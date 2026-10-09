@@ -13,7 +13,8 @@ class Config:
     api_base: str = "http://127.0.0.1:1234/v1"
     timeout_s: float = 45.0
     max_calls: int = 6
-    max_cycles: int = 3
+    max_cycles: int = 4
+    max_wall_seconds: float = 120.0
     max_tokens: int = 1600
     max_query_chars: int = 12000
 

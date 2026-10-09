@@ -1,7 +1,6 @@
 """Reproducible functional benchmarks and limited artifact integrity checks."""
 from __future__ import annotations
 
-import asyncio
 from hashlib import sha256
 import json
 from pathlib import Path
@@ -73,14 +72,58 @@ def integrity_check(store: Store, candidate_id: str) -> dict:
     return report
 
 
-async def quality_check(store: Store, engine: CognitiveEngine, candidate_id: str,
-                        dataset: Path) -> dict:
-    if store.candidate(candidate_id) is None:
+async def quality_check(store: Store, candidate_id: str, dataset: Path) -> dict:
+    """Check retrieval of *this candidate*, not unrelated arithmetic capabilities.
+
+    The held-out evaluation file uses {"query":..., "expected_excerpt":...}.
+    This only evaluates corpus matching, NOT neural reasoning or behavioral safety.
+    """
+    candidate = store.candidate(candidate_id)
+    if candidate is None:
         raise ValueError("Unknown candidate")
-    report = await benchmark(engine, read_cases(dataset), "fast")
-    # Requirement is configurable at code review, never adjustable by a model.
-    passed = report["total"] >= 3 and report["accuracy"] >= 0.9
-    store.record_evaluation(candidate_id, "quality", passed, report["accuracy"],
-                            {"dataset": str(dataset), "total": report["total"],
-                             "accuracy": report["accuracy"]})
-    return report | {"gate_passed": passed}
+    if candidate["kind"] != "rag":
+        raise ValueError("LoRA quality evaluation needs a separate neural model evaluator")
+    path = Path(candidate["artifact"])
+    if not path.is_file() or path.is_symlink() or sha256_file(path) != candidate["checksum"]:
+        raise ValueError("Artifact failed integrity requirements")
+    content = path.read_text("utf-8")
+    if dataset.is_symlink() or not dataset.is_file() or dataset.stat().st_size > MAX_DATASET_BYTES:
+        raise ValueError("Invalid held-out retrieval evaluation dataset")
+    cases = []
+    for line in dataset.read_text("utf-8").splitlines():
+        if not line.strip():
+            continue
+        item = json.loads(line)
+        if (not isinstance(item, dict) or not isinstance(item.get("query"), str)
+                or not isinstance(item.get("expected_excerpt"), str)
+                or not item["query"].strip() or not item["expected_excerpt"].strip()
+                or len(item["query"]) > 500 or len(item["expected_excerpt"]) > 200):
+            raise ValueError("Invalid query/expected_excerpt in evaluation dataset")
+        cases.append(item)
+    if not 3 <= len(cases) <= 1000:
+        raise ValueError("Retrieval evaluation requires 3-1000 cases")
+    # FTS5 candidate-only isolated corpus, not the production knowledge index.
+    import tempfile
+    with tempfile.TemporaryDirectory() as temp_dir:
+        staging = Store(Path(temp_dir) / "evaluation.db")
+        try:
+            staging.ensure_skill(candidate["skill_id"], "candidate", ["test"])
+            staging.add_document({"id": "candidate", "skill_id": candidate["skill_id"],
+                                  "title": path.name, "body": content,
+                                  "source": candidate["source"], "license": candidate["license"],
+                                  "sha256": candidate["checksum"]})
+            details = []
+            for item in cases:
+                hits = staging.search(item["query"], candidate["skill_id"], limit=1)
+                ok = bool(hits) and item["expected_excerpt"].casefold() in hits[0]["body"].casefold()
+                details.append({"query": item["query"], "passed": ok})
+        finally:
+            staging.close()
+    score = sum(int(d["passed"]) for d in details) / len(details)
+    passed = score >= 0.9
+    report = {"total": len(details), "passed": sum(int(d["passed"]) for d in details),
+              "accuracy": score, "gate_passed": passed, "details": details,
+              "warning": "This checks retrieval only, not model quality or security."}
+    store.record_evaluation(candidate_id, "quality", passed, score,
+                            {"dataset": str(dataset), "total": len(details), "accuracy": score})
+    return report

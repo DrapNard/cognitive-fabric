@@ -1,0 +1,28 @@
+// Reference schema for a future FlatBuffers wire implementation.
+// The shipped v1 runtime uses MessagePack envelopes, not FlatBuffers.
+namespace Cognitive;
+
+enum MessageKind:ubyte {
+  Request = 0, Response, Intent, Plan, Reasoning,
+  Feedback, Skill, Evaluation, Error
+}
+
+table EvidenceRef {
+  identifier:string (required);
+  source:string;
+  verified:bool = false;
+}
+
+table Envelope {
+  version:ushort = 1;
+  id:string (required);
+  task_id:string (required);
+  source:string (required);
+  target:string (required);
+  kind:MessageKind;
+  payload:[ubyte];
+  evidence:[EvidenceRef];
+}
+
+root_type Envelope;
+file_identifier "COGF";

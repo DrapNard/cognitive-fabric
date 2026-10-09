@@ -1,0 +1,3 @@
+{"query":"Rust async mutex", "expected_excerpt":"Rust async runtime diagnostics"}
+{"query":"held mutex guards", "expected_excerpt":"mutex guards across await boundaries"}
+{"query":"explicit timeouts", "expected_excerpt":"Use explicit timeouts"}

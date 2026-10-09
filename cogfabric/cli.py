@@ -31,6 +31,10 @@ def parser() -> argparse.ArgumentParser:
     ask.add_argument("--socket", action="store_true", help="Send to running Unix-socket daemon")
     sub.add_parser("status")
     sub.add_parser("skills")
+    new_skill = sub.add_parser("skill-add", help="Register a new operator-defined skill")
+    new_skill.add_argument("id", help="Unique dotted identifier, e.g. rust.async.tokio.s1")
+    new_skill.add_argument("--description", required=True)
+    new_skill.add_argument("--tags", required=True, help="Comma-separated routing tags")
     ingest_p = sub.add_parser("ingest")
     ingest_p.add_argument("file", type=pathlib.Path)
     ingest_p.add_argument("--skill", required=True)
@@ -51,6 +55,8 @@ def parser() -> argparse.ArgumentParser:
     create.add_argument("--skill", required=True)
     create.add_argument("--kind", choices=["rag", "lora"], required=True)
     create.add_argument("--artifact", type=pathlib.Path, required=True)
+    create.add_argument("--source", required=True, help="Provenance of candidate data/weights")
+    create.add_argument("--license", required=True, help="License for the candidate artifact")
     evaluate = cand_sub.add_parser("evaluate")
     evaluate.add_argument("id")
     evaluate.add_argument("--suite", choices=["quality", "integrity"], required=True)
@@ -95,6 +101,17 @@ async def execute(args: argparse.Namespace) -> None:
                       "candidates": len(store.candidates())}
         elif args.command == "skills":
             output = [{k: s[k] for k in ("id", "description", "tags", "active_version")} for s in store.skills()]
+        elif args.command == "skill-add":
+            import re
+            if not re.fullmatch(r"[a-z][a-z0-9_.-]{2,100}", args.id):
+                raise ValueError("Invalid skill id")
+            tags = [t.strip().lower() for t in args.tags.split(",") if t.strip()]
+            if not tags or len(tags) > 32 or any(not re.fullmatch(r"[a-z0-9_+-]{2,40}", t) for t in tags):
+                raise ValueError("Invalid skill routing tags")
+            if not args.description.strip() or len(args.description) > 500:
+                raise ValueError("Invalid description")
+            store.ensure_skill(args.id, args.description, tags)
+            output = {"id": args.id, "tags": tags, "registered": True}
         elif args.command == "ingest":
             output = ingest(store, SecurityKernel(), args.file, args.skill, args.source, args.license)
         elif args.command == "search":
@@ -111,14 +128,14 @@ async def execute(args: argparse.Namespace) -> None:
                 if args.artifact.is_symlink() or not args.artifact.is_file():
                     raise ValueError("Candidate artifact must be a regular file")
                 output = store.create_candidate(args.skill, args.kind, str(args.artifact.resolve()),
-                                                sha256_file(args.artifact))
+                                                sha256_file(args.artifact), args.source, args.license)
             elif args.action == "evaluate":
                 if args.suite == "integrity":
                     output = integrity_check(store, args.id)
                 else:
                     if not args.dataset:
                         raise ValueError("--dataset is required for quality evaluation")
-                    output = await quality_check(store, CognitiveEngine(cfg, store), args.id, args.dataset)
+                    output = await quality_check(store, args.id, args.dataset)
             elif args.action == "promote":
                 if not args.human_approve:
                     raise PermissionError("Promotion requires --human-approve")

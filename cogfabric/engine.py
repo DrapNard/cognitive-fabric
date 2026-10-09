@@ -11,7 +11,7 @@ import re
 from time import perf_counter
 
 from .config import Config
-from .models import Backend, create_backend, ModelUnavailable
+from .models import Backend, DemoBackend, create_backend
 from .security import SecurityKernel, SecurityError, safe_arithmetic
 from .skills import route
 from .storage import Store
@@ -82,15 +82,24 @@ class CognitiveEngine:
                               "research": ["planner", "solver", "explorer", "critic"]}[mode]
                 allocation = allocation[: min(len(allocation), self.cfg.max_calls)]
                 outputs: dict[str, str] = {}
+                remaining_tokens = self.cfg.max_tokens
                 for role in allocation:
-                    if calls >= self.cfg.max_calls or cycles >= self.cfg.max_cycles + 1:
+                    if (calls >= self.cfg.max_calls or cycles >= self.cfg.max_cycles
+                            or remaining_tokens <= 0):
                         break
                     self.security.authorize("jev-r", "llm.generate")
                     role_prompt = prompt
                     if outputs:
                         role_prompt += "\nPrevious role results (unverified): " + str(outputs)[:3500]
-                    result = await self.backend.generate(role, [{"role": "user", "content": role_prompt}],
-                                                         max_tokens=min(512, self.cfg.max_tokens))
+                    allocation_tokens = min(512, remaining_tokens)
+                    deadline = self.cfg.max_wall_seconds - (perf_counter() - start)
+                    if deadline <= 0:
+                        raise asyncio.TimeoutError("Task wall-clock budget exhausted")
+                    result = await asyncio.wait_for(
+                        self.backend.generate(role, [{"role": "user", "content": role_prompt}],
+                                              max_tokens=allocation_tokens),
+                        timeout=min(self.cfg.timeout_s + 1, deadline))
+                    remaining_tokens -= allocation_tokens
                     calls += 1
                     cycles += 1
                     outputs[role] = result
@@ -100,6 +109,8 @@ class CognitiveEngine:
                     answer += "\n\nReview (unverified): " + outputs["critic"]
                 if outputs.get("explorer"):
                     answer += "\n\nAlternative: " + outputs["explorer"]
+                if isinstance(self.backend, DemoBackend):
+                    status = "demo"
             self.store.task_finish(task_id, status, answer)
         except Exception as exc:
             status = "failed"

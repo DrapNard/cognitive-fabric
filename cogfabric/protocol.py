@@ -87,7 +87,8 @@ def decode(frame: bytes) -> Envelope:
     if size == 0 or size > MAX_FRAME or size != len(frame) - 4:
         raise ProtocolError("Invalid frame length")
     try:
-        raw = msgpack.unpackb(frame[4:], raw=False, strict_map_key=True, max_buffer_size=MAX_FRAME)
+        raw = msgpack.unpackb(frame[4:], raw=False, strict_map_key=True, max_str_len=MAX_FRAME, max_bin_len=MAX_FRAME,
+                              max_array_len=10000, max_map_len=10000, max_ext_len=1024)
         if not isinstance(raw, dict) or set(raw) != {"v", "id", "k", "s", "t", "task", "p"}:
             raise ProtocolError("Invalid envelope fields")
         event = Envelope(kind=Kind(raw["k"]), source=raw["s"], target=raw["t"],

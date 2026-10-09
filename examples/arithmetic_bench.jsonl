@@ -1,0 +1,10 @@
+{"input":"calc: 2+2", "expected":"4"}
+{"input":"calc: (7+5)*3", "expected":"36"}
+{"input":"calc: 18/3", "expected":"6"}
+{"input":"calc: 3**3", "expected":"27"}
+{"input":"calc: 23-9", "expected":"14"}
+{"input":"calc: 8%3", "expected":"2"}
+{"input":"calc: -3+10", "expected":"7"}
+{"input":"calc: (16//3)+1", "expected":"6"}
+{"input":"calc: 2**8", "expected":"256"}
+{"input":"calc: 1+1+1", "expected":"3"}

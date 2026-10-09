@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from hashlib import sha256
 from pathlib import Path
 import sqlite3
 from time import time
@@ -36,7 +37,9 @@ CREATE TABLE IF NOT EXISTS candidates (
  id TEXT PRIMARY KEY, skill_id TEXT NOT NULL, kind TEXT NOT NULL,
  version INTEGER NOT NULL, artifact TEXT NOT NULL, checksum TEXT NOT NULL,
  status TEXT NOT NULL CHECK(status IN ('candidate','rejected','approved')),
- created REAL NOT NULL, approved_at REAL, UNIQUE(skill_id, version),
+ created REAL NOT NULL, approved_at REAL,
+ source TEXT NOT NULL DEFAULT 'unknown', license TEXT NOT NULL DEFAULT 'unknown',
+ UNIQUE(skill_id, version),
  FOREIGN KEY(skill_id) REFERENCES skills(id)
 );
 CREATE TABLE IF NOT EXISTS evaluations (
@@ -64,6 +67,11 @@ class Store:
         self.conn.execute("PRAGMA foreign_keys=ON")
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.executescript(SCHEMA)
+        # Upgrade earlier local development stores safely and idempotently.
+        existing = {r["name"] for r in self.conn.execute("PRAGMA table_info(candidates)")}
+        for name in ("source", "license"):
+            if name not in existing:
+                self.conn.execute(f"ALTER TABLE candidates ADD COLUMN {name} TEXT NOT NULL DEFAULT 'unknown'")
 
     def close(self) -> None:
         self.conn.close()
@@ -125,15 +133,25 @@ class Store:
         row = self.conn.execute("SELECT * FROM candidates WHERE id=?", (id_,)).fetchone()
         return dict(row) if row else None
 
-    def create_candidate(self, skill_id: str, kind: str, artifact: str, checksum: str) -> dict:
+    def create_candidate(self, skill_id: str, kind: str, artifact: str, checksum: str,
+                         source: str = "unknown", license_name: str = "unknown") -> dict:
         if kind not in ("rag", "lora"):
             raise ValueError("Candidate kind must be rag or lora")
         if not self.conn.execute("SELECT 1 FROM skills WHERE id=?", (skill_id,)).fetchone():
             raise ValueError("Unknown skill")
         version = self.conn.execute("SELECT COALESCE(MAX(version),0)+1 FROM candidates WHERE skill_id=?", (skill_id,)).fetchone()[0]
         id_ = uuid.uuid4().hex
-        self.conn.execute("INSERT INTO candidates(id,skill_id,kind,version,artifact,checksum,status,created) VALUES(?,?,?,?,?,?,?,?)",
-                          (id_, skill_id, kind, version, artifact, checksum, "candidate", time()))
+        if (not source.strip() or not license_name.strip() or
+                source == "unknown" or license_name == "unknown"):
+            raise ValueError("Explicit candidate provenance and license required")
+        if kind == "rag":
+            candidate_path = Path(artifact)
+            if (candidate_path.is_symlink() or not candidate_path.is_file()
+                    or candidate_path.suffix.lower() not in (".md", ".txt")
+                    or candidate_path.stat().st_size > 256_000):
+                raise ValueError("RAG candidate requires a regular .md/.txt file <=256 KB")
+        self.conn.execute("INSERT INTO candidates(id,skill_id,kind,version,artifact,checksum,status,created,source,license) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                          (id_, skill_id, kind, version, artifact, checksum, "candidate", time(), source, license_name))
         return self.candidate(id_)
 
     def record_evaluation(self, id_: str, suite: str, success: bool, score: float, details: dict) -> None:
@@ -150,11 +168,27 @@ class Store:
         if not candidate or candidate["status"] != "candidate":
             raise ValueError("Candidate not eligible for promotion")
         evs = self.evaluations(id_)
-        suites = {e["suite"] for e in evs if e["success"] and e["score"] >= 0.9}
+        latest = {e["suite"]: e for e in evs}
+        suites = {suite for suite, e in latest.items() if e["success"] and e["score"] >= 0.9}
         if not {"quality", "integrity"}.issubset(suites):
             raise PermissionError("Both quality and integrity evaluation gates must pass")
+        # A neural model cannot be evaluated by the RAG retrieval-quality suite.
+        if candidate["kind"] != "rag":
+            raise PermissionError("LoRA promotion is disabled until model-specific behavioral evaluation exists")
+        path = Path(candidate["artifact"])
+        if path.is_symlink() or not path.is_file() or path.stat().st_size > 256_000:
+            raise PermissionError("Candidate artifact is missing or invalid")
+        body = path.read_text("utf-8")
+        digest = sha256(body.encode("utf-8")).hexdigest()
+        if digest != candidate["checksum"]:
+            raise PermissionError("Artifact changed since registration")
         self.conn.execute("BEGIN IMMEDIATE")
         try:
+            # RAG content becomes searchable *only after* explicit promotion.
+            self.add_document({"id": uuid.uuid4().hex, "skill_id": candidate["skill_id"],
+                               "title": path.name, "body": body,
+                               "source": candidate["source"], "license": candidate["license"],
+                               "sha256": digest})
             self.conn.execute("UPDATE candidates SET status='approved', approved_at=? WHERE id=? AND status='candidate'", (time(), id_))
             self.conn.execute("UPDATE skills SET active_version=? WHERE id=?", (candidate["version"], candidate["skill_id"]))
             self.conn.execute("COMMIT")
