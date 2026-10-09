@@ -1,0 +1,30 @@
+name: Quality and security checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install package
+        run: python -m pip install -e '.[dev]'
+      - name: Compile
+        run: python -m compileall -q cogfabric training
+      - name: Run tests
+        run: python -m pytest -q
+      - name: Smoke test
+        run: python -m cogfabric --home ./.local self-test
