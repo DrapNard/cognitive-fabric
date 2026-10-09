@@ -1,29 +1,20 @@
-# Release 1.0 implementation matrix
+# Rust port implementation matrix — 1.1.0-alpha.1
 
-**Definition of 1.0:** tested, local-first research orchestration runtime.
-It does **not** mean that the full scientific architecture is achieved.
+**Verification status: not compiled** (Rust and FlatBuffers compiler unavailable in the build environment). All implementation claims below refer to code written, not validated runtime behavior.
 
-| Design subsystem | Runtime status | Evidence / limitation |
+| Design subsystem | Port status | Remaining verification |
 |---|---|---|
-| Cognitive Fabric | **Implemented** | Versioned length-prefixed MessagePack, Unix socket, request validation |
-| FlatBuffers | **Design only** | `.fbs` proposal; runtime is MessagePack, the approved equivalent |
-| Micro-LLM interface | **Integrated adapter** | Local OpenAI-compatible endpoint; model not bundled |
-| Jev+ decision engine | **Heuristic prototype** | Skill scoring and bounded role scheduling; no learned Jev decision head |
-| Jev-R Collective | **Logical roles** | Planner/Solver/Explorer/Critic calls; no dedicated neural recursive model |
-| Expert Registry | **Implemented for text skills** | Dynamic tags, RAG documents, candidate versions |
-| Binary skill networking | **Partial** | Unix socket request/reply, not a distributed event mesh |
-| Cognitive memory | **Implemented** | SQLite WAL, FTS5, task history and event traces |
-| Safety kernel | **Initial reference design** | Deny-by-default capability registry, no arbitrary command execution |
-| RAG evolution | **Manual-gated** | Candidate-specific retrieval quality, checksum, operator approval |
-| LoRA training | **Optional offline script** | Requires external packages and model; no verified training run |
-| LoRA hot swap | **Not implemented** | No runtime adapter manager or neural model-evaluator |
-| Neural-weight promotion | **Blocked** | Intentionally disabled in 1.0 |
-| Model self-rebuild | **Not implemented** | Separate R&D project |
-| Auto dataset discovery | **Not implemented** | Security/licensing assessment needed |
-| Performance benchmark | **Initial harness** | Per-task wall-clock, calls, accuracy; no joules/FLOPs |
-| Distributed GPU scheduler | **Not implemented** | Current scheduler is bounded task-level control |
-| Proven AGI/frontier performance | **Not claimed** | No independently validated comparison |
+| Cognitive Fabric | Written in Rust | Compile typed FlatBuffers IPC, frame tests |
+| Micro-LLM adapter | Written | Verify against LM Studio on loopback |
+| Jev+ | Heuristic router written | Measure quality and cost |
+| Jev-R | Bounded role loop written | Verify calls and latency |
+| Expert Registry | SQLite implementation written | Regression test dynamic skill addition |
+| Memory | SQLite WAL + FTS5 written | Check storage migration, FTS test |
+| Security | Deny-by-default capability checks | Independent sandbox/security audit |
+| RAG candidates | Integrity + quality + approval gates written | Run held-out evaluation |
+| Model training | Python script retained | Run training separately |
+| LoRA hot swap / neural promotion | Not implemented | Requires separate research and reviews |
+| Energy / GPU monitoring | Not implemented | Benchmark infrastructure |
+| Novel learned Jev-R | Not implemented | Research program |
 
-The terminology in the specification denotes *architectural roles*, not
-necessarily distinct trained neural networks. Only measured improvements
-should be represented as demonstrated scientific results.
+The original `v1.0.0` Python reference remains in Git history, and the Rust rewrite is isolated in branch `rust-core`. Persistent database storage uses a different default directory (`~/.local/share/cogfabric-rust`) to prevent accidental schema collisions with the legacy Python implementation.

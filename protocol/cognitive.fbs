@@ -1,27 +1,37 @@
-// Reference schema for a future FlatBuffers wire implementation.
-// The shipped v1 runtime uses MessagePack envelopes, not FlatBuffers.
+// Versioned, typed Cognitive Fabric IPC schema.
+// Only one of request, response or error is populated per envelope.
 namespace Cognitive;
 
-enum MessageKind:ubyte {
-  Request = 0, Response, Intent, Plan, Reasoning,
-  Feedback, Skill, Evaluation, Error
+enum MessageKind:ubyte { Request = 0, Response = 1, Error = 2 }
+enum ReasoningMode:ubyte { Fast = 0, Standard = 1, Deep = 2, Research = 3 }
+
+table AskRequest {
+  query:string (required);
+  mode:ReasoningMode = Standard;
 }
 
-table EvidenceRef {
-  identifier:string (required);
-  source:string;
-  verified:bool = false;
+table AskResponse {
+  task_id:string (required);
+  answer:string (required);
+  status:string (required);
+  model_calls:uint;
+  cycles:uint;
+  elapsed_ms:double;
+  evidence:[string];
+  skills:[string];
+}
+
+table ProtocolError {
+  message:string (required);
 }
 
 table Envelope {
   version:ushort = 1;
-  id:string (required);
-  task_id:string (required);
-  source:string (required);
-  target:string (required);
+  request_id:string (required);
   kind:MessageKind;
-  payload:[ubyte];
-  evidence:[EvidenceRef];
+  request:AskRequest;
+  response:AskResponse;
+  error:ProtocolError;
 }
 
 root_type Envelope;

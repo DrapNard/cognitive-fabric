@@ -1,113 +1,93 @@
-# Cognitive Fabric 1.0
+# Cognitive Fabric — Rust Port (1.1.0-alpha.1)
 
 **Author:** DrapNard  
-**Status:** functional research runtime, not a pretrained Jev model or AGI  
+**Language:** Rust (runtime), Python (optional offline model training)
+**Status:** **Uncompiled Rust port** — awaiting compilation and regression testing in a Rust-enabled environment.
 **License:** Apache-2.0 (framework only)
 
-Cognitive Fabric is a local-first, resource-bounded, modular AI coordination
-runtime inspired by Jev-style decision engines. It separates language models,
-routing, reasoning roles, expert skills, evaluation and security controls.
+This branch corrects the original v1.0 implementation's technology mismatch:
+the production runtime is Rust with Tokio, typed FlatBuffers IPC, SQLite,
+a local inference adapter, bounded cooperative roles and an explicit security
+policy. Python is **not** used by the runtime.
 
-## Features
+This is an **orchestration framework**; Jev+ is a deterministic router and
+Jev-R is a multi-role orchestration loop, not a trained neural reasoning model.
+It does **not** claim to outperform an 8B or Terra-class model.
 
-- Versioned **binary MessagePack** envelopes and local Unix socket transport.
-- Persistent SQLite task logs, skill registry, text retrieval and trace events.
-- Single-backbone logical roles: planner, solver, explorer, critic.
-- FAST / STANDARD / DEEP / RESEARCH budgets with bounded model calls.
-- Local inference through LM Studio / llama.cpp-compatible chat-completions API.
-- Explicitly labelled demo mode which runs without an LLM.
-- Quality benchmarks, integrity checks and human-gated promotion of artifacts.
-- Manual offline LoRA/QLoRA training recipe (optional dependencies).
-- Zero automatic shell command execution, crawler access or weight promotion.
+## Requirements
 
-**Important:** v1 implements *orchestration roles*, not trained Jev-R neural
-models. Passing unit tests does not establish intelligence or deployment safety.
-It uses MessagePack instead of FlatBuffers because the latter runtime compiler
-is not available in the delivery environment. A future `.fbs` schema is included.
+- Rust stable (`rustup` or `pacman -S rust`)
+- FlatBuffers compiler (`pacman -S flatbuffers`)
+- SQLite (bundled via `rusqlite`)
+- A local OpenAI-compatible inference endpoint, optional
 
-## Installation
+> FlatBuffers Rust generated sources are produced by `flatc` at build time.
+> This branch pins FlatBuffers v25.12.19. If your `flatc --version` is
+> different, install a matching compiler or update both compiler and Rust crate
+> in a reviewed dependency change.
+
+## Install on Arch / CachyOS
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e '.[dev]'
-python -m cogfabric init
-python -m cogfabric self-test
-pytest -q
+sudo pacman -S --needed rust flatbuffers
+cargo build --release
+cargo test
+./target/release/cogfabric --home ./.local init
+./target/release/cogfabric --home ./.local self-test
 ```
 
-If dependencies are already installed and network access is unavailable:
+## Commands
 
 ```bash
-PYTHONPATH=. python -m cogfabric --home ./.local init
-```
+# No GPU, deterministic demonstration.
+cargo run -- ask 'calc: (7 + 5) * 3'
+cargo run -- bench examples/arithmetic_bench.jsonl
 
-## Example commands
-
-```bash
-# Deterministic verification; does not use an LLM.
-cogfabric ask 'calc: (7 + 5) * 3'
-
-# Run reproducible functional benchmarks.
-cogfabric --json bench examples/arithmetic_bench.jsonl
-
-# Enable a LOCAL inference server (LM Studio: http://127.0.0.1:1234/v1).
+# Local LLM (e.g. LM Studio):
 export COGFABRIC_BACKEND=openai-local
 export COGFABRIC_MODEL=your-loaded-model-id
 export COGFABRIC_API_BASE=http://127.0.0.1:1234/v1
-cogfabric ask 'Plan a minimal Rust async service' --mode deep
+cargo run -- ask 'Design a Tokio service' --mode deep
 
-# Ingest a human-reviewed file, then retrieve it.
-cogfabric ingest examples/skill_document.md --skill rust.s1 --source original-demo --license CC0-1.0
-cogfabric search 'Rust async mutex'
+# Typed FlatBuffers Unix socket transport:
+cargo run -- serve
+# In another terminal:
+cargo run -- ask 'calc: 10 * 12' --socket
 
-# Extend the registry without modifying the Python source.
-cogfabric skill-add rust.async.tokio.s1 --description 'Tokio async specialization' --tags tokio,async,rust
+# Approved knowledge ingestion and retrieval:
+cargo run -- ingest examples/skill_document.md --skill rust.s1 --source demo --license CC0-1.0
+cargo run -- search 'Rust async mutex'
 
-# Start the Unix-socket service in terminal A.
-cogfabric serve
-# Request from terminal B.
-cogfabric ask 'calc: 10 * 12' --socket
-
-# Create and evaluate a candidate artifact. Neither step activates it.
-cogfabric candidate create --skill rust.s1 --kind rag \
-  --artifact examples/skill_document.md --source original-demo --license CC0-1.0
-cogfabric candidate list
-cogfabric candidate evaluate CANDIDATE_ID --suite integrity
-cogfabric candidate evaluate CANDIDATE_ID --suite quality --dataset examples/retrieval_bench.jsonl
-# Human review is mandatory. This command records that approval.
-cogfabric candidate promote CANDIDATE_ID --human-approve
+# Candidate evaluation and human review:
+cargo run -- candidate create --skill rust.s1 --kind rag \
+  --artifact examples/skill_document.md --source demo --license CC0-1.0
+cargo run -- candidate list
+cargo run -- candidate evaluate CANDIDATE_ID --suite integrity
+cargo run -- candidate evaluate CANDIDATE_ID --suite quality \
+  --dataset examples/retrieval_bench.jsonl
+cargo run -- candidate promote CANDIDATE_ID --human-approve
 ```
 
-Note: retrieval quality uses candidate-only FTS5 tests on the specified
-artifact, not generative model quality or semantic safety. Use a genuinely
-held-out domain-specific benchmark in practice. Approved RAG artifacts become
-searchable after promotion. LoRA promotion remains blocked until a neural
-candidate evaluator and separate security review are implemented.
+The optional offline `training/train_lora.py` remains Python/PyTorch, but
+cannot hot-load weights into the Rust runtime. Neural candidate promotion is
+blocked; it would require architecture-specific evaluation and an independent
+security review.
 
-## Optional LoRA trainer
+## Security boundaries
 
-```bash
-pip install -e '.[training]'
-python training/train_lora.py \
-  --base-model /path/to/local/hf-model \
-  --dataset examples/training_examples.jsonl \
-  --output /path/to/new/adapter \
-  --dry-run
-```
+The runtime does not grant models shell execution, arbitrary network access,
+permission modification, dataset crawling or automatic weight deployment.
+Local inference is restricted to loopback HTTP. IPC messages are verified
+FlatBuffers frames capped at 256 KiB; the socket uses owner-only permissions.
+Any RAG candidate requires an explicit source, license, integrity test,
+held-out retrieval tests and an operator promotion command.
 
-Remove `--dry-run` to train. For `--qlora`, install `bitsandbytes` and use a
-supported CUDA setup. No automatic fine-tuning or deployment is performed.
-Model safety, license provenance and compatibility must be independently reviewed.
+**Caution:** this software is research-stage; the gates are limited. In
+particular, retrieval tests and file hashes do not establish semantic safety.
 
-## Limitations
+## Version history
 
-- The `demo` backend is a deterministic smoke-test stub, not an intelligent LLM.
-- No automatic dataset harvesting, neural model training or live self-modification.
-- LoRA trainer exists as an unverified optional script, not a guaranteed end-to-end neural deployment pipeline.
-- The included integrity evaluation is NOT a security evaluation of weights.
-- Latency/call budgets are measured; energy and VRAM instrumentation are TODO.
-- The daemon handles one task at a time to protect the SQLite store and VRAM.
-- The runtime is single-user and local-only, not a multi-tenant API.
+- `v1.0.0` (branch `main`): original Python + MessagePack proof of concept.
+- `rust-core` (this branch): Rust/Tokio + FlatBuffers port, pending Rust CI.
 
-See [Architecture](docs/ARCHITECTURE.md) and [Threat Model](docs/THREAT_MODEL.md).
+See `docs/RUST_PORT.md` for the port's status and known limitations.

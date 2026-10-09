@@ -23,3 +23,19 @@ This is a **working orchestration reference runtime**, not a novel pretrained
 neural reasoning model. FlatBuffers runtime, automatic training, LoRA deployment,
 GPU-specific resource scheduling and performance parity with frontier LLMs are
 not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
+
+## [1.1.0-alpha.1] - 2026-10-09
+
+### Rust migration
+
+- Ported the cognitive runtime to Rust 2021 with Tokio.
+- Replaced MessagePack IPC with a typed, bounded FlatBuffers schema.
+- Added Rust CLI, SQLite-backed task/skill/RAG candidate lifecycle, local model
+  adapter, bounded Jev-R roles and independent capability gating.
+- Preserved the original Python runtime in Git history on the `main` branch.
+- Retained Python only for the optional offline LoRA experiment.
+
+### Verification status
+
+- **Build and tests not run**: rustc, cargo and flatc are unavailable in the
+  authoring environment. This is an alpha port, not a verified replacement.
