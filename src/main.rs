@@ -101,6 +101,11 @@ enum CandidateAction {
         #[arg(long)]
         human_approve: bool,
     },
+    Rollback {
+        id: String,
+        #[arg(long)]
+        human_approve: bool,
+    },
 }
 
 fn valid_skill_id(id: &str) -> bool {
@@ -265,6 +270,9 @@ async fn main() -> Result<()> {
             }
             CandidateAction::Promote { id, human_approve } => {
                 evaluation::promote(&store, &id, human_approve)?
+            }
+            CandidateAction::Rollback { id, human_approve } => {
+                evaluation::rollback(&store, &id, human_approve)?
             }
         },
     };

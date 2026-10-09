@@ -28,3 +28,11 @@ remote hosts, credentials, query strings and fragments. Loopback binds are
 blocked by the default execution sandbox, so the full suite was rerun with
 socket permission; fixture setup fails explicitly when binding is unavailable.
 This is protocol testing, not live-model inference validation.
+
+## RAG lifecycle and migration verification
+
+All 19 tests pass, including migration from the unversioned schema, reopen
+idempotence, future-schema rejection, approved-version retrieval selection,
+operator approval, unauthorized rollback, candidate and tampered-snapshot denial,
+transactional audit counts and rollback durability. Formatting, workspace check
+and Clippy with warnings denied pass. Full tests use local socket permission.

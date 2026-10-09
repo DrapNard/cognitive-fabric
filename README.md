@@ -91,3 +91,8 @@ particular, retrieval tests and file hashes do not establish semantic safety.
 - `develop/v1.0` (this branch): Rust/Tokio + FlatBuffers development; see `docs/QUALITY_REVIEW.md` for local verification.
 
 See `docs/RUST_PORT.md` for the port's status and known limitations.
+
+RAG rollback is available with
+`cargo run -- candidate rollback OLD_CANDIDATE_ID --human-approve`.
+It restores an approved older durable snapshot after integrity checks. See
+[the evolution lifecycle](docs/EVOLUTION.md) for migration and scope details.

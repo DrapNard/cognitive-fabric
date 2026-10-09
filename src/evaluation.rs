@@ -187,6 +187,15 @@ pub fn promote(store: &Store, id: &str, human_approve: bool) -> Result<Value> {
     Ok(serde_json::to_value(approved)?)
 }
 
+pub fn rollback(store: &Store, id: &str, human_approve: bool) -> Result<Value> {
+    security::authorize("human-cli", "candidate.rollback")?;
+    if !human_approve {
+        bail!("Explicit --human-approve required")
+    }
+    store.rollback_rag(id)?;
+    Ok(json!({"candidate_id":id,"rolled_back":true}))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -28,3 +28,10 @@ passing demo tests does not establish neural quality or release acceptance.
 Inference boundary update: `src/backend.rs` implements bounded HTTP with
 redirect/proxy denial and literal loopback endpoint validation. Three additional
 tests pass (17 total). Real LM Studio/llama.cpp inference is still unverified.
+
+RAG lifecycle update: schema version 1 migrates legacy state transactionally;
+`src/store.rs` filters retrieval to the active candidate snapshot and records
+promotion/rollback audit metadata. `candidate rollback ID --human-approve` restores
+an approved older RAG version after stored content integrity checks. Migration,
+rollback failure and reopen tests pass (19 total). External artifact quarantine,
+full task version pinning and general registry lifecycle remain Partial.

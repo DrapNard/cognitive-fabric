@@ -11,7 +11,11 @@ pub fn authorize(principal: &str, capability: &str) -> Result<()> {
         "jev-plus" => matches!(capability, "knowledge.search" | "math.evaluate"),
         "human-cli" => matches!(
             capability,
-            "knowledge.ingest" | "candidate.create" | "candidate.evaluate" | "candidate.promote"
+            "knowledge.ingest"
+                | "candidate.create"
+                | "candidate.evaluate"
+                | "candidate.promote"
+                | "candidate.rollback"
         ),
         _ => false,
     };

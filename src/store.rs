@@ -103,10 +103,49 @@ impl Store {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let db = Connection::open(path)?;
+        let mut db = Connection::open(path)?;
+        db.busy_timeout(std::time::Duration::from_secs(5))?;
         db.pragma_update(None, "foreign_keys", "ON")?;
         db.pragma_update(None, "journal_mode", "WAL")?;
-        db.execute_batch(SCHEMA)?;
+        let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let version: i64 = tx.pragma_query_value(None, "user_version", |row| row.get(0))?;
+        if version > 1 {
+            bail!("Database schema is newer than this runtime")
+        }
+        if version == 0 {
+            tx.execute_batch(SCHEMA)?;
+            tx.execute_batch(
+                r#"
+                CREATE TABLE candidate_documents (
+                    candidate_id TEXT PRIMARY KEY REFERENCES candidates(id),
+                    document_id TEXT NOT NULL REFERENCES documents(id)
+                );
+                CREATE INDEX candidate_documents_document ON candidate_documents(document_id);
+                CREATE TABLE lifecycle_audit (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    skill_id TEXT NOT NULL REFERENCES skills(id),
+                    candidate_id TEXT NOT NULL REFERENCES candidates(id),
+                    action TEXT NOT NULL, previous_version INTEGER NOT NULL,
+                    active_version INTEGER NOT NULL, created REAL NOT NULL
+                );
+                CREATE TRIGGER IF NOT EXISTS documents_delete AFTER DELETE ON documents BEGIN
+                    INSERT INTO document_index(document_index,rowid,title,body)
+                    VALUES ('delete',old.rowid,old.title,old.body);
+                END;
+                CREATE TRIGGER IF NOT EXISTS documents_update AFTER UPDATE ON documents BEGIN
+                    INSERT INTO document_index(document_index,rowid,title,body)
+                    VALUES ('delete',old.rowid,old.title,old.body);
+                    INSERT INTO document_index(rowid,title,body) VALUES(new.rowid,new.title,new.body);
+                END;
+                INSERT INTO candidate_documents(candidate_id,document_id)
+                    SELECT c.id,d.id FROM candidates c JOIN documents d
+                    ON c.checksum=d.sha256 AND c.skill_id=d.skill_id
+                    WHERE c.status='approved' AND c.kind='rag';
+                PRAGMA user_version=1;
+            "#,
+            )?;
+        }
+        tx.commit()?;
         Ok(Self { db: Mutex::new(db) })
     }
     pub fn create_task(&self, query: &str, mode: &str) -> Result<String> {
@@ -204,6 +243,10 @@ impl Store {
         let statement = "SELECT d.id,d.skill_id,d.title,d.body,d.source,d.license \
            FROM document_index JOIN documents d ON d.rowid=document_index.rowid \
            WHERE document_index MATCH ?1 AND (?2 IS NULL OR d.skill_id=?2) \
+           AND (NOT EXISTS(SELECT 1 FROM candidate_documents cd WHERE cd.document_id=d.id) \
+                OR EXISTS(SELECT 1 FROM candidate_documents cd JOIN candidates c ON c.id=cd.candidate_id \
+                    JOIN skills s ON s.id=c.skill_id WHERE cd.document_id=d.id \
+                    AND c.status='approved' AND c.version=s.active_version)) \
            ORDER BY bm25(document_index) LIMIT ?3";
         let mut stmt = db.prepare(statement)?;
         let rows = stmt
@@ -350,14 +393,67 @@ impl Store {
                 candidate.checksum
             ],
         )?;
+        let (document_id, document_skill, stored_body): (String, String, String) = tx.query_row(
+            "SELECT id,skill_id,body FROM documents WHERE sha256=?1",
+            [&candidate.checksum],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )?;
+        if document_skill != candidate.skill_id {
+            bail!("Document hash belongs to another skill")
+        }
+        if sha256(stored_body.as_bytes()) != candidate.checksum {
+            bail!("Stored document failed integrity verification")
+        }
+        tx.execute(
+            "INSERT INTO candidate_documents VALUES (?1,?2)",
+            params![id, document_id],
+        )?;
+        let previous: i64 = tx.query_row(
+            "SELECT active_version FROM skills WHERE id=?1",
+            [&candidate.skill_id],
+            |r| r.get(0),
+        )?;
         tx.execute("UPDATE candidates SET status='approved' WHERE id=?1", [id])?;
         tx.execute(
             "UPDATE skills SET active_version=?2 WHERE id=?1",
             params![candidate.skill_id, candidate.version],
         )?;
+        tx.execute("INSERT INTO lifecycle_audit(skill_id,candidate_id,action,previous_version,active_version,created) VALUES (?1,?2,'promote',?3,?4,?5)",
+            params![candidate.skill_id,id,previous,candidate.version,now()])?;
         tx.commit()?;
         drop(db);
         self.candidate(id)
+    }
+
+    /// Restore a previously approved RAG version using its durable document snapshot.
+    /// Caller must enforce operator authorization before entering this storage boundary.
+    pub(crate) fn rollback_rag(&self, id: &str) -> Result<()> {
+        let mut db = self.lock()?;
+        let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let (skill, version, checksum, body): (String, i64, String, String) = tx.query_row(
+            "SELECT c.skill_id,c.version,c.checksum,d.body FROM candidates c \
+             JOIN candidate_documents cd ON cd.candidate_id=c.id JOIN documents d ON d.id=cd.document_id \
+             WHERE c.id=?1 AND c.kind='rag' AND c.status='approved'", [id],
+            |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?)))?;
+        if sha256(body.as_bytes()) != checksum {
+            bail!("Stored rollback artifact failed integrity verification")
+        }
+        let previous: i64 = tx.query_row(
+            "SELECT active_version FROM skills WHERE id=?1",
+            [&skill],
+            |r| r.get(0),
+        )?;
+        if version >= previous {
+            bail!("Rollback requires a previously approved older version")
+        }
+        tx.execute(
+            "UPDATE skills SET active_version=?2 WHERE id=?1",
+            params![skill, version],
+        )?;
+        tx.execute("INSERT INTO lifecycle_audit(skill_id,candidate_id,action,previous_version,active_version,created) VALUES (?1,?2,'rollback',?3,?4,?5)",
+            params![skill,id,previous,version,now()])?;
+        tx.commit()?;
+        Ok(())
     }
 }
 
@@ -433,6 +529,130 @@ pub fn route(skills: &[Skill], query: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn database_path() -> std::path::PathBuf {
+        std::env::temp_dir().join(format!("fabric-migration-{}.db", Uuid::new_v4()))
+    }
+
+    #[test]
+    fn migrate_legacy_database_and_reject_future_schema() {
+        let path = database_path();
+        let legacy = Connection::open(&path).unwrap();
+        legacy.execute_batch(SCHEMA).unwrap();
+        legacy
+            .execute("INSERT INTO skills VALUES ('rust.s1','legacy','[]',0)", [])
+            .unwrap();
+        drop(legacy);
+        let store = Store::open(&path).unwrap();
+        assert_eq!(store.skills().unwrap()[0].description, "legacy");
+        let version: i64 = store
+            .lock()
+            .unwrap()
+            .pragma_query_value(None, "user_version", |r| r.get(0))
+            .unwrap();
+        assert_eq!(version, 1);
+        drop(store);
+        let store = Store::open(&path).unwrap();
+        assert_eq!(store.skills().unwrap().len(), 1);
+        store
+            .lock()
+            .unwrap()
+            .pragma_update(None, "user_version", 99)
+            .unwrap();
+        drop(store);
+        assert!(Store::open(&path).is_err());
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn rollback_restores_only_approved_untampered_document_versions() {
+        let path = database_path();
+        let store = Store::open(&path).unwrap();
+        bootstrap(&store).unwrap();
+        let mut ids = Vec::new();
+        for body in ["Rust snapshot first", "Rust snapshot second"] {
+            let c = store
+                .create_candidate(
+                    "rust.s1",
+                    "rag",
+                    "fixture.md",
+                    &sha256(body.as_bytes()),
+                    "test",
+                    "CC0",
+                )
+                .unwrap();
+            // Storage transaction test; production evaluation is covered independently.
+            for suite in ["integrity", "quality"] {
+                store
+                    .evaluation(&c.id, suite, true, 1.0, json!({"fixture":true}))
+                    .unwrap();
+            }
+            store.promote_rag(&c.id, body).unwrap();
+            ids.push(c.id);
+        }
+        assert_eq!(
+            store.search("snapshot", Some("rust.s1"), 10).unwrap()[0].body,
+            "Rust snapshot second"
+        );
+        assert!(store.rollback_rag(&ids[1]).is_err());
+        assert!(crate::evaluation::rollback(&store, &ids[0], false).is_err());
+        let unknown = store
+            .create_candidate(
+                "rust.s1",
+                "rag",
+                "fixture.md",
+                &sha256(b"unknown"),
+                "test",
+                "CC0",
+            )
+            .unwrap();
+        assert!(store.rollback_rag(&unknown.id).is_err());
+        store
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE documents SET body='tampered' WHERE sha256=?1",
+                [sha256(b"Rust snapshot first")],
+            )
+            .unwrap();
+        assert!(crate::evaluation::rollback(&store, &ids[0], true).is_err());
+        assert_eq!(
+            store
+                .skills()
+                .unwrap()
+                .iter()
+                .find(|s| s.id == "rust.s1")
+                .unwrap()
+                .active_version,
+            2
+        );
+        store
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE documents SET body='Rust snapshot first' WHERE sha256=?1",
+                [sha256(b"Rust snapshot first")],
+            )
+            .unwrap();
+        crate::evaluation::rollback(&store, &ids[0], true).unwrap();
+        let hits = store.search("snapshot", Some("rust.s1"), 10).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].body, "Rust snapshot first");
+        assert!(crate::security::authorize("jev-r", "candidate.rollback").is_err());
+        let audits: i64 = store
+            .lock()
+            .unwrap()
+            .query_row("SELECT COUNT(*) FROM lifecycle_audit", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(audits, 3);
+        drop(store);
+        let reopened = Store::open(&path).unwrap();
+        assert_eq!(
+            reopened.search("snapshot", None, 10).unwrap()[0].body,
+            "Rust snapshot first"
+        );
+        drop(reopened);
+        std::fs::remove_file(path).unwrap();
+    }
     #[test]
     fn skill_routing() {
         let tmp = std::env::temp_dir().join(format!("cogfabric-test-{}.db", Uuid::new_v4()));

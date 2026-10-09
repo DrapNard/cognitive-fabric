@@ -51,3 +51,7 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
 - Constrain inference HTTP to literal loopback, disable redirects and proxies,
   bound request parameters and cap response bodies at 256 KiB. Add local HTTP
   boundary regressions (17 total tests passing with socket permission).
+- Migrate unversioned SQLite state transactionally with future-schema rejection
+  and bounded lock contention. Add candidate snapshot links, active-version
+  retrieval, integrity-checked operator rollback and lifecycle audit records.
+  Verify 19 tests, formatting, compilation and Clippy.
