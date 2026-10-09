@@ -1,7 +1,7 @@
 name: Rust checks
 on:
   push:
-    branches: [main, rust-core]
+    branches: [main, rust-core, develop/v1.0]
   pull_request:
   workflow_dispatch:
 permissions:

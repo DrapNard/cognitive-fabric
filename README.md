@@ -2,7 +2,7 @@
 
 **Author:** DrapNard  
 **Language:** Rust (runtime), Python (optional offline model training)
-**Status:** **Uncompiled Rust port** — awaiting compilation and regression testing in a Rust-enabled environment.
+**Status:** **Verified Rust alpha baseline** — builds and 14 offline tests pass; v1.0 integration requirements remain incomplete.
 **License:** Apache-2.0 (framework only)
 
 This branch corrects the original v1.0 implementation's technology mismatch:
@@ -88,6 +88,6 @@ particular, retrieval tests and file hashes do not establish semantic safety.
 ## Version history
 
 - `v1.0.0` (branch `main`): original Python + MessagePack proof of concept.
-- `rust-core` (this branch): Rust/Tokio + FlatBuffers port, pending Rust CI.
+- `develop/v1.0` (this branch): Rust/Tokio + FlatBuffers development; see `docs/QUALITY_REVIEW.md` for local verification.
 
 See `docs/RUST_PORT.md` for the port's status and known limitations.

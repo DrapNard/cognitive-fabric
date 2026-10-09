@@ -1,37 +1,64 @@
 //! Bounded, observable orchestration; roles share one backend unless configured otherwise.
+use crate::{
+    backend,
+    config::Config,
+    math, security,
+    store::{self, Store},
+};
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::{sync::Arc, time::{Duration,Instant}};
-use crate::{backend, config::Config, math, security, store::{self, Store}};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Outcome {
-    pub task_id:String, pub answer:String, pub status:String,
-    pub calls:u32, pub cycles:u32, pub elapsed_ms:f64,
-    pub evidence:Vec<String>, pub skills:Vec<String>,
+    pub task_id: String,
+    pub answer: String,
+    pub status: String,
+    pub calls: u32,
+    pub cycles: u32,
+    pub elapsed_ms: f64,
+    pub evidence: Vec<String>,
+    pub skills: Vec<String>,
 }
 
 #[derive(Clone)]
-pub struct Engine { pub cfg:Config, pub store:Arc<Store> }
+pub struct Engine {
+    pub cfg: Config,
+    pub store: Arc<Store>,
+}
 impl Engine {
-    pub fn new(cfg:Config, store:Arc<Store>)->Self { Self{cfg,store} }
-    pub async fn run(&self, query:&str, mode:&str)->Result<Outcome> {
-        if query.trim().is_empty() || query.len()>12_000 {bail!("Query is empty or exceeds 12,000 bytes")}
-        let roles:&[&str]=match mode {
-            "fast"=>&["solver"], "standard"=>&["planner","solver"],
-            "deep"=>&["planner","solver","critic"],
-            "research"=>&["planner","solver","explorer","critic"],
-            _=>bail!("Unknown reasoning mode"),
+    pub fn new(cfg: Config, store: Arc<Store>) -> Self {
+        Self { cfg, store }
+    }
+    pub async fn run(&self, query: &str, mode: &str) -> Result<Outcome> {
+        if query.trim().is_empty() || query.len() > 12_000 {
+            bail!("Query is empty or exceeds 12,000 bytes")
+        }
+        let roles: &[&str] = match mode {
+            "fast" => &["solver"],
+            "standard" => &["planner", "solver"],
+            "deep" => &["planner", "solver", "critic"],
+            "research" => &["planner", "solver", "explorer", "critic"],
+            _ => bail!("Unknown reasoning mode"),
         };
-        let start=Instant::now();
-        let id=self.store.create_task(query,mode)?;
-        self.store.event(&id,"intent","interface",json!({"query":query,"mode":mode}))?;
-        let skills=store::route(&self.store.skills()?,query);
-        self.store.event(&id,"route","jev-plus",json!({"skills":skills}))?;
-        let mut evidence=Vec::new();
-        let mut calls=0u32;
-        let mut cycles=0u32;
+        let start = Instant::now();
+        let id = self.store.create_task(query, mode)?;
+        self.store.event(
+            &id,
+            "intent",
+            "interface",
+            json!({"query":query,"mode":mode}),
+        )?;
+        let skills = store::route(&self.store.skills()?, query);
+        self.store
+            .event(&id, "route", "jev-plus", json!({"skills":skills}))?;
+        let mut evidence = Vec::new();
+        let mut calls = 0u32;
+        let mut cycles = 0u32;
         let result:Result<(String,String)>=async {
             security::authorize("jev-r","knowledge.search")?;
             let refs=self.store.search(query,None,3)?;
@@ -72,16 +99,35 @@ impl Engine {
             if let Some(explorer)=output.get("explorer") {answer.push_str("\n\nAlternative (unverified): ");answer.push_str(explorer);}
             Ok((answer,if self.cfg.backend=="demo" {"demo".into()} else {"completed".into()}))
         }.await;
-        let (answer,status)=match result {
-            Ok(ok)=>ok,
-            Err(err)=>{
-                self.store.event(&id,"error","system",json!({"message":err.to_string().chars().take(300).collect::<String>()}))?;
-                (format!("Task failed: {err}"),"failed".into())
+        let (answer, status) = match result {
+            Ok(ok) => ok,
+            Err(err) => {
+                self.store.event(
+                    &id,
+                    "error",
+                    "system",
+                    json!({"message":err.to_string().chars().take(300).collect::<String>()}),
+                )?;
+                (format!("Task failed: {err}"), "failed".into())
             }
         };
-        self.store.finish_task(&id,&status,&answer)?;
-        self.store.event(&id,"outcome","jev-plus",json!({"status":status,"calls":calls,"cycles":cycles,"evidence":evidence}))?;
-        Ok(Outcome{task_id:id,answer,status,calls,cycles,elapsed_ms:start.elapsed().as_secs_f64()*1000.0,evidence,skills})
+        self.store.finish_task(&id, &status, &answer)?;
+        self.store.event(
+            &id,
+            "outcome",
+            "jev-plus",
+            json!({"status":status,"calls":calls,"cycles":cycles,"evidence":evidence}),
+        )?;
+        Ok(Outcome {
+            task_id: id,
+            answer,
+            status,
+            calls,
+            cycles,
+            elapsed_ms: start.elapsed().as_secs_f64() * 1000.0,
+            evidence,
+            skills,
+        })
     }
 }
 
@@ -90,12 +136,13 @@ mod tests {
     use super::*;
     #[tokio::test]
     async fn verified_math_uses_no_model_calls() {
-        let path=std::env::temp_dir().join(format!("fabric-test-{}.db",uuid::Uuid::new_v4()));
-        let store=Arc::new(Store::open(&path).unwrap());
+        let path = std::env::temp_dir().join(format!("fabric-test-{}.db", uuid::Uuid::new_v4()));
+        let store = Arc::new(Store::open(&path).unwrap());
         store::bootstrap(&store).unwrap();
-        let engine=Engine::new(Config::load(None,Some("demo".into())).unwrap(),store);
-        let result=engine.run("calc: (7 + 5) * 3","fast").await.unwrap();
-        assert_eq!(result.answer,"36"); assert_eq!(result.calls,0);
-        let _=std::fs::remove_file(path);
+        let engine = Engine::new(Config::load(None, Some("demo".into())).unwrap(), store);
+        let result = engine.run("calc: (7 + 5) * 3", "fast").await.unwrap();
+        assert_eq!(result.answer, "36");
+        assert_eq!(result.calls, 0);
+        let _ = std::fs::remove_file(path);
     }
 }

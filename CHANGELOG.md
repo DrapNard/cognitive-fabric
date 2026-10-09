@@ -39,3 +39,12 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
 
 - **Build and tests not run**: rustc, cargo and flatc are unavailable in the
   authoring environment. This is an alpha port, not a verified replacement.
+
+## Unreleased — 2026-10-10
+
+- Compile the Rust alpha against the pinned FlatBuffers generator: fix required
+  field accessors, alloc visibility and SQLite query lifetimes.
+- Format the Rust workspace and record a reproducible Cargo.lock.
+- Support an explicit FLATC path and reject nonmatching compiler versions.
+- Verify 14 tests, Clippy, compilation and the CLI self-test; reconcile the
+  implementation matrix with remaining v1.0 requirements.

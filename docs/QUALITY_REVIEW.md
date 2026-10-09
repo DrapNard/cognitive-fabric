@@ -1,11 +1,20 @@
-# Rust Port Quality Review (pending)
+# Rust baseline quality review
 
-Compilation, formatting, Clippy, tests and runtime integration could not be run
-because the authoring container has no `rustc`, `cargo` or `flatc` and no external
-package network access. The Rust branch is intentionally alpha.
+Verified locally on 2026-10-10 using rustc/cargo 1.97.1 and flatc 25.12.19,
+compiled from upstream tag v25.12.19 (commit
+7e163021e59cca4f8e1e35a7c828b5c6b7915953). The Rust crate is pinned to the same
+version. Set `FLATC` to an absolute compiler path when it is outside PATH.
 
-CI is configured in `.github/workflows/ci.yml`. No passed CI runs are claimed.
-The next action is to compile on an Arch machine and fix any build errors
-before merging the Rust branch into main or publishing a stable release.
+- `cargo fmt --all -- --check`: initially failed; source formatted.
+- `cargo check --workspace --all-targets --offline`: passed after fixing
+  generated API usage, the crate-level alloc import and a query lifetime.
+- `cargo test --workspace --all-targets --offline`: 14 passed.
+- `cargo clippy --workspace --all-targets --offline -- -D warnings`: passed.
+- `cargo run --offline -- --home /tmp/cogfabric-audit-state self-test`: passed
+  arithmetic and FlatBuffers round trip.
 
-See `docs/RUST_PORT.md` and `docs/IMPLEMENTATION_MATRIX.md`.
+Cargo commands requiring generation used
+`FLATC=/tmp/cogfabric-flatbuffers/build/flatc`. Dependencies were downloaded
+with `cargo fetch`; Cargo.lock records the resolution. No live-model quality,
+GPU behavior, socket integration, cancellation, migrations or rollback is
+established by these checks. The release remains alpha.

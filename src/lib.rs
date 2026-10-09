@@ -1,3 +1,5 @@
+extern crate alloc;
+
 pub mod backend;
 pub mod config;
 pub mod engine;

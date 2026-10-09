@@ -1,20 +1,26 @@
-# Rust port implementation matrix — 1.1.0-alpha.1
+# Implementation matrix — 1.1.0-alpha.1
 
-**Verification status: not compiled** (Rust and FlatBuffers compiler unavailable in the build environment). All implementation claims below refer to code written, not validated runtime behavior.
+Canonical requirements remain in the complete French `ARCHITECTURE.md`.
+Baseline verified 2026-10-10: builds, 14 tests and Clippy pass; see
+`QUALITY_REVIEW.md`. Development is on `develop/v1.0`. No stable release is ready.
 
-| Design subsystem | Port status | Remaining verification |
-|---|---|---|
-| Cognitive Fabric | Written in Rust | Compile typed FlatBuffers IPC, frame tests |
-| Micro-LLM adapter | Written | Verify against LM Studio on loopback |
-| Jev+ | Heuristic router written | Measure quality and cost |
-| Jev-R | Bounded role loop written | Verify calls and latency |
-| Expert Registry | SQLite implementation written | Regression test dynamic skill addition |
-| Memory | SQLite WAL + FTS5 written | Check storage migration, FTS test |
-| Security | Deny-by-default capability checks | Independent sandbox/security audit |
-| RAG candidates | Integrity + quality + approval gates written | Run held-out evaluation |
-| Model training | Python script retained | Run training separately |
-| LoRA hot swap / neural promotion | Not implemented | Requires separate research and reviews |
-| Energy / GPU monitoring | Not implemented | Benchmark infrastructure |
-| Novel learned Jev-R | Not implemented | Research program |
+| Architecture sections | Requirement | Status | Implementation / evidence | Remaining work |
+|---|---|---|---|---|
+| 7, 12 | Typed local transport | Partial | `protocol/cognitive.fbs`, `src/wire.rs`, `src/service.rs`; round-trip, garbage and size tests | Socket integration, identities, broker, discovery, events, cancellation, shutdown |
+| 3 | Language interface | Partial | `src/backend.rs`, `src/engine.rs`; explicit demo test | Structured intent, conversations, configurable roles, live endpoint validation |
+| 4, 9 | Jev+ coordination | Partial | `src/store.rs::route`, `src/engine.rs`; routing test | Dependencies, scheduling, escalation, capability gaps |
+| 5 | Jev-R reasoning | Partial | `src/engine.rs`; zero-call arithmetic verification | Recursive revisions, task graph, Verifier and Reflector, independent evidence |
+| 6 | Expert network | Partial | `src/store.rs`, CLI skill-add | Versioned manifests, dependencies, lifecycle, health, rollback, trainer category |
+| 7 | Persistent memory | Partial | SQLite WAL/FTS5 and task/events in `src/store.rs`; retrieval gate test | Explicit migrations, model/evaluation stores, task isolation, quotas |
+| 8 A/B | RAG evolution | Partial | `src/evaluation.rs`, `src/store.rs`; approval and retrieval test | Immutable quarantine, independent dataset provenance, rollback, regression suite |
+| 8 C/D | Offline neural adaptation | Experimental | `training/train_lora.py`; not executed | Independent evaluator, artifact manifests; reconstruction remains research |
+| 9 | Resource limits | Partial | `src/config.rs`, `src/engine.rs` | Input tokens, actual usage, tool limits, cancellation, queue telemetry |
+| 10, 11 | Security kernel | Partial | `src/security.rs`; actor/self-promotion denial tests | Task-bound authorization, artifact tampering tests, secure bounded HTTP, sandbox before untrusted execution |
+| 13 | Evaluation | Partial | `src/evaluation.rs`, examples | Comparable baseline arms, 100–200 diverse tasks, regression/security measurements |
+| 12, 14 | CLI/service integration | Partial | `src/main.rs`, `src/service.rs`; CLI self-test passed | End-to-end sockets, stop/progress/configuration, diagnostics |
+| 12, 13 | Hardware metrics / performance advantage | Not implemented | No measurements claimed | Real backend, GPU/energy telemetry and controlled comparisons |
+| 5, 14 | Novel learned neural architectures | Not implemented | Future research | Separate research and independent evaluations |
 
-The original `v1.0.0` Python reference remains in Git history, and the Rust rewrite is isolated in branch `rust-core`. Persistent database storage uses a different default directory (`~/.local/share/cogfabric-rust`) to prevent accidental schema collisions with the legacy Python implementation.
+The historical Python reference remains in Git history. The Rust state directory
+is separate (`~/.local/share/cogfabric-rust`). The canonical vision is preserved;
+passing demo tests does not establish neural quality or release acceptance.

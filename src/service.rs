@@ -1,20 +1,32 @@
 //! Single-user local socket service using a bounded, verified FlatBuffers transport.
+use crate::{
+    config::Config,
+    engine::{Engine, Outcome},
+    wire::{self, Message},
+};
 use anyhow::{bail, Result};
-use std::{os::unix::fs::{FileTypeExt,PermissionsExt},sync::Arc};
-use tokio::{net::{UnixListener,UnixStream},io::AsyncWriteExt};
-use crate::{config::Config,engine::{Engine,Outcome},wire::{self,Message}};
+use std::{
+    os::unix::fs::{FileTypeExt, PermissionsExt},
+    sync::Arc,
+};
+use tokio::{
+    io::AsyncWriteExt,
+    net::{UnixListener, UnixStream},
+};
 
-pub async fn serve(engine:Engine)->Result<()> {
-    let socket=engine.cfg.socket();
-    if let Ok(meta)=std::fs::symlink_metadata(&socket) {
-        if !meta.file_type().is_socket() {bail!("Configured socket path is not a socket")}
+pub async fn serve(engine: Engine) -> Result<()> {
+    let socket = engine.cfg.socket();
+    if let Ok(meta) = std::fs::symlink_metadata(&socket) {
+        if !meta.file_type().is_socket() {
+            bail!("Configured socket path is not a socket")
+        }
         bail!("Socket exists; refusing to delete a possible active daemon socket");
     }
-    let listener=UnixListener::bind(&socket)?;
-    std::fs::set_permissions(&socket,std::fs::Permissions::from_mode(0o600))?;
-    let engine=Arc::new(engine);
-    let capacity=Arc::new(tokio::sync::Semaphore::new(1));
-    println!("Listening on {}",socket.display());
+    let listener = UnixListener::bind(&socket)?;
+    std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o600))?;
+    let engine = Arc::new(engine);
+    let capacity = Arc::new(tokio::sync::Semaphore::new(1));
+    println!("Listening on {}", socket.display());
     loop {
         tokio::select! {
             stream=listener.accept()=>{
@@ -48,14 +60,25 @@ pub async fn serve(engine:Engine)->Result<()> {
     Ok(())
 }
 
-pub async fn request(cfg:&Config,query:String,mode:String)->Result<Outcome> {
-    let mut stream=UnixStream::connect(cfg.socket()).await?;
-    let message=wire::new_request(query,mode);
-    let id=match &message {Message::Ask{id,..}=>id.clone(),_=>unreachable!()};
-    wire::write_message(&mut stream,&message).await?;
-    match tokio::time::timeout(std::time::Duration::from_secs(cfg.max_wall_seconds+10),wire::read_message(&mut stream)).await?? {
-        Message::Reply{id:answer_id,outcome} if answer_id==id=>Ok(outcome),
-        Message::Error{message,..}=>bail!("Server error: {message}"),
-        _=>bail!("Unexpected or mismatched server reply"),
+pub async fn request(cfg: &Config, query: String, mode: String) -> Result<Outcome> {
+    let mut stream = UnixStream::connect(cfg.socket()).await?;
+    let message = wire::new_request(query, mode);
+    let id = match &message {
+        Message::Ask { id, .. } => id.clone(),
+        _ => unreachable!(),
+    };
+    wire::write_message(&mut stream, &message).await?;
+    match tokio::time::timeout(
+        std::time::Duration::from_secs(cfg.max_wall_seconds + 10),
+        wire::read_message(&mut stream),
+    )
+    .await??
+    {
+        Message::Reply {
+            id: answer_id,
+            outcome,
+        } if answer_id == id => Ok(outcome),
+        Message::Error { message, .. } => bail!("Server error: {message}"),
+        _ => bail!("Unexpected or mismatched server reply"),
     }
 }

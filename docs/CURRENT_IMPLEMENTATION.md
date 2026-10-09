@@ -24,3 +24,10 @@ advantage has been demonstrated. There are no arbitrary tool invocations,
 automatic model deployments or untrusted command execution paths.
 
 The port is presently uncompiled. See `docs/RUST_PORT.md` before release.
+
+## Baseline verification (2026-10-10)
+
+The Rust port now compiles with flatc 25.12.19. All 14 existing tests and
+Clippy pass. See `QUALITY_REVIEW.md` for exact commands and
+`IMPLEMENTATION_MATRIX.md` for outstanding architecture requirements.
+The earlier uncompiled statement above describes the original alpha snapshot.

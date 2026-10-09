@@ -40,3 +40,11 @@ cargo run -- --home ./test-state self-test
 ```
 
 Failing any command blocks promotion from alpha to stable.
+
+## Verification update (2026-10-10)
+
+The earlier environment limitation has been resolved locally. Rust 1.97.1 and
+flatc 25.12.19 build the workspace; 14 tests, Clippy and the CLI self-test pass.
+`FLATC` may name a locally built compiler. The version check requires an exact
+match. See `QUALITY_REVIEW.md`; the implementation remains alpha because
+integration and architectural release requirements are incomplete.
