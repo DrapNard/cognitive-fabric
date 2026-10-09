@@ -45,3 +45,12 @@ is deliberately disabled in v1 because no candidate behavioral evaluator is avai
 - Automated behavior/security evaluations for neural weights are not implemented.
 - No isolation against an already-compromised same-user process.
 - No guarantees that model collaboration improves correctness.
+
+## Inference HTTP boundary
+
+The adapter accepts literal loopback HTTP addresses; localhost is pinned to
+127.0.0.1 without DNS lookup. Proxies and redirects are disabled. Credentials,
+query strings and fragments in endpoint URLs are rejected. Responses are
+limited to 256 KiB even without Content-Length, under the request timeout.
+A local HTTP fixture verifies these boundaries. A malicious same-user process
+can still impersonate an inference endpoint; its content remains untrusted.

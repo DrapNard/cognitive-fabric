@@ -18,3 +18,13 @@ Cargo commands requiring generation used
 with `cargo fetch`; Cargo.lock records the resolution. No live-model quality,
 GPU behavior, socket integration, cancellation, migrations or rollback is
 established by these checks. The release remains alpha.
+
+## Inference boundary verification
+
+The suite now has 17 passing tests, including a real loopback HTTP fixture for
+compatible responses, redirects, oversized declared responses and oversized
+bodies without a content length. Endpoint tests cover IPv4, IPv6, localhost,
+remote hosts, credentials, query strings and fragments. Loopback binds are
+blocked by the default execution sandbox, so the full suite was rerun with
+socket permission; fixture setup fails explicitly when binding is unavailable.
+This is protocol testing, not live-model inference validation.

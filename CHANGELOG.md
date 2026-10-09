@@ -48,3 +48,6 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
 - Support an explicit FLATC path and reject nonmatching compiler versions.
 - Verify 14 tests, Clippy, compilation and the CLI self-test; reconcile the
   implementation matrix with remaining v1.0 requirements.
+- Constrain inference HTTP to literal loopback, disable redirects and proxies,
+  bound request parameters and cap response bodies at 256 KiB. Add local HTTP
+  boundary regressions (17 total tests passing with socket permission).

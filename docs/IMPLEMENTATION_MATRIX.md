@@ -15,7 +15,7 @@ Baseline verified 2026-10-10: builds, 14 tests and Clippy pass; see
 | 8 A/B | RAG evolution | Partial | `src/evaluation.rs`, `src/store.rs`; approval and retrieval test | Immutable quarantine, independent dataset provenance, rollback, regression suite |
 | 8 C/D | Offline neural adaptation | Experimental | `training/train_lora.py`; not executed | Independent evaluator, artifact manifests; reconstruction remains research |
 | 9 | Resource limits | Partial | `src/config.rs`, `src/engine.rs` | Input tokens, actual usage, tool limits, cancellation, queue telemetry |
-| 10, 11 | Security kernel | Partial | `src/security.rs`; actor/self-promotion denial tests | Task-bound authorization, artifact tampering tests, secure bounded HTTP, sandbox before untrusted execution |
+| 10, 11 | Security kernel | Partial | `src/security.rs`; actor/self-promotion denial tests | Task-bound authorization, artifact tampering tests, secure artifact handling, sandbox before untrusted execution |
 | 13 | Evaluation | Partial | `src/evaluation.rs`, examples | Comparable baseline arms, 100–200 diverse tasks, regression/security measurements |
 | 12, 14 | CLI/service integration | Partial | `src/main.rs`, `src/service.rs`; CLI self-test passed | End-to-end sockets, stop/progress/configuration, diagnostics |
 | 12, 13 | Hardware metrics / performance advantage | Not implemented | No measurements claimed | Real backend, GPU/energy telemetry and controlled comparisons |
@@ -24,3 +24,7 @@ Baseline verified 2026-10-10: builds, 14 tests and Clippy pass; see
 The historical Python reference remains in Git history. The Rust state directory
 is separate (`~/.local/share/cogfabric-rust`). The canonical vision is preserved;
 passing demo tests does not establish neural quality or release acceptance.
+
+Inference boundary update: `src/backend.rs` implements bounded HTTP with
+redirect/proxy denial and literal loopback endpoint validation. Three additional
+tests pass (17 total). Real LM Studio/llama.cpp inference is still unverified.
