@@ -39,9 +39,14 @@ Quality requires operator-attested held-out data. Promotion checks quality,
 active-baseline retrieval regressions and unchanged versions transactionally.
 Rollback restores approved stored snapshots. Neural promotion stays disabled.
 
-Verification: 56 tests, formatting, all-target check and Clippy pass using exact
+Verification: 59 tests, formatting, all-target check and Clippy pass using exact
 flatc/Rust FlatBuffers 25.12.19. HTTP fixtures and socket tests ran locally; no
 compatible live model server was available at the default endpoint. No neural
 quality, GPU integration, hot-swap, energy or model-superiority result is claimed.
 See `IMPLEMENTATION_MATRIX.md` for every remaining engineering requirement and
 `QUALITY_REVIEW.md` for actual command evidence.
+
+`benchmarking.rs` now runs explicit execution ablations under common operator
+ceilings, rotates arm order, excludes expected answers from inference, records
+actual resource totals and cancels durably on a run deadline. The diverse study
+dataset and live-model comparison remain outstanding.

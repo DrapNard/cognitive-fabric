@@ -105,3 +105,6 @@ All-target check and tests passed (54 tests); formatting passed. Clippy identifi
 
 ### Immutable task capability scopes
 Formatting, all-target check, all-target tests (56 passed), and Clippy with denied warnings passed using the pinned compiler. New tests verify task replay rejection, actor narrowing, denial of promotion grant creation, and task-linked audit decisions without charging denied tool invocations. No external executable capabilities were added.
+
+### Controlled execution comparisons
+Formatting, all-target check, all-target tests (59 passed), and Clippy with denied warnings passed. Tests verify solver-only recursion, disabled reference stages, candidate-document exclusion in the memory arm, expected-answer isolation, duplicate rejection and durable deadline/operator cancellation. CLI comparison smoke completed 60 executions over the 10 arithmetic examples: demo-alone produced no accepted answers; each tool-enabled arm passed 10/10 with zero inference calls. This tests ablation mechanics, not neural performance. The recorded base revision is cd8340242cbc76043840c86e0870d3f7cbd50202 plus the comparison worktree changes; no live model or immutable weight attestation was available.

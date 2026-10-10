@@ -316,12 +316,25 @@ impl Store {
 
     /// Pin version metadata and retrieved content to one consistent SQLite snapshot.
     pub fn task_context(&self, query: &str) -> Result<TaskContext> {
+        self.task_context_scoped(query, true, true)
+    }
+
+    pub(crate) fn task_context_scoped(
+        &self,
+        query: &str,
+        retrieve: bool,
+        experts: bool,
+    ) -> Result<TaskContext> {
         let mut db = self.lock()?;
         let tx = db.transaction()?;
         let manifests = crate::registry::snapshot_from(&tx)?;
         let context = TaskContext {
             skills: Self::skills_from(&tx)?,
-            documents: Self::search_from(&tx, query, None, 3)?,
+            documents: if retrieve {
+                Self::search_scoped(&tx, query, None, 3, experts)?
+            } else {
+                Vec::new()
+            },
             manifests,
         };
         tx.commit()?;
@@ -333,6 +346,16 @@ impl Store {
         query: &str,
         skill: Option<&str>,
         limit: usize,
+    ) -> Result<Vec<Document>> {
+        Self::search_scoped(db, query, skill, limit, true)
+    }
+
+    fn search_scoped(
+        db: &Connection,
+        query: &str,
+        skill: Option<&str>,
+        limit: usize,
+        experts: bool,
     ) -> Result<Vec<Document>> {
         let mut tokens = Vec::new();
         for token in query.split(|c: char| !c.is_ascii_alphanumeric() && c != '_') {
@@ -348,6 +371,7 @@ impl Store {
            FROM document_index JOIN documents d ON d.rowid=document_index.rowid \
            WHERE document_index MATCH ?1 AND (?2 IS NULL OR d.skill_id=?2) \
            AND EXISTS(SELECT 1 FROM skills enabled_skill WHERE enabled_skill.id=d.skill_id AND enabled_skill.enabled=1) \
+           AND (?4=1 OR NOT EXISTS(SELECT 1 FROM candidate_documents memory_cd WHERE memory_cd.document_id=d.id)) \
            AND (NOT EXISTS(SELECT 1 FROM candidate_documents cd WHERE cd.document_id=d.id) \
                 OR EXISTS(SELECT 1 FROM candidate_documents cd JOIN candidates c ON c.id=cd.candidate_id \
                     JOIN skills s ON s.id=c.skill_id WHERE cd.document_id=d.id \
@@ -356,7 +380,7 @@ impl Store {
         let mut stmt = db.prepare(statement)?;
         let rows = stmt
             .query_map(
-                params![match_query, skill, limit.clamp(1, 20) as i64],
+                params![match_query, skill, limit.clamp(1, 20) as i64, experts],
                 |r| {
                     Ok((
                         Document {
@@ -857,6 +881,19 @@ mod tests {
         assert_eq!(
             store.search("snapshot", Some("rust.s1"), 10).unwrap()[0].body,
             "Rust snapshot second"
+        );
+        assert!(store
+            .task_context_scoped("snapshot", true, false)
+            .unwrap()
+            .documents
+            .is_empty());
+        assert_eq!(
+            store
+                .task_context_scoped("snapshot", true, true)
+                .unwrap()
+                .documents
+                .len(),
+            1
         );
         assert!(store.rollback_rag(&ids[1]).is_err());
         assert!(crate::evaluation::rollback(&store, &ids[0], false).is_err());

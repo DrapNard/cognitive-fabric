@@ -17,11 +17,11 @@ remains a pre-release. `QUALITY_REVIEW.md` preserves verification history.
 | 8 D, 14 | Novel neural reconstruction | Not implemented | Research only; no trained Jev networks or superiority claims | Separate research and independent evaluations, beyond proven v1.0 infrastructure |
 | 9 | Resource enforcement | Partial | `src/config.rs`, `src/reasoning.rs`: FAST/STANDARD/DEEP/RESEARCH ceilings, calls/cycles/reserved outputs/prompt bytes/tools/time, cancellation; exhaustion tests; optional provider usage and measured inference duration | Exact input-token preflight, model-load cost/retry/queue metrics, process/GPU memory and optional energy telemetry |
 | 10, 11 | Security kernel | Partial | `src/security.rs`: immutable task/actor scope intersected with global policy, per-dispatch audits, deny-default capabilities, bounded no-follow reads; replay/actor/promotion denials and artifact tampering tests | Authenticated independent module identities and isolation before executable experts; signatures/attestations and neural behavioral evaluator absent |
-| 13 | Reproducible evaluation | Partial | `src/evaluation.rs`, example JSONL: independently expected exact-match benchmark, per-case usage/latency, isolated retrieval tests | Seven comparable baseline arms, 100–200 diverse held-out tasks, robustness/security/regression reports and measured live-model comparisons |
+| 13 | Reproducible evaluation | Partial | `src/evaluation.rs`, `src/benchmarking.rs`: expected exact-match benchmarks, six isolated same-model ablation profiles plus optional larger baseline, per-arm resources, reviewed dataset hashes and durable run cancellation; profile/isolation/deadline tests | 100–200 diverse held-out tasks, robustness/security/regression reports, frozen study corpus and measured live-model comparisons |
 | 12, 14 | CLI/service | Partial | `src/main.rs`: initialization/configuration, ask, service controls, skill lifecycle, ingestion/search, task traces, candidates/rollback, benchmark, self-test; real socket fixtures | Model listing/lifecycle, diagnostics, module discovery and task-specific remote progress/cancel |
 | 12, 13 | Hardware/performance claims | Not implemented | No GPU/energy or large-model advantage claimed | Real local endpoint, hardware telemetry, equal-budget comparisons |
 
-All 56 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
+All 59 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
 all-target build checks and Clippy with denied warnings pass. Fixtures do not prove
 GPU integration, neural quality, immutable backend weights or live model switching.
 

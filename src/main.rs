@@ -98,6 +98,23 @@ enum Command {
         #[arg(long, default_value = "fast")]
         mode: String,
     },
+    Compare {
+        file: PathBuf,
+        #[arg(long, default_value = "deep")]
+        mode: String,
+        #[arg(long)]
+        larger_model: Option<String>,
+        #[arg(long)]
+        source: String,
+        #[arg(long)]
+        license: String,
+        #[arg(long)]
+        code_revision: String,
+        #[arg(long)]
+        held_out: bool,
+        #[arg(long, default_value = "1800")]
+        max_run_seconds: u64,
+    },
     Candidate {
         #[command(subcommand)]
         action: CandidateAction,
@@ -333,6 +350,40 @@ async fn main() -> Result<()> {
         }
         Command::Task { id } => store.task(&id)?,
         Command::Bench { file, mode } => evaluation::benchmark(&engine, &file, &mode).await?,
+        Command::Compare {
+            file,
+            mode,
+            larger_model,
+            source,
+            license,
+            code_revision,
+            held_out,
+            max_run_seconds,
+        } => {
+            let report = cogfabric::benchmarking::compare_until(
+                &cfg,
+                store.clone(),
+                &file,
+                &mode,
+                larger_model.as_deref(),
+                &cogfabric::benchmarking::Review {
+                    source,
+                    license,
+                    code_revision,
+                    held_out,
+                    max_run_seconds,
+                },
+                async {
+                    let _ = tokio::signal::ctrl_c().await;
+                },
+            )
+            .await?;
+            if report["complete"] != true {
+                output(&report, cli.json)?;
+                bail!("Comparison interrupted before all arms completed")
+            }
+            report
+        }
         Command::Candidate { action } => match action {
             CandidateAction::List => serde_json::to_value(store.candidates()?)?,
             CandidateAction::Create {

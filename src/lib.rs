@@ -1,6 +1,7 @@
 extern crate alloc;
 
 pub mod backend;
+pub mod benchmarking;
 pub mod config;
 pub mod engine;
 pub mod evaluation;

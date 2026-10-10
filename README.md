@@ -2,7 +2,7 @@
 
 **Author:** DrapNard  
 **Language:** Rust (runtime), Python (optional offline model training)
-**Status:** **Verified Rust alpha baseline** — builds and 56 regression tests pass; v1.0 integration requirements remain incomplete.
+**Status:** **Verified Rust alpha baseline** — builds and 59 regression tests pass; v1.0 integration requirements remain incomplete.
 **License:** Apache-2.0 (framework only)
 
 This branch corrects the original v1.0 implementation's technology mismatch:
@@ -99,3 +99,8 @@ It restores an approved older durable snapshot after integrity checks. See
 [the evolution lifecycle](docs/EVOLUTION.md) for migration and scope details.
 
 While `serve` runs, use `service-status`, `cancel-active`, or `stop` with the same `--home`. These controls use authenticated local FlatBuffers connections. One inference executes at a time; additional asks receive a busy error.
+
+For same-model ablations, use `compare DATASET --source SOURCE --license LICENSE
+--held-out --code-revision FULL_GIT_SHA`, optionally with `--larger-model ID`.
+See [benchmark methodology](docs/BENCHMARKING.md); the arithmetic example is only
+a runner smoke test, and a live-model advantage remains unmeasured.

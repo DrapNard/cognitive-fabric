@@ -88,3 +88,5 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
 - Bind inference and tool dispatch authorization to immutable per-task actor grants, with persisted scope snapshots and denial decisions.
 
 - Reconcile the current implementation matrix with verified code; document security boundaries and reproducible benchmark limitations.
+
+- Add reviewed, reproducible same-model comparison profiles with optional larger baseline, per-arm resource totals, expected-answer isolation and durable run cancellation.

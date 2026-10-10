@@ -30,6 +30,19 @@ pub struct Outcome {
     pub stop_reason: String,
 }
 
+/// Evaluation ablations share the same runtime ceilings and security kernel.
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ExecutionProfile {
+    Full,
+    Alone,
+    Tools,
+    Recursive,
+    Collective,
+    Memory,
+    Experts,
+}
+
 #[derive(Clone)]
 pub struct Engine {
     pub cfg: Config,
@@ -82,6 +95,51 @@ impl Engine {
     where
         F: std::future::Future<Output = ()>,
     {
+        self.run_execution(query, mode, options, ExecutionProfile::Full, cancel)
+            .await
+    }
+
+    pub async fn run_profile(
+        &self,
+        query: &str,
+        mode: &str,
+        profile: ExecutionProfile,
+    ) -> Result<Outcome> {
+        self.run_profile_until(query, mode, profile, std::future::pending())
+            .await
+    }
+
+    pub(crate) async fn run_profile_until<F>(
+        &self,
+        query: &str,
+        mode: &str,
+        profile: ExecutionProfile,
+        cancel: F,
+    ) -> Result<Outcome>
+    where
+        F: std::future::Future<Output = ()>,
+    {
+        self.run_execution(
+            query,
+            mode,
+            crate::language::TaskOptions::default(),
+            profile,
+            cancel,
+        )
+        .await
+    }
+
+    async fn run_execution<F>(
+        &self,
+        query: &str,
+        mode: &str,
+        options: crate::language::TaskOptions,
+        profile: ExecutionProfile,
+        cancel: F,
+    ) -> Result<Outcome>
+    where
+        F: std::future::Future<Output = ()>,
+    {
         if query.trim().is_empty() || query.len() > 12_000 {
             bail!("Query is empty or exceeds 12,000 bytes")
         }
@@ -104,18 +162,47 @@ impl Engine {
             &id,
             "intent",
             "interface",
-            json!({"query":query,"mode":mode}),
+            json!({"query":query,"mode":mode,"execution_profile":profile}),
         )?;
         let mut skills = Vec::new();
         let mut evidence = Vec::new();
         let execution = async {
-            session.authorize_tool("knowledge.search")?;
-            let pinned = self.store.task_context(query)?;
-            skills = store::route(&pinned.skills, query);
+            let retrieve = matches!(
+                profile,
+                ExecutionProfile::Full | ExecutionProfile::Memory | ExecutionProfile::Experts
+            );
+            let experts = matches!(profile, ExecutionProfile::Full | ExecutionProfile::Experts);
+            if retrieve {
+                session.authorize_tool("knowledge.search")?;
+            }
+            let pinned = if matches!(
+                profile,
+                ExecutionProfile::Alone | ExecutionProfile::Tools | ExecutionProfile::Recursive
+            ) {
+                store::TaskContext {
+                    skills: Vec::new(),
+                    documents: Vec::new(),
+                    manifests: Vec::new(),
+                }
+            } else {
+                self.store.task_context_scoped(query, retrieve, experts)?
+            };
+            if matches!(
+                profile,
+                ExecutionProfile::Full | ExecutionProfile::Collective | ExecutionProfile::Experts
+            ) {
+                skills = store::route(&pinned.skills, query);
+            }
             self.store.event(&id,"route","jev-plus",json!({"skills":skills,
                 "versions":pinned.skills.iter().filter(|s|skills.contains(&s.id)).collect::<Vec<_>>(),
                 "manifests":pinned.manifests.iter().filter(|m|skills.contains(&m.id)).collect::<Vec<_>>()}))?;
-            let refs = pinned.documents;
+            let refs = pinned
+                .documents
+                .into_iter()
+                .filter(|document| {
+                    profile != ExecutionProfile::Experts || skills.contains(&document.skill_id)
+                })
+                .collect::<Vec<_>>();
             let mut context = refs
                 .iter()
                 .map(|d| {
@@ -147,7 +234,9 @@ impl Engine {
                 "memory",
                 json!({"documents":refs.iter().map(|r|json!({"id":r.id,"checksum":store::sha256(r.body.as_bytes())})).collect::<Vec<_>>()}),
             )?;
-            if let Some(expression) = math::extract(query) {
+            if let Some(expression) =
+                math::extract(query).filter(|_| profile != ExecutionProfile::Alone)
+            {
                 session.authorize_tool("math.evaluate")?;
                 return match math::calculate(expression) {
                     Ok(answer) => {
@@ -170,7 +259,17 @@ impl Engine {
                     }
                 };
             }
-            if self.cfg.interpret_goals && self.cfg.backend != "demo" && mode != "fast" {
+            if self.cfg.interpret_goals
+                && self.cfg.backend != "demo"
+                && mode != "fast"
+                && matches!(
+                    profile,
+                    ExecutionProfile::Full
+                        | ExecutionProfile::Collective
+                        | ExecutionProfile::Memory
+                        | ExecutionProfile::Experts
+                )
+            {
                 let capabilities = pinned
                     .skills
                     .iter()
@@ -192,7 +291,12 @@ impl Engine {
                                 })
                                 .collect::<Vec<_>>();
                             for capability in &intent.required_capabilities {
-                                if skills.len() < 4
+                                if matches!(
+                                    profile,
+                                    ExecutionProfile::Full
+                                        | ExecutionProfile::Collective
+                                        | ExecutionProfile::Experts
+                                ) && skills.len() < 4
                                     && !skills.contains(capability)
                                     && pinned
                                         .skills
@@ -220,7 +324,20 @@ impl Engine {
                     }
                 }
             }
-            let mut answer = session.solve(query, &context, mode).await?;
+            let solve_mode = if matches!(profile, ExecutionProfile::Alone | ExecutionProfile::Tools)
+            {
+                "fast"
+            } else {
+                mode
+            };
+            let mut answer = session
+                .solve_configured(
+                    query,
+                    &context,
+                    solve_mode,
+                    profile != ExecutionProfile::Recursive,
+                )
+                .await?;
             let status = if !session.has_solution {
                 "exhausted"
             } else if self.cfg.backend == "demo" {
@@ -286,6 +403,94 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct RecordingBackend(std::sync::Mutex<Vec<(String, String)>>);
+    impl InferenceBackend for RecordingBackend {
+        fn generate<'a>(
+            &'a self,
+            role: &'a str,
+            prompt: &'a str,
+            _max_tokens: usize,
+        ) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = Result<crate::backend::Generation>> + Send + 'a>,
+        > {
+            self.0.lock().unwrap().push((role.into(), prompt.into()));
+            Box::pin(async move {
+                Ok(crate::backend::Generation {
+                    text: if role == "critic" || prompt.contains("Critique your candidate") {
+                        r#"{"revise":false,"reason":"No useful revision"}"#.into()
+                    } else {
+                        "Unverified candidate".into()
+                    },
+                    model: "recording-model/v1".into(),
+                    input_tokens: Some(10),
+                    output_tokens: Some(10),
+                    elapsed_ms: 1.0,
+                })
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn profiles_separate_recursive_roles_and_retrieved_memory() {
+        let store = Arc::new(Store::in_memory().unwrap());
+        store::bootstrap(&store).unwrap();
+        store
+            .add_document(&store::Document {
+                id: "reference".into(),
+                skill_id: "rust.s1".into(),
+                title: "Rust lifetimes".into(),
+                body: "Rust lifetime memory sentinel".into(),
+                source: "test".into(),
+                license: "CC0".into(),
+            })
+            .unwrap();
+        let mut cfg = Config::load(None, Some("openai-local".into())).unwrap();
+        cfg.interpret_goals = false;
+        let backend = Arc::new(RecordingBackend(std::sync::Mutex::new(Vec::new())));
+        let engine = Engine::with_backend(cfg, store, backend.clone());
+        for profile in [
+            ExecutionProfile::Alone,
+            ExecutionProfile::Tools,
+            ExecutionProfile::Recursive,
+            ExecutionProfile::Collective,
+            ExecutionProfile::Memory,
+            ExecutionProfile::Experts,
+        ] {
+            backend.0.lock().unwrap().clear();
+            let outcome = engine
+                .run_profile("Explain Rust lifetimes", "deep", profile)
+                .await
+                .unwrap();
+            assert_eq!(outcome.status, "unverified");
+            let calls = backend.0.lock().unwrap();
+            let uses_memory = matches!(
+                profile,
+                ExecutionProfile::Memory | ExecutionProfile::Experts
+            );
+            assert_eq!(!outcome.evidence.is_empty(), uses_memory);
+            assert_eq!(
+                calls
+                    .iter()
+                    .any(|(_, prompt)| prompt.contains("memory sentinel")),
+                uses_memory
+            );
+            if matches!(profile, ExecutionProfile::Alone | ExecutionProfile::Tools) {
+                assert_eq!(calls.len(), 1);
+            }
+            if profile == ExecutionProfile::Recursive {
+                assert_eq!(calls.len(), 2);
+                assert!(calls.iter().all(|(role, _)| role == "solver"));
+            }
+            if matches!(
+                profile,
+                ExecutionProfile::Collective | ExecutionProfile::Memory | ExecutionProfile::Experts
+            ) {
+                assert_eq!(calls[0].0, "planner");
+                assert_eq!(calls.last().unwrap().0, "critic");
+            }
+        }
+    }
     #[tokio::test]
     async fn immediate_cancellation_is_persisted_before_tool_execution() {
         let path = std::env::temp_dir().join(format!("fabric-cancel-{}.db", uuid::Uuid::new_v4()));
