@@ -21,10 +21,16 @@ remains a pre-release. `QUALITY_REVIEW.md` preserves verification history.
 | 12, 14 | CLI/service | Partial | `src/main.rs`: initialization/configuration, ask, service controls, task-specific socket progress/cancellation, skill lifecycle, ingestion/search, task traces, candidates/rollback, benchmark, self-test; real socket fixtures | Live residency lifecycle, diagnostics and independent-process streaming subscriptions |
 | 12, 13 | Hardware/performance claims | Not implemented | No GPU/energy or large-model advantage claimed | Real local endpoint, hardware telemetry, equal-budget comparisons |
 
-All 86 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
+All 88 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
 all-target build checks and Clippy with denied warnings pass. Fixtures do not prove
 GPU integration, neural quality, immutable backend weights or live model switching.
 
 The last live endpoint check found no server at `127.0.0.1:1234`. Live inference is
 therefore unverified. It is not a blocker for implementing independent infrastructure,
 but it is a release gate. No stable release tag or remote publication is authorized.
+
+Independent verification now additionally supports explicit `order:` dependency
+criteria through `src/verification.rs` and `src/reasoning.rs`; see
+`VERIFICATION.md`. Failed checks drive bounded solver revisions; success preserves
+the checked answer and records hashes. This advances sections 5/9/10 but does not
+complete the requirement for broader independent executable verifiers.

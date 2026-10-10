@@ -17,6 +17,7 @@ impl TaskPolicy {
                 ("jev-r", "llm.generate"),
                 ("jev-plus", "knowledge.search"),
                 ("jev-plus", "math.evaluate"),
+                ("jev-plus", "ordering.verify"),
             ],
         )
     }
@@ -72,7 +73,10 @@ pub fn authorize(principal: &str, capability: &str) -> Result<()> {
             capability,
             "llm.generate" | "knowledge.search" | "math.evaluate"
         ),
-        "jev-plus" => matches!(capability, "knowledge.search" | "math.evaluate"),
+        "jev-plus" => matches!(
+            capability,
+            "knowledge.search" | "math.evaluate" | "ordering.verify"
+        ),
         "human-cli" => matches!(
             capability,
             "knowledge.ingest"

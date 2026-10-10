@@ -21,4 +21,5 @@ pub mod security;
 pub mod service;
 pub mod storage;
 pub mod store;
+mod verification;
 pub mod wire;

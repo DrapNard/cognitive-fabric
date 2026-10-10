@@ -92,3 +92,10 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
 - Add reviewed, reproducible same-model comparison profiles with optional larger baseline, per-arm resource totals, expected-answer isolation and durable run cancellation.
 
 - Route inference through a bounded FlatBuffers module broker with trusted registration, discovery, version pinning, identity checks, backpressure and cancellation.
+
+### Development: independently verify dependency-order answers
+
+- Validate explicit original-request ordering constraints with a bounded Rust checker.
+- Feed independent failure diagnostics into bounded solver revisions, stop on success
+  or repeated answers, and preserve the exact verified result through presentation.
+- Audit and budget every verification invocation; document the limited proof scope.

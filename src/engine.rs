@@ -397,6 +397,7 @@ impl Engine {
             } else {
                 mode
             };
+            session.verification_enabled = profile != ExecutionProfile::Alone;
             let mut answer = session
                 .solve_configured(
                     query,
@@ -407,12 +408,16 @@ impl Engine {
                 .await?;
             let status = if !session.has_solution {
                 "exhausted"
+            } else if session.verified {
+                evidence.push("verified:dependency_order/v1".into());
+                "completed"
             } else if self.cfg.backend == "demo" {
                 "demo"
             } else {
                 "unverified"
             };
             if options.explain
+                && !session.verified
                 && session.has_solution
                 && self.cfg.backend != "demo"
                 && mode != "fast"

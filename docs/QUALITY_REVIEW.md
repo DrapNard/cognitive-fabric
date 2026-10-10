@@ -304,3 +304,22 @@ The checksum includes unrelated database history; it is not a content-only corpu
 digest. Temporary memory includes an extra serialization buffer and SQLite
 overhead. Live weight identity, availability and hardware remain unfrozen. A new
 probe of 127.0.0.1:1234 found connection refused; live-model quality is unverified.
+
+## Independent dependency-order verification
+
+Added a deterministic verifier selected only by an explicit original-request
+`order:` prefix. Strict bounded criteria reject cycles and unknown fields; answers
+must satisfy every node and edge. Verification events bind criterion version,
+objective hash and answer hash. Failed checks inform revisions within existing
+limits; repeated candidates stop; verified answers bypass language synthesis.
+The pure checker grants no filesystem, process or network access. Each invocation
+requires task-scoped authorization and consumes a tool call. The alone comparison
+profile has no executable checker. This is constraint validation, not general
+factual verification or a neural safety evaluation.
+
+Actual checks: exact FlatBuffers generator 25.12.19; `cargo test --offline
+--all-targets` passed 88 tests including socket/HTTP fixtures. Formatting,
+all-target check and Clippy with denied warnings passed. Initial test fixtures
+incorrectly omitted an unverified synthesis call and charged zero tools before
+retrieval; corrected the fixtures and reran the entire suite successfully.
+No live-model effectiveness measurement was performed.

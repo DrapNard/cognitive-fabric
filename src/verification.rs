@@ -1,0 +1,111 @@
+//! Independent, bounded checks of explicitly supplied dependency-order constraints.
+use anyhow::{bail, Result};
+use serde::Deserialize;
+use std::collections::{BTreeMap, BTreeSet};
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Ordering {
+    nodes: Vec<String>,
+    before: Vec<[String; 2]>,
+}
+
+impl Ordering {
+    pub(crate) fn from_query(query: &str) -> Result<Option<Self>> {
+        let Some(raw) = query.strip_prefix("order:") else {
+            return Ok(None);
+        };
+        if raw.len() > 10_000 {
+            bail!("Ordering criterion exceeds byte limit")
+        }
+        let criterion: Self = serde_json::from_str(raw)?;
+        let names = criterion.nodes.iter().collect::<BTreeSet<_>>();
+        if !(1..=64).contains(&criterion.nodes.len())
+            || names.len() != criterion.nodes.len()
+            || criterion.before.len() > 256
+            || names.iter().any(|name| {
+                name.is_empty()
+                    || name.len() > 32
+                    || !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+            })
+        {
+            bail!("Invalid ordering criterion bounds or identities")
+        }
+        let mut edges = BTreeSet::new();
+        for [a, b] in &criterion.before {
+            if a == b || !names.contains(a) || !names.contains(b) || !edges.insert((a, b)) {
+                bail!("Invalid or duplicate ordering dependency")
+            }
+        }
+        let mut done = BTreeSet::new();
+        while done.len() < names.len() {
+            let next = names.iter().find(|name| {
+                !done.contains(*name)
+                    && criterion
+                        .before
+                        .iter()
+                        .all(|[a, b]| b != **name || done.contains(a))
+            });
+            let Some(next) = next else {
+                bail!("Ordering criterion contains a dependency cycle")
+            };
+            done.insert(*next);
+        }
+        Ok(Some(criterion))
+    }
+
+    pub(crate) fn check(&self, answer: &str) -> Result<()> {
+        if answer.len() > 4096 {
+            bail!("Ordering answer exceeds byte limit")
+        }
+        let order: Vec<String> = serde_json::from_str(answer)?;
+        let positions = order
+            .iter()
+            .enumerate()
+            .map(|(i, n)| (n, i))
+            .collect::<BTreeMap<_, _>>();
+        if order.len() != self.nodes.len()
+            || positions.len() != order.len()
+            || self.nodes.iter().any(|n| !positions.contains_key(n))
+        {
+            bail!("Answer must contain each declared node exactly once")
+        }
+        for [a, b] in &self.before {
+            if positions[a] >= positions[b] {
+                bail!("Dependency violated: {a} must precede {b}")
+            }
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn checks_all_constraints_and_rejects_untrusted_extensions() {
+        let c = Ordering::from_query(r#"order:{"nodes":["a","b","c"],"before":[["a","c"]]}"#)
+            .unwrap()
+            .unwrap();
+        for valid in [r#"["a","b","c"]"#, r#"["b","a","c"]"#] {
+            c.check(valid).unwrap();
+        }
+        for bad in [
+            r#"["c","b","a"]"#,
+            r#"["a","a","c"]"#,
+            r#"["a","c"]"#,
+            r#"["a","c","x"]"#,
+            r#"{"verified":true}"#,
+        ] {
+            assert!(c.check(bad).is_err());
+        }
+        for bad in [
+            r#"{"nodes":["a","b"],"before":[["a","b"],["b","a"]]}"#,
+            r#"{"nodes":["a"],"before":[["x","a"]]}"#,
+            r#"{"nodes":["a"],"before":[],"permissions":["shell"]}"#,
+        ] {
+            assert!(Ordering::from_query(&format!("order:{bad}")).is_err());
+        }
+        assert!(Ordering::from_query("Explain ordering").unwrap().is_none());
+    }
+}
