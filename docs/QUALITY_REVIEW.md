@@ -339,3 +339,19 @@ regression. No schema change is needed: state is a validated string. Final check
 89 tests pass with actual socket/HTTP fixtures; all-target check, formatting and
 Clippy with denied warnings pass using FlatBuffers 25.12.19. No live model quality
 or additional inference capability is claimed.
+
+## Score dependency constraints across comparison arms
+
+Added explicit `dependency_order_v1` comparison rows, preserving legacy exact-match
+rows. Criteria are validated for every case before execution and reject ambiguous
+expected labels. Scoring independently checks candidate constraints even when a
+runtime reports completed; unverified baseline answers can pass the same check.
+No expected label is passed into inference. A real loopback HTTP fixture returns
+an alternative valid order across all six arms and verifies per-case report metadata.
+Additional negative tests cover malformed criteria with zero task creation, invalid
+completed answers, excluded terminal statuses and unknown criterion names.
+
+Final checks: 92 all-target tests pass, formatting/all-target check/Clippy with
+warnings denied pass using FlatBuffers 25.12.19. One Clippy fixture-initialization
+warning was fixed before the final checks. This HTTP fixture verifies integration,
+not real model inference or quality; no performance advantage is claimed.

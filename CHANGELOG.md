@@ -106,3 +106,10 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   typed progress, explicitly published history and reviewed retention.
 - Fix progress reporting for rejected arithmetic expressions and test zero-call malformed
   criteria, single-call rejection and explanation requests after failed checks.
+
+### Development: compare independently checked dependency orders
+
+- Accept versioned dependency-order comparison criteria and score alternative valid
+  answers fairly across all baseline and collective profiles.
+- Validate the complete dataset before creating tasks and identify criteria in reports.
+- Preserve existing exact-match datasets and test the full six-arm loopback HTTP path.

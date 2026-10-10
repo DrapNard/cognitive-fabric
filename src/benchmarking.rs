@@ -14,7 +14,62 @@ use std::{path::Path, sync::Arc, time::Duration};
 #[serde(deny_unknown_fields)]
 struct Case {
     input: String,
-    expected: String,
+    expected: Option<String>,
+    #[serde(default)]
+    verification: Criterion,
+}
+
+#[derive(Clone, Copy, Default, Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+enum Criterion {
+    #[default]
+    ExpectedOutputExactMatch,
+    DependencyOrderV1,
+}
+
+impl Case {
+    fn prepare(&self) -> Result<Option<crate::verification::Ordering>> {
+        match self.verification {
+            Criterion::ExpectedOutputExactMatch => {
+                if self
+                    .expected
+                    .as_ref()
+                    .is_none_or(|value| value.trim().is_empty() || value.len() > 16_000)
+                {
+                    bail!("Exact-match case requires a bounded expected output")
+                }
+                Ok(None)
+            }
+            Criterion::DependencyOrderV1 => {
+                if self.expected.is_some() {
+                    bail!("Dependency-order case must omit expected output")
+                }
+                let criterion = crate::verification::Ordering::from_query(&self.input)?;
+                if criterion.is_none() {
+                    bail!("Dependency-order case requires an explicit order: objective")
+                }
+                Ok(criterion)
+            }
+        }
+    }
+
+    fn score(
+        &self,
+        criterion: Option<&crate::verification::Ordering>,
+        status: &str,
+        answer: &str,
+    ) -> bool {
+        if !matches!(status, "completed" | "unverified") {
+            return false;
+        }
+        match criterion {
+            Some(criterion) => criterion.check(answer).is_ok(),
+            None => self
+                .expected
+                .as_ref()
+                .is_some_and(|expected| normalize(answer) == normalize(expected)),
+        }
+    }
 }
 
 pub struct Review {
@@ -135,15 +190,17 @@ where
         .map(serde_json::from_str::<Case>)
         .collect::<std::result::Result<Vec<_>, _>>()?;
     if !(1..=200).contains(&cases.len())
-        || cases.iter().any(|case| {
-            case.input.trim().is_empty()
-                || case.input.len() > 12_000
-                || case.expected.trim().is_empty()
-                || case.expected.len() > 16_000
-        })
+        || cases
+            .iter()
+            .any(|case| case.input.trim().is_empty() || case.input.len() > 12_000)
     {
         bail!("Comparison requires 1-200 bounded cases")
     }
+    // Validate every criterion before starting any arm; expected labels never enter execution.
+    let criteria = cases
+        .iter()
+        .map(Case::prepare)
+        .collect::<Result<Vec<_>>>()?;
     let mut inputs = std::collections::BTreeSet::new();
     if cases
         .iter()
@@ -212,8 +269,11 @@ where
                     }
                 })
                 .await?;
-            let passed = matches!(outcome.status.as_str(), "completed" | "unverified")
-                && normalize(&outcome.answer) == normalize(&case.expected);
+            let passed = case.score(
+                criteria[case_index].as_ref(),
+                &outcome.status,
+                &outcome.answer,
+            );
             scores[arm_index] += usize::from(passed);
             totals[arm_index].add(&outcome, counts[arm_index] == 0);
             counts[arm_index] += 1;
@@ -231,7 +291,7 @@ where
                 })
                 .collect::<Vec<_>>();
             details.push(json!({"case_index":case_index,"arm_index":arm_index,"execution_position":position,"profile":profile,"configured_model":model,
-                "reported_models":models,"passed":passed,"expected":case.expected,"input":case.input,"outcome":outcome,"verification":"expected_output_exact_match"}));
+                "reported_models":models,"passed":passed,"expected":case.expected,"input":case.input,"outcome":outcome,"verification":case.verification}));
             if cancelled || tokio::time::Instant::now() >= deadline {
                 stopped = true;
                 break 'cases;
@@ -244,13 +304,150 @@ where
         "case_count":cases.len(),"complete":!stopped,"stop_reason":if cancelled {"cancelled"} else if stopped {"run_deadline"} else {"completed"},"elapsed_ms":started.elapsed().as_secs_f64()*1000.0,"larger_baseline_configured":larger.is_some(),
         "arms":arms.iter().enumerate().map(|(index,(profile,model,_))| json!({"index":index,"profile":profile,"model":model,"executed":counts[index],"passed":scores[index],"resources":totals[index],"accuracy":if counts[index]>0 {Some(scores[index] as f64/counts[index] as f64)} else {None}})).collect::<Vec<_>>(),
         "details":details,"unavailable_metrics":["peak_memory","gpu_memory","energy","model_load_cost","general_security_failure_rate"],
-        "limitations":["Held-out independence and code revision are operator-attested","Backend model labels do not attest immutable weights","Exact-match criteria do not establish broad reasoning quality","Retrieval uses one read-only SQLite snapshot; checksum includes unrelated stored history","Snapshot bounds are 64 MB and temporarily require an additional serialization buffer","Live model availability, weight identity and server state are not frozen","Different arms consume different amounts within the same operator ceilings; inspect actual usage"]}),
+        "limitations":["Held-out independence and code revision are operator-attested","Backend model labels do not attest immutable weights","Exact-match and dependency-order criteria do not establish broad reasoning quality","Retrieval uses one read-only SQLite snapshot; checksum includes unrelated stored history","Snapshot bounds are 64 MB and temporarily require an additional serialization buffer","Live model availability, weight identity and server state are not frozen","Different arms consume different amounts within the same operator ceilings; inspect actual usage"]}),
     )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn ordering_comparison_scores_every_arm_through_http() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let cfg = Config {
+            backend: "openai-local".into(),
+            interpret_goals: false,
+            api_base: format!("http://{}/v1", listener.local_addr().unwrap()),
+            ..Config::default()
+        };
+        let server = tokio::spawn(async move {
+            loop {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut request = Vec::new();
+                loop {
+                    let mut chunk = [0u8; 4096];
+                    let n = stream.read(&mut chunk).await.unwrap();
+                    assert!(n > 0);
+                    request.extend_from_slice(&chunk[..n]);
+                    assert!(request.len() < 40_000);
+                    if let Some(end) = request.windows(4).position(|s| s == b"\r\n\r\n") {
+                        let headers = String::from_utf8_lossy(&request[..end]);
+                        let length: usize = headers
+                            .lines()
+                            .find_map(|line| {
+                                line.to_ascii_lowercase()
+                                    .strip_prefix("content-length:")
+                                    .map(|v| v.trim().parse().unwrap())
+                            })
+                            .unwrap();
+                        if request.len() >= end + 4 + length {
+                            break;
+                        }
+                    }
+                }
+                let body = json!({"model":"fixture/v1","choices":[{"message":{"content":r#"["b","a","c"]"#}}]}).to_string();
+                let response = format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{body}", body.len());
+                stream.write_all(response.as_bytes()).await.unwrap();
+                stream.shutdown().await.unwrap();
+            }
+        });
+        let dataset = std::env::temp_dir().join(format!(
+            "fabric-order-compare-{}.jsonl",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::write(&dataset, serde_json::to_string(&json!({"input":r#"order:{"nodes":["a","b","c"],"before":[["a","c"]]}"#,"verification":"dependency_order_v1"})).unwrap()).unwrap();
+        let store = Arc::new(Store::in_memory().unwrap());
+        let review = Review {
+            source: "test".into(),
+            license: "CC0-1.0".into(),
+            code_revision: "a".repeat(40),
+            held_out: true,
+            max_run_seconds: 10,
+        };
+        let report = compare(&cfg, store, &dataset, "deep", None, &review)
+            .await
+            .unwrap();
+        assert_eq!(report["complete"], true);
+        for arm in report["arms"].as_array().unwrap() {
+            assert_eq!(arm["passed"], 1);
+        }
+        for detail in report["details"].as_array().unwrap() {
+            assert_eq!(detail["verification"], "dependency_order_v1");
+            assert!(detail["expected"].is_null());
+        }
+        assert_eq!(report["details"][0]["outcome"]["status"], "unverified");
+        server.abort();
+        let _ = server.await;
+        std::fs::remove_file(dataset).unwrap();
+    }
+
+    #[test]
+    fn ordering_scoring_accepts_alternatives_without_trusting_runtime_verdicts() {
+        let case: Case = serde_json::from_value(json!({"input":r#"order:{"nodes":["a","b","c"],"before":[["a","c"]]}"#,"verification":"dependency_order_v1"})).unwrap();
+        let criterion = case.prepare().unwrap().unwrap();
+        for answer in [r#"["a","b","c"]"#, r#"["b","a","c"]"#] {
+            assert!(case.score(Some(&criterion), "unverified", answer));
+            assert!(case.score(Some(&criterion), "completed", answer));
+            assert!(!case.score(Some(&criterion), "demo", answer));
+            assert!(!case.score(Some(&criterion), "rejected", answer));
+        }
+        assert!(!case.score(Some(&criterion), "completed", r#"["c","a","b"]"#));
+        for value in [
+            json!({"input":"Explain ordering","verification":"dependency_order_v1"}),
+            json!({"input":r#"order:{"nodes":["a"],"before":[]}"#,"verification":"dependency_order_v1","expected":"a"}),
+            json!({"input":"Explain ordering"}),
+        ] {
+            assert!(serde_json::from_value::<Case>(value)
+                .unwrap()
+                .prepare()
+                .is_err());
+        }
+        assert!(serde_json::from_value::<Case>(
+            json!({"input":"a","verification":"model_confidence"})
+        )
+        .is_err());
+        let legacy: Case =
+            serde_json::from_value(json!({"input":"Question","expected":" Answer "})).unwrap();
+        assert!(legacy.prepare().unwrap().is_none());
+        assert!(legacy.score(None, "unverified", "answer"));
+    }
+
+    #[tokio::test]
+    async fn malformed_comparison_criteria_fail_before_creating_tasks() {
+        let dataset = std::env::temp_dir().join(format!(
+            "fabric-invalid-criterion-{}.jsonl",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::write(&dataset, serde_json::to_string(&json!({"input":r#"order:{"nodes":["a"],"before":[["a","a"]]}"#,"verification":"dependency_order_v1"})).unwrap()).unwrap();
+        let store = Arc::new(Store::in_memory().unwrap());
+        let review = Review {
+            source: "test".into(),
+            license: "CC0-1.0".into(),
+            code_revision: "a".repeat(40),
+            held_out: true,
+            max_run_seconds: 10,
+        };
+        assert!(compare(
+            &Config::default(),
+            store.clone(),
+            &dataset,
+            "deep",
+            None,
+            &review
+        )
+        .await
+        .is_err());
+        assert_eq!(
+            store
+                .lock()
+                .unwrap()
+                .query_row("SELECT count(*) FROM tasks", [], |row| row.get::<_, u64>(0))
+                .unwrap(),
+            0
+        );
+        std::fs::remove_file(dataset).unwrap();
+    }
 
     #[tokio::test]
     async fn comparison_deadline_cancels_and_persists_the_active_task() {

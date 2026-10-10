@@ -82,3 +82,26 @@ equivalence is claimed.
 Dispatch duration includes broker queueing/coordination and HTTP time. It does not
 measure GPU compute alone. Task traces include pinned inference module versions
 separately from provider model labels.
+
+### Constraint scoring in comparisons
+
+`compare` additionally accepts explicit versioned dependency-order criteria:
+
+```json
+{"input":"order:{\"nodes\":[\"a\",\"b\",\"c\"],\"before\":[[\"a\",\"c\"]]}","verification":"dependency_order_v1"}
+```
+
+Omit `expected` for this criterion. Every valid permutation satisfying all declared
+constraints is accepted, including alternative orders from the alone baseline.
+The evaluator independently rechecks the returned array; a runtime `completed`
+label cannot make an invalid answer pass. Only completed/unverified outcomes are
+eligible, preserving the existing exclusion of demo, rejection and failed runs.
+All criteria are validated before any tasks start. Unknown criterion names,
+malformed graphs and mixed expected-output/constraint cases fail closed.
+
+Existing rows with `input` and `expected` retain their normalized exact-match
+behavior. They may explicitly specify `verification: expected_output_exact_match`.
+Reports identify the criterion per case and use null expected output for constraint
+cases. Criteria are user-supplied objectives, not hidden answer labels. The simpler
+`bench` command continues to require exact-match datasets. These bounded checks do
+not establish general reasoning quality or replace diverse held-out evaluation.

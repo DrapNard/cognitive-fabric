@@ -21,7 +21,7 @@ remains a pre-release. `QUALITY_REVIEW.md` preserves verification history.
 | 12, 14 | CLI/service | Partial | `src/main.rs`: initialization/configuration, ask, service controls, task-specific socket progress/cancellation, skill lifecycle, ingestion/search, task traces, candidates/rollback, benchmark, self-test; real socket fixtures | Live residency lifecycle, diagnostics and independent-process streaming subscriptions |
 | 12, 13 | Hardware/performance claims | Not implemented | No GPU/energy or large-model advantage claimed | Real local endpoint, hardware telemetry, equal-budget comparisons |
 
-All 89 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
+All 92 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
 all-target build checks and Clippy with denied warnings pass. Fixtures do not prove
 GPU integration, neural quality, immutable backend weights or live model switching.
 
@@ -38,3 +38,8 @@ complete the requirement for broader independent executable verifiers.
 Verification failures now preserve checked candidates as rejected outcomes through
 progress IPC, episodic history and reviewed retention. Regression tests additionally
 cover division-by-zero progress and single-call ordering rejection.
+
+Comparison evaluation additionally supports versioned dependency-order criteria,
+accepting every valid permutation across all arms rather than one exact answer.
+Strict criterion preflight and a real loopback HTTP six-arm fixture cover this path;
+this does not supply the remaining diverse held-out dataset or live-model results.
