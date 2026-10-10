@@ -7,6 +7,7 @@ pub mod evaluation;
 pub mod evolution;
 pub mod language;
 pub mod math;
+pub mod planning;
 pub mod reasoning;
 pub mod registry;
 pub mod security;

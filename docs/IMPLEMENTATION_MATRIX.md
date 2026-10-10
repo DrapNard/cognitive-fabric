@@ -90,3 +90,6 @@ Implemented: schema-3 immutable dataset manifests, explicit held-out provenance,
 
 ### Local service controls
 Implemented: typed owner-authenticated status/cancel-active/stop, bounded eight connection handlers, single execution permit, correlated busy responses, graceful remote stop (`protocol/cognitive.fbs`, `src/wire.rs`, `src/service.rs`, `src/main.rs`). Integration tests exercise controls during stalled HTTP inference, durable cancellation, and incomplete-frame shutdown. General broker registration/event subscriptions and task-targeted remote cancellation remain incomplete.
+
+### Bounded decomposed task graphs
+Implemented: strict bounded planner graphs, dependency validation/topological scheduling, shared-budget admission with a reserved whole-goal solver, durable subtask transitions and cancellation (`src/planning.rs`, `src/reasoning.rs`, `src/engine.rs`). Tests cover forward dependencies, cycles, missing/duplicate IDs, permission fields, execution order, budget fallback and cancellation. Partial: sequential inference scheduling only; crash resume and general independent subtask verification are outstanding.

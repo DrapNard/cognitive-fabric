@@ -266,6 +266,7 @@ impl Engine {
         if status == "exhausted" {
             session.stop_reason = "budget_exhausted".into();
         }
+        session.finish_subtasks(&status)?;
         self.store.finish_task(&id, &status, &answer)?;
         self.store.event(&id,"outcome","jev-plus",json!({"status":status,"resources":session.resources,"stop_reason":session.stop_reason,"evidence":evidence}))?;
         Ok(Outcome {

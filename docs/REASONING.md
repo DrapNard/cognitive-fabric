@@ -15,7 +15,8 @@ roles; no new neural architecture is claimed.
 These mode limits are clamped to operator configuration. Defaults impose eight
 calls, four cycles, 1,600 reserved output tokens, 128,000 cumulative prompt bytes,
 four tool invocations, 45 seconds per model request and 120 seconds per task.
-A solver reserves 384 output tokens; each other model role reserves 128.
+The whole-goal solver reserves 384 output tokens, the planner 256, subtask solvers
+192 each, and other model roles 128.
 Reservations occur before dispatch and remain charged on errors/cancellation.
 Reported output exceeding the reserved request limit fails the task.
 
@@ -32,9 +33,17 @@ verify an answer against its supplied held-out expected result using exact match
 That does not change the runtime's verification status.
 
 Each completed model role produces a typed node with parent, cycle, model label
-and content hash, persisted with its output and usage in task events. This is a
-bounded role dependency graph; general decomposed subtask DAG execution remains
-outstanding. Configured model labels are recorded when providers omit a model
+and content hash, persisted with its output and usage in task events. Planner JSON is validated by `src/planning.rs`: one to four bounded subgoals,
+unique IDs, existing dependencies and an acyclic graph. Jev+ executes ready nodes
+in stable topological order, sequentially to avoid redundant GPU residency.
+Each subtask receives only its predecessor results and the original objective
+with pinned references. Outputs remain unverified advice. A final whole-goal
+solver combines the results; subgoals cannot replace the original request.
+Call/token admission reserves that solver before decomposition starts; insufficient
+budget skips all subtasks. Invalid plans fall back to the original objective.
+Pending/running nodes become cancelled, failed or skipped on termination.
+Graph and state transitions are persisted in task events, including dependency
+IDs and bounded result snapshots. This is not crash-resumable execution. Configured model labels are recorded when providers omit a model
 identity; this does not attest to immutable backend weights.
 
 `InferenceBackend` is replaceable and shared by logical roles. `LocalBackend`
@@ -46,8 +55,7 @@ GPU memory, load costs, energy and peak RAM remain unavailable.
 
 Input prompt bytes are enforced independently. Exact input-token preflight needs
 a compatible tokenizer/counting endpoint and is not yet implemented; byte limits
-must not be described as exact token limits. General semantic task plans,
-semantic task plans and general independent executable verifiers are also pending.
+must not be described as exact token limits. General independent executable verifiers and crash recovery remain pending.
 
 The optional interface and synthesis stages share these budgets. See
 LANGUAGE_INTERFACE.md. Exact input-token preflight and general independent

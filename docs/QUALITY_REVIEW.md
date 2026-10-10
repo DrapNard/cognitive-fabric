@@ -99,3 +99,6 @@ workspace check and Clippy pass. CLI candidate create was exercised in
 
 ### Typed live service controls
 Pinned flatc 25.12.19 regenerated the additive schema. Formatting, all-target check, all-target Clippy with denied warnings, and all-target tests passed (50 tests). Socket tests cover remote stop, incomplete clients, active status, busy errors, remote cancellation, disconnect cancellation and shutdown cancellation. Unknown controls and ambiguous envelopes fail validation. Control authorization remains same-UID local owner access.
+
+### Dependency-aware subtask execution
+All-target check and tests passed (54 tests); formatting passed. Clippy identified a redundant integer comparison, corrected without changing behavior. New tests verify strict acyclic plan validation, stable dependency order, shared call/token ceilings with whole-goal fallback, and cancellation of running/pending subgoals. Subtask results remain unverified and confer no tool capabilities.
