@@ -41,7 +41,7 @@ Quality requires operator-attested held-out data. Promotion checks quality,
 active-baseline retrieval regressions and unchanged versions transactionally.
 Rollback restores approved stored snapshots. Neural promotion stays disabled.
 
-Verification: 68 tests, formatting, all-target check and Clippy pass using exact
+Verification: 71 tests, formatting, all-target check and Clippy pass using exact
 flatc/Rust FlatBuffers 25.12.19. HTTP fixtures and socket tests ran locally; no
 compatible live model server was available at the default endpoint. No neural
 quality, GPU integration, hot-swap, energy or model-superiority result is claimed.
@@ -56,3 +56,7 @@ dataset and live-model comparison remain outstanding.
 Operator-published episodic memory and independently recomputed arithmetic snapshots
 are retrievable with provenance, hashes, revocation and bounded payload storage.
 See `MEMORY.md`; arbitrary model output remains unverified.
+
+Persistent Engine tasks hold kernel execution leases. Operator `recover-tasks`
+marks abandoned running tasks interrupted in an audited transaction; it refuses
+live leases and never automatically replays work. See `RECOVERY.md`.

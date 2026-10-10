@@ -106,6 +106,7 @@ pub struct Candidate {
 }
 
 pub struct Store {
+    pub(crate) runtime_lock: Option<std::path::PathBuf>,
     db: Mutex<Connection>,
 }
 impl Store {
@@ -121,7 +122,11 @@ impl Store {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        Self::initialize(Connection::open(path)?)
+        let mut store = Self::initialize(Connection::open(path)?)?;
+        let mut lease = path.as_os_str().to_os_string();
+        lease.push(".runtime.lock");
+        store.runtime_lock = Some(lease.into());
+        Ok(store)
     }
     pub fn in_memory() -> Result<Self> {
         Self::initialize(Connection::open_in_memory()?)
@@ -200,7 +205,10 @@ impl Store {
             tx.execute_batch(crate::memory::SCHEMA)?;
         }
         tx.commit()?;
-        Ok(Self { db: Mutex::new(db) })
+        Ok(Self {
+            db: Mutex::new(db),
+            runtime_lock: None,
+        })
     }
     pub fn create_task(&self, query: &str, mode: &str) -> Result<String> {
         let id = Uuid::new_v4().to_string();

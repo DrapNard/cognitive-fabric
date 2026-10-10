@@ -94,7 +94,13 @@ impl Store {
         )?;
         if !matches!(
             memory.status.as_str(),
-            "completed" | "unverified" | "demo" | "failed" | "cancelled" | "needs_clarification"
+            "completed"
+                | "unverified"
+                | "demo"
+                | "failed"
+                | "cancelled"
+                | "needs_clarification"
+                | "interrupted"
         ) || memory.answer.trim().is_empty()
         {
             bail!("Only terminal tasks with results can enter reusable memory")

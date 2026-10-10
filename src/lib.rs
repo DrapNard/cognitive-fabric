@@ -12,6 +12,7 @@ pub mod math;
 pub mod memory;
 pub mod planning;
 pub mod reasoning;
+pub mod recovery;
 pub mod registry;
 pub mod security;
 pub mod service;

@@ -155,6 +155,7 @@ impl Engine {
         let start = Instant::now();
         let backend = self.backend.pin()?.unwrap_or_else(|| self.backend.clone());
         let modules = backend.modules()?;
+        let _execution_lease = self.store.execution_lease()?;
         let id = self.store.create_task(query, mode)?;
         let mut session = Session::new(
             self.cfg.clone(),

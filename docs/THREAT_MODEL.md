@@ -67,3 +67,10 @@ tampering fails retrieval. Revocation affects future snapshots, not already pinn
 contexts. Poisoned text can influence model answers but cannot acquire capabilities.
 The memory payload quota excludes SQLite overhead and task/event history; see
 `MEMORY.md` for bounds and remaining retention work.
+
+Interrupted-task recovery requires an exclusive OS execution lease, not a trusted
+PID or elapsed-time heuristic. Live Engine executions hold shared leases; task
+updates and recovery audits are transactional. Lease replacement, hard-linked
+database aliases and malicious same-owner processes are outside this cooperative
+coordination guarantee. Recovery never replays tools or assumes external inference
+stopped; see `RECOVERY.md`.

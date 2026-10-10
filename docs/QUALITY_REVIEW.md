@@ -160,3 +160,23 @@ with flatc 25.12.19. `cargo build --offline` passed. A fresh-home demo CLI round
 calculated 72, published independently verified arithmetic memory, searched it,
 revoked it and confirmed empty search. No live-model injection-resistance claim.
 General database retention, wider fact verifiers and model registry remain open.
+
+## Lease-protected interrupted task recovery (2026-10-10)
+
+Persistent Engine execution now acquires a shared kernel flock before task
+creation. Operator recovery takes an exclusive nonblocking lease and atomically
+marks abandoned running tasks interrupted with explicit no-replay/unknown-usage
+audit evidence. Existing terminal results remain unchanged. Lease files reject
+symlinks, public permissions, non-owner files and multiple hard links.
+
+Three tests cover independent live leases, idempotence, terminal preservation,
+audit-write failure rollback, unsafe lease paths and a real Engine future aborted
+during pending inference. A separate-process CLI smoke held a shared lease,
+confirmed recovery rejection, killed the holder, then confirmed successful audited
+recovery and an empty second recovery. This tests kernel release after process
+death; it does not prove external server computation stops.
+
+All 71 tests passed, including local socket/HTTP fixtures. Formatting check,
+all-target check and denied-warning Clippy passed offline with flatc 25.12.19.
+The binary built and recovery CLI smoke passed. No automatic checkpoint resumption,
+stale-socket cleanup or general storage retention is claimed; see `RECOVERY.md`.

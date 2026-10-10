@@ -31,6 +31,7 @@ enum Command {
     Init,
     Status,
     SelfTest,
+    RecoverTasks,
     Skills,
     SkillRegister {
         manifest: PathBuf,
@@ -207,6 +208,9 @@ async fn main() -> Result<()> {
     store::bootstrap(&store)?;
     let engine = Engine::new(cfg.clone(), store.clone());
     let response: Value = match cli.command {
+        Command::RecoverTasks => {
+            json!({"interrupted_tasks":store.recover_tasks()?,"automatic_replay":false})
+        }
         Command::Init => {
             json!({"home":cfg.home,"version":env!("CARGO_PKG_VERSION"),"skills":store.skills()?.len()})
         }

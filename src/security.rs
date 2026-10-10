@@ -76,6 +76,7 @@ pub fn authorize(principal: &str, capability: &str) -> Result<()> {
         "human-cli" => matches!(
             capability,
             "knowledge.ingest"
+                | "task.recover"
                 | "memory.publish"
                 | "memory.revoke"
                 | "memory.search"
