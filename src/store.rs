@@ -548,40 +548,42 @@ impl Store {
         Ok(content)
     }
 
-    pub(crate) fn rag_baseline(&self, skill: &str) -> Result<Option<RagBaseline>> {
+    pub(crate) fn rag_baselines(&self, skill: &str) -> Result<Vec<RagBaseline>> {
         let db = self.lock()?;
-        let version: i64 = db.query_row(
-            "SELECT active_version FROM skills WHERE id=?1",
-            [skill],
-            |row| row.get(0),
-        )?;
-        if version == 0 {
-            return Ok(None);
+        let versions = db.prepare("SELECT version FROM candidates WHERE skill_id=?1 AND kind='rag' AND status='approved' ORDER BY version")?
+            .query_map([skill], |row| row.get::<_, i64>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        if versions.len() > 128 {
+            bail!("Historical RAG evaluation exceeds 128 approved versions")
         }
-        let (id,body,checksum,source,license):(String,String,String,String,String)=db.query_row(
+        let mut baselines = Vec::new();
+        for version in versions {
+            let (id,body,checksum,source,license):(String,String,String,String,String)=db.query_row(
             "SELECT c.id,d.body,c.checksum,c.source,c.license FROM candidates c JOIN candidate_documents cd ON cd.candidate_id=c.id \
              JOIN documents d ON d.id=cd.document_id WHERE c.skill_id=?1 AND c.version=?2 AND c.status='approved' AND c.kind='rag'",
             params![skill,version],|row|Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?)))?;
-        if body.len() > 256_000 || sha256(body.as_bytes()) != checksum {
-            bail!("Active RAG baseline integrity check failed")
+            if body.len() > 256_000 || sha256(body.as_bytes()) != checksum {
+                bail!("Active RAG baseline integrity check failed")
+            }
+            let (passed,details):(bool,String)=db.query_row("SELECT success,details FROM evaluations WHERE candidate_id=?1 AND suite='quality' ORDER BY id DESC LIMIT 1",[&id],|row|Ok((row.get(0)?,row.get(1)?)))?;
+            let details: Value = serde_json::from_str(&details)?;
+            if !passed {
+                bail!("Active baseline lacks a passing held-out suite")
+            }
+            let hash = details["dataset_checksum"].as_str().ok_or_else(|| {
+                anyhow!("Re-evaluate the active baseline with reviewed held-out dataset provenance")
+            })?;
+            let dataset_content = Self::dataset_from(&db, hash)?;
+            baselines.push(RagBaseline {
+                candidate_id: id,
+                version,
+                body,
+                dataset_content,
+                source,
+                license,
+            });
         }
-        let (passed,details):(bool,String)=db.query_row("SELECT success,details FROM evaluations WHERE candidate_id=?1 AND suite='quality' ORDER BY id DESC LIMIT 1",[&id],|row|Ok((row.get(0)?,row.get(1)?)))?;
-        let details: Value = serde_json::from_str(&details)?;
-        if !passed {
-            bail!("Active baseline lacks a passing held-out suite")
-        }
-        let hash = details["dataset_checksum"].as_str().ok_or_else(|| {
-            anyhow!("Re-evaluate the active baseline with reviewed held-out dataset provenance")
-        })?;
-        let dataset_content = Self::dataset_from(&db, hash)?;
-        Ok(Some(RagBaseline {
-            candidate_id: id,
-            version,
-            body,
-            dataset_content,
-            source,
-            license,
-        }))
+        Ok(baselines)
     }
 
     pub(crate) fn evaluation(
@@ -595,7 +597,16 @@ impl Store {
         if !score.is_finite() || !(0.0..=1.0).contains(&score) {
             bail!("Invalid evaluation score")
         }
-        self.lock()?.execute("INSERT INTO evaluations(candidate_id,suite,success,score,details,created) VALUES (?1,?2,?3,?4,?5,?6)",
+        let db = self.lock()?;
+        if suite == "quality" {
+            let sealed: bool = db.query_row(
+                "SELECT EXISTS(SELECT 1 FROM candidates c JOIN evaluations e ON e.candidate_id=c.id WHERE c.id=?1 AND c.status='approved' AND e.suite='quality' AND e.success=1 AND json_extract(e.details,'$.held_out')=1 AND json_extract(e.details,'$.dataset_checksum') IS NOT NULL)",
+                [id], |row| row.get(0))?;
+            if sealed {
+                bail!("Approved RAG acceptance suite is immutable; create a new candidate")
+            }
+        }
+        db.execute("INSERT INTO evaluations(candidate_id,suite,success,score,details,created) VALUES (?1,?2,?3,?4,?5,?6)",
             params![id,suite,pass as i32,score,details.to_string(),now()])?;
         Ok(())
     }
@@ -639,6 +650,12 @@ impl Store {
             if suite == "regression" {
                 if details["candidate_dataset_checksum"].as_str() != quality_dataset.as_deref() {
                     bail!("Quality and regression evaluations use different dataset manifests")
+                }
+                let historical_ids = tx.prepare("SELECT id,version FROM candidates WHERE skill_id=?1 AND kind='rag' AND status='approved' ORDER BY version")?
+                    .query_map([&candidate.skill_id], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)))?
+                    .collect::<rusqlite::Result<Vec<_>>>()?;
+                if details["baseline_ids"] != serde_json::to_value(historical_ids)? {
+                    bail!("Approved history changed; re-evaluate candidate regressions")
                 }
                 let current: i64 = tx.query_row(
                     "SELECT active_version FROM skills WHERE id=?1",
@@ -870,9 +887,15 @@ mod tests {
                 .find(|skill| skill.id == "rust.s1")
                 .unwrap()
                 .active_version;
+            let baseline_ids: Vec<_> = store
+                .rag_baselines("rust.s1")
+                .unwrap()
+                .into_iter()
+                .map(|baseline| (baseline.candidate_id, baseline.version))
+                .collect();
             for suite in ["integrity", "quality", "regression"] {
                 store
-                    .evaluation(&c.id, suite, true, 1.0, json!({"fixture":true,"dataset_checksum":dataset_hash,"candidate_dataset_checksum":dataset_hash,"held_out":true,"baseline_version":baseline_version,"candidate_checksum":c.checksum}))
+                    .evaluation(&c.id, suite, true, 1.0, json!({"fixture":true,"baseline_ids":baseline_ids,"dataset_checksum":dataset_hash,"candidate_dataset_checksum":dataset_hash,"held_out":true,"baseline_version":baseline_version,"candidate_checksum":c.checksum}))
                     .unwrap();
             }
             store.promote_rag(&c.id, body).unwrap();

@@ -201,27 +201,29 @@ pub fn evaluate_reviewed(
     // Re-reviewing an already approved immutable artifact can initialize legacy provenance.
     // It never promotes that artifact again or changes its active version.
     let baseline = if candidate.status == "approved" {
-        None
+        Vec::new()
     } else {
-        store.rag_baseline(&candidate.skill_id)?
+        store.rag_baselines(&candidate.skill_id)?
     };
     let mut regression_total = 0usize;
     let mut regression_passed = 0usize;
-    let mut baseline_version = if candidate.status == "approved" {
+    let baseline_version = {
         store
             .skills()?
             .into_iter()
             .find(|skill| skill.id == candidate.skill_id)
             .ok_or_else(|| anyhow::anyhow!("Unknown skill"))?
             .active_version
-    } else {
-        0
     };
-    let mut baseline_id = None;
-    if let Some(baseline) = baseline {
-        baseline_version = baseline.version;
-        baseline_id = Some(baseline.candidate_id);
+    let mut baseline_ids = Vec::new();
+    let mut historical_cases = 0usize;
+    for baseline in baseline {
+        baseline_ids.push((baseline.candidate_id, baseline.version));
         let previous_cases = retrieval_cases(&baseline.dataset_content)?;
+        historical_cases += previous_cases.len();
+        if historical_cases > 8192 {
+            bail!("Historical RAG evaluation exceeds 8192 cases")
+        }
         let previous_results = retrieval_results(
             &candidate.skill_id,
             &baseline.body,
@@ -255,7 +257,7 @@ pub fn evaluate_reviewed(
     } else {
         regression_passed as f64 / regression_total as f64
     };
-    store.evaluation(id,"regression",regression_ok,regression_score,json!({"baseline_version":baseline_version,"baseline_id":baseline_id,
+    store.evaluation(id,"regression",regression_ok,regression_score,json!({"baseline_version":baseline_version,"baseline_ids":baseline_ids,
         "candidate_checksum":candidate.checksum,"candidate_dataset_checksum":checksum,"total":regression_total,"passed":regression_passed}))?;
     Ok(
         json!({"total":cases.len(),"passed":passed,"accuracy":accuracy,"quality_gate":accuracy>=0.9,"regression_gate":regression_ok,
@@ -350,6 +352,12 @@ mod tests {
         evaluate(&store, &first.id, "integrity", None).unwrap();
         evaluate_reviewed(&store, &first.id, "quality", Some(&old), Some(&review)).unwrap();
         promote(&store, &first.id, true).unwrap();
+        assert!(
+            evaluate_reviewed(&store, &first.id, "quality", Some(&new), Some(&review))
+                .unwrap_err()
+                .to_string()
+                .contains("immutable")
+        );
         let broken = make("broken.txt", "delta epsilon zeta");
         evaluate(&store, &broken.id, "integrity", None).unwrap();
         let result =
@@ -371,9 +379,21 @@ mod tests {
         assert!(promote(&store, &b.id, true)
             .unwrap_err()
             .to_string()
-            .contains("baseline changed"));
+            .contains("changed"));
         evaluate_reviewed(&store, &b.id, "quality", Some(&new), Some(&review)).unwrap();
         promote(&store, &b.id, true).unwrap();
+        let loses_history = make("loses-history.txt", "delta epsilon zeta eta theta");
+        let result = evaluate_reviewed(
+            &store,
+            &loses_history.id,
+            "quality",
+            Some(&new),
+            Some(&review),
+        )
+        .unwrap();
+        assert_eq!(result["quality_gate"], true);
+        assert_eq!(result["regression_gate"], false);
+        assert_eq!(result["regression_total"], 9);
         fs::remove_dir_all(root).unwrap();
     }
     #[test]

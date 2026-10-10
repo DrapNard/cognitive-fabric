@@ -71,3 +71,15 @@ baseline candidate’s latest reviewed suite. It rejects a changed baseline or
 mismatched evaluation identities. This is a retrieval regression gate, not a
 neural safety assessment or cumulative historical regression bank. Legacy approved
 artifacts require re-review with dataset provenance before serving as baselines.
+
+## Historical retrieval regressions
+
+New RAG candidates retain passing assertions from every previously approved
+version, including versions inactive after rollback. Evaluation is bounded to
+128 approved versions and 8,192 historical cases; exceeding either limit fails
+closed. Approved reviewed quality suites cannot be replaced. Legacy approved
+artifacts without reviewed provenance can receive a one-time reviewed suite.
+Promotion compares the evaluated approved-version list and active version within
+its transaction, rejecting intervening promotions even after rollback. Quality
+and regression records are currently separate writes; atomic paired review
+records remain a hardening task. These retrieval checks do not establish neural safety.

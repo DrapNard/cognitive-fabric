@@ -111,3 +111,18 @@ Formatting, all-target check, all-target tests (59 passed), and Clippy with deni
 
 ### Integrated typed inference broker
 Pinned flatc 25.12.19 generated both owner-IPC and internal module schemas. All-target check, formatting and all-target tests passed (64 tests); Clippy with denied warnings passed. Four new broker tests cover bounded queues/cancelled futures, forged/expired work, malformed frame bounds and immutable pinned replacement/unregistration. Discovery is exercised over the real Unix socket; an additional legacy-control fixture verifies absent appended module fields. Internal dispatch now serializes validated FlatBuffers with task/correlation/actor/destination/version/expiry metadata. This remains trusted in-process adapter routing, not independent-process attestation, neural loading or external GPU cancellation.
+
+## Cumulative RAG regressions (2026-10-10)
+
+Approved reviewed quality suites now reject replacement. Candidate regressions
+cover all approved versions, bounded to 128 versions and 8,192 cases. Promotion
+checks the historical version list inside its transaction, as well as the active
+version. The regression test covers loss of first-version capabilities after
+multiple successful upgrades and rejection of approved-suite replacement.
+
+Validation: `cargo fmt --all -- --check`, `cargo check --all-targets --offline`,
+`cargo test --all-targets --offline` (64 passed), and
+`cargo clippy --all-targets --offline -- -D warnings` passed using flatc 25.12.19.
+Socket/HTTP fixtures ran with local networking permissions. No live model study
+was run. Paired quality/regression writes remain non-atomic; independent neural
+safety evaluation remains unavailable and neural promotion stays disabled.
