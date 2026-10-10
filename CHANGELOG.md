@@ -120,3 +120,9 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   missing-model reporting and meaningful failure exits without launching a task.
 - Document initialization effects and distinguish model advertisement from inference,
   loaded weights, residency and GPU validation.
+
+### Development: prepare reviewed RAG candidates from recorded gaps
+
+- Inspect bounded capability-gap evidence and report reuse/review steps without granting permissions.
+- Import reviewed gap-guided RAG artifacts with atomic candidate/provenance records
+  and evidence hash revalidation; protect source-task evidence from retention.

@@ -21,6 +21,37 @@ pub fn create(
     source: &str,
     license: &str,
 ) -> Result<Candidate> {
+    create_import(cfg, store, (skill, kind), (artifact, source, license), None)
+}
+
+pub fn create_from_gap(
+    cfg: &Config,
+    store: &Store,
+    task: &str,
+    skill: &str,
+    artifact: &Path,
+    source: &str,
+    license: &str,
+) -> Result<Candidate> {
+    let origin = crate::gaps::prepare(store, task, skill)?;
+    create_import(
+        cfg,
+        store,
+        (skill, "rag"),
+        (artifact, source, license),
+        Some(&origin),
+    )
+}
+
+fn create_import(
+    cfg: &Config,
+    store: &Store,
+    identity: (&str, &str),
+    input: (&Path, &str, &str),
+    origin: Option<&crate::gaps::Preparation>,
+) -> Result<Candidate> {
+    let (skill, kind) = identity;
+    let (artifact, source, license) = input;
     security::authorize("human-cli", "candidate.create")?;
     security::validate_provenance(source, license)?;
     if !store.skills()?.iter().any(|entry| entry.id == skill) {
@@ -112,22 +143,123 @@ pub fn create(
     reservation.commit()?;
     drop(database);
     let canonical = target.canonicalize()?;
-    store.create_candidate(
+    let metadata = (
         skill,
         kind,
         canonical
             .to_str()
             .ok_or_else(|| anyhow::anyhow!("Non-UTF8 quarantine path"))?,
-        &checksum,
+        checksum.as_str(),
         source,
         license,
-    )
+    );
+    if origin.is_some() {
+        store.create_candidate_record(metadata, origin)
+    } else {
+        store.create_candidate(
+            metadata.0, metadata.1, metadata.2, metadata.3, metadata.4, metadata.5,
+        )
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::store;
+    #[test]
+    fn gap_candidates_bind_evidence_atomically_and_preserve_provenance() {
+        let root =
+            std::env::temp_dir().join(format!("fabric-gap-candidate-{}", uuid::Uuid::new_v4()));
+        let cfg = Config::load(Some(root.clone()), Some("demo".into())).unwrap();
+        cfg.prepare().unwrap();
+        let store = Store::open(&cfg.db()).unwrap();
+        store::bootstrap(&store).unwrap();
+        let task = store
+            .create_task("Missing Rust references", "standard")
+            .unwrap();
+        store
+            .event(
+                &task,
+                "capability_gap",
+                "jev-plus",
+                serde_json::json!({"missing":["rust.s1"]}),
+            )
+            .unwrap();
+        let artifact = root.join("reviewed.md");
+        fs::write(&artifact, "Reviewed Rust reference document").unwrap();
+        let candidate =
+            create_from_gap(&cfg, &store, &task, "rust.s1", &artifact, "fixture", "CC0").unwrap();
+        assert_eq!(candidate.status, "candidate");
+        assert_eq!(
+            store
+                .skills()
+                .unwrap()
+                .iter()
+                .find(|s| s.id == "rust.s1")
+                .unwrap()
+                .active_version,
+            0
+        );
+        let trace = store.task(&task).unwrap();
+        assert!(trace["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["kind"] == "gap_candidate" && e["payload"]["candidate_id"] == candidate.id));
+        store
+            .finish_task(&task, "unverified", "historical attempt")
+            .unwrap();
+        store
+            .lock()
+            .unwrap()
+            .execute("UPDATE tasks SET updated=0 WHERE id=?1", [&task])
+            .unwrap();
+        assert!(store.retention_preview(1, 100).unwrap().task_ids.is_empty());
+        assert!(
+            create_from_gap(&cfg, &store, &task, "linux.s1", &artifact, "fixture", "CC0").is_err()
+        );
+        let origin = crate::gaps::prepare(&store, &task, "rust.s1").unwrap();
+        store
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE events SET payload='{}' WHERE id=?1",
+                [origin.gap_event_id],
+            )
+            .unwrap();
+        assert!(store
+            .create_candidate_record(
+                (
+                    "rust.s1",
+                    "rag",
+                    &candidate.artifact,
+                    &candidate.checksum,
+                    "fixture",
+                    "CC0"
+                ),
+                Some(&origin)
+            )
+            .is_err());
+        assert_eq!(store.candidates().unwrap().len(), 1);
+        store
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE events SET payload=?1 WHERE id=?2",
+                rusqlite::params![
+                    serde_json::json!({"missing":["rust.s1"]}).to_string(),
+                    origin.gap_event_id
+                ],
+            )
+            .unwrap();
+        store.lock().unwrap().execute_batch("CREATE TRIGGER deny_gap_link BEFORE INSERT ON events WHEN NEW.kind='gap_candidate' BEGIN SELECT RAISE(ABORT,'injected link failure'); END;").unwrap();
+        assert!(
+            create_from_gap(&cfg, &store, &task, "rust.s1", &artifact, "fixture", "CC0").is_err()
+        );
+        assert_eq!(store.candidates().unwrap().len(), 1);
+        drop(store);
+        fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn quota_and_modified_quarantine_block_new_candidates() {

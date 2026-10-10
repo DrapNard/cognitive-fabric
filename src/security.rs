@@ -91,6 +91,7 @@ pub fn authorize(principal: &str, capability: &str) -> Result<()> {
                 | "memory.revoke"
                 | "memory.search"
                 | "candidate.create"
+                | "candidate.prepare"
                 | "candidate.evaluate"
                 | "candidate.promote"
                 | "candidate.rollback"

@@ -471,6 +471,15 @@ impl Store {
         source: &str,
         license: &str,
     ) -> Result<Candidate> {
+        self.create_candidate_record((skill, kind, artifact, checksum, source, license), None)
+    }
+
+    pub(crate) fn create_candidate_record(
+        &self,
+        metadata: (&str, &str, &str, &str, &str, &str),
+        origin: Option<&crate::gaps::Preparation>,
+    ) -> Result<Candidate> {
+        let (skill, kind, artifact, checksum, source, license) = metadata;
         if kind != "rag" && kind != "lora" {
             bail!("Unsupported artifact kind")
         }
@@ -483,6 +492,15 @@ impl Store {
         }
         let mut connection = self.lock()?;
         let db = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        if let Some(origin) = origin {
+            if origin.capability != skill || kind != "rag" {
+                bail!("Gap preparation is limited to its declared RAG capability")
+            }
+            let raw: String = db.query_row("SELECT payload FROM events WHERE id=?1 AND task_id=?2 AND kind='capability_gap' AND source='jev-plus'", params![origin.gap_event_id,origin.task_id], |r| r.get(0))?;
+            if sha256(raw.as_bytes()) != origin.gap_checksum {
+                bail!("Gap evidence changed; prepare again")
+            }
+        }
         let count: i64 = db.query_row("SELECT COUNT(*) FROM candidates", [], |row| row.get(0))?;
         if count >= 10_000 {
             bail!("Candidate registry capacity exhausted")
@@ -526,6 +544,10 @@ impl Store {
                 now()
             ],
         )?;
+        if let Some(origin) = origin {
+            let payload = json!({"candidate_id":candidate.id,"candidate_checksum":candidate.checksum,"capability":skill,"gap_event_id":origin.gap_event_id,"gap_checksum":origin.gap_checksum,"automatic_promotion":false});
+            db.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES (?1,'gap_candidate','human-cli',?2,?3)",params![origin.task_id,payload.to_string(),now()])?;
+        }
         db.commit()?;
         Ok(candidate)
     }

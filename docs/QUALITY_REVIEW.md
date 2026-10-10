@@ -371,3 +371,21 @@ all-target check, Clippy with denied warnings and CLI build pass with FlatBuffer
 smoke used an invalid positional configure-local argument; corrected to `--model`
 and reran. The corrected local endpoint probe returned a failed discovery report
 and exit 1 at 127.0.0.1:1234. No live model success is claimed.
+
+## Gap-guided reviewed candidate preparation
+
+Added operator gap inspection/preparation and RAG import from recorded Jev+ gaps.
+Reads are bounded to 64 events and 16 KB/event, capability identities are validated,
+and model advice is labeled untrusted. Reviewed artifacts use existing quarantine,
+licensing, hashes and quotas. Candidate metadata and provenance link are committed
+in one immediate transaction after gap hash revalidation. Linked task histories
+are protected against reviewed retention. No permission, source acquisition,
+registration, evaluation threshold change or automatic promotion occurs.
+
+Tests cover preparation without candidate creation, available-skill reuse metadata,
+missing/invalid gaps, model capability denial, immutable evidence binding, injected
+audit rollback, inactive candidate status and protected provenance retention. Final
+checks: 96 tests pass including actual socket/HTTP fixtures; formatting, all-target
+check and Clippy with denied warnings pass using FlatBuffers 25.12.19. An initial
+test incorrectly assumed optional active_version; corrected to the existing zero
+inactive version. Source discovery/cleaning and poisoning evaluation remain partial.

@@ -84,3 +84,35 @@ its transaction, rejecting intervening promotions even after rollback. Quality
 and regression records save in one immediate transaction with a shared review ID.
 Promotion rejects missing or mismatched IDs; candidates reviewed by older versions
 must be re-evaluated before promotion. These retrieval checks do not establish neural safety.
+
+## Recorded capability gaps and candidate preparation
+
+`candidate gaps TASK_ID` inspects at most 64 Jev+ gap events from that task.
+Reports label payloads as recorded advice, not permissions. `candidate prepare-gap
+TASK_ID --capability ID` requires a matching recorded gap, validates bounded
+capability identities, and returns the evidence event ID/checksum, current registry
+availability and the remaining review steps. Availability is registry metadata,
+not a claim that inference weights or tools are loaded. Preparation creates no
+candidate and performs no source discovery, download, registration or promotion.
+
+After reviewing/registering capability metadata and selecting licensed documents:
+
+```text
+candidate create-from-gap TASK_ID --capability ID --artifact reviewed.md --source SOURCE --license LICENSE
+```
+
+This imports only a RAG document through the existing bounded content-addressed
+quarantine. Within one immediate database transaction it rechecks the selected gap
+hash, inserts the inactive candidate and records a `gap_candidate` provenance link
+on the source task. Changed/missing evidence or audit failure rolls back candidate
+metadata. A verified quarantine file may remain after a database failure, as with
+other imports; it confers no active capability. The source task is protected from
+reviewed retention to preserve this evidence link. There is currently no operation
+to remove that protection while the provenance record exists.
+
+Only operator capabilities permit preparation/import. Model-reported gaps are
+advisory and cannot grant permissions, fetch datasets, register new capabilities,
+modify acceptance suites or activate candidates. Existing integrity, held-out
+quality, historical regression and explicit promotion gates remain mandatory.
+This implements traceable gap-guided preparation from reviewed documents; unattended
+source acquisition, dataset cleaning and poisoning evaluation remain incomplete.

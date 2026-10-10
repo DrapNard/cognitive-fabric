@@ -106,7 +106,7 @@ fn preview(db: &Connection, before: u64, limit: u32) -> Result<RetentionPlan> {
     };
     plan.checksum = plan.digest()?;
     plan.validate()?;
-    plan.task_ids=db.prepare("SELECT t.id FROM tasks t WHERE t.updated<?1 AND t.status IN ('completed','unverified','demo','failed','rejected','cancelled','exhausted','needs_clarification','interrupted') AND NOT EXISTS(SELECT 1 FROM memories m WHERE m.task_id=t.id) AND NOT EXISTS(SELECT 1 FROM events e WHERE e.kind='conversation_reference' AND json_valid(e.payload) AND json_extract(e.payload,'$.task_id')=t.id) ORDER BY t.updated,t.id LIMIT ?2")?
+    plan.task_ids=db.prepare("SELECT t.id FROM tasks t WHERE t.updated<?1 AND t.status IN ('completed','unverified','demo','failed','rejected','cancelled','exhausted','needs_clarification','interrupted') AND NOT EXISTS(SELECT 1 FROM events ge WHERE ge.task_id=t.id AND ge.kind='gap_candidate') AND NOT EXISTS(SELECT 1 FROM memories m WHERE m.task_id=t.id) AND NOT EXISTS(SELECT 1 FROM events e WHERE e.kind='conversation_reference' AND json_valid(e.payload) AND json_extract(e.payload,'$.task_id')=t.id) ORDER BY t.updated,t.id LIMIT ?2")?
         .query_map(params![before,limit],|row|row.get(0))?.collect::<rusqlite::Result<Vec<String>>>()?;
     for id in &plan.task_ids {
         plan.event_count += db.query_row(

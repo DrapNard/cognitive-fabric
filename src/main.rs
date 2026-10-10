@@ -183,6 +183,25 @@ enum Command {
 #[derive(Subcommand)]
 enum CandidateAction {
     List,
+    CreateFromGap {
+        task: String,
+        #[arg(long)]
+        capability: String,
+        #[arg(long)]
+        artifact: PathBuf,
+        #[arg(long)]
+        source: String,
+        #[arg(long)]
+        license: String,
+    },
+    Gaps {
+        task: String,
+    },
+    PrepareGap {
+        task: String,
+        #[arg(long)]
+        capability: String,
+    },
     Create {
         #[arg(long)]
         skill: String,
@@ -515,6 +534,25 @@ async fn main() -> Result<()> {
         }
         Command::Candidate { action } => match action {
             CandidateAction::List => serde_json::to_value(store.candidates()?)?,
+            CandidateAction::CreateFromGap {
+                task,
+                capability,
+                artifact,
+                source,
+                license,
+            } => serde_json::to_value(cogfabric::evolution::create_from_gap(
+                &cfg,
+                &store,
+                &task,
+                &capability,
+                &artifact,
+                &source,
+                &license,
+            )?)?,
+            CandidateAction::Gaps { task } => cogfabric::gaps::recorded(&store, &task)?,
+            CandidateAction::PrepareGap { task, capability } => {
+                serde_json::to_value(cogfabric::gaps::prepare(&store, &task, &capability)?)?
+            }
             CandidateAction::Create {
                 skill,
                 kind,

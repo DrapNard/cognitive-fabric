@@ -35,7 +35,7 @@ pub struct Manifest {
     pub license: String,
 }
 
-fn identifier(id: &str) -> bool {
+pub(crate) fn identifier(id: &str) -> bool {
     (3..=101).contains(&id.len())
         && id.bytes().next().is_some_and(|b| b.is_ascii_lowercase())
         && id
