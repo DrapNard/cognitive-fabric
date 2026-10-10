@@ -94,6 +94,8 @@ struct Totals {
     latency_ms: f64,
     inference_ms: f64,
     queue_wait_ms: Option<f64>,
+    max_sampled_process_rss_bytes: Option<u64>,
+    process_lifetime_peak_rss_bytes: Option<u64>,
     prompt_bytes: usize,
     reserved_output_tokens: usize,
     input_tokens: Option<u64>,
@@ -107,6 +109,20 @@ impl Totals {
         self.tool_calls += outcome.resources.tool_calls as u64;
         self.latency_ms += outcome.elapsed_ms;
         self.inference_ms += outcome.resources.inference_ms;
+        self.max_sampled_process_rss_bytes = if first {
+            outcome.resources.process_rss_bytes
+        } else {
+            self.max_sampled_process_rss_bytes
+                .zip(outcome.resources.process_rss_bytes)
+                .map(|(left, right)| left.max(right))
+        };
+        self.process_lifetime_peak_rss_bytes = if first {
+            outcome.resources.process_lifetime_peak_rss_bytes
+        } else {
+            self.process_lifetime_peak_rss_bytes
+                .zip(outcome.resources.process_lifetime_peak_rss_bytes)
+                .map(|(left, right)| left.max(right))
+        };
         self.queue_wait_ms = if first {
             outcome.resources.queue_wait_ms
         } else {
@@ -319,6 +335,35 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn memory_totals_use_maxima_and_preserve_unavailable_samples() {
+        let mut outcome = crate::engine::Outcome {
+            task_id: "sample".into(),
+            answer: String::new(),
+            status: "unverified".into(),
+            calls: 0,
+            cycles: 0,
+            elapsed_ms: 0.0,
+            evidence: vec![],
+            skills: vec![],
+            stop_reason: String::new(),
+            resources: crate::reasoning::Resources::default(),
+        };
+        outcome.resources.process_rss_bytes = Some(100);
+        outcome.resources.process_lifetime_peak_rss_bytes = Some(200);
+        let mut totals = Totals::default();
+        totals.add(&outcome, true);
+        outcome.resources.process_rss_bytes = Some(80);
+        outcome.resources.process_lifetime_peak_rss_bytes = Some(240);
+        totals.add(&outcome, false);
+        assert_eq!(totals.max_sampled_process_rss_bytes, Some(100));
+        assert_eq!(totals.process_lifetime_peak_rss_bytes, Some(240));
+        outcome.resources.process_rss_bytes = None;
+        outcome.resources.process_lifetime_peak_rss_bytes = None;
+        totals.add(&outcome, false);
+        assert!(totals.max_sampled_process_rss_bytes.is_none());
+        assert!(totals.process_lifetime_peak_rss_bytes.is_none());
+    }
     #[tokio::test]
     async fn ordering_comparison_scores_every_arm_through_http() {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};

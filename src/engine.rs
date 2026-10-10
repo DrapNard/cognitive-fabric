@@ -453,6 +453,7 @@ impl Engine {
             result=execution=>result,
         };
         session.finish_metrics();
+        session.sample_process_memory();
         let (answer, status) = match result {
             Ok(value) => value,
             Err(err) => {

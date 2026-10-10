@@ -116,9 +116,27 @@ and backend activity; queue timing is a component, not an additional GPU charge.
 Per-call queue measurements are preserved in durable reasoning events. No-call
 tasks have zero queue time. A cancelled dispatched call or unavailable legacy metric
 makes the task total unavailable, and comparison totals preserve that uncertainty.
-This does not measure GPU execution, model loading, process memory or energy.
+This does not measure GPU execution, model loading or energy.
 
 Active routed workflow manifests add a separately budgeted advice call only to the
 experts profile (and normal full execution). Other ablation profiles exclude that
 call. Inspect expert_dispatch audit decisions and actual model-call/token usage;
 workflow registration does not imply a measured performance benefit.
+
+### Process memory scope
+
+On Linux, task resources include optional `process_rss_bytes` sampled at execution
+completion and `process_lifetime_peak_rss_bytes` from `/proc/self/status`. The
+bounded read is at most 16 KB; unavailable or malformed data remains null.
+These measure the entire calling Rust process, including caches, SQLite snapshots
+and concurrent work. The lifetime high-water mark includes earlier tasks and
+warm-up; it is not a peak attributable to the current task or comparison arm.
+The external inference server, its model weights, GPU memory and energy are
+excluded. Do not use these fields to claim end-to-end model memory efficiency.
+
+Comparison totals retain the maximum completion RSS sample and lifetime peak,
+rather than summing memory across tasks. Any unavailable sample makes the
+corresponding aggregate unavailable. For independently attributable memory
+comparisons, run arms in separately measured processes with backend telemetry.
+Diagnostics exposes the same optional runtime-process measurements without
+creating tasks. Non-Linux platforms report unavailable values.

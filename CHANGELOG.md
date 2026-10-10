@@ -154,3 +154,10 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   events, JSONL output, terminal states and resumable timeouts.
 - Bound watcher admission, queues and writes; report loss explicitly and preserve
   task execution when an observer disconnects.
+
+### Development: report optional Rust process memory
+
+- Sample bounded Linux procfs RSS and process-lifetime high-water RSS at task
+  completion and in diagnostics; preserve unavailable values through IPC.
+- Aggregate comparison memory as maxima and document scope, warm-up effects and
+  exclusion of inference-server/GPU memory.

@@ -21,6 +21,8 @@ table ResourceUsage {
   inference_ms:double;
   tool_calls:uint;
   queue_wait_ms:double = null;
+  process_rss_bytes:ulong = null;
+  process_lifetime_peak_rss_bytes:ulong = null;
 }
 
 table AskResponse {

@@ -300,6 +300,10 @@ pub fn encode(message: &Message) -> Result<Vec<u8>> {
                     inference_ms: outcome.resources.inference_ms,
                     tool_calls: outcome.resources.tool_calls,
                     queue_wait_ms: outcome.resources.queue_wait_ms,
+                    process_rss_bytes: outcome.resources.process_rss_bytes,
+                    process_lifetime_peak_rss_bytes: outcome
+                        .resources
+                        .process_lifetime_peak_rss_bytes,
                 },
             );
             let stop_reason = builder.create_string(&outcome.stop_reason);
@@ -511,6 +515,9 @@ pub fn decode(body: &[u8]) -> Result<Message> {
                             output_tokens: usage.output_tokens(),
                             inference_ms: usage.inference_ms(),
                             queue_wait_ms: usage.queue_wait_ms(),
+                            process_rss_bytes: usage.process_rss_bytes(),
+                            process_lifetime_peak_rss_bytes: usage
+                                .process_lifetime_peak_rss_bytes(),
                             tool_calls: usage.tool_calls(),
                         })
                         .unwrap_or_default(),
@@ -817,6 +824,8 @@ mod tests {
                 output_tokens: None,
                 inference_ms: 2.0,
                 queue_wait_ms: Some(0.5),
+                process_rss_bytes: Some(4096),
+                process_lifetime_peak_rss_bytes: Some(8192),
                 tool_calls: 1,
             },
         };
@@ -830,6 +839,11 @@ mod tests {
         assert_eq!(outcome.resources.input_tokens, Some(20));
         assert_eq!(outcome.resources.output_tokens, None);
         assert_eq!(outcome.resources.queue_wait_ms, Some(0.5));
+        assert_eq!(outcome.resources.process_rss_bytes, Some(4096));
+        assert_eq!(
+            outcome.resources.process_lifetime_peak_rss_bytes,
+            Some(8192)
+        );
         assert_eq!(outcome.resources.reserved_output_tokens, 512);
         let mut invalid = outcome.clone();
         invalid.resources.queue_wait_ms = Some(f64::NAN);
@@ -871,6 +885,8 @@ mod tests {
         };
         assert_eq!(outcome.answer, "legacy");
         assert_eq!(outcome.resources.queue_wait_ms, None);
+        assert_eq!(outcome.resources.process_rss_bytes, None);
+        assert_eq!(outcome.resources.process_lifetime_peak_rss_bytes, None);
         assert_eq!(outcome.resources.input_tokens, None);
         assert_eq!(outcome.stop_reason, "");
     }

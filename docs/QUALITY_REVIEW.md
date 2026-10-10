@@ -473,3 +473,23 @@ watched a previously completed demo task with `--json`, received one terminal
 JSONL page with cursor 17 and eight typed events, then stopped the service through
 typed control and confirmed clean exit. This verifies cross-process durable
 catch-up/termination; the integration tests exercise live delivery and overflow.
+
+## Optional Rust process memory measurements
+
+Added a fixed-path no-follow Linux procfs read bounded to 16 KB, with checked byte
+conversion, strict units/duplicate-field rejection and null fallback. Non-Linux
+platforms report unavailable values. Sampling occurs once at task completion,
+outside the inference timer; no polling thread, subprocess or new model permission
+is introduced. Diagnostics also samples its own calling process.
+
+Task resources/audits and appended optional FlatBuffers fields preserve RSS and
+process-lifetime high-water RSS. Comparison totals use maxima and propagate missing
+samples. These include the whole Rust process and previous tasks; external model
+servers, GPU memory, task-attributable peak and energy remain unmeasured.
+
+All 106 all-target tests pass, including parser bounds/units/duplicates, aggregation
+and legacy IPC defaults; formatting, all-target check, Clippy with denied warnings
+and CLI build pass with FlatBuffers 25.12.19. Actual isolated CLI arithmetic smoke
+returned 36 with zero model calls and measured RSS/high-water 16,527,360 bytes;
+separate diagnostics measured 15,159,296 bytes. These single-process observations
+are not a comparative memory benchmark or inference-server measurements.

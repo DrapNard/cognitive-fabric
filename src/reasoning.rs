@@ -26,6 +26,10 @@ pub struct Resources {
     #[serde(default)]
     pub queue_wait_ms: Option<f64>,
     pub tool_calls: u32,
+    #[serde(default)]
+    pub process_rss_bytes: Option<u64>,
+    #[serde(default)]
+    pub process_lifetime_peak_rss_bytes: Option<u64>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -64,6 +68,11 @@ impl Session {
         if let Some(start) = self.inference_started.take() {
             self.resources.inference_ms += start.elapsed().as_secs_f64() * 1000.0;
         }
+    }
+    pub fn sample_process_memory(&mut self) {
+        let memory = crate::telemetry::process_memory();
+        self.resources.process_rss_bytes = memory.rss_bytes;
+        self.resources.process_lifetime_peak_rss_bytes = memory.lifetime_peak_rss_bytes;
     }
     pub fn authorize_tool(&mut self, capability: &str) -> Result<()> {
         let decision = self

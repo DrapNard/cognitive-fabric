@@ -113,6 +113,11 @@ Legacy responses omit this field. One request yields correlated validated pages
 until termination; it does not grant execution authority. See `EVENTS.md` for
 queue, watcher, write-deadline and replay limits.
 
+ResourceUsage additionally appends optional unsigned byte counts
+`process_rss_bytes` and `process_lifetime_peak_rss_bytes`. Legacy frames decode
+these as unavailable. They describe the Rust process, not the external backend
+or task-attributable peak; see `BENCHMARKING.md` for measurement scope.
+
 ### Optional broker queue timing
 
 The module InferenceResponse and owner IPC ResourceUsage append optional
