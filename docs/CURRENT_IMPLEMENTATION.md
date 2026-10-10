@@ -19,8 +19,8 @@ The seven responsibilities currently map to these modules:
 
 Inference now traverses a bounded FlatBuffers Tokio broker with runtime-owned
 registration, discovery, actor/task validation and pinned adapter versions. Other
-layer interactions use direct Rust interfaces. General module events and
-independent process registration/authentication are still missing.
+layer interactions use direct Rust interfaces. Typed task progress now supports bounded local subscriptions and durable catch-up.
+General module events and independent process registration/authentication remain incomplete.
 Reference experts are functional; they are not loaded neural specialist models.
 
 A task snapshots active skill metadata and retrieved content before inference.
@@ -41,7 +41,7 @@ Quality requires operator-attested held-out data. Promotion checks quality,
 cumulative approved-version retrieval regressions and unchanged versions transactionally.
 Rollback restores approved stored snapshots. Neural promotion stays disabled.
 
-Verification: 75 tests, formatting, all-target check and Clippy pass using exact
+Verification: 79 tests, formatting, all-target check and Clippy pass using exact
 flatc/Rust FlatBuffers 25.12.19. HTTP fixtures and socket tests ran locally; no
 compatible live model server was available at the default endpoint. No neural
 quality, GPU integration, hot-swap, energy or model-superiority result is claimed.
@@ -65,3 +65,6 @@ Immutable local model registrations now record source/license, connection identi
 declared limits and optional unverified weight hashes. Operator selection persists
 an exact version reference; task traces pin it and disabled registrations reject
 new tasks. Physical model residency remains server-owned; see `MODELS.md`.
+
+Typed progress events use a dedicated FlatBuffers schema, with bounded subscriber
+queues, explicit gap reporting and cursor-based durable catch-up (`EVENTS.md`).

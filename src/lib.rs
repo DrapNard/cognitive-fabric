@@ -5,6 +5,7 @@ pub mod benchmarking;
 pub mod config;
 pub mod engine;
 pub mod evaluation;
+pub mod events;
 pub mod evolution;
 pub mod fabric;
 pub mod language;

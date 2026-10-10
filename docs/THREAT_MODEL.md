@@ -80,3 +80,10 @@ a permission grant or loaded-weight attestation. Only local endpoints are allowe
 Disable blocks new task selections but cannot revoke already pinned execution.
 Context/output capacities and optional weight hashes are declared; actual backend
 weight identity and tokenization remain unproven. See `MODELS.md`.
+
+Progress observers receive typed, bounded metadata without prompt/answer bodies.
+Subscriptions are task-scoped and runtime-owned; slow consumers receive a gap
+error and cannot stall producers. Known stages/sources/states, UUIDs and optional
+counters are validated from FlatBuffers. In-process code remains trusted; the
+hub does not authenticate independent plugins or remote subscribers. Durable
+catch-up is owner-local and does not grant model observation or tool permissions.

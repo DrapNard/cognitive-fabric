@@ -106,6 +106,7 @@ pub struct Candidate {
 }
 
 pub struct Store {
+    pub(crate) events: crate::events::Hub,
     pub(crate) runtime_lock: Option<std::path::PathBuf>,
     db: Mutex<Connection>,
 }
@@ -211,6 +212,7 @@ impl Store {
         Ok(Self {
             db: Mutex::new(db),
             runtime_lock: None,
+            events: crate::events::Hub::default(),
         })
     }
     pub fn create_task(&self, query: &str, mode: &str) -> Result<String> {
@@ -229,10 +231,20 @@ impl Store {
         Ok(())
     }
     pub fn event(&self, id: &str, kind: &str, source: &str, payload: Value) -> Result<()> {
-        self.lock()?.execute(
+        let raw = payload.to_string();
+        if raw.len() > 262144 || kind.len() > 64 || source.len() > 64 {
+            bail!("Audit event exceeds bounds")
+        }
+        let mut progress = crate::events::Progress::from_audit(1, id, kind, source, &payload)?;
+        let db = self.lock()?;
+        db.execute(
             "INSERT INTO events(task_id,kind,source,payload,created) VALUES (?1,?2,?3,?4,?5)",
-            params![id, kind, source, payload.to_string(), now()],
+            params![id, kind, source, raw, now()],
         )?;
+        if let Some(event) = &mut progress {
+            event.sequence = db.last_insert_rowid() as u64;
+            self.events.publish(event)?;
+        }
         Ok(())
     }
     pub fn task(&self, id: &str) -> Result<Value> {

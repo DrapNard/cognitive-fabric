@@ -1,0 +1,19 @@
+// Content-minimized task progress. Arbitrary prompts and answers are not event payloads.
+namespace Events;
+enum Stage:ubyte { Started, Routing, ModelDispatched, ReasoningStep, SubtaskUpdated, Verification, Finished, Recovery }
+table Progress {
+ version:ushort = 1;
+ sequence:ulong;
+ task_id:string (required);
+ stage:Stage;
+ source:string (required);
+ state:string (required);
+ role:string;
+ subtask_id:string;
+ model_calls:uint = null;
+ tool_calls:uint = null;
+ cycles:uint = null;
+ verified:bool = null;
+}
+root_type Progress;
+file_identifier "COGE";

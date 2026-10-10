@@ -88,3 +88,12 @@ authentication and non-inference module routing remain incomplete.
 
 The `inference_ms` resource counter measures dispatch duration, including broker
 queueing, coordination, HTTP time and cancellation; it is not measured GPU time.
+
+## Progress envelope
+
+`protocol/events.fbs` adds independent `COGE` version-1 frames generated with the
+same pinned flatc/Rust 25.12.19 pair. Bounded typed milestones cross local Tokio
+subscription queues; no JSON message payload replaces internal FlatBuffers.
+SQLite JSON audit metadata is projected into validated typed fields before
+publication. See `EVENTS.md` for capacity, overflow and durable cursor semantics.
+The existing owner-IPC and inference-RPC schemas remain unchanged.

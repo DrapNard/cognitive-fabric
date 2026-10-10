@@ -70,11 +70,25 @@ impl Store {
         if ids.len() > 10000 {
             bail!("Recovery exceeds 10,000 tasks; inspect state offline")
         }
+        let mut progress = Vec::new();
         for id in &ids {
             tx.execute("UPDATE tasks SET status='interrupted',answer='Task interrupted before a durable terminal result; no automatic replay',updated=unixepoch() WHERE id=?1 AND status='running'", [id])?;
             tx.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES (?1,'recovery','human-cli',?2,unixepoch())", params![id,serde_json::json!({"status":"interrupted","reason":"exclusive_runtime_lease","automatic_replay":false,"resource_usage_complete":false,"subtask_results_verified":false}).to_string()])?;
+            progress.push(
+                crate::events::Progress::from_audit(
+                    tx.last_insert_rowid() as u64,
+                    id,
+                    "recovery",
+                    "human-cli",
+                    &serde_json::json!({"status":"interrupted"}),
+                )?
+                .expect("Recovery is a typed event"),
+            );
         }
         tx.commit()?;
+        for event in &progress {
+            self.events.publish(event)?;
+        }
         Ok(ids)
     }
 }
@@ -142,6 +156,7 @@ mod tests {
         let store = Store::open(&root.join("state.db")).unwrap();
         let other = Store::open(&root.join("state.db")).unwrap();
         let abandoned = store.create_task("unfinished", "standard").unwrap();
+        let mut observer = other.subscribe_progress(&abandoned).unwrap();
         let completed = store.create_task("calc: 2 + 3", "fast").unwrap();
         store.finish_task(&completed, "completed", "5").unwrap();
         let first = store.execution_lease().unwrap();
@@ -151,6 +166,16 @@ mod tests {
         assert!(store.recover_tasks().is_err());
         drop(second);
         assert_eq!(other.recover_tasks().unwrap(), vec![abandoned.clone()]);
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+        let event = runtime.block_on(observer.receive()).unwrap().unwrap();
+        assert_eq!(event.stage, crate::events::Stage::Recovery);
+        assert_eq!(event.state, "interrupted");
+        assert_eq!(
+            store.progress_since(&abandoned, 0).unwrap().events[0].sequence,
+            event.sequence
+        );
         assert_eq!(
             store.task(&abandoned).unwrap()["task"]["status"],
             "interrupted"

@@ -32,6 +32,11 @@ enum Command {
     Status,
     SelfTest,
     RecoverTasks,
+    TaskProgress {
+        id: String,
+        #[arg(long, default_value = "0")]
+        after: u64,
+    },
     Models,
     ModelRegister {
         manifest: PathBuf,
@@ -224,6 +229,9 @@ async fn main() -> Result<()> {
     store::bootstrap(&store)?;
     let engine = Engine::new(cfg.clone(), store.clone());
     let response: Value = match cli.command {
+        Command::TaskProgress { id, after } => {
+            serde_json::to_value(store.progress_since(&id, after)?)?
+        }
         Command::Models => serde_json::to_value(store.models()?)?,
         Command::ModelRegister { manifest } => {
             serde_json::to_value(store.register_model(&manifest)?)?
