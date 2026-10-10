@@ -411,13 +411,15 @@ impl Engine {
             } else if session.verified {
                 evidence.push("verified:dependency_order/v1".into());
                 "completed"
+            } else if session.verification_attempted {
+                "rejected"
             } else if self.cfg.backend == "demo" {
                 "demo"
             } else {
                 "unverified"
             };
             if options.explain
-                && !session.verified
+                && !session.verification_attempted
                 && session.has_solution
                 && self.cfg.backend != "demo"
                 && mode != "fast"

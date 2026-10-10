@@ -98,6 +98,8 @@ impl Store {
                 | "unverified"
                 | "demo"
                 | "failed"
+                | "rejected"
+                | "exhausted"
                 | "cancelled"
                 | "needs_clarification"
                 | "interrupted"

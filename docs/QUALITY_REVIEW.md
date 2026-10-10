@@ -323,3 +323,19 @@ all-target check and Clippy with denied warnings passed. Initial test fixtures
 incorrectly omitted an unverified synthesis call and charged zero tools before
 retrieval; corrected the fixtures and reran the entire suite successfully.
 No live-model effectiveness measurement was performed.
+
+## Preserve independently rejected verdicts
+
+Inspection found ordering failures could be followed by language synthesis,
+replacing the candidate bound by the verification hash. Failed checks now produce
+`rejected` outcomes and bypass synthesis, just as passing checks do. Model assertions
+cannot alter that verdict. Added malformed-criterion/no-dispatch and FAST rejection
+coverage; rejected episodes preserve their status. Reviewed retention includes
+unreferenced rejected tasks, with existing protections unchanged.
+
+Testing revealed typed progress omitted the existing arithmetic `rejected` state.
+The validator now accepts it, with an actual division-by-zero engine/progress/codec
+regression. No schema change is needed: state is a validated string. Final checks:
+89 tests pass with actual socket/HTTP fixtures; all-target check, formatting and
+Clippy with denied warnings pass using FlatBuffers 25.12.19. No live model quality
+or additional inference capability is claimed.

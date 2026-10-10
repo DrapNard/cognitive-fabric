@@ -63,6 +63,7 @@ impl Progress {
                     | "unverified"
                     | "demo"
                     | "failed"
+                    | "rejected"
                     | "cancelled"
                     | "exhausted"
                     | "needs_clarification"
@@ -486,5 +487,15 @@ mod tests {
         for event in page.events {
             assert!(Progress::decode(&event.encode().unwrap()).is_ok());
         }
+        let rejected = engine.run("calc: 1 / 0", "fast").await.unwrap();
+        assert_eq!(rejected.status, "rejected");
+        let page = store.progress_since(&rejected.task_id, 0).unwrap();
+        let last = page.events.last().unwrap();
+        assert_eq!(last.stage, Stage::Finished);
+        assert_eq!(last.state, "rejected");
+        assert_eq!(
+            Progress::decode(&last.encode().unwrap()).unwrap().state,
+            "rejected"
+        );
     }
 }

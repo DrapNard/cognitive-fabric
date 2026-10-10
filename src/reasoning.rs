@@ -42,6 +42,7 @@ pub struct Session {
     pub stop_reason: String,
     pub has_solution: bool,
     pub(crate) verified: bool,
+    pub(crate) verification_attempted: bool,
     pub(crate) verification_enabled: bool,
     pub subtasks: Vec<Subtask>,
     cfg: Config,
@@ -114,6 +115,7 @@ impl Session {
             stop_reason: "unverified".into(),
             has_solution: false,
             verified: false,
+            verification_attempted: false,
             verification_enabled: true,
             subtasks: Vec::new(),
             complete_usage: true,
@@ -362,6 +364,7 @@ impl Session {
             self.has_solution = true;
             if let Some(criterion) = &criterion {
                 self.authorize_tool("ordering.verify")?;
+                self.verification_attempted = true;
                 let result = criterion.check(&answer);
                 self.store.event(&self.task,"verification","verifier-r",json!({"verified":result.is_ok(),"criterion":"dependency_order/v1","objective_hash":crate::store::sha256(query.as_bytes()),"answer_hash":hash,"reason":result.as_ref().err().map(ToString::to_string),"cycle":self.resources.cycles}))?;
                 if result.is_ok() {
@@ -464,6 +467,43 @@ mod tests {
 
     struct Script(Mutex<VecDeque<(&'static str, &'static str)>>);
     #[tokio::test]
+    async fn invalid_criteria_never_dispatch_and_fast_failures_remain_rejected() {
+        let store = Arc::new(Store::in_memory().unwrap());
+        let mut cfg = Config::load(None, Some("openai-local".into())).unwrap();
+        cfg.interpret_goals = false;
+        let backend = Arc::new(Script(Mutex::new(VecDeque::new())));
+        let engine = Engine::with_backend(cfg.clone(), store.clone(), backend);
+        let invalid = engine
+            .run(r#"order:{"nodes":["a"],"before":[["a","a"]]}"#, "deep")
+            .await
+            .unwrap();
+        assert_eq!(invalid.status, "failed");
+        assert_eq!(invalid.calls, 0);
+
+        let backend = Arc::new(Script(Mutex::new(vec![("solver", r#"["b","a"]"#)].into())));
+        let engine = Engine::with_backend(cfg, store.clone(), backend);
+        let rejected = engine
+            .run(r#"order:{"nodes":["a","b"],"before":[["a","b"]]}"#, "fast")
+            .await
+            .unwrap();
+        assert_eq!(rejected.status, "rejected");
+        assert_eq!(rejected.answer, r#"["b","a"]"#);
+        assert_eq!(rejected.calls, 1);
+        assert!(rejected.evidence.is_empty());
+        let episode = store
+            .publish_memory(
+                &rejected.task_id,
+                "episode",
+                "Rejected attempt retained as history",
+            )
+            .unwrap();
+        assert_eq!(episode.status, "rejected");
+        assert_eq!(
+            store.task(&rejected.task_id).unwrap()["task"]["status"],
+            "rejected"
+        );
+    }
+    #[tokio::test]
     async fn independent_ordering_failure_revises_and_success_preserves_exact_answer() {
         let query = r#"order:{"nodes":["a","b"],"before":[["a","b"]]}"#;
         for (answers, tools, expected_status, calls) in [
@@ -484,7 +524,7 @@ mod tests {
                     ("solver", r#"["b","a"]"#),
                 ],
                 4,
-                "unverified",
+                "rejected",
                 3,
             ),
             (
@@ -505,7 +545,7 @@ mod tests {
                     query,
                     "deep",
                     crate::language::TaskOptions {
-                        explain: expected_status == "completed",
+                        explain: true,
                         conversation_ref: None,
                     },
                     std::future::pending::<()>(),

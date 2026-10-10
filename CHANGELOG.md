@@ -99,3 +99,10 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
 - Feed independent failure diagnostics into bounded solver revisions, stop on success
   or repeated answers, and preserve the exact verified result through presentation.
 - Audit and budget every verification invocation; document the limited proof scope.
+
+### Development: preserve rejected verification outcomes
+
+- Keep failed checked candidates unchanged and mark them rejected through task results,
+  typed progress, explicitly published history and reviewed retention.
+- Fix progress reporting for rejected arithmetic expressions and test zero-call malformed
+  criteria, single-call rejection and explanation requests after failed checks.

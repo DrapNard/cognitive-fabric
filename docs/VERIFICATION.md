@@ -33,3 +33,11 @@ are not automatically published as verified memory.
 Tests cover alternate valid orders, violations, duplicate/missing/extra nodes,
 forged verification objects, invalid criteria, failed-then-successful revision,
 stagnation, tool budget denial and preserving the exact checked answer.
+
+Failed checks finish as `rejected`, preserving the last checked candidate even
+when explanation is requested. They cannot become ordinary unverified prose via
+synthesis. Both accepted and rejected candidates therefore remain bound to their
+verification hashes. A denied check still fails the task; it cannot grant itself
+a tool budget. Terminal rejection is represented in typed progress, may be retained
+as an explicitly rejected episode, and is eligible for reviewed history retention
+when no protected references exist. Rejection never qualifies as verified memory.
