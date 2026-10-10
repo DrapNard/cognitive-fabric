@@ -7,8 +7,9 @@ versions, unknown message/mode enums, missing required fields and mixed payloads
 Ask, Reply and Error envelopes carry request correlation IDs. Task IDs identify
 persistent execution independently. The generator and Rust runtime use 25.12.19.
 
-The single-user service accepts one in-flight request, with no application queue.
-Excess connections are closed. Peer UID from OS credentials must match the
+The single-user service executes one inference task, with no application task queue.
+Up to eight connection handlers permit controls during inference. Excess connections
+are closed; additional asks receive correlated busy errors. Peer UID from OS credentials must match the
 socket's owner. Owner-only directory/socket permissions are required; same-user
 malicious processes are outside this isolation boundary. Remote IPC is unsupported.
 Message-supplied identities are never used to authorize the connection.
@@ -37,8 +38,7 @@ existing-socket preservation, interrupted frames, disconnect/shutdown during
 loopback inference and durable cancelled state. They require local socket access.
 The HTTP backend in these tests is a fixture, not a real model.
 
-Outstanding protocol work includes a broker/module event API, explicit typed
-cancel/status/stop commands, deadlines and identities in module envelopes,
+Outstanding protocol work includes a broker/module event API, deadlines and identities in module envelopes,
 authentication between separate actors, and general compatibility fixtures.
 
 The v1 response schema now appends optional ResourceUsage and stop_reason fields.

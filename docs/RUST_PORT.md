@@ -48,3 +48,8 @@ flatc 25.12.19 build the workspace; 14 tests, Clippy and the CLI self-test pass.
 `FLATC` may name a locally built compiler. The version check requires an exact
 match. See `QUALITY_REVIEW.md`; the implementation remains alpha because
 integration and architectural release requirements are incomplete.
+
+The current snapshot has progressed beyond the initial port audit: 56 tests and
+all mandatory quality checks pass. Current functionality and unresolved release
+requirements are reconciled in `CURRENT_IMPLEMENTATION.md` and
+`IMPLEMENTATION_MATRIX.md`; earlier verification statements above are historical.

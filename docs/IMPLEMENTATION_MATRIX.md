@@ -1,98 +1,30 @@
 # Implementation matrix — 1.1.0-alpha.1
 
-Canonical requirements remain in the complete French `ARCHITECTURE.md`.
-Baseline verified 2026-10-10: builds, 14 tests and Clippy pass; see
-`QUALITY_REVIEW.md`. Development is on `develop/v1.0`. No stable release is ready.
+The complete French `ARCHITECTURE.md` remains canonical. This matrix describes
+current evidence on `develop/v1.0`, not a reduced target architecture. The project
+remains a pre-release. `QUALITY_REVIEW.md` preserves verification history.
 
-| Architecture sections | Requirement | Status | Implementation / evidence | Remaining work |
+| Architecture sections | Requirement | Status | Current implementation and tests | Remaining release work |
 |---|---|---|---|---|
-| 7, 12 | Typed local transport | Partial | `protocol/cognitive.fbs`, `src/wire.rs`, `src/service.rs`; round-trip, garbage and size tests | Socket integration, identities, broker, discovery, events, cancellation, shutdown |
-| 3 | Language interface | Partial | `src/backend.rs`, `src/engine.rs`; explicit demo test | Structured intent, conversations, configurable roles, live endpoint validation |
-| 4, 9 | Jev+ coordination | Partial | `src/store.rs::route`, `src/engine.rs`; routing test | Dependencies, scheduling, escalation, capability gaps |
-| 5 | Jev-R reasoning | Partial | `src/engine.rs`; zero-call arithmetic verification | Recursive revisions, task graph, Verifier and Reflector, independent evidence |
-| 6 | Expert network | Partial | `src/store.rs`, CLI skill-add | Versioned manifests, dependencies, lifecycle, health, rollback, trainer category |
-| 7 | Persistent memory | Partial | SQLite WAL/FTS5 and task/events in `src/store.rs`; retrieval gate test | Explicit migrations, model/evaluation stores, task isolation, quotas |
-| 8 A/B | RAG evolution | Partial | `src/evaluation.rs`, `src/store.rs`; approval and retrieval test | Immutable quarantine, independent dataset provenance, rollback, regression suite |
-| 8 C/D | Offline neural adaptation | Experimental | `training/train_lora.py`; not executed | Independent evaluator, artifact manifests; reconstruction remains research |
-| 9 | Resource limits | Partial | `src/config.rs`, `src/engine.rs` | Input tokens, actual usage, tool limits, cancellation, queue telemetry |
-| 10, 11 | Security kernel | Partial | `src/security.rs`; actor/self-promotion denial tests | Task-bound authorization, artifact tampering tests, secure artifact handling, sandbox before untrusted execution |
-| 13 | Evaluation | Partial | `src/evaluation.rs`, examples | Comparable baseline arms, 100–200 diverse tasks, regression/security measurements |
-| 12, 14 | CLI/service integration | Partial | `src/main.rs`, `src/service.rs`; CLI self-test passed | End-to-end sockets, stop/progress/configuration, diagnostics |
-| 12, 13 | Hardware metrics / performance advantage | Not implemented | No measurements claimed | Real backend, GPU/energy telemetry and controlled comparisons |
-| 5, 14 | Novel learned neural architectures | Not implemented | Future research | Separate research and independent evaluations |
+| 7, 12 | Typed local IPC | Partial | `protocol/cognitive.fbs`, `src/wire.rs`, `src/service.rs`: pinned FlatBuffers 25.12.19, bounded verified frames, correlation IDs, owner UID, busy errors, status/cancel/stop; socket, malformed-frame and legacy-field tests | Module broker, discovery, event subscriptions, actor/destination/deadline envelopes and broader compatibility fixtures |
+| 3 | Language interface | Partial | `src/language.rs`, `src/backend.rs`, `src/config.rs`: strict advisory intent, clarification, original-goal preservation, explicit conversation references, optional synthesis, persistent role profiles; scripted and HTTP tests | Live local-model validation and measured interpretation quality |
+| 4, 9 | Jev+ coordination | Partial | `src/engine.rs`, `src/planning.rs`, `src/store.rs::route`: capability routing/gaps, bounded topological subtask execution, admission budgets; dependency and budget tests | General module scheduling, measured escalation policy, persistent crash recovery and queue telemetry |
+| 5 | Jev-R reasoning | Partial | `src/reasoning.rs`: planner/solver/explorer/critic/reflector, strict recursive revisions, no-progress stopping, unverified subtask results and original-goal synthesis; order, revision and cancellation tests | General independent executable verifiers and live-model effectiveness measurements |
+| 6 | Expert network | Partial | `src/registry.rs`: immutable semantic-versioned reference manifests, dependency/reverse-dependency checks, health, activate/disable/metadata rollback, bounded registry; lifecycle/tampering tests | Tool-backed, prompt-workflow and independent-model experts; backend loading/unloading; neural adapters remain experimental |
+| 7 | Persistent memory | Partial | `src/store.rs`: SQLite WAL/FTS5, schema migrations through 3, durable task/events, isolated explicit history, pinned registry/document snapshots, dataset/evaluation stores; migration/isolation tests | Explicit reusable episodic/verified-fact memory, model registry, general storage quotas and crash-recovery semantics |
+| 8 A/B | RAG evolution | Partial | `src/evolution.rs`, `src/evaluation.rs`: content-addressed quarantine, hashes/provenance/deduplication/quotas, isolated held-out retrieval, active-baseline regression gates, transactional human promotion/rollback; integrity, regression, concurrency and rollback tests | Cumulative historical regression bank, stronger poisoning/security evaluation, automated gap-to-candidate preparation; dataset independence remains operator-attested |
+| 8 C | Offline neural adaptation | Experimental | `training/train_lora.py`, inactive artifact registration; neural evaluation/promotion denied | Validated training/dataset/evaluation manifests and an independently tested isolated offline pipeline; no hot-swap claim |
+| 8 D, 14 | Novel neural reconstruction | Not implemented | Research only; no trained Jev networks or superiority claims | Separate research and independent evaluations, beyond proven v1.0 infrastructure |
+| 9 | Resource enforcement | Partial | `src/config.rs`, `src/reasoning.rs`: FAST/STANDARD/DEEP/RESEARCH ceilings, calls/cycles/reserved outputs/prompt bytes/tools/time, cancellation; exhaustion tests; optional provider usage and measured inference duration | Exact input-token preflight, model-load cost/retry/queue metrics, process/GPU memory and optional energy telemetry |
+| 10, 11 | Security kernel | Partial | `src/security.rs`: immutable task/actor scope intersected with global policy, per-dispatch audits, deny-default capabilities, bounded no-follow reads; replay/actor/promotion denials and artifact tampering tests | Authenticated independent module identities and isolation before executable experts; signatures/attestations and neural behavioral evaluator absent |
+| 13 | Reproducible evaluation | Partial | `src/evaluation.rs`, example JSONL: independently expected exact-match benchmark, per-case usage/latency, isolated retrieval tests | Seven comparable baseline arms, 100–200 diverse held-out tasks, robustness/security/regression reports and measured live-model comparisons |
+| 12, 14 | CLI/service | Partial | `src/main.rs`: initialization/configuration, ask, service controls, skill lifecycle, ingestion/search, task traces, candidates/rollback, benchmark, self-test; real socket fixtures | Model listing/lifecycle, diagnostics, module discovery and task-specific remote progress/cancel |
+| 12, 13 | Hardware/performance claims | Not implemented | No GPU/energy or large-model advantage claimed | Real local endpoint, hardware telemetry, equal-budget comparisons |
 
-The historical Python reference remains in Git history. The Rust state directory
-is separate (`~/.local/share/cogfabric-rust`). The canonical vision is preserved;
-passing demo tests does not establish neural quality or release acceptance.
+All 56 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
+all-target build checks and Clippy with denied warnings pass. Fixtures do not prove
+GPU integration, neural quality, immutable backend weights or live model switching.
 
-Inference boundary update: `src/backend.rs` implements bounded HTTP with
-redirect/proxy denial and literal loopback endpoint validation. Three additional
-tests pass (17 total). Real LM Studio/llama.cpp inference is still unverified.
-
-RAG lifecycle update: schema version 1 migrates legacy state transactionally;
-`src/store.rs` filters retrieval to the active candidate snapshot and records
-promotion/rollback audit metadata. `candidate rollback ID --human-approve` restores
-an approved older RAG version after stored content integrity checks. Migration,
-rollback failure and reopen tests pass (19 total). External artifact quarantine,
-full task version pinning and general registry lifecycle remain Partial.
-
-Socket lifecycle update: `src/service.rs` enforces OS peer UID, one active handler,
-bounded frame/response I/O, disconnect cancellation and joined shutdown with
-inode-checked cleanup. `Engine::run_until` persists cancellation and wall-budget
-termination. CLI Ctrl-C uses these paths. `docs/PROTOCOL.md` documents semantics.
-Real Unix socket and blocked-inference cancellation regressions pass; broker,
-module identity, typed stop/status/cancel commands and general discovery remain Partial.
-
-Reasoning update: `src/reasoning.rs` implements bounded critique/reflect/re-solve
-cycles, no-progress stopping, strict advisory critique parsing, persisted typed
-role dependency nodes and replaceable `InferenceBackend`. Verifier-R independently
-verifies arithmetic; general generated results have status `unverified`. Calls,
-reserved output tokens, input bytes, tool invocations and time are bounded;
-provider token usage remains optional and is carried through typed FlatBuffers
-fields. Tests cover actual revisions, stagnation, malformed critique, budget
-exhaustion and legacy replies. General subtask DAGs, role-specific configurations,
-exact input-token preflight and hardware metrics remain Partial / Not implemented.
-
-Expert lifecycle update: `src/registry.rs` implements immutable semantic-versioned
-reference manifests, bounded registration, staging, dependency/reverse-dependency
-validation, cycle rejection, activation/metadata rollback, disable and integrity
-health checks. Schema 2 adds persistent expert manifests and audit records.
-`Store::task_context` atomically snapshots versions and documents for in-flight
-pinning. Tests verify conflicts, missing dependencies, cycles, metadata tampering,
-permission injection, snapshot stability and disabled retrieval. Neural/executable
-expert loading remains unsupported; categories include trainer.s1 as metadata only.
-
-Configuration update: `Config` supports bounded validated persistent settings,
-atomic owner-only saves, environment overrides, independently selected role
-models/temperatures and explicit resource ceilings. `configure-local` and
-`config-show` expose it. Loopback HTTP fixtures verify role profile selection.
-Reviewed configuration, manifests, documents, benchmarks and candidate checksum
-reads now share bounded no-follow regular-file opening in `src/security.rs`.
-Language interface generation and real loaded-model validation remain outstanding.
-
-Language interface update: `src/language.rs` defines bounded strict structured
-interpretation; `Engine` keeps the original goal authoritative, requests
-clarification when needed, tracks missing capabilities and refines existing
-routes without granting permissions. CLI/socket support explicit conversation
-references and optional result synthesis under the shared budget. Scripted tests
-cover injection, goal preservation, ambiguity, fallback and historical isolation.
-Real-model quality and exact input-token preflight remain unverified/incomplete.
-
-Candidate quarantine update: `src/evolution.rs` imports operator-selected artifacts
-into content-addressed read-only snapshots with deduplication, directory/symlink
-checks and aggregate storage/entry limits. Candidate version allocation is
-transactional and bounded. Tests cover source mutation, modified quarantine,
-quota denial and concurrent imports. Legacy external-path candidates remain
-compatible; held-out dataset manifests and regression promotion gates remain Partial.
-
-### Reviewed RAG evaluation datasets
-Implemented: schema-3 immutable dataset manifests, explicit held-out provenance, duplicate query rejection, isolated FTS evaluation, active-baseline retrieval regressions and stale-baseline promotion rejection (`src/evaluation.rs`, `src/store.rs`). Tests cover losing old facts despite passing new cases and concurrent baseline replacement. Partial: independence remains operator-attested; cumulative historical regression suites are not yet retained.
-
-### Local service controls
-Implemented: typed owner-authenticated status/cancel-active/stop, bounded eight connection handlers, single execution permit, correlated busy responses, graceful remote stop (`protocol/cognitive.fbs`, `src/wire.rs`, `src/service.rs`, `src/main.rs`). Integration tests exercise controls during stalled HTTP inference, durable cancellation, and incomplete-frame shutdown. General broker registration/event subscriptions and task-targeted remote cancellation remain incomplete.
-
-### Bounded decomposed task graphs
-Implemented: strict bounded planner graphs, dependency validation/topological scheduling, shared-budget admission with a reserved whole-goal solver, durable subtask transitions and cancellation (`src/planning.rs`, `src/reasoning.rs`, `src/engine.rs`). Tests cover forward dependencies, cycles, missing/duplicate IDs, permission fields, execution order, budget fallback and cancellation. Partial: sequential inference scheduling only; crash resume and general independent subtask verification are outstanding.
-
-### Task-bound security decisions
-Implemented: immutable task/actor scopes created by Rust, intersection with global capability policy, scope checks at each model/tool dispatch, grant snapshots and denial audits (`src/security.rs`, `src/reasoning.rs`). Tests reject cross-task replay, actor substitution, unauthorized grant expansion and promotion requests; denied calls do not consume tool invocations. External executable expert isolation remains unsupported.
+The last live endpoint check found no server at `127.0.0.1:1234`. Live inference is
+therefore unverified. It is not a blocker for implementing independent infrastructure,
+but it is a release gate. No stable release tag or remote publication is authorized.

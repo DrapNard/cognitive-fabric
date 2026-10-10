@@ -86,3 +86,5 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
 - Execute validated advisory subtask dependencies under the shared reasoning budget, persist graph transitions, and preserve a final solver for the original goal.
 
 - Bind inference and tool dispatch authorization to immutable per-task actor grants, with persisted scope snapshots and denial decisions.
+
+- Reconcile the current implementation matrix with verified code; document security boundaries and reproducible benchmark limitations.

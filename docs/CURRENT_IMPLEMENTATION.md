@@ -1,33 +1,47 @@
-# Architecture (Rust alpha)
+# Current Rust implementation
 
-```mermaid
-flowchart TB
- H[Human CLI / Unix Socket] --> P[Typed FlatBuffers / Tokio transport]
- P --> J[Jev+ heuristic scheduler / router]
- J <--> R[Jev-R planner / solver / critic / explorer]
- R <--> X[Expert registry]
- R <--> K[(SQLite FTS5 knowledge + task traces)]
- R --> G[Capability policy gate]
- K --> E[Offline candidate registry]
- E --> Q[Independent integrity + held-out retrieval tests]
- Q --> A[Explicit operator promotion]
-```
+This is the implementation snapshot, not the target specification. The complete
+French vision is preserved in `ARCHITECTURE.md`. The branch is `develop/v1.0`,
+package version `1.1.0-alpha.1`; it remains a pre-release despite its historical
+version numbering. Rust 2021 and Tokio own the runtime; Python is offline only.
 
-All runtime components are Rust 2021. The generation/LLM interface uses a local
-OpenAI-compatible API and requires an externally installed model. The training
-recipe under `training/` remains Python by design and is not invoked by the Rust
-runtime. FlatBuffers is used for Unix socket IPC, **not** the LLM HTTP JSON API.
+The seven responsibilities currently map to these modules:
 
-The current Jev+ and Jev-R roles are algorithms and repeated model calls, not
-newly trained neural architectures. No general intelligence benchmark or scale
-advantage has been demonstrated. There are no arbitrary tool invocations,
-automatic model deployments or untrusted command execution paths.
+| Layer | Implementation |
+|---|---|
+| Language Interface | `language.rs`, `backend.rs`, `config.rs`: advisory intent, explicit history, synthesis and loopback inference |
+| Jev+ | `engine.rs`, `planning.rs`: task lifecycle, reference routing, capability gaps, bounded dependency scheduling |
+| Jev-R | `reasoning.rs`: shared-budget model roles, revisions, stagnation detection and independent verification status |
+| Expert Network | `registry.rs`: immutable reference manifests, dependencies, lifecycle and task version snapshots |
+| Cognitive Fabric | `wire.rs`, `service.rs`, `store.rs`: typed owner-local IPC, durable state/evidence and SQLite/FTS5 |
+| Evolution Engine | `evolution.rs`, candidate storage: quarantined immutable artifacts and explicit lifecycle |
+| Security & Evaluation Kernel | `security.rs`, `evaluation.rs`: task-bound dispatch authorization and independent deterministic gates |
 
-The port is presently uncompiled. See `docs/RUST_PORT.md` before release.
+Current execution uses direct Rust interfaces between layers. A general typed
+module broker/event bus and process-level module discovery are still missing.
+Reference experts are functional; they are not loaded neural specialist models.
 
-## Baseline verification (2026-10-10)
+A task snapshots active skill metadata and retrieved content before inference.
+Planner JSON may describe up to four acyclic dependent subgoals; ready nodes run
+sequentially under shared ceilings, followed by an original-goal solver. Invalid
+or unaffordable plans fall back to whole-goal execution. Critic advice can trigger
+bounded reflection/revision. Model claims and subtask answers remain unverified.
+The arithmetic parser provides an independent verified execution criterion.
 
-The Rust port now compiles with flatc 25.12.19. All 14 existing tests and
-Clippy pass. See `QUALITY_REVIEW.md` for exact commands and
-`IMPLEMENTATION_MATRIX.md` for outstanding architecture requirements.
-The earlier uncompiled statement above describes the original alpha snapshot.
+The local service authenticates the owner UID, caps pending connections at eight,
+and permits one active task. Typed controls can query status, cancel current work,
+or stop/join the service. Socket disconnects also cancel work durably. It is a
+single-user local service, not a multi-tenant sandbox.
+
+SQLite migrations preserve alpha data through schema 3. RAG candidate imports use
+content-addressed quarantine, explicit provenance, quotas and integrity checks.
+Quality requires operator-attested held-out data. Promotion checks quality,
+active-baseline retrieval regressions and unchanged versions transactionally.
+Rollback restores approved stored snapshots. Neural promotion stays disabled.
+
+Verification: 56 tests, formatting, all-target check and Clippy pass using exact
+flatc/Rust FlatBuffers 25.12.19. HTTP fixtures and socket tests ran locally; no
+compatible live model server was available at the default endpoint. No neural
+quality, GPU integration, hot-swap, energy or model-superiority result is claimed.
+See `IMPLEMENTATION_MATRIX.md` for every remaining engineering requirement and
+`QUALITY_REVIEW.md` for actual command evidence.
