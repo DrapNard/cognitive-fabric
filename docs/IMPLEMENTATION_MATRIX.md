@@ -35,3 +35,10 @@ promotion/rollback audit metadata. `candidate rollback ID --human-approve` resto
 an approved older RAG version after stored content integrity checks. Migration,
 rollback failure and reopen tests pass (19 total). External artifact quarantine,
 full task version pinning and general registry lifecycle remain Partial.
+
+Socket lifecycle update: `src/service.rs` enforces OS peer UID, one active handler,
+bounded frame/response I/O, disconnect cancellation and joined shutdown with
+inode-checked cleanup. `Engine::run_until` persists cancellation and wall-budget
+termination. CLI Ctrl-C uses these paths. `docs/PROTOCOL.md` documents semantics.
+Real Unix socket and blocked-inference cancellation regressions pass; broker,
+module identity, typed stop/status/cancel commands and general discovery remain Partial.

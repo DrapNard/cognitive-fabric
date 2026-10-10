@@ -156,10 +156,30 @@ async fn main() -> Result<()> {
             socket,
         } => {
             let outcome = if socket {
-                service::request(&cfg, query, mode).await?
+                tokio::select! {
+                    result = service::request(&cfg, query, mode) => result?,
+                    _ = tokio::signal::ctrl_c() => bail!("Request cancelled; the service cancels on disconnect"),
+                }
             } else {
-                engine.run(&query, &mode).await?
+                engine
+                    .run_until(&query, &mode, async {
+                        let _ = tokio::signal::ctrl_c().await;
+                    })
+                    .await?
             };
+            let unsuccessful = matches!(
+                outcome.status.as_str(),
+                "failed" | "rejected" | "cancelled" | "exhausted"
+            );
+            let status = outcome.status.clone();
+            if unsuccessful {
+                if cli.json {
+                    output(&outcome, true)?;
+                } else {
+                    output(&outcome.answer, false)?;
+                }
+                bail!("Task ended with status: {status}")
+            }
             if cli.json {
                 serde_json::to_value(outcome)?
             } else {

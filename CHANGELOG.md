@@ -55,3 +55,7 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   and bounded lock contention. Add candidate snapshot links, active-version
   retrieval, integrity-checked operator rollback and lifecycle audit records.
   Verify 19 tests, formatting, compilation and Clippy.
+- Cancel tasks durably on disconnect, Ctrl-C and service shutdown; join bounded
+  socket handlers before cleanup, authenticate peer UID and preserve replaced
+  socket paths. Count dispatched inference calls and return failed CLI outcomes
+  with nonzero exit codes. Add Unix socket and cancellation integration tests.

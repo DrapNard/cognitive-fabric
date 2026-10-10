@@ -36,3 +36,11 @@ idempotence, future-schema rejection, approved-version retrieval selection,
 operator approval, unauthorized rollback, candidate and tampered-snapshot denial,
 transactional audit counts and rollback durability. Formatting, workspace check
 and Clippy with warnings denied pass. Full tests use local socket permission.
+
+## Socket lifecycle verification
+
+All 23 tests pass with socket access, including a real Unix socket round trip,
+0600 permissions, existing-socket preservation, malformed lengths, interruption
+of incomplete frames, cancellation during stalled HTTP on disconnect/shutdown,
+and persistence before any tool runs on immediate cancellation. Formatting,
+workspace check and Clippy pass. No inference-quality claims follow from fixtures.
