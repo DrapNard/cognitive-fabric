@@ -2,7 +2,8 @@
 // Only one of request, response or error is populated per envelope.
 namespace Cognitive;
 
-enum MessageKind:ubyte { Request = 0, Response = 1, Error = 2 }
+enum MessageKind:ubyte { Request = 0, Response = 1, Error = 2, Control = 3, ControlResponse = 4 }
+enum ControlAction:ubyte { Status = 0, CancelActive = 1, Stop = 2 }
 enum ReasoningMode:ubyte { Fast = 0, Standard = 1, Deep = 2, Research = 3 }
 
 table AskRequest {
@@ -38,6 +39,15 @@ table ProtocolError {
   message:string (required);
 }
 
+table ControlRequest {
+  action:ControlAction;
+}
+
+table ControlResponse {
+  active:bool;
+  accepted:bool;
+}
+
 table Envelope {
   version:ushort = 1;
   request_id:string (required);
@@ -45,6 +55,8 @@ table Envelope {
   request:AskRequest;
   response:AskResponse;
   error:ProtocolError;
+  control:ControlRequest;
+  control_response:ControlResponse;
 }
 
 root_type Envelope;

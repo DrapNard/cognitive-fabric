@@ -80,3 +80,5 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   allocate candidate versions transactionally under concurrent imports.
 
 - Require immutable held-out dataset provenance and active-baseline retrieval regression gates before RAG promotion; migrate evaluation storage to schema 3.
+
+- Add typed service-status, cancel-active and stop controls that remain available during inference, with bounded connections and busy responses.

@@ -87,3 +87,6 @@ compatible; held-out dataset manifests and regression promotion gates remain Par
 
 ### Reviewed RAG evaluation datasets
 Implemented: schema-3 immutable dataset manifests, explicit held-out provenance, duplicate query rejection, isolated FTS evaluation, active-baseline retrieval regressions and stale-baseline promotion rejection (`src/evaluation.rs`, `src/store.rs`). Tests cover losing old facts despite passing new cases and concurrent baseline replacement. Partial: independence remains operator-attested; cumulative historical regression suites are not yet retained.
+
+### Local service controls
+Implemented: typed owner-authenticated status/cancel-active/stop, bounded eight connection handlers, single execution permit, correlated busy responses, graceful remote stop (`protocol/cognitive.fbs`, `src/wire.rs`, `src/service.rs`, `src/main.rs`). Integration tests exercise controls during stalled HTTP inference, durable cancellation, and incomplete-frame shutdown. General broker registration/event subscriptions and task-targeted remote cancellation remain incomplete.

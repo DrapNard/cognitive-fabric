@@ -96,3 +96,6 @@ workspace check and Clippy pass. CLI candidate create was exercised in
 
 ### Held-out dataset and baseline regression gates
 `cargo fmt --all -- --check`, `cargo check --offline --all-targets`, `cargo test --offline --all-targets` (48 passed), and `cargo clippy --offline --all-targets -- -D warnings` passed using pinned FlatBuffers 25.12.19. Full tests ran with local socket/loopback permissions. New negative tests cover duplicate normalized queries, missing provenance/attestation, loss of previously passing retrieval facts, and stale baseline promotion. This validates retrieval gates, not neural safety or live inference.
+
+### Typed live service controls
+Pinned flatc 25.12.19 regenerated the additive schema. Formatting, all-target check, all-target Clippy with denied warnings, and all-target tests passed (50 tests). Socket tests cover remote stop, incomplete clients, active status, busy errors, remote cancellation, disconnect cancellation and shutdown cancellation. Unknown controls and ambiguous envelopes fail validation. Control authorization remains same-UID local owner access.

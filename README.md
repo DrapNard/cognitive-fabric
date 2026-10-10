@@ -97,3 +97,5 @@ RAG rollback is available with
 `cargo run -- candidate rollback OLD_CANDIDATE_ID --human-approve`.
 It restores an approved older durable snapshot after integrity checks. See
 [the evolution lifecycle](docs/EVOLUTION.md) for migration and scope details.
+
+While `serve` runs, use `service-status`, `cancel-active`, or `stop` with the same `--home`. These controls use authenticated local FlatBuffers connections. One inference executes at a time; additional asks receive a busy error.

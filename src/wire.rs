@@ -12,8 +12,24 @@ use generated::cognitive as fb;
 
 const MAX_FRAME: usize = 256 * 1024;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ControlAction {
+    Status,
+    CancelActive,
+    Stop,
+}
+
 #[derive(Clone, Debug)]
 pub enum Message {
+    Control {
+        id: String,
+        action: ControlAction,
+    },
+    ControlReply {
+        id: String,
+        active: bool,
+        accepted: bool,
+    },
     Ask {
         id: String,
         query: String,
@@ -47,7 +63,11 @@ pub fn encode(message: &Message) -> Result<Vec<u8>> {
     }
     let mut builder = flatbuffers::FlatBufferBuilder::with_capacity(4096);
     let id = match message {
-        Message::Ask { id, .. } | Message::Reply { id, .. } | Message::Error { id, .. } => id,
+        Message::Ask { id, .. }
+        | Message::Reply { id, .. }
+        | Message::Error { id, .. }
+        | Message::Control { id, .. }
+        | Message::ControlReply { id, .. } => id,
     };
     if id.is_empty() || id.len() > 128 {
         bail!("Invalid request correlation ID")
@@ -59,6 +79,31 @@ pub fn encode(message: &Message) -> Result<Vec<u8>> {
         ..Default::default()
     };
     match message {
+        Message::Control { action, .. } => {
+            args.kind = fb::MessageKind::Control;
+            args.control = Some(fb::ControlRequest::create(
+                &mut builder,
+                &fb::ControlRequestArgs {
+                    action: match action {
+                        ControlAction::Status => fb::ControlAction::Status,
+                        ControlAction::CancelActive => fb::ControlAction::CancelActive,
+                        ControlAction::Stop => fb::ControlAction::Stop,
+                    },
+                },
+            ));
+        }
+        Message::ControlReply {
+            active, accepted, ..
+        } => {
+            args.kind = fb::MessageKind::ControlResponse;
+            args.control_response = Some(fb::ControlResponse::create(
+                &mut builder,
+                &fb::ControlResponseArgs {
+                    active: *active,
+                    accepted: *accepted,
+                },
+            ));
+        }
         Message::Ask {
             query,
             mode,
@@ -172,7 +217,37 @@ pub fn decode(body: &[u8]) -> Result<Message> {
     if id.is_empty() || id.len() > 128 {
         bail!("Invalid request correlation ID")
     }
+    let fields = [
+        envelope.request().is_some(),
+        envelope.response().is_some(),
+        envelope.error().is_some(),
+        envelope.control().is_some(),
+        envelope.control_response().is_some(),
+    ];
+    if fields.into_iter().filter(|present| *present).count() != 1 {
+        bail!("Envelope must contain exactly one payload")
+    }
     match envelope.kind() {
+        fb::MessageKind::Control => {
+            let control = envelope.control().context("Missing control request")?;
+            let action = match control.action() {
+                fb::ControlAction::Status => ControlAction::Status,
+                fb::ControlAction::CancelActive => ControlAction::CancelActive,
+                fb::ControlAction::Stop => ControlAction::Stop,
+                _ => bail!("Unknown control action"),
+            };
+            Ok(Message::Control { id, action })
+        }
+        fb::MessageKind::ControlResponse => {
+            let response = envelope
+                .control_response()
+                .context("Missing control response")?;
+            Ok(Message::ControlReply {
+                id,
+                active: response.active(),
+                accepted: response.accepted(),
+            })
+        }
         fb::MessageKind::Request => {
             if envelope.response().is_some() || envelope.error().is_some() {
                 bail!("Ambiguous request envelope")
@@ -285,6 +360,63 @@ pub fn new_request(query: String, mode: String) -> Message {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn controls_are_typed_and_ambiguous_envelopes_fail() {
+        for action in [
+            ControlAction::Status,
+            ControlAction::CancelActive,
+            ControlAction::Stop,
+        ] {
+            let message = Message::Control {
+                id: "control".into(),
+                action,
+            };
+            assert!(
+                matches!(decode(&encode(&message).unwrap()).unwrap(), Message::Control { action: decoded, .. } if decoded == action)
+            );
+        }
+        let mut builder = flatbuffers::FlatBufferBuilder::new();
+        let id = builder.create_string("invalid");
+        let control = fb::ControlRequest::create(
+            &mut builder,
+            &fb::ControlRequestArgs {
+                action: fb::ControlAction(255),
+            },
+        );
+        let envelope = fb::Envelope::create(
+            &mut builder,
+            &fb::EnvelopeArgs {
+                request_id: Some(id),
+                kind: fb::MessageKind::Control,
+                control: Some(control),
+                ..Default::default()
+            },
+        );
+        builder.finish(envelope, Some("COGF"));
+        assert!(decode(builder.finished_data()).is_err());
+        builder.reset();
+        let id = builder.create_string("ambiguous");
+        let control = fb::ControlRequest::create(&mut builder, &fb::ControlRequestArgs::default());
+        let detail = builder.create_string("error");
+        let error = fb::ProtocolError::create(
+            &mut builder,
+            &fb::ProtocolErrorArgs {
+                message: Some(detail),
+            },
+        );
+        let envelope = fb::Envelope::create(
+            &mut builder,
+            &fb::EnvelopeArgs {
+                request_id: Some(id),
+                kind: fb::MessageKind::Control,
+                control: Some(control),
+                error: Some(error),
+                ..Default::default()
+            },
+        );
+        builder.finish(envelope, Some("COGF"));
+        assert!(decode(builder.finished_data()).is_err());
+    }
     #[test]
     fn conversation_and_explanation_options_roundtrip() {
         let reference = uuid::Uuid::new_v4().to_string();

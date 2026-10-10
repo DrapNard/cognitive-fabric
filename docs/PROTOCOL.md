@@ -49,3 +49,6 @@ A compatibility regression covers absent appended fields and metrics round trips
 AskRequest appends optional conversation_ref and explain fields, preserving prior
 field IDs and defaults. Correlation IDs are bounded to 128 bytes, requests to
 12,000 bytes, and conversation references to valid UUIDs before dispatch.
+
+### Owner service controls
+Additive v1 envelope kinds Control (3) and ControlResponse (4) carry typed Status, CancelActive, and Stop actions. Exactly one payload is permitted; unknown actions fail validation. OS peer UID authentication applies to all controls. Status reports whether inference is active; cancel-active signals only the current execution, and stop cancels work and joins handlers before removing the socket. Up to eight connections may be pending; one execution permit bounds inference. Additional asks receive a correlated busy error. Legacy peers reject unknown controls; existing ask/reply fields remain compatible.

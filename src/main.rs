@@ -66,6 +66,9 @@ enum Command {
         explain: bool,
     },
     Serve,
+    ServiceStatus,
+    CancelActive,
+    Stop,
     SkillAdd {
         id: String,
         #[arg(long)]
@@ -250,6 +253,15 @@ async fn main() -> Result<()> {
         Command::Serve => {
             service::serve(engine).await?;
             return Ok(());
+        }
+        Command::ServiceStatus | Command::CancelActive | Command::Stop => {
+            let action = match cli.command {
+                Command::ServiceStatus => cogfabric::wire::ControlAction::Status,
+                Command::CancelActive => cogfabric::wire::ControlAction::CancelActive,
+                _ => cogfabric::wire::ControlAction::Stop,
+            };
+            let (active, accepted) = service::control(&cfg, action).await?;
+            json!({"active":active,"accepted":accepted})
         }
         Command::Skills => serde_json::to_value(store.skills()?)?,
         Command::SkillRegister { manifest } => {

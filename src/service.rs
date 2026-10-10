@@ -9,13 +9,16 @@ use std::{
     future::Future,
     os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt},
     path::PathBuf,
-    sync::Arc,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
     time::Duration,
 };
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{UnixListener, UnixStream},
-    sync::watch,
+    sync::{watch, Semaphore},
     task::JoinSet,
 };
 
@@ -23,6 +26,13 @@ struct SocketGuard {
     path: PathBuf,
     device: u64,
     inode: u64,
+}
+
+struct Controls {
+    stopping: watch::Sender<bool>,
+    cancellation: watch::Sender<u64>,
+    active: AtomicBool,
+    execution: Semaphore,
 }
 impl Drop for SocketGuard {
     fn drop(&mut self) {
@@ -65,6 +75,13 @@ where
     let owner = meta.uid();
     let engine = Arc::new(engine);
     let (cancel, _) = watch::channel(false);
+    let controls = Arc::new(Controls {
+        stopping: cancel.clone(),
+        cancellation: watch::channel(0).0,
+        active: AtomicBool::new(false),
+        execution: Semaphore::new(1),
+    });
+    let mut remote_stop = cancel.subscribe();
     let mut handlers = JoinSet::new();
     tokio::pin!(shutdown);
     println!("Listening on {}", socket.display());
@@ -72,19 +89,21 @@ where
         tokio::select! {
             biased;
             _ = &mut shutdown => break Ok(()),
+            _ = stopped(&mut remote_stop) => break Ok(()),
             Some(result) = handlers.join_next(), if !handlers.is_empty() => {
                 if let Err(err) = result { eprintln!("Socket handler failed: {err}"); }
             }
             accepted = listener.accept() => {
                 let (stream, _) = match accepted { Ok(value) => value, Err(err) => break Err(err.into()) };
                 // OS credentials, never message-supplied actor names, establish the owner.
-                if !stream.peer_cred().is_ok_and(|credentials| credentials.uid() == owner) || !handlers.is_empty() {
+                if !stream.peer_cred().is_ok_and(|credentials| credentials.uid() == owner) || handlers.len() >= 8 {
                     drop(stream);
                     continue;
                 }
                 let engine = engine.clone();
                 let stopping = cancel.subscribe();
-                handlers.spawn(async move { handle(stream, engine, stopping).await });
+                let controls = controls.clone();
+                handlers.spawn(async move { handle(stream, engine, stopping, controls).await });
             }
         }
     };
@@ -106,7 +125,12 @@ async fn stopped(receiver: &mut watch::Receiver<bool>) {
     let _ = receiver.changed().await;
 }
 
-async fn handle(stream: UnixStream, engine: Arc<Engine>, mut stopping: watch::Receiver<bool>) {
+async fn handle(
+    stream: UnixStream,
+    engine: Arc<Engine>,
+    mut stopping: watch::Receiver<bool>,
+    controls: Arc<Controls>,
+) {
     let (mut reader, mut writer) = stream.into_split();
     let request = tokio::select! {
         biased;
@@ -114,6 +138,29 @@ async fn handle(stream: UnixStream, engine: Arc<Engine>, mut stopping: watch::Re
         result = tokio::time::timeout(Duration::from_secs(10), wire::read_message(&mut reader)) => result,
     };
     let response = match request {
+        Ok(Ok(Message::Control { id, action })) => {
+            let active = controls.active.load(Ordering::Acquire);
+            let accepted = match action {
+                wire::ControlAction::Status => true,
+                wire::ControlAction::CancelActive => {
+                    if active {
+                        controls
+                            .cancellation
+                            .send_modify(|generation| *generation = generation.wrapping_add(1));
+                    }
+                    active
+                }
+                wire::ControlAction::Stop => {
+                    controls.stopping.send_replace(true);
+                    true
+                }
+            };
+            Message::ControlReply {
+                id,
+                active,
+                accepted,
+            }
+        }
         Ok(Ok(Message::Ask {
             id,
             query,
@@ -121,15 +168,32 @@ async fn handle(stream: UnixStream, engine: Arc<Engine>, mut stopping: watch::Re
             conversation_ref,
             explain,
         })) => {
+            let Ok(_permit) = controls.execution.try_acquire() else {
+                let _ = tokio::time::timeout(
+                    Duration::from_secs(2),
+                    wire::write_message(
+                        &mut writer,
+                        &Message::Error {
+                            id,
+                            message: "Service busy; retry later".into(),
+                        },
+                    ),
+                )
+                .await;
+                return;
+            };
+            let mut cancellation = controls.cancellation.subscribe();
+            controls.active.store(true, Ordering::Release);
             let cancel = async {
                 let mut extra = [0];
                 tokio::select! {
                     _ = stopped(&mut stopping) => {},
+                    _ = cancellation.changed() => {},
                     // EOF cancels the request; extra input violates one-request-per-connection.
                     _ = reader.read(&mut extra) => {},
                 }
             };
-            match engine
+            let result = engine
                 .run_with_options(
                     &query,
                     &mode,
@@ -139,8 +203,9 @@ async fn handle(stream: UnixStream, engine: Arc<Engine>, mut stopping: watch::Re
                     },
                     cancel,
                 )
-                .await
-            {
+                .await;
+            controls.active.store(false, Ordering::Release);
+            match result {
                 Ok(outcome) => Message::Reply { id, outcome },
                 Err(err) => Message::Error {
                     id,
@@ -167,6 +232,30 @@ async fn handle(stream: UnixStream, engine: Arc<Engine>, mut stopping: watch::Re
         Ok::<(), anyhow::Error>(())
     })
     .await;
+}
+
+pub async fn control(cfg: &Config, action: wire::ControlAction) -> Result<(bool, bool)> {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        let mut stream = UnixStream::connect(cfg.socket()).await?;
+        let id = uuid::Uuid::new_v4().to_string();
+        wire::write_message(
+            &mut stream,
+            &Message::Control {
+                id: id.clone(),
+                action,
+            },
+        )
+        .await?;
+        match wire::read_message(&mut stream).await? {
+            Message::ControlReply {
+                id: reply_id,
+                active,
+                accepted,
+            } if reply_id == id => Ok((active, accepted)),
+            _ => bail!("Unexpected control response"),
+        }
+    })
+    .await?
 }
 
 pub async fn request(cfg: &Config, query: String, mode: String) -> Result<Outcome> {
@@ -273,6 +362,16 @@ mod tests {
             .unwrap();
         assert_eq!(result.answer, "42");
         assert_eq!(result.status, "completed");
+        assert_eq!(
+            control(&cfg, wire::ControlAction::Status).await.unwrap(),
+            (false, true)
+        );
+        assert_eq!(
+            control(&cfg, wire::ControlAction::CancelActive)
+                .await
+                .unwrap(),
+            (false, false)
+        );
         // Join completion is processed before the next accepted connection.
         tokio::time::sleep(Duration::from_millis(10)).await;
         let mut malformed = UnixStream::connect(cfg.socket()).await.unwrap();
@@ -307,8 +406,27 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn typed_stop_joins_incomplete_clients() {
+        let (cfg, engine) = setup();
+        let (_stop, task) = start(engine).await;
+        let mut incomplete = UnixStream::connect(cfg.socket()).await.unwrap();
+        incomplete.write_all(&[0, 0]).await.unwrap();
+        assert_eq!(
+            control(&cfg, wire::ControlAction::Stop).await.unwrap(),
+            (false, true)
+        );
+        tokio::time::timeout(Duration::from_secs(3), task)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert!(!cfg.socket().exists());
+        std::fs::remove_dir_all(cfg.home).unwrap();
+    }
+
+    #[tokio::test]
     async fn disconnect_and_shutdown_cancel_inference_durably() {
-        for disconnect in [true, false] {
+        for cancellation_mode in 0..3 {
             let (mut cfg, _) = setup();
             let http = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             cfg.backend = "openai-local".into();
@@ -335,7 +453,28 @@ mod tests {
                 .await
                 .unwrap()
                 .unwrap();
-            if disconnect {
+            if cancellation_mode == 0 {
+                drop(client);
+            } else if cancellation_mode == 2 {
+                assert_eq!(
+                    control(&cfg, wire::ControlAction::Status).await.unwrap(),
+                    (true, true)
+                );
+                assert!(request(&cfg, "calc: 1+1".into(), "fast".into())
+                    .await
+                    .unwrap_err()
+                    .to_string()
+                    .contains("busy"));
+                assert_eq!(
+                    control(&cfg, wire::ControlAction::CancelActive)
+                        .await
+                        .unwrap(),
+                    (true, true)
+                );
+                let result = wire::read_message(&mut client).await.unwrap();
+                assert!(
+                    matches!(result, Message::Reply { outcome, .. } if outcome.status == "cancelled")
+                );
                 drop(client);
             } else {
                 stop.take().unwrap().send(()).unwrap();
@@ -354,7 +493,7 @@ mod tests {
             })
             .await
             .expect("Cancellation was not persisted");
-            if disconnect {
+            if cancellation_mode != 1 {
                 stop.take().unwrap().send(()).unwrap();
             }
             service.await.unwrap().unwrap();
