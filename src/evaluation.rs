@@ -10,11 +10,7 @@ use serde_json::{json, Value};
 use std::{fs, path::Path, sync::Arc, time::Instant};
 
 fn read_capped(path: &Path, max: usize) -> Result<String> {
-    let metadata = fs::symlink_metadata(path)?;
-    if !metadata.is_file() || metadata.file_type().is_symlink() || metadata.len() > max as u64 {
-        bail!("Invalid input file")
-    }
-    Ok(fs::read_to_string(path)?)
+    Ok(String::from_utf8(security::read_regular_bytes(path, max)?)?)
 }
 
 #[derive(Deserialize)]

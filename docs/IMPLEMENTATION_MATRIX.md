@@ -61,3 +61,11 @@ health checks. Schema 2 adds persistent expert manifests and audit records.
 pinning. Tests verify conflicts, missing dependencies, cycles, metadata tampering,
 permission injection, snapshot stability and disabled retrieval. Neural/executable
 expert loading remains unsupported; categories include trainer.s1 as metadata only.
+
+Configuration update: `Config` supports bounded validated persistent settings,
+atomic owner-only saves, environment overrides, independently selected role
+models/temperatures and explicit resource ceilings. `configure-local` and
+`config-show` expose it. Loopback HTTP fixtures verify role profile selection.
+Reviewed configuration, manifests, documents, benchmarks and candidate checksum
+reads now share bounded no-follow regular-file opening in `src/security.rs`.
+Language interface generation and real loaded-model validation remain outstanding.

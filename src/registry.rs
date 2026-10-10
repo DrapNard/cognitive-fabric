@@ -90,7 +90,7 @@ pub fn read_manifest(path: &Path) -> Result<Manifest> {
     if !meta.is_file() || meta.file_type().is_symlink() || meta.len() > 64_000 {
         bail!("Manifest must be a bounded regular file")
     }
-    let manifest: Manifest = serde_json::from_str(&std::fs::read_to_string(path)?)?;
+    let manifest: Manifest = serde_json::from_slice(&security::read_regular_bytes(path, 64_000)?)?;
     manifest.validate()?;
     Ok(manifest)
 }

@@ -1,5 +1,23 @@
 use anyhow::{bail, Result};
-use std::{fs, path::Path};
+use std::{fs, io::Read, os::unix::fs::OpenOptionsExt, path::Path};
+
+/// Open the reviewed file itself without following a substituted final symlink.
+pub fn read_regular_bytes(path: &Path, maximum: usize) -> Result<Vec<u8>> {
+    let file = fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(path)?;
+    let metadata = file.metadata()?;
+    if !metadata.is_file() || metadata.len() > maximum as u64 {
+        bail!("Input must be a bounded regular file")
+    }
+    let mut bytes = Vec::new();
+    file.take(maximum as u64 + 1).read_to_end(&mut bytes)?;
+    if bytes.len() > maximum {
+        bail!("Input grew beyond its byte limit")
+    }
+    Ok(bytes)
+}
 
 pub fn authorize(principal: &str, capability: &str) -> Result<()> {
     let allowed = match principal {
@@ -30,20 +48,13 @@ pub fn authorize(principal: &str, capability: &str) -> Result<()> {
 
 pub fn read_reviewed_document(path: &Path) -> Result<String> {
     authorize("human-cli", "knowledge.ingest")?;
-    let metadata = fs::symlink_metadata(path)?;
-    if !metadata.is_file() || metadata.file_type().is_symlink() {
-        bail!("Document must be a regular file, not a symlink")
-    }
     if !matches!(
         path.extension().and_then(|e| e.to_str()),
         Some("md" | "txt")
     ) {
         bail!("Only .md and .txt documents can be ingested")
     }
-    if metadata.len() > 256_000 {
-        bail!("Document exceeds 256 KB")
-    }
-    Ok(fs::read_to_string(path)?)
+    Ok(String::from_utf8(read_regular_bytes(path, 256_000)?)?)
 }
 
 pub fn validate_provenance(source: &str, license: &str) -> Result<()> {
@@ -60,6 +71,20 @@ pub fn validate_provenance(source: &str, license: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn reviewed_reads_reject_symlinks_directories_and_oversized_inputs() {
+        let root = std::env::temp_dir().join(format!("fabric-read-{}", uuid::Uuid::new_v4()));
+        fs::create_dir(&root).unwrap();
+        let file = root.join("reference.md");
+        fs::write(&file, b"reviewed").unwrap();
+        assert_eq!(read_regular_bytes(&file, 8).unwrap(), b"reviewed");
+        assert!(read_regular_bytes(&file, 7).is_err());
+        assert!(read_regular_bytes(&root, 100).is_err());
+        let link = root.join("substitute.md");
+        std::os::unix::fs::symlink(&file, &link).unwrap();
+        assert!(read_reviewed_document(&link).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn deny_unknown_actor() {
         assert!(authorize("rust.s1", "candidate.promote").is_err());

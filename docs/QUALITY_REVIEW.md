@@ -67,3 +67,12 @@ exclusion of disabled skills from retrieval/routing. Formatting, workspace check
 and Clippy pass. CLI registration, activation and health were exercised using
 `examples/reference_manifest.json` in `/tmp/cogfabric-registry-smoke`; health
 correctly reports zero documents and unsupported neural loading.
+
+## Persistent configuration verification
+
+All 37 tests pass, including configuration/profile round trips, owner-only saves,
+invalid settings and symlink rejection, bounded regular-file reads, and HTTP
+request assertions for per-role model/temperature selection. Formatting, workspace
+check and Clippy pass. configure-local (shared model and critic profile) and
+config-show were smoke-tested in `/tmp/cogfabric-config-smoke`. The configured
+fixture label does not imply an installed or loaded model.

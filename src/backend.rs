@@ -40,7 +40,7 @@ impl InferenceBackend for LocalBackend {
     }
 }
 
-fn local_endpoint(base: &str) -> Result<Url> {
+pub(crate) fn local_endpoint(base: &str) -> Result<Url> {
     let mut url = Url::parse(base).context("Invalid model endpoint URL")?;
     let loopback = match url.host() {
         Some(url::Host::Ipv4(ip)) => ip.is_loopback(),
@@ -113,6 +113,13 @@ pub async fn generate_report(
         bail!("Unsupported inference backend")
     }
     let endpoint = local_endpoint(&cfg.api_base)?;
+    let profile = cfg.role_profiles.get(role);
+    let model = profile
+        .map(|profile| profile.model.as_str())
+        .unwrap_or(&cfg.model);
+    let temperature = profile
+        .map(|profile| profile.temperature)
+        .unwrap_or(cfg.temperature);
     let client = reqwest::Client::builder()
         .no_proxy()
         .redirect(reqwest::redirect::Policy::none())
@@ -121,7 +128,7 @@ pub async fn generate_report(
     let mut response = client
         .post(endpoint)
         .json(&json!({
-            "model": cfg.model, "stream": false, "temperature": 0.15,
+            "model": model, "stream": false, "temperature": temperature,
             "max_tokens": max_tokens,
             "messages": [
                 {"role":"system", "content":system},
@@ -160,7 +167,7 @@ pub async fn generate_report(
         model: response
             .get("model")
             .and_then(|v| v.as_str())
-            .unwrap_or(&cfg.model)
+            .unwrap_or(model)
             .chars()
             .take(256)
             .collect(),
@@ -207,6 +214,13 @@ mod tests {
             .expect("HTTP fixture requires permission to bind loopback");
         let mut cfg = Config::load(None, Some("openai-local".into()))?;
         cfg.api_base = format!("http://{}/v1", listener.local_addr()?);
+        cfg.role_profiles.insert(
+            "solver".into(),
+            crate::config::RoleProfile {
+                model: "fixture-role-model".into(),
+                temperature: 0.0,
+            },
+        );
         let server = tokio::spawn(async move {
             let (mut socket, _) = listener.accept().await.unwrap();
             let mut request = Vec::new();
@@ -226,6 +240,12 @@ mod tests {
                         .parse()
                         .unwrap();
                     if request.len() >= header_end + 4 + length {
+                        let payload: serde_json::Value = serde_json::from_slice(
+                            &request[header_end + 4..header_end + 4 + length],
+                        )
+                        .unwrap();
+                        assert_eq!(payload["model"], "fixture-role-model");
+                        assert_eq!(payload["temperature"], 0.0);
                         break;
                     }
                 }

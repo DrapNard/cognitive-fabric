@@ -68,3 +68,6 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   staged activation, metadata rollback, disable, health checks and registry audit
   records. Pin task routing/reference snapshots transactionally and validate
   retrieved content hashes. Add trainer.s1 metadata without a neural backend.
+- Persist validated loopback inference settings and independent role profiles
+  through atomic owner-only config saves. Add configure-local/config-show and
+  bounded no-follow regular-file reads across reviewed input boundaries.

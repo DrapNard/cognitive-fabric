@@ -196,6 +196,7 @@ dependencies = [
  "clap",
  "flatbuffers",
  "hex",
+ "libc",
  "reqwest",
  "rusqlite",
  "semver",

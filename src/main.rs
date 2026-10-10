@@ -43,6 +43,17 @@ enum Command {
         id: String,
     },
     SkillHealth,
+    ConfigureLocal {
+        #[arg(long)]
+        model: String,
+        #[arg(long)]
+        api_base: Option<String>,
+        #[arg(long)]
+        role: Option<String>,
+        #[arg(long, default_value = "0.15")]
+        temperature: f64,
+    },
+    ConfigShow,
     Ask {
         query: String,
         #[arg(long, default_value = "standard")]
@@ -154,6 +165,29 @@ async fn main() -> Result<()> {
         }
         Command::Status => json!({"home":cfg.home,"backend":cfg.backend,"model":cfg.model,
             "skills":store.skills()?.len(),"candidates":store.candidates()?.len()}),
+        Command::ConfigureLocal {
+            model,
+            api_base,
+            role,
+            temperature,
+        } => {
+            let mut settings = cfg.clone();
+            settings.backend = "openai-local".into();
+            if let Some(endpoint) = api_base {
+                settings.api_base = endpoint;
+            }
+            if let Some(role) = role {
+                settings
+                    .role_profiles
+                    .insert(role, cogfabric::config::RoleProfile { model, temperature });
+            } else {
+                settings.model = model;
+                settings.temperature = temperature;
+            }
+            settings.save()?;
+            json!({"saved":true,"configuration":settings})
+        }
+        Command::ConfigShow => serde_json::to_value(&cfg)?,
         Command::SelfTest => {
             let math = engine.run("calc: (7 + 5) * 3", "fast").await?;
             let wire = cogfabric::wire::new_request("calc: 7 * 6".into(), "fast".into());
@@ -290,7 +324,8 @@ async fn main() -> Result<()> {
                     security::read_reviewed_document(&artifact)?;
                 }
                 let canonical = artifact.canonicalize()?;
-                let checksum = store::sha256(&std::fs::read(&canonical)?);
+                let checksum =
+                    store::sha256(&security::read_regular_bytes(&canonical, 64_000_000)?);
                 serde_json::to_value(
                     store.create_candidate(
                         &skill,
