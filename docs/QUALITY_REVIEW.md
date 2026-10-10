@@ -514,3 +514,34 @@ Environment inspection confirms torch, transformers, peft, safetensors and
 bitsandbytes are absent. No training/GPU run is claimed. Model provenance manifests,
 held-out neural evaluations and independently enforced isolation remain required;
 neural promotion remains disabled.
+
+## Bounded inline SQL tool
+
+Added explicit original-request SELECT tasks over fresh in-memory inline tables.
+Validated identifiers and bound values separate data from generated setup SQL.
+After setup, query-only mode and a deny-default SQLite authorizer block mutations,
+schema/host access, ATTACH, PRAGMAs, extensions and non-allowlisted functions. Batch
+preparation rejects multiple statements before execution. Output preserves types
+and fails on blobs/nonfinite numbers or exceeded bounds, without partial success.
+
+Enforcement combines 12 KB engine requests (32 KB standalone tool bound), 4 KB SQL,
+four 16-column/256-row tables, 64-row/16 KB results, 128 main database pages,
+compiled-program/depth/function limits, approximately 100,000 VM operations and a
+100 ms query deadline checked by progress/row iteration. Two static worker slots
+bound queued/running blocking jobs and stay held after caller cancellation; dropped
+futures signal cancellation. These are in-process guards, not hard heap/real-time
+or OS isolation guarantees. No external connector or arbitrary native code exists.
+
+Tests verify arithmetic aggregates, finite recursion, actual interrupted infinite
+recursion, row/input/schema limits, isolation, nonfinite output, multiple-statement
+and host/mutation/function denials, task budgets, actor denials, alone-profile
+separation and persisted status. All 110 Rust tests pass; fmt, all-target check,
+Clippy with denied warnings and CLI build pass with FlatBuffers 25.12.19. Isolated
+CLI smoke returned total 5 with zero model calls, data.sql.s1 routing and hashed
+input/answer evidence. Completion verifies the supplied query over supplied data,
+not real-world truth or general model-generated SQL correctness. Dynamic tool
+manifests and external executable expert isolation remain incomplete.
+
+The negative CLI smoke also rejected `randomblob` with status `rejected`, no
+verification evidence and exit code 1. This confirms denied execution is visible
+to shell callers rather than reported as a successful task.

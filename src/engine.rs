@@ -326,6 +326,32 @@ impl Engine {
                     }
                 };
             }
+            if let Some(raw) = query
+                .strip_prefix("sql:")
+                .filter(|_| profile != ExecutionProfile::Alone)
+            {
+                session.authorize_tool("sql.query")?;
+                let input_hash = store::sha256(raw.as_bytes());
+                return match crate::sql::execute(raw.to_string()).await {
+                    Ok(answer) => {
+                        session.stop_reason = "verified".into();
+                        evidence.push(format!(
+                            "verified:sqlite_inline/v1:{input_hash}:{}",
+                            store::sha256(answer.as_bytes())
+                        ));
+                        self.store.event(&id, "verification", "verifier-r", json!({"checker":"sqlite_inline/v1","input_sha256":input_hash,"answer_sha256":store::sha256(answer.as_bytes()),"verified":true}))?;
+                        Ok((answer, "completed".into()))
+                    }
+                    Err(error) => {
+                        session.stop_reason = "invalid_sql_task".into();
+                        self.store.event(&id, "verification", "verifier-r", json!({"checker":"sqlite_inline/v1","input_sha256":input_hash,"verified":false}))?;
+                        Ok((
+                            format!("SQL execution rejected: {error}"),
+                            "rejected".into(),
+                        ))
+                    }
+                };
+            }
             if self.cfg.interpret_goals
                 && self.cfg.backend != "demo"
                 && mode != "fast"
@@ -493,6 +519,63 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn inline_sql_is_budgeted_verified_and_excluded_from_alone_profile() {
+        let store = Arc::new(Store::in_memory().unwrap());
+        store::bootstrap(&store).unwrap();
+        let cfg = Config {
+            backend: "demo".into(),
+            interpret_goals: false,
+            ..Config::default()
+        };
+        let engine = Engine::new(cfg.clone(), store.clone());
+        let query = "sql:{\"tables\":[{\"name\":\"items\",\"columns\":[\"amount\"],\"rows\":[[2],[3]]}],\"query\":\"SELECT sum(amount) AS total FROM items\"}";
+        let result = engine.run(query, "fast").await.unwrap();
+        assert_eq!(result.status, "completed");
+        assert_eq!(result.calls, 0);
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&result.answer).unwrap()["rows"],
+            json!([[5]])
+        );
+        assert!(result
+            .evidence
+            .iter()
+            .any(|e| e.starts_with("verified:sqlite_inline/v1:")));
+        let status: String = store
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT status FROM tasks WHERE id=?1",
+                [&result.task_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(status, "completed");
+        let alone = engine
+            .run_profile(query, "fast", ExecutionProfile::Alone)
+            .await
+            .unwrap();
+        assert_ne!(alone.status, "completed");
+        assert!(!alone.evidence.iter().any(|e| e.contains("sqlite_inline")));
+        let rejected = engine
+            .run(
+                "sql:{\"tables\":[],\"query\":\"ATTACH '/tmp/forbidden.db' AS external\"}",
+                "fast",
+            )
+            .await
+            .unwrap();
+        assert_eq!(rejected.status, "rejected");
+        let restricted = Engine::new(
+            Config {
+                max_tool_calls: 0,
+                ..cfg
+            },
+            store,
+        );
+        let denied = restricted.run(query, "fast").await.unwrap();
+        assert_eq!(denied.status, "failed");
+        assert!(!denied.evidence.iter().any(|e| e.contains("sqlite_inline")));
+    }
 
     #[tokio::test]
     async fn workflow_experts_use_shared_budget_and_are_excluded_from_other_profiles() {

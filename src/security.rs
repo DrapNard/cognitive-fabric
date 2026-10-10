@@ -18,6 +18,7 @@ impl TaskPolicy {
                 ("jev-plus", "knowledge.search"),
                 ("jev-plus", "math.evaluate"),
                 ("jev-plus", "ordering.verify"),
+                ("jev-plus", "sql.query"),
             ],
         )
     }
@@ -75,7 +76,7 @@ pub fn authorize(principal: &str, capability: &str) -> Result<()> {
         ),
         "jev-plus" => matches!(
             capability,
-            "knowledge.search" | "math.evaluate" | "ordering.verify"
+            "knowledge.search" | "math.evaluate" | "ordering.verify" | "sql.query"
         ),
         "human-cli" => matches!(
             capability,
@@ -178,6 +179,8 @@ mod tests {
     #[test]
     fn deny_self_promotion() {
         assert!(authorize("jev-r", "candidate.promote").is_err());
+        assert!(authorize("jev-r", "sql.query").is_err());
+        assert!(authorize("interface", "sql.query").is_err());
     }
     #[test]
     fn allow_knowledge_search() {

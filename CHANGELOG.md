@@ -169,3 +169,10 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   reserve separate output and record seeded configuration/dependency versions.
 - Hash bounded inactive adapter bundles; add standard-library preflight CI tests
   while keeping neural evaluation/promotion disabled.
+
+### Development: execute bounded SQL over task-local inline data
+
+- Add deterministic SELECT tasks with isolated in-memory tables, audited task
+  permissions and no inference requirement.
+- Deny external access, mutations, unsafe functions and multiple statements;
+  bound VM work, cancellation, data sizes and results, with hashed evidence.

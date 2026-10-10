@@ -2,7 +2,7 @@
 
 **Author:** DrapNard  
 **Language:** Rust (runtime), Python (optional offline model training)
-**Status:** **Verified Rust alpha baseline** — builds and 106 regression tests pass; v1.0 integration requirements remain incomplete.
+**Status:** **Verified Rust alpha baseline** — builds and 110 regression tests pass; v1.0 integration requirements remain incomplete.
 **License:** Apache-2.0 (framework only)
 
 This branch corrects the original v1.0 implementation's technology mismatch:
@@ -41,6 +41,7 @@ cargo test
 ```bash
 # No GPU, deterministic demonstration.
 cargo run -- ask 'calc: (7 + 5) * 3'
+cargo run -- ask 'sql:{"tables":[],"query":"SELECT 2 + 3 AS total"}' --mode fast
 cargo run -- bench examples/arithmetic_bench.jsonl
 
 # Local LLM (e.g. LM Studio):

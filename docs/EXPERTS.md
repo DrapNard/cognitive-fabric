@@ -5,6 +5,11 @@ data.sql.s1, git.s1, unity.s1 and trainer.s1. These are routing metadata and
 reference skills, not eight trained neural experts. Empty categories do not
 supply domain documentation or independent verification automatically.
 
+The SQL domain now also has a built-in bounded inline-data SELECT tool. Explicit
+`sql:` objectives use deterministic authorization and fresh in-memory databases;
+reference registration does not grant execution authority. See `SQL.md`. Dynamic
+tool manifests and external database connections remain unsupported.
+
 ## Versioned reference manifests
 
 `skill-register FILE.json` imports a bounded, reviewed reference manifest. It

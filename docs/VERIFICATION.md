@@ -3,6 +3,10 @@
 The runtime can verify arithmetic and explicit dependency-order objectives without
 trusting model confidence. General prose remains unverified.
 
+Explicit `sql:` tasks additionally execute bounded SELECT queries over inline
+tables, producing hashed tool results without a model call. See `SQL.md` for the
+strict limits and the distinction between query execution and factual truth.
+
 Example objective (pass as the quoted argument to `ask`):
 
 ```text
