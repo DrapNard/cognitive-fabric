@@ -177,6 +177,7 @@ where
     if let Some(model) = larger {
         let mut baseline = common.clone();
         baseline.model = model.into();
+        baseline.model_registration = None;
         arms.push((
             ExecutionProfile::Alone,
             model.into(),

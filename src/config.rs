@@ -22,6 +22,7 @@ pub struct Config {
     pub format_version: u16,
     pub backend: String,
     pub model: String,
+    pub model_registration: Option<crate::models::Selection>,
     pub api_base: String,
     pub max_calls: usize,
     pub max_cycles: usize,
@@ -44,6 +45,7 @@ impl Default for Config {
             format_version: 1,
             backend: "demo".into(),
             model: "local-model".into(),
+            model_registration: None,
             api_base: "http://127.0.0.1:1234/v1".into(),
             max_calls: 8,
             max_cycles: 4,
@@ -101,6 +103,9 @@ impl Config {
     }
 
     pub fn validate(&self) -> Result<()> {
+        if let Some(selection) = &self.model_registration {
+            selection.validate()?;
+        }
         if self.format_version != 1
             || !matches!(self.backend.as_str(), "demo" | "openai-local")
             || self.model.trim().is_empty()

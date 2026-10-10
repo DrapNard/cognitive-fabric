@@ -35,13 +35,13 @@ and permits one active task. Typed controls can query status, cancel current wor
 or stop/join the service. Socket disconnects also cancel work durably. It is a
 single-user local service, not a multi-tenant sandbox.
 
-SQLite migrations preserve alpha data through schema 4. RAG candidate imports use
+SQLite migrations preserve alpha data through schema 5. RAG candidate imports use
 content-addressed quarantine, explicit provenance, quotas and integrity checks.
 Quality requires operator-attested held-out data. Promotion checks quality,
-active-baseline retrieval regressions and unchanged versions transactionally.
+cumulative approved-version retrieval regressions and unchanged versions transactionally.
 Rollback restores approved stored snapshots. Neural promotion stays disabled.
 
-Verification: 71 tests, formatting, all-target check and Clippy pass using exact
+Verification: 75 tests, formatting, all-target check and Clippy pass using exact
 flatc/Rust FlatBuffers 25.12.19. HTTP fixtures and socket tests ran locally; no
 compatible live model server was available at the default endpoint. No neural
 quality, GPU integration, hot-swap, energy or model-superiority result is claimed.
@@ -60,3 +60,8 @@ See `MEMORY.md`; arbitrary model output remains unverified.
 Persistent Engine tasks hold kernel execution leases. Operator `recover-tasks`
 marks abandoned running tasks interrupted in an audited transaction; it refuses
 live leases and never automatically replays work. See `RECOVERY.md`.
+
+Immutable local model registrations now record source/license, connection identity,
+declared limits and optional unverified weight hashes. Operator selection persists
+an exact version reference; task traces pin it and disabled registrations reject
+new tasks. Physical model residency remains server-owned; see `MODELS.md`.

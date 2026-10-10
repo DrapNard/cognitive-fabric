@@ -245,7 +245,7 @@ mod tests {
         let store = Store::open(&path).unwrap();
         let task = store.create_task("calc: 3 + 4", "fast").unwrap();
         store.finish_task(&task, "completed", "7").unwrap();
-        store.lock().unwrap().execute_batch("DROP TRIGGER memory_insert; DROP TABLE memory_index; DROP TABLE memories; PRAGMA user_version=3;").unwrap();
+        store.lock().unwrap().execute_batch("DROP TRIGGER memory_insert; DROP TABLE memory_index; DROP TABLE memories; DROP TABLE model_audit; DROP TABLE model_manifests; PRAGMA user_version=3;").unwrap();
         drop(store);
         let store = Store::open(&path).unwrap();
         store

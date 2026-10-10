@@ -180,3 +180,26 @@ All 71 tests passed, including local socket/HTTP fixtures. Formatting check,
 all-target check and denied-warning Clippy passed offline with flatc 25.12.19.
 The binary built and recovery CLI smoke passed. No automatic checkpoint resumption,
 stale-socket cleanup or general storage retention is claimed; see `RECOVERY.md`.
+
+## Persistent local model registration (2026-10-10)
+
+Schema 5 adds immutable, canonical-hashed local inference manifests, provenance,
+declared context/output limits, optional unverified weight hashes and audited
+enable/disable. Explicit selection persists an exact reference and narrows existing
+output budgets; task-start checks reject disabled or mismatched configuration and
+record registration evidence. Manual configuration and larger-baseline overrides
+do not falsely retain a different model's registration.
+
+Four model tests cover immutable registration, disable/pinned snapshot behavior,
+configuration mismatch, corruption, invalid endpoints/fields/limits/hashes,
+schema-4 migration preserving tasks, truthful trace metadata and an actual local
+HTTP request carrying the registered model ID. Schema-3 memory migration fixtures
+now correctly omit the newly added model tables. All 75 tests passed with local
+socket/HTTP fixture permissions. Formatting check, all-target check and denied-
+warning Clippy passed offline using flatc 25.12.19; the binary built. A fresh-home
+CLI smoke registered/listed/selected a model, executed verified arithmetic without
+a live model call, denied a task after disable and allowed it after re-enable.
+
+No weights are loaded or attested by registration. Declared context capacity is
+not exact tokenizer preflight. Saved selections require service restart; physical
+residency, dependency graphs and live inference studies remain open (`MODELS.md`).

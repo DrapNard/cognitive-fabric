@@ -74,3 +74,9 @@ updates and recovery audits are transactional. Lease replacement, hard-linked
 database aliases and malicious same-owner processes are outside this cooperative
 coordination guarantee. Recovery never replays tools or assumes external inference
 stopped; see `RECOVERY.md`.
+
+Model registration is immutable operator-reviewed metadata, not executable code,
+a permission grant or loaded-weight attestation. Only local endpoints are allowed.
+Disable blocks new task selections but cannot revoke already pinned execution.
+Context/output capacities and optional weight hashes are declared; actual backend
+weight identity and tokenization remain unproven. See `MODELS.md`.

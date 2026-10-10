@@ -152,11 +152,18 @@ impl Engine {
         if let Some(reference) = &options.conversation_ref {
             uuid::Uuid::parse_str(reference)?;
         }
+        let model_registration = self.store.pin_model(&self.cfg)?;
         let start = Instant::now();
         let backend = self.backend.pin()?.unwrap_or_else(|| self.backend.clone());
         let modules = backend.modules()?;
         let _execution_lease = self.store.execution_lease()?;
         let id = self.store.create_task(query, mode)?;
+        self.store.event(
+            &id,
+            "model_registration",
+            "runtime",
+            json!({"registration":model_registration,"weight_identity_verified":false}),
+        )?;
         let mut session = Session::new(
             self.cfg.clone(),
             self.store.clone(),

@@ -10,6 +10,7 @@ pub mod fabric;
 pub mod language;
 pub mod math;
 pub mod memory;
+pub mod models;
 pub mod planning;
 pub mod reasoning;
 pub mod recovery;

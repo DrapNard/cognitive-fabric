@@ -32,6 +32,22 @@ enum Command {
     Status,
     SelfTest,
     RecoverTasks,
+    Models,
+    ModelRegister {
+        manifest: PathBuf,
+    },
+    ModelUse {
+        id: String,
+        version: String,
+    },
+    ModelEnable {
+        id: String,
+        version: String,
+    },
+    ModelDisable {
+        id: String,
+        version: String,
+    },
     Skills,
     SkillRegister {
         manifest: PathBuf,
@@ -208,6 +224,24 @@ async fn main() -> Result<()> {
     store::bootstrap(&store)?;
     let engine = Engine::new(cfg.clone(), store.clone());
     let response: Value = match cli.command {
+        Command::Models => serde_json::to_value(store.models()?)?,
+        Command::ModelRegister { manifest } => {
+            serde_json::to_value(store.register_model(&manifest)?)?
+        }
+        Command::ModelUse { id, version } => {
+            let settings =
+                store.model_configuration(&cfg, &cogfabric::models::Selection { id, version })?;
+            settings.save()?;
+            json!({"saved":true,"configuration":settings,"server_weights_attested":false})
+        }
+        Command::ModelEnable { id, version } => {
+            store.set_model_enabled(&cogfabric::models::Selection { id, version }, true)?;
+            json!({"enabled":true})
+        }
+        Command::ModelDisable { id, version } => {
+            store.set_model_enabled(&cogfabric::models::Selection { id, version }, false)?;
+            json!({"enabled":false})
+        }
         Command::RecoverTasks => {
             json!({"interrupted_tasks":store.recover_tasks()?,"automatic_replay":false})
         }
@@ -224,6 +258,7 @@ async fn main() -> Result<()> {
         } => {
             let mut settings = cfg.clone();
             settings.backend = "openai-local".into();
+            settings.model_registration = None;
             if let Some(endpoint) = api_base {
                 settings.api_base = endpoint;
             }

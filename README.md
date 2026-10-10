@@ -2,7 +2,7 @@
 
 **Author:** DrapNard  
 **Language:** Rust (runtime), Python (optional offline model training)
-**Status:** **Verified Rust alpha baseline** — builds and 71 regression tests pass; v1.0 integration requirements remain incomplete.
+**Status:** **Verified Rust alpha baseline** — builds and 75 regression tests pass; v1.0 integration requirements remain incomplete.
 **License:** Apache-2.0 (framework only)
 
 This branch corrects the original v1.0 implementation's technology mismatch:
@@ -112,3 +112,5 @@ this does not attest immutable neural weights or load external executable plugin
 Reusable task snapshots: see [memory publication and revocation](docs/MEMORY.md).
 
 After a terminated process, see [interrupted task recovery](docs/RECOVERY.md).
+
+Manage [registered local model configurations](docs/MODELS.md).

@@ -137,7 +137,7 @@ impl Store {
         db.pragma_update(None, "journal_mode", "WAL")?;
         let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         let version: i64 = tx.pragma_query_value(None, "user_version", |row| row.get(0))?;
-        if version > 4 {
+        if version > 5 {
             bail!("Database schema is newer than this runtime")
         }
         if version == 0 {
@@ -203,6 +203,9 @@ impl Store {
         }
         if version < 4 {
             tx.execute_batch(crate::memory::SCHEMA)?;
+        }
+        if version < 5 {
+            tx.execute_batch(crate::models::SCHEMA)?;
         }
         tx.commit()?;
         Ok(Self {
@@ -940,7 +943,7 @@ mod tests {
             .unwrap()
             .pragma_query_value(None, "user_version", |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 4);
+        assert_eq!(version, 5);
         drop(store);
         let store = Store::open(&path).unwrap();
         assert_eq!(store.skills().unwrap().len(), 1);
