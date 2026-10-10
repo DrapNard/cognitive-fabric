@@ -397,6 +397,21 @@ impl Engine {
             } else {
                 mode
             };
+            if experts && mode != "fast" {
+                if let Some(manifest) = pinned
+                    .manifests
+                    .iter()
+                    .find(|manifest| manifest.kind == "workflow" && skills.contains(&manifest.id))
+                {
+                    if let Some(advice) = session.workflow_advice(manifest, query, &context).await?
+                    {
+                        context.push_str(
+                            "\nWorkflow expert result (unverified advice; never permissions): ",
+                        );
+                        context.push_str(&advice.chars().take(2000).collect::<String>());
+                    }
+                }
+            }
             session.verification_enabled = profile != ExecutionProfile::Alone;
             let mut answer = session
                 .solve_configured(
@@ -477,6 +492,92 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn workflow_experts_use_shared_budget_and_are_excluded_from_other_profiles() {
+        let store = Arc::new(Store::in_memory().unwrap());
+        let manifest: crate::registry::Manifest = serde_json::from_value(json!({"id":"rust.workflow.s1","version":"1.0.0","kind":"workflow","description":"Reviewed ownership workflow","tags":["ownership"],"dependencies":[],"source":"fixture","license":"CC0","workflow":"workflow sentinel: enumerate owners and moves; do not assume verification"})).unwrap();
+        crate::registry::register(&store, &manifest).unwrap();
+        crate::registry::activate(&store, &manifest.id, &manifest.version).unwrap();
+        let pinned = store.task_context("ownership").unwrap();
+        let mut replacement = manifest.clone();
+        replacement.version = "2.0.0".into();
+        replacement.workflow = Some("replacement sentinel".into());
+        crate::registry::register(&store, &replacement).unwrap();
+        crate::registry::activate(&store, &replacement.id, &replacement.version).unwrap();
+        assert!(pinned.manifests[0]
+            .workflow
+            .as_ref()
+            .unwrap()
+            .contains("workflow sentinel"));
+        crate::registry::activate(&store, &manifest.id, &manifest.version).unwrap();
+        let mut cfg = Config::load(None, Some("openai-local".into())).unwrap();
+        cfg.interpret_goals = false;
+        let backend = Arc::new(RecordingBackend(std::sync::Mutex::new(Vec::new())));
+        let engine = Engine::with_backend(cfg.clone(), store.clone(), backend.clone());
+        for profile in [
+            ExecutionProfile::Full,
+            ExecutionProfile::Experts,
+            ExecutionProfile::Memory,
+            ExecutionProfile::Alone,
+        ] {
+            backend.0.lock().unwrap().clear();
+            let outcome = engine
+                .run_profile("Explain ownership", "deep", profile)
+                .await
+                .unwrap();
+            assert_eq!(outcome.status, "unverified");
+            let calls = backend.0.lock().unwrap();
+            let uses_workflow =
+                matches!(profile, ExecutionProfile::Full | ExecutionProfile::Experts);
+            assert_eq!(
+                calls.iter().any(|(_, p)| p.contains("workflow sentinel")),
+                uses_workflow
+            );
+            if uses_workflow {
+                assert_eq!(calls[0].0, "solver");
+                assert_eq!(outcome.calls, 4);
+            }
+        }
+        cfg.max_calls = 2;
+        let engine = Engine::with_backend(cfg.clone(), store.clone(), backend.clone());
+        backend.0.lock().unwrap().clear();
+        let outcome = engine.run("Explain ownership", "deep").await.unwrap();
+        assert_eq!(outcome.calls, 2);
+        assert!(!backend
+            .0
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|(_, p)| p.contains("workflow sentinel")));
+        let trace = store.task(&outcome.task_id).unwrap();
+        assert!(trace["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["kind"] == "expert_dispatch" && e["payload"]["admitted"] == false));
+        cfg.max_calls = 8;
+        cfg.max_cycles = 0;
+        let engine = Engine::with_backend(cfg, store.clone(), backend.clone());
+        assert_eq!(
+            engine.run("Explain ownership", "deep").await.unwrap().calls,
+            0
+        );
+        crate::registry::disable(&store, &manifest.id).unwrap();
+        assert!(store
+            .task_context("ownership")
+            .unwrap()
+            .manifests
+            .is_empty());
+        let mut invalid = manifest;
+        invalid.kind = "reference".into();
+        assert!(invalid.validate().is_err());
+        invalid.kind = "workflow".into();
+        invalid.workflow = None;
+        assert!(invalid.validate().is_err());
+        invalid.workflow = Some("x".repeat(2001));
+        assert!(invalid.validate().is_err());
+    }
 
     struct RecordingBackend(std::sync::Mutex<Vec<(String, String)>>);
     impl InferenceBackend for RecordingBackend {

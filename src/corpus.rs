@@ -93,6 +93,7 @@ mod tests {
             .unwrap();
         let memory = store.publish_memory(&task, "episode", "reviewed").unwrap();
         let mut manifest = crate::registry::Manifest {
+            workflow: None,
             id: "rust.s1".into(),
             version: "1.0.0".into(),
             kind: "reference".into(),

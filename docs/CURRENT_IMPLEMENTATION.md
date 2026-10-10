@@ -42,7 +42,7 @@ Quality requires operator-attested held-out data. Promotion checks quality,
 cumulative approved-version retrieval regressions and unchanged versions transactionally.
 Rollback restores approved stored snapshots. Neural promotion stays disabled.
 
-Verification: 98 tests, formatting, all-target check and Clippy pass using exact
+Verification: 99 tests, formatting, all-target check and Clippy pass using exact
 flatc/Rust FlatBuffers 25.12.19. HTTP fixtures and socket tests ran locally; no
 compatible live model server was available at the default endpoint. No neural
 quality, GPU integration, hot-swap, energy or model-superiority result is claimed.
@@ -96,3 +96,8 @@ retention. Automatic source discovery/cleaning remains absent. See `EVOLUTION.md
 Module brokers measure per-call queue waiting independently of backend reports.
 Optional queue timing crosses module/owner IPC and accumulates in task/comparison
 resources; cancelled partial totals remain unavailable. GPU/load timing is absent.
+
+Expert manifests now include bounded prompt/workflow checklists. Full/experts
+execution can invoke one routed, version-pinned workflow through the shared solver
+backend, reserving budget for whole-goal reasoning. Advice is unverified and grants
+no permissions. Multi-step/executable/independent-model experts remain incomplete.

@@ -133,3 +133,10 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   timing through compatible module/socket schemas, task traces and comparison totals.
 - Preserve unavailable metrics on cancellation and legacy frames; test contention
   and reject invalid metric values without increasing runtime budgets.
+
+### Development: invoke bounded versioned prompt/workflow experts
+
+- Register and activate immutable reviewed workflow checklists alongside reference skills.
+- Invoke at most one routed checklist under shared budgets and task permissions,
+  retaining version/checksum audits and reserving whole-goal reasoning capacity.
+- Keep workflow advice unverified and isolate it from baseline comparison profiles.

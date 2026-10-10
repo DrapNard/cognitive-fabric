@@ -1,0 +1,11 @@
+{
+  "id": "rust.ownership.workflow.s1",
+  "version": "1.0.0",
+  "kind": "workflow",
+  "description": "Review Rust ownership explanations using an explicit checklist",
+  "tags": ["rust", "ownership", "borrowing"],
+  "dependencies": [],
+  "source": "Cognitive Fabric example authored for this repository",
+  "license": "Apache-2.0",
+  "workflow": "Identify each owner, move and borrow in the original objective. Separate compile-time constraints from runtime behavior. State missing evidence and provide advice to the final solver. Do not claim compilation, execute commands, or infer permissions."
+}

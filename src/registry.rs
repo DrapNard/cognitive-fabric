@@ -33,6 +33,8 @@ pub struct Manifest {
     pub dependencies: Vec<Dependency>,
     pub source: String,
     pub license: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workflow: Option<String>,
 }
 
 pub(crate) fn identifier(id: &str) -> bool {
@@ -46,14 +48,19 @@ pub(crate) fn identifier(id: &str) -> bool {
 impl Manifest {
     pub fn validate(&self) -> Result<()> {
         if !identifier(&self.id)
-            || self.kind != "reference"
+            || !matches!(self.kind.as_str(), "reference" | "workflow")
             || self.description.trim().is_empty()
             || self.description.len() > 500
             || self.tags.is_empty()
             || self.tags.len() > 32
             || self.dependencies.len() > 16
         {
-            bail!("Invalid reference-skill manifest")
+            bail!("Invalid expert manifest")
+        }
+        match (self.kind.as_str(), self.workflow.as_deref()) {
+            ("reference", None) => {},
+            ("workflow", Some(text)) if !text.trim().is_empty() && text.len() <= 2000 => {},
+            _ => bail!("Workflow experts require bounded advice; reference experts cannot contain workflows"),
         }
         let version = Version::parse(&self.version)?;
         if version.to_string() != self.version || self.version.len() > 64 {
@@ -307,6 +314,7 @@ mod tests {
             id: id.into(),
             version: version.into(),
             kind: "reference".into(),
+            workflow: None,
             description: "Reviewed reference skill".into(),
             tags: vec!["rust".into()],
             dependencies: vec![],

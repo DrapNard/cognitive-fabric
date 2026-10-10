@@ -407,3 +407,25 @@ Final checks: 98 all-target tests pass including actual socket/HTTP fixtures;
 formatting, all-target check and Clippy with denied warnings pass with flatc/Rust
 FlatBuffers 25.12.19. Initial compilation identified constructors and owner IPC
 resource paths requiring the added optional field; fixed before final checks.
+
+## Version-pinned bounded prompt/workflow experts
+
+Added optional workflow manifest text with strict kind-specific bounds and legacy
+canonical hash preservation. Explicit operator registration/activation retains
+existing dependency and immutable-version checks. Full/experts execution admits
+at most one routed workflow advice call under the shared task policy/broker/model;
+reserves planner/final-solver calls, tokens and conservative byte headroom; zero
+cycles prevent advice dispatch. Audit binds selected manifest version/checksum.
+Text and results remain advisory and cannot grant permissions or verification.
+
+Tests cover enabled execution, isolated profiles, insufficient calls, zero cycles,
+version-pinned text across replacement, disable behavior and invalid kind/text
+bounds. Final 99 all-target tests pass including actual socket/HTTP fixtures;
+formatting, all-target check and Clippy with denied warnings pass with FlatBuffers
+25.12.19. No live usefulness or expected-utility measurement is claimed. Multi-step
+workflows, executable experts and independent backend loading remain partial.
+
+Built CLI smoke: registered `examples/workflow_manifest.json`, activated
+rust.ownership.workflow.s1 1.0.0 and inspected skill-health in an isolated /tmp
+workspace; commands succeeded and reported valid dependency metadata. This smoke
+performed no live generation and did not modify the user's normal workspace state.

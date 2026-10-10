@@ -117,3 +117,8 @@ Per-call queue measurements are preserved in durable reasoning events. No-call
 tasks have zero queue time. A cancelled dispatched call or unavailable legacy metric
 makes the task total unavailable, and comparison totals preserve that uncertainty.
 This does not measure GPU execution, model loading, process memory or energy.
+
+Active routed workflow manifests add a separately budgeted advice call only to the
+experts profile (and normal full execution). Other ablation profiles exclude that
+call. Inspect expert_dispatch audit decisions and actual model-call/token usage;
+workflow registration does not imply a measured performance benefit.
