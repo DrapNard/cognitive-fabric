@@ -98,7 +98,7 @@ impl Engine {
     where
         F: std::future::Future<Output = ()>,
     {
-        self.run_execution(query, mode, options, ExecutionProfile::Full, cancel)
+        self.run_execution(query, mode, (options, None), ExecutionProfile::Full, cancel)
             .await
     }
 
@@ -125,8 +125,29 @@ impl Engine {
         self.run_execution(
             query,
             mode,
-            crate::language::TaskOptions::default(),
+            (crate::language::TaskOptions::default(), None),
             profile,
+            cancel,
+        )
+        .await
+    }
+
+    pub(crate) async fn run_service_task<F>(
+        &self,
+        task: &str,
+        query: &str,
+        mode: &str,
+        options: crate::language::TaskOptions,
+        cancel: F,
+    ) -> Result<Outcome>
+    where
+        F: std::future::Future<Output = ()>,
+    {
+        self.run_execution(
+            query,
+            mode,
+            (options, Some(task.to_string())),
+            ExecutionProfile::Full,
             cancel,
         )
         .await
@@ -136,13 +157,14 @@ impl Engine {
         &self,
         query: &str,
         mode: &str,
-        options: crate::language::TaskOptions,
+        execution_options: (crate::language::TaskOptions, Option<String>),
         profile: ExecutionProfile,
         cancel: F,
     ) -> Result<Outcome>
     where
         F: std::future::Future<Output = ()>,
     {
+        let (options, task_id) = execution_options;
         if query.trim().is_empty() || query.len() > 12_000 {
             bail!("Query is empty or exceeds 12,000 bytes")
         }
@@ -157,7 +179,10 @@ impl Engine {
         let backend = self.backend.pin()?.unwrap_or_else(|| self.backend.clone());
         let modules = backend.modules()?;
         let _execution_lease = self.store.execution_lease()?;
-        let id = self.store.create_task(query, mode)?;
+        let id = match task_id {
+            Some(id) => self.store.create_named_task(&id, query, mode)?,
+            None => self.store.create_task(query, mode)?,
+        };
         self.store.event(
             &id,
             "model_registration",

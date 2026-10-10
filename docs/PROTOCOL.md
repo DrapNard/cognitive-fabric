@@ -96,4 +96,12 @@ same pinned flatc/Rust 25.12.19 pair. Bounded typed milestones cross local Tokio
 subscription queues; no JSON message payload replaces internal FlatBuffers.
 SQLite JSON audit metadata is projected into validated typed fields before
 publication. See `EVENTS.md` for capacity, overflow and durable cursor semantics.
-The existing owner-IPC and inference-RPC schemas remain unchanged.
+The inference-RPC schema remains unchanged; owner-IPC additions are described below.
+
+COGF v1 now appends TaskProgress (4) and CancelTask (5) control actions. Requests
+append optional task UUID and after-sequence fields; task actions require UUIDs,
+and only progress accepts a nonzero cursor. Control responses append optional
+active-task UUID and a task-bound progress page of at most 32 independently
+verified COGE frames. Existing action ordinals and absent-field defaults remain
+compatible. Nested malformed frames, task mismatches and unordered sequences fail
+closed. Clients correlate responses and reject progress preceding their cursor.

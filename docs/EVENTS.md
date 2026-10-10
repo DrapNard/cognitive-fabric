@@ -38,5 +38,25 @@ this is neither a distributed consensus service nor exactly-once delivery.
 
 The event hub extends the inference broker's typed communication with progress
 notifications. Independent-process streaming subscriptions, general executable
-module event routing and Unix-socket task-specific controls remain incomplete.
+module event routing remain incomplete. Unix-socket progress polling and task-specific cancellation
+are available as described below.
 Progress frames are data, never commands or evidence that a model answer is true.
+
+## Owner-local socket controls
+
+While `cogfabric serve` runs, `cogfabric service-status` reports its active task
+UUID. Use `cogfabric task-progress TASK_UUID --after CURSOR --socket` to request a
+bounded durable page over the owner-authenticated Unix socket, or
+`cogfabric cancel-task TASK_UUID` to cancel that specific active execution. Wrong,
+completed and stale task targets return `accepted: false`; they do not cancel a
+subsequent task. The current-task identity and cancellation signal are coordinated
+under one runtime mutex. Ask correlation IDs do not select execution identities.
+
+The appended COGF control fields preserve legacy defaults. Progress pages contain
+verified nested COGE FlatBuffers frames, bound to the requested task and strictly
+increasing sequences. Both peers validate frame counts, cursor bounds and task
+identity. Controls use the existing five-second client deadline and bounded socket
+handlers; inference cancellation and progress controls remain available while work
+is running. A just-admitted UUID can briefly precede its database task creation;
+a progress request then returns an explicit unknown-task error, so retry after
+creation. This is bounded polling, not a permanent streaming connection.

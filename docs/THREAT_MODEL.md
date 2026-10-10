@@ -87,3 +87,10 @@ error and cannot stall producers. Known stages/sources/states, UUIDs and optiona
 counters are validated from FlatBuffers. In-process code remains trusted; the
 hub does not authenticate independent plugins or remote subscribers. Durable
 catch-up is owner-local and does not grant model observation or tool permissions.
+
+Socket task controls use the existing OS owner-UID authentication. Task UUIDs
+identify execution; request correlation IDs cannot assign or overwrite task IDs.
+Targeted cancellation compares against the current execution under one mutex, so
+stale targets cannot cancel new tasks. Progress pages validate nested FlatBuffers,
+task identity and monotonic cursors; wrong-target and malformed requests fail.
+This adds observation/cancellation for the authorized owner, not model tool grants.

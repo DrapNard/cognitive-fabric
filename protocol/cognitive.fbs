@@ -3,7 +3,7 @@
 namespace Cognitive;
 
 enum MessageKind:ubyte { Request = 0, Response = 1, Error = 2, Control = 3, ControlResponse = 4 }
-enum ControlAction:ubyte { Status = 0, CancelActive = 1, Stop = 2, Modules = 3 }
+enum ControlAction:ubyte { Status = 0, CancelActive = 1, Stop = 2, Modules = 3, TaskProgress = 4, CancelTask = 5 }
 enum ReasoningMode:ubyte { Fast = 0, Standard = 1, Deep = 2, Research = 3 }
 
 table AskRequest {
@@ -41,13 +41,20 @@ table ProtocolError {
 
 table ControlRequest {
   action:ControlAction;
+  task_id:string;
+  after_sequence:ulong;
 }
 
 table ControlResponse {
   active:bool;
   accepted:bool;
   modules:[ModuleInfo];
+  active_task_id:string;
+  progress:ProgressPage;
 }
+
+table ProgressFrame { data:[ubyte] (required); }
+table ProgressPage { task_id:string (required); cursor:ulong; more:bool; events:[ProgressFrame]; }
 
 table ModuleInfo {
   id:string (required);

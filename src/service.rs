@@ -9,10 +9,7 @@ use std::{
     future::Future,
     os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt},
     path::PathBuf,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
+    sync::{Arc, Mutex},
     time::Duration,
 };
 use tokio::{
@@ -31,7 +28,7 @@ struct SocketGuard {
 struct Controls {
     stopping: watch::Sender<bool>,
     cancellation: watch::Sender<u64>,
-    active: AtomicBool,
+    active: Mutex<Option<String>>,
     execution: Semaphore,
 }
 impl Drop for SocketGuard {
@@ -78,7 +75,7 @@ where
     let controls = Arc::new(Controls {
         stopping: cancel.clone(),
         cancellation: watch::channel(0).0,
-        active: AtomicBool::new(false),
+        active: Mutex::new(None),
         execution: Semaphore::new(1),
     });
     let mut remote_stop = cancel.subscribe();
@@ -138,41 +135,18 @@ async fn handle(
         result = tokio::time::timeout(Duration::from_secs(10), wire::read_message(&mut reader)) => result,
     };
     let response = match request {
-        Ok(Ok(Message::Control { id, action })) => {
-            let active = controls.active.load(Ordering::Acquire);
-            let accepted = match action {
-                wire::ControlAction::Status => true,
-                wire::ControlAction::Modules => true,
-                wire::ControlAction::CancelActive => {
-                    if active {
-                        controls
-                            .cancellation
-                            .send_modify(|generation| *generation = generation.wrapping_add(1));
-                    }
-                    active
-                }
-                wire::ControlAction::Stop => {
-                    controls.stopping.send_replace(true);
-                    true
-                }
-            };
-            match if action == wire::ControlAction::Modules {
-                engine.broker.discover()
-            } else {
-                Ok(Vec::new())
-            } {
-                Ok(modules) => Message::ControlReply {
-                    id,
-                    active,
-                    accepted,
-                    modules,
-                },
-                Err(error) => Message::Error {
-                    id,
-                    message: error.to_string(),
-                },
-            }
-        }
+        Ok(Ok(Message::Control {
+            id,
+            action,
+            task_id,
+            after,
+        })) => match control_response(&engine, &controls, &id, action, task_id.as_deref(), after) {
+            Ok(response) => response,
+            Err(error) => Message::Error {
+                id,
+                message: error.to_string(),
+            },
+        },
         Ok(Ok(Message::Ask {
             id,
             query,
@@ -195,7 +169,9 @@ async fn handle(
                 return;
             };
             let mut cancellation = controls.cancellation.subscribe();
-            controls.active.store(true, Ordering::Release);
+            let runtime_task = uuid::Uuid::new_v4().to_string();
+            *controls.active.lock().expect("Active task mutex poisoned") =
+                Some(runtime_task.clone());
             let cancel = async {
                 let mut extra = [0];
                 tokio::select! {
@@ -206,7 +182,8 @@ async fn handle(
                 }
             };
             let result = engine
-                .run_with_options(
+                .run_service_task(
+                    &runtime_task,
                     &query,
                     &mode,
                     crate::language::TaskOptions {
@@ -216,7 +193,7 @@ async fn handle(
                     cancel,
                 )
                 .await;
-            controls.active.store(false, Ordering::Release);
+            *controls.active.lock().expect("Active task mutex poisoned") = None;
             match result {
                 Ok(outcome) => Message::Reply { id, outcome },
                 Err(err) => Message::Error {
@@ -246,6 +223,57 @@ async fn handle(
     .await;
 }
 
+fn control_response(
+    engine: &Engine,
+    controls: &Controls,
+    id: &str,
+    action: wire::ControlAction,
+    task: Option<&str>,
+    after: u64,
+) -> Result<Message> {
+    let active_task = controls
+        .active
+        .lock()
+        .map_err(|_| anyhow::anyhow!("Active task mutex poisoned"))?;
+    let active = active_task.is_some();
+    let mut modules = Vec::new();
+    let mut progress = None;
+    let accepted = match action {
+        wire::ControlAction::Status => true,
+        wire::ControlAction::Modules => {
+            modules = engine.broker.discover()?;
+            true
+        }
+        wire::ControlAction::TaskProgress => {
+            let task = task.ok_or_else(|| anyhow::anyhow!("Missing task UUID"))?;
+            progress = Some((task.into(), engine.store.progress_since(task, after)?));
+            true
+        }
+        wire::ControlAction::CancelActive | wire::ControlAction::CancelTask => {
+            let matched = active
+                && (action == wire::ControlAction::CancelActive || active_task.as_deref() == task);
+            if matched {
+                controls
+                    .cancellation
+                    .send_modify(|generation| *generation = generation.wrapping_add(1));
+            }
+            matched
+        }
+        wire::ControlAction::Stop => {
+            controls.stopping.send_replace(true);
+            true
+        }
+    };
+    Ok(Message::ControlReply {
+        id: id.into(),
+        active,
+        accepted,
+        modules,
+        active_task_id: active_task.clone(),
+        progress,
+    })
+}
+
 pub async fn control(cfg: &Config, action: wire::ControlAction) -> Result<(bool, bool)> {
     let (active, accepted, _) = exchange_control(cfg, action).await?;
     Ok((active, accepted))
@@ -263,6 +291,66 @@ async fn exchange_control(
     cfg: &Config,
     action: wire::ControlAction,
 ) -> Result<(bool, bool, Vec<crate::fabric::ModuleDescriptor>)> {
+    match exchange_task_control(cfg, action, None, 0).await? {
+        Message::ControlReply {
+            active,
+            accepted,
+            modules,
+            ..
+        } => Ok((active, accepted, modules)),
+        _ => bail!("Unexpected control response"),
+    }
+}
+
+pub async fn task_progress(
+    cfg: &Config,
+    task: &str,
+    after: u64,
+) -> Result<crate::events::ProgressPage> {
+    match exchange_task_control(cfg, wire::ControlAction::TaskProgress, Some(task), after).await? {
+        Message::ControlReply {
+            accepted: true,
+            progress: Some((identity, page)),
+            ..
+        } if identity == task
+            && page.cursor >= after
+            && page.events.iter().all(|event| event.sequence > after) =>
+        {
+            Ok(page)
+        }
+        _ => bail!("Unexpected task progress response"),
+    }
+}
+pub async fn cancel_task(cfg: &Config, task: &str) -> Result<bool> {
+    match exchange_task_control(cfg, wire::ControlAction::CancelTask, Some(task), 0).await? {
+        Message::ControlReply {
+            accepted,
+            active_task_id,
+            ..
+        } if !accepted || active_task_id.as_deref() == Some(task) => Ok(accepted),
+        _ => bail!("Unexpected task cancellation response"),
+    }
+}
+pub async fn status(cfg: &Config) -> Result<(bool, Option<String>)> {
+    match exchange_task_control(cfg, wire::ControlAction::Status, None, 0).await? {
+        Message::ControlReply {
+            active,
+            active_task_id,
+            accepted: true,
+            ..
+        } => Ok((active, active_task_id)),
+        _ => bail!("Unexpected service status response"),
+    }
+}
+pub async fn active_task(cfg: &Config) -> Result<Option<String>> {
+    Ok(status(cfg).await?.1)
+}
+async fn exchange_task_control(
+    cfg: &Config,
+    action: wire::ControlAction,
+    task: Option<&str>,
+    after: u64,
+) -> Result<Message> {
     tokio::time::timeout(Duration::from_secs(5), async {
         let mut stream = UnixStream::connect(cfg.socket()).await?;
         let id = uuid::Uuid::new_v4().to_string();
@@ -271,17 +359,16 @@ async fn exchange_control(
             &Message::Control {
                 id: id.clone(),
                 action,
+                task_id: task.map(String::from),
+                after,
             },
         )
         .await?;
-        match wire::read_message(&mut stream).await? {
-            Message::ControlReply {
-                id: reply_id,
-                active,
-                accepted,
-                modules,
-            } if reply_id == id => Ok((active, accepted, modules)),
-            _ => bail!("Unexpected control response"),
+        let response = wire::read_message(&mut stream).await?;
+        match &response {
+            Message::ControlReply { id: reply, .. } if reply == &id => Ok(response),
+            Message::Error { id: reply, message } if reply == &id => bail!("{message}"),
+            _ => bail!("Unexpected correlated control response"),
         }
     })
     .await?
@@ -459,7 +546,7 @@ mod tests {
 
     #[tokio::test]
     async fn disconnect_and_shutdown_cancel_inference_durably() {
-        for cancellation_mode in 0..3 {
+        for cancellation_mode in 0..4 {
             let (mut cfg, _) = setup();
             let http = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             cfg.backend = "openai-local".into();
@@ -475,6 +562,16 @@ mod tests {
             });
             let (stop, service) = start(engine).await;
             let mut stop = Some(stop);
+            let prior_task = if cancellation_mode == 3 {
+                Some(
+                    request(&cfg, "calc: 1+1".into(), "fast".into())
+                        .await
+                        .unwrap()
+                        .task_id,
+                )
+            } else {
+                None
+            };
             let mut client = UnixStream::connect(cfg.socket()).await.unwrap();
             wire::write_message(
                 &mut client,
@@ -488,26 +585,55 @@ mod tests {
                 .unwrap();
             if cancellation_mode == 0 {
                 drop(client);
-            } else if cancellation_mode == 2 {
+            } else if cancellation_mode >= 2 {
                 assert_eq!(
                     control(&cfg, wire::ControlAction::Status).await.unwrap(),
                     (true, true)
                 );
+                let identity = active_task(&cfg).await.unwrap().unwrap();
+                if let Some(prior) = &prior_task {
+                    assert!(!cancel_task(&cfg, prior).await.unwrap());
+                }
+                assert!(!cancel_task(&cfg, &uuid::Uuid::new_v4().to_string())
+                    .await
+                    .unwrap());
+                assert_eq!(
+                    active_task(&cfg).await.unwrap().as_deref(),
+                    Some(identity.as_str())
+                );
+                let page = task_progress(&cfg, &identity, 0).await.unwrap();
+                assert!(page
+                    .events
+                    .iter()
+                    .any(|event| event.stage == crate::events::Stage::ModelDispatched));
+                assert!(task_progress(&cfg, &uuid::Uuid::new_v4().to_string(), 0)
+                    .await
+                    .is_err());
                 assert!(request(&cfg, "calc: 1+1".into(), "fast".into())
                     .await
                     .unwrap_err()
                     .to_string()
                     .contains("busy"));
-                assert_eq!(
-                    control(&cfg, wire::ControlAction::CancelActive)
-                        .await
-                        .unwrap(),
-                    (true, true)
-                );
+                if cancellation_mode == 2 {
+                    assert_eq!(
+                        control(&cfg, wire::ControlAction::CancelActive)
+                            .await
+                            .unwrap(),
+                        (true, true)
+                    );
+                } else {
+                    assert!(cancel_task(&cfg, &identity).await.unwrap());
+                }
                 let result = wire::read_message(&mut client).await.unwrap();
                 assert!(
-                    matches!(result, Message::Reply { outcome, .. } if outcome.status == "cancelled")
+                    matches!(result, Message::Reply { outcome, .. } if outcome.status == "cancelled" && outcome.task_id==identity)
                 );
+                assert!(!cancel_task(&cfg, &identity).await.unwrap());
+                let terminal = task_progress(&cfg, &identity, page.cursor).await.unwrap();
+                assert!(terminal
+                    .events
+                    .iter()
+                    .any(|event| event.state == "cancelled"));
                 drop(client);
             } else {
                 stop.take().unwrap().send(()).unwrap();
@@ -516,7 +642,11 @@ mod tests {
                 loop {
                     let db = rusqlite::Connection::open(cfg.db()).unwrap();
                     let status: String = db
-                        .query_row("SELECT status FROM tasks LIMIT 1", [], |row| row.get(0))
+                        .query_row(
+                            "SELECT status FROM tasks ORDER BY created DESC LIMIT 1",
+                            [],
+                            |row| row.get(0),
+                        )
                         .unwrap();
                     if status == "cancelled" {
                         break;

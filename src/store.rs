@@ -216,12 +216,15 @@ impl Store {
         })
     }
     pub fn create_task(&self, query: &str, mode: &str) -> Result<String> {
-        let id = Uuid::new_v4().to_string();
+        self.create_named_task(&Uuid::new_v4().to_string(), query, mode)
+    }
+    pub(crate) fn create_named_task(&self, id: &str, query: &str, mode: &str) -> Result<String> {
+        Uuid::parse_str(id)?;
         self.lock()?.execute(
             "INSERT INTO tasks VALUES (?1,?2,?3,'running','',?4,?4)",
             params![id, query, mode, now()],
         )?;
-        Ok(id)
+        Ok(id.to_string())
     }
     pub fn finish_task(&self, id: &str, status: &str, answer: &str) -> Result<()> {
         self.lock()?.execute(

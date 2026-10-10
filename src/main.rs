@@ -36,6 +36,11 @@ enum Command {
         id: String,
         #[arg(long, default_value = "0")]
         after: u64,
+        #[arg(long)]
+        socket: bool,
+    },
+    CancelTask {
+        id: String,
     },
     Models,
     ModelRegister {
@@ -229,8 +234,13 @@ async fn main() -> Result<()> {
     store::bootstrap(&store)?;
     let engine = Engine::new(cfg.clone(), store.clone());
     let response: Value = match cli.command {
-        Command::TaskProgress { id, after } => {
-            serde_json::to_value(store.progress_since(&id, after)?)?
+        Command::TaskProgress { id, after, socket } => serde_json::to_value(if socket {
+            service::task_progress(&cfg, &id, after).await?
+        } else {
+            store.progress_since(&id, after)?
+        })?,
+        Command::CancelTask { id } => {
+            json!({"task_id":id,"accepted":service::cancel_task(&cfg,&id).await?})
         }
         Command::Models => serde_json::to_value(store.models()?)?,
         Command::ModelRegister { manifest } => {
@@ -335,9 +345,12 @@ async fn main() -> Result<()> {
             service::serve(engine).await?;
             return Ok(());
         }
-        Command::ServiceStatus | Command::CancelActive | Command::Stop => {
+        Command::ServiceStatus => {
+            let (active, active_task_id) = service::status(&cfg).await?;
+            json!({"active":active,"accepted":true,"active_task_id":active_task_id})
+        }
+        Command::CancelActive | Command::Stop => {
             let action = match cli.command {
-                Command::ServiceStatus => cogfabric::wire::ControlAction::Status,
                 Command::CancelActive => cogfabric::wire::ControlAction::CancelActive,
                 _ => cogfabric::wire::ControlAction::Stop,
             };

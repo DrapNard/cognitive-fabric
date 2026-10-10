@@ -18,6 +18,8 @@ pub enum ControlAction {
     CancelActive,
     Stop,
     Modules,
+    TaskProgress,
+    CancelTask,
 }
 
 #[derive(Clone, Debug)]
@@ -25,12 +27,16 @@ pub enum Message {
     Control {
         id: String,
         action: ControlAction,
+        task_id: Option<String>,
+        after: u64,
     },
     ControlReply {
         id: String,
         active: bool,
         accepted: bool,
         modules: Vec<crate::fabric::ModuleDescriptor>,
+        active_task_id: Option<String>,
+        progress: Option<(String, crate::events::ProgressPage)>,
     },
     Ask {
         id: String,
@@ -47,6 +53,35 @@ pub enum Message {
         id: String,
         message: String,
     },
+}
+
+fn validate_control(action: ControlAction, task: Option<&str>, after: u64) -> Result<()> {
+    if matches!(
+        action,
+        ControlAction::TaskProgress | ControlAction::CancelTask
+    ) {
+        uuid::Uuid::parse_str(task.context("Task control requires a task UUID")?)?;
+    } else if task.is_some() {
+        bail!("Unexpected task identity on service control")
+    }
+    if after > i64::MAX as u64 || (action != ControlAction::TaskProgress && after != 0) {
+        bail!("Invalid progress cursor")
+    }
+    Ok(())
+}
+fn validate_page(task: &str, page: &crate::events::ProgressPage) -> Result<()> {
+    uuid::Uuid::parse_str(task)?;
+    if page.events.len() > 32 || page.cursor > i64::MAX as u64 {
+        bail!("Invalid progress page bounds")
+    }
+    let mut last = 0;
+    for event in &page.events {
+        if event.task_id != task || event.sequence <= last || event.sequence > page.cursor {
+            bail!("Progress page task or sequence mismatch")
+        }
+        last = event.sequence;
+    }
+    Ok(())
 }
 
 pub fn encode(message: &Message) -> Result<Vec<u8>> {
@@ -81,7 +116,14 @@ pub fn encode(message: &Message) -> Result<Vec<u8>> {
         ..Default::default()
     };
     match message {
-        Message::Control { action, .. } => {
+        Message::Control {
+            action,
+            task_id,
+            after,
+            ..
+        } => {
+            validate_control(*action, task_id.as_deref(), *after)?;
+            let task_id = task_id.as_ref().map(|id| builder.create_string(id));
             args.kind = fb::MessageKind::Control;
             args.control = Some(fb::ControlRequest::create(
                 &mut builder,
@@ -91,7 +133,11 @@ pub fn encode(message: &Message) -> Result<Vec<u8>> {
                         ControlAction::CancelActive => fb::ControlAction::CancelActive,
                         ControlAction::Stop => fb::ControlAction::Stop,
                         ControlAction::Modules => fb::ControlAction::Modules,
+                        ControlAction::TaskProgress => fb::ControlAction::TaskProgress,
+                        ControlAction::CancelTask => fb::ControlAction::CancelTask,
                     },
+                    task_id,
+                    after_sequence: *after,
                 },
             ));
         }
@@ -99,8 +145,13 @@ pub fn encode(message: &Message) -> Result<Vec<u8>> {
             active,
             accepted,
             modules,
+            active_task_id,
+            progress,
             ..
         } => {
+            if active_task_id.is_some() && !active {
+                bail!("Inactive response cannot identify an active task")
+            }
             args.kind = fb::MessageKind::ControlResponse;
             if modules.len() > 32 {
                 bail!("Too many discovered modules")
@@ -126,12 +177,46 @@ pub fn encode(message: &Message) -> Result<Vec<u8>> {
                 ));
             }
             let modules = builder.create_vector(&encoded);
+            let active_task_id = active_task_id
+                .as_ref()
+                .map(|id| -> Result<_> {
+                    uuid::Uuid::parse_str(id)?;
+                    Ok(builder.create_string(id))
+                })
+                .transpose()?;
+            let progress = if let Some((task, page)) = progress {
+                validate_page(task, page)?;
+                let task = builder.create_string(task);
+                let mut frames = Vec::new();
+                for event in &page.events {
+                    let bytes = event.encode()?;
+                    let data = builder.create_vector(&bytes);
+                    frames.push(fb::ProgressFrame::create(
+                        &mut builder,
+                        &fb::ProgressFrameArgs { data: Some(data) },
+                    ));
+                }
+                let events = builder.create_vector(&frames);
+                Some(fb::ProgressPage::create(
+                    &mut builder,
+                    &fb::ProgressPageArgs {
+                        task_id: Some(task),
+                        cursor: page.cursor,
+                        more: page.more,
+                        events: Some(events),
+                    },
+                ))
+            } else {
+                None
+            };
             args.control_response = Some(fb::ControlResponse::create(
                 &mut builder,
                 &fb::ControlResponseArgs {
                     active: *active,
                     accepted: *accepted,
                     modules: Some(modules),
+                    active_task_id,
+                    progress,
                 },
             ));
         }
@@ -266,9 +351,19 @@ pub fn decode(body: &[u8]) -> Result<Message> {
                 fb::ControlAction::CancelActive => ControlAction::CancelActive,
                 fb::ControlAction::Stop => ControlAction::Stop,
                 fb::ControlAction::Modules => ControlAction::Modules,
+                fb::ControlAction::TaskProgress => ControlAction::TaskProgress,
+                fb::ControlAction::CancelTask => ControlAction::CancelTask,
                 _ => bail!("Unknown control action"),
             };
-            Ok(Message::Control { id, action })
+            let task_id = control.task_id().map(String::from);
+            let after = control.after_sequence();
+            validate_control(action, task_id.as_deref(), after)?;
+            Ok(Message::Control {
+                id,
+                action,
+                task_id,
+                after,
+            })
         }
         fb::MessageKind::ControlResponse => {
             let response = envelope
@@ -292,11 +387,41 @@ pub fn decode(body: &[u8]) -> Result<Message> {
                     modules.push(descriptor);
                 }
             }
+            let active_task_id = response.active_task_id().map(String::from);
+            if active_task_id.is_some() && !response.active() {
+                bail!("Inactive response cannot identify an active task")
+            }
+            if let Some(id) = &active_task_id {
+                uuid::Uuid::parse_str(id)?;
+            }
+            let progress = if let Some(page) = response.progress() {
+                let mut events = Vec::new();
+                if let Some(frames) = page.events() {
+                    if frames.len() > 32 {
+                        bail!("Progress page exceeds event limit")
+                    }
+                    for frame in frames.iter() {
+                        events.push(crate::events::Progress::decode(frame.data().bytes())?);
+                    }
+                }
+                let task = page.task_id().to_string();
+                let page = crate::events::ProgressPage {
+                    cursor: page.cursor(),
+                    more: page.more(),
+                    events,
+                };
+                validate_page(&task, &page)?;
+                Some((task, page))
+            } else {
+                None
+            };
             Ok(Message::ControlReply {
                 id,
                 active: response.active(),
                 accepted: response.accepted(),
                 modules,
+                active_task_id,
+                progress,
             })
         }
         fb::MessageKind::Request => {
@@ -412,6 +537,122 @@ pub fn new_request(query: String, mode: String) -> Message {
 mod tests {
     use super::*;
     #[test]
+    fn targeted_controls_require_identity_and_preserve_progress_frames() {
+        let task = Uuid::new_v4().to_string();
+        for action in [ControlAction::TaskProgress, ControlAction::CancelTask] {
+            let message = Message::Control {
+                id: "control".into(),
+                action,
+                task_id: Some(task.clone()),
+                after: 0,
+            };
+            assert!(
+                matches!(decode(&encode(&message).unwrap()).unwrap(),Message::Control{task_id:Some(identity),..} if identity==task)
+            );
+            assert!(encode(&Message::Control {
+                id: "control".into(),
+                action,
+                task_id: None,
+                after: 0
+            })
+            .is_err());
+        }
+        assert!(encode(&Message::Control {
+            id: "c".into(),
+            action: ControlAction::Status,
+            task_id: Some(task.clone()),
+            after: 0
+        })
+        .is_err());
+        assert!(encode(&Message::Control {
+            id: "c".into(),
+            action: ControlAction::CancelTask,
+            task_id: Some(task.clone()),
+            after: 1
+        })
+        .is_err());
+        let event = crate::events::Progress::from_audit(
+            7,
+            &task,
+            "model_dispatch",
+            "jev-r",
+            &serde_json::json!({"role":"solver","call":1}),
+        )
+        .unwrap()
+        .unwrap();
+        let reply = Message::ControlReply {
+            id: "c".into(),
+            active: true,
+            accepted: true,
+            modules: Vec::new(),
+            active_task_id: Some(task.clone()),
+            progress: Some((
+                task.clone(),
+                crate::events::ProgressPage {
+                    cursor: 8,
+                    more: false,
+                    events: vec![event.clone()],
+                },
+            )),
+        };
+        let Message::ControlReply {
+            progress: Some((identity, page)),
+            ..
+        } = decode(&encode(&reply).unwrap()).unwrap()
+        else {
+            panic!("Expected progress")
+        };
+        assert_eq!(identity, task);
+        assert_eq!(page.cursor, 8);
+        assert_eq!(page.events[0].model_calls, Some(1));
+        let mut invalid = page.clone();
+        invalid.cursor = 6;
+        assert!(validate_page(&task, &invalid).is_err());
+        invalid = page;
+        invalid.events.push(event);
+        assert!(validate_page(&task, &invalid).is_err());
+        assert!(validate_page(&Uuid::new_v4().to_string(), &invalid).is_err());
+    }
+    #[test]
+    fn nested_progress_frames_are_verified_before_access() {
+        let mut builder = flatbuffers::FlatBufferBuilder::new();
+        let bytes = builder.create_vector(b"garbage");
+        let frame =
+            fb::ProgressFrame::create(&mut builder, &fb::ProgressFrameArgs { data: Some(bytes) });
+        let events = builder.create_vector(&[frame]);
+        let task = builder.create_string(&Uuid::new_v4().to_string());
+        let page = fb::ProgressPage::create(
+            &mut builder,
+            &fb::ProgressPageArgs {
+                task_id: Some(task),
+                cursor: 1,
+                more: false,
+                events: Some(events),
+            },
+        );
+        let response = fb::ControlResponse::create(
+            &mut builder,
+            &fb::ControlResponseArgs {
+                accepted: true,
+                progress: Some(page),
+                ..Default::default()
+            },
+        );
+        let id = builder.create_string("control");
+        let envelope = fb::Envelope::create(
+            &mut builder,
+            &fb::EnvelopeArgs {
+                request_id: Some(id),
+                kind: fb::MessageKind::ControlResponse,
+                control_response: Some(response),
+                ..Default::default()
+            },
+        );
+        builder.finish(envelope, Some("COGF"));
+        assert!(decode(builder.finished_data()).is_err());
+    }
+
+    #[test]
     fn controls_are_typed_and_ambiguous_envelopes_fail() {
         for action in [
             ControlAction::Status,
@@ -422,6 +663,8 @@ mod tests {
             let message = Message::Control {
                 id: "control".into(),
                 action,
+                task_id: None,
+                after: 0,
             };
             assert!(
                 matches!(decode(&encode(&message).unwrap()).unwrap(), Message::Control { action: decoded, .. } if decoded == action)
@@ -433,6 +676,7 @@ mod tests {
             &mut builder,
             &fb::ControlRequestArgs {
                 action: fb::ControlAction(255),
+                ..Default::default()
             },
         );
         let envelope = fb::Envelope::create(
@@ -556,6 +800,8 @@ mod tests {
     #[test]
     fn discovery_roundtrips_and_legacy_controls_have_no_modules() {
         let reply = Message::ControlReply {
+            active_task_id: None,
+            progress: None,
             id: "discovery".into(),
             active: false,
             accepted: true,
@@ -591,7 +837,7 @@ mod tests {
         );
         builder.finish(envelope, Some("COGF"));
         assert!(
-            matches!(decode(builder.finished_data()).unwrap(),Message::ControlReply { modules, .. } if modules.is_empty())
+            matches!(decode(builder.finished_data()).unwrap(),Message::ControlReply { modules, active_task_id:None, progress:None, .. } if modules.is_empty())
         );
     }
     #[test]

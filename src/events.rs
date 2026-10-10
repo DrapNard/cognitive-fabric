@@ -297,7 +297,7 @@ impl crate::store::Store {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct ProgressPage {
     pub cursor: u64,
     pub more: bool,
