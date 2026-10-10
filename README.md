@@ -2,7 +2,7 @@
 
 **Author:** DrapNard  
 **Language:** Rust (runtime), Python (optional offline model training)
-**Status:** **Verified Rust alpha baseline** — builds and 59 regression tests pass; v1.0 integration requirements remain incomplete.
+**Status:** **Verified Rust alpha baseline** — builds and 64 regression tests pass; v1.0 integration requirements remain incomplete.
 **License:** Apache-2.0 (framework only)
 
 This branch corrects the original v1.0 implementation's technology mismatch:
@@ -104,3 +104,7 @@ For same-model ablations, use `compare DATASET --source SOURCE --license LICENSE
 --held-out --code-revision FULL_GIT_SHA`, optionally with `--larger-model ID`.
 See [benchmark methodology](docs/BENCHMARKING.md); the arithmetic example is only
 a runner smoke test, and a live-model advantage remains unmeasured.
+
+Use `modules` or `modules --socket` to inspect registered inference adapter
+versions and roles. The bounded internal FlatBuffers broker pins adapters per task;
+this does not attest immutable neural weights or load external executable plugins.

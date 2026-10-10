@@ -142,6 +142,7 @@ async fn handle(
             let active = controls.active.load(Ordering::Acquire);
             let accepted = match action {
                 wire::ControlAction::Status => true,
+                wire::ControlAction::Modules => true,
                 wire::ControlAction::CancelActive => {
                     if active {
                         controls
@@ -155,10 +156,21 @@ async fn handle(
                     true
                 }
             };
-            Message::ControlReply {
-                id,
-                active,
-                accepted,
+            match if action == wire::ControlAction::Modules {
+                engine.broker.discover()
+            } else {
+                Ok(Vec::new())
+            } {
+                Ok(modules) => Message::ControlReply {
+                    id,
+                    active,
+                    accepted,
+                    modules,
+                },
+                Err(error) => Message::Error {
+                    id,
+                    message: error.to_string(),
+                },
             }
         }
         Ok(Ok(Message::Ask {
@@ -235,6 +247,22 @@ async fn handle(
 }
 
 pub async fn control(cfg: &Config, action: wire::ControlAction) -> Result<(bool, bool)> {
+    let (active, accepted, _) = exchange_control(cfg, action).await?;
+    Ok((active, accepted))
+}
+
+pub async fn modules(cfg: &Config) -> Result<Vec<crate::fabric::ModuleDescriptor>> {
+    let (_, accepted, modules) = exchange_control(cfg, wire::ControlAction::Modules).await?;
+    if !accepted {
+        bail!("Module discovery unavailable")
+    }
+    Ok(modules)
+}
+
+async fn exchange_control(
+    cfg: &Config,
+    action: wire::ControlAction,
+) -> Result<(bool, bool, Vec<crate::fabric::ModuleDescriptor>)> {
     tokio::time::timeout(Duration::from_secs(5), async {
         let mut stream = UnixStream::connect(cfg.socket()).await?;
         let id = uuid::Uuid::new_v4().to_string();
@@ -251,7 +279,8 @@ pub async fn control(cfg: &Config, action: wire::ControlAction) -> Result<(bool,
                 id: reply_id,
                 active,
                 accepted,
-            } if reply_id == id => Ok((active, accepted)),
+                modules,
+            } if reply_id == id => Ok((active, accepted, modules)),
             _ => bail!("Unexpected control response"),
         }
     })
@@ -362,6 +391,10 @@ mod tests {
             .unwrap();
         assert_eq!(result.answer, "42");
         assert_eq!(result.status, "completed");
+        let discovered = modules(&cfg).await.unwrap();
+        assert_eq!(discovered.len(), 1);
+        assert_eq!(discovered[0].id, "inference.local");
+        assert!(discovered[0].roles.iter().any(|role| role == "solver"));
         assert_eq!(
             control(&cfg, wire::ControlAction::Status).await.unwrap(),
             (false, true)

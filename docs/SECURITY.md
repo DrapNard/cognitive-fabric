@@ -34,3 +34,9 @@ See `THREAT_MODEL.md`, `EVOLUTION.md` and the negative tests in `security.rs`,
 `wire.rs`, `backend.rs`, `registry.rs`, `evaluation.rs` and `service.rs`. The code
 and these tests do not prove alignment or safety after an open-source fork removes
 policies. No cryptographic module attestation or multi-tenant protection is claimed.
+
+Inference modules use runtime-owned registration handles and task-pinned adapter
+versions. FlatBuffers headers are checked against those handles; string actor
+fields alone confer no authority. Queues, expiry and cancellation are enforced
+outside the backend. Trusted in-process Rust adapters are not a sandbox for
+third-party executable code. See `PROTOCOL.md` for remaining process boundaries.

@@ -1,0 +1,34 @@
+// Internal module RPC. Identity fields are checked against runtime-owned handles.
+namespace Fabric;
+
+enum Role:ubyte { Interface, Planner, Solver, Explorer, Critic, Reflector, Synthesizer }
+
+table InferenceRequest {
+  role:Role;
+  prompt:string (required);
+  max_tokens:uint;
+}
+
+table InferenceResponse {
+  text:string (required);
+  model:string (required);
+  input_tokens:ulong = null;
+  output_tokens:ulong = null;
+  elapsed_ms:double;
+}
+
+table Packet {
+  version:ushort = 1;
+  correlation_id:string (required);
+  task_id:string (required);
+  sender:string (required);
+  destination:string (required);
+  module_version:string (required);
+  expires_at_ms:ulong;
+  request:InferenceRequest;
+  response:InferenceResponse;
+  error:string;
+}
+
+root_type Packet;
+file_identifier "COGM";

@@ -67,6 +67,10 @@ enum Command {
     },
     Serve,
     ServiceStatus,
+    Modules {
+        #[arg(long)]
+        socket: bool,
+    },
     CancelActive,
     Stop,
     SkillAdd {
@@ -281,6 +285,11 @@ async fn main() -> Result<()> {
             json!({"active":active,"accepted":accepted})
         }
         Command::Skills => serde_json::to_value(store.skills()?)?,
+        Command::Modules { socket } => serde_json::to_value(if socket {
+            service::modules(&cfg).await?
+        } else {
+            engine.broker.discover()?
+        })?,
         Command::SkillRegister { manifest } => {
             cogfabric::registry::register(&store, &cogfabric::registry::read_manifest(&manifest)?)?
         }

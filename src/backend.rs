@@ -4,6 +4,7 @@ use serde_json::json;
 use std::{
     future::Future,
     pin::Pin,
+    sync::Arc,
     time::{Duration, Instant},
 };
 use url::Url;
@@ -20,6 +21,22 @@ pub struct Generation {
 }
 
 pub trait InferenceBackend: Send + Sync {
+    fn modules(&self) -> Result<Vec<crate::fabric::ModuleDescriptor>> {
+        Ok(Vec::new())
+    }
+    fn pin(&self) -> Result<Option<Arc<dyn InferenceBackend>>> {
+        Ok(None)
+    }
+
+    fn generate_for<'a>(
+        &'a self,
+        _task: &'a str,
+        role: &'a str,
+        prompt: &'a str,
+        max_tokens: usize,
+    ) -> Pin<Box<dyn Future<Output = Result<Generation>> + Send + 'a>> {
+        self.generate(role, prompt, max_tokens)
+    }
     fn generate<'a>(
         &'a self,
         role: &'a str,

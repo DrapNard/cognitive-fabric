@@ -17,8 +17,10 @@ The seven responsibilities currently map to these modules:
 | Evolution Engine | `evolution.rs`, candidate storage: quarantined immutable artifacts and explicit lifecycle |
 | Security & Evaluation Kernel | `security.rs`, `evaluation.rs`: task-bound dispatch authorization and independent deterministic gates |
 
-Current execution uses direct Rust interfaces between layers. A general typed
-module broker/event bus and process-level module discovery are still missing.
+Inference now traverses a bounded FlatBuffers Tokio broker with runtime-owned
+registration, discovery, actor/task validation and pinned adapter versions. Other
+layer interactions use direct Rust interfaces. General module events and
+independent process registration/authentication are still missing.
 Reference experts are functional; they are not loaded neural specialist models.
 
 A task snapshots active skill metadata and retrieved content before inference.
@@ -39,7 +41,7 @@ Quality requires operator-attested held-out data. Promotion checks quality,
 active-baseline retrieval regressions and unchanged versions transactionally.
 Rollback restores approved stored snapshots. Neural promotion stays disabled.
 
-Verification: 59 tests, formatting, all-target check and Clippy pass using exact
+Verification: 64 tests, formatting, all-target check and Clippy pass using exact
 flatc/Rust FlatBuffers 25.12.19. HTTP fixtures and socket tests ran locally; no
 compatible live model server was available at the default endpoint. No neural
 quality, GPU integration, hot-swap, energy or model-superiority result is claimed.

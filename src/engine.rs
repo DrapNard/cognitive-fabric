@@ -47,6 +47,7 @@ pub enum ExecutionProfile {
 pub struct Engine {
     pub cfg: Config,
     pub store: Arc<Store>,
+    pub broker: Arc<crate::fabric::Broker>,
     backend: Arc<dyn InferenceBackend>,
 }
 impl Engine {
@@ -59,10 +60,12 @@ impl Engine {
         store: Arc<Store>,
         backend: Arc<dyn InferenceBackend>,
     ) -> Self {
+        let broker = Arc::new(crate::fabric::Broker::with_inference(backend));
         Self {
             cfg,
             store,
-            backend,
+            backend: broker.clone(),
+            broker,
         }
     }
     pub async fn run(&self, query: &str, mode: &str) -> Result<Outcome> {
@@ -150,11 +153,13 @@ impl Engine {
             uuid::Uuid::parse_str(reference)?;
         }
         let start = Instant::now();
+        let backend = self.backend.pin()?.unwrap_or_else(|| self.backend.clone());
+        let modules = backend.modules()?;
         let id = self.store.create_task(query, mode)?;
         let mut session = Session::new(
             self.cfg.clone(),
             self.store.clone(),
-            self.backend.clone(),
+            backend,
             id.clone(),
             mode,
         )?;
@@ -164,6 +169,8 @@ impl Engine {
             "interface",
             json!({"query":query,"mode":mode,"execution_profile":profile}),
         )?;
+        self.store
+            .event(&id, "module_snapshot", "fabric", json!({"modules":modules}))?;
         let mut skills = Vec::new();
         let mut evidence = Vec::new();
         let execution = async {

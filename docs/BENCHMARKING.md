@@ -62,3 +62,7 @@ cases, including ambiguity, unseen cases and objectives requiring tools. That
 curated dataset and measured live-model study remain incomplete. The arithmetic
 example validates runner mechanics only. No performance-superiority or larger-model
 equivalence is claimed.
+
+Dispatch duration includes broker queueing/coordination and HTTP time. It does not
+measure GPU compute alone. Task traces include pinned inference module versions
+separately from provider model labels.

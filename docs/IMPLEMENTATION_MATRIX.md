@@ -6,7 +6,7 @@ remains a pre-release. `QUALITY_REVIEW.md` preserves verification history.
 
 | Architecture sections | Requirement | Status | Current implementation and tests | Remaining release work |
 |---|---|---|---|---|
-| 7, 12 | Typed local IPC | Partial | `protocol/cognitive.fbs`, `src/wire.rs`, `src/service.rs`: pinned FlatBuffers 25.12.19, bounded verified frames, correlation IDs, owner UID, busy errors, status/cancel/stop; socket, malformed-frame and legacy-field tests | Module broker, discovery, event subscriptions, actor/destination/deadline envelopes and broader compatibility fixtures |
+| 7, 12 | Typed local IPC | Partial | `protocol/*.fbs`, `src/fabric.rs`, `src/wire.rs`, `src/service.rs`: bounded verified IPC and module RPC, version-pinned inference registration/discovery, correlation/actor/destination/expiry checks, queues and cancellation; socket, spoofing, overflow, replacement and compatibility tests | General non-inference/event routing, subscriptions, separate-process actor authentication and broader compatibility fixtures |
 | 3 | Language interface | Partial | `src/language.rs`, `src/backend.rs`, `src/config.rs`: strict advisory intent, clarification, original-goal preservation, explicit conversation references, optional synthesis, persistent role profiles; scripted and HTTP tests | Live local-model validation and measured interpretation quality |
 | 4, 9 | Jev+ coordination | Partial | `src/engine.rs`, `src/planning.rs`, `src/store.rs::route`: capability routing/gaps, bounded topological subtask execution, admission budgets; dependency and budget tests | General module scheduling, measured escalation policy, persistent crash recovery and queue telemetry |
 | 5 | Jev-R reasoning | Partial | `src/reasoning.rs`: planner/solver/explorer/critic/reflector, strict recursive revisions, no-progress stopping, unverified subtask results and original-goal synthesis; order, revision and cancellation tests | General independent executable verifiers and live-model effectiveness measurements |
@@ -21,7 +21,7 @@ remains a pre-release. `QUALITY_REVIEW.md` preserves verification history.
 | 12, 14 | CLI/service | Partial | `src/main.rs`: initialization/configuration, ask, service controls, skill lifecycle, ingestion/search, task traces, candidates/rollback, benchmark, self-test; real socket fixtures | Model listing/lifecycle, diagnostics, module discovery and task-specific remote progress/cancel |
 | 12, 13 | Hardware/performance claims | Not implemented | No GPU/energy or large-model advantage claimed | Real local endpoint, hardware telemetry, equal-budget comparisons |
 
-All 59 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
+All 64 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
 all-target build checks and Clippy with denied warnings pass. Fixtures do not prove
 GPU integration, neural quality, immutable backend weights or live model switching.
 

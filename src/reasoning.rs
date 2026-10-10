@@ -239,7 +239,8 @@ impl Session {
         self.inference_started = Some(Instant::now());
         let report: Generation = tokio::time::timeout(
             Duration::from_secs(self.cfg.timeout_seconds),
-            self.backend.generate(role, prompt, allocation),
+            self.backend
+                .generate_for(&self.task, role, prompt, allocation),
         )
         .await
         .map_err(|_| anyhow::anyhow!("Inference timeout"))??;

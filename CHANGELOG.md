@@ -90,3 +90,5 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
 - Reconcile the current implementation matrix with verified code; document security boundaries and reproducible benchmark limitations.
 
 - Add reviewed, reproducible same-model comparison profiles with optional larger baseline, per-arm resource totals, expected-answer isolation and durable run cancellation.
+
+- Route inference through a bounded FlatBuffers module broker with trusted registration, discovery, version pinning, identity checks, backpressure and cancellation.

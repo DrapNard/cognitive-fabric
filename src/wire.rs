@@ -17,6 +17,7 @@ pub enum ControlAction {
     Status,
     CancelActive,
     Stop,
+    Modules,
 }
 
 #[derive(Clone, Debug)]
@@ -29,6 +30,7 @@ pub enum Message {
         id: String,
         active: bool,
         accepted: bool,
+        modules: Vec<crate::fabric::ModuleDescriptor>,
     },
     Ask {
         id: String,
@@ -88,19 +90,48 @@ pub fn encode(message: &Message) -> Result<Vec<u8>> {
                         ControlAction::Status => fb::ControlAction::Status,
                         ControlAction::CancelActive => fb::ControlAction::CancelActive,
                         ControlAction::Stop => fb::ControlAction::Stop,
+                        ControlAction::Modules => fb::ControlAction::Modules,
                     },
                 },
             ));
         }
         Message::ControlReply {
-            active, accepted, ..
+            active,
+            accepted,
+            modules,
+            ..
         } => {
             args.kind = fb::MessageKind::ControlResponse;
+            if modules.len() > 32 {
+                bail!("Too many discovered modules")
+            }
+            let mut encoded = Vec::new();
+            for module in modules {
+                module.validate()?;
+                let id = builder.create_string(&module.id);
+                let version = builder.create_string(&module.version);
+                let roles = module
+                    .roles
+                    .iter()
+                    .map(|role| builder.create_string(role))
+                    .collect::<Vec<_>>();
+                let roles = builder.create_vector(&roles);
+                encoded.push(fb::ModuleInfo::create(
+                    &mut builder,
+                    &fb::ModuleInfoArgs {
+                        id: Some(id),
+                        version: Some(version),
+                        roles: Some(roles),
+                    },
+                ));
+            }
+            let modules = builder.create_vector(&encoded);
             args.control_response = Some(fb::ControlResponse::create(
                 &mut builder,
                 &fb::ControlResponseArgs {
                     active: *active,
                     accepted: *accepted,
+                    modules: Some(modules),
                 },
             ));
         }
@@ -234,6 +265,7 @@ pub fn decode(body: &[u8]) -> Result<Message> {
                 fb::ControlAction::Status => ControlAction::Status,
                 fb::ControlAction::CancelActive => ControlAction::CancelActive,
                 fb::ControlAction::Stop => ControlAction::Stop,
+                fb::ControlAction::Modules => ControlAction::Modules,
                 _ => bail!("Unknown control action"),
             };
             Ok(Message::Control { id, action })
@@ -242,10 +274,29 @@ pub fn decode(body: &[u8]) -> Result<Message> {
             let response = envelope
                 .control_response()
                 .context("Missing control response")?;
+            let mut modules = Vec::new();
+            if let Some(entries) = response.modules() {
+                if entries.len() > 32 {
+                    bail!("Too many discovered modules")
+                }
+                for entry in entries.iter() {
+                    let descriptor = crate::fabric::ModuleDescriptor {
+                        id: entry.id().into(),
+                        version: entry.version().into(),
+                        roles: entry
+                            .roles()
+                            .map(|roles| roles.iter().map(str::to_string).collect())
+                            .unwrap_or_default(),
+                    };
+                    descriptor.validate()?;
+                    modules.push(descriptor);
+                }
+            }
             Ok(Message::ControlReply {
                 id,
                 active: response.active(),
                 accepted: response.accepted(),
+                modules,
             })
         }
         fb::MessageKind::Request => {
@@ -366,6 +417,7 @@ mod tests {
             ControlAction::Status,
             ControlAction::CancelActive,
             ControlAction::Stop,
+            ControlAction::Modules,
         ] {
             let message = Message::Control {
                 id: "control".into(),
@@ -499,6 +551,48 @@ mod tests {
         assert_eq!(outcome.answer, "legacy");
         assert_eq!(outcome.resources.input_tokens, None);
         assert_eq!(outcome.stop_reason, "");
+    }
+
+    #[test]
+    fn discovery_roundtrips_and_legacy_controls_have_no_modules() {
+        let reply = Message::ControlReply {
+            id: "discovery".into(),
+            active: false,
+            accepted: true,
+            modules: vec![crate::fabric::ModuleDescriptor {
+                id: "inference.local".into(),
+                version: "1.0.0".into(),
+                roles: vec!["solver".into()],
+            }],
+        };
+        let Message::ControlReply { modules, .. } = decode(&encode(&reply).unwrap()).unwrap()
+        else {
+            panic!("Expected control response")
+        };
+        assert_eq!(modules[0].id, "inference.local");
+        let mut builder = flatbuffers::FlatBufferBuilder::new();
+        let id = builder.create_string("legacy");
+        let response = fb::ControlResponse::create(
+            &mut builder,
+            &fb::ControlResponseArgs {
+                active: false,
+                accepted: true,
+                ..Default::default()
+            },
+        );
+        let envelope = fb::Envelope::create(
+            &mut builder,
+            &fb::EnvelopeArgs {
+                request_id: Some(id),
+                kind: fb::MessageKind::ControlResponse,
+                control_response: Some(response),
+                ..Default::default()
+            },
+        );
+        builder.finish(envelope, Some("COGF"));
+        assert!(
+            matches!(decode(builder.finished_data()).unwrap(),Message::ControlReply { modules, .. } if modules.is_empty())
+        );
     }
     #[test]
     fn typed_round_trip() {

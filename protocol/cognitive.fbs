@@ -3,7 +3,7 @@
 namespace Cognitive;
 
 enum MessageKind:ubyte { Request = 0, Response = 1, Error = 2, Control = 3, ControlResponse = 4 }
-enum ControlAction:ubyte { Status = 0, CancelActive = 1, Stop = 2 }
+enum ControlAction:ubyte { Status = 0, CancelActive = 1, Stop = 2, Modules = 3 }
 enum ReasoningMode:ubyte { Fast = 0, Standard = 1, Deep = 2, Research = 3 }
 
 table AskRequest {
@@ -46,6 +46,13 @@ table ControlRequest {
 table ControlResponse {
   active:bool;
   accepted:bool;
+  modules:[ModuleInfo];
+}
+
+table ModuleInfo {
+  id:string (required);
+  version:string (required);
+  roles:[string];
 }
 
 table Envelope {
