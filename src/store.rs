@@ -594,20 +594,42 @@ impl Store {
         score: f64,
         details: Value,
     ) -> Result<()> {
-        if !score.is_finite() || !(0.0..=1.0).contains(&score) {
-            bail!("Invalid evaluation score")
+        self.evaluations(id, &[(suite, pass, score, details)])
+    }
+
+    pub(crate) fn evaluations(&self, id: &str, records: &[(&str, bool, f64, Value)]) -> Result<()> {
+        if records.is_empty() || records.len() > 3 {
+            bail!("Invalid evaluation batch size")
         }
-        let db = self.lock()?;
-        if suite == "quality" {
-            let sealed: bool = db.query_row(
-                "SELECT EXISTS(SELECT 1 FROM candidates c JOIN evaluations e ON e.candidate_id=c.id WHERE c.id=?1 AND c.status='approved' AND e.suite='quality' AND e.success=1 AND json_extract(e.details,'$.held_out')=1 AND json_extract(e.details,'$.dataset_checksum') IS NOT NULL)",
-                [id], |row| row.get(0))?;
-            if sealed {
-                bail!("Approved RAG acceptance suite is immutable; create a new candidate")
+        let mut db = self.lock()?;
+        let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let review_id = Uuid::new_v4().to_string();
+        let mut suites = std::collections::BTreeSet::new();
+        for (suite, pass, score, details) in records {
+            if !score.is_finite()
+                || !(0.0..=1.0).contains(score)
+                || !matches!(*suite, "integrity" | "quality" | "regression")
+                || !suites.insert(*suite)
+            {
+                bail!("Invalid evaluation record")
             }
+            if *suite == "quality" {
+                let sealed: bool = tx.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM candidates c JOIN evaluations e ON e.candidate_id=c.id WHERE c.id=?1 AND c.status='approved' AND e.suite='quality' AND e.success=1 AND json_extract(e.details,'$.held_out')=1 AND json_extract(e.details,'$.dataset_checksum') IS NOT NULL)",
+                    [id], |row| row.get(0))?;
+                if sealed {
+                    bail!("Approved RAG acceptance suite is immutable; create a new candidate")
+                }
+            }
+            let mut details = details.clone();
+            details
+                .as_object_mut()
+                .ok_or_else(|| anyhow!("Evaluation details must be an object"))?
+                .insert("review_id".into(), Value::String(review_id.clone()));
+            tx.execute("INSERT INTO evaluations(candidate_id,suite,success,score,details,created) VALUES (?1,?2,?3,?4,?5,?6)",
+                params![id,suite,*pass as i32,score,details.to_string(),now()])?;
         }
-        db.execute("INSERT INTO evaluations(candidate_id,suite,success,score,details,created) VALUES (?1,?2,?3,?4,?5,?6)",
-            params![id,suite,pass as i32,score,details.to_string(),now()])?;
+        tx.commit()?;
         Ok(())
     }
     pub(crate) fn promote_rag(&self, id: &str, body: &str) -> Result<Candidate> {
@@ -624,6 +646,7 @@ impl Store {
             bail!("Artifact changed since evaluation")
         }
         let mut quality_dataset = None;
+        let mut quality_review = None;
         for suite in ["integrity", "quality", "regression"] {
             let approved:Option<(i64,f64,String)>=tx.query_row("SELECT success,score,details FROM evaluations WHERE candidate_id=?1 AND suite=?2 ORDER BY id DESC LIMIT 1",
                 params![id,suite],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?;
@@ -645,9 +668,20 @@ impl Store {
                     bail!("Invalid held-out evaluation manifest")
                 }
                 Self::dataset_from(&tx, hash)?;
+                quality_review = Some(
+                    details["review_id"]
+                        .as_str()
+                        .ok_or_else(|| {
+                            anyhow!("Quality requires a paired review; re-evaluate candidate")
+                        })?
+                        .to_string(),
+                );
                 quality_dataset = Some(hash.to_string());
             }
             if suite == "regression" {
+                if details["review_id"].as_str() != quality_review.as_deref() {
+                    bail!("Quality and regression records belong to different reviews")
+                }
                 if details["candidate_dataset_checksum"].as_str() != quality_dataset.as_deref() {
                     bail!("Quality and regression evaluations use different dataset manifests")
                 }
@@ -829,6 +863,51 @@ mod tests {
     }
 
     #[test]
+    fn evaluation_pairs_roll_back_on_second_write_failure() {
+        let store = Store::in_memory().unwrap();
+        bootstrap(&store).unwrap();
+        let candidate = store
+            .create_candidate(
+                "rust.s1",
+                "rag",
+                "fixture.md",
+                &sha256(b"fixture"),
+                "test",
+                "CC0",
+            )
+            .unwrap();
+        store.lock().unwrap().execute_batch("CREATE TRIGGER fail_regression BEFORE INSERT ON evaluations WHEN NEW.suite='regression' BEGIN SELECT RAISE(ABORT,'injected storage failure'); END;").unwrap();
+        let records = [
+            ("quality", true, 1.0, json!({})),
+            ("regression", true, 1.0, json!({})),
+        ];
+        assert!(store.evaluations(&candidate.id, &records).is_err());
+        let count: i64 = store
+            .lock()
+            .unwrap()
+            .query_row("SELECT count(*) FROM evaluations", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
+        store
+            .lock()
+            .unwrap()
+            .execute_batch("DROP TRIGGER fail_regression")
+            .unwrap();
+        store.evaluations(&candidate.id, &records).unwrap();
+        let reviews = store
+            .lock()
+            .unwrap()
+            .prepare("SELECT json_extract(details,'$.review_id') FROM evaluations ORDER BY id")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(0))
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .unwrap();
+        assert_eq!(reviews.len(), 2);
+        assert_eq!(reviews[0], reviews[1]);
+    }
+
+    #[test]
     fn migrate_legacy_database_and_reject_future_schema() {
         let path = database_path();
         let legacy = Connection::open(&path).unwrap();
@@ -893,11 +972,8 @@ mod tests {
                 .into_iter()
                 .map(|baseline| (baseline.candidate_id, baseline.version))
                 .collect();
-            for suite in ["integrity", "quality", "regression"] {
-                store
-                    .evaluation(&c.id, suite, true, 1.0, json!({"fixture":true,"baseline_ids":baseline_ids,"dataset_checksum":dataset_hash,"candidate_dataset_checksum":dataset_hash,"held_out":true,"baseline_version":baseline_version,"candidate_checksum":c.checksum}))
-                    .unwrap();
-            }
+            let records = ["integrity", "quality", "regression"].into_iter().map(|suite| (suite, true, 1.0, json!({"fixture":true,"baseline_ids":baseline_ids,"dataset_checksum":dataset_hash,"candidate_dataset_checksum":dataset_hash,"held_out":true,"baseline_version":baseline_version,"candidate_checksum":c.checksum}))).collect::<Vec<_>>();
+            store.evaluations(&c.id, &records).unwrap();
             store.promote_rag(&c.id, body).unwrap();
             ids.push(c.id);
         }

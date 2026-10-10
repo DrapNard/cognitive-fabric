@@ -81,5 +81,6 @@ closed. Approved reviewed quality suites cannot be replaced. Legacy approved
 artifacts without reviewed provenance can receive a one-time reviewed suite.
 Promotion compares the evaluated approved-version list and active version within
 its transaction, rejecting intervening promotions even after rollback. Quality
-and regression records are currently separate writes; atomic paired review
-records remain a hardening task. These retrieval checks do not establish neural safety.
+and regression records save in one immediate transaction with a shared review ID.
+Promotion rejects missing or mismatched IDs; candidates reviewed by older versions
+must be re-evaluated before promotion. These retrieval checks do not establish neural safety.

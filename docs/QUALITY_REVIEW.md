@@ -126,3 +126,17 @@ Validation: `cargo fmt --all -- --check`, `cargo check --all-targets --offline`,
 Socket/HTTP fixtures ran with local networking permissions. No live model study
 was run. Paired quality/regression writes remain non-atomic; independent neural
 safety evaluation remains unavailable and neural promotion stays disabled.
+
+## Atomic RAG reviews (2026-10-10)
+
+Quality and regression records now save in one immediate SQLite transaction,
+sharing a runtime-generated review UUID. Promotion rejects mismatched or missing
+review identities, including legacy unpaired records until re-evaluation. A
+fault-injection trigger rejects the second insert; the test verifies no partial
+review survives. Another negative check rejects independently recorded regression
+results even for the same artifact. This supersedes the non-atomic write limitation
+recorded above. No model permissions or neural promotion capabilities changed.
+
+Validation with flatc 25.12.19: formatting check, all-target check, all-target tests
+(65 passed, including local socket/HTTP fixtures), and Clippy with denied warnings
+passed offline. No live-model inference or reasoning-quality claim is made.

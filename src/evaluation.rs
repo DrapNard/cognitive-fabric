@@ -250,15 +250,17 @@ pub fn evaluate_reviewed(
     let regression_ok = regression_total == regression_passed;
     let registered = store.record_dataset(&raw, &review.source, &review.license)?;
     debug_assert_eq!(registered, checksum);
-    store.evaluation(id,"quality",accuracy>=0.9,accuracy,json!({"dataset_checksum":checksum,"source":review.source,"license":review.license,"held_out":true,
-        "candidate_checksum":candidate.checksum,"cases":cases.len(),"accuracy":accuracy,"evaluator":"isolated-fts5/v1"}))?;
     let regression_score = if regression_total == 0 {
         1.0
     } else {
         regression_passed as f64 / regression_total as f64
     };
-    store.evaluation(id,"regression",regression_ok,regression_score,json!({"baseline_version":baseline_version,"baseline_ids":baseline_ids,
-        "candidate_checksum":candidate.checksum,"candidate_dataset_checksum":checksum,"total":regression_total,"passed":regression_passed}))?;
+    store.evaluations(id, &[
+        ("quality",accuracy>=0.9,accuracy,json!({"dataset_checksum":checksum,"source":review.source,"license":review.license,"held_out":true,
+        "candidate_checksum":candidate.checksum,"cases":cases.len(),"accuracy":accuracy,"evaluator":"isolated-fts5/v1"})),
+        ("regression",regression_ok,regression_score,json!({"baseline_version":baseline_version,"baseline_ids":baseline_ids,
+        "candidate_checksum":candidate.checksum,"candidate_dataset_checksum":checksum,"total":regression_total,"passed":regression_passed})),
+    ])?;
     Ok(
         json!({"total":cases.len(),"passed":passed,"accuracy":accuracy,"quality_gate":accuracy>=0.9,"regression_gate":regression_ok,
         "gate_passed":accuracy>=0.9 && regression_ok,"regression_total":regression_total,"regression_passed":regression_passed,"dataset_checksum":checksum,
@@ -350,6 +352,21 @@ mod tests {
             evaluate_reviewed(&store, &first.id, "quality", Some(&old), Some(&unreviewed)).is_err()
         );
         evaluate(&store, &first.id, "integrity", None).unwrap();
+        evaluate_reviewed(&store, &first.id, "quality", Some(&old), Some(&review)).unwrap();
+        // A separately recorded regression must never pair with the quality review.
+        store
+            .evaluation(
+                &first.id,
+                "regression",
+                true,
+                1.0,
+                json!({"candidate_checksum":first.checksum}),
+            )
+            .unwrap();
+        assert!(promote(&store, &first.id, true)
+            .unwrap_err()
+            .to_string()
+            .contains("different reviews"));
         evaluate_reviewed(&store, &first.id, "quality", Some(&old), Some(&review)).unwrap();
         promote(&store, &first.id, true).unwrap();
         assert!(
