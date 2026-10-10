@@ -9,12 +9,10 @@ is disabled. Level D architecture reconstruction remains future research.
 
 Register a skill using `skill-add`, then create a candidate with
 `candidate create --skill ID --kind rag --artifact FILE --source SOURCE --license LICENSE`.
-The reviewed input must be a bounded UTF-8 Markdown/text file. The external
-artifact is hash-pinned but not copied into quarantine; mutation causes evaluation
-or promotion to fail. Immutable external artifact quarantine remains outstanding.
+The reviewed input must be a bounded UTF-8 Markdown/text file. New imports copy the artifact into content-addressed quarantine, as described below.
 
 Run `candidate evaluate ID --suite integrity` and
-`candidate evaluate ID --suite quality --dataset FILE`. The latter evaluates
+`candidate evaluate ID --suite quality --dataset FILE --dataset-source SOURCE --dataset-license LICENSE --held-out`. The latter evaluates
 retrieval against a candidate-only corpus, with at least three supplied cases
 and a 0.9 acceptance threshold. An operator must provide genuinely held-out
 cases: the runtime does not establish dataset independence automatically.
@@ -65,5 +63,11 @@ Existing alpha candidates with external paths are preserved and still hash-check
 operators can re-import them into quarantine. Read-only permissions are not a
 security guarantee against a compromised same-user process: modification is detected
 by content hashes at evaluation, reuse and promotion. Neural evaluation/promotion
-remain disabled. Dataset provenance and independent regression gates are the next
-required evolution increment.
+remain disabled. Schema version 3 stores immutable held-out dataset snapshots with source, license,
+and checksum (up to 1,024 datasets / 64 MB). Quality evaluation rejects duplicate
+normalized queries and requires operator attestation of held-out independence.
+Promotion additionally requires retaining every passing case in the active
+baseline candidate’s latest reviewed suite. It rejects a changed baseline or
+mismatched evaluation identities. This is a retrieval regression gate, not a
+neural safety assessment or cumulative historical regression bank. Legacy approved
+artifacts require re-review with dataset provenance before serving as baselines.

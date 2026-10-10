@@ -54,3 +54,5 @@ query strings and fragments in endpoint URLs are rejected. Responses are
 limited to 256 KiB even without Content-Length, under the request timeout.
 A local HTTP fixture verifies these boundaries. A malicious same-user process
 can still impersonate an inference endpoint; its content remains untrusted.
+
+RAG promotion now binds quality/regression records to artifact and dataset hashes, validates stored dataset integrity, and rejects stale baseline versions transactionally. Held-out independence is operator-attested; same-user database modification remains outside the local trust boundary. Passing retrieval tests does not establish neural safety.

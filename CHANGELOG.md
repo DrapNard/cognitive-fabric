@@ -78,3 +78,5 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
 - Copy reviewed candidate artifacts into bounded content-addressed read-only
   quarantine, verify deduplicated content, enforce aggregate storage limits and
   allocate candidate versions transactionally under concurrent imports.
+
+- Require immutable held-out dataset provenance and active-baseline retrieval regression gates before RAG promotion; migrate evaluation storage to schema 3.

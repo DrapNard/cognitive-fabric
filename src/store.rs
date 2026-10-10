@@ -82,6 +82,15 @@ pub struct TaskContext {
     pub documents: Vec<Document>,
     pub manifests: Vec<crate::registry::Manifest>,
 }
+
+pub(crate) struct RagBaseline {
+    pub candidate_id: String,
+    pub version: i64,
+    pub body: String,
+    pub dataset_content: String,
+    pub source: String,
+    pub license: String,
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Candidate {
     pub id: String,
@@ -111,13 +120,18 @@ impl Store {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let mut db = Connection::open(path)?;
+        Self::initialize(Connection::open(path)?)
+    }
+    pub fn in_memory() -> Result<Self> {
+        Self::initialize(Connection::open_in_memory()?)
+    }
+    fn initialize(mut db: Connection) -> Result<Self> {
         db.busy_timeout(std::time::Duration::from_secs(5))?;
         db.pragma_update(None, "foreign_keys", "ON")?;
         db.pragma_update(None, "journal_mode", "WAL")?;
         let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         let version: i64 = tx.pragma_query_value(None, "user_version", |row| row.get(0))?;
-        if version > 2 {
+        if version > 3 {
             bail!("Database schema is newer than this runtime")
         }
         if version == 0 {
@@ -168,6 +182,18 @@ impl Store {
                 );
                 PRAGMA user_version=2;
             "#)?;
+        }
+        if version < 3 {
+            tx.execute_batch(
+                r#"
+                CREATE TABLE evaluation_datasets (
+                    checksum TEXT PRIMARY KEY, content TEXT NOT NULL,
+                    source TEXT NOT NULL, license TEXT NOT NULL,
+                    split TEXT NOT NULL CHECK(split='held_out'), created REAL NOT NULL
+                );
+                PRAGMA user_version=3;
+            "#,
+            )?;
         }
         tx.commit()?;
         Ok(Self { db: Mutex::new(db) })
@@ -448,7 +474,93 @@ impl Store {
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(entries)
     }
-    pub fn evaluation(
+    pub(crate) fn record_dataset(
+        &self,
+        content: &str,
+        source: &str,
+        license: &str,
+    ) -> Result<String> {
+        crate::security::validate_provenance(source, license)?;
+        if content.len() > 2_000_000 {
+            bail!("Evaluation dataset exceeds bounds")
+        }
+        let checksum = sha256(content.as_bytes());
+        let mut connection = self.lock()?;
+        let tx = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let existing: Option<(String, String, String)> = tx
+            .query_row(
+                "SELECT content,source,license FROM evaluation_datasets WHERE checksum=?1",
+                [&checksum],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .optional()?;
+        if let Some((previous, previous_source, previous_license)) = existing {
+            if previous != content || previous_source != source || previous_license != license {
+                bail!("Evaluation dataset manifest is immutable")
+            }
+            return Ok(checksum);
+        }
+        let (count,bytes):(i64,i64)=tx.query_row("SELECT COUNT(*),COALESCE(SUM(length(CAST(content AS BLOB))),0) FROM evaluation_datasets",[],|row|Ok((row.get(0)?,row.get(1)?)))?;
+        if count >= 1024 || bytes.saturating_add(content.len() as i64) > 64_000_000 {
+            bail!("Evaluation dataset store capacity exhausted")
+        }
+        tx.execute(
+            "INSERT INTO evaluation_datasets VALUES (?1,?2,?3,?4,'held_out',?5)",
+            params![checksum, content, source, license, now()],
+        )?;
+        tx.commit()?;
+        Ok(checksum)
+    }
+
+    fn dataset_from(db: &Connection, checksum: &str) -> Result<String> {
+        let content: String = db.query_row(
+            "SELECT content FROM evaluation_datasets WHERE checksum=?1 AND split='held_out'",
+            [checksum],
+            |row| row.get(0),
+        )?;
+        if content.len() > 2_000_000 || sha256(content.as_bytes()) != checksum {
+            bail!("Evaluation dataset integrity check failed")
+        }
+        Ok(content)
+    }
+
+    pub(crate) fn rag_baseline(&self, skill: &str) -> Result<Option<RagBaseline>> {
+        let db = self.lock()?;
+        let version: i64 = db.query_row(
+            "SELECT active_version FROM skills WHERE id=?1",
+            [skill],
+            |row| row.get(0),
+        )?;
+        if version == 0 {
+            return Ok(None);
+        }
+        let (id,body,checksum,source,license):(String,String,String,String,String)=db.query_row(
+            "SELECT c.id,d.body,c.checksum,c.source,c.license FROM candidates c JOIN candidate_documents cd ON cd.candidate_id=c.id \
+             JOIN documents d ON d.id=cd.document_id WHERE c.skill_id=?1 AND c.version=?2 AND c.status='approved' AND c.kind='rag'",
+            params![skill,version],|row|Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?)))?;
+        if body.len() > 256_000 || sha256(body.as_bytes()) != checksum {
+            bail!("Active RAG baseline integrity check failed")
+        }
+        let (passed,details):(bool,String)=db.query_row("SELECT success,details FROM evaluations WHERE candidate_id=?1 AND suite='quality' ORDER BY id DESC LIMIT 1",[&id],|row|Ok((row.get(0)?,row.get(1)?)))?;
+        let details: Value = serde_json::from_str(&details)?;
+        if !passed {
+            bail!("Active baseline lacks a passing held-out suite")
+        }
+        let hash = details["dataset_checksum"].as_str().ok_or_else(|| {
+            anyhow!("Re-evaluate the active baseline with reviewed held-out dataset provenance")
+        })?;
+        let dataset_content = Self::dataset_from(&db, hash)?;
+        Ok(Some(RagBaseline {
+            candidate_id: id,
+            version,
+            body,
+            dataset_content,
+            source,
+            license,
+        }))
+    }
+
+    pub(crate) fn evaluation(
         &self,
         id: &str,
         suite: &str,
@@ -456,11 +568,14 @@ impl Store {
         score: f64,
         details: Value,
     ) -> Result<()> {
+        if !score.is_finite() || !(0.0..=1.0).contains(&score) {
+            bail!("Invalid evaluation score")
+        }
         self.lock()?.execute("INSERT INTO evaluations(candidate_id,suite,success,score,details,created) VALUES (?1,?2,?3,?4,?5,?6)",
             params![id,suite,pass as i32,score,details.to_string(),now()])?;
         Ok(())
     }
-    pub fn promote_rag(&self, id: &str, body: &str) -> Result<Candidate> {
+    pub(crate) fn promote_rag(&self, id: &str, body: &str) -> Result<Candidate> {
         // Revalidate gates and candidate while holding the same DB lock.
         let mut db = self.lock()?;
         let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
@@ -473,11 +588,42 @@ impl Store {
         if sha256(body.as_bytes()) != candidate.checksum {
             bail!("Artifact changed since evaluation")
         }
-        for suite in ["integrity", "quality"] {
-            let approved:Option<(i64,f64)>=tx.query_row("SELECT success,score FROM evaluations WHERE candidate_id=?1 AND suite=?2 ORDER BY id DESC LIMIT 1",
-                params![id,suite],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
-            if !matches!(approved,Some((1,score)) if score>=0.9) {
+        let mut quality_dataset = None;
+        for suite in ["integrity", "quality", "regression"] {
+            let approved:Option<(i64,f64,String)>=tx.query_row("SELECT success,score,details FROM evaluations WHERE candidate_id=?1 AND suite=?2 ORDER BY id DESC LIMIT 1",
+                params![id,suite],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?;
+            let Some((1, score, details)) = approved else {
                 bail!("Missing passing {suite} evaluation")
+            };
+            if score < if suite == "regression" { 1.0 } else { 0.9 } {
+                bail!("Missing passing {suite} evaluation")
+            }
+            let details: Value = serde_json::from_str(&details)?;
+            if details["candidate_checksum"].as_str() != Some(candidate.checksum.as_str()) {
+                bail!("Evaluation artifact identity mismatch")
+            }
+            if suite == "quality" {
+                let hash = details["dataset_checksum"].as_str().ok_or_else(|| {
+                    anyhow!("Quality evaluation lacks reviewed dataset provenance")
+                })?;
+                if details["held_out"] != true || hash == candidate.checksum {
+                    bail!("Invalid held-out evaluation manifest")
+                }
+                Self::dataset_from(&tx, hash)?;
+                quality_dataset = Some(hash.to_string());
+            }
+            if suite == "regression" {
+                if details["candidate_dataset_checksum"].as_str() != quality_dataset.as_deref() {
+                    bail!("Quality and regression evaluations use different dataset manifests")
+                }
+                let current: i64 = tx.query_row(
+                    "SELECT active_version FROM skills WHERE id=?1",
+                    [&candidate.skill_id],
+                    |row| row.get(0),
+                )?;
+                if details["baseline_version"].as_i64() != Some(current) {
+                    bail!("Active baseline changed; re-evaluate candidate regressions")
+                }
             }
         }
         tx.execute(
@@ -657,7 +803,7 @@ mod tests {
             .unwrap()
             .pragma_query_value(None, "user_version", |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 2);
+        assert_eq!(version, 3);
         drop(store);
         let store = Store::open(&path).unwrap();
         assert_eq!(store.skills().unwrap().len(), 1);
@@ -677,6 +823,10 @@ mod tests {
         let store = Store::open(&path).unwrap();
         bootstrap(&store).unwrap();
         let mut ids = Vec::new();
+        let dataset="{\"query\":\"Rust\",\"expected_excerpt\":\"Rust snapshot\"}\n{\"query\":\"snapshot\",\"expected_excerpt\":\"Rust snapshot\"}\n{\"query\":\"Rust snapshot\",\"expected_excerpt\":\"Rust snapshot\"}";
+        let dataset_hash = store
+            .record_dataset(dataset, "storage-test", "CC0")
+            .unwrap();
         for body in ["Rust snapshot first", "Rust snapshot second"] {
             let c = store
                 .create_candidate(
@@ -689,9 +839,16 @@ mod tests {
                 )
                 .unwrap();
             // Storage transaction test; production evaluation is covered independently.
-            for suite in ["integrity", "quality"] {
+            let baseline_version = store
+                .skills()
+                .unwrap()
+                .iter()
+                .find(|skill| skill.id == "rust.s1")
+                .unwrap()
+                .active_version;
+            for suite in ["integrity", "quality", "regression"] {
                 store
-                    .evaluation(&c.id, suite, true, 1.0, json!({"fixture":true}))
+                    .evaluation(&c.id, suite, true, 1.0, json!({"fixture":true,"dataset_checksum":dataset_hash,"candidate_dataset_checksum":dataset_hash,"held_out":true,"baseline_version":baseline_version,"candidate_checksum":c.checksum}))
                     .unwrap();
             }
             store.promote_rag(&c.id, body).unwrap();

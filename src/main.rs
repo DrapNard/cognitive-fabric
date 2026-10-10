@@ -121,6 +121,12 @@ enum CandidateAction {
         suite: String,
         #[arg(long)]
         dataset: Option<PathBuf>,
+        #[arg(long)]
+        dataset_source: Option<String>,
+        #[arg(long)]
+        dataset_license: Option<String>,
+        #[arg(long)]
+        held_out: bool,
     },
     Promote {
         id: String,
@@ -326,8 +332,32 @@ async fn main() -> Result<()> {
             } => serde_json::to_value(cogfabric::evolution::create(
                 &cfg, &store, &skill, &kind, &artifact, &source, &license,
             )?)?,
-            CandidateAction::Evaluate { id, suite, dataset } => {
-                evaluation::evaluate(&store, &id, &suite, dataset.as_deref())?
+            CandidateAction::Evaluate {
+                id,
+                suite,
+                dataset,
+                dataset_source,
+                dataset_license,
+                held_out,
+            } => {
+                let review = if suite == "quality" {
+                    Some(evaluation::DatasetReview {
+                        source: dataset_source
+                            .ok_or_else(|| anyhow::anyhow!("Quality requires --dataset-source"))?,
+                        license: dataset_license
+                            .ok_or_else(|| anyhow::anyhow!("Quality requires --dataset-license"))?,
+                        held_out,
+                    })
+                } else {
+                    None
+                };
+                evaluation::evaluate_reviewed(
+                    &store,
+                    &id,
+                    &suite,
+                    dataset.as_deref(),
+                    review.as_ref(),
+                )?
             }
             CandidateAction::Promote { id, human_approve } => {
                 evaluation::promote(&store, &id, human_approve)?

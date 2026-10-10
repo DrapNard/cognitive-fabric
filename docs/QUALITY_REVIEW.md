@@ -93,3 +93,6 @@ read-only artifact permissions, symlinked directory denial, aggregate quota deni
 modified-quarantine detection and concurrent unique version allocation. Formatting,
 workspace check and Clippy pass. CLI candidate create was exercised in
 `/tmp/cogfabric-quarantine-smoke`; its artifact is stored under the managed hash path.
+
+### Held-out dataset and baseline regression gates
+`cargo fmt --all -- --check`, `cargo check --offline --all-targets`, `cargo test --offline --all-targets` (48 passed), and `cargo clippy --offline --all-targets -- -D warnings` passed using pinned FlatBuffers 25.12.19. Full tests ran with local socket/loopback permissions. New negative tests cover duplicate normalized queries, missing provenance/attestation, loss of previously passing retrieval facts, and stale baseline promotion. This validates retrieval gates, not neural safety or live inference.

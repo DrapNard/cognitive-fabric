@@ -64,7 +64,8 @@ cargo run -- candidate create --skill rust.s1 --kind rag \
 cargo run -- candidate list
 cargo run -- candidate evaluate CANDIDATE_ID --suite integrity
 cargo run -- candidate evaluate CANDIDATE_ID --suite quality \
-  --dataset examples/retrieval_bench.jsonl
+  --dataset examples/retrieval_bench.jsonl \
+  --dataset-source project-example --dataset-license CC0-1.0 --held-out
 cargo run -- candidate promote CANDIDATE_ID --human-approve
 ```
 

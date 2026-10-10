@@ -84,3 +84,6 @@ checks and aggregate storage/entry limits. Candidate version allocation is
 transactional and bounded. Tests cover source mutation, modified quarantine,
 quota denial and concurrent imports. Legacy external-path candidates remain
 compatible; held-out dataset manifests and regression promotion gates remain Partial.
+
+### Reviewed RAG evaluation datasets
+Implemented: schema-3 immutable dataset manifests, explicit held-out provenance, duplicate query rejection, isolated FTS evaluation, active-baseline retrieval regressions and stale-baseline promotion rejection (`src/evaluation.rs`, `src/store.rs`). Tests cover losing old facts despite passing new cases and concurrent baseline replacement. Partial: independence remains operator-attested; cumulative historical regression suites are not yet retained.
