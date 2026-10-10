@@ -32,6 +32,18 @@ enum Command {
     Status,
     SelfTest,
     RecoverTasks,
+    StorageStatus,
+    RetentionPreview {
+        #[arg(long)]
+        before_unix: u64,
+        #[arg(long, default_value = "100")]
+        limit: u32,
+    },
+    RetentionApply {
+        plan: PathBuf,
+        #[arg(long)]
+        human_approve: bool,
+    },
     TaskProgress {
         id: String,
         #[arg(long, default_value = "0")]
@@ -230,7 +242,7 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
     let cfg = Config::load(cli.home, cli.backend)?;
     cfg.prepare()?;
-    let store = Arc::new(Store::open(&cfg.db())?);
+    let store = Arc::new(Store::open_with_limit(&cfg.db(), cfg.max_database_bytes)?);
     store::bootstrap(&store)?;
     let engine = Engine::new(cfg.clone(), store.clone());
     let response: Value = match cli.command {
@@ -241,6 +253,18 @@ async fn main() -> Result<()> {
         })?,
         Command::CancelTask { id } => {
             json!({"task_id":id,"accepted":service::cancel_task(&cfg,&id).await?})
+        }
+        Command::StorageStatus => serde_json::to_value(store.storage_stats()?)?,
+        Command::RetentionPreview { before_unix, limit } => {
+            serde_json::to_value(store.retention_preview(before_unix, limit)?)?
+        }
+        Command::RetentionApply {
+            plan,
+            human_approve,
+        } => {
+            let bytes = security::read_regular_bytes(&plan, 128000)?;
+            let plan: cogfabric::storage::RetentionPlan = serde_json::from_slice(&bytes)?;
+            json!({"audit_id":store.apply_retention(&plan,human_approve)?,"deleted_tasks":plan.task_ids.len(),"deleted_events":plan.event_count})
         }
         Command::Models => serde_json::to_value(store.models()?)?,
         Command::ModelRegister { manifest } => {

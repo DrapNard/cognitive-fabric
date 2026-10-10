@@ -26,7 +26,7 @@ quota. No automatic task-history indexing occurs.
 Limits: 10,000 entries, 16 MB of query/answer/note payload, 12 KB query, 16 KB answer,
 500-byte operator note, eight search terms and three retrieved entries. Physical
 SQLite/FTS overhead and task/event history are outside this payload quota and still
-need a general database retention policy. Search terms are quoted after bounded
+use the separate database page ceiling and reviewed retention policy (`STORAGE.md`). Search terms are quoted after bounded
 ASCII tokenization; external input cannot inject FTS expressions or SQL.
 
 Full tasks and the memory comparison profile pin published entries alongside

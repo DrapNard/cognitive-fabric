@@ -249,3 +249,29 @@ empty final catch-up, denied completed-task cancellation and stopped cleanly.
 The service remains owner-local with bounded polling, not independent-process
 streaming or generic executable-module authentication. External backend GPU
 cancellation and live-model reasoning quality remain unverified.
+
+## Logical database limits and reviewed retention (2026-10-10)
+
+Schema 6 adds retention summary audits and indexed conversation references. Every
+configured CLI connection applies a SQLite page ceiling (default 256 MB), with
+transactional admission requiring 16 MB available/reusable pages and fewer than
+eight running tasks. Retention previews are bounded, hashed, operator-approved and
+revalidated under an immediate transaction. Running tasks, all published memory
+sources and explicit conversation references remain protected. No automatic
+deletions, VACUUM, artifact removals or backup mutation were introduced.
+
+Three tests cover task admission capacity/headroom, actual SQLITE_FULL growth
+denial, plan approval/staleness, protected references, repeated apply denial,
+delete-failure rollback and retained audit counts. An initial broad test-fixture
+edit affected an earlier migration and was corrected before final verification;
+all 84 tests now pass, including legacy/schema-3/schema-4 migration, real socket
+and HTTP fixtures. Formatting, all-target check and denied-warning Clippy passed
+offline with flatc/Rust 25.12.19. The binary built. A fresh temporary-home CLI
+smoke rejected unapproved retention, deleted exactly one reviewed test task,
+preserved a published memory source and checked the summary audit/storage stats.
+
+Main database pages have an enforced logical ceiling; WAL settings remain soft
+checkpoint/retention controls (`wal_hard_limit=false`). Strict physical disk bounds
+need filesystem quotas. Concurrent writes can still exhaust reserved headroom and
+return durable-write errors. Backups, automatic resumption and archive management
+remain open; see `STORAGE.md`. No real user history was cleaned up during this run.

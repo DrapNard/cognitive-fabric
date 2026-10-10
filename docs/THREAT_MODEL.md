@@ -94,3 +94,10 @@ Targeted cancellation compares against the current execution under one mutex, so
 stale targets cannot cancel new tasks. Progress pages validate nested FlatBuffers,
 task identity and monotonic cursors; wrong-target and malformed requests fail.
 This adds observation/cancellation for the authorized owner, not model tool grants.
+
+Logical database page growth is capped per configured connection, with transactional
+task admission/headroom checks. Retention is operator-only, requires a reviewed
+checksum-bound plan and explicit approval, and preserves running/memory/referenced
+tasks. Changes and deletions share a transaction with a summary audit. SQLite WAL
+retention settings are not hard disk quotas; long readers can grow the WAL. Strict
+physical limits need host filesystem quotas. See `STORAGE.md`.

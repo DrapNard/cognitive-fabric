@@ -385,7 +385,7 @@ mod tests {
             .lock()
             .unwrap()
             .execute_batch(
-                "DROP TABLE model_audit; DROP TABLE model_manifests; PRAGMA user_version=4;",
+                "DROP TABLE model_audit; DROP TABLE model_manifests; DROP TABLE retention_audit; DROP INDEX event_conversation_task; PRAGMA user_version=4;",
             )
             .unwrap();
         drop(store);

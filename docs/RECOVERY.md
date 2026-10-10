@@ -33,3 +33,8 @@ repair corrupted databases or prove that an external inference server stopped
 computing. Those cases need separate handling. Recovered task snapshots can enter
 episodic memory only through explicit operator publication; they cannot become
 verified arithmetic memories.
+
+Logical storage admission and reviewed retention are documented in `STORAGE.md`.
+Interrupted rows count toward the global eight-running-task admission ceiling
+until recovery marks them terminal; recovery itself does not require free task
+slots and never silently deletes their history.

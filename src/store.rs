@@ -117,28 +117,35 @@ impl Store {
             .map_err(|_| anyhow!("Database mutex poisoned"))
     }
     pub fn open(path: &Path) -> Result<Self> {
+        Self::open_with_limit(path, crate::storage::DEFAULT_DATABASE_BYTES)
+    }
+    pub fn open_with_limit(path: &Path, maximum_bytes: u64) -> Result<Self> {
         if path.is_symlink() {
             bail!("Database path cannot be a symlink")
         }
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let mut store = Self::initialize(Connection::open(path)?)?;
+        let mut store = Self::initialize(Connection::open(path)?, maximum_bytes)?;
         let mut lease = path.as_os_str().to_os_string();
         lease.push(".runtime.lock");
         store.runtime_lock = Some(lease.into());
         Ok(store)
     }
     pub fn in_memory() -> Result<Self> {
-        Self::initialize(Connection::open_in_memory()?)
+        Self::initialize(
+            Connection::open_in_memory()?,
+            crate::storage::DEFAULT_DATABASE_BYTES,
+        )
     }
-    fn initialize(mut db: Connection) -> Result<Self> {
+    fn initialize(mut db: Connection, maximum_bytes: u64) -> Result<Self> {
+        crate::storage::configure(&db, maximum_bytes)?;
         db.busy_timeout(std::time::Duration::from_secs(5))?;
         db.pragma_update(None, "foreign_keys", "ON")?;
         db.pragma_update(None, "journal_mode", "WAL")?;
         let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         let version: i64 = tx.pragma_query_value(None, "user_version", |row| row.get(0))?;
-        if version > 5 {
+        if version > 6 {
             bail!("Database schema is newer than this runtime")
         }
         if version == 0 {
@@ -208,6 +215,9 @@ impl Store {
         if version < 5 {
             tx.execute_batch(crate::models::SCHEMA)?;
         }
+        if version < 6 {
+            tx.execute_batch(crate::storage::SCHEMA)?;
+        }
         tx.commit()?;
         Ok(Self {
             db: Mutex::new(db),
@@ -220,10 +230,14 @@ impl Store {
     }
     pub(crate) fn create_named_task(&self, id: &str, query: &str, mode: &str) -> Result<String> {
         Uuid::parse_str(id)?;
-        self.lock()?.execute(
+        let mut db = self.lock()?;
+        let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        crate::storage::admit(&tx)?;
+        tx.execute(
             "INSERT INTO tasks VALUES (?1,?2,?3,'running','',?4,?4)",
             params![id, query, mode, now()],
         )?;
+        tx.commit()?;
         Ok(id.to_string())
     }
     pub fn finish_task(&self, id: &str, status: &str, answer: &str) -> Result<()> {
@@ -958,7 +972,7 @@ mod tests {
             .unwrap()
             .pragma_query_value(None, "user_version", |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 5);
+        assert_eq!(version, 6);
         drop(store);
         let store = Store::open(&path).unwrap();
         assert_eq!(store.skills().unwrap().len(), 1);

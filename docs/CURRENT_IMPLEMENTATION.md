@@ -36,13 +36,13 @@ or stop/join the service. Active task UUIDs enable targeted cancellation and
 bounded progress pages over the socket. Socket disconnects also cancel work durably. It is a
 single-user local service, not a multi-tenant sandbox.
 
-SQLite migrations preserve alpha data through schema 5. RAG candidate imports use
+SQLite migrations preserve alpha data through schema 6. RAG candidate imports use
 content-addressed quarantine, explicit provenance, quotas and integrity checks.
 Quality requires operator-attested held-out data. Promotion checks quality,
 cumulative approved-version retrieval regressions and unchanged versions transactionally.
 Rollback restores approved stored snapshots. Neural promotion stays disabled.
 
-Verification: 81 tests, formatting, all-target check and Clippy pass using exact
+Verification: 84 tests, formatting, all-target check and Clippy pass using exact
 flatc/Rust FlatBuffers 25.12.19. HTTP fixtures and socket tests ran locally; no
 compatible live model server was available at the default endpoint. No neural
 quality, GPU integration, hot-swap, energy or model-superiority result is claimed.
@@ -69,3 +69,7 @@ new tasks. Physical model residency remains server-owned; see `MODELS.md`.
 
 Typed progress events use a dedicated FlatBuffers schema, with bounded subscriber
 queues, explicit gap reporting and cursor-based durable catch-up (`EVENTS.md`).
+
+SQLite page limits, transactional global task admission and explicit preview/apply
+retention bound logical storage growth. Memory/conversation sources are protected;
+WAL physical size remains outside a hard runtime quota (`STORAGE.md`).

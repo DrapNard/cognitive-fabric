@@ -36,6 +36,7 @@ pub struct Config {
     pub interpret_goals: bool,
     pub synthesize_results: bool,
     pub max_artifact_bytes: u64,
+    pub max_database_bytes: u64,
 }
 
 impl Default for Config {
@@ -59,6 +60,7 @@ impl Default for Config {
             interpret_goals: true,
             synthesize_results: false,
             max_artifact_bytes: 256_000_000,
+            max_database_bytes: crate::storage::DEFAULT_DATABASE_BYTES,
         }
     }
 }
@@ -119,6 +121,7 @@ impl Config {
             || self.max_input_bytes > 1_000_000
             || self.max_tool_calls > 64
             || self.max_artifact_bytes > 2_000_000_000
+            || !(64_000_000..=2_000_000_000).contains(&self.max_database_bytes)
             || !(1..=300).contains(&self.timeout_seconds)
             || !(1..=3600).contains(&self.max_wall_seconds)
         {
