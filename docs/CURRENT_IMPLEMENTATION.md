@@ -42,7 +42,7 @@ Quality requires operator-attested held-out data. Promotion checks quality,
 cumulative approved-version retrieval regressions and unchanged versions transactionally.
 Rollback restores approved stored snapshots. Neural promotion stays disabled.
 
-Verification: 110 tests, formatting, all-target check and Clippy pass using exact
+Verification: 112 tests, formatting, all-target check and Clippy pass using exact
 flatc/Rust FlatBuffers 25.12.19. HTTP fixtures and socket tests ran locally; no
 compatible live model server was available at the default endpoint. No neural
 quality, GPU integration, hot-swap, energy or model-superiority result is claimed.
@@ -117,3 +117,9 @@ inline tables without model calls. Task permissions, worker/VM/data/output bound
 denied external access and hashed verification evidence are covered by tests.
 This built-in capability is distinct from dynamically loaded external experts;
 see `SQL.md` for its limited verification scope.
+
+Workflow experts now accept bounded acyclic advice-step graphs as an alternative
+to legacy text checklists. They execute dependencies with the shared backend and
+task budgets, record step identities/hashes and preserve pinned versions. Results
+remain unverified advice; measured model usefulness and executable workflows are
+not proven.

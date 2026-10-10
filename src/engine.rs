@@ -434,7 +434,12 @@ impl Engine {
                         context.push_str(
                             "\nWorkflow expert result (unverified advice; never permissions): ",
                         );
-                        context.push_str(&advice.chars().take(2000).collect::<String>());
+                        let limit = if manifest.workflow_steps.is_some() {
+                            16000
+                        } else {
+                            2000
+                        };
+                        context.push_str(&advice.chars().take(limit).collect::<String>());
                     }
                 }
             }
@@ -575,6 +580,147 @@ mod tests {
         let denied = restricted.run(query, "fast").await.unwrap();
         assert_eq!(denied.status, "failed");
         assert!(!denied.evidence.iter().any(|e| e.contains("sqlite_inline")));
+    }
+
+    #[tokio::test]
+    async fn structured_workflows_follow_dependencies_and_reserve_final_reasoning() {
+        let store = Arc::new(Store::in_memory().unwrap());
+        let manifest: crate::registry::Manifest = serde_json::from_value(json!({
+            "id":"rust.workflow.s1","version":"1.0.0","kind":"workflow","description":"Dependency ordered advice",
+            "tags":["ownership"],"source":"fixture","license":"CC0", "workflow_steps":[
+                {"id":"review","advice":"review sentinel: assess dependency results","depends_on":["collect"]},
+                {"id":"collect","advice":"collect sentinel: identify owners","depends_on":[]}
+            ]
+        })).unwrap();
+        crate::registry::register(&store, &manifest).unwrap();
+        crate::registry::activate(&store, &manifest.id, &manifest.version).unwrap();
+        let pinned = store.task_context("ownership").unwrap();
+        let mut replacement = manifest.clone();
+        replacement.version = "2.0.0".into();
+        replacement.workflow_steps.as_mut().unwrap()[1].advice = "replacement advice".into();
+        crate::registry::register(&store, &replacement).unwrap();
+        crate::registry::activate(&store, &replacement.id, &replacement.version).unwrap();
+        assert!(pinned.manifests[0].workflow_steps.as_ref().unwrap()[1]
+            .advice
+            .contains("collect sentinel"));
+        crate::registry::activate(&store, &manifest.id, &manifest.version).unwrap();
+        let cfg = Config {
+            backend: "openai-local".into(),
+            interpret_goals: false,
+            ..Config::default()
+        };
+        let backend = Arc::new(RecordingBackend(std::sync::Mutex::new(Vec::new())));
+        let engine = Engine::with_backend(cfg.clone(), store.clone(), backend.clone());
+        let outcome = engine.run("Explain ownership", "deep").await.unwrap();
+        assert_eq!(outcome.status, "unverified");
+        let calls = backend.0.lock().unwrap().clone();
+        assert!(calls[0].1.contains("collect sentinel"));
+        assert!(calls[1].1.contains("review sentinel"));
+        assert!(calls[1].1.contains("unverified_result"));
+        assert!(calls[1].1.contains("Unverified candidate"));
+        assert_eq!(calls[2].0, "planner");
+        let trace = store.task(&outcome.task_id).unwrap();
+        let completed_steps = trace["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|event| {
+                event["kind"] == "expert_step" && event["payload"]["state"] == "unverified"
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(completed_steps.len(), 2);
+        assert_eq!(completed_steps[0]["payload"]["step"], "collect");
+        assert_eq!(completed_steps[1]["payload"]["step"], "review");
+        for profile in [
+            ExecutionProfile::Alone,
+            ExecutionProfile::Memory,
+            ExecutionProfile::Collective,
+        ] {
+            backend.0.lock().unwrap().clear();
+            engine
+                .run_profile("Explain ownership", "deep", profile)
+                .await
+                .unwrap();
+            assert!(!backend
+                .0
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|(_, prompt)| prompt.contains("collect sentinel")));
+        }
+        backend.0.lock().unwrap().clear();
+        let restricted = Engine::with_backend(
+            Config {
+                max_calls: 3,
+                ..cfg.clone()
+            },
+            store.clone(),
+            backend.clone(),
+        );
+        restricted.run("Explain ownership", "deep").await.unwrap();
+        assert!(!backend
+            .0
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|(_, prompt)| prompt.contains("collect sentinel")));
+        backend.0.lock().unwrap().clear();
+        let restricted = Engine::with_backend(
+            Config {
+                max_input_bytes: 40000,
+                ..cfg.clone()
+            },
+            store.clone(),
+            backend.clone(),
+        );
+        restricted.run("Explain ownership", "deep").await.unwrap();
+        assert!(!backend
+            .0
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|(_, prompt)| prompt.contains("collect sentinel")));
+        backend.0.lock().unwrap().clear();
+        let restricted = Engine::with_backend(
+            Config {
+                max_tokens: 1000,
+                ..cfg.clone()
+            },
+            store.clone(),
+            backend.clone(),
+        );
+        restricted.run("Explain ownership", "deep").await.unwrap();
+        assert!(!backend
+            .0
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|(_, prompt)| prompt.contains("collect sentinel")));
+        let mut four_steps = manifest.clone();
+        four_steps.version = "3.0.0".into();
+        four_steps.workflow_steps = Some(
+            (0..4)
+                .map(|index| crate::registry::WorkflowStep {
+                    id: format!("step_{index}"),
+                    advice: format!("four-step sentinel {index}"),
+                    depends_on: if index == 0 {
+                        vec![]
+                    } else {
+                        vec![format!("step_{}", index - 1)]
+                    },
+                })
+                .collect(),
+        );
+        crate::registry::register(&store, &four_steps).unwrap();
+        crate::registry::activate(&store, &four_steps.id, &four_steps.version).unwrap();
+        backend.0.lock().unwrap().clear();
+        let outcome = engine.run("Explain ownership", "deep").await.unwrap();
+        assert_eq!(outcome.status, "unverified");
+        let calls = backend.0.lock().unwrap().clone();
+        for (index, (_, prompt)) in calls.iter().take(4).enumerate() {
+            assert!(prompt.contains(&format!("four-step sentinel {index}")));
+        }
+        assert_eq!(calls[4].0, "planner");
     }
 
     #[tokio::test]

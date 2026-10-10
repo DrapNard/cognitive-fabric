@@ -118,7 +118,7 @@ tasks have zero queue time. A cancelled dispatched call or unavailable legacy me
 makes the task total unavailable, and comparison totals preserve that uncertainty.
 This does not measure GPU execution, model loading or energy.
 
-Active routed workflow manifests add a separately budgeted advice call only to the
+Active routed workflow manifests add separately budgeted advice calls only to the
 experts profile (and normal full execution). Other ablation profiles exclude that
 call. Inspect expert_dispatch audit decisions and actual model-call/token usage;
 workflow registration does not imply a measured performance benefit.

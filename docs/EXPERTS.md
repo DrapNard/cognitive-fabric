@@ -60,7 +60,7 @@ existing canonical hashes. Unknown fields and permission/executable declarations
 remain rejected. `examples/workflow_manifest.json` demonstrates registration and
 explicit activation through the same immutable/dependency-aware lifecycle.
 
-In full/experts profiles, a routed workflow can provide one separate solver advice
+In full/experts profiles, a legacy text workflow provides one separate solver advice
 call before whole-goal reasoning. At most one workflow is selected deterministically
 from the task's pinned active manifest snapshot. FAST and other comparison profiles
 do not invoke it. The original objective remains authoritative; workflow content
@@ -78,4 +78,32 @@ unverified and cannot complete a task on its own.
 Replacing/disabling manifests affects subsequent snapshots, while copied workflow
 text stays pinned for in-flight work. This is a single model-assisted checklist
 expert, not an arbitrary workflow interpreter, executable plugin or independent
-model backend. Multi-step workflows and measured usefulness still require work.
+model backend. Structured multi-step advice is described below; measured usefulness
+still requires work.
+
+## Dependency-ordered workflow steps
+
+Instead of `workflow`, a manifest may provide `workflow_steps`, containing one to
+four `{id, advice, depends_on}` objects. The two representations are mutually
+exclusive. Advice is at most 1,000 bytes per step and 2,000 bytes total; IDs are
+3–32 ASCII identifier bytes and dependencies name distinct steps in the same
+manifest. Missing/self/duplicate dependencies, duplicate IDs and cycles fail.
+`examples/workflow_steps_manifest.json` lists a dependent before its prerequisite
+to demonstrate deterministic topological execution. Absent new fields preserve
+legacy canonical hashes.
+
+Each step makes one shared-backend solver call with 192 reserved output tokens.
+Declared dependency results are copied as unverified data, bounded to 600
+characters per step. Step state and result hashes are audited with pinned manifest
+identity. The final solver receives the bounded workflow results; they are never
+verification evidence, tool commands or permissions. An interrupted workflow does
+not automatically resume or publish partial advice as a successful result.
+
+Admission requires a nonzero cycle limit, all step calls plus two remaining calls,
+`192 * steps + 640` reserved output tokens and conservative prompt-byte headroom
+for dependency data and final reasoning. Each actual dispatch independently checks
+the shared limits. Refusal skips the entire workflow before calls. FAST and other
+ablation profiles continue to exclude workflow advice. This is a bounded advice
+graph, not an interpreter for executable/conditional workflows, and does not load
+additional models. Lifecycle replacement/disable affects new task snapshots;
+in-flight manifests remain pinned.

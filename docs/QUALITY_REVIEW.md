@@ -545,3 +545,27 @@ manifests and external executable expert isolation remain incomplete.
 The negative CLI smoke also rejected `randomblob` with status `rejected`, no
 verification evidence and exit code 1. This confirms denied execution is visible
 to shell callers rather than reported as a successful task.
+
+## Dependency-ordered expert advice workflows
+
+Added mutually exclusive structured workflow_steps alongside legacy text. Strict
+manifest validation bounds one to four steps, 1 KB per-step/2 KB total advice,
+identifiers and acyclic dependencies. Omitted new fields preserve exact legacy
+canonical serialization. One routed pinned workflow runs through the shared
+solver backend; dependency output is bounded to 600 characters and labeled
+unverified. Each step audits identity/state/result hash. The final solver receives
+the bounded complete result map, without tools or additional authority.
+
+Admission checks all step calls/tokens and conservative escaped prompt/dependency
+headroom plus final planner/solver capacity; actual calls retain independent hard
+limits. Refusal skips the entire workflow before advice calls. No partial graph
+is reported as successful after interruption. This is a bounded advisory DAG,
+not executable/conditional plugin code, automatic resumption or measured utility.
+
+Tests cover exact legacy serialization, duplicate/missing/cyclic dependencies,
+empty/over-count/over-size graphs, actual two/four-step execution order, dependency
+data, final planner admission, pinned replacement/rollback, profile isolation and
+call/token/input-byte refusal. All 112 Rust tests, fmt/check/Clippy and CLI build
+pass with FlatBuffers 25.12.19. CLI smoke registered/activated the structured
+example in an isolated /tmp home and reported valid dependency metadata. Execution
+tests use the recording fixture backend; no live model-quality claim is made.

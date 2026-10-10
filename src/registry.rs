@@ -23,6 +23,15 @@ pub struct Dependency {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct WorkflowStep {
+    pub id: String,
+    pub advice: String,
+    #[serde(default)]
+    pub depends_on: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Manifest {
     pub id: String,
     pub version: String,
@@ -35,6 +44,8 @@ pub struct Manifest {
     pub license: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workflow: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workflow_steps: Option<Vec<WorkflowStep>>,
 }
 
 pub(crate) fn identifier(id: &str) -> bool {
@@ -57,9 +68,10 @@ impl Manifest {
         {
             bail!("Invalid expert manifest")
         }
-        match (self.kind.as_str(), self.workflow.as_deref()) {
-            ("reference", None) => {},
-            ("workflow", Some(text)) if !text.trim().is_empty() && text.len() <= 2000 => {},
+        match (self.kind.as_str(), self.workflow.as_deref(), self.workflow_steps.as_ref()) {
+            ("reference", None, None) => {},
+            ("workflow", Some(text), None) if !text.trim().is_empty() && text.len() <= 2000 => {},
+            ("workflow", None, Some(_)) => { self.workflow_order()?; },
             _ => bail!("Workflow experts require bounded advice; reference experts cannot contain workflows"),
         }
         let version = Version::parse(&self.version)?;
@@ -89,6 +101,52 @@ impl Manifest {
             bail!("Manifest provenance exceeds bounds")
         }
         Ok(())
+    }
+
+    pub(crate) fn workflow_order(&self) -> Result<Vec<usize>> {
+        let steps = self
+            .workflow_steps
+            .as_ref()
+            .context("Missing structured workflow")?;
+        let names = steps.iter().map(|step| &step.id).collect::<BTreeSet<_>>();
+        if steps.is_empty()
+            || steps.len() > 4
+            || names.len() != steps.len()
+            || steps.iter().map(|step| step.advice.len()).sum::<usize>() > 2000
+        {
+            bail!("Invalid workflow step count, identities or total advice size")
+        }
+        for step in steps {
+            let dependencies = step.depends_on.iter().collect::<BTreeSet<_>>();
+            if !identifier(&step.id)
+                || step.id.len() > 32
+                || step.advice.trim().is_empty()
+                || step.advice.len() > 1000
+                || step.depends_on.len() > 3
+                || dependencies.len() != step.depends_on.len()
+                || step
+                    .depends_on
+                    .iter()
+                    .any(|id| id == &step.id || !names.contains(id))
+            {
+                bail!("Invalid workflow advice or dependency")
+            }
+        }
+        let mut order = Vec::new();
+        let mut done = BTreeSet::new();
+        while order.len() < steps.len() {
+            let index = steps
+                .iter()
+                .enumerate()
+                .find(|(_, step)| {
+                    !done.contains(&step.id) && step.depends_on.iter().all(|id| done.contains(id))
+                })
+                .map(|(index, _)| index)
+                .context("Workflow dependency cycle")?;
+            done.insert(steps[index].id.clone());
+            order.push(index);
+        }
+        Ok(order)
     }
 }
 
@@ -315,12 +373,80 @@ mod tests {
             version: version.into(),
             kind: "reference".into(),
             workflow: None,
+            workflow_steps: None,
             description: "Reviewed reference skill".into(),
             tags: vec!["rust".into()],
             dependencies: vec![],
             source: "test fixture".into(),
             license: "CC0-1.0".into(),
         }
+    }
+
+    #[test]
+    fn structured_workflows_validate_dependencies_bounds_and_legacy_hashes() {
+        let mut manifest = manifest("rust.workflow.s1", "1.0.0");
+        let legacy = serde_json::to_string(&manifest).unwrap();
+        assert_eq!(
+            legacy,
+            r#"{"id":"rust.workflow.s1","version":"1.0.0","kind":"reference","description":"Reviewed reference skill","tags":["rust"],"dependencies":[],"source":"test fixture","license":"CC0-1.0"}"#
+        );
+        assert!(!legacy.contains("workflow_steps"));
+        let roundtrip: Manifest = serde_json::from_str(&legacy).unwrap();
+        assert_eq!(serde_json::to_string(&roundtrip).unwrap(), legacy);
+        manifest.kind = "workflow".into();
+        manifest.workflow_steps = Some(vec![
+            WorkflowStep {
+                id: "review".into(),
+                advice: "Review collected evidence".into(),
+                depends_on: vec!["collect".into()],
+            },
+            WorkflowStep {
+                id: "collect".into(),
+                advice: "Collect advisory evidence".into(),
+                depends_on: vec![],
+            },
+        ]);
+        manifest.validate().unwrap();
+        assert_eq!(manifest.workflow_order().unwrap(), vec![1, 0]);
+        let original = manifest.clone();
+        manifest.workflow = Some("ambiguous second representation".into());
+        assert!(manifest.validate().is_err());
+        manifest = original.clone();
+        manifest.workflow_steps.as_mut().unwrap()[1]
+            .depends_on
+            .push("review".into());
+        assert!(manifest.validate().is_err());
+        manifest = original.clone();
+        manifest.workflow_steps.as_mut().unwrap()[0].depends_on = vec!["missing".into()];
+        assert!(manifest.validate().is_err());
+        manifest = original.clone();
+        manifest.workflow_steps.as_mut().unwrap()[0].advice = "x".repeat(1001);
+        assert!(manifest.validate().is_err());
+        manifest = original;
+        manifest.workflow_steps.as_mut().unwrap()[0].id = "collect".into();
+        assert!(manifest.validate().is_err());
+        manifest.workflow_steps = Some(vec![]);
+        assert!(manifest.validate().is_err());
+        manifest.workflow_steps = Some(
+            (0..5)
+                .map(|index| WorkflowStep {
+                    id: format!("step_{index}"),
+                    advice: "Advice".into(),
+                    depends_on: vec![],
+                })
+                .collect(),
+        );
+        assert!(manifest.validate().is_err());
+        manifest.workflow_steps = Some(
+            (0..3)
+                .map(|index| WorkflowStep {
+                    id: format!("step_{index}"),
+                    advice: "x".repeat(800),
+                    depends_on: vec![],
+                })
+                .collect(),
+        );
+        assert!(manifest.validate().is_err());
     }
     fn setup() -> (std::path::PathBuf, Store) {
         let path =

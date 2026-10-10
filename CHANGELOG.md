@@ -176,3 +176,10 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   permissions and no inference requirement.
 - Deny external access, mutations, unsafe functions and multiple statements;
   bound VM work, cancellation, data sizes and results, with hashed evidence.
+
+### Development: run dependency-ordered expert advice workflows
+
+- Extend immutable manifests with bounded acyclic advice steps while preserving
+  legacy hashes and shared-backend behavior.
+- Execute declared dependencies under shared budgets, audit step/result identities,
+  and keep advice unverified and isolated from baseline profiles.
