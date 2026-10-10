@@ -15,7 +15,7 @@ runtime verification status. `task ID` retrieves persisted traces.
 `examples/arithmetic_bench.jsonl` is a deterministic parser smoke benchmark. It
 uses no model inference, so its accuracy/latency cannot establish collective
 reasoning quality or advantage over a language model. RAG held-out tests exercise
-isolated retrieval and active-baseline regressions; see `EVOLUTION.md`.
+isolated retrieval and cumulative approved-version regressions; see `EVOLUTION.md`.
 
 ## Comparison runner
 
@@ -52,10 +52,26 @@ is missing. GPU/peak RAM/energy/load cost and general security-failure metrics r
 explicitly unavailable. A run deadline or Ctrl-C cancels the active task durably,
 returns `complete:false` with partial results, and makes the CLI exit unsuccessfully.
 
-Run without concurrent document/registry updates; the corpus is operator-managed,
-while each individual task pins its retrieved versions. Use a fresh state directory
-and identical reviewed corpus for repeated runs. This runner does not freeze an
-external model's weights or infer a true model size from its identifier.
+Every comparison captures one read-only, consistent SQLite snapshot before the
+first arm. Skills, active reference/candidate versions, documents and published
+memories remain fixed for the whole run even if their live source changes. Later
+revocations/updates affect normal tasks and future runs; cancel a comparison if
+its frozen evidence should no longer be used. Each evaluation task records the
+same snapshot metadata while its own result/trace stays durable in the original
+database. Expected test outputs remain outside model contexts.
+
+Snapshots cap the complete allocated database at 64 MB and temporarily require
+a second serialization buffer plus SQLite overhead. Oversized state fails closed
+rather than silently dropping references; use a smaller reviewed evaluation store.
+Reports include snapshot bytes, SHA-256 and capture time, and the run deadline
+includes snapshot capture. The checksum identifies the complete SQLite image,
+including unrelated stored history, not merely a semantic corpus or a portable
+content-only digest. No database content is exported in the report.
+
+Live model availability, immutable weights, provider state and hardware are not
+frozen. Registered-model disable still applies to new task starts through the
+live operator policy. Use identical reviewed corpus/configuration across repeated
+runs; model identifiers do not establish actual parameter counts.
 
 The canonical initial suite still requires 100–200 diverse technical/reasoning
 cases, including ambiguity, unseen cases and objectives requiring tools. That

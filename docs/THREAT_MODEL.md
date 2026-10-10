@@ -101,3 +101,10 @@ checksum-bound plan and explicit approval, and preserves running/memory/referenc
 tasks. Changes and deletions share a transaction with a summary audit. SQLite WAL
 retention settings are not hard disk quotas; long readers can grow the WAL. Strict
 physical limits need host filesystem quotas. See `STORAGE.md`.
+
+Evaluation retrieval uses one bounded read-only database snapshot per comparison,
+preventing concurrent source updates from giving different arms different evidence.
+The image remains in process memory; reports expose only its hash/size and capture
+time. It retains the original reviewed corpus for that run, including subsequently
+revoked entries; cancel the run if that evidence must no longer be used. No model
+permissions or expected test outputs are added to inference contexts.

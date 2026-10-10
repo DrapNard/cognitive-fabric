@@ -156,6 +156,9 @@ where
     common.role_profiles.clear();
     common.synthesize_results = false;
     common.validate()?;
+    let started = tokio::time::Instant::now();
+    let corpus = Arc::new(store.freeze_corpus()?);
+    let snapshot_ms = started.elapsed().as_secs_f64() * 1000.0;
     let profiles = [
         ExecutionProfile::Alone,
         ExecutionProfile::Tools,
@@ -170,7 +173,7 @@ where
             (
                 profile,
                 common.model.clone(),
-                Engine::new(common.clone(), store.clone()),
+                Engine::new(common.clone(), store.clone()).with_frozen_corpus(corpus.clone()),
             )
         })
         .collect::<Vec<_>>();
@@ -181,10 +184,9 @@ where
         arms.push((
             ExecutionProfile::Alone,
             model.into(),
-            Engine::new(baseline, store.clone()),
+            Engine::new(baseline, store.clone()).with_frozen_corpus(corpus.clone()),
         ));
     }
-    let started = tokio::time::Instant::now();
     let deadline = started + Duration::from_secs(review.max_run_seconds);
     let mut details = Vec::new();
     let mut scores = vec![0usize; arms.len()];
@@ -238,11 +240,11 @@ where
     }
     Ok(
         json!({"format_version":1,"dataset_checksum":store::sha256(&bytes),"dataset_source":review.source,"dataset_license":review.license,"held_out_operator_attested":true,
-        "code_revision_operator_attested":review.code_revision,"package_version":env!("CARGO_PKG_VERSION"),"configuration":common,"mode":mode,
+        "code_revision_operator_attested":review.code_revision,"package_version":env!("CARGO_PKG_VERSION"),"configuration":common,"mode":mode,"corpus_snapshot":corpus.metadata,"snapshot_elapsed_ms":snapshot_ms,
         "case_count":cases.len(),"complete":!stopped,"stop_reason":if cancelled {"cancelled"} else if stopped {"run_deadline"} else {"completed"},"elapsed_ms":started.elapsed().as_secs_f64()*1000.0,"larger_baseline_configured":larger.is_some(),
         "arms":arms.iter().enumerate().map(|(index,(profile,model,_))| json!({"index":index,"profile":profile,"model":model,"executed":counts[index],"passed":scores[index],"resources":totals[index],"accuracy":if counts[index]>0 {Some(scores[index] as f64/counts[index] as f64)} else {None}})).collect::<Vec<_>>(),
         "details":details,"unavailable_metrics":["peak_memory","gpu_memory","energy","model_load_cost","general_security_failure_rate"],
-        "limitations":["Held-out independence and code revision are operator-attested","Backend model labels do not attest immutable weights","Exact-match criteria do not establish broad reasoning quality","Corpus is operator-managed; run without concurrent registry or document changes","Different arms consume different amounts within the same operator ceilings; inspect actual usage"]}),
+        "limitations":["Held-out independence and code revision are operator-attested","Backend model labels do not attest immutable weights","Exact-match criteria do not establish broad reasoning quality","Retrieval uses one read-only SQLite snapshot; checksum includes unrelated stored history","Snapshot bounds are 64 MB and temporarily require an additional serialization buffer","Live model availability, weight identity and server state are not frozen","Different arms consume different amounts within the same operator ceilings; inspect actual usage"]}),
     )
 }
 
@@ -311,12 +313,27 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(report["complete"], true);
+        assert_eq!(report["corpus_snapshot"]["frozen"], true);
+        assert_eq!(
+            report["corpus_snapshot"]["database_snapshot_checksum"]
+                .as_str()
+                .unwrap()
+                .len(),
+            64
+        );
         assert_eq!(report["arms"].as_array().unwrap().len(), 6);
         assert_eq!(report["details"].as_array().unwrap().len(), 12);
         assert_eq!(report["arms"][0]["passed"], 0);
         assert_eq!(report["arms"][1]["passed"], 1);
         for detail in report["details"].as_array().unwrap() {
             let task = detail["outcome"]["task_id"].as_str().unwrap();
+            let trace = store.task(task).unwrap();
+            assert!(trace["events"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|event| event["kind"] == "evaluation_corpus"
+                    && event["payload"] == report["corpus_snapshot"]));
             assert!(!store
                 .task(task)
                 .unwrap()

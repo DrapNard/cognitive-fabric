@@ -225,6 +225,14 @@ impl Store {
             events: crate::events::Hub::default(),
         })
     }
+    pub(crate) fn from_frozen_connection(db: Connection) -> Result<Self> {
+        db.pragma_update(None, "query_only", true)?;
+        Ok(Self {
+            db: Mutex::new(db),
+            runtime_lock: None,
+            events: crate::events::Hub::default(),
+        })
+    }
     pub fn create_task(&self, query: &str, mode: &str) -> Result<String> {
         self.create_named_task(&Uuid::new_v4().to_string(), query, mode)
     }

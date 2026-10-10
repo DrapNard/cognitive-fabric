@@ -49,6 +49,7 @@ pub struct Engine {
     pub store: Arc<Store>,
     pub broker: Arc<crate::fabric::Broker>,
     backend: Arc<dyn InferenceBackend>,
+    corpus: Option<Arc<crate::corpus::FrozenCorpus>>,
 }
 impl Engine {
     pub fn new(cfg: Config, store: Arc<Store>) -> Self {
@@ -66,7 +67,12 @@ impl Engine {
             store,
             backend: broker.clone(),
             broker,
+            corpus: None,
         }
+    }
+    pub(crate) fn with_frozen_corpus(mut self, corpus: Arc<crate::corpus::FrozenCorpus>) -> Self {
+        self.corpus = Some(corpus);
+        self
     }
     pub async fn run(&self, query: &str, mode: &str) -> Result<Outcome> {
         self.run_until(query, mode, std::future::pending()).await
@@ -204,6 +210,10 @@ impl Engine {
         )?;
         self.store
             .event(&id, "module_snapshot", "fabric", json!({"modules":modules}))?;
+        if let Some(corpus) = &self.corpus {
+            self.store
+                .event(&id, "evaluation_corpus", "runtime", json!(corpus.metadata))?;
+        }
         let mut skills = Vec::new();
         let mut evidence = Vec::new();
         let execution = async {
@@ -226,7 +236,11 @@ impl Engine {
                     manifests: Vec::new(),
                 }
             } else {
-                self.store.task_context_scoped(query, retrieve, experts)?
+                self.corpus
+                    .as_ref()
+                    .map(|corpus| &corpus.store)
+                    .unwrap_or(&self.store)
+                    .task_context_scoped(query, retrieve, experts)?
             };
             if matches!(
                 profile,
@@ -518,7 +532,19 @@ mod tests {
         let mut cfg = Config::load(None, Some("openai-local".into())).unwrap();
         cfg.interpret_goals = false;
         let backend = Arc::new(RecordingBackend(std::sync::Mutex::new(Vec::new())));
-        let engine = Engine::with_backend(cfg, store, backend.clone());
+        let corpus = Arc::new(store.freeze_corpus().unwrap());
+        let engine =
+            Engine::with_backend(cfg, store.clone(), backend.clone()).with_frozen_corpus(corpus);
+        store
+            .add_document(&store::Document {
+                id: "later".into(),
+                skill_id: "rust.s1".into(),
+                title: "Rust lifetimes".into(),
+                body: "Rust later corpus sentinel".into(),
+                source: "test".into(),
+                license: "CC0".into(),
+            })
+            .unwrap();
         for profile in [
             ExecutionProfile::Alone,
             ExecutionProfile::Tools,
@@ -534,6 +560,12 @@ mod tests {
                 .await
                 .unwrap();
             assert_eq!(outcome.status, "unverified");
+            assert!(!backend
+                .0
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|(_, prompt)| prompt.contains("later corpus sentinel")));
             let calls = backend.0.lock().unwrap();
             let uses_memory = matches!(
                 profile,

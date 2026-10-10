@@ -18,7 +18,7 @@ flatbuffers = "=25.12.19"
 hex = "0.4"
 libc = "0.2"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.32", features = ["bundled", "backup", "serialize"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 semver = "1"

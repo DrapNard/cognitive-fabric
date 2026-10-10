@@ -275,3 +275,32 @@ checkpoint/retention controls (`wal_hard_limit=false`). Strict physical disk bou
 need filesystem quotas. Concurrent writes can still exhaust reserved headroom and
 return durable-write errors. Backups, automatic resumption and archive management
 remain open; see `STORAGE.md`. No real user history was cleaned up during this run.
+
+## Frozen comparison retrieval (2026-10-10)
+
+Comparison arms now share one consistent read-only SQLite backup held in memory.
+Source read transactions prevent concurrent source updates from restarting or
+changing capture. The complete image is capped at 64 MB; reports and every task
+trace record its size/hash, and overall deadline accounting includes capture time.
+Task results remain in the original live database. SQLite backup/serialization
+features reuse the existing pinned rusqlite dependency; no new package was added.
+
+Two new corpus tests cover oversize denial without source mutation, read-only
+write rejection, subsequent document additions, episode revocation and expert
+version activation while the original snapshot remains stable. Existing Engine
+profile tests now prove later corpus text cannot enter frozen prompts. Comparison
+tests verify identical snapshot provenance in every durable task trace.
+
+All 86 tests passed with actual local HTTP/socket fixtures. Formatting check,
+all-target check, denied-warning Clippy and binary build passed offline. A missing
+temporary flatc executable initially blocked Clippy; the exact 25.12.19 generator
+was restored from upstream commit 7e163021e59cca4f8e1e35a7c828b5c6b7915953,
+then all required checks were rerun successfully. A fresh CLI arithmetic comparison
+completed 60 executions with one 188,416-byte snapshot and 60 matching durable
+provenance records. The smoke report uses the d3555e2 base plus this worktree,
+not an attested immutable final build, and establishes runner mechanics only.
+
+The checksum includes unrelated database history; it is not a content-only corpus
+digest. Temporary memory includes an extra serialization buffer and SQLite
+overhead. Live weight identity, availability and hardware remain unfrozen. A new
+probe of 127.0.0.1:1234 found connection refused; live-model quality is unverified.
