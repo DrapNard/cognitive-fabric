@@ -42,7 +42,7 @@ Quality requires operator-attested held-out data. Promotion checks quality,
 cumulative approved-version retrieval regressions and unchanged versions transactionally.
 Rollback restores approved stored snapshots. Neural promotion stays disabled.
 
-Verification: 92 tests, formatting, all-target check and Clippy pass using exact
+Verification: 94 tests, formatting, all-target check and Clippy pass using exact
 flatc/Rust FlatBuffers 25.12.19. HTTP fixtures and socket tests ran locally; no
 compatible live model server was available at the default endpoint. No neural
 quality, GPU integration, hot-swap, energy or model-superiority result is claimed.
@@ -82,3 +82,8 @@ Explicit `order:` objectives now use an independent bounded Rust constraint chec
 Each check is individually authorized and charged against the tool budget; failed
 checks inform subsequent solver cycles. Passing checks produce completed outcomes
 and suppress answer rewriting. See `VERIFICATION.md` for syntax and exact scope.
+
+Operator `diagnostics` reports storage/schema/registered-selection checks without
+creating a task. Optional bounded local model discovery reports unavailable or
+missing model IDs and produces a nonzero CLI exit; it does not perform inference
+or attest weights. See `DIAGNOSTICS.md`.

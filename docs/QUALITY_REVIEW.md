@@ -355,3 +355,19 @@ Final checks: 92 all-target tests pass, formatting/all-target check/Clippy with
 warnings denied pass using FlatBuffers 25.12.19. One Clippy fixture-initialization
 warning was fixed before the final checks. This HTTP fixture verifies integration,
 not real model inference or quality; no performance advantage is claimed.
+
+## Bounded operator diagnostics
+
+Added local diagnostics for schema/storage/registered selection and an explicit
+optional operator model-list probe. The probe is GET-only, three-second bounded,
+64 KiB/256-ID limited, no proxy/redirect, using the same loopback URL boundary as
+inference. Model advertisement does not imply generation, residency or weight
+attestation. Reasoning actors cannot invoke the diagnostic capability. Diagnostics
+creates no tasks/events, though normal CLI workspace initialization still applies.
+
+Actual checks: all 94 tests pass including socket and HTTP fixtures; formatting,
+all-target check, Clippy with denied warnings and CLI build pass with FlatBuffers
+25.12.19. CLI offline smoke reports schema 6/storage and no generation. An initial
+smoke used an invalid positional configure-local argument; corrected to `--model`
+and reran. The corrected local endpoint probe returned a failed discovery report
+and exit 1 at 127.0.0.1:1234. No live model success is claimed.

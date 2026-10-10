@@ -4,6 +4,7 @@ pub mod backend;
 pub mod benchmarking;
 pub mod config;
 pub mod corpus;
+pub mod diagnostics;
 pub mod engine;
 pub mod evaluation;
 pub mod events;

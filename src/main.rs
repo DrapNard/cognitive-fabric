@@ -31,6 +31,10 @@ enum Command {
     Init,
     Status,
     SelfTest,
+    Diagnostics {
+        #[arg(long)]
+        probe_inference: bool,
+    },
     RecoverTasks,
     StorageStatus,
     RetentionPreview {
@@ -246,6 +250,17 @@ async fn main() -> Result<()> {
     store::bootstrap(&store)?;
     let engine = Engine::new(cfg.clone(), store.clone());
     let response: Value = match cli.command {
+        Command::Diagnostics { probe_inference } => {
+            let report = cogfabric::diagnostics::diagnose(&cfg, &store, probe_inference).await?;
+            if report["registered_selection_valid"] == false
+                || report["inference_discovery"]["status"] == "failed"
+                || report["inference_discovery"]["all_configured_models_advertised"] == false
+            {
+                output(&report, cli.json)?;
+                bail!("Diagnostics found an invalid selection or unavailable configured inference model")
+            }
+            report
+        }
         Command::TaskProgress { id, after, socket } => serde_json::to_value(if socket {
             service::task_progress(&cfg, &id, after).await?
         } else {

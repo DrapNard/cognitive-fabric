@@ -113,3 +113,10 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   answers fairly across all baseline and collective profiles.
 - Validate the complete dataset before creating tasks and identify criteria in reports.
 - Preserve existing exact-match datasets and test the full six-arm loopback HTTP path.
+
+### Development: diagnose local storage and inference configuration
+
+- Add operator diagnostics with optional bounded loopback model discovery, explicit
+  missing-model reporting and meaningful failure exits without launching a task.
+- Document initialization effects and distinguish model advertisement from inference,
+  loaded weights, residency and GPU validation.
