@@ -93,3 +93,6 @@ Implemented: typed owner-authenticated status/cancel-active/stop, bounded eight 
 
 ### Bounded decomposed task graphs
 Implemented: strict bounded planner graphs, dependency validation/topological scheduling, shared-budget admission with a reserved whole-goal solver, durable subtask transitions and cancellation (`src/planning.rs`, `src/reasoning.rs`, `src/engine.rs`). Tests cover forward dependencies, cycles, missing/duplicate IDs, permission fields, execution order, budget fallback and cancellation. Partial: sequential inference scheduling only; crash resume and general independent subtask verification are outstanding.
+
+### Task-bound security decisions
+Implemented: immutable task/actor scopes created by Rust, intersection with global capability policy, scope checks at each model/tool dispatch, grant snapshots and denial audits (`src/security.rs`, `src/reasoning.rs`). Tests reject cross-task replay, actor substitution, unauthorized grant expansion and promotion requests; denied calls do not consume tool invocations. External executable expert isolation remains unsupported.

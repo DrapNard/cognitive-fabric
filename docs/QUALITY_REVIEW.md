@@ -102,3 +102,6 @@ Pinned flatc 25.12.19 regenerated the additive schema. Formatting, all-target ch
 
 ### Dependency-aware subtask execution
 All-target check and tests passed (54 tests); formatting passed. Clippy identified a redundant integer comparison, corrected without changing behavior. New tests verify strict acyclic plan validation, stable dependency order, shared call/token ceilings with whole-goal fallback, and cancellation of running/pending subgoals. Subtask results remain unverified and confer no tool capabilities.
+
+### Immutable task capability scopes
+Formatting, all-target check, all-target tests (56 passed), and Clippy with denied warnings passed using the pinned compiler. New tests verify task replay rejection, actor narrowing, denial of promotion grant creation, and task-linked audit decisions without charging denied tool invocations. No external executable capabilities were added.

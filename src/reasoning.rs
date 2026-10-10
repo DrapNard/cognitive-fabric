@@ -50,6 +50,7 @@ pub struct Session {
     cycle_limit: usize,
     complete_usage: bool,
     inference_started: Option<Instant>,
+    policy: security::TaskPolicy,
 }
 
 impl Session {
@@ -59,17 +60,22 @@ impl Session {
         }
     }
     pub fn authorize_tool(&mut self, capability: &str) -> Result<()> {
-        let decision = security::authorize("jev-r", capability);
+        let decision = self
+            .policy
+            .authorize(&self.task, "jev-plus", capability)
+            .and_then(|()| {
+                if self.resources.tool_calls >= self.cfg.max_tool_calls {
+                    bail!("Tool invocation budget exhausted")
+                }
+                Ok(())
+            });
         self.store.event(
             &self.task,
             "policy",
             "security-kernel",
-            json!({"actor":"jev-r","capability":capability,"allowed":decision.is_ok()}),
+            json!({"task_id":self.task,"actor":"jev-plus","capability":capability,"allowed":decision.is_ok(),"reason":decision.as_ref().err().map(ToString::to_string)}),
         )?;
         decision?;
-        if self.resources.tool_calls >= self.cfg.max_tool_calls {
-            bail!("Tool invocation budget exhausted")
-        }
         self.resources.tool_calls += 1;
         Ok(())
     }
@@ -87,6 +93,13 @@ impl Session {
             "research" => (18, 4),
             _ => bail!("Unknown reasoning mode"),
         };
+        let policy = security::TaskPolicy::reasoning(&task)?;
+        store.event(
+            &task,
+            "policy_snapshot",
+            "security-kernel",
+            policy.snapshot(),
+        )?;
         Ok(Self {
             call_limit: calls.min(cfg.max_calls),
             cycle_limit: cycles.min(cfg.max_cycles),
@@ -101,6 +114,7 @@ impl Session {
             subtasks: Vec::new(),
             complete_usage: true,
             inference_started: None,
+            policy,
         })
     }
 
@@ -208,7 +222,14 @@ impl Session {
             self.stop_reason = "budget_exhausted".into();
             return Ok(None);
         }
-        security::authorize("jev-r", "llm.generate")?;
+        let actor = match role {
+            "interface" | "synthesizer" => "interface",
+            "planner" | "solver" | "critic" | "explorer" | "reflector" => "jev-r",
+            _ => bail!("Unsupported reasoning actor"),
+        };
+        let decision = self.policy.authorize(&self.task, actor, "llm.generate");
+        self.store.event(&self.task, "policy", "security-kernel", json!({"task_id":self.task,"actor":actor,"role":role,"capability":"llm.generate","allowed":decision.is_ok(),"reason":decision.as_ref().err().map(ToString::to_string)}))?;
+        decision?;
         self.resources.calls += 1;
         self.resources.reserved_output_tokens += allocation;
         self.resources.prompt_bytes += prompt.len();
@@ -442,6 +463,36 @@ mod tests {
     }
 
     const GRAPH: &str = r#"{"steps":[{"id":"combine","objective":"Explain the combined conditions","depends_on":["collect"]},{"id":"collect","objective":"Identify lifetime conditions","depends_on":[]}]}"#;
+
+    #[tokio::test]
+    async fn denied_tools_are_task_audited_and_do_not_consume_invocations() {
+        let store = Arc::new(Store::in_memory().unwrap());
+        let task = store.create_task("Read references", "fast").unwrap();
+        let cfg = Config::load(None, Some("demo".into())).unwrap();
+        let mut session = Session::new(
+            cfg,
+            store.clone(),
+            Arc::new(Script(Mutex::new(VecDeque::new()))),
+            task.clone(),
+            "fast",
+        )
+        .unwrap();
+        assert!(session.authorize_tool("candidate.promote").is_err());
+        assert_eq!(session.resources.tool_calls, 0);
+        session.authorize_tool("knowledge.search").unwrap();
+        assert_eq!(session.resources.tool_calls, 1);
+        let trace = store.task(&task).unwrap();
+        let events = trace["events"].as_array().unwrap();
+        assert!(
+            events
+                .iter()
+                .any(|event| event["kind"] == "policy_snapshot"
+                    && event["payload"]["task_id"] == task)
+        );
+        assert!(events.iter().any(|event| event["kind"] == "policy"
+            && event["payload"]["allowed"] == false
+            && event["payload"]["task_id"] == task));
+    }
 
     #[tokio::test]
     async fn dependent_subtasks_execute_in_order_under_the_shared_budget() {

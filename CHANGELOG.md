@@ -84,3 +84,5 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
 - Add typed service-status, cancel-active and stop controls that remain available during inference, with bounded connections and busy responses.
 
 - Execute validated advisory subtask dependencies under the shared reasoning budget, persist graph transitions, and preserve a final solver for the original goal.
+
+- Bind inference and tool dispatch authorization to immutable per-task actor grants, with persisted scope snapshots and denial decisions.
