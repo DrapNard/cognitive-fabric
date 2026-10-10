@@ -14,8 +14,8 @@ sets an independent role profile. Planner, solver, critic, explorer, reflector,
 interface and synthesizer profiles are accepted. Roles share the default model
 unless explicitly overridden; selecting a model does not load its weights.
 The operator must run a compatible loopback inference server independently.
-The interface/synthesizer profile slots are reserved for language-interface
-integration; this configuration change alone does not implement those calls.
+The interface/synthesizer profiles are used by the language-interface
+integration; see LANGUAGE_INTERFACE.md for budgets and invocation rules.
 
 Settings live in owner-only `config.json`, with format_version 1. Saves use an
 exclusive temporary file, sync file contents, atomically rename, and sync the

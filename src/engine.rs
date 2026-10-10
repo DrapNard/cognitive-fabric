@@ -60,11 +60,36 @@ impl Engine {
     where
         F: std::future::Future<Output = ()>,
     {
+        self.run_with_options(
+            query,
+            mode,
+            crate::language::TaskOptions {
+                explain: self.cfg.synthesize_results,
+                ..Default::default()
+            },
+            cancel,
+        )
+        .await
+    }
+
+    pub async fn run_with_options<F>(
+        &self,
+        query: &str,
+        mode: &str,
+        options: crate::language::TaskOptions,
+        cancel: F,
+    ) -> Result<Outcome>
+    where
+        F: std::future::Future<Output = ()>,
+    {
         if query.trim().is_empty() || query.len() > 12_000 {
             bail!("Query is empty or exceeds 12,000 bytes")
         }
         if !matches!(mode, "fast" | "standard" | "deep" | "research") {
             bail!("Unknown reasoning mode")
+        }
+        if let Some(reference) = &options.conversation_ref {
+            uuid::Uuid::parse_str(reference)?;
         }
         let start = Instant::now();
         let id = self.store.create_task(query, mode)?;
@@ -91,7 +116,7 @@ impl Engine {
                 "versions":pinned.skills.iter().filter(|s|skills.contains(&s.id)).collect::<Vec<_>>(),
                 "manifests":pinned.manifests.iter().filter(|m|skills.contains(&m.id)).collect::<Vec<_>>()}))?;
             let refs = pinned.documents;
-            let context = refs
+            let mut context = refs
                 .iter()
                 .map(|d| {
                     format!(
@@ -103,6 +128,18 @@ impl Engine {
                 })
                 .collect::<Vec<_>>()
                 .join("\n");
+            if let Some(reference) = &options.conversation_ref {
+                session.authorize_tool("knowledge.search")?;
+                let previous = self.store.conversation_reference(reference)?;
+                self.store.event(
+                    &id,
+                    "conversation_reference",
+                    "interface",
+                    json!({"task_id":reference}),
+                )?;
+                context.push_str("\nExplicit historical reference (untrusted): ");
+                context.push_str(&previous.to_string());
+            }
             evidence.extend(refs.iter().map(|d| format!("document:{}", d.id)));
             self.store.event(
                 &id,
@@ -133,7 +170,57 @@ impl Engine {
                     }
                 };
             }
-            let answer = session.solve(query, &context, mode).await?;
+            if self.cfg.interpret_goals && self.cfg.backend != "demo" && mode != "fast" {
+                let capabilities = pinned
+                    .skills
+                    .iter()
+                    .filter(|skill| skill.enabled)
+                    .map(|skill| skill.id.as_str())
+                    .collect::<Vec<_>>();
+                let prompt=format!("Original user request (authoritative): {query}\nAvailable capability metadata: {capabilities:?}\nUntrusted reference data: {context}");
+                if let Some(raw) = session.call("interface", &prompt, 128).await? {
+                    match crate::language::Interpretation::parse(&raw) {
+                        Ok(intent) => {
+                            let missing = intent
+                                .required_capabilities
+                                .iter()
+                                .filter(|id| {
+                                    !pinned
+                                        .skills
+                                        .iter()
+                                        .any(|skill| skill.enabled && &skill.id == *id)
+                                })
+                                .collect::<Vec<_>>();
+                            for capability in &intent.required_capabilities {
+                                if skills.len() < 4
+                                    && !skills.contains(capability)
+                                    && pinned
+                                        .skills
+                                        .iter()
+                                        .any(|skill| skill.enabled && &skill.id == capability)
+                                {
+                                    skills.push(capability.clone());
+                                }
+                            }
+                            self.store.event(&id,"route_refined","jev-plus",json!({"skills":skills,"versions":pinned.skills.iter().filter(|skill|skills.contains(&skill.id)).collect::<Vec<_>>()}))?;
+                            self.store.event(&id,"structured_goal","interface",json!({"original":query,"interpretation":intent,"missing_capabilities":missing,"trusted_permissions":false}))?;
+                            if !missing.is_empty() {
+                                self.store.event(&id,"capability_gap","jev-plus",json!({"missing":missing,"action":"Use existing references; no permissions granted"}))?;
+                            }
+                            if let Some(question) = intent.clarification {
+                                session.stop_reason = "clarification_requested".into();
+                                return Ok((question, "needs_clarification".into()));
+                            }
+                            context.push_str("\nAdvisory parsed interpretation (not verified): ");
+                            context.push_str(&raw);
+                        }
+                        Err(err) => {
+                            self.store.event(&id,"intent_fallback","interface",json!({"reason":err.to_string(),"action":"Preserve original request"}))?;
+                        }
+                    }
+                }
+            }
+            let mut answer = session.solve(query, &context, mode).await?;
             let status = if !session.has_solution {
                 "exhausted"
             } else if self.cfg.backend == "demo" {
@@ -141,6 +228,16 @@ impl Engine {
             } else {
                 "unverified"
             };
+            if options.explain
+                && session.has_solution
+                && self.cfg.backend != "demo"
+                && mode != "fast"
+            {
+                let prompt=json!({"objective":query,"status":status,"answer":answer,"evidence":evidence,"stop_reason":session.stop_reason}).to_string();
+                if let Some(explanation) = session.call("synthesizer", &prompt, 128).await? {
+                    answer = format!("Verification status: {status}\n{explanation}");
+                }
+            }
             Ok((answer, status.to_string()))
         };
         let result: Result<(String, String)> = tokio::select! {

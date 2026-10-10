@@ -8,11 +8,11 @@ roles; no new neural architecture is claimed.
 | Mode | Maximum model calls | Maximum solver cycles | Stages |
 |---|---|---|---|
 | FAST | 1 | 1 | Solver, deterministic verification |
-| STANDARD | 2 | 1 | Planner, solver, deterministic verification |
-| DEEP | 8 | 3 | Planner, solver, critic, reflector, bounded revisions |
-| RESEARCH | 16 | 4 | Planner, explorer, solver, critic, reflector, bounded revisions |
+| STANDARD | 4 | 1 | Planner, solver, deterministic verification |
+| DEEP | 10 | 3 | Planner, solver, critic, reflector, bounded revisions |
+| RESEARCH | 18 | 4 | Planner, explorer, solver, critic, reflector, bounded revisions |
 
-These mode limits are clamped to operator configuration. Defaults impose six
+These mode limits are clamped to operator configuration. Defaults impose eight
 calls, four cycles, 1,600 reserved output tokens, 128,000 cumulative prompt bytes,
 four tool invocations, 45 seconds per model request and 120 seconds per task.
 A solver reserves 384 output tokens; each other model role reserves 128.
@@ -46,5 +46,9 @@ GPU memory, load costs, energy and peak RAM remain unavailable.
 
 Input prompt bytes are enforced independently. Exact input-token preflight needs
 a compatible tokenizer/counting endpoint and is not yet implemented; byte limits
-must not be described as exact token limits. Different role model configurations,
+must not be described as exact token limits. General semantic task plans,
 semantic task plans and general independent executable verifiers are also pending.
+
+The optional interface and synthesis stages share these budgets. See
+LANGUAGE_INTERFACE.md. Exact input-token preflight and general independent
+executable verifiers remain pending; per-role model configuration is implemented.

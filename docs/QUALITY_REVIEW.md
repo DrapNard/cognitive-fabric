@@ -76,3 +76,12 @@ request assertions for per-role model/temperature selection. Formatting, workspa
 check and Clippy pass. configure-local (shared model and critic profile) and
 config-show were smoke-tested in `/tmp/cogfabric-config-smoke`. The configured
 fixture label does not imply an installed or loaded model.
+
+## Language interface verification
+
+All 42 tests pass after adding strict interpretation parsing, clarification,
+malformed-intent fallback, preservation of the original user goal despite a
+malicious interpretation, missing-capability tracking, status-labelled synthesis,
+explicit historical-reference isolation and typed conversation-option round trips.
+Formatting, workspace check and Clippy pass. Scripted outputs validate orchestration
+and boundaries only; live-model interpretation quality remains unverified.

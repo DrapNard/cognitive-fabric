@@ -8,6 +8,8 @@ enum ReasoningMode:ubyte { Fast = 0, Standard = 1, Deep = 2, Research = 3 }
 table AskRequest {
   query:string (required);
   mode:ReasoningMode = Standard;
+  conversation_ref:string;
+  explain:bool;
 }
 
 table ResourceUsage {

@@ -114,7 +114,13 @@ async fn handle(stream: UnixStream, engine: Arc<Engine>, mut stopping: watch::Re
         result = tokio::time::timeout(Duration::from_secs(10), wire::read_message(&mut reader)) => result,
     };
     let response = match request {
-        Ok(Ok(Message::Ask { id, query, mode })) => {
+        Ok(Ok(Message::Ask {
+            id,
+            query,
+            mode,
+            conversation_ref,
+            explain,
+        })) => {
             let cancel = async {
                 let mut extra = [0];
                 tokio::select! {
@@ -123,7 +129,18 @@ async fn handle(stream: UnixStream, engine: Arc<Engine>, mut stopping: watch::Re
                     _ = reader.read(&mut extra) => {},
                 }
             };
-            match engine.run_until(&query, &mode, cancel).await {
+            match engine
+                .run_with_options(
+                    &query,
+                    &mode,
+                    crate::language::TaskOptions {
+                        conversation_ref,
+                        explain,
+                    },
+                    cancel,
+                )
+                .await
+            {
                 Ok(outcome) => Message::Reply { id, outcome },
                 Err(err) => Message::Error {
                     id,
@@ -153,11 +170,38 @@ async fn handle(stream: UnixStream, engine: Arc<Engine>, mut stopping: watch::Re
 }
 
 pub async fn request(cfg: &Config, query: String, mode: String) -> Result<Outcome> {
+    request_with_options(
+        cfg,
+        query,
+        mode,
+        crate::language::TaskOptions {
+            explain: cfg.synthesize_results,
+            ..Default::default()
+        },
+    )
+    .await
+}
+
+pub async fn request_with_options(
+    cfg: &Config,
+    query: String,
+    mode: String,
+    options: crate::language::TaskOptions,
+) -> Result<Outcome> {
     tokio::time::timeout(
         Duration::from_secs(cfg.max_wall_seconds.saturating_add(10)),
         async {
             let mut stream = UnixStream::connect(cfg.socket()).await?;
-            let message = wire::new_request(query, mode);
+            let mut message = wire::new_request(query, mode);
+            if let Message::Ask {
+                conversation_ref,
+                explain,
+                ..
+            } = &mut message
+            {
+                *conversation_ref = options.conversation_ref;
+                *explain = options.explain;
+            }
             let id = match &message {
                 Message::Ask { id, .. } => id.clone(),
                 _ => unreachable!(),

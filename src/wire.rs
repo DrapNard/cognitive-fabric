@@ -18,6 +18,8 @@ pub enum Message {
         id: String,
         query: String,
         mode: String,
+        conversation_ref: Option<String>,
+        explain: bool,
     },
     Reply {
         id: String,
@@ -30,10 +32,26 @@ pub enum Message {
 }
 
 pub fn encode(message: &Message) -> Result<Vec<u8>> {
+    if let Message::Ask {
+        query,
+        conversation_ref,
+        ..
+    } = message
+    {
+        if query.trim().is_empty() || query.len() > 12_000 {
+            bail!("Query is empty or exceeds 12,000 bytes")
+        }
+        if let Some(reference) = conversation_ref {
+            uuid::Uuid::parse_str(reference)?;
+        }
+    }
     let mut builder = flatbuffers::FlatBufferBuilder::with_capacity(4096);
     let id = match message {
         Message::Ask { id, .. } | Message::Reply { id, .. } | Message::Error { id, .. } => id,
     };
+    if id.is_empty() || id.len() > 128 {
+        bail!("Invalid request correlation ID")
+    }
     let request_id = builder.create_string(id);
     let mut args = fb::EnvelopeArgs {
         version: 1,
@@ -41,7 +59,13 @@ pub fn encode(message: &Message) -> Result<Vec<u8>> {
         ..Default::default()
     };
     match message {
-        Message::Ask { query, mode, .. } => {
+        Message::Ask {
+            query,
+            mode,
+            conversation_ref,
+            explain,
+            ..
+        } => {
             args.kind = fb::MessageKind::Request;
             let q = builder.create_string(query);
             let mode = match mode.as_str() {
@@ -51,11 +75,16 @@ pub fn encode(message: &Message) -> Result<Vec<u8>> {
                 "research" => fb::ReasoningMode::Research,
                 _ => bail!("Unknown reasoning mode"),
             };
+            let reference = conversation_ref
+                .as_ref()
+                .map(|reference| builder.create_string(reference));
             let ask = fb::AskRequest::create(
                 &mut builder,
                 &fb::AskRequestArgs {
                     query: Some(q),
                     mode,
+                    conversation_ref: reference,
+                    explain: *explain,
                 },
             );
             args.request = Some(ask);
@@ -140,12 +169,21 @@ pub fn decode(body: &[u8]) -> Result<Message> {
         bail!("Unsupported protocol version")
     }
     let id = envelope.request_id().to_string();
+    if id.is_empty() || id.len() > 128 {
+        bail!("Invalid request correlation ID")
+    }
     match envelope.kind() {
         fb::MessageKind::Request => {
             if envelope.response().is_some() || envelope.error().is_some() {
                 bail!("Ambiguous request envelope")
             }
             let req = envelope.request().context("Missing request")?;
+            if req.query().trim().is_empty() || req.query().len() > 12_000 {
+                bail!("Invalid request query bounds")
+            }
+            if let Some(reference) = req.conversation_ref() {
+                uuid::Uuid::parse_str(reference)?;
+            }
             let mode = match req.mode() {
                 fb::ReasoningMode::Fast => "fast",
                 fb::ReasoningMode::Standard => "standard",
@@ -157,6 +195,8 @@ pub fn decode(body: &[u8]) -> Result<Message> {
                 id,
                 query: req.query().to_string(),
                 mode: mode.to_string(),
+                conversation_ref: req.conversation_ref().map(str::to_string),
+                explain: req.explain(),
             })
         }
         fb::MessageKind::Response => {
@@ -237,12 +277,32 @@ pub fn new_request(query: String, mode: String) -> Message {
         id: Uuid::new_v4().to_string(),
         query,
         mode,
+        conversation_ref: None,
+        explain: false,
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn conversation_and_explanation_options_roundtrip() {
+        let reference = uuid::Uuid::new_v4().to_string();
+        let mut message = new_request("Explain previous result".into(), "standard".into());
+        if let Message::Ask {
+            conversation_ref,
+            explain,
+            ..
+        } = &mut message
+        {
+            *conversation_ref = Some(reference.clone());
+            *explain = true;
+        }
+        assert!(
+            matches!(decode(&encode(&message).unwrap()).unwrap(),Message::Ask{conversation_ref:Some(id),explain:true,..} if id==reference)
+        );
+    }
+
     #[test]
     fn reply_preserves_optional_metrics_and_legacy_v1_defaults() {
         let outcome = Outcome {

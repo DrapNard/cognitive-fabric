@@ -60,6 +60,10 @@ enum Command {
         mode: String,
         #[arg(long)]
         socket: bool,
+        #[arg(long)]
+        conversation: Option<String>,
+        #[arg(long)]
+        explain: bool,
     },
     Serve,
     SkillAdd {
@@ -199,15 +203,21 @@ async fn main() -> Result<()> {
             query,
             mode,
             socket,
+            conversation,
+            explain,
         } => {
+            let options = cogfabric::language::TaskOptions {
+                conversation_ref: conversation,
+                explain: explain || cfg.synthesize_results,
+            };
             let outcome = if socket {
                 tokio::select! {
-                    result = service::request(&cfg, query, mode) => result?,
+                    result = service::request_with_options(&cfg, query, mode,options) => result?,
                     _ = tokio::signal::ctrl_c() => bail!("Request cancelled; the service cancels on disconnect"),
                 }
             } else {
                 engine
-                    .run_until(&query, &mode, async {
+                    .run_with_options(&query, &mode, options, async {
                         let _ = tokio::signal::ctrl_c().await;
                     })
                     .await?

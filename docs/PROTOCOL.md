@@ -45,3 +45,7 @@ The v1 response schema now appends optional ResourceUsage and stop_reason fields
 Existing field IDs are unchanged. Legacy v1 replies without these fields decode;
 unknown token usage uses optional ulong scalars, never fabricated zero counts.
 A compatibility regression covers absent appended fields and metrics round trips.
+
+AskRequest appends optional conversation_ref and explain fields, preserving prior
+field IDs and defaults. Correlation IDs are bounded to 128 bytes, requests to
+12,000 bytes, and conversation references to valid UUIDs before dispatch.

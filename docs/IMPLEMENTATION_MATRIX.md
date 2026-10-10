@@ -69,3 +69,11 @@ models/temperatures and explicit resource ceilings. `configure-local` and
 Reviewed configuration, manifests, documents, benchmarks and candidate checksum
 reads now share bounded no-follow regular-file opening in `src/security.rs`.
 Language interface generation and real loaded-model validation remain outstanding.
+
+Language interface update: `src/language.rs` defines bounded strict structured
+interpretation; `Engine` keeps the original goal authoritative, requests
+clarification when needed, tracks missing capabilities and refines existing
+routes without granting permissions. CLI/socket support explicit conversation
+references and optional result synthesis under the shared budget. Scripted tests
+cover injection, goal preservation, ambiguity, fallback and historical isolation.
+Real-model quality and exact input-token preflight remain unverified/incomplete.

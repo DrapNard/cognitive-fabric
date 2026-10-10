@@ -32,6 +32,8 @@ pub struct Config {
     pub max_wall_seconds: u64,
     pub temperature: f64,
     pub role_profiles: BTreeMap<String, RoleProfile>,
+    pub interpret_goals: bool,
+    pub synthesize_results: bool,
 }
 
 impl Default for Config {
@@ -42,7 +44,7 @@ impl Default for Config {
             backend: "demo".into(),
             model: "local-model".into(),
             api_base: "http://127.0.0.1:1234/v1".into(),
-            max_calls: 6,
+            max_calls: 8,
             max_cycles: 4,
             max_tokens: 1600,
             max_input_bytes: 128_000,
@@ -51,6 +53,8 @@ impl Default for Config {
             max_wall_seconds: 120,
             temperature: 0.15,
             role_profiles: BTreeMap::new(),
+            interpret_goals: true,
+            synthesize_results: false,
         }
     }
 }

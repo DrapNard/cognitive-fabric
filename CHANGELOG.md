@@ -71,3 +71,7 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
 - Persist validated loopback inference settings and independent role profiles
   through atomic owner-only config saves. Add configure-local/config-show and
   bounded no-follow regular-file reads across reviewed input boundaries.
+- Parse bounded structured goals with a separate interface role, preserve original
+  user instructions, handle clarification and missing capabilities, isolate
+  explicit conversation references and optionally synthesize labelled results.
+  Carry conversation/synthesis options through additive typed IPC fields.

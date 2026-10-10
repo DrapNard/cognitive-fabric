@@ -80,9 +80,9 @@ impl Session {
     ) -> Result<Self> {
         let (calls, cycles) = match mode {
             "fast" => (1, 1),
-            "standard" => (2, 1),
-            "deep" => (8, 3),
-            "research" => (16, 4),
+            "standard" => (4, 1),
+            "deep" => (10, 3),
+            "research" => (18, 4),
             _ => bail!("Unknown reasoning mode"),
         };
         Ok(Self {
@@ -101,7 +101,7 @@ impl Session {
         })
     }
 
-    async fn call(
+    pub(crate) async fn call(
         &mut self,
         role: &str,
         prompt: &str,
@@ -309,7 +309,8 @@ mod tests {
     async fn cancellation_counts_dispatch_and_invalidates_partial_usage_totals() {
         let path = std::env::temp_dir().join(format!("fabric-usage-{}.db", uuid::Uuid::new_v4()));
         let store = Arc::new(Store::open(&path).unwrap());
-        let cfg = Config::load(None, Some("openai-local".into())).unwrap();
+        let mut cfg = Config::load(None, Some("openai-local".into())).unwrap();
+        cfg.interpret_goals = false;
         let backend = Arc::new(Stalled {
             calls: std::sync::atomic::AtomicUsize::new(0),
             entered: tokio::sync::Notify::new(),
@@ -372,6 +373,7 @@ mod tests {
         let store = Arc::new(Store::open(&path).unwrap());
         let mut cfg = Config::load(None, Some("openai-local".into())).unwrap();
         cfg.max_calls = max_calls;
+        cfg.interpret_goals = false;
         configure(&mut cfg);
         let backend = Arc::new(Script(Mutex::new(script.into())));
         let engine = Engine::with_backend(cfg, store.clone(), backend.clone());
