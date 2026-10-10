@@ -32,6 +32,17 @@ enum Command {
     Status,
     SelfTest,
     Skills,
+    SkillRegister {
+        manifest: PathBuf,
+    },
+    SkillActivate {
+        id: String,
+        version: String,
+    },
+    SkillDisable {
+        id: String,
+    },
+    SkillHealth,
     Ask {
         query: String,
         #[arg(long, default_value = "standard")]
@@ -191,6 +202,14 @@ async fn main() -> Result<()> {
             return Ok(());
         }
         Command::Skills => serde_json::to_value(store.skills()?)?,
+        Command::SkillRegister { manifest } => {
+            cogfabric::registry::register(&store, &cogfabric::registry::read_manifest(&manifest)?)?
+        }
+        Command::SkillActivate { id, version } => {
+            cogfabric::registry::activate(&store, &id, &version)?
+        }
+        Command::SkillDisable { id } => cogfabric::registry::disable(&store, &id)?,
+        Command::SkillHealth => cogfabric::registry::health(&store)?,
         Command::SkillAdd {
             id,
             description,

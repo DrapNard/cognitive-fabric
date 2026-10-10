@@ -64,3 +64,7 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   results unverified without executable evidence. Measure optional token usage,
   runtime inference duration, prompt bytes, output reservations and tool counts;
   carry resource metrics through backward-compatible FlatBuffers response fields.
+- Add immutable versioned reference manifests, dependency and cycle validation,
+  staged activation, metadata rollback, disable, health checks and registry audit
+  records. Pin task routing/reference snapshots transactionally and validate
+  retrieved content hashes. Add trainer.s1 metadata without a neural backend.

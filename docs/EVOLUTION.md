@@ -45,3 +45,7 @@ approved candidates are linked to matching stored document hashes and skills.
 SQLite user_version tracks compatibility; newer schemas are rejected.
 WAL and a five-second busy timeout support bounded lock contention. Lifecycle
 audit records include prior and selected versions. Back up state before upgrades.
+
+Schema version 2 adds reference-manifest lifecycle and skill enable state. Tasks
+now pin declarative registry versions and copied retrieved content in one SQLite
+snapshot. See `EXPERTS.md`; external backend weight identity is still unverified.

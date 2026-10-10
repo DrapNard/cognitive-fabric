@@ -57,3 +57,13 @@ passed 10/10 expected outputs with zero model calls (6.423 ms total in this run)
 This measures the deterministic arithmetic path only, not neural reasoning gains.
 A permitted loopback request to `http://127.0.0.1:1234/v1/models` failed to connect;
 real-model validation remains blocked by the unavailable default inference server.
+
+## Expert registry and snapshot verification
+
+All 34 tests pass. New tests cover staging, immutable-version conflicts, dependency
+and reverse-dependency constraints, missing dependencies, cycles, tampered active
+metadata, permission injection, metadata rollback, stable task snapshots and
+exclusion of disabled skills from retrieval/routing. Formatting, workspace check
+and Clippy pass. CLI registration, activation and health were exercised using
+`examples/reference_manifest.json` in `/tmp/cogfabric-registry-smoke`; health
+correctly reports zero documents and unsupported neural loading.

@@ -1,0 +1,10 @@
+{
+  "id": "rust.docs.s1",
+  "version": "1.0.0",
+  "kind": "reference",
+  "description": "Operator-reviewed Rust reference documents",
+  "tags": ["rust", "tokio", "lifetime"],
+  "dependencies": [],
+  "source": "Cognitive Fabric reference manifest example",
+  "license": "CC0-1.0"
+}

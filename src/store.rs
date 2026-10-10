@@ -64,6 +64,8 @@ pub struct Skill {
     pub description: String,
     pub tags: Vec<String>,
     pub active_version: i64,
+    pub enabled: bool,
+    pub manifest_version: Option<String>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Document {
@@ -73,6 +75,12 @@ pub struct Document {
     pub body: String,
     pub source: String,
     pub license: String,
+}
+
+pub struct TaskContext {
+    pub skills: Vec<Skill>,
+    pub documents: Vec<Document>,
+    pub manifests: Vec<crate::registry::Manifest>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Candidate {
@@ -91,7 +99,7 @@ pub struct Store {
     db: Mutex<Connection>,
 }
 impl Store {
-    fn lock(&self) -> Result<std::sync::MutexGuard<'_, Connection>> {
+    pub(crate) fn lock(&self) -> Result<std::sync::MutexGuard<'_, Connection>> {
         self.db
             .lock()
             .map_err(|_| anyhow!("Database mutex poisoned"))
@@ -109,7 +117,7 @@ impl Store {
         db.pragma_update(None, "journal_mode", "WAL")?;
         let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         let version: i64 = tx.pragma_query_value(None, "user_version", |row| row.get(0))?;
-        if version > 1 {
+        if version > 2 {
             bail!("Database schema is newer than this runtime")
         }
         if version == 0 {
@@ -144,6 +152,22 @@ impl Store {
                 PRAGMA user_version=1;
             "#,
             )?;
+        }
+        if version < 2 {
+            tx.execute_batch(r#"
+                ALTER TABLE skills ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1;
+                CREATE TABLE expert_manifests (
+                    skill_id TEXT NOT NULL REFERENCES skills(id),
+                    version TEXT NOT NULL, manifest TEXT NOT NULL, checksum TEXT NOT NULL,
+                    active INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(skill_id,version)
+                );
+                CREATE UNIQUE INDEX expert_active_version ON expert_manifests(skill_id) WHERE active=1;
+                CREATE TABLE expert_audit (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, skill_id TEXT NOT NULL,
+                    version TEXT, action TEXT NOT NULL, created REAL NOT NULL
+                );
+                PRAGMA user_version=2;
+            "#)?;
         }
         tx.commit()?;
         Ok(Self { db: Mutex::new(db) })
@@ -198,8 +222,12 @@ impl Store {
     }
     pub fn skills(&self) -> Result<Vec<Skill>> {
         let db = self.lock()?;
+        Self::skills_from(&db)
+    }
+    fn skills_from(db: &Connection) -> Result<Vec<Skill>> {
         let mut stmt =
-            db.prepare("SELECT id,description,tags_json,active_version FROM skills ORDER BY id")?;
+            db.prepare("SELECT s.id,s.description,s.tags_json,s.active_version,s.enabled,m.version \
+                FROM skills s LEFT JOIN expert_manifests m ON m.skill_id=s.id AND m.active=1 ORDER BY s.id")?;
         let entries = stmt
             .query_map([], |r| {
                 let tags: String = r.get(2)?;
@@ -208,12 +236,23 @@ impl Store {
                     description: r.get(1)?,
                     tags: serde_json::from_str(&tags).unwrap_or_default(),
                     active_version: r.get(3)?,
+                    enabled: r.get(4)?,
+                    manifest_version: r.get(5)?,
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(entries)
     }
     pub fn add_document(&self, doc: &Document) -> Result<bool> {
+        crate::security::validate_provenance(&doc.source, &doc.license)?;
+        if doc.body.trim().is_empty()
+            || doc.body.len() > 256_000
+            || doc.title.len() > 500
+            || doc.source.len() > 1000
+            || doc.license.len() > 128
+        {
+            bail!("Document exceeds metadata or content bounds")
+        }
         let result = self.lock()?.execute(
             "INSERT OR IGNORE INTO documents VALUES(?1,?2,?3,?4,?5,?6,?7)",
             params![
@@ -229,6 +268,30 @@ impl Store {
         Ok(result != 0)
     }
     pub fn search(&self, query: &str, skill: Option<&str>, limit: usize) -> Result<Vec<Document>> {
+        let db = self.lock()?;
+        Self::search_from(&db, query, skill, limit)
+    }
+
+    /// Pin version metadata and retrieved content to one consistent SQLite snapshot.
+    pub fn task_context(&self, query: &str) -> Result<TaskContext> {
+        let mut db = self.lock()?;
+        let tx = db.transaction()?;
+        let manifests = crate::registry::snapshot_from(&tx)?;
+        let context = TaskContext {
+            skills: Self::skills_from(&tx)?,
+            documents: Self::search_from(&tx, query, None, 3)?,
+            manifests,
+        };
+        tx.commit()?;
+        Ok(context)
+    }
+
+    fn search_from(
+        db: &Connection,
+        query: &str,
+        skill: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<Document>> {
         let mut tokens = Vec::new();
         for token in query.split(|c: char| !c.is_ascii_alphanumeric() && c != '_') {
             if token.len() >= 2 && token.len() <= 40 && tokens.len() < 8 {
@@ -239,10 +302,10 @@ impl Store {
             return Ok(Vec::new());
         }
         let match_query = tokens.join(" OR ");
-        let db = self.lock()?;
-        let statement = "SELECT d.id,d.skill_id,d.title,d.body,d.source,d.license \
+        let statement = "SELECT d.id,d.skill_id,d.title,d.body,d.source,d.license,d.sha256 \
            FROM document_index JOIN documents d ON d.rowid=document_index.rowid \
            WHERE document_index MATCH ?1 AND (?2 IS NULL OR d.skill_id=?2) \
+           AND EXISTS(SELECT 1 FROM skills enabled_skill WHERE enabled_skill.id=d.skill_id AND enabled_skill.enabled=1) \
            AND (NOT EXISTS(SELECT 1 FROM candidate_documents cd WHERE cd.document_id=d.id) \
                 OR EXISTS(SELECT 1 FROM candidate_documents cd JOIN candidates c ON c.id=cd.candidate_id \
                     JOIN skills s ON s.id=c.skill_id WHERE cd.document_id=d.id \
@@ -253,18 +316,28 @@ impl Store {
             .query_map(
                 params![match_query, skill, limit.clamp(1, 20) as i64],
                 |r| {
-                    Ok(Document {
-                        id: r.get(0)?,
-                        skill_id: r.get(1)?,
-                        title: r.get(2)?,
-                        body: r.get(3)?,
-                        source: r.get(4)?,
-                        license: r.get(5)?,
-                    })
+                    Ok((
+                        Document {
+                            id: r.get(0)?,
+                            skill_id: r.get(1)?,
+                            title: r.get(2)?,
+                            body: r.get(3)?,
+                            source: r.get(4)?,
+                            license: r.get(5)?,
+                        },
+                        r.get::<_, String>(6)?,
+                    ))
                 },
             )?
             .collect::<rusqlite::Result<Vec<_>>>()?;
-        Ok(rows)
+        rows.into_iter()
+            .map(|(document, hash)| {
+                if document.body.len() > 256_000 || sha256(document.body.as_bytes()) != hash {
+                    bail!("Retrieved document integrity or size check failed")
+                }
+                Ok(document)
+            })
+            .collect()
     }
     pub fn create_candidate(
         &self,
@@ -490,6 +563,11 @@ pub fn bootstrap(store: &Store) -> Result<()> {
             &["git", "commit", "merge", "repository"],
         ),
         (
+            "trainer.s1",
+            "Offline training manifests and research documentation",
+            &["trainer", "training", "lora", "dataset"],
+        ),
+        (
             "unity.s1",
             "Unity and C#",
             &["unity", "shader", "gameobject", "csharp", "urp"],
@@ -513,6 +591,7 @@ pub fn route(skills: &[Skill], query: &str) -> Vec<String> {
         .collect::<std::collections::HashSet<_>>();
     let mut scores: Vec<(i64, String)> = skills
         .iter()
+        .filter(|skill| skill.enabled)
         .filter_map(|skill| {
             let value = skill.tags.iter().filter(|tag| words.contains(*tag)).count() as i64 * 3;
             if value > 0 {
@@ -549,7 +628,7 @@ mod tests {
             .unwrap()
             .pragma_query_value(None, "user_version", |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 1);
+        assert_eq!(version, 2);
         drop(store);
         let store = Store::open(&path).unwrap();
         assert_eq!(store.skills().unwrap().len(), 1);

@@ -52,3 +52,12 @@ provider token usage remains optional and is carried through typed FlatBuffers
 fields. Tests cover actual revisions, stagnation, malformed critique, budget
 exhaustion and legacy replies. General subtask DAGs, role-specific configurations,
 exact input-token preflight and hardware metrics remain Partial / Not implemented.
+
+Expert lifecycle update: `src/registry.rs` implements immutable semantic-versioned
+reference manifests, bounded registration, staging, dependency/reverse-dependency
+validation, cycle rejection, activation/metadata rollback, disable and integrity
+health checks. Schema 2 adds persistent expert manifests and audit records.
+`Store::task_context` atomically snapshots versions and documents for in-flight
+pinning. Tests verify conflicts, missing dependencies, cycles, metadata tampering,
+permission injection, snapshot stability and disabled retrieval. Neural/executable
+expert loading remains unsupported; categories include trainer.s1 as metadata only.

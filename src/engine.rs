@@ -81,13 +81,16 @@ impl Engine {
             "interface",
             json!({"query":query,"mode":mode}),
         )?;
-        let available = self.store.skills()?;
-        let skills = store::route(&available, query);
-        self.store.event(&id,"route","jev-plus",json!({"skills":skills,"versions":available.iter().filter(|s|skills.contains(&s.id)).collect::<Vec<_>>()}))?;
+        let mut skills = Vec::new();
         let mut evidence = Vec::new();
         let execution = async {
             session.authorize_tool("knowledge.search")?;
-            let refs = self.store.search(query, None, 3)?;
+            let pinned = self.store.task_context(query)?;
+            skills = store::route(&pinned.skills, query);
+            self.store.event(&id,"route","jev-plus",json!({"skills":skills,
+                "versions":pinned.skills.iter().filter(|s|skills.contains(&s.id)).collect::<Vec<_>>(),
+                "manifests":pinned.manifests.iter().filter(|m|skills.contains(&m.id)).collect::<Vec<_>>()}))?;
+            let refs = pinned.documents;
             let context = refs
                 .iter()
                 .map(|d| {
@@ -105,7 +108,7 @@ impl Engine {
                 &id,
                 "knowledge",
                 "memory",
-                json!({"documents":refs.iter().map(|r|&r.id).collect::<Vec<_>>()}),
+                json!({"documents":refs.iter().map(|r|json!({"id":r.id,"checksum":store::sha256(r.body.as_bytes())})).collect::<Vec<_>>()}),
             )?;
             if let Some(expression) = math::extract(query) {
                 session.authorize_tool("math.evaluate")?;

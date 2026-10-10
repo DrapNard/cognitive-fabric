@@ -16,6 +16,9 @@ pub fn authorize(principal: &str, capability: &str) -> Result<()> {
                 | "candidate.evaluate"
                 | "candidate.promote"
                 | "candidate.rollback"
+                | "skill.register"
+                | "skill.activate"
+                | "skill.disable"
         ),
         _ => false,
     };
