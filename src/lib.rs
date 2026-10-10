@@ -5,6 +5,7 @@ pub mod config;
 pub mod engine;
 pub mod evaluation;
 pub mod math;
+pub mod reasoning;
 pub mod security;
 pub mod service;
 pub mod store;

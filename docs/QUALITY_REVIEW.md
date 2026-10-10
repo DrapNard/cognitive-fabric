@@ -44,3 +44,16 @@ All 23 tests pass with socket access, including a real Unix socket round trip,
 of incomplete frames, cancellation during stalled HTTP on disconnect/shutdown,
 and persistence before any tool runs on immediate cancellation. Formatting,
 workspace check and Clippy pass. No inference-quality claims follow from fixtures.
+
+## Bounded recursive reasoning verification
+
+All 30 tests pass after adding scripted actual revision order, stagnant-answer
+stopping, malformed-critique denial, call/cycle/output/input-byte/tool quotas,
+cancellation-safe usage accounting, provider usage parsing and legacy FlatBuffers
+metrics compatibility. Formatting, workspace check and Clippy pass.
+
+`cargo run --offline -- --home /tmp/cogfabric-verified-state bench examples/arithmetic_bench.jsonl`
+passed 10/10 expected outputs with zero model calls (6.423 ms total in this run).
+This measures the deterministic arithmetic path only, not neural reasoning gains.
+A permitted loopback request to `http://127.0.0.1:1234/v1/models` failed to connect;
+real-model validation remains blocked by the unavailable default inference server.

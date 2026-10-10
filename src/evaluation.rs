@@ -42,7 +42,7 @@ pub async fn benchmark(engine: &Engine, file: &Path, mode: &str) -> Result<Value
             bail!("Benchmark case exceeds limits")
         }
         let out = engine.run(&case.input, mode).await?;
-        let ok = out.status == "completed"
+        let ok = matches!(out.status.as_str(), "completed" | "unverified")
             && out
                 .answer
                 .split_whitespace()
@@ -60,7 +60,8 @@ pub async fn benchmark(engine: &Engine, file: &Path, mode: &str) -> Result<Value
         }
         calls += out.calls;
         details.push(json!({"task_id":out.task_id,"passed":ok,"input":case.input,
-            "expected":case.expected,"answer":out.answer,"latency_ms":out.elapsed_ms,"model_calls":out.calls}));
+            "expected":case.expected,"answer":out.answer,"latency_ms":out.elapsed_ms,"model_calls":out.calls,
+            "verification":"expected_output_exact_match","runtime_status":out.status,"resources":out.resources,"stop_reason":out.stop_reason}));
     }
     Ok(
         json!({"total":cases.len(),"passed":passed,"accuracy":passed as f64/cases.len() as f64,

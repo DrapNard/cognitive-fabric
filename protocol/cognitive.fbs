@@ -10,6 +10,15 @@ table AskRequest {
   mode:ReasoningMode = Standard;
 }
 
+table ResourceUsage {
+  reserved_output_tokens:ulong;
+  prompt_bytes:ulong;
+  input_tokens:ulong = null;
+  output_tokens:ulong = null;
+  inference_ms:double;
+  tool_calls:uint;
+}
+
 table AskResponse {
   task_id:string (required);
   answer:string (required);
@@ -19,6 +28,8 @@ table AskResponse {
   elapsed_ms:double;
   evidence:[string];
   skills:[string];
+  resources:ResourceUsage;
+  stop_reason:string;
 }
 
 table ProtocolError {

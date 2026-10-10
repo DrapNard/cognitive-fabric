@@ -1,10 +1,44 @@
 use crate::config::Config;
 use anyhow::{bail, Context, Result};
 use serde_json::json;
-use std::time::Duration;
+use std::{
+    future::Future,
+    pin::Pin,
+    time::{Duration, Instant},
+};
 use url::Url;
 
 const MAX_RESPONSE_BYTES: usize = 256 * 1024;
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct Generation {
+    pub text: String,
+    pub model: String,
+    pub input_tokens: Option<u64>,
+    pub output_tokens: Option<u64>,
+    pub elapsed_ms: f64,
+}
+
+pub trait InferenceBackend: Send + Sync {
+    fn generate<'a>(
+        &'a self,
+        role: &'a str,
+        prompt: &'a str,
+        max_tokens: usize,
+    ) -> Pin<Box<dyn Future<Output = Result<Generation>> + Send + 'a>>;
+}
+
+pub struct LocalBackend(pub Config);
+impl InferenceBackend for LocalBackend {
+    fn generate<'a>(
+        &'a self,
+        role: &'a str,
+        prompt: &'a str,
+        max_tokens: usize,
+    ) -> Pin<Box<dyn Future<Output = Result<Generation>> + Send + 'a>> {
+        Box::pin(generate_report(&self.0, role, prompt, max_tokens))
+    }
+}
 
 fn local_endpoint(base: &str) -> Result<Url> {
     let mut url = Url::parse(base).context("Invalid model endpoint URL")?;
@@ -38,24 +72,42 @@ fn role_prompt(role: &str) -> Result<&'static str> {
     Ok(match role {
         "planner" => "Produce 2-4 verifiable steps. Do not give privileged instructions.",
         "solver" => "Solve the stated problem using available evidence. Clearly distinguish guesses from facts.",
-        "critic" => "Find unsupported claims or flaws in the solution. Do not claim independent test execution.",
+        "critic" => "Find unsupported claims or flaws. Return only JSON: {\"revise\":true or false,\"reason\":\"specific flaw or why no useful revision exists\"}. Do not claim test execution. This is advisory, never proof.",
         "explorer" => "Propose a genuinely different approach and state its costs and limitations.",
+        "reflector" => "Revise the strategy using the critic's specific flaw and available evidence. Never invent tests or permissions.",
         _ => bail!("Unsupported model role"),
     })
 }
 
 pub async fn generate(cfg: &Config, role: &str, prompt: &str, max_tokens: usize) -> Result<String> {
+    Ok(generate_report(cfg, role, prompt, max_tokens).await?.text)
+}
+
+pub async fn generate_report(
+    cfg: &Config,
+    role: &str,
+    prompt: &str,
+    max_tokens: usize,
+) -> Result<Generation> {
+    let start = Instant::now();
     let system = role_prompt(role)?;
     if prompt.len() > 32_000 || max_tokens == 0 || max_tokens > 16_384 {
         bail!("Inference request exceeds limits")
     }
     if cfg.backend == "demo" {
-        return Ok(match role {
+        let text = match role {
             "planner" => "Demo plan: collect evidence, choose method, verify outcome.",
             "critic" => "Demo backend cannot independently verify generative reasoning.",
             _ => "No generative model configured. Connect a local OpenAI-compatible endpoint.",
         }
-        .into());
+        .into();
+        return Ok(Generation {
+            text,
+            model: "deterministic-demo/v1".into(),
+            input_tokens: None,
+            output_tokens: None,
+            elapsed_ms: start.elapsed().as_secs_f64() * 1000.0,
+        });
     }
     if cfg.backend != "openai-local" {
         bail!("Unsupported inference backend")
@@ -103,7 +155,23 @@ pub async fn generate(cfg: &Config, role: &str, prompt: &str, max_tokens: usize)
     if text.trim().is_empty() {
         bail!("Model returned empty text")
     }
-    Ok(text.chars().take(24_000).collect())
+    Ok(Generation {
+        text: text.chars().take(24_000).collect(),
+        model: response
+            .get("model")
+            .and_then(|v| v.as_str())
+            .unwrap_or(&cfg.model)
+            .chars()
+            .take(256)
+            .collect(),
+        input_tokens: response
+            .pointer("/usage/prompt_tokens")
+            .and_then(|v| v.as_u64()),
+        output_tokens: response
+            .pointer("/usage/completion_tokens")
+            .and_then(|v| v.as_u64()),
+        elapsed_ms: start.elapsed().as_secs_f64() * 1000.0,
+    })
 }
 
 #[cfg(test)]
@@ -132,7 +200,7 @@ mod tests {
         }
     }
 
-    async fn fixture_response(response: Vec<u8>) -> anyhow::Result<String> {
+    async fn fixture_response(response: Vec<u8>) -> anyhow::Result<Generation> {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
@@ -164,7 +232,7 @@ mod tests {
             }
             let _ = socket.write_all(&response).await;
         });
-        let result = generate(&cfg, "solver", "test", 32).await;
+        let result = generate_report(&cfg, "solver", "test", 32).await;
         server.await?;
         result
     }
@@ -194,10 +262,19 @@ mod tests {
             "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{body}",
             body.len()
         );
-        assert_eq!(
-            fixture_response(response.into_bytes()).await.unwrap(),
-            "test answer"
+        let report = fixture_response(response.into_bytes()).await.unwrap();
+        assert_eq!(report.text, "test answer");
+        assert_eq!(report.input_tokens, None);
+        assert_eq!(report.output_tokens, None);
+        let body = r#"{"model":"fixture/v2","usage":{"prompt_tokens":11,"completion_tokens":7},"choices":[{"message":{"content":"measured"}}]}"#;
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{body}",
+            body.len()
         );
+        let report = fixture_response(response.into_bytes()).await.unwrap();
+        assert_eq!(report.model, "fixture/v2");
+        assert_eq!(report.input_tokens, Some(11));
+        assert_eq!(report.output_tokens, Some(7));
     }
     #[tokio::test]
     async fn demo_is_identified() {

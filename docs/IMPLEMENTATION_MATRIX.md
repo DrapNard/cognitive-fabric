@@ -42,3 +42,13 @@ inode-checked cleanup. `Engine::run_until` persists cancellation and wall-budget
 termination. CLI Ctrl-C uses these paths. `docs/PROTOCOL.md` documents semantics.
 Real Unix socket and blocked-inference cancellation regressions pass; broker,
 module identity, typed stop/status/cancel commands and general discovery remain Partial.
+
+Reasoning update: `src/reasoning.rs` implements bounded critique/reflect/re-solve
+cycles, no-progress stopping, strict advisory critique parsing, persisted typed
+role dependency nodes and replaceable `InferenceBackend`. Verifier-R independently
+verifies arithmetic; general generated results have status `unverified`. Calls,
+reserved output tokens, input bytes, tool invocations and time are bounded;
+provider token usage remains optional and is carried through typed FlatBuffers
+fields. Tests cover actual revisions, stagnation, malformed critique, budget
+exhaustion and legacy replies. General subtask DAGs, role-specific configurations,
+exact input-token preflight and hardware metrics remain Partial / Not implemented.

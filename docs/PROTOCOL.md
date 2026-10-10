@@ -40,3 +40,8 @@ The HTTP backend in these tests is a fixture, not a real model.
 Outstanding protocol work includes a broker/module event API, explicit typed
 cancel/status/stop commands, deadlines and identities in module envelopes,
 authentication between separate actors, and general compatibility fixtures.
+
+The v1 response schema now appends optional ResourceUsage and stop_reason fields.
+Existing field IDs are unchanged. Legacy v1 replies without these fields decode;
+unknown token usage uses optional ulong scalars, never fabricated zero counts.
+A compatibility regression covers absent appended fields and metrics round trips.

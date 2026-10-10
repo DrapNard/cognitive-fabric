@@ -10,6 +10,8 @@ pub struct Config {
     pub max_calls: usize,
     pub max_cycles: usize,
     pub max_tokens: usize,
+    pub max_input_bytes: usize,
+    pub max_tool_calls: u32,
     pub timeout_seconds: u64,
     pub max_wall_seconds: u64,
 }
@@ -38,6 +40,8 @@ impl Config {
             max_calls: 6,
             max_cycles: 4,
             max_tokens: 1600,
+            max_input_bytes: 128_000,
+            max_tool_calls: 4,
             timeout_seconds: 45,
             max_wall_seconds: 120,
         })

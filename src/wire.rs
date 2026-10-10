@@ -77,6 +77,18 @@ pub fn encode(message: &Message) -> Result<Vec<u8>> {
                 .map(|s| builder.create_string(s))
                 .collect::<Vec<_>>();
             let skills = builder.create_vector(&skills);
+            let resources = fb::ResourceUsage::create(
+                &mut builder,
+                &fb::ResourceUsageArgs {
+                    reserved_output_tokens: outcome.resources.reserved_output_tokens as u64,
+                    prompt_bytes: outcome.resources.prompt_bytes as u64,
+                    input_tokens: outcome.resources.input_tokens,
+                    output_tokens: outcome.resources.output_tokens,
+                    inference_ms: outcome.resources.inference_ms,
+                    tool_calls: outcome.resources.tool_calls,
+                },
+            );
+            let stop_reason = builder.create_string(&outcome.stop_reason);
             let reply = fb::AskResponse::create(
                 &mut builder,
                 &fb::AskResponseArgs {
@@ -88,6 +100,8 @@ pub fn encode(message: &Message) -> Result<Vec<u8>> {
                     elapsed_ms: outcome.elapsed_ms,
                     evidence: Some(evidence),
                     skills: Some(skills),
+                    resources: Some(resources),
+                    stop_reason: Some(stop_reason),
                 },
             );
             args.response = Some(reply);
@@ -159,6 +173,20 @@ pub fn decode(body: &[u8]) -> Result<Message> {
                     calls: r.model_calls(),
                     cycles: r.cycles(),
                     elapsed_ms: r.elapsed_ms(),
+                    stop_reason: r.stop_reason().unwrap_or("").to_string(),
+                    resources: r
+                        .resources()
+                        .map(|usage| crate::reasoning::Resources {
+                            calls: r.model_calls(),
+                            cycles: r.cycles(),
+                            reserved_output_tokens: usage.reserved_output_tokens() as usize,
+                            prompt_bytes: usage.prompt_bytes() as usize,
+                            input_tokens: usage.input_tokens(),
+                            output_tokens: usage.output_tokens(),
+                            inference_ms: usage.inference_ms(),
+                            tool_calls: usage.tool_calls(),
+                        })
+                        .unwrap_or_default(),
                     evidence: r
                         .evidence()
                         .map(|v| v.iter().map(str::to_string).collect())
@@ -215,6 +243,71 @@ pub fn new_request(query: String, mode: String) -> Message {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn reply_preserves_optional_metrics_and_legacy_v1_defaults() {
+        let outcome = Outcome {
+            task_id: "task".into(),
+            answer: "candidate".into(),
+            status: "unverified".into(),
+            calls: 2,
+            cycles: 1,
+            elapsed_ms: 3.0,
+            evidence: vec![],
+            skills: vec![],
+            stop_reason: "unverified".into(),
+            resources: crate::reasoning::Resources {
+                calls: 2,
+                cycles: 1,
+                reserved_output_tokens: 512,
+                prompt_bytes: 200,
+                input_tokens: Some(20),
+                output_tokens: None,
+                inference_ms: 2.0,
+                tool_calls: 1,
+            },
+        };
+        let reply = Message::Reply {
+            id: "request".into(),
+            outcome,
+        };
+        let Message::Reply { outcome, .. } = decode(&encode(&reply).unwrap()).unwrap() else {
+            panic!("Expected reply")
+        };
+        assert_eq!(outcome.resources.input_tokens, Some(20));
+        assert_eq!(outcome.resources.output_tokens, None);
+        assert_eq!(outcome.resources.reserved_output_tokens, 512);
+        let mut builder = flatbuffers::FlatBufferBuilder::new();
+        let id = builder.create_string("request");
+        let task = builder.create_string("task");
+        let answer = builder.create_string("legacy");
+        let status = builder.create_string("completed");
+        let response = fb::AskResponse::create(
+            &mut builder,
+            &fb::AskResponseArgs {
+                task_id: Some(task),
+                answer: Some(answer),
+                status: Some(status),
+                ..Default::default()
+            },
+        );
+        let envelope = fb::Envelope::create(
+            &mut builder,
+            &fb::EnvelopeArgs {
+                version: 1,
+                request_id: Some(id),
+                kind: fb::MessageKind::Response,
+                response: Some(response),
+                ..Default::default()
+            },
+        );
+        builder.finish(envelope, Some("COGF"));
+        let Message::Reply { outcome, .. } = decode(builder.finished_data()).unwrap() else {
+            panic!("Expected legacy reply")
+        };
+        assert_eq!(outcome.answer, "legacy");
+        assert_eq!(outcome.resources.input_tokens, None);
+        assert_eq!(outcome.stop_reason, "");
+    }
     #[test]
     fn typed_round_trip() {
         let message = new_request("calc: 7 * 6".into(), "fast".into());

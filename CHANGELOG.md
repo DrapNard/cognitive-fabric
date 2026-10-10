@@ -59,3 +59,8 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   socket handlers before cleanup, authenticate peer UID and preserve replaced
   socket paths. Count dispatched inference calls and return failed CLI outcomes
   with nonzero exit codes. Add Unix socket and cancellation integration tests.
+- Add bounded Jev-R critique/reflect/re-solve cycles with persisted role dependency
+  nodes, replaceable inference backends and no-progress stopping. Keep generated
+  results unverified without executable evidence. Measure optional token usage,
+  runtime inference duration, prompt bytes, output reservations and tool counts;
+  carry resource metrics through backward-compatible FlatBuffers response fields.
