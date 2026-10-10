@@ -37,6 +37,7 @@ enum Command {
     },
     RecoverTasks,
     StorageStatus,
+    Backup,
     RetentionPreview {
         #[arg(long)]
         before_unix: u64,
@@ -289,6 +290,7 @@ async fn main() -> Result<()> {
             json!({"task_id":id,"accepted":service::cancel_task(&cfg,&id).await?})
         }
         Command::StorageStatus => serde_json::to_value(store.storage_stats()?)?,
+        Command::Backup => serde_json::to_value(cogfabric::backups::create(&cfg, &store)?)?,
         Command::RetentionPreview { before_unix, limit } => {
             serde_json::to_value(store.retention_preview(before_unix, limit)?)?
         }

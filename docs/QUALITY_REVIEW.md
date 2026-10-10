@@ -429,3 +429,24 @@ Built CLI smoke: registered `examples/workflow_manifest.json`, activated
 rust.ownership.workflow.s1 1.0.0 and inspected skill-health in an isolated /tmp
 workspace; commands succeeded and reported valid dependency metadata. This smoke
 performed no live generation and did not modify the user's normal workspace state.
+
+## Consistent operator SQLite backups
+
+Added SQLite backup API copying from a pinned read snapshot, separate nonblocking
+flock admission, owner-only temporary storage, quick consistency checking, streaming
+hash verification and immutable file publication. Limits: eight entries, per-file
+configured DB ceiling, total twice that ceiling capped at 2 GB. Copy/hash loops
+check a ten-second deadline; blocking filesystem calls/quick_check are not a hard
+real-time guarantee. Other WAL writers can continue; same-Store users wait on the
+connection mutex and checkpoints may be delayed by the read snapshot.
+
+Tests verify committed WAL task/event preservation, unchanged backup after later
+writes, checksum/permissions, restored read-only data, backup lease contention,
+byte/count ceilings, symlink denial and model capability denial. Initial use of a
+SQLite write reservation prevented backup reads; replaced it with a separate file
+lease and pinned read transaction. Final 100 all-target tests pass, formatting,
+all-target check, Clippy with denied warnings and CLI build pass with FlatBuffers
+25.12.19. Actual CLI smoke backed up a completed 8*9 task, independently matched
+SHA-256 and reopened a copy in a separate /tmp workspace with result 72 and its
+audit events intact. No user's normal state was replaced. Configuration/external
+artifacts/weights are excluded; full workspace restore remains incomplete.

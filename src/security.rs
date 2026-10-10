@@ -85,6 +85,7 @@ pub fn authorize(principal: &str, capability: &str) -> Result<()> {
                 | "model.select"
                 | "model.lifecycle"
                 | "storage.retention"
+                | "storage.backup"
                 | "task.observe"
                 | "task.recover"
                 | "memory.publish"

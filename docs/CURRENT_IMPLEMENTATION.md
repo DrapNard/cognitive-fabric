@@ -42,7 +42,7 @@ Quality requires operator-attested held-out data. Promotion checks quality,
 cumulative approved-version retrieval regressions and unchanged versions transactionally.
 Rollback restores approved stored snapshots. Neural promotion stays disabled.
 
-Verification: 99 tests, formatting, all-target check and Clippy pass using exact
+Verification: 100 tests, formatting, all-target check and Clippy pass using exact
 flatc/Rust FlatBuffers 25.12.19. HTTP fixtures and socket tests ran locally; no
 compatible live model server was available at the default endpoint. No neural
 quality, GPU integration, hot-swap, energy or model-superiority result is claimed.
@@ -101,3 +101,8 @@ Expert manifests now include bounded prompt/workflow checklists. Full/experts
 execution can invoke one routed, version-pinned workflow through the shared solver
 backend, reserving budget for whole-goal reasoning. Advice is unverified and grants
 no permissions. Multi-step/executable/independent-model experts remain incomplete.
+
+Operator SQLite backups now use a pinned read view, bounded copy/hash loops,
+private files and serialized admission. They preserve committed WAL state and
+publish a checksummed read-only standalone database. Full artifact/configuration
+restore and automatic replay are not implemented. See `STORAGE.md`.

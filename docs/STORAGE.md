@@ -50,3 +50,43 @@ Freed pages become reusable; cleanup does not promise immediate file shrinkage.
 No automatic VACUUM or WAL truncation occurs. Existing progress cursors for deleted
 tasks return unknown-task errors. This is explicit bounded retention, not full
 backup/restore, secure erasure or automatic checkpoint resumption.
+
+## Consistent database backups
+
+`cogfabric --home STATE --json backup` uses SQLite's backup API to copy a pinned
+read transaction, including committed WAL data, to `STATE/backups/UUID.db`.
+It performs a SQLite quick consistency check, streams SHA-256 over the file,
+fsyncs and publishes it read-only (0400) in an owner-only (0700) directory. Reports
+include path, checksum, bytes and schema version. Backups require the operator-only
+storage.backup capability; model actors cannot request them. No task is replayed,
+cancelled or marked complete as a result of backing up.
+
+A stable owner-private `backups.lock` uses nonblocking flock to serialize cooperating
+backup processes. Source reads do not take SQLite's write reservation, so WAL
+writers on other connections can continue. The source Store connection/mutex is
+held during copying: embedded callers using that same connection wait. Backups
+pin a read view and can temporarily delay WAL checkpoints. Copy/hash loops check
+a ten-second deadline between bounded batches; filesystem/SQLite syscalls and the
+consistency check are not hard real-time bounded. This is not a disk quota service.
+
+Limits are eight backup directory entries, individual files no larger than the
+configured database ceiling, and total retained backup bytes no larger than twice
+that ceiling or 2 GB, whichever is smaller. No existing backup is overwritten or
+automatically deleted. Symlink directories, nonregular entries and invalid lease
+files fail closed. Temp files are cleaned after ordinary failures; filesystem
+failures during publication may leave a valid read-only file despite an error.
+Same-user hostile tampering is outside an absolute isolation guarantee.
+
+The snapshot includes SQLite tables only. Save the checksum report separately and
+back up reviewed artifacts/configuration through an operator-controlled process.
+Candidate artifact paths are not rewritten, weights are not copied, and a database
+snapshot alone is not a portable full workspace archive. Running tasks remain
+running in the snapshot; explicit recovery can mark abandoned tasks interrupted
+without replaying them after restoration.
+
+To inspect restoration safely, verify the file against the saved checksum, copy it
+without overwriting into a separate new private directory as `fabric.sqlite3`, make
+the copy owner-writable (0600), and open that directory with `--home`. Keep the
+original backup read-only. This procedure does not replace a live database and does
+not restore missing configuration/artifacts automatically. Validate task traces,
+registry state and artifact availability before using a restored workspace.

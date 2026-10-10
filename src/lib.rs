@@ -1,6 +1,7 @@
 extern crate alloc;
 
 pub mod backend;
+pub mod backups;
 pub mod benchmarking;
 pub mod config;
 pub mod corpus;

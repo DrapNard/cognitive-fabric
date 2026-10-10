@@ -140,3 +140,10 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
 - Invoke at most one routed checklist under shared budgets and task permissions,
   retaining version/checksum audits and reserving whole-goal reasoning capacity.
 - Keep workflow advice unverified and isolate it from baseline comparison profiles.
+
+### Development: back up consistent SQLite state
+
+- Publish bounded, private, checksummed SQLite snapshots including committed WAL
+  data using the backup API and serialized operator admission.
+- Verify copy/reopen behavior, permissions, contention and capacity failures while
+  keeping configuration/artifacts separate and never replaying saved tasks.
