@@ -94,6 +94,19 @@ enum Command {
         #[arg(long)]
         skill: Option<String>,
     },
+    MemoryPublish {
+        task: String,
+        #[arg(long, default_value = "episode")]
+        kind: String,
+        #[arg(long)]
+        note: String,
+    },
+    MemorySearch {
+        query: String,
+    },
+    MemoryRevoke {
+        id: String,
+    },
     Task {
         id: String,
     },
@@ -356,6 +369,14 @@ async fn main() -> Result<()> {
         }
         Command::Search { query, skill } => {
             serde_json::to_value(store.search(&query, skill.as_deref(), 10)?)?
+        }
+        Command::MemoryPublish { task, kind, note } => {
+            serde_json::to_value(store.publish_memory(&task, &kind, &note)?)?
+        }
+        Command::MemorySearch { query } => serde_json::to_value(store.search_memories(&query)?)?,
+        Command::MemoryRevoke { id } => {
+            store.revoke_memory(&id)?;
+            json!({"revoked":id})
         }
         Command::Task { id } => store.task(&id)?,
         Command::Bench { file, mode } => evaluation::benchmark(&engine, &file, &mode).await?,

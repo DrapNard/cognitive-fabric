@@ -36,7 +36,7 @@ same amount. The optional larger baseline uses the same single-solver path.
 | tools | One solver plus deterministic arithmetic when applicable; no references |
 | recursive | Solver-only generation, self-critique and reflection under shared ceilings; arithmetic available |
 | collective | Interface and distinct logical reasoning roles with capability routing; no retrieved documents |
-| memory | Collective reasoning with directly ingested semantic references; versioned candidate documents excluded |
+| memory | Collective reasoning with directly ingested semantic references and operator-published episodes; versioned candidate documents excluded |
 | experts | Collective plus routed active reference experts and candidate snapshots |
 
 Each case rotates which arm executes first. There is no automatic warmup or claim

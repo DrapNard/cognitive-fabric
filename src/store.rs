@@ -78,6 +78,7 @@ pub struct Document {
 }
 
 pub struct TaskContext {
+    pub memories: Vec<crate::memory::Memory>,
     pub skills: Vec<Skill>,
     pub documents: Vec<Document>,
     pub manifests: Vec<crate::registry::Manifest>,
@@ -131,7 +132,7 @@ impl Store {
         db.pragma_update(None, "journal_mode", "WAL")?;
         let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         let version: i64 = tx.pragma_query_value(None, "user_version", |row| row.get(0))?;
-        if version > 3 {
+        if version > 4 {
             bail!("Database schema is newer than this runtime")
         }
         if version == 0 {
@@ -194,6 +195,9 @@ impl Store {
                 PRAGMA user_version=3;
             "#,
             )?;
+        }
+        if version < 4 {
+            tx.execute_batch(crate::memory::SCHEMA)?;
         }
         tx.commit()?;
         Ok(Self { db: Mutex::new(db) })
@@ -329,6 +333,11 @@ impl Store {
         let tx = db.transaction()?;
         let manifests = crate::registry::snapshot_from(&tx)?;
         let context = TaskContext {
+            memories: if retrieve {
+                crate::memory::search_from(&tx, query)?
+            } else {
+                Vec::new()
+            },
             skills: Self::skills_from(&tx)?,
             documents: if retrieve {
                 Self::search_scoped(&tx, query, None, 3, experts)?
@@ -923,7 +932,7 @@ mod tests {
             .unwrap()
             .pragma_query_value(None, "user_version", |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 3);
+        assert_eq!(version, 4);
         drop(store);
         let store = Store::open(&path).unwrap();
         assert_eq!(store.skills().unwrap().len(), 1);

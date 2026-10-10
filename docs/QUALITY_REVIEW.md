@@ -140,3 +140,23 @@ recorded above. No model permissions or neural promotion capabilities changed.
 Validation with flatc 25.12.19: formatting check, all-target check, all-target tests
 (65 passed, including local socket/HTTP fixtures), and Clippy with denied warnings
 passed offline. No live-model inference or reasoning-quality claim is made.
+
+## Operator-published reusable memory (2026-10-10)
+
+Schema 4 adds bounded FTS5 episodic snapshots with source-task identity, immutable
+content hashes, review notes, transactional publication/revocation audits and
+future-retrieval revocation. Only operator actions publish entries. Arithmetic
+verification independently recomputes completed answers; generic episodes remain
+unverified. Full and memory-profile tasks pin labeled entries; other comparison
+arms omit them. No arbitrary fact promotion or additional model permission exists.
+
+Validation: schema-3 and legacy migrations preserve tasks; disk reopen, revoked
+retrieval, duplicate publication, invalid fact kind, mismatched arithmetic, source
+mutation, snapshot tampering and model permission denial are covered. Profile tests
+check memory provenance and hostile text remains labeled data without upgrading
+result status. `cargo fmt --all -- --check`, `cargo check --all-targets --offline`,
+`cargo test --all-targets --offline` (68 passed), and denied-warning Clippy passed
+with flatc 25.12.19. `cargo build --offline` passed. A fresh-home demo CLI roundtrip
+calculated 72, published independently verified arithmetic memory, searched it,
+revoked it and confirmed empty search. No live-model injection-resistance claim.
+General database retention, wider fact verifiers and model registry remain open.

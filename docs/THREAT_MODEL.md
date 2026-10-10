@@ -59,3 +59,11 @@ RAG promotion now binds quality/regression records to artifact and dataset hashe
 
 ### Task-local authorization
 Every runtime task receives a non-deserializable immutable TaskPolicy. Grants narrow the global actor policy and bind to one task UUID. Jev+ can search references/evaluate arithmetic; Jev-R can generate, and interface roles can generate only. Session dispatches check the task and actor scope and persist policy decisions, including budget denials. Neither planner graphs, interpreted capabilities nor reference manifests construct grants. This is an in-process deterministic boundary, not isolation from compromised runtime code or the same OS user.
+
+Published task memories remain untrusted data. Only the operator can publish or
+revoke them; generic episodes retain source status, while arithmetic verification
+requires independent recomputation. Snapshots have hashes and source-task links;
+tampering fails retrieval. Revocation affects future snapshots, not already pinned
+contexts. Poisoned text can influence model answers but cannot acquire capabilities.
+The memory payload quota excludes SQLite overhead and task/event history; see
+`MEMORY.md` for bounds and remaining retention work.

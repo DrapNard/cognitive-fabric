@@ -9,6 +9,7 @@ pub mod evolution;
 pub mod fabric;
 pub mod language;
 pub mod math;
+pub mod memory;
 pub mod planning;
 pub mod reasoning;
 pub mod registry;

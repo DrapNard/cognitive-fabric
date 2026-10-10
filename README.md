@@ -2,7 +2,7 @@
 
 **Author:** DrapNard  
 **Language:** Rust (runtime), Python (optional offline model training)
-**Status:** **Verified Rust alpha baseline** — builds and 65 regression tests pass; v1.0 integration requirements remain incomplete.
+**Status:** **Verified Rust alpha baseline** — builds and 68 regression tests pass; v1.0 integration requirements remain incomplete.
 **License:** Apache-2.0 (framework only)
 
 This branch corrects the original v1.0 implementation's technology mismatch:
@@ -108,3 +108,5 @@ a runner smoke test, and a live-model advantage remains unmeasured.
 Use `modules` or `modules --socket` to inspect registered inference adapter
 versions and roles. The bounded internal FlatBuffers broker pins adapters per task;
 this does not attest immutable neural weights or load external executable plugins.
+
+Reusable task snapshots: see [memory publication and revocation](docs/MEMORY.md).
