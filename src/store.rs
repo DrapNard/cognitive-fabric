@@ -355,7 +355,7 @@ impl Store {
             })
             .collect()
     }
-    pub fn create_candidate(
+    pub(crate) fn create_candidate(
         &self,
         skill: &str,
         kind: &str,
@@ -367,7 +367,19 @@ impl Store {
         if kind != "rag" && kind != "lora" {
             bail!("Unsupported artifact kind")
         }
-        let db = self.lock()?;
+        crate::security::validate_provenance(source, license)?;
+        if artifact.len() > 4096
+            || checksum.len() != 64
+            || !checksum.bytes().all(|b| b.is_ascii_hexdigit())
+        {
+            bail!("Invalid candidate artifact metadata")
+        }
+        let mut connection = self.lock()?;
+        let db = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let count: i64 = db.query_row("SELECT COUNT(*) FROM candidates", [], |row| row.get(0))?;
+        if count >= 10_000 {
+            bail!("Candidate registry capacity exhausted")
+        }
         let exists: bool = db.query_row(
             "SELECT EXISTS(SELECT 1 FROM skills WHERE id=?1)",
             [skill],
@@ -407,6 +419,7 @@ impl Store {
                 now()
             ],
         )?;
+        db.commit()?;
         Ok(candidate)
     }
     pub fn candidate(&self, id: &str) -> Result<Candidate> {

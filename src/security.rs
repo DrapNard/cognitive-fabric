@@ -60,8 +60,10 @@ pub fn read_reviewed_document(path: &Path) -> Result<String> {
 pub fn validate_provenance(source: &str, license: &str) -> Result<()> {
     if source.trim().is_empty()
         || license.trim().is_empty()
-        || source.eq_ignore_ascii_case("unknown")
-        || license.eq_ignore_ascii_case("unknown")
+        || source.trim().eq_ignore_ascii_case("unknown")
+        || license.trim().eq_ignore_ascii_case("unknown")
+        || source.len() > 1000
+        || license.len() > 128
     {
         bail!("Explicit source and license are required");
     }

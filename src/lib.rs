@@ -4,6 +4,7 @@ pub mod backend;
 pub mod config;
 pub mod engine;
 pub mod evaluation;
+pub mod evolution;
 pub mod language;
 pub mod math;
 pub mod reasoning;

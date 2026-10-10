@@ -85,3 +85,11 @@ malicious interpretation, missing-capability tracking, status-labelled synthesis
 explicit historical-reference isolation and typed conversation-option round trips.
 Formatting, workspace check and Clippy pass. Scripted outputs validate orchestration
 and boundaries only; live-model interpretation quality remains unverified.
+
+## Candidate quarantine verification
+
+All 46 tests pass, including source mutation isolation, content deduplication,
+read-only artifact permissions, symlinked directory denial, aggregate quota denial,
+modified-quarantine detection and concurrent unique version allocation. Formatting,
+workspace check and Clippy pass. CLI candidate create was exercised in
+`/tmp/cogfabric-quarantine-smoke`; its artifact is stored under the managed hash path.

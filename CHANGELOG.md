@@ -75,3 +75,6 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   user instructions, handle clarification and missing capabilities, isolate
   explicit conversation references and optionally synthesize labelled results.
   Carry conversation/synthesis options through additive typed IPC fields.
+- Copy reviewed candidate artifacts into bounded content-addressed read-only
+  quarantine, verify deduplicated content, enforce aggregate storage limits and
+  allocate candidate versions transactionally under concurrent imports.

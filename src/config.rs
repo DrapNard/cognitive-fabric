@@ -34,6 +34,7 @@ pub struct Config {
     pub role_profiles: BTreeMap<String, RoleProfile>,
     pub interpret_goals: bool,
     pub synthesize_results: bool,
+    pub max_artifact_bytes: u64,
 }
 
 impl Default for Config {
@@ -55,6 +56,7 @@ impl Default for Config {
             role_profiles: BTreeMap::new(),
             interpret_goals: true,
             synthesize_results: false,
+            max_artifact_bytes: 256_000_000,
         }
     }
 }
@@ -111,6 +113,7 @@ impl Config {
             || self.max_tokens > 16_384
             || self.max_input_bytes > 1_000_000
             || self.max_tool_calls > 64
+            || self.max_artifact_bytes > 2_000_000_000
             || !(1..=300).contains(&self.timeout_seconds)
             || !(1..=3600).contains(&self.max_wall_seconds)
         {

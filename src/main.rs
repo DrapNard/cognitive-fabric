@@ -323,32 +323,9 @@ async fn main() -> Result<()> {
                 artifact,
                 source,
                 license,
-            } => {
-                security::authorize("human-cli", "candidate.create")?;
-                security::validate_provenance(&source, &license)?;
-                let meta = std::fs::symlink_metadata(&artifact)?;
-                if !meta.is_file() || meta.file_type().is_symlink() || meta.len() > 64_000_000 {
-                    bail!("Invalid candidate artifact")
-                }
-                if kind == "rag" {
-                    security::read_reviewed_document(&artifact)?;
-                }
-                let canonical = artifact.canonicalize()?;
-                let checksum =
-                    store::sha256(&security::read_regular_bytes(&canonical, 64_000_000)?);
-                serde_json::to_value(
-                    store.create_candidate(
-                        &skill,
-                        &kind,
-                        canonical
-                            .to_str()
-                            .ok_or_else(|| anyhow::anyhow!("Non-UTF8 candidate path"))?,
-                        &checksum,
-                        &source,
-                        &license,
-                    )?,
-                )?
-            }
+            } => serde_json::to_value(cogfabric::evolution::create(
+                &cfg, &store, &skill, &kind, &artifact, &source, &license,
+            )?)?,
             CandidateAction::Evaluate { id, suite, dataset } => {
                 evaluation::evaluate(&store, &id, &suite, dataset.as_deref())?
             }

@@ -49,3 +49,21 @@ audit records include prior and selected versions. Back up state before upgrades
 Schema version 2 adds reference-manifest lifecycle and skill enable state. Tasks
 now pin declarative registry versions and copied retrieved content in one SQLite
 snapshot. See `EXPERTS.md`; external backend weight identity is still unverified.
+
+## Content-addressed quarantine
+
+New CLI candidate imports use `src/evolution.rs`: operator-reviewed content is
+copied into owner-only `artifacts/` and stored as a read-only hash-named file.
+Changing the original source no longer changes a candidate. Repeated imports reuse
+verified content while creating separate immutable candidate versions. Imports
+serialize through an immediate SQLite transaction to enforce a shared quarantine
+ceiling (max_artifact_bytes, default 256 MB, at most 2 GB) and 4,096 entries.
+Candidate metadata is capped at 10,000 rows and version allocation is transactional.
+Individual limits remain 256 KB for RAG and 64 MB for inactive neural candidates.
+
+Existing alpha candidates with external paths are preserved and still hash-checked;
+operators can re-import them into quarantine. Read-only permissions are not a
+security guarantee against a compromised same-user process: modification is detected
+by content hashes at evaluation, reuse and promotion. Neural evaluation/promotion
+remain disabled. Dataset provenance and independent regression gates are the next
+required evolution increment.

@@ -77,3 +77,10 @@ routes without granting permissions. CLI/socket support explicit conversation
 references and optional result synthesis under the shared budget. Scripted tests
 cover injection, goal preservation, ambiguity, fallback and historical isolation.
 Real-model quality and exact input-token preflight remain unverified/incomplete.
+
+Candidate quarantine update: `src/evolution.rs` imports operator-selected artifacts
+into content-addressed read-only snapshots with deduplication, directory/symlink
+checks and aggregate storage/entry limits. Candidate version allocation is
+transactional and bounded. Tests cover source mutation, modified quarantine,
+quota denial and concurrent imports. Legacy external-path candidates remain
+compatible; held-out dataset manifests and regression promotion gates remain Partial.
