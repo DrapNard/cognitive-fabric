@@ -20,6 +20,7 @@ table ResourceUsage {
   output_tokens:ulong = null;
   inference_ms:double;
   tool_calls:uint;
+  queue_wait_ms:double = null;
 }
 
 table AskResponse {

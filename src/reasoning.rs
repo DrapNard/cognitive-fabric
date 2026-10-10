@@ -23,6 +23,8 @@ pub struct Resources {
     pub input_tokens: Option<u64>,
     pub output_tokens: Option<u64>,
     pub inference_ms: f64,
+    #[serde(default)]
+    pub queue_wait_ms: Option<f64>,
     pub tool_calls: u32,
 }
 
@@ -52,6 +54,7 @@ pub struct Session {
     call_limit: usize,
     cycle_limit: usize,
     complete_usage: bool,
+    complete_queue_metrics: bool,
     inference_started: Option<Instant>,
     policy: security::TaskPolicy,
 }
@@ -110,7 +113,10 @@ impl Session {
             store,
             backend,
             task,
-            resources: Resources::default(),
+            resources: Resources {
+                queue_wait_ms: Some(0.0),
+                ..Resources::default()
+            },
             nodes: Vec::new(),
             stop_reason: "unverified".into(),
             has_solution: false,
@@ -119,6 +125,7 @@ impl Session {
             verification_enabled: true,
             subtasks: Vec::new(),
             complete_usage: true,
+            complete_queue_metrics: true,
             inference_started: None,
             policy,
         })
@@ -241,6 +248,7 @@ impl Session {
         self.resources.prompt_bytes += prompt.len();
         let previous_input = self.resources.input_tokens.take();
         let previous_output = self.resources.output_tokens.take();
+        let previous_queue = self.resources.queue_wait_ms.take();
         self.store.event(&self.task,"model_dispatch","jev-r",json!({"role":role,"call":self.resources.calls,"allocation":allocation,"prompt_bytes":prompt.len()}))?;
         self.inference_started = Some(Instant::now());
         let report: Generation = tokio::time::timeout(
@@ -256,10 +264,20 @@ impl Session {
             || report.model.len() > 256
             || !report.elapsed_ms.is_finite()
             || report.elapsed_ms < 0.0
+            || report
+                .queue_wait_ms
+                .is_some_and(|ms| !ms.is_finite() || !(0.0..=300_000.0).contains(&ms))
         {
             bail!("Invalid bounded inference result")
         }
         self.finish_metrics();
+        if self.complete_queue_metrics {
+            if let Some(wait) = report.queue_wait_ms {
+                self.resources.queue_wait_ms = Some(previous_queue.unwrap_or(0.0) + wait);
+            } else {
+                self.complete_queue_metrics = false;
+            }
+        }
         if self.complete_usage {
             if let (Some(input), Some(output)) = (report.input_tokens, report.output_tokens) {
                 self.resources.input_tokens =
@@ -286,7 +304,7 @@ impl Session {
             model: report.model,
             content_hash: crate::store::sha256(report.text.as_bytes()),
         };
-        self.store.event(&self.task,"reasoning","jev-r",json!({"node":node,"text":report.text,"input_tokens":report.input_tokens,"output_tokens":report.output_tokens,"inference_ms":report.elapsed_ms}))?;
+        self.store.event(&self.task,"reasoning","jev-r",json!({"node":node,"text":report.text,"input_tokens":report.input_tokens,"output_tokens":report.output_tokens,"inference_ms":report.elapsed_ms,"queue_wait_ms":report.queue_wait_ms}))?;
         self.nodes.push(node);
         Ok(Some(report.text))
     }
@@ -597,6 +615,7 @@ mod tests {
                     input_tokens: Some(20),
                     output_tokens: Some(10),
                     elapsed_ms: 1.0,
+                    queue_wait_ms: None,
                 })
             })
         }
@@ -623,6 +642,7 @@ mod tests {
         assert_eq!(outcome.resources.reserved_output_tokens, 640);
         assert_eq!(outcome.resources.input_tokens, None);
         assert_eq!(outcome.resources.output_tokens, None);
+        assert_eq!(outcome.resources.queue_wait_ms, None);
         assert!(outcome.resources.inference_ms.is_finite());
         drop(engine);
         drop(store);
@@ -766,6 +786,7 @@ mod tests {
                     input_tokens: Some(20),
                     output_tokens: Some(10),
                     elapsed_ms: 1.0,
+                    queue_wait_ms: None,
                 })
             })
         }

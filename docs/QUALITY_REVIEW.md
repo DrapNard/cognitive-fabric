@@ -389,3 +389,21 @@ checks: 96 tests pass including actual socket/HTTP fixtures; formatting, all-tar
 check and Clippy with denied warnings pass using FlatBuffers 25.12.19. An initial
 test incorrectly assumed optional active_version; corrected to the existing zero
 inactive version. Source discovery/cleaning and poisoning evaluation remain partial.
+
+## Measured module queue waiting
+
+Added runtime-owned enqueue-to-worker timing, overriding backend queue claims.
+Optional bounded finite values cross append-only FlatBuffers response/resource
+fields and accumulate separately from existing total caller inference duration.
+Zero-call tasks report zero; missing legacy values and cancelled dispatches retain
+unavailable totals. Comparison totals preserve uncertainty. No queue capacity,
+permissions or model-call budget increase occurred. This is broker scheduling
+telemetry, not GPU, energy or model-load measurement.
+
+Controlled contention test holds the first backend call, queues a second and
+confirms its measured delay. Codec tests cover absent/finite/negative/nonfinite/
+over-limit values and owner IPC legacy defaults; cancellation retains unknown totals.
+Final checks: 98 all-target tests pass including actual socket/HTTP fixtures;
+formatting, all-target check and Clippy with denied warnings pass with flatc/Rust
+FlatBuffers 25.12.19. Initial compilation identified constructors and owner IPC
+resource paths requiring the added optional field; fixed before final checks.

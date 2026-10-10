@@ -18,6 +18,8 @@ pub struct Generation {
     pub input_tokens: Option<u64>,
     pub output_tokens: Option<u64>,
     pub elapsed_ms: f64,
+    #[serde(default)]
+    pub queue_wait_ms: Option<f64>,
 }
 
 pub trait InferenceBackend: Send + Sync {
@@ -126,6 +128,7 @@ pub async fn generate_report(
             input_tokens: None,
             output_tokens: None,
             elapsed_ms: start.elapsed().as_secs_f64() * 1000.0,
+            queue_wait_ms: None,
         });
     }
     if cfg.backend != "openai-local" {
@@ -197,6 +200,7 @@ pub async fn generate_report(
             .pointer("/usage/completion_tokens")
             .and_then(|v| v.as_u64()),
         elapsed_ms: start.elapsed().as_secs_f64() * 1000.0,
+        queue_wait_ms: None,
     })
 }
 

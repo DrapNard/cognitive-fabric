@@ -15,6 +15,7 @@ table InferenceResponse {
   input_tokens:ulong = null;
   output_tokens:ulong = null;
   elapsed_ms:double;
+  queue_wait_ms:double = null;
 }
 
 table Packet {

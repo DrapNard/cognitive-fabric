@@ -126,3 +126,10 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
 - Inspect bounded capability-gap evidence and report reuse/review steps without granting permissions.
 - Import reviewed gap-guided RAG artifacts with atomic candidate/provenance records
   and evidence hash revalidation; protect source-task evidence from retention.
+
+### Development: measure bounded inference queue waiting
+
+- Measure broker queue delays independently of backend claims and retain optional
+  timing through compatible module/socket schemas, task traces and comparison totals.
+- Preserve unavailable metrics on cancellation and legacy frames; test contention
+  and reject invalid metric values without increasing runtime budgets.

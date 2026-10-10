@@ -105,3 +105,15 @@ Reports identify the criterion per case and use null expected output for constra
 cases. Criteria are user-supplied objectives, not hidden answer labels. The simpler
 `bench` command continues to require exact-match datasets. These bounded checks do
 not establish general reasoning quality or replace diverse held-out evaluation.
+
+### Queue timing
+
+Task resources and per-arm comparison totals include optional `queue_wait_ms`.
+The runtime measures time from insertion into a module queue until worker receipt,
+separately from the adapter's reported inference duration. The existing aggregate
+`inference_ms` remains total caller time around dispatch, including queue/transport
+and backend activity; queue timing is a component, not an additional GPU charge.
+Per-call queue measurements are preserved in durable reasoning events. No-call
+tasks have zero queue time. A cancelled dispatched call or unavailable legacy metric
+makes the task total unavailable, and comparison totals preserve that uncertainty.
+This does not measure GPU execution, model loading, process memory or energy.

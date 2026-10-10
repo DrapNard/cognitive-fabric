@@ -276,6 +276,7 @@ pub fn encode(message: &Message) -> Result<Vec<u8>> {
                     output_tokens: outcome.resources.output_tokens,
                     inference_ms: outcome.resources.inference_ms,
                     tool_calls: outcome.resources.tool_calls,
+                    queue_wait_ms: outcome.resources.queue_wait_ms,
                 },
             );
             let stop_reason = builder.create_string(&outcome.stop_reason);
@@ -455,6 +456,12 @@ pub fn decode(body: &[u8]) -> Result<Message> {
                 bail!("Ambiguous response envelope")
             }
             let r = envelope.response().context("Missing response")?;
+            if r.resources()
+                .and_then(|usage| usage.queue_wait_ms())
+                .is_some_and(|ms| !ms.is_finite() || !(0.0..=300_000.0).contains(&ms))
+            {
+                bail!("Invalid queue wait metric")
+            }
             Ok(Message::Reply {
                 id,
                 outcome: Outcome {
@@ -475,6 +482,7 @@ pub fn decode(body: &[u8]) -> Result<Message> {
                             input_tokens: usage.input_tokens(),
                             output_tokens: usage.output_tokens(),
                             inference_ms: usage.inference_ms(),
+                            queue_wait_ms: usage.queue_wait_ms(),
                             tool_calls: usage.tool_calls(),
                         })
                         .unwrap_or_default(),
@@ -751,6 +759,7 @@ mod tests {
                 input_tokens: Some(20),
                 output_tokens: None,
                 inference_ms: 2.0,
+                queue_wait_ms: Some(0.5),
                 tool_calls: 1,
             },
         };
@@ -763,7 +772,18 @@ mod tests {
         };
         assert_eq!(outcome.resources.input_tokens, Some(20));
         assert_eq!(outcome.resources.output_tokens, None);
+        assert_eq!(outcome.resources.queue_wait_ms, Some(0.5));
         assert_eq!(outcome.resources.reserved_output_tokens, 512);
+        let mut invalid = outcome.clone();
+        invalid.resources.queue_wait_ms = Some(f64::NAN);
+        assert!(decode(
+            &encode(&Message::Reply {
+                id: "invalid".into(),
+                outcome: invalid
+            })
+            .unwrap()
+        )
+        .is_err());
         let mut builder = flatbuffers::FlatBufferBuilder::new();
         let id = builder.create_string("request");
         let task = builder.create_string("task");
@@ -793,6 +813,7 @@ mod tests {
             panic!("Expected legacy reply")
         };
         assert_eq!(outcome.answer, "legacy");
+        assert_eq!(outcome.resources.queue_wait_ms, None);
         assert_eq!(outcome.resources.input_tokens, None);
         assert_eq!(outcome.stop_reason, "");
     }

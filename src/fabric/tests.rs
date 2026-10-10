@@ -20,6 +20,7 @@ impl InferenceBackend for Fixed {
                 input_tokens: Some(2),
                 output_tokens: Some(1),
                 elapsed_ms: 1.0,
+                queue_wait_ms: None,
             })
         })
     }
@@ -44,6 +45,106 @@ fn request(header: Header) -> Packet {
             tokens: 128,
         },
     }
+}
+
+#[test]
+fn queue_metrics_preserve_absence_and_reject_invalid_values() {
+    for wait in [
+        None,
+        Some(0.0),
+        Some(12.5),
+        Some(300_001.0),
+        Some(-1.0),
+        Some(f64::NAN),
+        Some(f64::INFINITY),
+    ] {
+        let packet = Packet {
+            header: header(),
+            payload: Payload::Response(Generation {
+                text: "answer".into(),
+                model: "fixture".into(),
+                input_tokens: None,
+                output_tokens: None,
+                elapsed_ms: 1.0,
+                queue_wait_ms: wait,
+            }),
+        };
+        let decoded = decode(&encode(&packet).unwrap());
+        if wait.is_some_and(|v| !v.is_finite() || !(0.0..=300_000.0).contains(&v)) {
+            assert!(decoded.is_err());
+        } else {
+            let Payload::Response(report) = decoded.unwrap().payload else {
+                panic!("Missing response")
+            };
+            assert_eq!(report.queue_wait_ms, wait);
+        }
+    }
+}
+
+struct Gated {
+    calls: AtomicUsize,
+    entered: tokio::sync::Notify,
+    release: tokio::sync::Notify,
+}
+impl InferenceBackend for Gated {
+    fn generate<'a>(
+        &'a self,
+        _role: &'a str,
+        _prompt: &'a str,
+        _tokens: usize,
+    ) -> Pin<Box<dyn Future<Output = Result<Generation>> + Send + 'a>> {
+        Box::pin(async move {
+            if self.calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                self.entered.notify_one();
+                self.release.notified().await;
+            }
+            Ok(Generation {
+                text: "answer".into(),
+                model: "fixture".into(),
+                input_tokens: None,
+                output_tokens: None,
+                elapsed_ms: 1.0,
+                queue_wait_ms: Some(999_999.0),
+            })
+        })
+    }
+}
+
+#[tokio::test]
+async fn broker_measures_actual_queue_wait_and_overrides_backend_claims() {
+    let backend = Arc::new(Gated {
+        calls: AtomicUsize::new(0),
+        entered: tokio::sync::Notify::new(),
+        release: tokio::sync::Notify::new(),
+    });
+    let broker = Arc::new(Broker::with_inference(backend.clone()));
+    let first_broker = broker.clone();
+    let first =
+        tokio::spawn(async move { first_broker.generate("solver", "first", 128).await.unwrap() });
+    backend.entered.notified().await;
+    let second_broker = broker.clone();
+    let second = tokio::spawn(async move {
+        second_broker
+            .generate("solver", "second", 128)
+            .await
+            .unwrap()
+    });
+    let pinned = broker.snapshot().unwrap();
+    let queue = pinned.routes["solver"].queue().await;
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while queue.capacity() != 3 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    tokio::time::sleep(Duration::from_millis(25)).await;
+    backend.release.notify_one();
+    let first = first.await.unwrap();
+    let second = second.await.unwrap();
+    assert!(first.queue_wait_ms.unwrap() < 999_999.0);
+    assert!(second.queue_wait_ms.unwrap() >= 20.0);
+    assert_eq!(second.elapsed_ms, 1.0);
 }
 
 #[tokio::test]
@@ -176,6 +277,7 @@ async fn forged_identity_and_expired_work_never_reach_the_backend() {
             .queue()
             .await
             .try_send(Work {
+                enqueued: std::time::Instant::now(),
                 bytes: encode(&packet).unwrap(),
                 identity,
                 reply,
@@ -225,6 +327,7 @@ async fn bounded_queue_rejects_overflow_and_drops_cancelled_inference() {
     let (reply, response) = oneshot::channel();
     queue
         .try_send(Work {
+            enqueued: std::time::Instant::now(),
             bytes: encode(&request(identity.clone())).unwrap(),
             identity,
             reply,
@@ -237,6 +340,7 @@ async fn bounded_queue_rejects_overflow_and_drops_cancelled_inference() {
         let (reply, response) = oneshot::channel();
         queue
             .try_send(Work {
+                enqueued: std::time::Instant::now(),
                 bytes: encode(&request(identity.clone())).unwrap(),
                 identity,
                 reply,
@@ -248,6 +352,7 @@ async fn bounded_queue_rejects_overflow_and_drops_cancelled_inference() {
     let (reply, _response) = oneshot::channel();
     assert!(queue
         .try_send(Work {
+            enqueued: std::time::Instant::now(),
             bytes: encode(&request(identity.clone())).unwrap(),
             identity,
             reply

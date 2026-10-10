@@ -93,6 +93,7 @@ struct Totals {
     tool_calls: u64,
     latency_ms: f64,
     inference_ms: f64,
+    queue_wait_ms: Option<f64>,
     prompt_bytes: usize,
     reserved_output_tokens: usize,
     input_tokens: Option<u64>,
@@ -106,6 +107,13 @@ impl Totals {
         self.tool_calls += outcome.resources.tool_calls as u64;
         self.latency_ms += outcome.elapsed_ms;
         self.inference_ms += outcome.resources.inference_ms;
+        self.queue_wait_ms = if first {
+            outcome.resources.queue_wait_ms
+        } else {
+            self.queue_wait_ms
+                .zip(outcome.resources.queue_wait_ms)
+                .map(|(left, right)| left + right)
+        };
         self.prompt_bytes += outcome.resources.prompt_bytes;
         self.reserved_output_tokens += outcome.resources.reserved_output_tokens;
         self.failed_tasks += usize::from(matches!(

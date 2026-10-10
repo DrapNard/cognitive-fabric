@@ -105,3 +105,12 @@ active-task UUID and a task-bound progress page of at most 32 independently
 verified COGE frames. Existing action ordinals and absent-field defaults remain
 compatible. Nested malformed frames, task mismatches and unordered sequences fail
 closed. Clients correlate responses and reject progress preceding their cursor.
+
+### Optional broker queue timing
+
+The module InferenceResponse and owner IPC ResourceUsage append optional
+`queue_wait_ms` double fields without reordering existing schema fields. Legacy
+frames omit them and decode as unavailable. Values must be finite and within
+0–300,000 ms, the maximum module request lifetime. The runtime broker overwrites
+backend queue claims with its own enqueue-to-worker-receive measurement. Absent,
+negative, nonfinite and over-limit cases have compatibility/negative tests.

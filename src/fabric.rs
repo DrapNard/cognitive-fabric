@@ -54,6 +54,7 @@ impl ModuleDescriptor {
 }
 
 struct Work {
+    enqueued: std::time::Instant,
     bytes: Vec<u8>,
     identity: Header,
     reply: oneshot::Sender<Result<Vec<u8>>>,
@@ -82,6 +83,7 @@ impl Module {
             tokio::spawn(async move {
                 while let Some(mut work) = receiver.recv().await {
                     if work.reply.is_closed() { continue; }
+                    let queue_wait_ms = work.enqueued.elapsed().as_secs_f64() * 1000.0;
                     let result = async {
                         let packet = decode(&work.bytes)?;
                         if !same_header(&packet.header, &work.identity) || packet.header.destination != descriptor.id || packet.header.module_version != descriptor.version || packet.header.expires <= now_ms() { bail!("Module identity or deadline mismatch") }
@@ -96,7 +98,7 @@ impl Module {
                         };
                         let payload = match result {
                             Ok(report) if report.output_tokens.is_some_and(|count| count > tokens as u64) => Payload::Error("Module exceeded output token budget".into()),
-                            Ok(report) => Payload::Response(report),
+                            Ok(mut report) => { report.queue_wait_ms = Some(queue_wait_ms); Payload::Response(report) },
                             Err(error) => Payload::Error(error.to_string().chars().take(250).collect()),
                         };
                         encode(&Packet { header: packet.header, payload })
@@ -300,6 +302,7 @@ impl InferenceBackend for Pinned {
                 .queue()
                 .await
                 .try_send(Work {
+                    enqueued: std::time::Instant::now(),
                     bytes,
                     identity: header.clone(),
                     reply,

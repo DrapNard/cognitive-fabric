@@ -103,6 +103,7 @@ pub(super) fn encode(packet: &Packet) -> Result<Vec<u8>> {
                     input_tokens: report.input_tokens,
                     output_tokens: report.output_tokens,
                     elapsed_ms: report.elapsed_ms,
+                    queue_wait_ms: report.queue_wait_ms,
                 },
             ));
         }
@@ -173,6 +174,9 @@ pub(super) fn decode(bytes: &[u8]) -> Result<Packet> {
             || response.model().len() > 256
             || !response.elapsed_ms().is_finite()
             || response.elapsed_ms() < 0.0
+            || response
+                .queue_wait_ms()
+                .is_some_and(|ms| !ms.is_finite() || !(0.0..=300_000.0).contains(&ms))
         {
             bail!("Invalid module response bounds")
         }
@@ -182,6 +186,7 @@ pub(super) fn decode(bytes: &[u8]) -> Result<Packet> {
             input_tokens: response.input_tokens(),
             output_tokens: response.output_tokens(),
             elapsed_ms: response.elapsed_ms(),
+            queue_wait_ms: response.queue_wait_ms(),
         })
     } else {
         let error = packet.error().context("Missing module payload")?;
