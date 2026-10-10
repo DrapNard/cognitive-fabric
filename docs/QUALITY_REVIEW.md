@@ -493,3 +493,24 @@ and CLI build pass with FlatBuffers 25.12.19. Actual isolated CLI arithmetic smo
 returned 36 with zero model calls and measured RSS/high-water 16,527,360 bytes;
 separate diagnostics measured 15,159,296 bytes. These single-process observations
 are not a comparative memory benchmark or inference-server measurements.
+
+## Offline trainer termination and provenance preflight
+
+Fixed an infinite training-loop path when all examples lose supervised labels to
+truncation. A complete no-progress pass now fails. Input is read once through a
+bounded no-follow regular-file descriptor; the manifest hashes that snapshot and
+the actual deduplicated rows rather than rereading potentially changed data.
+Strict fields, provenance bounds, normalized duplicate conflicts, seeded settings,
+new disjoint output, safe-format loader requests and bounded output inventories
+strengthen this manually invoked experimental path. Loader options follow the
+official Transformers model-loading API; they do not provide process isolation.
+
+Six standard-library tests pass: snapshot changes, malformed/duplicate/conflicting
+data, symlink/size rejection, no-supervision termination guard, hashed artifact
+inventory and subprocess dry-run/output separation. Fixtures do not contain valid
+neural weights. All 106 Rust tests and mandatory fmt/check/Clippy checks pass with
+FlatBuffers 25.12.19. CI now includes offline preflight tests without ML installs.
+Environment inspection confirms torch, transformers, peft, safetensors and
+bitsandbytes are absent. No training/GPU run is claimed. Model provenance manifests,
+held-out neural evaluations and independently enforced isolation remain required;
+neural promotion remains disabled.

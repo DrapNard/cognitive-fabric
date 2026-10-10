@@ -5,6 +5,39 @@ Level B supports RAG candidates with source, license, content hash and version.
 Level C remains an optional offline Python training experiment; neural promotion
 is disabled. Level D architecture reconstruction remains future research.
 
+## Offline training experiment validation
+
+`training/train_lora.py` is manually invoked outside the Rust service. Run
+`python3 training/train_lora.py --base-model LOCAL_HF_DIRECTORY --dataset DATA.jsonl
+--output NEW_DIRECTORY --dry-run` to validate bounded input without ML dependencies
+or training. Four distinct prompt/response rows with source/license are required;
+unknown/duplicate fields, conflicting normalized prompts and invalid provenance
+fail. The dataset is read once with no-follow regular-file checks and an 8 MB cap.
+The recorded file hash and consumed-row hash describe that snapshot, even if the
+source later changes. The output must be new and disjoint from the base directory.
+
+Real training needs separately installed torch, transformers, peft and safetensors
+(plus bitsandbytes for QLoRA). The loader requests local files, no remote model
+code, and safetensors weights. These options are not process isolation: reviewed
+dependencies/models and external OS resource/network/filesystem isolation remain
+the operator's responsibility. No runtime actor can invoke this script.
+
+The training loop fails when a full dataset pass produces no supervised tokens,
+preventing infinite retry after truncation. A seed is applied, but numerical
+reproducibility across devices/libraries is not guaranteed. Step count is bounded;
+wall time, GPU memory and subprocess isolation are not enforced by this script.
+Output is reserved privately before loading/training; failures can leave an
+inactive partial directory. Never reuse it as successful output.
+
+Successful runs emit a versioned unreviewed training manifest with a run UUID,
+seed/configuration, dependency versions, snapshot hashes and a bounded adapter
+inventory (16 regular non-pickle files, 64 MB total). Inventory hashes establish
+content identity, not valid weights or neural safety. Base-weight attestation,
+isolated execution and independent evaluation are explicitly false. Model source/
+license manifests, held-out neural evaluation, actual compatible training, verified
+isolation and backend adapter switching remain incomplete. Neural promotion stays
+disabled. Tests run with standard-library unittest; no GPU run is claimed.
+
 ## RAG lifecycle
 
 Register a skill using `skill-add`, then create a candidate with

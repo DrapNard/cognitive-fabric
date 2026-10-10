@@ -3,38 +3,110 @@
 
 This script NEVER publishes, activates or merges learned weights. Validate
 provenance/licensing and benchmark independently before manual promotion.
-Dependencies: pip install -e '.[training]'. For --qlora also install bitsandbytes.
+Dependencies: torch, transformers, peft, safetensors. QLoRA also needs bitsandbytes.
 """
 from __future__ import annotations
 
 import argparse
 from hashlib import sha256
 import json
+import os
 from pathlib import Path
 import random
+import stat
+from importlib.metadata import version
+from uuid import uuid4
+
+
+def load_data(path: Path) -> tuple[list[dict], str]:
+    """Read once, bound allocation, and hash exactly the validated input snapshot."""
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK)
+    with os.fdopen(fd, "rb") as stream:
+        metadata = os.fstat(stream.fileno())
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_size > 8_000_000:
+            raise ValueError("Dataset must be a regular file smaller than 8 MB")
+        data = stream.read(8_000_001)
+        if len(data) > 8_000_000:
+            raise ValueError("Dataset exceeds 8 MB")
+    rows = validate_rows(data.decode("utf-8"))
+    return rows, sha256(data).hexdigest()
 
 
 def validate_data(path: Path) -> list[dict]:
-    if path.is_symlink() or not path.is_file() or path.stat().st_size > 8_000_000:
-        raise ValueError("Dataset must be a regular file smaller than 8 MB")
+    return load_data(path)[0]
+
+
+def unique_object(pairs: list[tuple]) -> dict:
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("Duplicate dataset field")
+        result[key] = value
+    return result
+
+
+def validate_rows(text: str) -> list[dict]:
     rows = []
-    seen = set()
-    for line in path.read_text("utf-8").splitlines():
+    seen = {}
+    for line in text.splitlines():
         if not line.strip():
             continue
-        row = json.loads(line)
-        if not isinstance(row, dict) or not all(isinstance(row.get(k), str) and row[k].strip()
+        row = json.loads(line, object_pairs_hook=unique_object)
+        if not isinstance(row, dict) or set(row) != {"prompt", "response", "source", "license"} or not all(isinstance(row.get(k), str) and row[k].strip()
                                                   for k in ("prompt", "response", "source", "license")):
             raise ValueError("Each row must have prompt, response, source and license")
         if len(row["prompt"]) > 8000 or len(row["response"]) > 8000:
             raise ValueError("Oversized training example")
-        digest = sha256(row["prompt"].strip().encode()).hexdigest()
+        for key, maximum in (("source", 2048), ("license", 256)):
+            if len(row[key]) > maximum or not row[key].isprintable():
+                raise ValueError("Invalid provenance bounds")
+        digest = sha256(" ".join(row["prompt"].split()).encode()).hexdigest()
+        if digest in seen and row["response"] != seen[digest]:
+            raise ValueError("Conflicting responses for a duplicate prompt")
         if digest not in seen:
             rows.append(row)
-            seen.add(digest)
+            seen[digest] = row["response"]
+        if len(rows) > 4096:
+            raise ValueError("Training example capacity exhausted")
     if len(rows) < 4:
         raise ValueError("At least four distinct, provenance-labelled examples required")
     return rows
+
+
+def require_progress(previous_step: int, current_step: int) -> None:
+    if previous_step == current_step:
+        raise ValueError("No supervised tokens survived truncation in a complete dataset pass")
+
+
+def describe_artifacts(directory: Path) -> list[dict]:
+    """Hash the inactive adapter bundle under the runtime's 64 MB import ceiling."""
+    artifacts = []
+    total = 0
+    for path in sorted(directory.iterdir()):
+        if len(artifacts) >= 16:
+            raise ValueError("Adapter bundle entry capacity exhausted")
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK)
+        with os.fdopen(fd, "rb") as stream:
+            metadata = os.fstat(stream.fileno())
+            if not stat.S_ISREG(metadata.st_mode) or path.suffix == ".bin":
+                raise ValueError("Adapter outputs must be regular non-pickle files")
+            total += metadata.st_size
+            if total > 64_000_000:
+                raise ValueError("Adapter bundle exceeds 64 MB")
+            digest = sha256()
+            copied = 0
+            while chunk := stream.read(65536):
+                copied += len(chunk)
+                if copied > metadata.st_size:
+                    raise ValueError("Adapter changed during hashing")
+                digest.update(chunk)
+            after = os.fstat(stream.fileno())
+            if copied != metadata.st_size or after.st_mtime_ns != metadata.st_mtime_ns:
+                raise ValueError("Adapter changed during hashing")
+        artifacts.append({"name": path.name, "bytes": copied, "sha256": digest.hexdigest()})
+    if not any(item["name"].endswith(".safetensors") for item in artifacts):
+        raise ValueError("No safetensors adapter output")
+    return artifacts
 
 
 def main() -> None:
@@ -46,20 +118,28 @@ def main() -> None:
     p.add_argument("--max-length", type=int, default=512)
     p.add_argument("--rank", type=int, default=8)
     p.add_argument("--qlora", action="store_true")
+    p.add_argument("--seed", type=int, default=42)
     p.add_argument("--dry-run", action="store_true")
     args = p.parse_args()
-    rows = validate_data(args.dataset)
+    rows, dataset_hash = load_data(args.dataset)
     if not args.base_model.is_dir() or args.base_model.is_symlink():
         p.error("--base-model must be a local directory")
     if args.max_steps < 1 or args.max_steps > 10000 or args.max_length not in range(64, 4097):
         p.error("Invalid training limits")
     if args.rank < 1 or args.rank > 128:
         p.error("Invalid LoRA rank")
-    if args.output.resolve() == args.base_model.resolve():
-        p.error("Output must be different from base-model directory")
+    base = args.base_model.resolve()
+    output = args.output.resolve()
+    if output == base or output in base.parents or base in output.parents:
+        p.error("Output and base-model directories must not contain each other")
+    if args.output.exists() or args.output.is_symlink():
+        p.error("Output must be a new directory")
+    if args.seed < 0 or args.seed > 2**32 - 1:
+        p.error("Seed must fit an unsigned 32-bit integer")
     if args.dry_run:
         print(json.dumps({"status": "validated", "examples": len(rows),
-                          "base_model": str(args.base_model), "training_started": False}, indent=2))
+                          "base_model": str(base), "dataset_sha256": dataset_hash,
+                          "seed": args.seed, "training_started": False}, indent=2))
         return
 
     import torch
@@ -67,12 +147,17 @@ def main() -> None:
     from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
     from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 
+    random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    args.output.mkdir(parents=True, exist_ok=False, mode=0o700)
+
     if args.qlora and not torch.cuda.is_available():
         p.error("QLoRA requires a supported CUDA device")
-    tokenizer = AutoTokenizer.from_pretrained(str(args.base_model), local_files_only=True)
+    tokenizer = AutoTokenizer.from_pretrained(str(args.base_model), local_files_only=True,
+                                            trust_remote_code=False)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
-    kwargs = {"local_files_only": True, "trust_remote_code": False}
+    kwargs = {"local_files_only": True, "trust_remote_code": False, "use_safetensors": True}
     if args.qlora:
         kwargs["quantization_config"] = BitsAndBytesConfig(load_in_4bit=True,
             bnb_4bit_compute_dtype=torch.float16, bnb_4bit_quant_type="nf4")
@@ -112,6 +197,7 @@ def main() -> None:
     losses = []
     step = 0
     while step < args.max_steps:
+        previous_step = step
         for batch in loader:
             device = next(model.parameters()).device
             batch = {k: v.to(device) for k, v in batch.items()}
@@ -127,10 +213,17 @@ def main() -> None:
             step += 1
             if step >= args.max_steps:
                 break
-    args.output.mkdir(parents=True, exist_ok=False)
+        require_progress(previous_step, step)
     model.save_pretrained(str(args.output), safe_serialization=True)
     metadata = {"base_model": str(args.base_model.resolve()), "examples": len(rows),
-                "steps": step, "final_loss": losses[-1], "dataset_sha256": sha256(args.dataset.read_bytes()).hexdigest(),
+                "run_id": str(uuid4()), "artifacts": describe_artifacts(args.output),
+                "format_version": 1, "steps": step, "final_loss": losses[-1], "dataset_sha256": dataset_hash,
+                "consumed_rows_sha256": sha256(json.dumps(rows, sort_keys=True, separators=(",", ":")).encode()).hexdigest(),
+                "seed": args.seed, "rank": args.rank, "max_length": args.max_length,
+                "qlora": args.qlora,
+                "dependencies": {name: version(name) for name in ("torch", "transformers", "peft", "safetensors")},
+                "independently_evaluated": False, "isolated_execution_verified": False,
+                "base_weights_attested": False,
                 "status": "unreviewed_candidate", "production_ready": False}
     (args.output / "training_manifest.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
     print(json.dumps(metadata, indent=2))

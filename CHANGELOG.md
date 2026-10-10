@@ -161,3 +161,11 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   completion and in diagnostics; preserve unavailable values through IPC.
 - Aggregate comparison memory as maxima and document scope, warm-up effects and
   exclusion of inference-server/GPU memory.
+
+### Development: bound and audit the offline training experiment
+
+- Fail when truncation leaves no supervised examples instead of looping forever.
+- Freeze and hash validated dataset input, reject conflicting/ambiguous provenance,
+  reserve separate output and record seeded configuration/dependency versions.
+- Hash bounded inactive adapter bundles; add standard-library preflight CI tests
+  while keeping neural evaluation/promotion disabled.

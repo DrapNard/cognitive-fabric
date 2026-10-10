@@ -106,3 +106,8 @@ Operator SQLite backups now use a pinned read view, bounded copy/hash loops,
 private files and serialized admission. They preserve committed WAL state and
 publish a checksummed read-only standalone database. Full artifact/configuration
 restore and automatic replay are not implemented. See `STORAGE.md`.
+
+Offline training preflight now has six standard-library tests, frozen input hashes,
+strict provenance/deduplication, a no-supervised-token termination guard, disjoint
+new output and bounded adapter inventories. This improves the experimental script;
+no actual ML training, isolation, neural evaluation or promotion is proven.

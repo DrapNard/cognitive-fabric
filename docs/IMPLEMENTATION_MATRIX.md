@@ -85,3 +85,11 @@ high-water RSS at task completion and in diagnostics. Task audits, append-only
 socket fields and comparison maxima preserve unavailable measurements. Parser,
 legacy-frame and aggregation tests cover this path. These are whole Rust-process
 observations, not isolated task peaks, backend residency or GPU measurements.
+
+The optional offline trainer now freezes bounded dataset input, rejects ambiguous/
+conflicting provenance, fails on passes with no supervised tokens, reserves separate
+output and records seeded configuration, dependency versions and hashed adapter
+inventory. Six standard-library preflight tests pass in addition to the 106 Rust
+tests. Level C stays Experimental: ML dependencies/weights are unavailable here,
+and base provenance manifests, independent neural evaluation, external isolation,
+actual training and adapter switching remain unverified. Promotion remains denied.
