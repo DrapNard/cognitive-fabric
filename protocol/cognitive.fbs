@@ -3,7 +3,7 @@
 namespace Cognitive;
 
 enum MessageKind:ubyte { Request = 0, Response = 1, Error = 2, Control = 3, ControlResponse = 4 }
-enum ControlAction:ubyte { Status = 0, CancelActive = 1, Stop = 2, Modules = 3, TaskProgress = 4, CancelTask = 5 }
+enum ControlAction:ubyte { Status = 0, CancelActive = 1, Stop = 2, Modules = 3, TaskProgress = 4, CancelTask = 5, SubscribeProgress = 6 }
 enum ReasoningMode:ubyte { Fast = 0, Standard = 1, Deep = 2, Research = 3 }
 
 table AskRequest {
@@ -52,6 +52,7 @@ table ControlResponse {
   modules:[ModuleInfo];
   active_task_id:string;
   progress:ProgressPage;
+  stream_state:string;
 }
 
 table ProgressFrame { data:[ubyte] (required); }

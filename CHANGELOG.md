@@ -147,3 +147,10 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   data using the backup API and serialized operator admission.
 - Verify copy/reopen behavior, permissions, contention and capacity failures while
   keeping configuration/artifacts separate and never replaying saved tasks.
+
+### Development: stream bounded task progress over local sockets
+
+- Add owner-authenticated `watch-task` with durable cursor catch-up and typed live
+  events, JSONL output, terminal states and resumable timeouts.
+- Bound watcher admission, queues and writes; report loss explicitly and preserve
+  task execution when an observer disconnects.

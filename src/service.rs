@@ -30,6 +30,7 @@ struct Controls {
     cancellation: watch::Sender<u64>,
     active: Mutex<Option<String>>,
     execution: Semaphore,
+    subscriptions: Semaphore,
 }
 impl Drop for SocketGuard {
     fn drop(&mut self) {
@@ -77,6 +78,7 @@ where
         cancellation: watch::channel(0).0,
         active: Mutex::new(None),
         execution: Semaphore::new(1),
+        subscriptions: Semaphore::new(2),
     });
     let mut remote_stop = cancel.subscribe();
     let mut handlers = JoinSet::new();
@@ -134,6 +136,37 @@ async fn handle(
         _ = stopped(&mut stopping) => return,
         result = tokio::time::timeout(Duration::from_secs(10), wire::read_message(&mut reader)) => result,
     };
+    if let Ok(Ok(Message::Control {
+        id,
+        action: wire::ControlAction::SubscribeProgress,
+        task_id: Some(task),
+        after,
+    })) = &request
+    {
+        let result = stream_progress(
+            &mut reader,
+            &mut writer,
+            &engine,
+            &controls,
+            &mut stopping,
+            (id, task, *after),
+        )
+        .await;
+        if let Err(error) = result {
+            let _ = tokio::time::timeout(
+                Duration::from_secs(2),
+                wire::write_message(
+                    &mut writer,
+                    &Message::Error {
+                        id: id.clone(),
+                        message: error.to_string().chars().take(300).collect(),
+                    },
+                ),
+            )
+            .await;
+        }
+        return;
+    }
     let response = match request {
         Ok(Ok(Message::Control {
             id,
@@ -249,6 +282,9 @@ fn control_response(
             progress = Some((task.into(), engine.store.progress_since(task, after)?));
             true
         }
+        wire::ControlAction::SubscribeProgress => {
+            bail!("Subscription requires a streaming connection")
+        }
         wire::ControlAction::CancelActive | wire::ControlAction::CancelTask => {
             let matched = active
                 && (action == wire::ControlAction::CancelActive || active_task.as_deref() == task);
@@ -271,7 +307,193 @@ fn control_response(
         modules,
         active_task_id: active_task.clone(),
         progress,
+        stream_state: None,
     })
+}
+
+async fn send_progress(
+    writer: &mut tokio::net::unix::OwnedWriteHalf,
+    id: &str,
+    task: &str,
+    page: crate::events::ProgressPage,
+    state: &str,
+) -> Result<()> {
+    tokio::time::timeout(
+        Duration::from_secs(2),
+        wire::write_message(
+            writer,
+            &Message::ControlReply {
+                id: id.into(),
+                active: false,
+                accepted: true,
+                modules: Vec::new(),
+                active_task_id: None,
+                progress: Some((task.into(), page)),
+                stream_state: Some(state.into()),
+            },
+        ),
+    )
+    .await??;
+    Ok(())
+}
+
+async fn stream_progress(
+    reader: &mut tokio::net::unix::OwnedReadHalf,
+    writer: &mut tokio::net::unix::OwnedWriteHalf,
+    engine: &Engine,
+    controls: &Controls,
+    stopping: &mut watch::Receiver<bool>,
+    request: (&str, &str, u64),
+) -> Result<()> {
+    let (id, task, mut cursor) = request;
+    let _slot = controls
+        .subscriptions
+        .try_acquire()
+        .map_err(|_| anyhow::anyhow!("Progress subscription capacity exhausted"))?;
+    let mut subscription = engine.store.subscribe_progress(task)?;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(60);
+    loop {
+        if *stopping.borrow() {
+            bail!("Service shutting down; resume from the last cursor")
+        }
+        let page = engine.store.progress_since(task, cursor)?;
+        cursor = page.cursor;
+        let more = page.more;
+        let complete:bool = engine.store.lock()?.query_row("SELECT EXISTS(SELECT 1 FROM events WHERE task_id=?1 AND kind IN ('outcome','recovery') AND id<=?2)",rusqlite::params![task,cursor],|r|r.get(0))?;
+        send_progress(
+            writer,
+            id,
+            task,
+            page,
+            if complete && !more {
+                "complete"
+            } else {
+                "update"
+            },
+        )
+        .await?;
+        if complete && !more {
+            return Ok(());
+        }
+        if !more {
+            break;
+        }
+        if tokio::time::Instant::now() >= deadline {
+            bail!("Progress catch-up deadline exhausted")
+        }
+    }
+    loop {
+        let mut extra = [0u8; 1];
+        let event = tokio::select! {
+            biased;
+            _=stopped(stopping)=>bail!("Service shutting down; resume from the last cursor"),
+            _=reader.read(&mut extra)=>return Ok(()),
+            _=tokio::time::sleep_until(deadline)=> {
+                send_progress(writer,id,task,crate::events::ProgressPage{cursor,more:false,events:Vec::new()},"timeout").await?;
+                return Ok(())
+            },
+            event=subscription.receive()=>event?,
+        };
+        let event = event.ok_or_else(|| {
+            anyhow::anyhow!("Progress subscription closed; resume from durable history")
+        })?;
+        if event.sequence <= cursor {
+            continue;
+        }
+        cursor = event.sequence;
+        let complete = matches!(
+            event.stage,
+            crate::events::Stage::Finished | crate::events::Stage::Recovery
+        );
+        send_progress(
+            writer,
+            id,
+            task,
+            crate::events::ProgressPage {
+                cursor,
+                more: false,
+                events: vec![event],
+            },
+            if complete { "complete" } else { "update" },
+        )
+        .await?;
+        if complete {
+            return Ok(());
+        }
+    }
+}
+
+pub struct ProgressStream {
+    stream: UnixStream,
+    id: String,
+    task: String,
+    cursor: u64,
+    finished: bool,
+}
+#[derive(Debug, serde::Serialize)]
+pub struct ProgressUpdate {
+    pub task_id: String,
+    pub state: String,
+    pub page: crate::events::ProgressPage,
+}
+impl ProgressStream {
+    pub async fn receive(&mut self) -> Result<Option<ProgressUpdate>> {
+        if self.finished {
+            return Ok(None);
+        }
+        let response = tokio::time::timeout(
+            Duration::from_secs(65),
+            wire::read_message(&mut self.stream),
+        )
+        .await??;
+        match response {
+            Message::ControlReply {
+                id,
+                accepted: true,
+                progress: Some((task, page)),
+                stream_state: Some(state),
+                ..
+            } if id == self.id
+                && task == self.task
+                && page.cursor >= self.cursor
+                && page.events.iter().all(|e| e.sequence > self.cursor) =>
+            {
+                self.cursor = page.cursor;
+                self.finished = state != "update";
+                Ok(Some(ProgressUpdate {
+                    task_id: task,
+                    state,
+                    page,
+                }))
+            }
+            Message::Error { id, message } if id == self.id => bail!("{message}"),
+            _ => bail!("Invalid correlated progress subscription response"),
+        }
+    }
+}
+pub async fn subscribe_progress(cfg: &Config, task: &str, after: u64) -> Result<ProgressStream> {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        let mut stream = UnixStream::connect(cfg.socket()).await?;
+        let id = uuid::Uuid::new_v4().to_string();
+        wire::write_message(
+            &mut stream,
+            &Message::Control {
+                id: id.clone(),
+                action: wire::ControlAction::SubscribeProgress,
+                task_id: Some(task.into()),
+                after,
+            },
+        )
+        .await?;
+        Ok(ProgressStream {
+            stream,
+            id,
+            task: task.into(),
+            cursor: after,
+            finished: false,
+        })
+    })
+    .await?
 }
 
 pub async fn control(cfg: &Config, action: wire::ControlAction) -> Result<(bool, bool)> {
@@ -457,6 +679,134 @@ mod tests {
         .await
         .expect("Service did not bind");
         (stop, task)
+    }
+
+    #[tokio::test]
+    async fn progress_subscriptions_catch_up_stream_and_reserve_control_capacity() {
+        let (cfg, engine) = setup();
+        let identity = engine.store.create_task("watched task", "deep").unwrap();
+        engine
+            .store
+            .event(&identity, "intent", "interface", serde_json::json!({}))
+            .unwrap();
+        let (stop, service) = start(engine.clone()).await;
+        let mut first = subscribe_progress(&cfg, &identity, 0).await.unwrap();
+        let initial = first.receive().await.unwrap().unwrap();
+        assert_eq!(initial.state, "update");
+        assert_eq!(initial.page.events.len(), 1);
+        let mut second = subscribe_progress(&cfg, &identity, initial.page.cursor)
+            .await
+            .unwrap();
+        assert_eq!(second.receive().await.unwrap().unwrap().state, "update");
+        let mut third = subscribe_progress(&cfg, &identity, 0).await.unwrap();
+        assert!(third
+            .receive()
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("capacity"));
+        assert!(status(&cfg).await.is_ok());
+        drop(second);
+        let unrelated = engine
+            .store
+            .create_task("unrelated secret", "fast")
+            .unwrap();
+        engine
+            .store
+            .event(
+                &unrelated,
+                "intent",
+                "interface",
+                serde_json::json!({"secret":"do not transmit"}),
+            )
+            .unwrap();
+        engine
+            .store
+            .event(
+                &identity,
+                "model_dispatch",
+                "jev-r",
+                serde_json::json!({"role":"solver","call":1}),
+            )
+            .unwrap();
+        let live = first.receive().await.unwrap().unwrap();
+        assert!(live.page.cursor > initial.page.cursor);
+        assert_eq!(live.page.events.len(), 1);
+        assert!(live.page.events.iter().all(|e| e.task_id == identity));
+        engine
+            .store
+            .finish_task(&identity, "unverified", "candidate")
+            .unwrap();
+        engine
+            .store
+            .event(
+                &identity,
+                "outcome",
+                "jev-plus",
+                serde_json::json!({"status":"unverified","resources":{"calls":1}}),
+            )
+            .unwrap();
+        let terminal = first.receive().await.unwrap().unwrap();
+        assert_eq!(terminal.state, "complete");
+        assert!(first.receive().await.unwrap().is_none());
+        let mut resumed = subscribe_progress(&cfg, &identity, initial.page.cursor)
+            .await
+            .unwrap();
+        let catchup = resumed.receive().await.unwrap().unwrap();
+        assert_eq!(catchup.state, "complete");
+        assert_eq!(catchup.page.events.len(), 2);
+        let mut unknown = subscribe_progress(&cfg, &uuid::Uuid::new_v4().to_string(), 0)
+            .await
+            .unwrap();
+        assert!(unknown.receive().await.is_err());
+        let mut pending = subscribe_progress(&cfg, &unrelated, 0).await.unwrap();
+        assert_eq!(pending.receive().await.unwrap().unwrap().state, "update");
+        let _ = stop.send(());
+        tokio::time::timeout(Duration::from_secs(3), service)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert!(pending.receive().await.is_err());
+        std::fs::remove_dir_all(cfg.home).unwrap();
+    }
+
+    #[tokio::test]
+    async fn overflowing_socket_subscription_requires_durable_resume() {
+        let (cfg, engine) = setup();
+        let identity = engine.store.create_task("overflow task", "deep").unwrap();
+        let (stop, service) = start(engine.clone()).await;
+        let mut subscription = subscribe_progress(&cfg, &identity, 0).await.unwrap();
+        let initial = subscription.receive().await.unwrap().unwrap();
+        for _ in 0..40 {
+            engine
+                .store
+                .event(
+                    &identity,
+                    "model_dispatch",
+                    "jev-r",
+                    serde_json::json!({"role":"solver","call":1}),
+                )
+                .unwrap();
+        }
+        assert!(subscription
+            .receive()
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("lost"));
+        let durable = task_progress(&cfg, &identity, initial.page.cursor)
+            .await
+            .unwrap();
+        assert_eq!(durable.events.len(), 32);
+        assert!(durable.more);
+        let _ = stop.send(());
+        tokio::time::timeout(Duration::from_secs(3), service)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        std::fs::remove_dir_all(cfg.home).unwrap();
     }
 
     #[tokio::test]

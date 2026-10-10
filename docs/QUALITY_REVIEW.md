@@ -450,3 +450,26 @@ all-target check, Clippy with denied warnings and CLI build pass with FlatBuffer
 SHA-256 and reopened a copy in a separate /tmp workspace with result 72 and its
 audit events intact. No user's normal state was replaced. Configuration/external
 artifacts/weights are excluded; full workspace restore remains incomplete.
+
+## Bounded socket progress subscriptions
+
+Appended SubscribeProgress and optional stream state without changing existing
+FlatBuffers fields or ordinals. Owner-authenticated watchers subscribe before
+durable replay, deduplicate by sequence and receive only task-bound typed events.
+Limits: two service watchers, 16 queued frames each, 32-row replay pages, two-second
+writes and 60-second watches. Overflow is an explicit error requiring durable
+resume. Disconnecting observation does not cancel execution. Other Store instances
+require reconnect/replay; their writes do not publish through this service hub.
+
+Tests cover catch-up followed by live delivery, unrelated-task exclusion, cursor
+resume, completion, unknown tasks, watcher capacity preserving controls, overflow,
+shutdown with a pending watcher and invalid stream states. All 103 all-target
+tests pass; formatting, all-target check, CLI build and Clippy with denied warnings
+pass with FlatBuffers 25.12.19. No live inference or neural-quality claim follows
+from these socket tests.
+
+Separate-process CLI smoke also passed: started `serve` in an isolated /tmp home,
+watched a previously completed demo task with `--json`, received one terminal
+JSONL page with cursor 17 and eight typed events, then stopped the service through
+typed control and confirmed clean exit. This verifies cross-process durable
+catch-up/termination; the integration tests exercise live delivery and overflow.

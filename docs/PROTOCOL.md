@@ -106,6 +106,13 @@ verified COGE frames. Existing action ordinals and absent-field defaults remain
 compatible. Nested malformed frames, task mismatches and unordered sequences fail
 closed. Clients correlate responses and reject progress preceding their cursor.
 
+SubscribeProgress (6) appends bounded streaming observation. It requires a task
+UUID and accepts an after-sequence cursor. ControlResponse appends optional
+`stream_state`: `update`, `complete`, or `timeout`, valid only with a progress page.
+Legacy responses omit this field. One request yields correlated validated pages
+until termination; it does not grant execution authority. See `EVENTS.md` for
+queue, watcher, write-deadline and replay limits.
+
 ### Optional broker queue timing
 
 The module InferenceResponse and owner IPC ResourceUsage append optional

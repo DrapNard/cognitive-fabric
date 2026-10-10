@@ -37,8 +37,8 @@ only after their transaction commits. Per-Store insertion/publication is ordered
 this is neither a distributed consensus service nor exactly-once delivery.
 
 The event hub extends the inference broker's typed communication with progress
-notifications. Independent-process streaming subscriptions, general executable
-module event routing remain incomplete. Unix-socket progress polling and task-specific cancellation
+notifications. General executable module event routing remains incomplete.
+Unix-socket progress polling, streaming and task-specific cancellation
 are available as described below.
 Progress frames are data, never commands or evidence that a model answer is true.
 
@@ -59,4 +59,24 @@ identity. Controls use the existing five-second client deadline and bounded sock
 handlers; inference cancellation and progress controls remain available while work
 is running. A just-admitted UUID can briefly precede its database task creation;
 a progress request then returns an explicit unknown-task error, so retry after
-creation. This is bounded polling, not a permanent streaming connection.
+creation.
+
+## Bounded socket subscriptions
+
+`cogfabric watch-task TASK_UUID --after CURSOR` connects to the service and catches
+up durably before delivering live service-owned updates. With `--json`, each line
+is one object containing `task_id`, `state` and `page`. Save `page.cursor` after
+every update, including empty pages. `complete` means a terminal task event was
+observed; it does not imply a verified answer. `timeout` ends the watch normally
+after 60 seconds; reconnect with the last cursor to continue. Ctrl-C or dropping
+the watcher closes observation without cancelling the task.
+
+The owner-authenticated service allows two watchers, preserving handler capacity
+for task submission and controls. Each watcher has 16 queued live frames and a
+two-second write deadline. Overflow, shutdown or protocol errors terminate the
+connection explicitly; reconnect and replay durable progress. Catch-up pages scan
+32 audit records each. Task IDs, request correlation, frame bounds and monotonic
+sequences are validated on both peers. SQLite is authoritative; writes from other
+Store instances are available through reconnect/catch-up but do not trigger this
+service's live event hub. No exactly-once or cross-process publication guarantee
+is claimed.

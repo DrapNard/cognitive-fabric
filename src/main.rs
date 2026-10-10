@@ -37,6 +37,11 @@ enum Command {
     },
     RecoverTasks,
     StorageStatus,
+    WatchTask {
+        id: String,
+        #[arg(long, default_value = "0")]
+        after: u64,
+    },
     Backup,
     RetentionPreview {
         #[arg(long)]
@@ -270,6 +275,22 @@ async fn main() -> Result<()> {
     store::bootstrap(&store)?;
     let engine = Engine::new(cfg.clone(), store.clone());
     let response: Value = match cli.command {
+        Command::WatchTask { id, after } => {
+            let mut subscription = service::subscribe_progress(&cfg, &id, after).await?;
+            loop {
+                let update = tokio::select! {
+                    _=tokio::signal::ctrl_c()=>break,
+                    update=subscription.receive()=>update?,
+                };
+                let Some(update) = update else { break };
+                if cli.json {
+                    println!("{}", serde_json::to_string(&update)?);
+                } else {
+                    output(&update, false)?;
+                }
+            }
+            return Ok(());
+        }
         Command::Diagnostics { probe_inference } => {
             let report = cogfabric::diagnostics::diagnose(&cfg, &store, probe_inference).await?;
             if report["registered_selection_valid"] == false

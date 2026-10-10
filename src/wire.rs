@@ -12,6 +12,15 @@ use generated::cognitive as fb;
 
 const MAX_FRAME: usize = 256 * 1024;
 
+fn validate_stream(state: Option<&str>, has_progress: bool) -> Result<()> {
+    if let Some(state) = state {
+        if !has_progress || !matches!(state, "update" | "complete" | "timeout") {
+            bail!("Invalid progress stream state")
+        }
+    }
+    Ok(())
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ControlAction {
     Status,
@@ -20,6 +29,7 @@ pub enum ControlAction {
     Modules,
     TaskProgress,
     CancelTask,
+    SubscribeProgress,
 }
 
 #[derive(Clone, Debug)]
@@ -37,6 +47,7 @@ pub enum Message {
         modules: Vec<crate::fabric::ModuleDescriptor>,
         active_task_id: Option<String>,
         progress: Option<(String, crate::events::ProgressPage)>,
+        stream_state: Option<String>,
     },
     Ask {
         id: String,
@@ -58,13 +69,18 @@ pub enum Message {
 fn validate_control(action: ControlAction, task: Option<&str>, after: u64) -> Result<()> {
     if matches!(
         action,
-        ControlAction::TaskProgress | ControlAction::CancelTask
+        ControlAction::TaskProgress | ControlAction::CancelTask | ControlAction::SubscribeProgress
     ) {
         uuid::Uuid::parse_str(task.context("Task control requires a task UUID")?)?;
     } else if task.is_some() {
         bail!("Unexpected task identity on service control")
     }
-    if after > i64::MAX as u64 || (action != ControlAction::TaskProgress && after != 0) {
+    if after > i64::MAX as u64
+        || (!matches!(
+            action,
+            ControlAction::TaskProgress | ControlAction::SubscribeProgress
+        ) && after != 0)
+    {
         bail!("Invalid progress cursor")
     }
     Ok(())
@@ -135,6 +151,7 @@ pub fn encode(message: &Message) -> Result<Vec<u8>> {
                         ControlAction::Modules => fb::ControlAction::Modules,
                         ControlAction::TaskProgress => fb::ControlAction::TaskProgress,
                         ControlAction::CancelTask => fb::ControlAction::CancelTask,
+                        ControlAction::SubscribeProgress => fb::ControlAction::SubscribeProgress,
                     },
                     task_id,
                     after_sequence: *after,
@@ -147,12 +164,17 @@ pub fn encode(message: &Message) -> Result<Vec<u8>> {
             modules,
             active_task_id,
             progress,
+            stream_state,
             ..
         } => {
             if active_task_id.is_some() && !active {
                 bail!("Inactive response cannot identify an active task")
             }
             args.kind = fb::MessageKind::ControlResponse;
+            validate_stream(stream_state.as_deref(), progress.is_some())?;
+            let stream_state = stream_state
+                .as_ref()
+                .map(|state| builder.create_string(state));
             if modules.len() > 32 {
                 bail!("Too many discovered modules")
             }
@@ -217,6 +239,7 @@ pub fn encode(message: &Message) -> Result<Vec<u8>> {
                     modules: Some(modules),
                     active_task_id,
                     progress,
+                    stream_state,
                 },
             ));
         }
@@ -354,6 +377,7 @@ pub fn decode(body: &[u8]) -> Result<Message> {
                 fb::ControlAction::Modules => ControlAction::Modules,
                 fb::ControlAction::TaskProgress => ControlAction::TaskProgress,
                 fb::ControlAction::CancelTask => ControlAction::CancelTask,
+                fb::ControlAction::SubscribeProgress => ControlAction::SubscribeProgress,
                 _ => bail!("Unknown control action"),
             };
             let task_id = control.task_id().map(String::from);
@@ -423,6 +447,10 @@ pub fn decode(body: &[u8]) -> Result<Message> {
                 modules,
                 active_task_id,
                 progress,
+                stream_state: {
+                    validate_stream(response.stream_state(), response.progress().is_some())?;
+                    response.stream_state().map(String::from)
+                },
             })
         }
         fb::MessageKind::Request => {
@@ -547,7 +575,11 @@ mod tests {
     #[test]
     fn targeted_controls_require_identity_and_preserve_progress_frames() {
         let task = Uuid::new_v4().to_string();
-        for action in [ControlAction::TaskProgress, ControlAction::CancelTask] {
+        for action in [
+            ControlAction::TaskProgress,
+            ControlAction::CancelTask,
+            ControlAction::SubscribeProgress,
+        ] {
             let message = Message::Control {
                 id: "control".into(),
                 action,
@@ -589,6 +621,7 @@ mod tests {
         .unwrap()
         .unwrap();
         let reply = Message::ControlReply {
+            stream_state: Some("update".into()),
             id: "c".into(),
             active: true,
             accepted: true,
@@ -620,6 +653,30 @@ mod tests {
         invalid.events.push(event);
         assert!(validate_page(&task, &invalid).is_err());
         assert!(validate_page(&Uuid::new_v4().to_string(), &invalid).is_err());
+    }
+    #[test]
+    fn stream_states_require_pages_and_known_values() {
+        assert!(validate_stream(Some("update"), false).is_err());
+        assert!(validate_stream(Some("success"), true).is_err());
+        for state in ["update", "complete", "timeout"] {
+            assert!(validate_stream(Some(state), true).is_ok());
+        }
+        assert!(validate_stream(None, false).is_ok());
+        let task = Uuid::new_v4().to_string();
+        let request = Message::Control {
+            id: "watch".into(),
+            action: ControlAction::SubscribeProgress,
+            task_id: Some(task),
+            after: 42,
+        };
+        assert!(matches!(
+            decode(&encode(&request).unwrap()).unwrap(),
+            Message::Control {
+                action: ControlAction::SubscribeProgress,
+                after: 42,
+                ..
+            }
+        ));
     }
     #[test]
     fn nested_progress_frames_are_verified_before_access() {
@@ -822,6 +879,7 @@ mod tests {
     fn discovery_roundtrips_and_legacy_controls_have_no_modules() {
         let reply = Message::ControlReply {
             active_task_id: None,
+            stream_state: None,
             progress: None,
             id: "discovery".into(),
             active: false,
