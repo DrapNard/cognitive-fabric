@@ -160,3 +160,18 @@ script now checks demo inference launch/ownership/handoff/reaping and passes aga
 the debug executable. Prior optimized-install evidence predates this runtime change;
 repeat installed verification before release. Crash cleanup and live inference
 remain incomplete.
+
+Optimized inference-startup verification (2026-10-11): source
+`fcd64652bffad1c046d24fbae58c8d7c5eb6bd28` was installed with
+`FLATC=/tmp/cogfabric-flatbuffers/build/flatc cargo install --offline --locked --path . --root /tmp/cogfabric-v1-inference-startup-install-20261011`.
+Cargo reported 45.75 seconds for the optimized build. Binary SHA-256:
+`7cbbe8d572711320829cedf98294c31632ca8bda2b94849dfca6c386754f739c`.
+Smoke script SHA-256:
+`4e07b549ed4aabe3b19506ac151ea6adc7f723b213bf488eb0f490a4d6bb10cf`.
+The installed workflow passed, including demo inference launch intent, owned PID,
+completed handoff and matching confirmed reap, in addition to SQL/arithmetic,
+service, skill rollback and restore. Evidence:
+`/tmp/cogfabric-installed-smoke.TOVIs8`; log:
+`/tmp/cogfabric-inference-startup-installed-smoke.log`. This closes the pending
+installed-source gap above. Real authenticated inference, host-crash cleanup,
+clean-OS setup and independent live benchmarks remain unverified.

@@ -1544,3 +1544,10 @@ against the current debug executable and now checks demo inference launch intent
 owned PID, completed handoff and matching reaped PID. Optimized installed
 verification must follow this runtime change. Host crashes and actual authenticated
 model behavior remain unverified.
+
+Fresh optimized installation of `fcd6465` passed the expanded installed smoke
+workflow, including demo inference launch/ownership/handoff/matching reap.
+`RELEASE_AUDIT.md` records exact source/binary/script hashes and retained evidence.
+The pending installed-source gap above is closed for this commit; cancellation
+and audit-failure startup coverage comes from the real-child Rust regressions.
+No real model or host-crash behavior is inferred from the demo workflow.

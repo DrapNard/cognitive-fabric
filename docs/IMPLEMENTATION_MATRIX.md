@@ -731,3 +731,9 @@ Inference startup ownership validation: all mandatory quality checks pass with
 one demo inference child from launch intent through owned PID, handoff and matching
 reap; debug execution passes. Optimized installed verification is pending for this
 new source. This does not establish host-crash cleanup or real model behavior.
+
+Optimized installed verification of `fcd6465` now passes the expanded CLI/service
+workflow and demo inference ownership/reaping checks. Exact build identity and
+hashes are recorded in `RELEASE_AUDIT.md`. The installed-source gap is closed for
+this commit; host-crash cleanup, general module lifecycle and live-model gates
+remain incomplete.
