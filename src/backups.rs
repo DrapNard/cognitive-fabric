@@ -1,4 +1,4 @@
-//! Consistent operator SQLite backups; external artifacts and config are separate.
+//! Consistent operator SQLite backups with checked configuration metadata.
 use crate::{config::Config, security, store::Store};
 use anyhow::{bail, Result};
 use rusqlite::{
@@ -121,6 +121,18 @@ pub fn create(cfg: &Config, store: &Store) -> Result<Snapshot> {
                 }
             }
         }
+        let mut configuration = cfg.clone();
+        configuration.home = PathBuf::new();
+        let configuration = serde_json::to_string(&configuration)?;
+        if configuration.len() > 64_000 {
+            bail!("Backup configuration exceeds bounds")
+        }
+        target.pragma_update(None, "trusted_schema", false)?;
+        target.execute_batch("CREATE TABLE IF NOT EXISTS backup_configuration (id INTEGER PRIMARY KEY CHECK(id=1), format_version INTEGER NOT NULL, body TEXT NOT NULL);")?;
+        target.execute(
+            "INSERT OR REPLACE INTO backup_configuration(id,format_version,body) VALUES(1,1,?1)",
+            [&configuration],
+        )?;
         target.pragma_update(None, "journal_mode", "DELETE")?;
         let check: String = target.query_row("PRAGMA quick_check(1)", [], |r| r.get(0))?;
         if check != "ok" {
@@ -156,6 +168,10 @@ pub fn create(cfg: &Config, store: &Store) -> Result<Snapshot> {
             hash.update(&buffer[..n]);
         }
         file.set_permissions(fs::Permissions::from_mode(0o400))?;
+        if used.saturating_add(bytes) > cfg.max_database_bytes.saturating_mul(2).min(2_000_000_000)
+        {
+            bail!("Backup byte capacity exhausted after metadata insertion")
+        }
         file.sync_all()?;
         fs::hard_link(&temporary, &destination)?;
         fs::remove_file(&temporary)?;
@@ -166,7 +182,7 @@ pub fn create(cfg: &Config, store: &Store) -> Result<Snapshot> {
             bytes,
             schema_version: schema,
             includes_external_artifacts: false,
-            includes_configuration: false,
+            includes_configuration: true,
             automatic_task_replay: false,
         })
     })();

@@ -967,3 +967,15 @@ Clippy with warnings denied. Tests cover improvement/regression/both-pass/both-f
 missing baseline/arm outcomes, zero denominators, and actual six-arm SQLite results.
 Aggregation introduces no model calls or permissions. Optional larger baselines
 use the same paired machinery; no live performance measurement is inferred.
+
+## Configuration snapshot and recovery
+
+FlatBuffers 25.12.19 mandatory checks passed: fmt check, all-target check, all-target
+171 tests (162 library, three authentication, five managed process, one restore
+CLI), and Clippy with warnings denied. A final assertion-only path check was also
+rerun through the restore CLI test and Clippy. Tests verify configuration opt-in,
+private permissions, source-home exclusion/new-home binding, invalid settings and
+missing metadata before publication, legacy database-only restoration, checksum
+integrity, and actual CLI backup/restore without initializing an unused source.
+The source database is not modified by snapshot metadata insertion. External
+artifact/config lifecycle portability remains partial; weights are never copied.

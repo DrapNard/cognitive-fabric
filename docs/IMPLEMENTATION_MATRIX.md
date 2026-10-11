@@ -246,3 +246,10 @@ unpaired coverage, explicit denominators and null unavailable rates. Unit tests
 cover incomplete/zero-denominator outcomes; the real six-arm SQLite fixture checks
 aggregation from executed tasks. This supplies descriptive dataset regression
 metrics, not the outstanding live held-out robustness or security study.
+
+Configuration recovery: **Implemented** for new checked database snapshots via
+embedded versioned effective settings and explicit `--restore-configuration`.
+`src/backups.rs`, `src/restore.rs` and CLI integration cover preserved settings,
+private new-path publication, invalid/missing metadata rejection, legacy default
+restoration and no task replay. External artifacts/weights and older-schema
+migration remain **Not implemented**; this does not complete full workspace restore.

@@ -123,3 +123,31 @@ before retrying with another new destination. No existing directory is cleaned u
 or overwritten. Same-user hostile tampering remains outside an absolute isolation
 guarantee. Full artifact/configuration archives and older-schema migration restore
 remain separate work.
+
+## Checked configuration recovery
+
+New backups embed version-1 `backup_configuration` metadata in the standalone
+SQLite snapshot. It contains the validated effective runtime configuration (including
+CLI/environment configuration overrides), not the raw source config file. The
+snapshot checksum covers these settings and the task database together. Workspace
+paths are excluded by configuration serialization; environment credentials are
+never configuration fields. Backup reports now set `includes_configuration: true`.
+External artifact/weight files remain excluded. Metadata insertion and final byte
+admission apply to the backup only, without changing the source database.
+
+Pass `--restore-configuration` to `restore-database` to restore these settings.
+The default remains database-only. Explicit configuration restoration requires the
+embedded metadata and supported version, bounds its JSON to 64 KB, validates all
+settings before publishing the database, then creates private 0600 `config.json`
+without overwriting. The regular loader binds settings to the new destination;
+archived source paths cannot redirect workspace access. Old snapshots lacking
+metadata still restore database-only, but explicit configuration requests fail.
+
+Restoring settings is an operator action: review endpoints, model registrations,
+resource ceilings and optional managed-worker/authentication flags. Auth scope
+metadata may be restored; the dedicated credential must still be provided locally.
+As before, publication/sync failures can leave valid partial output in the newly
+reserved directory. This is not atomic full workspace restoration: artifacts,
+model weights, missing external candidate paths and older-schema migration remain
+separate work. The earlier database-only instructions describe default behavior;
+new snapshots additionally include the configuration metadata described here.

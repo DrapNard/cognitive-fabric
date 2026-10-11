@@ -189,3 +189,8 @@ Opt-in local bearer authentication now binds the dedicated operator environment
 credential to one local API scope, including managed workers and discovery.
 Synthetic direct/managed generation and escaped-echo regression tests pass.
 Live authenticated generation remains unverified; see `AUTHENTICATION.md`.
+
+New database backups include bounded effective configuration under the same
+checksum. Restore defaults to database-only; `--restore-configuration` explicitly
+validates and creates private settings for the new workspace. External artifact
+files and older-schema migration remain separate recovery work. See `STORAGE.md`.

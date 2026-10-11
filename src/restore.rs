@@ -31,6 +31,16 @@ pub fn database(
     checksum: &str,
     destination: &Path,
 ) -> Result<Restored> {
+    database_with_configuration(cfg, snapshot, checksum, destination, false)
+}
+
+pub fn database_with_configuration(
+    cfg: &Config,
+    snapshot: &Path,
+    checksum: &str,
+    destination: &Path,
+    restore_configuration: bool,
+) -> Result<Restored> {
     security::authorize("human-cli", "storage.restore")?;
     cfg.validate()?;
     if checksum.len() != 64
@@ -133,6 +143,21 @@ pub fn database(
             [],
             |row| row.get::<_, u64>(0),
         )?;
+        let configuration = if restore_configuration {
+            let (version, body): (u16, String) = db.query_row(
+                "SELECT format_version, body FROM backup_configuration WHERE id=1 AND length(CAST(body AS BLOB))<=64000",
+                [], |row| Ok((row.get(0)?,row.get(1)?)),
+            )?;
+            if version != 1 {
+                bail!("Unsupported backup configuration version")
+            }
+            let mut saved: Config = serde_json::from_str(&body)?;
+            saved.home = destination.into();
+            saved.validate()?;
+            Some(serde_json::to_vec_pretty(&saved)?)
+        } else {
+            None
+        };
         drop(db);
         if started.elapsed() > Duration::from_secs(10) {
             bail!("Restore validation deadline exhausted")
@@ -156,6 +181,16 @@ pub fn database(
         }
         fs::hard_link(&temporary, &published)?;
         fs::remove_file(&temporary)?;
+        if let Some(configuration) = configuration {
+            let mut config_file = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .custom_flags(libc::O_NOFOLLOW)
+                .open(destination.join("config.json"))?;
+            config_file.write_all(&configuration)?;
+            config_file.sync_all()?;
+        }
         fs::File::open(destination)?.sync_all()?;
         let report = Restored {
             format_version: 1,
@@ -165,7 +200,7 @@ pub fn database(
             bytes,
             schema_version: schema,
             running_tasks_not_replayed: running,
-            configuration_restored: false,
+            configuration_restored: restore_configuration,
             external_artifacts_restored: false,
         };
         let mut record = fs::OpenOptions::new()
@@ -201,6 +236,78 @@ pub fn database(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn restores_explicit_configuration_and_rejects_invalid_embedded_settings() {
+        let root =
+            std::env::temp_dir().join(format!("fabric-restore-config-{}", uuid::Uuid::new_v4()));
+        let cfg = Config {
+            home: root.join("source"),
+            max_tokens: 1024,
+            inference_auth_scope: Some("http://127.0.0.1:1234/v1".into()),
+            ..Config::default()
+        };
+        cfg.prepare().unwrap();
+        let store = crate::store::Store::open(&cfg.db()).unwrap();
+        let backup = crate::backups::create(&cfg, &store).unwrap();
+        assert!(backup.includes_configuration);
+        let destination = root.join("restored");
+        let report =
+            database_with_configuration(&cfg, &backup.path, &backup.checksum, &destination, true)
+                .unwrap();
+        assert!(report.configuration_restored);
+        let saved: Config =
+            serde_json::from_slice(&fs::read(destination.join("config.json")).unwrap()).unwrap();
+        // Home is deliberately omitted from serialized configuration; the loader
+        // binds it to the selected workspace rather than an archived source path.
+        assert!(saved.home.as_os_str().is_empty());
+        assert_eq!(
+            Config::load(Some(destination.clone()), None).unwrap().home,
+            destination
+        );
+        assert_eq!(saved.max_tokens, 1024);
+        assert_eq!(saved.inference_auth_scope, cfg.inference_auth_scope);
+        assert_eq!(
+            fs::metadata(destination.join("config.json"))
+                .unwrap()
+                .mode()
+                & 0o777,
+            0o600
+        );
+        let corrupt = root.join("invalid.db");
+        fs::copy(&backup.path, &corrupt).unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&corrupt, fs::Permissions::from_mode(0o600)).unwrap();
+        let db = Connection::open(&corrupt).unwrap();
+        let mut invalid = cfg.clone();
+        invalid.api_base = "http://192.0.2.1/v1".into();
+        db.execute(
+            "UPDATE backup_configuration SET body=?1",
+            [serde_json::to_string(&invalid).unwrap()],
+        )
+        .unwrap();
+        drop(db);
+        let hash = crate::store::sha256(&fs::read(&corrupt).unwrap());
+        let rejected = root.join("rejected");
+        assert!(database_with_configuration(&cfg, &corrupt, &hash, &rejected, true).is_err());
+        assert!(!rejected.join("fabric.sqlite3").exists());
+        assert!(!rejected.join("config.json").exists());
+        let db = Connection::open(&corrupt).unwrap();
+        db.execute_batch("DROP TABLE backup_configuration;")
+            .unwrap();
+        drop(db);
+        let hash = crate::store::sha256(&fs::read(&corrupt).unwrap());
+        assert!(database_with_configuration(
+            &cfg,
+            &corrupt,
+            &hash,
+            &root.join("legacy-request"),
+            true
+        )
+        .is_err());
+        assert!(database(&cfg, &corrupt, &hash, &root.join("legacy-default")).is_ok());
+        drop(store);
+        fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn restores_checked_state_without_overwrite_or_task_replay() {
         let root = std::env::temp_dir().join(format!("fabric-restore-{}", uuid::Uuid::new_v4()));

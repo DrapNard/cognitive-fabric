@@ -346,3 +346,10 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   with paired coverage, explicit denominators and unavailable empty rates.
 - Exclude unexecuted deadline/cancellation cases from comparisons and expose their
   count instead of treating missing outcomes as successes or failures.
+
+### Checked configuration restoration
+
+- Include bounded effective runtime configuration in checksummed SQLite backups
+  without persisting workspace paths or environment credentials.
+- Add explicit restore-configuration opt-in with validated settings, private
+  no-overwrite output and backward-compatible database-only defaults.

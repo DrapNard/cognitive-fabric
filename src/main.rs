@@ -61,6 +61,8 @@ enum Command {
         checksum: String,
         #[arg(long)]
         destination: PathBuf,
+        #[arg(long)]
+        restore_configuration: bool,
     },
     RetentionPreview {
         #[arg(long)]
@@ -310,10 +312,17 @@ async fn main() -> Result<()> {
         snapshot,
         checksum,
         destination,
+        restore_configuration,
     } = &cli.command
     {
         output(
-            &cogfabric::restore::database(&cfg, snapshot, checksum, destination)?,
+            &cogfabric::restore::database_with_configuration(
+                &cfg,
+                snapshot,
+                checksum,
+                destination,
+                *restore_configuration,
+            )?,
             cli.json,
         )?;
         return Ok(());
