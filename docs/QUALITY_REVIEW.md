@@ -1464,3 +1464,33 @@ no arithmetic/inference worker launch. The initial unprivileged broad tool test
 run could not open local sockets; the final full run used the required socket
 permissions and passed. SQL execution/checking is in-process; live inference,
 SQL process provisioning and arbitrary executable isolation remain unverified.
+
+
+### Current installed tool workflow verification — 2026-10-11
+
+The optimized executable built from Rust source commit
+`69190875aef58b821e6daa37e9dbd887698bba64` was installed with
+`FLATC=/tmp/cogfabric-flatbuffers/build/flatc cargo install --offline --locked --path . --root /tmp/cogfabric-v1-tool-install-audit-20261011`.
+Rust/Cargo 1.97.1, FlatBuffers 25.12.19 and cached locked dependencies were used.
+The release build completed successfully (45.05 seconds reported by Cargo).
+Executable SHA-256:
+`4b0145d6323a9e9b81ddf342e535dfaa10f709bdc638d69bf6428bd56d176e42`.
+Only smoke-script/documentation changes followed that Rust source commit.
+
+The expanded `scripts/installed-smoke.sh` passed against that installed executable
+in a new temporary workspace. It retains executable/script hashes and version
+metadata along with JSON task traces. In addition to the earlier offline workflow,
+it verifies one-call arithmetic worker launch/authorization/confirmed reaping,
+cleanup after rejected arithmetic, SQL capability dispatch with no child launch,
+restored worker configuration and actual worker execution after database/RAG
+restore, and both arithmetic and SQL socket-service asks. All six new execution
+cases used zero model calls. The rejected arithmetic case exited with status 1;
+service STOP succeeded and removed the socket. Final local evidence is retained
+at `/tmp/cogfabric-installed-smoke.Q1YToY`.
+
+Mandatory formatting, offline all-target check/tests (292 passed: 272 library,
+20 integration) and Clippy with warnings denied also passed. This supersedes the
+older installed source evidence for tool routing. It does not establish clean-OS
+prerequisite setup, real inference/authentication, model switching, independent
+held-out results, executable sandboxing or neural safety. Future runtime changes
+must repeat installation verification before release; the project remains alpha.

@@ -19,10 +19,35 @@ cleanup() {
     echo "Smoke evidence: $evidence"
 }
 trap cleanup EXIT
-run() {
-    local label=$1
-    shift
-    timeout 20s "$binary" --home "$state" --backend demo --json "$@" >"$evidence/$label.json"
+sha256sum "$binary" >"$evidence/binary.sha256"
+sha256sum "${BASH_SOURCE[0]}" >"$evidence/smoke-script.sha256"
+timeout 5s "$binary" --version >"$evidence/binary-version.txt"
+run_at() {
+    local task_home=$1 label=$2
+    shift 2
+    timeout 20s "$binary" --home "$task_home" --backend demo --json "$@" >"$evidence/$label.json"
+}
+run() { run_at "$state" "$@"; }
+check_worker() {
+    local task_home=$1 label=$2 task
+    task=$(jq -er '.task_id' "$evidence/$label.json")
+    run_at "$task_home" "$label-trace" task "$task"
+    jq -e '
+        ([.events[] | select(.kind == "tool_worker_process")] | length) == 1 and
+        ([.events[] | select(.kind == "tool_worker_process_stopped" and .payload.reaped)] | length) == 1 and
+        ([.events[] | select(.kind == "tool_worker" and .payload.state == "authorized" and .payload.charged_calls == 1)] | length) == 1 and
+        ([.events[] | select(.kind == "worker_process")] | length) == 0
+    ' "$evidence/$label-trace.json" >/dev/null
+}
+check_sql() {
+    local label=$1 task
+    task=$(jq -er '.task_id' "$evidence/$label.json")
+    run "$label-trace" task "$task"
+    jq -e '
+        any(.events[]; .kind == "tool_dispatch" and .payload.module_id == "sql.local" and .payload.module_version == "1.0.0" and .payload.capability == "sql.query") and
+        any(.events[]; .kind == "verification" and .payload.checker == "sqlite_inline/v1" and .payload.verified) and
+        ([.events[] | select(.kind == "tool_worker_process" or .kind == "worker_process")] | length) == 0
+    ' "$evidence/$label-trace.json" >/dev/null
 }
 run init init
 run self-test self-test
@@ -56,6 +81,22 @@ done
 previous=$(jq -er '.id' "$evidence/candidate-1.json")
 run rollback candidate rollback "$previous" --human-approve
 jq -e '.rolled_back' "$evidence/rollback.json" >/dev/null
+run tool-worker-configure configure-tool-worker --enabled true
+jq -e '.arithmetic_process and (.sandboxed | not)' "$evidence/tool-worker-configure.json" >/dev/null
+run managed-arithmetic ask 'calc: 6 * 7' --mode fast
+jq -e '.answer == "42" and .status == "completed" and .calls == 0 and .resources.tool_calls == 2' "$evidence/managed-arithmetic.json" >/dev/null
+check_worker "$state" managed-arithmetic
+run managed-sql ask 'sql:{"tables":[],"query":"SELECT 42 AS total"}' --mode fast
+jq -e '.status == "completed" and .calls == 0 and (.answer | fromjson | .rows == [[42]])' "$evidence/managed-sql.json" >/dev/null
+check_sql managed-sql
+if run rejected-arithmetic ask 'calc: 1 / 0' --mode fast 2>"$evidence/rejected-arithmetic.stderr"; then
+    echo 'Invalid arithmetic unexpectedly succeeded' >&2
+    exit 1
+else
+    [[ $? == 1 ]]
+fi
+jq -e '.status == "rejected" and .calls == 0' "$evidence/rejected-arithmetic.json" >/dev/null
+check_worker "$state" rejected-arithmetic
 run backup backup --include-rag-artifacts
 snapshot=$(jq -er '.path' "$evidence/backup.json")
 checksum=$(jq -er '.checksum' "$evidence/backup.json")
@@ -63,6 +104,11 @@ run restore restore-database "$snapshot" --checksum "$checksum" --destination "$
 jq -e --arg checksum "$checksum" '.source_checksum == $checksum and .configuration_restored and .rag_artifacts_restored == 1' "$evidence/restore.json" >/dev/null
 timeout 20s "$binary" --home "$evidence/restored" --backend demo --json self-test >"$evidence/restored-self-test.json"
 jq -e '.math_ok and .wire_ok' "$evidence/restored-self-test.json" >/dev/null
+run_at "$evidence/restored" restored-config config-show
+jq -e '.arithmetic_process' "$evidence/restored-config.json" >/dev/null
+run_at "$evidence/restored" restored-arithmetic ask 'calc: 9 * 9' --mode fast
+jq -e '.answer == "81" and .status == "completed" and .calls == 0' "$evidence/restored-arithmetic.json" >/dev/null
+check_worker "$evidence/restored" restored-arithmetic
 "$binary" --home "$state" --backend demo serve >"$evidence/service.log" 2>&1 &
 service_pid=$!
 for ((attempt=0; attempt<200; attempt++)); do
@@ -73,6 +119,10 @@ done
 [[ -S "$state/fabric.sock" ]]
 run socket ask 'calc: 10 * 12' --socket
 jq -e '.answer == "120" and .status == "completed"' "$evidence/socket.json" >/dev/null
+check_worker "$state" socket
+run socket-sql ask 'sql:{"tables":[],"query":"SELECT 72 AS total"}' --mode fast --socket
+jq -e '.status == "completed" and .calls == 0 and (.answer | fromjson | .rows == [[72]])' "$evidence/socket-sql.json" >/dev/null
+check_sql socket-sql
 run service-stop stop
 wait "$service_pid"
 service_pid=''

@@ -2,6 +2,14 @@
 
 All notable changes are documented here in English.
 
+### Installed tool lifecycle verification
+
+- Extend installed smoke checks to managed arithmetic authorization/reaping,
+  rejected-task cleanup, SQL routing and restored worker configuration.
+- Verify arithmetic/SQL service asks and retain binary/script hashes with evidence.
+- Validate a fresh optimized installation and all 292 Rust regression tests;
+  keep clean-OS setup and live-model release gates explicitly open.
+
 ### Typed SQL capability modules
 
 - Route SQL through separately pinned, versioned tool modules and bounded queues.

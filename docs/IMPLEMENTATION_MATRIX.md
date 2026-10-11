@@ -669,3 +669,13 @@ inline task-local data and denies host databases, mutations and unsafe functions
 Registered Rust backend code is trusted host code and is not automatically sandboxed.
 SQL process transport/provisioning and broad executable tool loading remain
 **Partial / Not implemented**; arithmetic worker setup remains arithmetic-only.
+
+
+Installed tool workflow: **Implemented and locally verified** through the expanded
+`scripts/installed-smoke.sh` against an optimized isolated source installation of
+`6919087`. Actual CLI/service arithmetic workers are audited/reaped; rejected
+arithmetic is cleaned up; SQL dispatch stays separate; restored configuration
+launches a functioning worker. Binary/script hashes, task traces and exact build
+identity are recorded in `RELEASE_AUDIT.md`. All 292 mandatory Rust tests and quality
+checks pass. This supersedes the earlier installed binary evidence, while final
+runtime changes, clean-OS setup and live inference still require verification.

@@ -55,8 +55,11 @@ Choose new install/state directories. `FLATC=/absolute/path/to/flatc` selects a
 matching compiler when the system compiler differs. Use `--offline` on the install
 command only when all locked dependencies are cached; this is not a clean-machine
 package installation. The workflow script requires Bash, jq, coreutils and Unix
-sockets. It creates fresh temporary state, retains JSON evidence and checks tools,
+sockets. It creates fresh temporary state, retains binary/script hashes and JSON evidence, and checks tools,
 IPC, skill registration, example RAG promotion/rollback and backup restoration.
+It also enables managed arithmetic, verifies audited child reaping after successful
+and rejected tasks, checks SQL capability routing, and runs worker tasks after
+configuration restoration and through the socket service.
 It uses demo inference and operator-attested example datasets; it does not test
 live model quality, independent held-out performance or neural safety.
 
