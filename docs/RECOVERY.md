@@ -416,3 +416,21 @@ execute their skipped nodes during this recovery path. Tests cover real HTTP
 whole-goal revision, FAST zero-prior-call admission, budget-skipped plans, deleted
 valid graphs and consumed boundaries. This supersedes the no-graph limitation
 above. Within-cycle and general repeated continuation remain incomplete.
+
+
+### Repeated saved-boundary recovery
+
+A task may resume again at a later unconsumed solver boundary. Every assembled
+context must preserve the first context's objective, reference bytes, hashes and
+data/permission markers exactly. Its call and cycle anchors must equal the actual
+chronological reservations before that event. The first context and original
+settings/deadline remain authoritative; subsequent assemblies grant no new budget.
+Admission bounds this selected history to 85 records, 8 MB and at most 17 contexts
+(original plus up to 16 additional assemblies). Excess history fails closed.
+
+Regression tests resume through two boundaries into the third original cycle,
+verify cumulative calls and one settings record, and refuse changed context,
+wrong chronological anchors, exhausted cycles and excessive assemblies. This
+supersedes the blanket repeated-recovery limitation above. Repeating recovery
+inside consumed cycles or with unresolved inference remains unsupported; arbitrary
+within-cycle repair is not inferred from duplicate context acceptance.

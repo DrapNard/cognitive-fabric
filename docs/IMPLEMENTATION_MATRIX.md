@@ -523,3 +523,12 @@ original resources and stopping state. A valid planner result with missing graph
 history fails closed. Tests include actual HTTP no-graph revision, FAST and skipped
 budgets plus missing-plan/consumed-boundary denials. This supersedes the preceding
 no-graph limitation; within-cycle and repeated recovery remain **Partial**.
+
+
+Repeated solver-boundary recovery: **Implemented** in
+`src/recovery/continuation.rs`. Up to 17 immutable context assemblies are validated
+against original bytes and chronological call/cycle reservations. Two-boundary
+regression execution retains one settings record, cumulative charges and the
+original cycle cap. Tampered counters/context, consumed/exhausted boundaries and
+excess history fail closed. This supersedes the general repeated-boundary limit;
+arbitrary within-cycle recovery remains **Partial / Not implemented**.

@@ -281,3 +281,10 @@ Unconsumed solver-boundary recovery now also covers FAST tasks, malformed-plan
 whole-goal fallback and explicitly budget-skipped graphs. Valid planner output
 without its graph record is refused. Actual HTTP and budget/stopping regression
 tests pass; within-cycle and repeated recovery remain incomplete.
+
+
+Repeated recovery at later unconsumed solver boundaries now preserves the original
+context/settings/deadline and cumulative counters. Each new context assembly must
+match the original bytes and its chronological call/cycle anchors; history is
+bounded to 17 assemblies. Tests cover two resumptions, unchanged settings, exhausted
+cycles and tampering. Arbitrary within-cycle repair remains incomplete.

@@ -2,6 +2,13 @@
 
 All notable changes are documented here in English.
 
+### Repeated boundary recovery
+
+- Admit later unconsumed solver boundaries while retaining the original context,
+  deadline, settings and cumulative resource ledger.
+- Validate each repeated context against chronological reservations and immutable
+  bytes; bound assembly history and reject changes or exhausted allowances.
+
 ### Whole-goal boundary recovery
 
 - Resume validated unconsumed boundaries for FAST and whole-goal fallback tasks

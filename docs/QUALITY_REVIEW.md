@@ -1368,3 +1368,13 @@ admission with zero prior inference, explicitly budget-skipped plans, refusal of
 missing valid graphs and consumed boundaries. Original counters and stopping
 state remain enforced; no new inference or authority is granted by absent plans.
 General repeated and within-cycle recovery remain unfinished.
+
+## Repeated solver-boundary recovery (2026-10-11)
+
+Formatting, offline all-target checking, Clippy with warnings denied and all-target
+regressions passed with FlatBuffers compiler/crate 25.12.19: 246 tests (229 library,
+17 integration). New tests restore two successive boundaries while retaining one
+settings record and the original call/cycle ledger. Changed context bytes and
+chronological counters, exhausted cycles and more than 17 assemblies are refused.
+Existing HTTP/process tests also pass. This validates saved-boundary repetition,
+not recovery inside consumed cycles or external inference termination.

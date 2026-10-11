@@ -51,7 +51,8 @@ fn prepare(db: &rusqlite::Connection, task: &str) -> Result<Checkpoint> {
     let mut solver_texts = BTreeMap::new();
     let mut planner_texts = BTreeMap::new();
     let mut bytes = 0usize;
-    let mut stmt = db.prepare("SELECT kind,CASE WHEN length(CAST(source AS BLOB))<=64 THEN source END,CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN payload END FROM events WHERE task_id=?1 AND kind IN ('execution_settings','execution_options','model_registration','module_snapshot','reasoning_context','reasoning') ORDER BY id LIMIT 70")?;
+    let mut contexts = 0usize;
+    let mut stmt = db.prepare("SELECT kind,CASE WHEN length(CAST(source AS BLOB))<=64 THEN source END,CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN payload END,id FROM events WHERE task_id=?1 AND kind IN ('execution_settings','execution_options','model_registration','module_snapshot','reasoning_context','reasoning') ORDER BY id LIMIT 86")?;
     let mut rows = stmt.query([task])?;
     let mut count = 0;
     while let Some(row) = rows.next()? {
@@ -60,7 +61,7 @@ fn prepare(db: &rusqlite::Connection, task: &str) -> Result<Checkpoint> {
         let source: String = row.get(1)?;
         let raw: String = row.get(2)?;
         bytes += raw.len();
-        if count > 69 || bytes > 8_000_000 {
+        if count > 85 || bytes > 8_000_000 {
             bail!("Checkpoint exceeds bounded history")
         }
         let payload: Value = serde_json::from_str(&raw)?;
@@ -95,6 +96,34 @@ fn prepare(db: &rusqlite::Connection, task: &str) -> Result<Checkpoint> {
                 "reasoning_context" => "jev-r",
                 _ => "runtime",
             };
+            if kind == "reasoning_context" {
+                contexts += 1;
+                if contexts > 17 || source != expected {
+                    bail!("Invalid or excessive context history")
+                }
+                let event_id: u64 = row.get(3)?;
+                let (calls,cycles):(u64,u64)=db.query_row("SELECT (SELECT count(*) FROM events WHERE task_id=?1 AND id<?2 AND kind='model_dispatch'),(SELECT count(*) FROM events WHERE task_id=?1 AND id<?2 AND kind='cycle_reservation')",rusqlite::params![task,event_id],|r|Ok((r.get(0)?,r.get(1)?)))?;
+                if payload["calls_before"] != calls || payload["cycles_before"] != cycles {
+                    bail!("Context counters differ from chronological reservations")
+                }
+                if let Some(original) = snapshots.get(&kind) {
+                    for field in [
+                        "format_version",
+                        "objective",
+                        "context",
+                        "objective_hash",
+                        "context_hash",
+                        "prompt_base_hash",
+                        "untrusted_data",
+                        "permissions_restorable",
+                    ] {
+                        if payload[field] != original[field] {
+                            bail!("Continuation changed immutable reasoning context")
+                        }
+                    }
+                    continue;
+                }
+            }
             if source != expected || snapshots.insert(kind, payload).is_some() {
                 bail!("Invalid or repeated checkpoint snapshot")
             }
@@ -169,7 +198,7 @@ fn prepare(db: &rusqlite::Connection, task: &str) -> Result<Checkpoint> {
     let calls_before = context["calls_before"]
         .as_u64()
         .ok_or_else(|| anyhow::anyhow!("Missing context charge anchor"))?;
-    let recorded_before: u64 = db.query_row("SELECT count(*) FROM events WHERE task_id=?1 AND kind='model_dispatch' AND id < (SELECT id FROM events WHERE task_id=?1 AND kind='reasoning_context')", [task], |r| r.get(0))?;
+    let recorded_before: u64 = db.query_row("SELECT count(*) FROM events WHERE task_id=?1 AND kind='model_dispatch' AND id < (SELECT min(id) FROM events WHERE task_id=?1 AND kind='reasoning_context')", [task], |r| r.get(0))?;
     if calls_before != recorded_before {
         bail!("Context charge anchor differs from dispatch history")
     }
@@ -1069,7 +1098,7 @@ mod tests {
             rusqlite::params![task, id],
         )
         .unwrap();
-        db.execute("DELETE FROM events WHERE task_id=?1 AND kind='reasoning_context' AND id!=(SELECT min(id) FROM events WHERE task_id=?1 AND kind='reasoning_context')",[task]).unwrap();
+
         drop(db);
     }
     #[tokio::test]
@@ -1148,5 +1177,124 @@ mod tests {
                 assert_eq!(resumed.stop_reason, "no_progress");
             }
         }
+    }
+    #[tokio::test]
+    async fn repeated_revision_recovery_preserves_one_original_budget_and_context() {
+        let (store, task) = fixture().await;
+        save_revision_boundary(&store, &task).await;
+        let saved = prepare(&store.lock().unwrap(), &task).unwrap();
+        let backend = Arc::new(Script(Mutex::new(
+            vec![("solver", "[2,3,1]"), ("solver", "[1,2,3]")].into(),
+        )));
+        let mut second = Session::restored(
+            saved.cfg,
+            store.clone(),
+            backend,
+            task.clone(),
+            &saved.mode,
+            saved.state,
+        )
+        .unwrap();
+        second
+            .continue_solver(
+                saved.boundary.as_ref().unwrap(),
+                &saved.query,
+                &saved.context,
+                &saved.mode,
+            )
+            .await
+            .unwrap();
+        {
+            let db = store.lock().unwrap();
+            let id:u64=db.query_row("SELECT id FROM events WHERE task_id=?1 AND kind='reasoning_boundary' AND json_extract(payload,'$.cycles_before')=2",[&task],|r|r.get(0)).unwrap();
+            db.execute(
+                "DELETE FROM events WHERE task_id=?1 AND id>?2",
+                rusqlite::params![task, id],
+            )
+            .unwrap();
+        }
+        let saved = prepare(&store.lock().unwrap(), &task).unwrap();
+        assert_eq!(saved.state.resources.calls, 5);
+        assert_eq!(saved.state.resources.cycles, 2);
+        let backend = Arc::new(Script(Mutex::new(vec![("solver", "[1,2,3]")].into())));
+        let mut third = Session::restored(
+            saved.cfg,
+            store.clone(),
+            backend,
+            task.clone(),
+            &saved.mode,
+            saved.state,
+        )
+        .unwrap();
+        third
+            .continue_solver(
+                saved.boundary.as_ref().unwrap(),
+                &saved.query,
+                &saved.context,
+                &saved.mode,
+            )
+            .await
+            .unwrap();
+        assert!(third.verified);
+        assert_eq!(third.resources.calls, 6);
+        assert_eq!(third.resources.cycles, 3);
+        let db = store.lock().unwrap();
+        let settings: u32 = db
+            .query_row(
+                "SELECT count(*) FROM events WHERE task_id=?1 AND kind='execution_settings'",
+                [&task],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(settings, 1);
+        let contexts: u32 = db
+            .query_row(
+                "SELECT count(*) FROM events WHERE task_id=?1 AND kind='reasoning_context'",
+                [&task],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(contexts, 4);
+        assert!(
+            prepare(&db, &task).is_err(),
+            "Consumed final cycle cannot be reset"
+        );
+    }
+    #[tokio::test]
+    async fn repeated_contexts_must_match_original_bytes_and_chronological_charges() {
+        let (store, task) = fixture().await;
+        save_revision_boundary(&store, &task).await;
+        let raw:String=store.lock().unwrap().query_row("SELECT payload FROM events WHERE task_id=?1 AND kind='reasoning_context' ORDER BY id DESC LIMIT 1",[&task],|r|r.get(0)).unwrap();
+        for (field, value) in [
+            ("context", json!("changed")),
+            ("calls_before", json!(0)),
+            ("cycles_before", json!(1)),
+            ("permissions_restorable", json!(true)),
+        ] {
+            let mut changed: Value = serde_json::from_str(&raw).unwrap();
+            changed[field] = value;
+            store.lock().unwrap().execute("UPDATE events SET payload=?2 WHERE id=(SELECT max(id) FROM events WHERE task_id=?1 AND kind='reasoning_context')",rusqlite::params![task,changed.to_string()]).unwrap();
+            assert!(
+                prepare(&store.lock().unwrap(), &task).is_err(),
+                "Accepted context mutation {field}"
+            );
+        }
+        store.lock().unwrap().execute("UPDATE events SET payload=?2 WHERE id=(SELECT max(id) FROM events WHERE task_id=?1 AND kind='reasoning_context')",rusqlite::params![task,raw]).unwrap();
+        let mut context: Value = serde_json::from_str(&raw).unwrap();
+        context["calls_before"] = json!(4);
+        context["cycles_before"] = json!(1);
+        for _ in 0..15 {
+            store
+                .event(&task, "reasoning_context", "jev-r", context.clone())
+                .unwrap();
+        }
+        assert!(prepare(&store.lock().unwrap(), &task).is_ok());
+        store
+            .event(&task, "reasoning_context", "jev-r", context)
+            .unwrap();
+        assert!(
+            prepare(&store.lock().unwrap(), &task).is_err(),
+            "Exceeded bounded context history"
+        );
     }
 }
