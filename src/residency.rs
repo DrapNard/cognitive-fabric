@@ -297,14 +297,10 @@ pub async fn mutate(
     }.await;
     match outcome {
         Ok(report) => {
-            store.event(
+            finish_operation(
+                store,
                 &task,
-                "model_residency",
-                "human-cli",
                 json!({"state":"server_confirmed","report":report}),
-            )?;
-            store.finish_task(
-                &task,
                 "completed",
                 "Server-confirmed operator residency operation; no generation tested",
             )?;
@@ -312,9 +308,10 @@ pub async fn mutate(
         }
         Err(_) => {
             // Never persist provider error bodies or retry an uncertain external effect.
-            store.event(&task, "model_residency", "human-cli", json!({"state":"outcome_unknown","automatic_retry":false,"automatic_cleanup":false}))?;
-            store.finish_task(
+            finish_operation(
+                store,
                 &task,
+                json!({"state":"outcome_unknown","automatic_retry":false,"automatic_cleanup":false}),
                 "interrupted",
                 "Residency outcome unknown; inspect native inventory before another operation",
             )?;
@@ -374,5 +371,98 @@ mod lifecycle_tests {
         drop(live);
         drop(store);
         std::fs::remove_dir_all(home).unwrap();
+    }
+}
+
+fn finish_operation(
+    store: &crate::store::Store,
+    task: &str,
+    payload: Value,
+    state: &str,
+    answer: &str,
+) -> Result<()> {
+    let raw = serde_json::to_string(&payload)?;
+    if raw.len() > 4096 {
+        bail!("Residency completion metadata exceeds bounds")
+    }
+    let mut db = store.lock()?;
+    let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+    let inserted = tx.execute("INSERT INTO events(task_id,kind,source,payload,created) SELECT id,'model_residency','human-cli',?2,unixepoch() FROM tasks WHERE id=?1 AND status='running'", rusqlite::params![task,raw])?;
+    if inserted != 1 {
+        bail!("Residency operation anchor is missing or no longer running")
+    }
+    let changed = tx.execute(
+        "UPDATE tasks SET status=?2,answer=?3,updated=unixepoch() WHERE id=?1 AND status='running'",
+        rusqlite::params![task, state, answer],
+    )?;
+    if changed != 1 {
+        bail!("Residency operation status update failed")
+    }
+    tx.commit()?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod completion_tests {
+    use super::*;
+    #[test]
+    fn operation_completion_is_atomic_under_audit_and_status_failures() {
+        let store = crate::store::Store::in_memory().unwrap();
+        for failure in ["audit", "status", "none"] {
+            let task = store
+                .create_task("Residency test operation", "fast")
+                .unwrap();
+            match failure {
+                "audit" => store.lock().unwrap().execute_batch("CREATE TRIGGER refuse_completion BEFORE INSERT ON events WHEN NEW.kind='model_residency' BEGIN SELECT RAISE(ABORT,'audit unavailable'); END;").unwrap(),
+                "status" => store.lock().unwrap().execute_batch("CREATE TRIGGER refuse_completion BEFORE UPDATE ON tasks BEGIN SELECT RAISE(ABORT,'status unavailable'); END;").unwrap(),
+                _ => {}
+            }
+            let result = finish_operation(
+                &store,
+                &task,
+                json!({"state":"server_confirmed"}),
+                "completed",
+                "Server observation only",
+            );
+            let trace = store.task(&task).unwrap();
+            if failure == "none" {
+                result.unwrap();
+                assert_eq!(trace["task"]["status"], "completed");
+                assert!(finish_operation(
+                    &store,
+                    &task,
+                    json!({"state":"outcome_unknown"}),
+                    "interrupted",
+                    "unknown"
+                )
+                .is_err());
+            } else {
+                assert!(result.is_err());
+                assert_eq!(trace["task"]["status"], "running");
+                assert!(trace["events"].as_array().unwrap().is_empty());
+                store
+                    .lock()
+                    .unwrap()
+                    .execute_batch("DROP TRIGGER refuse_completion")
+                    .unwrap();
+                finish_operation(
+                    &store,
+                    &task,
+                    json!({"state":"outcome_unknown"}),
+                    "interrupted",
+                    "Unknown external outcome",
+                )
+                .unwrap();
+                assert_eq!(store.task(&task).unwrap()["task"]["status"], "interrupted");
+            }
+        }
+        assert!(finish_operation(
+            &store,
+            &uuid::Uuid::new_v4().to_string(),
+            json!({}),
+            "completed",
+            "missing"
+        )
+        .is_err());
     }
 }

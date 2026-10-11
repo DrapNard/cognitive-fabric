@@ -2,6 +2,11 @@
 
 All notable changes are documented here in English.
 
+### Atomic native lifecycle outcomes
+
+- Commit final residency audit metadata and task status together, rolling back
+  both on audit or status-update failure without retrying external effects.
+
 ### Explicit native model lifecycle
 
 - Add operator-approved load/unload with exclusive workspace leases, exact native

@@ -131,3 +131,10 @@ inspect inventory and the operation's task trace first. Process death or an audi
 failure can leave a running/requested record; that is not proof the request failed.
 Real authenticated host validation, exclusive cross-client ownership, automatic
 residency scheduling and end-to-end switching remain incomplete.
+
+Final residency audit and terminal task status now commit in one immediate SQLite
+transaction. An audit insertion or status-update failure rolls both back; the
+pre-effect requested record remains and does not establish success or failure of
+the external operation. Missing or already-terminal anchors refuse finalization.
+This prevents a partially committed confirmation from appearing as a completed
+operation. It cannot undo a load/unload already performed by the model server.

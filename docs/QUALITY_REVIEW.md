@@ -1252,3 +1252,15 @@ No real weights were loaded by these tests. Actual host lifecycle and generation
 cross-client instance ownership and automatic switching remain unverified.
 Mutation requests are bounded to 60 seconds; no automatic retries or inference
 calls are added. Missing outcomes cannot safely trigger automatic cleanup.
+
+## Atomic residency completion
+
+Formatting, all-target check, 222 tests (208 library, 14 integration) and Clippy
+with denied warnings pass offline with FlatBuffers compiler/crate 25.12.19.
+Fault injection verifies that both audit-insert and task-update failures roll back
+the entire local completion transaction. Subsequent unknown-outcome finalization
+works, while missing and already-terminal anchors fail without extra evidence.
+Existing actual CLI load/unload and credential tests still pass. Completion
+metadata is capped at 4 KiB; no network calls, retries or model authority are
+added. External side effects remain outside SQLite rollback and real host
+validation remains outstanding.

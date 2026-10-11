@@ -53,7 +53,7 @@ remains a pre-release. `QUALITY_REVIEW.md` preserves verification history.
 | 12, 14 | CLI/service | Partial | `src/main.rs`: initialization/configuration, ask, service controls, task-specific socket progress/cancellation, skill lifecycle, ingestion/search, task traces, candidates/rollback, benchmark, self-test; real socket fixtures | Live residency lifecycle |
 | 12, 13 | Hardware/performance claims | Partial | Optional whole-device GPU diagnostics sampled real host memory/utilization/power; no energy or large-model advantage claimed | Authenticated live inference, task-attributed telemetry and equal-budget comparisons |
 
-All 221 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
+All 222 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
 all-target build checks and Clippy with denied warnings pass. Fixtures do not prove
 GPU integration, neural quality, immutable backend weights or live model switching.
 
@@ -442,3 +442,10 @@ outcomes remain interrupted without retries or implicit cleanup. Cross-client
 ownership cannot be established by this API; automatic lifecycle scheduling,
 weight identity, generation after switching and real host validation stay
 **Partial / Not verified**. See `MODELS.md` for operator responsibilities.
+
+Residency audit/status consistency: **Implemented** in `src/residency.rs`.
+Terminal confirmation/unknown-outcome metadata and task status commit atomically;
+injected audit/status failures leave the prior running state without partial
+completion evidence. Missing and terminal anchors are rejected. External model
+server effects remain outside the database transaction and are never retried
+merely because local persistence failed.
