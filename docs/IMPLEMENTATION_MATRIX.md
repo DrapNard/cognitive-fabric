@@ -449,3 +449,11 @@ injected audit/status failures leave the prior running state without partial
 completion evidence. Missing and terminal anchors are rejected. External model
 server effects remain outside the database transaction and are never retried
 merely because local persistence failed.
+
+Installed binary workflow: **Implemented and locally verified** through
+`scripts/installed-smoke.sh`. An isolated optimized offline source installation
+passes tool tasks, skill registration, reference retrieval, example RAG promotion/
+rollback, configuration/artifact restore and real socket ask/stop in fresh state.
+README documents installation prerequisites and reproduction; CI includes the
+workflow. Clean-OS package setup, remote CI and live inference remain unverified.
+See `RELEASE_AUDIT.md` for source/binary identity and evidence limits.

@@ -30,6 +30,8 @@ jobs:
         run: cargo test --all-targets
       - name: CLI smoke
         run: cargo run -- --home ./test-state self-test
+      - name: Complete local CLI workflow smoke
+        run: bash scripts/installed-smoke.sh "$PWD/target/debug/cogfabric"
       - name: Offline security boundary evaluation
         run: cargo run -- --home ./test-state --json security-eval
       - name: Offline training preflight tests (no ML dependencies)

@@ -2,6 +2,13 @@
 
 All notable changes are documented here in English.
 
+### Installed binary workflow verification
+
+- Add a repeatable fresh-state CLI workflow for installed binaries, covering
+  deterministic tools, socket lifecycle, skills, RAG rollback and restore.
+- Document and verify isolated optimized source installation; include the
+  workflow in CI without claiming live-model or independent benchmark results.
+
 ### Atomic native lifecycle outcomes
 
 - Commit final residency audit metadata and task status together, rolling back

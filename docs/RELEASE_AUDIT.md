@@ -9,7 +9,7 @@ Clippy with warnings denied, using FlatBuffers compiler/crate 25.12.19.
 
 | Goal criterion | Evidence inspected | Assessment / remaining proof |
 |---|---|---|
-| 1. Workspace builds | `Cargo.toml`, all-target check | Passed locally; clean installation still needs verification. |
+| 1. Workspace builds | `Cargo.toml`, all-target check | Passed locally; isolated optimized source installation also passed with cached dependencies. |
 | 2. Formatting and Clippy | Mandatory checks in `QUALITY_REVIEW.md` | Passed locally. |
 | 3. Mandatory tests | All-target test results, `tests/` | 222 passed; fixtures do not establish live model quality. |
 | 4. FlatBuffers IPC | `protocol/`, `src/wire.rs`, `src/fabric/`, malformed/compatibility/socket tests | Implemented for present transports; broader module compatibility remains partial. |
@@ -25,7 +25,7 @@ Clippy with warnings denied, using FlatBuffers compiler/crate 25.12.19.
 | 14. Lifecycle documented | `MODELS.md`, `EXPERTS.md`, `WORKERS.md` | Metadata lifecycle documented; explicit native load/unload is fixture-tested; automatic scheduling and real host validation remain incomplete. |
 | 15. Reproducible benchmarks | `src/benchmarking.rs`, `evaluation/`, `BENCHMARKING.md` | Six-arm runner and provisional corpus exist; reviewed unseen dataset and real equal-budget model study missing. |
 | 16. Accurate matrix | `IMPLEMENTATION_MATRIX.md` | Partial statuses retained; historical paragraphs must be read with later explicit superseding entries. |
-| 17. Verified docs/installation | `README.md`, CI workflow | Existing checkout builds; fresh installation and full documented walkthrough not yet demonstrated. |
+| 17. Verified docs/installation | `README.md`, CI workflow | Isolated source install and offline CLI walkthrough passed; clean-OS prerequisite setup and live inference instructions remain unverified. |
 | 18. Honest experimental claims | `EVOLUTION.md`, `MODELS.md`, `THREAT_MODEL.md` | Neural adaptation remains experimental and neural promotion denied; no trained Jev or superiority claim. |
 
 ## Next verifiable milestones
@@ -45,10 +45,32 @@ Clippy with warnings denied, using FlatBuffers compiler/crate 25.12.19.
    credential locally. Establish an available small generative baseline, review
    the held-out technical corpus, then execute comparable model studies. Never
    search token files, weaken server authentication or substitute mock scores.
-5. Run installation/documentation walkthroughs and the complete release gate
-   again against the final implementation. Preserve unavailable GPU attribution
+5. Repeat the verified source-install/offline workflow against the final implementation,
+   additionally verify clean-OS prerequisites and live setup, then run the complete release gate. Preserve unavailable GPU attribution
    and energy measurements as unavailable.
 
 Novel neural architectures and automatic neural promotion are not substitutes
 for these infrastructure requirements. The goal explicitly permits optional
 offline LoRA to remain experimental. No release tag or publication is authorized.
+
+## Installed release binary evidence
+
+At source commit `abb23c1f77aefa12c8b505ee71fbc972b004a163`,
+`cargo install --offline --locked --path . --root /tmp/cogfabric-v1-install-audit-20261011`
+with `FLATC=/tmp/cogfabric-flatbuffers/build/flatc` successfully compiled and installed
+an optimized executable in a separate directory. Rust/Cargo 1.97.1 and flatc
+25.12.19 were already available; dependencies came from the local cache. Binary
+SHA-256: `1c9897138bd3e309cdfbb4a244969915c6a8efbb6ea9eff1b89de9239f7c6edc`.
+This is not evidence of a fresh operating-system package installation.
+
+`scripts/installed-smoke.sh` passed against that binary using a new temporary
+workspace. It verifies arithmetic/SQL with zero inference calls, 24 security
+boundary probes, checker registration/activation/health, reference ingestion and
+retrieval, the ten-case arithmetic example, two reviewed example RAG promotions,
+rollback to the first candidate, configuration/RAG artifact backup restoration,
+restored self-test and an actual Unix socket ask/stop with socket cleanup.
+Local JSON evidence is retained at `/tmp/cogfabric-installed-smoke.2yzLfs`.
+Temporary evidence paths are observations, not portable repository artifacts;
+the script provides reproduction. The example dataset's operator review flags
+establish no independent held-out status or live-model result. Current CI is
+configured to run the workflow with its built binary; remote CI has not been run.

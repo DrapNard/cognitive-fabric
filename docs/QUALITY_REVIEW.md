@@ -1264,3 +1264,21 @@ Existing actual CLI load/unload and credential tests still pass. Completion
 metadata is capped at 4 KiB; no network calls, retries or model authority are
 added. External side effects remain outside SQLite rollback and real host
 validation remains outstanding.
+
+## Isolated optimized installation and CLI walkthrough
+
+`cargo install --offline --locked --path . --root /tmp/cogfabric-v1-install-audit-20261011`
+passed with FLATC 25.12.19, producing an optimized installed binary from `abb23c1`.
+The build used cached dependencies and took 3m21s; this is build timing, not task
+performance. `bash -n scripts/installed-smoke.sh` passed. The workflow passed both
+with the development binary and with the installed release binary in separate new
+state directories. Explicit JSON assertions verify returned behavior, not merely
+exit status. Evidence/source identity is recorded in `RELEASE_AUDIT.md`.
+
+Runtime Rust code is unchanged since the 222-test mandatory check run. This
+change adds reproducible installation/workflow verification and CI configuration;
+remote CI and a fresh OS/package-manager installation were not executed. Ten
+arithmetic examples all passed deterministically, which proves no live LLM quality,
+held-out benchmark improvement or neural safety. The service is stopped by the
+script and its socket removal is checked; retained temporary files contain only
+synthetic demonstration data.

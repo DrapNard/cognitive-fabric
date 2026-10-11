@@ -40,6 +40,26 @@ cargo test
 ./target/release/cogfabric --home ./.local self-test
 ```
 
+## Install a standalone binary
+
+With Rust and the matching `flatc` 25.12.19 already installed:
+
+```bash
+cargo install --locked --path . --root /tmp/cognitive-fabric-install
+/tmp/cognitive-fabric-install/bin/cogfabric --home /tmp/cognitive-fabric-state init
+/tmp/cognitive-fabric-install/bin/cogfabric --home /tmp/cognitive-fabric-state self-test
+bash scripts/installed-smoke.sh /tmp/cognitive-fabric-install/bin/cogfabric
+```
+
+Choose new install/state directories. `FLATC=/absolute/path/to/flatc` selects a
+matching compiler when the system compiler differs. Use `--offline` on the install
+command only when all locked dependencies are cached; this is not a clean-machine
+package installation. The workflow script requires Bash, jq, coreutils and Unix
+sockets. It creates fresh temporary state, retains JSON evidence and checks tools,
+IPC, skill registration, example RAG promotion/rollback and backup restoration.
+It uses demo inference and operator-attested example datasets; it does not test
+live model quality, independent held-out performance or neural safety.
+
 ## Commands
 
 ```bash
