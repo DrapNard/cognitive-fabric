@@ -96,6 +96,28 @@ enum Command {
     CancelTask {
         id: String,
     },
+    ResidencyLoad {
+        #[arg(long)]
+        api_base: String,
+        #[arg(long)]
+        authenticate: bool,
+        #[arg(long)]
+        model: String,
+        #[arg(long, default_value = "2048")]
+        context_length: u32,
+        #[arg(long)]
+        human_approve: bool,
+    },
+    ResidencyUnload {
+        #[arg(long)]
+        api_base: String,
+        #[arg(long)]
+        authenticate: bool,
+        #[arg(long)]
+        instance_id: String,
+        #[arg(long)]
+        human_approve: bool,
+    },
     ResidencyStatus {
         #[arg(long)]
         api_base: String,
@@ -507,6 +529,40 @@ async fn main() -> Result<()> {
             changed.inference_process = enabled;
             changed.save()?;
             json!({"inference_process":enabled,"sandboxed":false})
+        }
+        Command::ResidencyLoad {
+            api_base,
+            authenticate,
+            model,
+            context_length,
+            human_approve,
+        } => {
+            cogfabric::residency::mutate(
+                &store,
+                &api_base,
+                authenticate,
+                cogfabric::residency::Mutation::Load {
+                    model,
+                    context_length,
+                },
+                human_approve,
+            )
+            .await?
+        }
+        Command::ResidencyUnload {
+            api_base,
+            authenticate,
+            instance_id,
+            human_approve,
+        } => {
+            cogfabric::residency::mutate(
+                &store,
+                &api_base,
+                authenticate,
+                cogfabric::residency::Mutation::Unload { instance_id },
+                human_approve,
+            )
+            .await?
         }
         Command::ResidencyStatus {
             api_base,

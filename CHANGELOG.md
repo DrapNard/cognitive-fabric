@@ -2,6 +2,13 @@
 
 All notable changes are documented here in English.
 
+### Explicit native model lifecycle
+
+- Add operator-approved load/unload with exclusive workspace leases, exact native
+  inventory preflight, durable intent and fresh inventory confirmation.
+- Preserve uncertain external outcomes without automatic retries or unloads;
+  disclose that native instance IDs do not establish exclusive ownership.
+
 ### Native local model residency inspection
 
 - Add bounded operator-only LM Studio native inventory with installed keys,

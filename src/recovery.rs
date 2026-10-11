@@ -16,7 +16,7 @@ use std::{
 
 pub(crate) struct ExecutionLease(#[allow(dead_code)] File);
 impl ExecutionLease {
-    fn acquire(path: &Path, exclusive: bool) -> Result<Self> {
+    pub(crate) fn acquire(path: &Path, exclusive: bool) -> Result<Self> {
         let file = OpenOptions::new()
             .read(true)
             .write(true)

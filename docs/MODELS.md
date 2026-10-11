@@ -94,3 +94,40 @@ This operator-only read command performs no load, unload, download or mutation.
 It provides instance identity needed by the subsequent lifecycle implementation;
 ownership-aware loading/unloading, model switching and real authenticated host
 validation remain incomplete.
+
+## Explicit native load and unload
+
+```sh
+cogfabric residency-load --api-base http://127.0.0.1:1234/api/v1 \
+  --model installed-model-key --context-length 2048 --human-approve
+cogfabric residency-unload --api-base http://127.0.0.1:1234/api/v1 \
+  --instance-id exact-loaded-instance --human-approve
+```
+
+Add `--authenticate` to use the dedicated residency credential. These commands
+use the documented [load](https://lmstudio.ai/docs/developer/rest/load) and
+[unload](https://lmstudio.ai/docs/developer/rest/unload) endpoints; they neither
+download weights nor alter saved inference selection. Load requires an installed
+key with no loaded instances and context between 1 and 32,768. Unload requires an
+exact currently listed instance. There is no unload-all or implicit replacement.
+
+An exclusive workspace execution lease prevents these operations while framework
+tasks/workers hold their shared leases. It does not coordinate another workspace,
+LM Studio's UI or other clients: the operator must ensure the instance is unused.
+Inventory and load responses cannot establish exclusive ownership; every report
+keeps `ownership_established: false`. No automatic cleanup/unload is authorized
+merely because a load returned an instance ID.
+
+A bounded operator task records exact intent before POST; audit failure prevents
+the request. Native requests retain response/credential protections, with a
+60-second mutation timeout and three-second inventory timeout. A fresh inventory
+must confirm the response instance under the requested model/context, or confirm
+absence after unload. Reports distinguish measured request elapsed time from
+provider-reported load time. They do not prove generation or immutable weights.
+
+Errors after sending a request conservatively record an interrupted operation
+with unknown external outcome. No automatic retry, rollback or unload follows:
+inspect inventory and the operation's task trace first. Process death or an audit
+failure can leave a running/requested record; that is not proof the request failed.
+Real authenticated host validation, exclusive cross-client ownership, automatic
+residency scheduling and end-to-end switching remain incomplete.

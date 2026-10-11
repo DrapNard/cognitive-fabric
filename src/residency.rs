@@ -1,4 +1,4 @@
-//! Operator-only LM Studio native residency observations; no model mutation.
+//! Operator-only bounded LM Studio native residency observations and lifecycle.
 use crate::{backend, credentials::Bearer, security};
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
@@ -75,9 +75,17 @@ fn endpoint(base: &str) -> Result<url::Url> {
     Ok(url)
 }
 
-pub async fn status(base: &str, authenticate: bool) -> Result<Value> {
-    security::authorize("human-cli", "model.residency.inspect")?;
-    let endpoint = endpoint(base)?;
+async fn request(
+    base: &str,
+    authenticate: bool,
+    operation: Option<&str>,
+    body: Option<Value>,
+    timeout: Duration,
+) -> Result<Value> {
+    let mut endpoint = endpoint(base)?;
+    if let Some(operation) = operation {
+        endpoint.set_path(&format!("/api/v1/models/{operation}"));
+    }
     let credential = if authenticate {
         Some(Bearer::new(std::env::var(CREDENTIAL_ENV).map_err(
             |_| anyhow::anyhow!("Dedicated residency credential is unavailable"),
@@ -88,13 +96,15 @@ pub async fn status(base: &str, authenticate: bool) -> Result<Value> {
     let client = reqwest::Client::builder()
         .no_proxy()
         .redirect(reqwest::redirect::Policy::none())
-        .timeout(Duration::from_secs(3))
+        .timeout(timeout)
         .build()?;
-    let mut request = client.get(endpoint.clone());
+    let mut request = match body {
+        Some(body) => client.post(endpoint.clone()).json(&body),
+        None => client.get(endpoint.clone()),
+    };
     if let Some(credential) = &credential {
         request = credential.apply(request)?;
     }
-    let start = Instant::now();
     let mut response = request.send().await?;
     if !response.status().is_success() {
         bail!("Native model inventory returned a non-success status")
@@ -117,13 +127,20 @@ pub async fn status(base: &str, authenticate: bool) -> Result<Value> {
     if let Some(credential) = &credential {
         credential.reject_echo(&serde_json::to_vec(&value)?)?;
     }
+    Ok(value)
+}
+
+pub async fn status(base: &str, authenticate: bool) -> Result<Value> {
+    security::authorize("human-cli", "model.residency.inspect")?;
+    let start = Instant::now();
+    let value = request(base, authenticate, None, None, Duration::from_secs(3)).await?;
     let models = parse(&serde_json::to_vec(&value)?)?;
     let loaded = models
         .iter()
         .map(|m| m.loaded_instances.len())
         .sum::<usize>();
     Ok(
-        json!({"format_version":1,"adapter":"lmstudio-native-v1","endpoint":endpoint.as_str(),
+        json!({"format_version":1,"adapter":"lmstudio-native-v1","endpoint":endpoint(base)?.as_str(),
         "models":models,"loaded_instances":loaded,"observation_ms":start.elapsed().as_secs_f64()*1000.0,
         "server_reported":true,"weights_attested":false,"generation_tested":false,
         "ownership_established":false,"model_mutation_performed":false}),
@@ -176,5 +193,186 @@ mod tests {
         ] {
             assert!(endpoint(base).is_err());
         }
+    }
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(tag = "operation", rename_all = "snake_case")]
+pub enum Mutation {
+    Load { model: String, context_length: u32 },
+    Unload { instance_id: String },
+}
+
+/// Explicit operator mutation; no model capability, automatic retry or implicit unload.
+pub async fn mutate(
+    store: &crate::store::Store,
+    base: &str,
+    authenticate: bool,
+    action: Mutation,
+    human_approve: bool,
+) -> Result<Value> {
+    security::authorize("human-cli", "model.residency.change")?;
+    if !human_approve {
+        bail!("Model residency changes require explicit operator approval")
+    }
+    endpoint(base)?;
+    match &action {
+        Mutation::Load {
+            model,
+            context_length,
+        } if !identity(model) || !(1..=32768).contains(context_length) => {
+            bail!("Invalid load identity or context ceiling")
+        }
+        Mutation::Unload { instance_id } if !identity(instance_id) => {
+            bail!("Invalid unload instance identity")
+        }
+        _ => {}
+    }
+    let lease_path = store
+        .runtime_lock
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("Residency changes require a persistent store"))?;
+    let _lease = crate::recovery::ExecutionLease::acquire(lease_path, true).map_err(|_| {
+        anyhow::anyhow!("Residency change refused while runtime execution is active")
+    })?;
+    let before = status(base, authenticate).await?;
+    let models = parse(&serde_json::to_vec(&before)?)?;
+    let (operation, body) = match &action {
+        Mutation::Load {
+            model,
+            context_length,
+        } => {
+            let selected = models.iter().find(|m| &m.key == model).ok_or_else(|| {
+                anyhow::anyhow!("Load requires an installed model key from native inventory")
+            })?;
+            if !selected.loaded_instances.is_empty() {
+                bail!("Model already has loaded instances; inspect and reuse them explicitly")
+            }
+            (
+                "load",
+                json!({"model":model,"context_length":context_length}),
+            )
+        }
+        Mutation::Unload { instance_id } => {
+            if !models
+                .iter()
+                .any(|m| m.loaded_instances.iter().any(|i| &i.id == instance_id))
+            {
+                bail!("Unload requires an existing exact instance ID")
+            }
+            ("unload", json!({"instance_id":instance_id}))
+        }
+    };
+    let task = store.create_task("Operator native model residency change", "fast")?;
+    // Persist exact bounded operator intent before the external effect.
+    store.event(&task, "model_residency", "human-cli", json!({"state":"requested","adapter":"lmstudio-native-v1","endpoint":endpoint(base)?.as_str(),"action":action,"external_outcome":"unknown"}))?;
+    let started = Instant::now();
+    let outcome = async {
+        let response = request(base, authenticate, Some(operation), Some(body), Duration::from_secs(60)).await?;
+        let instance = response["instance_id"].as_str().filter(|id| identity(id))
+            .ok_or_else(|| anyhow::anyhow!("Missing or invalid residency response instance ID"))?;
+        match &action {
+            Mutation::Load { .. } => {
+                if response["status"] != "loaded" || !matches!(response["type"].as_str(), Some("llm" | "embedding" | "decision"))
+                    || !response["load_time_seconds"].as_f64().is_some_and(|v| v.is_finite() && v >= 0.0) {
+                    bail!("Invalid native load response")
+                }
+                if models.iter().any(|m| m.loaded_instances.iter().any(|i| i.id == instance)) {
+                    bail!("Native load returned a pre-existing instance")
+                }
+            }
+            Mutation::Unload { instance_id } if instance != instance_id => bail!("Native unload returned another instance"),
+            _ => {}
+        }
+        let after = status(base, authenticate).await?;
+        let observed = parse(&serde_json::to_vec(&after)?)?;
+        let confirmed = match &action {
+            Mutation::Load { model, context_length } => observed.iter().any(|m| &m.key == model && m.loaded_instances.iter().any(|i| i.id == instance && i.config.context_length == u64::from(*context_length))),
+            Mutation::Unload { instance_id } => !observed.iter().any(|m| m.loaded_instances.iter().any(|i| &i.id == instance_id)),
+        };
+        if !confirmed { bail!("Native residency change was not confirmed by fresh inventory") }
+        Ok::<_, anyhow::Error>(json!({"task_id":task,"operation":operation,"instance_id":instance,"server_confirmed":true,
+            "elapsed_ms":started.elapsed().as_secs_f64()*1000.0,"provider_load_seconds":response.get("load_time_seconds"),
+            "ownership_established":false,"weights_attested":false,"generation_tested":false,"automatic_cleanup_performed":false}))
+    }.await;
+    match outcome {
+        Ok(report) => {
+            store.event(
+                &task,
+                "model_residency",
+                "human-cli",
+                json!({"state":"server_confirmed","report":report}),
+            )?;
+            store.finish_task(
+                &task,
+                "completed",
+                "Server-confirmed operator residency operation; no generation tested",
+            )?;
+            Ok(report)
+        }
+        Err(_) => {
+            // Never persist provider error bodies or retry an uncertain external effect.
+            store.event(&task, "model_residency", "human-cli", json!({"state":"outcome_unknown","automatic_retry":false,"automatic_cleanup":false}))?;
+            store.finish_task(
+                &task,
+                "interrupted",
+                "Residency outcome unknown; inspect native inventory before another operation",
+            )?;
+            bail!("Residency outcome unknown for task {task}; inspect inventory before retrying")
+        }
+    }
+}
+
+#[cfg(test)]
+mod lifecycle_tests {
+    use super::*;
+    #[tokio::test]
+    async fn mutations_require_approval_valid_bounds_and_exclusive_runtime_ownership() {
+        let home =
+            std::env::temp_dir().join(format!("fabric-residency-lease-{}", uuid::Uuid::new_v4()));
+        let cfg = crate::config::Config {
+            home: home.clone(),
+            ..Default::default()
+        };
+        cfg.prepare().unwrap();
+        let store = crate::store::Store::open(&cfg.db()).unwrap();
+        let base = "http://127.0.0.1:1/api/v1";
+        let load = Mutation::Load {
+            model: "installed".into(),
+            context_length: 2048,
+        };
+        assert!(mutate(&store, base, false, load.clone(), false)
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("approval"));
+        assert!(mutate(
+            &store,
+            base,
+            false,
+            Mutation::Load {
+                model: "installed".into(),
+                context_length: 32769
+            },
+            true
+        )
+        .await
+        .is_err());
+        let live = store.execution_lease().unwrap();
+        assert!(mutate(&store, base, false, load, true)
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("runtime execution"));
+        assert!(crate::security::authorize("jev-r", "model.residency.change").is_err());
+        let count: i64 = store
+            .lock()
+            .unwrap()
+            .query_row("SELECT COUNT(*) FROM tasks", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
+        drop(live);
+        drop(store);
+        std::fs::remove_dir_all(home).unwrap();
     }
 }

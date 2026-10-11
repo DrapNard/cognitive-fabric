@@ -1238,3 +1238,17 @@ invalid context capacities and native endpoint restrictions. Observations are
 server-reported only; real authenticated LM Studio inventory, physical lifecycle
 operations and automatic model switching remain unverified/incomplete. The
 read-only command performs one bounded request and adds no runtime inference cost.
+
+## Explicit native residency lifecycle
+
+Formatting, all-target checking, 221 tests (207 library, 14 integration) and
+Clippy with warnings denied pass offline with FlatBuffers compiler/crate 25.12.19.
+CLI HTTP fixtures execute load and unload with durable pre-POST intent and fresh
+inventory confirmation. Negative fixtures cover existing loaded-model refusal,
+malformed load outcomes retained as interrupted, and injected intent-write failure
+preventing POST. Unit tests verify approval/context bounds, shared-lease exclusion,
+zero task creation on rejected preflight and model-actor permission denial.
+No real weights were loaded by these tests. Actual host lifecycle and generation,
+cross-client instance ownership and automatic switching remain unverified.
+Mutation requests are bounded to 60 seconds; no automatic retries or inference
+calls are added. Missing outcomes cannot safely trigger automatic cleanup.

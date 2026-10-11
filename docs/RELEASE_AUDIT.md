@@ -4,14 +4,14 @@ This checklist preserves the 18 acceptance criteria in the goal objective. It is
 an evidence inventory, not a release approval. The canonical French architecture
 and the broader implementation matrix remain authoritative. Earlier test counts
 in the quality review are historical milestones. Current local verification is
-219 Rust tests (206 library, 13 integration), formatting, all-target checking and
+221 Rust tests (207 library, 14 integration), formatting, all-target checking and
 Clippy with warnings denied, using FlatBuffers compiler/crate 25.12.19.
 
 | Goal criterion | Evidence inspected | Assessment / remaining proof |
 |---|---|---|
 | 1. Workspace builds | `Cargo.toml`, all-target check | Passed locally; clean installation still needs verification. |
 | 2. Formatting and Clippy | Mandatory checks in `QUALITY_REVIEW.md` | Passed locally. |
-| 3. Mandatory tests | All-target test results, `tests/` | 219 passed; fixtures do not establish live model quality. |
+| 3. Mandatory tests | All-target test results, `tests/` | 221 passed; fixtures do not establish live model quality. |
 | 4. FlatBuffers IPC | `protocol/`, `src/wire.rs`, `src/fabric/`, malformed/compatibility/socket tests | Implemented for present transports; broader module compatibility remains partial. |
 | 5. CLI/service communication | `src/service.rs`, socket tests, `tests/process_worker.rs` | Tested local transport, progress and cancellation; no general independent plugin service is claimed. |
 | 6. Compatible local LLM | `src/backend.rs`, `tests/inference_auth.rs`, `AUTHENTICATION.md` | Synthetic authenticated HTTP works; real LM Studio generation last returned 401. Not passed. |
@@ -22,7 +22,7 @@ Clippy with warnings denied, using FlatBuffers compiler/crate 25.12.19.
 | 11. Budgets/cancellation | Session/broker/worker tests, `RECOVERY.md` | Current execution ceilings tested; exact tokenizer/GPU ceilings and safe automatic interrupted execution remain incomplete. |
 | 12. Security regressions | `security-eval`, policy/transport/artifact tests, `THREAT_MODEL.md` | 24 fixed boundary probes plus regression tests; live injection, poisoning, sandbox escape and general peer identity evaluations remain unmeasured. |
 | 13. RAG evaluation/promotion | `src/evaluation.rs`, `src/evolution.rs`, promotion/rollback tests | Transactional reviewed promotion with integrity/regression gates; dataset independence is operator-attested, not independently established. |
-| 14. Lifecycle documented | `MODELS.md`, `EXPERTS.md`, `WORKERS.md` | Metadata lifecycle documented; actual backend loading/unloading remains unimplemented. |
+| 14. Lifecycle documented | `MODELS.md`, `EXPERTS.md`, `WORKERS.md` | Metadata lifecycle documented; explicit native load/unload is fixture-tested; automatic scheduling and real host validation remain incomplete. |
 | 15. Reproducible benchmarks | `src/benchmarking.rs`, `evaluation/`, `BENCHMARKING.md` | Six-arm runner and provisional corpus exist; reviewed unseen dataset and real equal-budget model study missing. |
 | 16. Accurate matrix | `IMPLEMENTATION_MATRIX.md` | Partial statuses retained; historical paragraphs must be read with later explicit superseding entries. |
 | 17. Verified docs/installation | `README.md`, CI workflow | Existing checkout builds; fresh installation and full documented walkthrough not yet demonstrated. |
@@ -37,9 +37,10 @@ Clippy with warnings denied, using FlatBuffers compiler/crate 25.12.19.
    budgets, permissions, pinned dependencies and remaining wall time. Current
    `recover-verified-result` completes checked saved answers without replay;
    audit inspection alone never authorizes continuation.
-3. Add backend-specific model residency control through an explicit reviewed
-   adapter, with ownership-aware unload, bounded loading and failure cleanup.
-   OpenAI-compatible chat endpoints alone do not supply this lifecycle.
+3. Extend fixture-tested explicit native load/unload into residency scheduling
+   with enforceable ownership and recoverable uncertain outcomes. Current native
+   instance IDs do not prove exclusive cross-client ownership; no automatic
+   cleanup is inferred from a successful load. Validate real model switching.
 4. Validate authenticated real generation after the operator configures a scoped
    credential locally. Establish an available small generative baseline, review
    the held-out technical corpus, then execute comparable model studies. Never

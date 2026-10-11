@@ -53,7 +53,7 @@ remains a pre-release. `QUALITY_REVIEW.md` preserves verification history.
 | 12, 14 | CLI/service | Partial | `src/main.rs`: initialization/configuration, ask, service controls, task-specific socket progress/cancellation, skill lifecycle, ingestion/search, task traces, candidates/rollback, benchmark, self-test; real socket fixtures | Live residency lifecycle |
 | 12, 13 | Hardware/performance claims | Partial | Optional whole-device GPU diagnostics sampled real host memory/utilization/power; no energy or large-model advantage claimed | Authenticated live inference, task-attributed telemetry and equal-budget comparisons |
 
-All 219 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
+All 221 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
 all-target build checks and Clippy with denied warnings pass. Fixtures do not prove
 GPU integration, neural quality, immutable backend weights or live model switching.
 
@@ -433,3 +433,12 @@ Unit and actual CLI HTTP tests cover identities, native endpoint constraints,
 separate authentication, escaped token echo rejection, redirects, malformed and
 oversized responses. Physical load/unload ownership and live validation remain
 **Not implemented / Not verified**. See `MODELS.md`.
+
+Explicit native model load/unload: **Implemented** in `src/residency.rs` and
+`residency-load` / `residency-unload`. Operator approval, exclusive workspace
+leases, installed/exact-instance preflight, durable pre-effect intent, bounded
+requests and fresh inventory confirmation are tested through the CLI. Unknown
+outcomes remain interrupted without retries or implicit cleanup. Cross-client
+ownership cannot be established by this API; automatic lifecycle scheduling,
+weight identity, generation after switching and real host validation stay
+**Partial / Not verified**. See `MODELS.md` for operator responsibilities.
