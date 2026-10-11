@@ -1170,3 +1170,14 @@ sorting result without inference. Incorrect checks retain their charge; provider
 usage remains unknown where absent and whole-resource completeness stays false.
 This recovers provable terminal answers, not arbitrary subtask graphs or missing
 results, and grants no restarted inference or restored wall allowance.
+
+## Versioned compiled checker experts
+
+FlatBuffers 25.12.19 formatting, all-target check, 212 all-target tests (201
+library and 11 integration), and Clippy with denied warnings pass. Tests exercise
+supported checker discovery/health, rejected unknown/missing/workflow/reference
+bindings, model-actor registration denial, preserved legacy hashes, replacement
+with historical proof pinning, disable fallback and actual reasoning/memory proof
+identities. Compiled checker implementations remain fixed Rust code; manifest
+versioning does not attest neural weights or grant permissions. Dynamic imported
+executable plugins and broader independent module authentication remain absent.

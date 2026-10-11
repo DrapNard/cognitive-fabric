@@ -240,3 +240,9 @@ runtime ownership, a fully correlated bounded ledger and remaining verification
 allowance, then atomically commits proof/status without repeating inference.
 Unsupported or unresolved tasks remain interrupted; general continuation is still
 incomplete. See RECOVERY.md for failed-check charges and transactional behavior.
+
+The Expert Network now supports checker manifests binding reviewed expert metadata
+to compiled integer-sort/dependency-order verifiers. Existing immutable lifecycle,
+dependency validation and task pinning apply; actual proof events record the
+selected manifest version separately from the compiled criterion version. No
+imported code or new permissions are accepted. See EXPERTS.md.

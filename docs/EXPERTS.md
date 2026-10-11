@@ -19,7 +19,7 @@ version leaves the current version active. The same version with different
 content is rejected. Models cannot register, activate or disable skills.
 
 See `examples/reference_manifest.json` for the format. Required fields are id,
-version, kind (reference or workflow), description, tags, dependencies, source
+version, kind (reference, workflow or checker), description, tags, dependencies, source
 and license. A dependency has id and a semantic version requirement such as
 `^1.0`. Unknown fields are rejected, including permissions and executable paths.
 Manifests do not grant tool permissions, execute code or load neural weights.
@@ -145,3 +145,31 @@ Automatic backend loading/unloading, GPU residency control, neural adapter switc
 and measured expert usefulness remain unverified or unsupported. Comparisons using
 a separately bound model must report that model and cannot claim same-model
 ablation fairness solely from matching task budgets.
+
+## Compiled checker experts
+
+`kind: checker` manifests bind a reviewed logical expert to either
+`integer_sort/v1` or `dependency_order/v1` using the `checker` field. Register and
+activate `examples/checker_manifest.json` through the ordinary skill lifecycle:
+
+```sh
+cogfabric skill-register examples/checker_manifest.json
+cogfabric skill-activate data.sort.s1 1.0.0
+cogfabric skill-health
+```
+
+Full/Experts execution selects a matching routed checker from the task's pinned
+manifest snapshot for an explicit sort/order goal. Verification records its
+manifest identity/version/checksum alongside the actual compiled criterion.
+Full-profile memory checks also record that binding when present. Manifest
+replacement affects later task snapshots; prior evidence retains its version.
+Health reports the compiled checker identity and `model_health: not_required`.
+
+The manifest version describes reviewed expert metadata; the checker ID separately
+versions the compiled implementation. Registration cannot supply or modify code,
+add checker names, bind inference models or grant permissions. Every actual check
+still consumes the task-scoped fixed kernel capability and tool budget. Disabling
+a checker expert removes its binding from later ordinary task discovery; it does
+not disable the independent core checker or allow an invalid answer to pass.
+Existing manifests omit `checker` and preserve their canonical serialization/hash.
+This is reuse of compiled Rust tools, not arbitrary executable plugin loading.

@@ -36,6 +36,8 @@ pub struct Manifest {
     pub id: String,
     pub version: String,
     pub kind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checker: Option<String>,
     pub description: String,
     pub tags: Vec<String>,
     #[serde(default)]
@@ -61,7 +63,7 @@ pub(crate) fn identifier(id: &str) -> bool {
 impl Manifest {
     pub fn validate(&self) -> Result<()> {
         if !identifier(&self.id)
-            || !matches!(self.kind.as_str(), "reference" | "workflow")
+            || !matches!(self.kind.as_str(), "reference" | "workflow" | "checker")
             || self.description.trim().is_empty()
             || self.description.len() > 500
             || self.tags.is_empty()
@@ -71,10 +73,20 @@ impl Manifest {
             bail!("Invalid expert manifest")
         }
         match (self.kind.as_str(), self.workflow.as_deref(), self.workflow_steps.as_ref()) {
-            ("reference", None, None) => {},
+            ("reference" | "checker", None, None) => {},
             ("workflow", Some(text), None) if !text.trim().is_empty() && text.len() <= 2000 => {},
             ("workflow", None, Some(_)) => { self.workflow_order()?; },
             _ => bail!("Workflow experts require bounded advice; reference experts cannot contain workflows"),
+        }
+        if self.kind == "checker" {
+            if !matches!(
+                self.checker.as_deref(),
+                Some("dependency_order/v1" | "integer_sort/v1")
+            ) {
+                bail!("Checker experts require a supported compiled checker identity")
+            }
+        } else if self.checker.is_some() {
+            bail!("Only checker experts can bind a compiled checker")
         }
         if let Some(model) = &self.model {
             model.validate()?;
@@ -367,6 +379,8 @@ pub fn health(store: &Store) -> Result<Value> {
                 }
                 _ => "unavailable",
             }
+        } else if manifest.kind == "checker" {
+            "not_required"
         } else {
             "shared_backend"
         };
@@ -375,7 +389,7 @@ pub fn health(store: &Store) -> Result<Value> {
             [&manifest.id],
             |row| row.get(0),
         )?;
-        entries.push(json!({"id":manifest.id,"version":manifest.version,"kind":manifest.kind,"stored_documents":count,
+        entries.push(json!({"id":manifest.id,"version":manifest.version,"kind":manifest.kind,"checker":manifest.checker,"stored_documents":count,
             "dependency_health":"valid","model":manifest.model,"model_health":model_health,"note":"Stored document count and registration do not prove retrieval quality, provider availability or loaded weights"}));
     }
     Ok(json!({"active":entries,"neural_loading":"unsupported"}))
@@ -397,6 +411,7 @@ mod tests {
             id: id.into(),
             version: version.into(),
             kind: "reference".into(),
+            checker: None,
             workflow: None,
             workflow_steps: None,
             model: None,
@@ -408,6 +423,30 @@ mod tests {
         }
     }
 
+    #[test]
+    fn checker_manifests_only_bind_known_compiled_criteria() {
+        let mut checker = manifest("data.sort.s1", "1.0.0");
+        checker.kind = "checker".into();
+        checker.checker = Some("integer_sort/v1".into());
+        checker.validate().unwrap();
+        let store = Store::in_memory().unwrap();
+        register(&store, &checker).unwrap();
+        activate(&store, &checker.id, &checker.version).unwrap();
+        let report = health(&store).unwrap();
+        assert_eq!(report["active"][0]["checker"], "integer_sort/v1");
+        assert_eq!(report["active"][0]["model_health"], "not_required");
+        for variant in 0..4 {
+            let mut bad = checker.clone();
+            match variant {
+                0 => bad.checker = Some("shell/v1".into()),
+                1 => bad.checker = None,
+                2 => bad.workflow = Some("Execute anything".into()),
+                _ => bad.kind = "reference".into(),
+            }
+            assert!(register(&store, &bad).is_err());
+        }
+        assert!(security::authorize("jev-r", "skill.register").is_err());
+    }
     #[test]
     fn structured_workflows_validate_dependencies_bounds_and_legacy_hashes() {
         let mut manifest = manifest("rust.workflow.s1", "1.0.0");

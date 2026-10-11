@@ -302,6 +302,26 @@ impl Engine {
             self.store.event(&id,"route","jev-plus",json!({"skills":skills,
                 "versions":pinned.skills.iter().filter(|s|skills.contains(&s.id)).collect::<Vec<_>>(),
                 "manifests":pinned.manifests.iter().filter(|m|skills.contains(&m.id)).collect::<Vec<_>>()}))?;
+            if experts {
+                if let Some(criterion) = crate::verification::Criterion::from_query(query)? {
+                    if let Some(manifest) = skills.iter().find_map(|id| {
+                        pinned.manifests.iter().find(|m| {
+                            &m.id == id
+                                && m.kind == "checker"
+                                && m.checker.as_deref() == Some(criterion.name())
+                        })
+                    }) {
+                        let binding = json!({"id":manifest.id,"version":manifest.version,"checker":manifest.checker,"manifest_checksum":store::sha256(&serde_json::to_vec(manifest)?),"permissions_granted":false});
+                        self.store.event(
+                            &id,
+                            "expert_checker_snapshot",
+                            "jev-plus",
+                            binding.clone(),
+                        )?;
+                        session.checker_binding = Some(binding);
+                    }
+                }
+            }
             let refs = pinned
                 .documents
                 .into_iter()
@@ -348,7 +368,7 @@ impl Engine {
                             "verifier-r",
                             json!({
                                 "criterion":criterion.name(),"verified":checked.is_ok(),
-                                "origin":"published_memory","memory_id":memory.id,
+                                "origin":"published_memory","memory_id":memory.id,"expert":session.checker_binding,
                                 "objective_hash":store::sha256(query.as_bytes()),
                                 "answer_hash":store::sha256(memory.answer.as_bytes()),
                                 "reason":checked.as_ref().err().map(ToString::to_string)
@@ -648,6 +668,55 @@ mod expert_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn registered_checker_identity_is_pinned_to_actual_verification() {
+        let store = Arc::new(Store::in_memory().unwrap());
+        let query = r#"sort:{"values":[3,1,3]}"#;
+        let original = store.create_task(query, "fast").unwrap();
+        store
+            .finish_task(&original, "unverified", "[1,3,3]")
+            .unwrap();
+        store
+            .publish_memory(
+                &original,
+                "episode",
+                "Reviewed history, recheck before reuse",
+            )
+            .unwrap();
+        let mut manifest: crate::registry::Manifest = serde_json::from_value(json!({"id":"data.sort.s1","version":"1.0.0","kind":"checker","checker":"integer_sort/v1","description":"Bounded integer checker","tags":["sort"],"source":"operator-local","license":"CC0"})).unwrap();
+        crate::registry::register(&store, &manifest).unwrap();
+        crate::registry::activate(&store, &manifest.id, &manifest.version).unwrap();
+        let engine = Engine::new(Config::default(), store.clone());
+        let first = engine.run(query, "fast").await.unwrap();
+        manifest.version = "2.0.0".into();
+        crate::registry::register(&store, &manifest).unwrap();
+        crate::registry::activate(&store, &manifest.id, &manifest.version).unwrap();
+        let second = engine.run(query, "fast").await.unwrap();
+        for (task, version) in [(&first.task_id, "1.0.0"), (&second.task_id, "2.0.0")] {
+            let trace = store.task(task).unwrap();
+            let events = trace["events"].as_array().unwrap();
+            let binding = events
+                .iter()
+                .find(|e| e["kind"] == "expert_checker_snapshot")
+                .unwrap();
+            assert_eq!(binding["payload"]["version"], version);
+            assert_eq!(binding["payload"]["permissions_granted"], false);
+            let proof = events
+                .iter()
+                .find(|e| e["kind"] == "verification" && e["payload"]["verified"] == true)
+                .unwrap();
+            assert_eq!(proof["payload"]["expert"]["version"], version);
+        }
+        crate::registry::disable(&store, &manifest.id).unwrap();
+        let third = engine.run(query, "fast").await.unwrap();
+        assert_eq!(third.status, "completed");
+        assert!(!store.task(&third.task_id).unwrap()["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["kind"] == "expert_checker_snapshot"));
+    }
+
     #[tokio::test]
     async fn reasoning_retains_original_reference_context_after_document_changes() {
         let store = Arc::new(Store::in_memory().unwrap());

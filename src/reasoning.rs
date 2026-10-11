@@ -52,6 +52,7 @@ pub struct Session {
     pub(crate) verification_attempted: bool,
     pub(crate) verification_enabled: bool,
     pub subtasks: Vec<Subtask>,
+    pub(crate) checker_binding: Option<serde_json::Value>,
     cfg: Config,
     store: Arc<Store>,
     backend: Arc<dyn InferenceBackend>,
@@ -165,6 +166,7 @@ impl Session {
             verification_attempted: false,
             verification_enabled: true,
             subtasks: Vec::new(),
+            checker_binding: None,
             complete_usage: true,
             complete_queue_metrics: true,
             inference_started: None,
@@ -694,7 +696,7 @@ impl Session {
                 self.authorize_tool(criterion.capability())?;
                 self.verification_attempted = true;
                 let result = criterion.check(&answer);
-                self.store.event(&self.task,"verification","verifier-r",json!({"verified":result.is_ok(),"criterion":criterion.name(),"objective_hash":crate::store::sha256(query.as_bytes()),"answer_hash":hash,"reason":result.as_ref().err().map(ToString::to_string),"cycle":self.resources.cycles}))?;
+                self.store.event(&self.task,"verification","verifier-r",json!({"verified":result.is_ok(),"criterion":criterion.name(),"expert":self.checker_binding,"objective_hash":crate::store::sha256(query.as_bytes()),"answer_hash":hash,"reason":result.as_ref().err().map(ToString::to_string),"cycle":self.resources.cycles}))?;
                 if result.is_ok() {
                     self.verified = true;
                     self.verified_criterion = Some(criterion.name());
@@ -816,6 +818,11 @@ mod tests {
                 3 => vec![("solver", "[1,2,2]")],
                 _ => vec![],
             };
+            if variant == 0 {
+                let manifest: crate::registry::Manifest = serde_json::from_value(json!({"id":"data.sort.s1","version":"1.0.0","kind":"checker","checker":"integer_sort/v1","description":"Independent checker","tags":["sort"],"source":"fixture","license":"CC0"})).unwrap();
+                crate::registry::register(&store, &manifest).unwrap();
+                crate::registry::activate(&store, &manifest.id, &manifest.version).unwrap();
+            }
             let engine = Engine::with_backend(
                 cfg,
                 store.clone(),
@@ -840,6 +847,13 @@ mod tests {
                 assert!(!outcome
                     .evidence
                     .contains(&"verified:dependency_order/v1".into()));
+                assert!(store.task(&outcome.task_id).unwrap()["events"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|e| e["kind"] == "verification"
+                        && e["payload"]["verified"] == true
+                        && e["payload"]["expert"]["id"] == "data.sort.s1"));
                 let audit = store.inference_audit(&outcome.task_id).unwrap();
                 assert_eq!(audit["remaining_inference_admission"]["cycles"], 1);
             } else if variant == 1 {

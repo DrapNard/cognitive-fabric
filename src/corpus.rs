@@ -99,6 +99,7 @@ mod tests {
             id: "rust.s1".into(),
             version: "1.0.0".into(),
             kind: "reference".into(),
+            checker: None,
             description: "Rust references".into(),
             tags: vec!["rust".into()],
             dependencies: Vec::new(),

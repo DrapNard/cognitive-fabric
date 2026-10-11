@@ -476,3 +476,12 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
 - Validate and charge the original resource ledger transactionally; reject live
   leases, unresolved calls, missing allowances and terminal-task rewrites.
 - Preserve failed-check charges while rolling back audit-write failures atomically.
+
+### Versioned compiled checker experts
+
+- Support reviewed checker manifests for existing integer-sort/dependency-order
+  implementations using the registry's immutable lifecycle and dependency checks.
+- Pin routed checker metadata and record its version/checksum in actual proof
+  events, keeping compiled criterion identity separate from manifest version.
+- Reject unsupported checker identities, workflows, model bindings and permissions;
+  preserve existing manifest hashes and fixed kernel authorization.

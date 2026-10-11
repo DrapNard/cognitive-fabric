@@ -392,3 +392,12 @@ failure rolls back. Tests cover leases, reopen durability, terminal/actor denial
 wrong/tampered/unresolved answers, exhausted budgets, atomic failure and real CLI
 use. This completes a concrete result-reconciliation path; arbitrary graph
 continuation, missing outcomes and recovered wall-time admission remain **Partial**.
+
+Compiled checker expert bindings: **Implemented** in `src/registry.rs`, Engine and
+Session verification. Reviewed checker manifests use existing immutable lifecycle
+and dependency checks, route by capability tags and bind only supported compiled
+criteria. Health and actual memory/reasoning proof events disclose manifest and
+checker identities; tests cover malformed bindings, legacy hashes, replacement,
+disabling, pinned historical proofs and independent recursive verification.
+Registration grants no capabilities; arbitrary executable experts and dynamic
+implementation loading remain **Partial / Not implemented**.
