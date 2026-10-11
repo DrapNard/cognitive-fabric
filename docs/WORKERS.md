@@ -55,7 +55,14 @@ HTTP endpoint. No model-supplied executable path, shell command or process-launc
 tool is exposed. Arbitrary executable experts still require separate isolation
 and review. External servers may continue GPU work after disconnect. Abrupt worker
 or host death can leave incomplete audit sessions and temporary directories;
-operator-reviewed crash reconciliation remains unfinished.
+explicit audit reconciliation is available below; stale-resource cleanup remains
+separate operator work.
+
+Worker audit reconciliation is now available through `recover-workers`; persistent
+workers and host startup hold cooperative execution leases, so recovery refuses
+while either is active. It marks open sessions interrupted without changing task
+answers, replaying inference or killing recorded PIDs. See `RECOVERY.md` for bounds
+and failure behavior. Stale temporary-directory cleanup remains unfinished.
 
 Integration tests launch the actual CLI binary with the demo backend, verify one
 worker reused across a task, ensure arithmetic launches none, and cancel a pending

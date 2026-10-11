@@ -50,6 +50,7 @@ struct Managed {
     // Tokio kills/reaps this same-binary child when task ownership ends.
     child: Mutex<tokio::process::Child>,
     _socket: SocketDirectory,
+    _lease: Option<crate::recovery::ExecutionLease>,
 }
 pub struct ProcessTask {
     cfg: Config,
@@ -96,6 +97,15 @@ impl ProcessTask {
         })
     }
     async fn launch(&self) -> Result<Managed> {
+        let lease = self.store.execution_lease()?;
+        let running: bool = self.store.lock()?.query_row(
+            "SELECT status='running' FROM tasks WHERE id=?1",
+            [&self.task],
+            |row| row.get(0),
+        )?;
+        if !running {
+            bail!("Cannot launch inference for a terminal task")
+        }
         let started = std::time::Instant::now();
         let home = std::fs::canonicalize(&self.cfg.home)?;
         let metadata = std::fs::symlink_metadata(&home)?;
@@ -160,6 +170,7 @@ impl ProcessTask {
             adapter,
             child: Mutex::new(child),
             _socket: guard,
+            _lease: lease,
         })
     }
 }
@@ -210,6 +221,15 @@ pub async fn run_worker(home: &Path, socket: &Path, host_pid: u32) -> Result<()>
         &setup.config.db(),
         setup.config.max_database_bytes,
     )?);
+    let _lease = store.execution_lease()?;
+    let running: bool = store.lock()?.query_row(
+        "SELECT status='running' FROM tasks WHERE id=?1",
+        [&setup.task],
+        |row| row.get(0),
+    )?;
+    if !running {
+        bail!("Worker task is no longer running")
+    }
     let audit = Audit::new(store, &setup.task)?;
     let authority = setup.authority(metadata.uid(), host_pid)?;
     let backend = Arc::new(LocalBackend(setup.config));
@@ -224,11 +244,21 @@ mod tests {
     async fn wrong_task_never_initializes_a_process() {
         let store = Arc::new(Store::in_memory().unwrap());
         let task = store.create_task("Worker scope", "fast").unwrap();
-        let backend = ProcessTask::new(Config::default(), store, &task).unwrap();
+        let backend = ProcessTask::new(Config::default(), store.clone(), &task).unwrap();
         assert!(backend
             .generate_for(&uuid::Uuid::new_v4().to_string(), "solver", "goal", 128)
             .await
             .is_err());
+        assert!(backend.worker.get().is_none());
+        store
+            .finish_task(&task, "interrupted", "No replay")
+            .unwrap();
+        assert!(backend
+            .generate_for(&task, "solver", "goal", 128)
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("terminal task"));
         assert!(backend.worker.get().is_none());
     }
     #[tokio::test]

@@ -19,8 +19,10 @@ limit repeated requests. Disconnect/shutdown drops active inference, but cannot
 prove an external GPU server stopped. These controls do not attest executable
 contents, isolate same-user compromise or provision grants securely by themselves.
 Managed same-binary workers now receive authenticated task grants and are reaped
-on task termination. General executable isolation and worker crash reconciliation
-remain release integration work; see `WORKERS.md` and `PROTOCOL.md`.
+on task termination. Persistent workers hold shared runtime leases and operator
+reconciliation requires exclusive ownership; it never kills recorded PIDs or
+assumes external GPU work stopped. General executable isolation and stale-resource
+cleanup remain release integration work; see `WORKERS.md` and `RECOVERY.md`.
 
 Worker audit records use a trusted existing task anchor and bounded metadata.
 Authorization decisions must persist before inference; atomic anchor checks prevent

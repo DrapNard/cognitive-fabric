@@ -38,3 +38,31 @@ Logical storage admission and reviewed retention are documented in `STORAGE.md`.
 Interrupted rows count toward the global eight-running-task admission ceiling
 until recovery marks them terminal; recovery itself does not require free task
 slots and never silently deletes their history.
+
+## Interrupted worker audit sessions
+
+Run `cogfabric recover-workers` to reconcile sessions that recorded session_started
+but no session_stopped, session_failed or prior session_interrupted. It requires
+exclusive runtime ownership and leaves task statuses/results unchanged. Use
+recover-tasks separately for abandoned running tasks. No PID is killed or treated
+as proof of abandonment; no inference is replayed and no unknown success/resource
+usage is invented. External HTTP/GPU computation remains unverified.
+
+Both managed host startup and persistent worker serving hold shared execution
+leases. A surviving worker therefore blocks reconciliation even after its host
+dies. New worker launch checks running status under its lease and refuses terminal
+tasks. Lease replacement/aliases and hostile same-owner code retain the caveats
+above. Standalone workers using in-memory audit stores do not support durable
+recovery.
+
+Worker reconciliation uses one immediate transaction, validates session/module
+metadata and records bounded session_interrupted events under the original trusted
+anchor. Completed task answers remain intact, even when their worker audit ended
+abruptly. Repetition is idempotent. At most 10,000 sessions are processed, with
+five-second progress/deadline checks; existing SQLite busy/I/O and fsync behavior
+are soft rather than hard real-time bounds. Malformed metadata, quota/SQL errors
+and audit-write failures roll back the whole operation. The temporary progress
+callback is removed on success or error.
+
+This reconciles audit history, not stale temporary socket directories or arbitrary
+executable processes. Operator-reviewed filesystem cleanup remains separate work.

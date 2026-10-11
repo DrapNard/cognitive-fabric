@@ -93,6 +93,13 @@ fn deterministic_tools_do_not_launch_a_worker() {
 
 #[test]
 fn cancellation_reaps_worker_during_pending_http_inference() {
+    terminate_pending_inference(false);
+}
+#[test]
+fn crashed_worker_is_reconciled_without_replaying_or_changing_task_result() {
+    terminate_pending_inference(true);
+}
+fn terminate_pending_inference(crash_worker: bool) {
     use std::{
         io::Read,
         time::{Duration, Instant},
@@ -142,8 +149,25 @@ fn cancellation_reaps_worker_during_pending_http_inference() {
         .spawn()
         .unwrap();
     received.recv_timeout(Duration::from_secs(10)).unwrap();
-    // Signal only the child created and still owned by this test.
-    assert_eq!(unsafe { libc::kill(child.id() as i32, libc::SIGINT) }, 0);
+    // Target only the current fixture's owned child or its newly launched worker.
+    let (pid, signal) = if crash_worker {
+        let db = rusqlite::Connection::open_with_flags(
+            cfg.db(),
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .unwrap();
+        let pid: i32 = db
+            .query_row(
+                "SELECT json_extract(payload,'$.pid') FROM events WHERE kind='worker_process'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        (pid, libc::SIGKILL)
+    } else {
+        (child.id() as i32, libc::SIGINT)
+    };
+    assert_eq!(unsafe { libc::kill(pid, signal) }, 0);
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
         if child.try_wait().unwrap().is_some() {
@@ -159,7 +183,10 @@ fn cancellation_reaps_worker_during_pending_http_inference() {
     let output = child.wait_with_output().unwrap();
     assert!(!output.status.success());
     let outcome: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(outcome["status"], "cancelled");
+    assert_eq!(
+        outcome["status"],
+        if crash_worker { "failed" } else { "cancelled" }
+    );
     let store = Store::open(&cfg.db()).unwrap();
     let trace = store.task(outcome["task_id"].as_str().unwrap()).unwrap();
     assert!(trace["events"]
@@ -168,6 +195,25 @@ fn cancellation_reaps_worker_during_pending_http_inference() {
         .iter()
         .any(|e| e["kind"] == "worker_process_stopped" && e["payload"]["reaped"] == true));
     server.join().unwrap();
+    let recovered = command(&home, &["recover-workers"]);
+    assert!(
+        recovered.status.success(),
+        "{}",
+        String::from_utf8_lossy(&recovered.stderr)
+    );
+    let recovered: serde_json::Value = serde_json::from_slice(&recovered.stdout).unwrap();
+    assert_eq!(
+        recovered["interrupted_worker_sessions"]
+            .as_array()
+            .unwrap()
+            .len(),
+        usize::from(crash_worker)
+    );
+    assert!(store.recover_workers().unwrap().is_empty());
+    assert_eq!(
+        store.task(outcome["task_id"].as_str().unwrap()).unwrap()["task"]["status"],
+        outcome["status"]
+    );
     drop(store);
     std::fs::remove_dir_all(home).unwrap();
 }

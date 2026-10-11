@@ -146,7 +146,8 @@ dispatch prevents inference; outcome-write failure closes the session, though
 already executed inference cannot be undone. Database busy/I/O blocking is subject
 to SQLite's existing limits rather than a hard real-time guarantee. A process
 crash or externally dropped serve future can leave an unterminated session record;
-durable worker crash reconciliation remains unfinished. In-memory Stores are
+recover-workers reconciles these records under an exclusive runtime lease without
+replaying inference or changing task results. In-memory Stores are
 useful for tests but do not supply persistence; operators must supply a file Store.
 
 ### Host-connected Unix inference adapters
@@ -171,7 +172,7 @@ wrong UID/PID, forged task, oversized length and cancellation denials. This is a
 connected-process identity check, not executable attestation, sandboxing or neural
 weight verification. Same-user compromise and inherited/passed descriptors remain
 outside isolation guarantees. Generalized executable module lifecycle,
-crash reconciliation and general module event routing remain incomplete; remote
+stale-resource cleanup and general module event routing remain incomplete; remote
 computation may continue after the host closes its connection.
 
 `configure-worker --enabled true` selects managed task-local inference in new

@@ -42,7 +42,7 @@ Quality requires operator-attested held-out data. Promotion checks quality,
 cumulative approved-version retrieval regressions and unchanged versions transactionally.
 Rollback restores approved stored snapshots. Neural promotion stays disabled.
 
-Verification: 140 tests, formatting, all-target check and Clippy pass using exact
+Verification: 145 tests, formatting, all-target check and Clippy pass using exact
 flatc/Rust FlatBuffers 25.12.19. HTTP fixtures and socket tests ran locally; no
 compatible live model server was available at the default endpoint. No neural
 quality, GPU integration, hot-swap, energy or model-superiority result is claimed.
@@ -54,6 +54,11 @@ task, provisions authenticated typed settings and closes/reaps it on completion
 or cancellation. Three actual CLI integration tests cover demo role execution,
 zero-process arithmetic and Ctrl-C during pending HTTP inference. This is process
 coordination, not an executable sandbox or model-loading proof. See `WORKERS.md`.
+
+Persistent workers also hold shared runtime leases. Operator-only recover-workers
+marks open audit sessions interrupted under exclusive ownership, without task
+result changes, PID killing or inference replay. Tests include an actual child
+crash and transactional rollback; stale temporary-directory cleanup remains open.
 
 `benchmarking.rs` now runs explicit execution ablations under common operator
 ceilings, rotates arm order, excludes expected answers from inference, records

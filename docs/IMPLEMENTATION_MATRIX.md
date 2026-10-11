@@ -18,8 +18,10 @@ authorization-write failure; reopening/privacy/failure tests verify this path.
 Opt-in same-binary task workers now launch through `src/fabric/unix/process.rs`,
 receive authenticated grants, reuse pinned settings and are closed/reaped at task
 termination. CLI integration tests cover demo execution, zero-process arithmetic
-and pending HTTP cancellation. Worker crash reconciliation, generalized executable
-module lifecycle and general actor routing remain incomplete. See `WORKERS.md`.
+and pending HTTP cancellation. Worker audit reconciliation is operator-only under
+exclusive runtime leases; real-crash, live-lease and rollback tests cover it.
+Generalized executable module lifecycle, stale-resource cleanup and general actor
+routing remain incomplete. See `WORKERS.md` and `RECOVERY.md`.
 
 Managed worker lifetime now follows the task's approved wall ceiling rather than
 an unrelated fixed timeout. Virtual-time regressions cover idle gaps, partial
@@ -51,7 +53,7 @@ remains a pre-release. `QUALITY_REVIEW.md` preserves verification history.
 | 12, 14 | CLI/service | Partial | `src/main.rs`: initialization/configuration, ask, service controls, task-specific socket progress/cancellation, skill lifecycle, ingestion/search, task traces, candidates/rollback, benchmark, self-test; real socket fixtures | Live residency lifecycle |
 | 12, 13 | Hardware/performance claims | Not implemented | No GPU/energy or large-model advantage claimed | Real local endpoint, hardware telemetry, equal-budget comparisons |
 
-All 140 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
+All 145 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
 all-target build checks and Clippy with denied warnings pass. Fixtures do not prove
 GPU integration, neural quality, immutable backend weights or live model switching.
 
@@ -120,7 +122,7 @@ observations, not isolated task peaks, backend residency or GPU measurements.
 The optional offline trainer now freezes bounded dataset input, rejects ambiguous/
 conflicting provenance, fails on passes with no supervised tokens, reserves separate
 output and records seeded configuration, dependency versions and hashed adapter
-inventory. Six standard-library preflight tests pass in addition to the 140 Rust
+inventory. Six standard-library preflight tests pass in addition to the 145 Rust
 tests. Level C stays Experimental: ML dependencies/weights are unavailable here,
 and base provenance manifests, independent neural evaluation, external isolation,
 actual training and adapter switching remain unverified. Promotion remains denied.

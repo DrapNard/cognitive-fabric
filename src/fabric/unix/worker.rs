@@ -189,6 +189,7 @@ pub async fn serve(
     mut shutdown: watch::Receiver<bool>,
     audit: Audit,
 ) -> Result<()> {
+    let _execution_lease = audit.store.execution_lease()?;
     audit.record("session_started", &authority, None)?;
     let result = async {
     authenticate(&stream, authority.host_uid, authority.host_pid)?;

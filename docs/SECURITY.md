@@ -49,7 +49,7 @@ credentials are not executable/weight attestation or isolation from same-user
 descriptor transfer. Worker sessions use trusted immutable task grants and
 cumulative ceilings, and drop inference on disconnect/shutdown. Opt-in managed
 workers launch only the current executable and receive authenticated single-task
-grants. General executable lifecycle/isolation and worker crash reconciliation remain unimplemented;
+grants. General executable lifecycle/isolation and stale-resource cleanup remain unimplemented;
 see `PROTOCOL.md` for the tested scope.
 
 Worker sessions require a trusted audit anchor. Atomic SQLite inserts record
@@ -63,3 +63,8 @@ child environment and creates private socket resources; task ownership closes
 and reaps the child, with kill-on-drop fallback. This adds process coordination,
 not shell execution or a sandbox. Same-user worker code retains database access.
 Custom registries are rejected in this mode instead of silently replaced.
+
+Persistent workers and host startup hold shared runtime leases; exclusive
+operator-only recover-workers reconciles abandoned audit sessions transactionally.
+It preserves task results, records unknown external-inference state, never kills
+stored PIDs and never replays inference. Audit/metadata failures roll back changes.

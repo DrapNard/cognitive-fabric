@@ -730,3 +730,25 @@ All 140 tests (137 unit and 3 process integration), mandatory workspace checks,
 formatting and Clippy pass with FlatBuffers 25.12.19. Bootstrap tests/Clippy passed
 again after the explicit absent-field assertion. Worker crash reconciliation and
 general module lifecycle remain incomplete; no live model/GPU claim is added.
+
+## Lease-protected worker audit reconciliation
+
+Persistent worker serving and managed host launch now hold shared runtime leases.
+Launch/status checks under that lease refuse terminal tasks. Operator-only
+recover-workers requires exclusive ownership, validates open session identities
+and appends session_interrupted metadata in one immediate transaction. It never
+kills recorded PIDs, replays inference, changes task results or claims an external
+server stopped. Closed/reconciled sessions are skipped idempotently. Batches above
+10,000 fail before writes, with five-second SQL/progress and loop checks; the
+temporary callback is cleared on error/success. SQLite blocking I/O remains soft.
+
+Four unit regressions verify live-worker exclusion until its future drops,
+persistent idempotency/task preservation, audit/metadata rollback and an actual
+10,001-session refusal without partial changes. Process tests now kill only their
+own fixture worker, observe host failure/confirmed reaping, invoke the actual
+recover-workers CLI and verify the failed task result remains unchanged. Existing
+Ctrl-C cancellation still passes. A terminal-task launch denial is also covered.
+All 145 tests (141 unit plus 4 process integration), formatting, workspace check
+and Clippy pass with FlatBuffers 25.12.19. No live-model/GPU quality claim is added.
+Stale temporary-resource cleanup and generalized executable lifecycle remain
+unfinished; recovery remains cooperative with the documented lease-inode caveats.

@@ -2,6 +2,15 @@
 
 All notable changes are documented here in English.
 
+### Worker crash audit reconciliation
+
+- Hold runtime execution leases through host startup and persistent worker serving;
+  refuse launching inference for terminal tasks.
+- Add operator-only recover-workers with bounded transactional interrupted-session
+  records, preserving task results and never replaying inference or killing PIDs.
+- Test live-worker exclusion, real child crashes, durable idempotency, malformed
+  metadata and transactional audit failures.
+
 ### Task-bound worker lifetime
 
 - Pin worker lifetime to the approved task wall ceiling through an additive

@@ -91,6 +91,7 @@ pub fn authorize(principal: &str, capability: &str) -> Result<()> {
                 | "storage.restore"
                 | "task.observe"
                 | "task.recover"
+                | "worker.recover"
                 | "memory.publish"
                 | "memory.revoke"
                 | "memory.search"

@@ -43,6 +43,7 @@ enum Command {
         probe_inference: bool,
     },
     RecoverTasks,
+    RecoverWorkers,
     StorageStatus,
     WatchTask {
         id: String,
@@ -384,6 +385,9 @@ async fn main() -> Result<()> {
         }
         Command::RecoverTasks => {
             json!({"interrupted_tasks":store.recover_tasks()?,"automatic_replay":false})
+        }
+        Command::RecoverWorkers => {
+            json!({"interrupted_worker_sessions":store.recover_workers()?,"automatic_replay":false,"external_inference_stopped_verified":false})
         }
         Command::Init => {
             json!({"home":cfg.home,"version":env!("CARGO_PKG_VERSION"),"skills":store.skills()?.len()})
