@@ -116,3 +116,18 @@ library, 20 integration), including a separate-process SQLite exchange. See
 `QUALITY_REVIEW.md` for evidence. The installed executable recorded above predates
 this change; installation verification must be repeated before release. This adds
 a trusted-host transport API, not automatic SQL worker provisioning or sandboxing.
+
+Fresh installed verification of SQL transport source (2026-10-11): commit
+`af921687775177dbbdf2ed9fc865eb6dfdb1ab84` was installed with
+`FLATC=/tmp/cogfabric-flatbuffers/build/flatc cargo install --offline --locked --path . --root /tmp/cogfabric-v1-sql-unix-install-20261011`.
+Cargo reported 45.59 seconds for the optimized build. Executable SHA-256:
+`b8d8bc58051acabd3f62ea2f8cc24dea093297c5061c2cc8d8fa9a156cc88d33`.
+`scripts/installed-smoke.sh` (SHA-256
+`02a8d1849612a3da264fbe778729bf24f2f5565bca9b83f450901fc3cb3c89e7`)
+passed against that executable; evidence is retained at
+`/tmp/cogfabric-installed-smoke.MImFGj`, with log
+`/tmp/cogfabric-sql-unix-smoke.log`. This supersedes the installed-source gap
+immediately above. It verifies the existing installed CLI/service workflow;
+SQL Unix RPC itself is exercised by the separate-process Rust regression, since
+CLI/service SQL worker provisioning remains unfinished. Live inference, clean-OS
+setup and neural safety were not evaluated.

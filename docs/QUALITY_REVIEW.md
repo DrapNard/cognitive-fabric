@@ -1505,3 +1505,9 @@ negative identity, replay, budget, framing, cancellation and audit-failure cases
 are covered. Installed evidence for source `6919087` predates this runtime change;
 repeat installation verification before release. Automatic SQL launch/reaping,
 real authenticated model inference and final release gates remain incomplete.
+
+A fresh optimized installation of `af92168` also passed the complete installed
+smoke script. Exact binary/script hashes and evidence directory are recorded in
+`RELEASE_AUDIT.md`; this closes the installed-source gap noted above for this
+commit. The script checks existing CLI/service behavior, while SQL Unix transport
+is covered by the actual child-process Rust test rather than automatic CLI launch.

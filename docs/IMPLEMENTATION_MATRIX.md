@@ -689,3 +689,8 @@ cancellation and failed authorization audit. Queries/results are excluded from
 worker metadata. All 301 Rust tests and mandatory quality checks pass. This
 supersedes the SQL transport limitation above, but does not establish sandboxing,
 crash cleanup or installed verification of the new runtime source.
+
+The SQL Unix source commit `af92168` subsequently passed a fresh optimized install
+and existing installed CLI/service smoke workflow. See `RELEASE_AUDIT.md` for
+hashes and retained evidence. Automatic SQL worker provisioning is still absent;
+separate-process transport evidence comes from the Rust child-process regression.
