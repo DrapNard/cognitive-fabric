@@ -24,11 +24,31 @@ use tokio::{
     sync::{watch, Mutex, OnceCell},
 };
 
-struct SocketDirectory {
+pub(crate) struct SocketDirectory {
     path: PathBuf,
     dev: u64,
     ino: u64,
     socket: Option<(u64, u64)>,
+}
+impl SocketDirectory {
+    pub(crate) fn bind_tool() -> Result<(Self, UnixListener, PathBuf)> {
+        let directory =
+            PathBuf::from("/tmp").join(format!("cogfabric-tool-worker-{}", uuid::Uuid::new_v4()));
+        std::fs::DirBuilder::new().mode(0o700).create(&directory)?;
+        let identity = std::fs::symlink_metadata(&directory)?;
+        let mut guard = Self {
+            path: directory.clone(),
+            dev: identity.dev(),
+            ino: identity.ino(),
+            socket: None,
+        };
+        let socket = directory.join("worker.sock");
+        let listener = UnixListener::bind(&socket)?;
+        let metadata = std::fs::symlink_metadata(&socket)?;
+        guard.socket = Some((metadata.dev(), metadata.ino()));
+        std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o600))?;
+        Ok((guard, listener, socket))
+    }
 }
 impl Drop for SocketDirectory {
     fn drop(&mut self) {

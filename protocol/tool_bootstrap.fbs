@@ -1,0 +1,14 @@
+// Host-authenticated grant for a built-in arithmetic worker; no executable paths.
+namespace ToolSetup;
+table Bootstrap {
+ version:ushort = 1;
+ task_id:string (required);
+ module_id:string (required);
+ module_version:string (required);
+ capability:string (required);
+ calls:uint;
+ seconds:ulong;
+ max_database_bytes:ulong;
+}
+root_type Bootstrap;
+file_identifier "COTB";

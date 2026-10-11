@@ -35,6 +35,13 @@ enum Command {
         #[arg(long)]
         host_pid: u32,
     },
+    #[command(hide = true)]
+    ArithmeticWorker {
+        #[arg(long)]
+        socket: PathBuf,
+        #[arg(long)]
+        host_pid: u32,
+    },
     Init,
     Status,
     SelfTest,
@@ -172,6 +179,10 @@ enum Command {
         enabled: bool,
     },
     ConfigShow,
+    ConfigureToolWorker {
+        #[arg(long, action = clap::ArgAction::Set)]
+        enabled: bool,
+    },
     ConfigureWorker {
         #[arg(long, action = clap::ArgAction::Set)]
         enabled: bool,
@@ -362,6 +373,13 @@ async fn main() -> Result<()> {
             .ok_or_else(|| anyhow::anyhow!("Worker requires an explicit home"))?;
         return cogfabric::fabric::unix::process::run_worker(home, socket, *host_pid).await;
     }
+    if let Command::ArithmeticWorker { socket, host_pid } = &cli.command {
+        let home = cli
+            .home
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Tool worker requires an explicit home"))?;
+        return cogfabric::fabric::tools::unix::process::run_worker(home, socket, *host_pid).await;
+    }
     let cfg = Config::load(cli.home, cli.backend)?;
     if let Command::RestoreDatabase {
         snapshot,
@@ -391,7 +409,9 @@ async fn main() -> Result<()> {
     store::bootstrap(&store)?;
     let engine = Engine::new(cfg.clone(), store.clone());
     let response: Value = match cli.command {
-        Command::InferenceWorker { .. } => bail!("Worker must run before normal initialization"),
+        Command::InferenceWorker { .. } | Command::ArithmeticWorker { .. } => {
+            bail!("Worker must run before normal initialization")
+        }
         Command::RestoreDatabase { .. } => {
             bail!("Restore must run before workspace initialization")
         }
@@ -528,6 +548,13 @@ async fn main() -> Result<()> {
             json!({"saved":true,"inference_auth_scope":settings.inference_auth_scope,"credential_environment_variable":cogfabric::credentials::ENVIRONMENT_VARIABLE,"credential_stored":false})
         }
         Command::ConfigShow => serde_json::to_value(&cfg)?,
+        Command::ConfigureToolWorker { enabled } => {
+            security::authorize("human-cli", "tool.worker.configure")?;
+            let mut changed = cfg.clone();
+            changed.arithmetic_process = enabled;
+            changed.save()?;
+            json!({"arithmetic_process":enabled,"sandboxed":false})
+        }
         Command::ConfigureWorker { enabled } => {
             security::authorize("human-cli", "inference.worker.configure")?;
             let mut changed = cfg.clone();

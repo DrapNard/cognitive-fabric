@@ -354,3 +354,35 @@ Dropping a future is not proof that arbitrary external side effects stopped;
 this transport provides no executable sandbox or model attestation. Abrupt worker
 termination may omit the terminal audit record. Original Engine tool allowances
 and independent arithmetic verification still apply; grants cannot expand policy.
+
+
+### Managed built-in arithmetic workers
+
+`configure-tool-worker --enabled true` persists `arithmetic_process` (default
+false); restart a running service to apply it. Disable with the same command and
+`--enabled false`. Direct and socket `ask 'calc: 6*7' --mode fast` now lazily launch
+the same Rust binary as an arithmetic worker, using the existing bounded broker
+and COGT commands. No inference worker/model call is needed for arithmetic.
+The default arithmetic registry is required; custom versions are rejected before
+task creation rather than silently replaced. Other capabilities remain in-process.
+
+`protocol/tool_bootstrap.fbs` defines verified COTB v1, bounded to 2 KiB with
+two-second read/write deadlines. Both peers authenticate approved UID/PID before
+bootstrap. Trusted setup grants exactly one task, built-in module/version and one
+arithmetic call; its lifetime is at most 30 seconds and conservatively rounds up
+remaining task seconds. The host still enforces its original precise deadline.
+The worker opens the matching private workspace database with the pinned quota;
+no mutable generation settings, model credentials or inherited environment are used.
+Permission/tool-budget admission precedes lazy launch and the host independently
+verifies the returned arithmetic answer.
+
+Launch intent, owned PID, bootstrap delivery and confirmed reaping are distinct
+audit records. Ownership begins at spawn and survives cancelled/failed handoff;
+normal task cleanup closes the connection, waits two seconds, then kills/reaps
+with a further two-second limit. Directory/socket cleanup checks inode/device
+identity. Cleanup errors fail the task. This also applies after execution errors
+and cancellation. Process/runtime crashes can still leave stale files or unknown
+cleanup outcomes; no automatic crash cleanup or executable sandbox is claimed.
+This supersedes the arithmetic-specific provisioning/CLI lifecycle limitations
+above. General executable provisioning and non-arithmetic command routing remain
+**Partial / Not implemented**. Process overhead is not a measured speedup.

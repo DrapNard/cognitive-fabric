@@ -193,6 +193,13 @@ impl Engine {
         let deadline = execution_start.deadline;
         let model_registration = self.store.pin_model(&self.cfg)?;
         let arithmetic = self.tools.pin()?;
+        if self.cfg.arithmetic_process
+            && arithmetic.as_ref().is_none_or(|h| {
+                h.descriptor().id != "arithmetic.local" || h.descriptor().version != "1.0.0"
+            })
+        {
+            bail!("Managed arithmetic requires the default tool registry; custom modules need explicit lifecycle integration")
+        }
         let backend = self.backend.pin()?.unwrap_or_else(|| self.backend.clone());
         if self.process_inference {
             let modules = backend.modules()?;
@@ -212,6 +219,27 @@ impl Engine {
         let id = match task_id {
             Some(id) => self.store.create_named_task(&id, query, mode)?,
             None => self.store.create_task(query, mode)?,
+        };
+        let tool_process = if self.cfg.arithmetic_process {
+            Some(Arc::new(
+                crate::fabric::tools::unix::process::ProcessTask::new(
+                    self.cfg.clone(),
+                    self.store.clone(),
+                    &id,
+                    deadline,
+                )?,
+            ))
+        } else {
+            None
+        };
+        let task_tools = tool_process
+            .as_ref()
+            .map(|process| crate::fabric::tools::Broker::with_arithmetic(process.clone()))
+            .transpose()?;
+        let arithmetic = if let Some(tools) = &task_tools {
+            tools.pin()?
+        } else {
+            arithmetic
         };
         let process = if self.process_inference {
             Some(Arc::new(crate::fabric::unix::process::ProcessTask::new(
@@ -628,6 +656,22 @@ impl Engine {
             result=execution=>result,
         };
         let result = if let Some(process) = &process {
+            match process.shutdown().await {
+                Ok(()) => result,
+                Err(error) => Err(error),
+            }
+        } else {
+            result
+        };
+        let result = match task_tools
+            .as_ref()
+            .map(|tools| tools.shutdown())
+            .transpose()
+        {
+            Ok(_) => result,
+            Err(error) => Err(error),
+        };
+        let result = if let Some(process) = &tool_process {
             match process.shutdown().await {
                 Ok(()) => result,
                 Err(error) => Err(error),

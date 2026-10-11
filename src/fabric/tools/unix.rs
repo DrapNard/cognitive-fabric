@@ -1,4 +1,5 @@
 //! Task-granted arithmetic commands over mutually authenticated local sockets.
+pub mod process;
 use super::{decode, encode, ArithmeticBackend, Descriptor, Identity, Packet};
 use anyhow::{bail, Context, Result};
 use std::{future::Future, pin::Pin, sync::Arc, time::Duration};

@@ -1436,3 +1436,16 @@ duplicate-correlation denial and authorization-audit failure before backend work
 Registration also rejects a descriptor differing from its socket backend grant.
 No live inference or arbitrary executable sandbox was tested. Automatic tool-worker
 launch, task-grant provisioning and service/CLI integration remain incomplete.
+
+
+### Managed arithmetic task workers — 2026-10-11
+
+Mandatory formatting, offline all-target check, all-target tests (285 passed:
+266 library and 19 integration), and Clippy with warnings denied passed with
+FlatBuffers compiler/crate 25.12.19. New checks cover typed bootstrap bounds and
+built-in grant constraints, terminal/wrong-task refusal, custom registry refusal,
+forced reaping/socket removal for unfinished startup, and actual CLI/service asks.
+Integration tests assert zero inference calls, one audited arithmetic authorization,
+confirmed reaping, rejected-expression cleanup, and no launch when the math-tool
+allowance is exhausted after retrieval. The startup child fixture is included in
+the count. No live inference or sandbox isolation is established by these tests.

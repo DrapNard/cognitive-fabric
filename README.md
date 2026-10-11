@@ -171,3 +171,10 @@ supports default Full/Collective advisory graphs and unconsumed solver boundarie
 including FAST, whole-goal fallback and skipped-plan tasks, with direct or managed
 inference and validated original model registrations. See
 [recovery documentation](docs/RECOVERY.md) before using this command.
+
+
+Optional arithmetic workers: `cogfabric configure-tool-worker --enabled true`
+launches one task-scoped built-in Rust worker for `ask 'calc: 6*7' --mode fast`,
+including socket-service asks after restart. Disable with `--enabled false`.
+The host retains budget checks and independent verification; this is process
+separation, not an executable sandbox. See [worker lifecycle](docs/WORKERS.md).

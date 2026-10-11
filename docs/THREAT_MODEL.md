@@ -160,3 +160,12 @@ The host controls socket permissions, child creation and grant provisioning.
 This transport does not isolate executable code, attest backend identity beyond
 OS credentials, stop arbitrary external side effects, or protect against a
 compromised same-user host. Tool-worker lifecycle automation remains unfinished.
+
+
+Managed arithmetic provisioning is now opt-in through the human-only
+`tool.worker.configure` capability. The launcher accepts only its current Rust
+executable, clears inherited environment, requires a matching private persistent
+workspace and gives exactly one arithmetic call through authenticated COTB setup.
+Original host tool allowances and deadlines remain authoritative. Ownership survives
+cancelled/failed startup and normal cleanup confirms child reaping. Runtime crashes
+can still leave stale resources; same-user code and database access are not sandboxed.

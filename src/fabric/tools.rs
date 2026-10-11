@@ -239,25 +239,26 @@ pub struct Broker {
 }
 impl Default for Broker {
     fn default() -> Self {
+        Self::with_arithmetic(Arc::new(LocalMath)).expect("Built-in arithmetic descriptor is valid")
+    }
+}
+impl Broker {
+    pub(crate) fn with_arithmetic(backend: Arc<dyn ArithmeticBackend>) -> Result<Self> {
         let (stop, _) = watch::channel(false);
         let broker = Self {
             registry: RwLock::new(Registry::default()),
             stop: Arc::new(stop),
         };
-        broker
-            .register(
-                Descriptor {
-                    id: "arithmetic.local".into(),
-                    version: "1.0.0".into(),
-                    capability: "math.evaluate".into(),
-                },
-                Arc::new(LocalMath),
-            )
-            .expect("Built-in arithmetic descriptor is valid");
-        broker
+        broker.register(
+            Descriptor {
+                id: "arithmetic.local".into(),
+                version: "1.0.0".into(),
+                capability: "math.evaluate".into(),
+            },
+            backend,
+        )?;
+        Ok(broker)
     }
-}
-impl Broker {
     pub fn register(
         &self,
         descriptor: Descriptor,

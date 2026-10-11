@@ -2,6 +2,16 @@
 
 All notable changes are documented here in English.
 
+### Managed arithmetic task workers
+
+- Add opt-in `configure-tool-worker` and same-binary lazy arithmetic workers for
+  direct CLI and socket service tasks, preserving bounded broker dispatch.
+- Deliver an authenticated typed one-call task grant without inherited credentials.
+- Retain ownership through interrupted startup, reap children and clean sockets;
+  refuse custom registry substitution and exhausted tool allowances.
+- Test real CLI/service execution, invalid arithmetic cleanup and unfinished-startup
+  reaping. General executable lifecycle and crash cleanup remain incomplete.
+
 ### Authenticated arithmetic process transport
 
 - Carry task-scoped arithmetic commands over mutually authenticated Unix sockets.

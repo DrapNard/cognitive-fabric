@@ -1,0 +1,478 @@
+//! Opt-in built-in arithmetic workers. No arbitrary executable is accepted.
+use super::{authenticate, Grant, UnixArithmetic};
+use crate::{
+    config::Config,
+    fabric::{
+        tools::{ArithmeticBackend, Descriptor, LocalMath},
+        unix::process::SocketDirectory,
+    },
+    store::Store,
+};
+use anyhow::{bail, Context, Result};
+use std::{
+    future::Future,
+    os::unix::fs::MetadataExt,
+    path::Path,
+    pin::Pin,
+    sync::Arc,
+    time::{Duration, Instant},
+};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::UnixStream,
+    sync::{watch, Mutex, OnceCell},
+};
+#[allow(dead_code, unused_imports, clippy::all)]
+mod generated {
+    include!(concat!(env!("OUT_DIR"), "/tool_bootstrap_generated.rs"));
+}
+use generated::tool_setup as fb;
+
+struct Setup {
+    grant: Grant,
+    database_bytes: u64,
+}
+impl Setup {
+    fn validate(&self) -> Result<()> {
+        Grant::new(
+            &self.grant.task,
+            self.grant.descriptor.clone(),
+            self.grant.calls,
+            self.grant.seconds,
+        )?;
+        if self.grant.descriptor != descriptor()
+            || self.grant.calls != 1
+            || !(64_000_000..=2_000_000_000).contains(&self.database_bytes)
+        {
+            bail!("Invalid built-in tool worker setup")
+        }
+        Ok(())
+    }
+    fn encode(&self) -> Result<Vec<u8>> {
+        self.validate()?;
+        let mut b = flatbuffers::FlatBufferBuilder::new();
+        let args = fb::BootstrapArgs {
+            version: 1,
+            task_id: Some(b.create_string(&self.grant.task)),
+            module_id: Some(b.create_string(&self.grant.descriptor.id)),
+            module_version: Some(b.create_string(&self.grant.descriptor.version)),
+            capability: Some(b.create_string(&self.grant.descriptor.capability)),
+            calls: self.grant.calls,
+            seconds: self.grant.seconds,
+            max_database_bytes: self.database_bytes,
+        };
+        let root = fb::Bootstrap::create(&mut b, &args);
+        fb::finish_bootstrap_buffer(&mut b, root);
+        Ok(b.finished_data().to_vec())
+    }
+    fn decode(bytes: &[u8]) -> Result<Self> {
+        if !(8..=2048).contains(&bytes.len()) || !fb::bootstrap_buffer_has_identifier(bytes) {
+            bail!("Invalid tool bootstrap frame")
+        }
+        let p = fb::root_as_bootstrap(bytes)?;
+        if p.version() != 1 {
+            bail!("Unsupported tool bootstrap version")
+        }
+        let setup = Self {
+            grant: Grant::new(
+                p.task_id(),
+                Descriptor {
+                    id: p.module_id().into(),
+                    version: p.module_version().into(),
+                    capability: p.capability().into(),
+                },
+                p.calls(),
+                p.seconds(),
+            )?,
+            database_bytes: p.max_database_bytes(),
+        };
+        setup.validate()?;
+        Ok(setup)
+    }
+    async fn send(&self, stream: &mut UnixStream) -> Result<()> {
+        let bytes = self.encode()?;
+        tokio::time::timeout(Duration::from_secs(2), async {
+            stream.write_u32(u32::try_from(bytes.len())?).await?;
+            stream.write_all(&bytes).await?;
+            Ok::<_, anyhow::Error>(())
+        })
+        .await
+        .context("Tool bootstrap write deadline exhausted")?
+    }
+    async fn receive(stream: &mut UnixStream) -> Result<Self> {
+        tokio::time::timeout(Duration::from_secs(2), async {
+            let length = stream.read_u32().await? as usize;
+            if !(8..=2048).contains(&length) {
+                bail!("Tool bootstrap length exceeds bounds")
+            }
+            let mut bytes = vec![0; length];
+            stream.read_exact(&mut bytes).await?;
+            Self::decode(&bytes)
+        })
+        .await
+        .context("Tool bootstrap read deadline exhausted")?
+    }
+}
+fn descriptor() -> Descriptor {
+    Descriptor {
+        id: "arithmetic.local".into(),
+        version: "1.0.0".into(),
+        capability: "math.evaluate".into(),
+    }
+}
+fn private_home(home: &Path) -> Result<std::fs::Metadata> {
+    let metadata = std::fs::symlink_metadata(home)?;
+    if !metadata.is_dir()
+        || metadata.mode() & 0o777 != 0o700
+        || metadata.uid() != unsafe { libc::geteuid() }
+    {
+        bail!("Tool worker requires an owner-only home")
+    }
+    Ok(metadata)
+}
+struct Managed {
+    adapter: UnixArithmetic,
+    child: Mutex<tokio::process::Child>,
+    _directory: SocketDirectory,
+    _lease: Option<crate::recovery::ExecutionLease>,
+}
+struct Starting {
+    child: tokio::process::Child,
+    directory: SocketDirectory,
+    lease: Option<crate::recovery::ExecutionLease>,
+}
+pub(crate) struct ProcessTask {
+    config: Config,
+    store: Arc<Store>,
+    task: String,
+    deadline: Instant,
+    descriptor: Descriptor,
+    worker: OnceCell<Managed>,
+    starting: Mutex<Option<Starting>>,
+}
+impl ProcessTask {
+    pub(crate) fn new(
+        config: Config,
+        store: Arc<Store>,
+        task: &str,
+        deadline: Instant,
+    ) -> Result<Self> {
+        config.validate()?;
+        uuid::Uuid::parse_str(task)?;
+        Ok(Self {
+            config,
+            store,
+            task: task.into(),
+            deadline,
+            descriptor: descriptor(),
+            worker: OnceCell::new(),
+            starting: Mutex::new(None),
+        })
+    }
+    async fn launch(&self) -> Result<Managed> {
+        let lease = self.store.execution_lease()?;
+        let running: bool = self.store.lock()?.query_row(
+            "SELECT status='running' FROM tasks WHERE id=?1",
+            [&self.task],
+            |r| r.get(0),
+        )?;
+        if !running {
+            bail!("Cannot launch tool worker for a terminal task")
+        }
+        let remaining = self.deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            bail!("Tool worker task deadline exhausted")
+        }
+        let seconds = remaining
+            .as_secs()
+            .saturating_add(u64::from(remaining.subsec_nanos() != 0))
+            .min(30);
+        let home = std::fs::canonicalize(&self.config.home)?;
+        let metadata = private_home(&home)?;
+        let database: String = self.store.lock()?.query_row(
+            "SELECT file FROM pragma_database_list WHERE name='main'",
+            [],
+            |r| r.get(0),
+        )?;
+        if database.is_empty()
+            || std::fs::canonicalize(self.config.db())? != std::fs::canonicalize(database)?
+        {
+            bail!("Tool worker database differs from workspace storage")
+        }
+        let (guard, listener, socket) = SocketDirectory::bind_tool()?;
+        let mut command = tokio::process::Command::new(std::env::current_exe()?);
+        command
+            .arg("--home")
+            .arg(&home)
+            .arg("arithmetic-worker")
+            .arg("--socket")
+            .arg(&socket)
+            .arg("--host-pid")
+            .arg(std::process::id().to_string())
+            .env_clear()
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .kill_on_drop(true);
+        self.store.event(
+            &self.task,
+            "tool_worker_launch",
+            "fabric",
+            serde_json::json!({"calls_granted":1,"seconds_granted":seconds,"sandboxed":false}),
+        )?;
+        let mut pending = self.starting.lock().await;
+        if pending.is_some() {
+            bail!("An unfinished tool worker startup cannot be retried")
+        }
+        let child = command.spawn()?;
+        let pid = child.id().context("Tool worker has no PID")?;
+        *pending = Some(Starting {
+            child,
+            directory: guard,
+            lease,
+        });
+        self.store.event(&self.task, "tool_worker_process", "fabric", serde_json::json!({"pid":pid,"calls_granted":1,"seconds_granted":seconds,"sandboxed":false}))?;
+        let starting = pending.as_mut().context("Tool startup ownership missing")?;
+        let mut stream = tokio::select! {
+            result = tokio::time::timeout(Duration::from_secs(5), listener.accept()) => result.context("Tool worker connect deadline exhausted")??.0,
+            status = starting.child.wait() => bail!("Tool worker exited before setup: {:?}", status?),
+        };
+        authenticate(&stream, metadata.uid(), pid)?;
+        let setup = Setup {
+            grant: Grant::new(&self.task, self.descriptor.clone(), 1, seconds)?,
+            database_bytes: self.config.max_database_bytes,
+        };
+        setup.send(&mut stream).await?;
+        let adapter = UnixArithmetic::connected(stream, setup.grant, metadata.uid(), pid)?;
+        self.store.event(
+            &self.task,
+            "tool_worker_ready",
+            "fabric",
+            serde_json::json!({"pid":pid,"bootstrap_delivered":true}),
+        )?;
+        drop(listener);
+        let starting = pending.take().context("Tool startup ownership missing")?;
+        Ok(Managed {
+            adapter,
+            child: Mutex::new(starting.child),
+            _directory: starting.directory,
+            _lease: starting.lease,
+        })
+    }
+    pub(crate) async fn shutdown(&self) -> Result<()> {
+        if let Some(worker) = self.worker.get() {
+            worker.adapter.connection.lock().await.stream.take();
+            let mut child = worker.child.lock().await;
+            return self.reap(&mut child).await;
+        }
+        let pending = self.starting.lock().await.take();
+        if let Some(mut pending) = pending {
+            return self.reap(&mut pending.child).await;
+        }
+        Ok(())
+    }
+    async fn reap(&self, child: &mut tokio::process::Child) -> Result<()> {
+        let pid = child.id();
+        let mut forced = false;
+        let status = match tokio::time::timeout(Duration::from_secs(2), child.wait()).await {
+            Ok(status) => status?,
+            Err(_) => {
+                forced = true;
+                child.start_kill()?;
+                tokio::time::timeout(Duration::from_secs(2), child.wait())
+                    .await
+                    .context("Tool worker reap deadline exhausted")??
+            }
+        };
+        self.store.event(
+            &self.task,
+            "tool_worker_process_stopped",
+            "fabric",
+            serde_json::json!({"pid":pid,"forced":forced,"exit_code":status.code(),"reaped":true}),
+        )
+    }
+}
+impl ArithmeticBackend for ProcessTask {
+    fn module_descriptor(&self) -> Option<&Descriptor> {
+        Some(&self.descriptor)
+    }
+    fn evaluate<'a>(
+        &'a self,
+        expression: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<String>> + Send + 'a>> {
+        self.evaluate_for(&self.task, expression)
+    }
+    fn evaluate_for<'a>(
+        &'a self,
+        task: &'a str,
+        expression: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<String>> + Send + 'a>> {
+        Box::pin(async move {
+            if task != self.task || expression.is_empty() || expression.len() > 120 {
+                bail!("Tool process request exceeds task/input scope")
+            }
+            let worker = self.worker.get_or_try_init(|| self.launch()).await?;
+            worker.adapter.evaluate_for(task, expression).await
+        })
+    }
+}
+
+pub async fn run_worker(home: &Path, socket: &Path, host_pid: u32) -> Result<()> {
+    let metadata = private_home(home)?;
+    let mut stream =
+        tokio::time::timeout(Duration::from_secs(5), UnixStream::connect(socket)).await??;
+    authenticate(&stream, metadata.uid(), host_pid)?;
+    let setup = Setup::receive(&mut stream).await?;
+    let store = Arc::new(Store::open_with_limit(
+        &home.join("fabric.sqlite3"),
+        setup.database_bytes,
+    )?);
+    let running: bool = store.lock()?.query_row(
+        "SELECT status='running' FROM tasks WHERE id=?1",
+        [&setup.grant.task],
+        |r| r.get(0),
+    )?;
+    if !running {
+        bail!("Tool worker task is no longer running")
+    }
+    let (_stop, receive) = watch::channel(false);
+    super::serve(
+        stream,
+        setup.grant,
+        metadata.uid(),
+        host_pid,
+        Arc::new(LocalMath),
+        store,
+        receive,
+    )
+    .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn startup_child_fixture() {
+        if std::env::var_os("COGFABRIC_TEST_TOOL_STARTUP_HOLD").is_some() {
+            std::thread::sleep(Duration::from_secs(10));
+        }
+    }
+    #[tokio::test]
+    async fn unfinished_startup_is_owned_reaped_and_socket_directory_removed() {
+        let store = Arc::new(Store::in_memory().unwrap());
+        let task = store
+            .create_task("unfinished tool startup", "fast")
+            .unwrap();
+        let process = ProcessTask::new(
+            Config::default(),
+            store.clone(),
+            &task,
+            Instant::now() + Duration::from_secs(10),
+        )
+        .unwrap();
+        let (directory, listener, socket) = SocketDirectory::bind_tool().unwrap();
+        let path = socket.parent().unwrap().to_path_buf();
+        let child = tokio::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "fabric::tools::unix::process::tests::startup_child_fixture",
+            ])
+            .env("COGFABRIC_TEST_TOOL_STARTUP_HOLD", "1")
+            .stdout(std::process::Stdio::null())
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        *process.starting.lock().await = Some(Starting {
+            child,
+            directory,
+            lease: None,
+        });
+        drop(listener);
+        process.shutdown().await.unwrap();
+        assert!(process.starting.lock().await.is_none());
+        assert!(!path.exists());
+        let trace = store.task(&task).unwrap();
+        assert!(trace["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["kind"] == "tool_worker_process_stopped"
+                && e["payload"]["reaped"] == true
+                && e["payload"]["forced"] == true));
+    }
+    #[test]
+    fn bootstrap_round_trip_and_invalid_grants() {
+        let mut setup = Setup {
+            grant: Grant::new(&uuid::Uuid::new_v4().to_string(), descriptor(), 1, 30).unwrap(),
+            database_bytes: 256_000_000,
+        };
+        let bytes = setup.encode().unwrap();
+        assert_eq!(Setup::decode(&bytes).unwrap().grant.task, setup.grant.task);
+        assert!(Setup::decode(&[0; 16]).is_err());
+        assert!(Setup::decode(&vec![0; 2049]).is_err());
+        setup.grant.calls = 2;
+        assert!(setup.encode().is_err());
+        setup.grant.calls = 1;
+        setup.grant.descriptor.version = "2.0.0".into();
+        assert!(setup.encode().is_err());
+        setup.grant.descriptor = descriptor();
+        setup.database_bytes = 1;
+        assert!(setup.encode().is_err());
+    }
+    #[tokio::test]
+    async fn denied_scope_and_terminal_task_never_launch() {
+        let store = Arc::new(Store::in_memory().unwrap());
+        let task = store.create_task("tool scope", "fast").unwrap();
+        let process = ProcessTask::new(
+            Config::default(),
+            store.clone(),
+            &task,
+            Instant::now() + Duration::from_secs(10),
+        )
+        .unwrap();
+        assert!(process
+            .evaluate_for(&uuid::Uuid::new_v4().to_string(), "6*7")
+            .await
+            .is_err());
+        assert!(process.worker.get().is_none());
+        store
+            .finish_task(&task, "interrupted", "No replay")
+            .unwrap();
+        assert!(process
+            .evaluate("6*7")
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("terminal"));
+        assert!(process.worker.get().is_none());
+    }
+    #[tokio::test]
+    async fn managed_mode_refuses_custom_tool_registration_before_task_creation() {
+        let store = Arc::new(Store::in_memory().unwrap());
+        let engine = crate::engine::Engine::new(
+            Config {
+                arithmetic_process: true,
+                ..Config::default()
+            },
+            store.clone(),
+        );
+        let mut replaced = descriptor();
+        replaced.version = "2.0.0".into();
+        engine
+            .tools
+            .register(replaced, Arc::new(LocalMath))
+            .unwrap();
+        assert!(engine
+            .run("calc: 6*7", "fast")
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("default tool registry"));
+        let tasks: u32 = store
+            .lock()
+            .unwrap()
+            .query_row("SELECT count(*) FROM tasks", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(tasks, 0);
+    }
+}
