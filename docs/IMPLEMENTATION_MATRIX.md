@@ -349,3 +349,10 @@ admission and cap request timeout by remaining time. Tests exercise slow setup,
 zero post-expiry dispatch and refusal to extend a restricted deadline. Blocking
 callbacks/I/O are not preemptible; cross-process wall-time recovery remains
 **Partial** and no fresh allowance is granted by recovery inspection.
+
+Model registry read integrity: **Implemented** in `src/models.rs`. Listing now
+checks embedded identity against row identity as exact lookup already did, and
+both paths exclude oversized payload/checksum fields before Rust allocation.
+Regression tests cover changed IDs/versions with recomputed valid hashes and
+oversized manifests, checksums, row IDs and versions. This strengthens discovery
+and version references; server-loaded weight identity remains unattested.

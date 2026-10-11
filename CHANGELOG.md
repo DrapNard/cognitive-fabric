@@ -438,3 +438,10 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   deadline with reasoning sessions.
 - Reject expired tool/cycle/inference admission and cap inference timeouts by
   remaining task time, preserving cancellation priority.
+
+### Model registry read integrity
+
+- Reject model discovery entries whose embedded identities differ from stored row
+  identities, even when their manifest checksums are valid.
+- Bound stored manifest, identifier, version and checksum reads before Rust
+  allocation and add tampered/oversized registry regression coverage.

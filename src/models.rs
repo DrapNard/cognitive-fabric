@@ -97,7 +97,7 @@ pub(crate) fn registered_from(
     selection.validate()?;
     let row: Option<(String, String, bool)> = db
         .query_row(
-            "SELECT manifest,checksum,enabled FROM model_manifests WHERE id=?1 AND version=?2",
+            "SELECT CASE WHEN length(CAST(manifest AS BLOB))<=16000 THEN manifest END,CASE WHEN length(CAST(checksum AS BLOB))=64 THEN checksum END,enabled FROM model_manifests WHERE id=?1 AND version=?2",
             params![selection.id, selection.version],
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )
@@ -153,18 +153,21 @@ impl Store {
     }
     pub fn models(&self) -> Result<Vec<Registered>> {
         let db = self.lock()?;
-        let rows = db.prepare("SELECT manifest,checksum,enabled FROM model_manifests ORDER BY id,version LIMIT 257")?
-            .query_map([],|row|Ok((row.get::<_,String>(0)?,row.get::<_,String>(1)?,row.get::<_,bool>(2)?)))?.collect::<rusqlite::Result<Vec<_>>>()?;
+        let rows = db.prepare("SELECT CASE WHEN length(CAST(id AS BLOB))<=64 THEN id END,CASE WHEN length(CAST(version AS BLOB))<=64 THEN version END,CASE WHEN length(CAST(manifest AS BLOB))<=16000 THEN manifest END,CASE WHEN length(CAST(checksum AS BLOB))=64 THEN checksum END,enabled FROM model_manifests ORDER BY id,version LIMIT 257")?
+            .query_map([],|row|Ok((row.get::<_,String>(0)?,row.get::<_,String>(1)?,row.get::<_,String>(2)?,row.get::<_,String>(3)?,row.get::<_,bool>(4)?)))?.collect::<rusqlite::Result<Vec<_>>>()?;
         if rows.len() > 256 {
             bail!("Model registry exceeds limit")
         }
         rows.into_iter()
-            .map(|(raw, checksum, enabled)| {
+            .map(|(id, version, raw, checksum, enabled)| {
                 if raw.len() > 16000 || sha256(raw.as_bytes()) != checksum {
                     bail!("Model manifest integrity check failed")
                 }
                 let manifest: Manifest = serde_json::from_str(&raw)?;
                 manifest.validate()?;
+                if manifest.id != id || manifest.version != version {
+                    bail!("Model registration identity mismatch")
+                }
                 Ok(Registered {
                     manifest,
                     checksum,
@@ -247,6 +250,59 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn listing_and_lookup_reject_mismatched_and_oversized_stored_identity() {
+        for variant in 0..6 {
+            let store = Store::in_memory().unwrap();
+            let (path, manifest) = fixture();
+            store.register_model(&path).unwrap();
+            std::fs::remove_file(path).unwrap();
+            let selection = Selection {
+                id: manifest.id.clone(),
+                version: manifest.version.clone(),
+            };
+            let mut changed = manifest.clone();
+            match variant {
+                0 => changed.id = "forged.model".into(),
+                1 => changed.version = "2.0.0".into(),
+                _ => (),
+            }
+            let raw = if variant == 2 {
+                "x".repeat(16001)
+            } else {
+                serde_json::to_string(&changed).unwrap()
+            };
+            let checksum = if variant == 3 {
+                "x".repeat(1024)
+            } else {
+                sha256(raw.as_bytes())
+            };
+            store
+                .lock()
+                .unwrap()
+                .execute(
+                    "UPDATE model_manifests SET manifest=?1,checksum=?2",
+                    params![raw, checksum],
+                )
+                .unwrap();
+            if variant == 4 {
+                store
+                    .lock()
+                    .unwrap()
+                    .execute("UPDATE model_manifests SET id=?1", ["x".repeat(1024)])
+                    .unwrap();
+            }
+            if variant == 5 {
+                store
+                    .lock()
+                    .unwrap()
+                    .execute("UPDATE model_manifests SET version=?1", ["x".repeat(1024)])
+                    .unwrap();
+            }
+            assert!(store.models().is_err(), "variant {variant}");
+            assert!(store.model(&selection).is_err(), "variant {variant}");
+        }
+    }
     fn fixture() -> (std::path::PathBuf, Manifest) {
         let path =
             std::env::temp_dir().join(format!("cogfabric-model-{}.json", uuid::Uuid::new_v4()));

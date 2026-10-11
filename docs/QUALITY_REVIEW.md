@@ -1112,3 +1112,13 @@ rejects all three admissions, and a later attempted deadline extension has no
 effect. Request timeouts are capped by remaining monotonic allowance. Synchronous
 callbacks/I/O are not preemptible, cleanup may exceed execution time, and no
 cross-process clock restoration or automatic resumption is claimed.
+
+## Model registry read integrity
+
+FlatBuffers 25.12.19 formatting, all-target check, 200 all-target tests (190
+library and 10 integration), and Clippy with denied warnings pass. Six corruption
+fixtures reject embedded ID/version changes with valid recomputed hashes, oversized
+manifest/checksum fields and oversized row IDs/versions through both listing and
+exact lookup. SQL field guards prevent oversized values from being copied into
+Rust; registry count bounds remain unchanged. No loaded-weight attestation or
+trust against an owner rewriting both data and hashes is implied.

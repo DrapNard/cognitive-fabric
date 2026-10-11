@@ -60,3 +60,10 @@ metadata. There are no dependency graphs between these connection records yet.
 Provider-reported model IDs and optional usage remain distinct from registration
 metadata. Live server validation, actual model residency changes, exact tokenizer
 preflight, and weight attestation remain incomplete.
+
+Registry reads validate that each embedded manifest identity equals its database
+row identity, both during discovery/listing and exact selection. SQL excludes
+manifest payloads above 16,000 bytes, identifiers/versions above 64 bytes and
+checksums other than 64 bytes before copying those fields into Rust. Invalid
+records fail the operation rather than being silently skipped. Hashes prove local
+consistency only; an owner able to rewrite the database can rewrite its checksums.
