@@ -49,7 +49,7 @@ a compromised same-user process can rewrite both data and hashes.
 
 Neural adapters, inference-model loading/unloading, external executable experts,
 sandboxed code execution and backend weight attestations remain unsupported.
-The shared loopback inference adapter serves all logical roles; reference skill
+The default shared loopback inference adapter serves all logical roles; reference skill
 replacement is implemented independently of neural hot-swapping.
 
 ## Bounded prompt/workflow experts
@@ -77,8 +77,8 @@ unverified and cannot complete a task on its own.
 
 Replacing/disabling manifests affects subsequent snapshots, while copied workflow
 text stays pinned for in-flight work. This is a single model-assisted checklist
-expert, not an arbitrary workflow interpreter, executable plugin or independent
-model backend. Structured multi-step advice is described below; measured usefulness
+expert; optional registered model bindings are described below. It is not an
+arbitrary workflow interpreter or executable plugin. Structured multi-step advice is described below; measured usefulness
 still requires work.
 
 ## Dependency-ordered workflow steps
@@ -104,6 +104,40 @@ Admission requires a nonzero cycle limit, all step calls plus two remaining call
 for dependency data and final reasoning. Each actual dispatch independently checks
 the shared limits. Refusal skips the entire workflow before calls. FAST and other
 ablation profiles continue to exclude workflow advice. This is a bounded advice
-graph, not an interpreter for executable/conditional workflows, and does not load
-additional models. Lifecycle replacement/disable affects new task snapshots;
+graph, not an interpreter for executable/conditional workflows, and does not automatically load model weights. Lifecycle replacement/disable affects new task snapshots;
 in-flight manifests remain pinned.
+
+
+## Registered local model bindings
+
+A workflow may include `"model": {"id": "domain.local", "version": "1.0.0"}`.
+Reference manifests cannot bind models. Register the reviewed model with
+`model-register FILE.json` before activating the workflow. Activation requires an
+existing enabled immutable model registration with at least 192 output tokens.
+Omitting the binding preserves legacy hashes and shared-backend behavior.
+
+The task snapshots the workflow and enabled model registration together. Bound
+advice uses that registration's loopback endpoint and requested model, with parent
+role overrides cleared. Each advice step reserves 192 output tokens through the
+same task policy, broker, call, prompt-byte and wall budgets as ordinary reasoning.
+No additional tool permissions are granted. The existing whole-workflow admission
+rules still apply, and at most one workflow is selected.
+
+Disabling a model affects new tasks, including tasks using frozen knowledge
+corpora; an already admitted task retains its copied registration. Missing or
+disabled bindings skip advice. Provider failure leaves consumed call charges in
+place and continues main reasoning within remaining budgets; incomplete token and
+queue measurements remain unavailable. Advice never becomes verification evidence.
+Health reports registration availability, not endpoint readiness or model quality.
+
+With managed inference enabled, a bound expert owns a separate authenticated
+worker using the same task identity and limits. The main and expert workers are
+closed and reaped at task termination; cleanup allows up to four seconds per
+child. Tests cover actual loopback endpoint selection, in-flight disable, frozen
+corpus revocation, budget refusal, provider failure and two-child cleanup.
+
+Registration hashes identify configuration, not remotely attested model weights.
+Automatic backend loading/unloading, GPU residency control, neural adapter switching
+and measured expert usefulness remain unverified or unsupported. Comparisons using
+a separately bound model must report that model and cannot claim same-model
+ablation fairness solely from matching task budgets.

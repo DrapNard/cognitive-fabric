@@ -95,6 +95,7 @@ mod tests {
         let mut manifest = crate::registry::Manifest {
             workflow: None,
             workflow_steps: None,
+            model: None,
             id: "rust.s1".into(),
             version: "1.0.0".into(),
             kind: "reference".into(),

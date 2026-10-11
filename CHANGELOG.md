@@ -2,6 +2,14 @@
 
 All notable changes are documented here in English.
 
+### Registered-model workflow experts
+
+- Bind workflow advice to immutable enabled local model registrations while sharing
+  task budgets, permissions and bounded typed inference dispatch.
+- Preserve in-flight bindings, honor live disable for new frozen-corpus tasks and
+  retain failed-call charges without fabricating missing usage measurements.
+- Cover independent HTTP selection, failure fallback and managed expert cleanup.
+
 ### Worker crash audit reconciliation
 
 - Hold runtime execution leases through host startup and persistent worker serving;

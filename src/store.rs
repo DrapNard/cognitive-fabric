@@ -82,6 +82,7 @@ pub struct TaskContext {
     pub skills: Vec<Skill>,
     pub documents: Vec<Document>,
     pub manifests: Vec<crate::registry::Manifest>,
+    pub expert_models: std::collections::BTreeMap<String, crate::models::Registered>,
 }
 
 pub(crate) struct RagBaseline {
@@ -396,6 +397,18 @@ impl Store {
         let mut db = self.lock()?;
         let tx = db.transaction()?;
         let manifests = crate::registry::snapshot_from(&tx)?;
+        let mut expert_models = std::collections::BTreeMap::new();
+        if experts {
+            for manifest in &manifests {
+                if let Some(selection) = &manifest.model {
+                    if let Some(model) = crate::models::registered_from(&tx, selection)? {
+                        if model.enabled && model.manifest.max_output_tokens >= 192 {
+                            expert_models.insert(manifest.id.clone(), model);
+                        }
+                    }
+                }
+            }
+        }
         let context = TaskContext {
             memories: if retrieve {
                 crate::memory::search_from(&tx, query)?
@@ -409,6 +422,7 @@ impl Store {
                 Vec::new()
             },
             manifests,
+            expert_models,
         };
         tx.commit()?;
         Ok(context)

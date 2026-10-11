@@ -42,7 +42,7 @@ remains a pre-release. `QUALITY_REVIEW.md` preserves verification history.
 | 3 | Language interface | Partial | `src/language.rs`, `src/backend.rs`, `src/config.rs`: strict advisory intent, clarification, original-goal preservation, explicit conversation references, optional synthesis, persistent role profiles; scripted and HTTP tests | Live local-model validation and measured interpretation quality |
 | 4, 9 | Jev+ coordination | Partial | `src/engine.rs`, `src/planning.rs`, `src/store.rs::route`: capability routing/gaps, bounded topological subtask execution, admission budgets; dependency and budget tests | General module scheduling, measured escalation policy, automatic subtask resumption and broader scheduling telemetry |
 | 5 | Jev-R reasoning | Partial | `src/reasoning.rs`: planner/solver/explorer/critic/reflector, strict recursive revisions, no-progress stopping, unverified subtask results and original-goal synthesis; order, revision and cancellation tests | General independent executable verifiers and live-model effectiveness measurements |
-| 6 | Expert network | Partial | `src/registry.rs`: immutable semantic-versioned reference manifests, dependency/reverse-dependency checks, health, activate/disable/metadata rollback, bounded registry; lifecycle/tampering tests | Registered tool-backed and independent-model experts, measured workflow usefulness; backend loading/unloading; neural adapters remain experimental |
+| 6 | Expert network | Partial | `src/registry.rs`: immutable semantic-versioned reference manifests, dependency/reverse-dependency checks, health, activate/disable/metadata rollback, bounded registry; lifecycle/tampering tests | Dynamic executable tool experts, measured workflow usefulness; backend loading/unloading; neural adapters remain experimental |
 | 7 | Persistent memory | Partial | `src/store.rs`: SQLite WAL/FTS5, schema migrations through 6, durable task/events, isolated explicit history, pinned registry/document snapshots, explicit lease-protected interrupted-task recovery, immutable versioned local model manifests and task selection snapshots, operator-published episodic snapshots, recomputed arithmetic memory, revocation and payload quotas, SQLite page ceilings, global task admission and reviewed retention; migration/isolation/tampering/deletion-rollback tests | Broader independent fact verifiers, backend model residency, physical WAL/filesystem bounds, full artifact/configuration restore and automatic checkpoint resumption |
 | 8 A/B | RAG evolution | Partial | `src/evolution.rs`, `src/evaluation.rs`: content-addressed quarantine, hashes/provenance/deduplication/quotas, isolated held-out retrieval, bounded cumulative approved-version regression gates and immutable accepted suites, atomic paired review records, transactional human promotion/rollback; integrity, regression, concurrency and rollback tests | Stronger poisoning/security evaluation, automatic source discovery and cleaning; dataset independence remains operator-attested |
 | 8 C | Offline neural adaptation | Experimental | `training/train_lora.py`, inactive artifact registration; neural evaluation/promotion denied | Validated training/dataset/evaluation manifests and an independently tested isolated offline pipeline; no hot-swap claim |
@@ -53,7 +53,7 @@ remains a pre-release. `QUALITY_REVIEW.md` preserves verification history.
 | 12, 14 | CLI/service | Partial | `src/main.rs`: initialization/configuration, ask, service controls, task-specific socket progress/cancellation, skill lifecycle, ingestion/search, task traces, candidates/rollback, benchmark, self-test; real socket fixtures | Live residency lifecycle |
 | 12, 13 | Hardware/performance claims | Not implemented | No GPU/energy or large-model advantage claimed | Real local endpoint, hardware telemetry, equal-budget comparisons |
 
-All 145 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
+All 151 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
 all-target build checks and Clippy with denied warnings pass. Fixtures do not prove
 GPU integration, neural quality, immutable backend weights or live model switching.
 
@@ -122,7 +122,7 @@ observations, not isolated task peaks, backend residency or GPU measurements.
 The optional offline trainer now freezes bounded dataset input, rejects ambiguous/
 conflicting provenance, fails on passes with no supervised tokens, reserves separate
 output and records seeded configuration, dependency versions and hashed adapter
-inventory. Six standard-library preflight tests pass in addition to the 145 Rust
+inventory. Six standard-library preflight tests pass in addition to the 151 Rust
 tests. Level C stays Experimental: ML dependencies/weights are unavailable here,
 and base provenance manifests, independent neural evaluation, external isolation,
 actual training and adapter switching remain unverified. Promotion remains denied.
@@ -140,8 +140,7 @@ steps, strict DAG validation, pinned versions, shared inference and conservative
 whole-workflow admission. Tests cover legacy hash compatibility, malformed graphs,
 execution order, dependency results, profile isolation, version replacement and
 budget refusals. This implements bounded multi-step advice; executable/conditional
-workflow interpreters, measured utility and independent-model experts remain
-incomplete. See `EXPERTS.md`.
+workflow interpreters, measured utility remain incomplete; registered-model advice is described below. See `EXPERTS.md`.
 
 `src/restore.rs` and `restore-database` now automate current-schema database-only
 restoration into an exclusively new private directory, with saved-hash verification,
@@ -150,3 +149,11 @@ Tests cover preserved running state without replay, existing paths, checksum/
 symlink/corruption/schema/WAL denials and model permission denial. This does not
 restore configuration/artifacts or automatically migrate older snapshots; full
 workspace restoration remains partial. See `STORAGE.md`.
+
+
+Workflow experts may now pin an enabled immutable local-model registration and
+invoke its actual endpoint through the bounded broker. Tests cover activation,
+in-flight pinning, live disable overriding frozen knowledge snapshots, budget
+refusal, failed-call accounting and managed two-child cleanup. See `EXPERTS.md`.
+Model configuration snapshots are implemented; weight attestation, automatic model
+residency and live domain-quality measurements remain incomplete.

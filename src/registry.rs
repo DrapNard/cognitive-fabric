@@ -46,6 +46,8 @@ pub struct Manifest {
     pub workflow: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workflow_steps: Option<Vec<WorkflowStep>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<crate::models::Selection>,
 }
 
 pub(crate) fn identifier(id: &str) -> bool {
@@ -73,6 +75,12 @@ impl Manifest {
             ("workflow", Some(text), None) if !text.trim().is_empty() && text.len() <= 2000 => {},
             ("workflow", None, Some(_)) => { self.workflow_order()?; },
             _ => bail!("Workflow experts require bounded advice; reference experts cannot contain workflows"),
+        }
+        if let Some(model) = &self.model {
+            model.validate()?;
+            if self.kind != "workflow" {
+                bail!("Only workflow experts can bind an inference model")
+            }
         }
         let version = Version::parse(&self.version)?;
         if version.to_string() != self.version || self.version.len() > 64 {
@@ -293,6 +301,13 @@ pub fn activate(store: &Store, id: &str, version: &str) -> Result<Value> {
     if candidate.id != id || candidate.version != version {
         bail!("Manifest identity mismatch")
     }
+    if let Some(selection) = &candidate.model {
+        let model = crate::models::registered_from(&tx, selection)?
+            .context("Unknown expert model registration")?;
+        if !model.enabled || model.manifest.max_output_tokens < 192 {
+            bail!("Expert model is disabled or cannot supply the reserved advice allocation")
+        }
+    }
     let mut graph = active_graph(&tx)?;
     graph.insert(id.into(), candidate.clone());
     validate_graph(&graph)?;
@@ -345,13 +360,23 @@ pub fn health(store: &Store) -> Result<Value> {
     validate_graph(&graph)?;
     let mut entries = Vec::new();
     for manifest in graph.values() {
+        let model_health = if let Some(selection) = &manifest.model {
+            match crate::models::registered_from(&db, selection)? {
+                Some(model) if model.enabled && model.manifest.max_output_tokens >= 192 => {
+                    "registered_enabled"
+                }
+                _ => "unavailable",
+            }
+        } else {
+            "shared_backend"
+        };
         let count: i64 = db.query_row(
             "SELECT COUNT(*) FROM documents WHERE skill_id=?1",
             [&manifest.id],
             |row| row.get(0),
         )?;
         entries.push(json!({"id":manifest.id,"version":manifest.version,"kind":manifest.kind,"stored_documents":count,
-            "dependency_health":"valid","note":"Stored document count is not retrieval quality or model health"}));
+            "dependency_health":"valid","model":manifest.model,"model_health":model_health,"note":"Stored document count and registration do not prove retrieval quality, provider availability or loaded weights"}));
     }
     Ok(json!({"active":entries,"neural_loading":"unsupported"}))
 }
@@ -374,6 +399,7 @@ mod tests {
             kind: "reference".into(),
             workflow: None,
             workflow_steps: None,
+            model: None,
             description: "Reviewed reference skill".into(),
             tags: vec!["rust".into()],
             dependencies: vec![],

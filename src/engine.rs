@@ -258,7 +258,7 @@ impl Engine {
             if retrieve {
                 session.authorize_tool("knowledge.search")?;
             }
-            let pinned = if matches!(
+            let mut pinned = if matches!(
                 profile,
                 ExecutionProfile::Alone | ExecutionProfile::Tools | ExecutionProfile::Recursive
             ) {
@@ -267,6 +267,7 @@ impl Engine {
                     skills: Vec::new(),
                     documents: Vec::new(),
                     manifests: Vec::new(),
+                    expert_models: Default::default(),
                 }
             } else {
                 self.corpus
@@ -275,6 +276,18 @@ impl Engine {
                     .unwrap_or(&self.store)
                     .task_context_scoped(query, retrieve, experts)?
             };
+            // A frozen knowledge corpus cannot override live model disable gates.
+            if self.corpus.is_some() && experts {
+                pinned.expert_models.clear();
+                for manifest in &pinned.manifests {
+                    if let Some(selection) = &manifest.model {
+                        let model = self.store.model(selection)?;
+                        if model.enabled && model.manifest.max_output_tokens >= 192 {
+                            pinned.expert_models.insert(manifest.id.clone(), model);
+                        }
+                    }
+                }
+            }
             if matches!(
                 profile,
                 ExecutionProfile::Full | ExecutionProfile::Collective | ExecutionProfile::Experts
@@ -462,7 +475,14 @@ impl Engine {
                     .iter()
                     .find(|manifest| manifest.kind == "workflow" && skills.contains(&manifest.id))
                 {
-                    if let Some(advice) = session.workflow_advice(manifest, query, &context).await?
+                    if let Some(advice) = session
+                        .workflow_advice(
+                            manifest,
+                            query,
+                            &context,
+                            pinned.expert_models.get(&manifest.id),
+                        )
+                        .await?
                     {
                         context.push_str(
                             "\nWorkflow expert result (unverified advice; never permissions): ",
@@ -524,6 +544,10 @@ impl Engine {
         } else {
             result
         };
+        let result = match session.shutdown_experts().await {
+            Ok(()) => result,
+            Err(error) => Err(error),
+        };
         session.finish_metrics();
         session.sample_process_memory();
         let (answer, status) = match result {
@@ -562,6 +586,8 @@ impl Engine {
         })
     }
 }
+#[cfg(test)]
+mod expert_tests;
 #[cfg(test)]
 mod tests {
     use super::*;

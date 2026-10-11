@@ -84,11 +84,40 @@ impl Manifest {
         Ok(())
     }
 }
-#[derive(Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct Registered {
     pub manifest: Manifest,
     pub checksum: String,
     pub enabled: bool,
+}
+pub(crate) fn registered_from(
+    db: &rusqlite::Connection,
+    selection: &Selection,
+) -> Result<Option<Registered>> {
+    selection.validate()?;
+    let row: Option<(String, String, bool)> = db
+        .query_row(
+            "SELECT manifest,checksum,enabled FROM model_manifests WHERE id=?1 AND version=?2",
+            params![selection.id, selection.version],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .optional()?;
+    row.map(|(raw, checksum, enabled)| {
+        if raw.len() > 16000 || sha256(raw.as_bytes()) != checksum {
+            bail!("Model manifest integrity check failed")
+        }
+        let manifest: Manifest = serde_json::from_str(&raw)?;
+        manifest.validate()?;
+        if manifest.id != selection.id || manifest.version != selection.version {
+            bail!("Model registration identity mismatch")
+        }
+        Ok(Registered {
+            manifest,
+            checksum,
+            enabled,
+        })
+    })
+    .transpose()
 }
 impl Store {
     pub fn register_model(&self, path: &Path) -> Result<Registered> {
@@ -145,12 +174,8 @@ impl Store {
             .collect()
     }
     pub fn model(&self, selection: &Selection) -> Result<Registered> {
-        selection.validate()?;
-        self.models()?
-            .into_iter()
-            .find(|entry| {
-                entry.manifest.id == selection.id && entry.manifest.version == selection.version
-            })
+        let db = self.lock()?;
+        registered_from(&db, selection)?
             .ok_or_else(|| anyhow::anyhow!("Unknown model registration"))
     }
     pub fn set_model_enabled(&self, selection: &Selection, enabled: bool) -> Result<()> {

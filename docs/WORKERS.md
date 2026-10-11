@@ -34,7 +34,8 @@ runtime/process crashes. Socket cleanup checks directory and socket identities.
 No automatic restart, task replay or permission expansion occurs on failure.
 
 The execution wall-clock ceiling ends reasoning; child cleanup may add up to four
-seconds plus existing database/I/O delays. Managed worker lifetime follows the
+seconds per child plus existing database/I/O delays. A registered-model workflow
+may own one additional expert child, allowing up to eight seconds for both. Managed worker lifetime follows the
 task's approved max_wall_seconds (1–3600 seconds), with 1024 exchanges maximum.
 Trusted standalone worker authorities default to 300 seconds and may explicitly
 select a bounded lifetime. Waiting between calls consumes that lifetime; once a

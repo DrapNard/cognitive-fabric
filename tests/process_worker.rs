@@ -14,6 +14,95 @@ fn command(home: &PathBuf, args: &[&str]) -> std::process::Output {
 }
 
 #[test]
+fn registered_expert_uses_its_own_managed_backend_and_both_children_are_reaped() {
+    use std::{
+        io::{Read, Write},
+        time::Duration,
+    };
+    let home = std::env::temp_dir().join(format!("fabric-process-expert-{}", uuid::Uuid::new_v4()));
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let endpoint = format!("http://{}/v1", listener.local_addr().unwrap());
+    let server = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        let mut raw = Vec::new();
+        let mut buffer = [0u8; 4096];
+        let request = loop {
+            let count = stream.read(&mut buffer).unwrap();
+            assert!(count > 0);
+            raw.extend_from_slice(&buffer[..count]);
+            assert!(raw.len() < 64000);
+            if let Some(end) = raw.windows(4).position(|w| w == b"\r\n\r\n") {
+                let headers = String::from_utf8_lossy(&raw[..end]);
+                let length = headers
+                    .lines()
+                    .find_map(|line| {
+                        line.to_ascii_lowercase()
+                            .strip_prefix("content-length:")
+                            .map(|value| value.trim().parse::<usize>().unwrap())
+                    })
+                    .unwrap();
+                if raw.len() >= end + 4 + length {
+                    break serde_json::from_slice::<serde_json::Value>(
+                        &raw[end + 4..end + 4 + length],
+                    )
+                    .unwrap();
+                }
+            }
+        };
+        let body=serde_json::json!({"model":"domain-provider","choices":[{"message":{"content":"Independent domain advice remains unverified"}}],"usage":{"prompt_tokens":5,"completion_tokens":3}}).to_string();
+        write!(stream,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",body.len(),body).unwrap();
+        request
+    });
+    let cfg = Config {
+        home: home.clone(),
+        inference_process: true,
+        interpret_goals: false,
+        ..Config::default()
+    };
+    cfg.save().unwrap();
+    let store = Store::open(&cfg.db()).unwrap();
+    let model = home.join("reviewed-model.json");
+    std::fs::write(&model,serde_json::json!({"id":"domain.local","version":"1.0.0","model":"domain-model","api_base":endpoint,"source":"fixture","license":"CC0","context_tokens":4096,"max_output_tokens":512,"weights_sha256":null}).to_string()).unwrap();
+    store.register_model(&model).unwrap();
+    let manifest:cogfabric::registry::Manifest=serde_json::from_value(serde_json::json!({"id":"rust.model.s1","version":"1.0.0","kind":"workflow","description":"Reviewed model-backed advice","tags":["ownership"],"source":"fixture","license":"CC0","workflow":"Inspect domain evidence without claiming verification","model":{"id":"domain.local","version":"1.0.0"}})).unwrap();
+    cogfabric::registry::register(&store, &manifest).unwrap();
+    cogfabric::registry::activate(&store, &manifest.id, &manifest.version).unwrap();
+    let output = command(&home, &["ask", "Explain ownership", "--mode", "deep"]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let outcome: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(outcome["status"], "demo");
+    let request = server.join().unwrap();
+    assert_eq!(request["model"], "domain-model");
+    assert_eq!(request["max_tokens"], 192);
+    let trace = store.task(outcome["task_id"].as_str().unwrap()).unwrap();
+    let events = trace["events"].as_array().unwrap();
+    assert_eq!(
+        events
+            .iter()
+            .filter(|e| e["kind"] == "worker_process")
+            .count(),
+        2
+    );
+    assert_eq!(
+        events
+            .iter()
+            .filter(|e| e["kind"] == "worker_process_stopped" && e["payload"]["reaped"] == true)
+            .count(),
+        2
+    );
+    assert!(store.recover_workers().unwrap().is_empty());
+    drop(store);
+    std::fs::remove_dir_all(home).unwrap();
+}
+
+#[test]
 fn managed_worker_runs_and_audits_one_task_without_claiming_real_inference() {
     let home = std::env::temp_dir().join(format!("fabric-process-e2e-{}", uuid::Uuid::new_v4()));
     let cfg = Config {
