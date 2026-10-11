@@ -330,3 +330,15 @@ unrecorded results never refund charges. Tests cover runtime/CLI reports, missin
 legacy snapshots, invalid/late/duplicate snapshots, mode mismatch, uncorrelated
 results and overdrawn budgets. Wall-time/cycle/tool reconstruction and actual
 checkpoint continuation remain **Partial**, with no resumed execution authority.
+
+Durable tool/cycle admission: **Implemented** in `src/reasoning.rs` and recovery
+inference auditing. New settings version the resource ledger; reservations are
+written before tool admission/cycle execution, with failure containment and
+conservative reconstruction against original limits. Tests cover injected write
+failure, denied-tool behavior, actual runtime cycles, missing version markers,
+forged sources/capabilities, noncontiguous charges and cycle exhaustion. Older
+histories retain unknown tool/cycle allowances. Wall-time recovery, immutable
+reference admission and actual continuation remain **Partial**.
+Repeated Session solve calls now share the original cycle ceiling rather than
+restarting it; a regression test checks one exhausted FAST session remains at
+one cycle and one inference call after another solve request.

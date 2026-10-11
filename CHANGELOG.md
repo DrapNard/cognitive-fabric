@@ -422,3 +422,12 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
 - Report remaining inference admission allowances while retaining all charges for
   unrecorded calls; reject histories exceeding their original saved limits.
 - Keep unproven time/cycle/tool allowances unavailable and resumption unauthorized.
+
+### Durable tool and reasoning-cycle charges
+
+- Persist versioned reservations before tool admission and reasoning cycles;
+  stop execution when reservation writes fail.
+- Reconstruct remaining tool/cycle allowances conservatively for versioned ledgers,
+  rejecting forged, discontinuous or over-budget charges.
+- Keep older histories unknown and preserve deny-by-default permissions.
+- Enforce the original cycle ceiling across repeated solve calls on one Session.

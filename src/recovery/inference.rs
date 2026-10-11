@@ -19,15 +19,17 @@ impl Store {
         )?;
         let mut calls = BTreeMap::<u64, Value>::new();
         let mut legacy = 0usize;
-        let mut settings: Option<(crate::config::Config, u64)> = None;
+        let mut settings: Option<(crate::config::Config, u64, u64, bool)> = None;
+        let mut tools = 0u64;
+        let mut cycles = 0u64;
         {
-            let mut stmt=tx.prepare("SELECT kind,CASE WHEN length(CAST(source AS BLOB))<=64 THEN source END,CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN payload END FROM events WHERE task_id=?1 AND kind IN ('execution_settings','model_dispatch','reasoning') ORDER BY id LIMIT 130")?;
+            let mut stmt=tx.prepare("SELECT kind,CASE WHEN length(CAST(source AS BLOB))<=64 THEN source END,CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN payload END FROM events WHERE task_id=?1 AND kind IN ('execution_settings','model_dispatch','reasoning','tool_reservation','cycle_reservation') ORDER BY id LIMIT 210")?;
             let mut rows = stmt.query([task])?;
             let mut count = 0;
             let mut inference_count = 0;
             while let Some(row) = rows.next()? {
                 count += 1;
-                if count > 129 {
+                if count > 209 {
                     bail!("Inference audit exceeds bounded call history")
                 }
                 let kind: String = row.get(0)?;
@@ -66,7 +68,53 @@ impl Store {
                     {
                         bail!("Invalid saved execution ceilings")
                     }
-                    settings = Some((cfg, payload["call_limit"].as_u64().unwrap()));
+                    let durable = match payload.get("resource_reservations_version") {
+                        None => false,
+                        Some(v) if *v == 1 => true,
+                        _ => bail!("Unsupported resource reservation version"),
+                    };
+                    settings = Some((
+                        cfg,
+                        payload["call_limit"].as_u64().unwrap(),
+                        payload["cycle_limit"].as_u64().unwrap(),
+                        durable,
+                    ));
+                    continue;
+                }
+                if matches!(kind.as_str(), "tool_reservation" | "cycle_reservation") {
+                    let Some((cfg, _, cycle_limit, true)) = settings.as_ref() else {
+                        bail!("Resource reservation has no compatible settings")
+                    };
+                    if payload["format_version"] != 1 {
+                        bail!("Unsupported resource reservation")
+                    }
+                    if kind == "tool_reservation" {
+                        if source != "security-kernel"
+                            || payload["actor"] != "jev-plus"
+                            || payload["invocation"].as_u64() != Some(tools + 1)
+                            || tools >= cfg.max_tool_calls as u64
+                            || !matches!(
+                                payload["capability"].as_str(),
+                                Some(
+                                    "knowledge.search"
+                                        | "math.evaluate"
+                                        | "sql.query"
+                                        | "ordering.verify"
+                                )
+                            )
+                        {
+                            bail!("Invalid durable tool reservation")
+                        }
+                        tools += 1;
+                    } else {
+                        if source != "jev-r"
+                            || payload["cycle"].as_u64() != Some(cycles + 1)
+                            || cycles >= *cycle_limit
+                        {
+                            bail!("Invalid durable cycle reservation")
+                        }
+                        cycles += 1;
+                    }
                     continue;
                 }
                 inference_count += 1;
@@ -162,7 +210,7 @@ impl Store {
                     .ok_or_else(|| anyhow::anyhow!("Inference audit metric overflow"))
             })
         };
-        let remaining = if let Some((cfg, limit)) = settings {
+        let remaining = if let Some((cfg, limit, cycle_limit, durable)) = settings {
             let used_calls = calls.len() as u64;
             let reserved = sum("reserved_output_tokens")?;
             let input = sum("prompt_bytes")?;
@@ -176,7 +224,7 @@ impl Store {
                 )
             }
             Some(
-                json!({"calls":limit-used_calls,"reserved_output_tokens":cfg.max_tokens as u64-reserved,"prompt_bytes":cfg.max_input_bytes as u64-input,"wall_time":null,"cycles":null,"tool_calls":null,"resume_authorized":false}),
+                json!({"calls":limit-used_calls,"reserved_output_tokens":cfg.max_tokens as u64-reserved,"prompt_bytes":cfg.max_input_bytes as u64-input,"wall_time":null,"cycles":if durable {Some(cycle_limit-cycles)} else {None},"tool_calls":if durable {Some(cfg.max_tool_calls as u64-tools)} else {None},"resume_authorized":false}),
             )
         } else {
             None
@@ -257,6 +305,52 @@ mod tests {
         assert_eq!(report["results_not_recorded"], 1);
     }
     #[test]
+    fn durable_tool_and_cycle_charges_are_bounded_and_never_imply_results() {
+        for variant in 0..6 {
+            let store = Store::in_memory().unwrap();
+            let task = store.create_task("fixture", "standard").unwrap();
+            let cfg = crate::config::Config::default();
+            let mut snapshot = json!({"format_version":1,"configuration":cfg,"mode":"standard","call_limit":4,"cycle_limit":1});
+            if variant != 1 {
+                snapshot["resource_reservations_version"] = json!(1);
+            }
+            store
+                .event(&task, "execution_settings", "runtime", snapshot)
+                .unwrap();
+            store.event(&task,"tool_reservation",if variant == 2 {"jev-r"} else {"security-kernel"},json!({"format_version":1,"actor":"jev-plus","capability":if variant == 3 {"candidate.promote"} else {"knowledge.search"},"invocation":if variant == 4 {2} else {1}})).unwrap();
+            store
+                .event(
+                    &task,
+                    "cycle_reservation",
+                    "jev-r",
+                    json!({"format_version":1,"cycle":1}),
+                )
+                .unwrap();
+            if variant == 5 {
+                store
+                    .event(
+                        &task,
+                        "cycle_reservation",
+                        "jev-r",
+                        json!({"format_version":1,"cycle":2}),
+                    )
+                    .unwrap();
+            }
+            let result = store.inference_audit(&task);
+            if variant == 0 {
+                let report = result.unwrap();
+                assert_eq!(
+                    report["remaining_inference_admission"]["tool_calls"],
+                    cfg.max_tool_calls - 1
+                );
+                assert_eq!(report["remaining_inference_admission"]["cycles"], 0);
+                assert_eq!(report["resume_authorized"], false);
+            } else {
+                assert!(result.is_err(), "variant {variant}");
+            }
+        }
+    }
+    #[test]
     fn rejects_invalid_snapshots_and_overdrawn_original_budgets() {
         for variant in 0..7 {
             let store = Store::in_memory().unwrap();
@@ -332,5 +426,6 @@ mod tests {
         assert_eq!(report["results_not_recorded"], 0);
         assert_eq!(report["reported_usage_complete"], false);
         assert_eq!(report["remaining_inference_admission"]["calls"], 0);
+        assert_eq!(report["remaining_inference_admission"]["cycles"], 0);
     }
 }

@@ -106,7 +106,7 @@ result-recorded state without prompts or answer bodies. Result hashes and role/c
 identity are checked. Duplicate/unmatched results, invalid metrics, noncontiguous
 reservations and oversized history fail closed.
 
-At most 64 reservations, 128 inference records and one settings record are admitted, with the
+At most 64 reservations, 128 inference records, one settings record, 64 tool reservations and 16 cycle reservations are admitted, with the
 existing 256 KiB payload bound. Provider token totals are available only when every
 reservation has a matched recorded result with both usage values and no legacy
 uncorrelated results. Missing/legacy usage remains null. Legacy reasoning events
@@ -175,8 +175,25 @@ refunds reserved output. Later workspace configuration changes are irrelevant.
 Without a settings snapshot this field is null. Duplicate, late, invalid or
 mode-mismatched snapshots, inconsistent effective ceilings, uncorrelated legacy
 results alongside new settings and charges exceeding original limits fail closed.
-Time, cycle and tool allowances remain null because this inference ledger does
-not prove their remaining budgets. These three remaining inference allowances
+Wall time remains null. Older settings without a resource reservation version
+retain null cycle/tool allowances. New versioned resource ledgers also reconstruct
+remaining cycles and tools using the conservative rules below. These three remaining inference allowances
 are bookkeeping only: `resume_authorized` stays false, including when all call
 results are present. They do not attest backend settings, restore permissions or
 prove external inference terminated.
+
+## Durable tool and cycle reservations
+
+New execution_settings includes resource_reservations_version 1. Before an
+admitted tool is returned to its caller or a reasoning cycle starts, Session
+records a versioned tool_reservation or cycle_reservation. Audit-write failure
+prevents that work. Numbering is contiguous per task; denied tools consume no
+invocation. A permission-decision event alone does not prove tool reservation.
+
+`inference-audit` checks reservation sources, actors, capabilities, numbering and
+original ceilings, and subtracts charges even without recorded results. Tool
+reservations with no compatible settings marker fail closed. Older tasks lack
+this completeness marker, so zero observed reservations cannot imply zero usage.
+A reservation proves admission only, not that an operation ran or succeeded.
+Remaining resource counts do not grant permission, authorize replay or prove that
+an interrupted external process stopped. Actual continuation remains unimplemented.

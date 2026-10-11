@@ -1090,3 +1090,14 @@ prompt budget overdraws. Actual runtime and CLI reports include remaining call
 admission. Missing snapshots retain null admission; other resource allowances
 remain unavailable rather than inferred. No replay, permission restoration or
 checkpoint execution is established.
+
+## Durable tool and cycle admission
+
+FlatBuffers 25.12.19 formatting, all-target check, 197 all-target tests (187
+library and 10 integration), and Clippy with denied warnings pass. Regression
+coverage proves reservation-write failures prevent tool admission and solver
+calls, denied tools do not consume invocations, repeated solve calls cannot
+restart the session cycle budget, and durable auditing rejects forged sources,
+capabilities, numbering, incompatible settings and cycle overdraw. Actual runtime
+cycles are reconstructed. Wall time remains unavailable and no continuation or
+external-operation completion is inferred from reservation records.

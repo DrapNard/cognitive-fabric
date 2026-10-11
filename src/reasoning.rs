@@ -92,7 +92,10 @@ impl Session {
             json!({"task_id":self.task,"actor":"jev-plus","capability":capability,"allowed":decision.is_ok(),"reason":decision.as_ref().err().map(ToString::to_string)}),
         )?;
         decision?;
-        self.resources.tool_calls += 1;
+        let next = self.resources.tool_calls + 1;
+        self.store.event(&self.task, "tool_reservation", "security-kernel",
+            json!({"format_version":1,"invocation":next,"actor":"jev-plus","capability":capability}))?;
+        self.resources.tool_calls = next;
         Ok(())
     }
     pub fn new(
@@ -116,7 +119,7 @@ impl Session {
             "execution_settings",
             "runtime",
             json!({
-                "format_version":1,"configuration":cfg,"mode":mode,
+                "format_version":1,"resource_reservations_version":1,"configuration":cfg,"mode":mode,
                 "call_limit":calls.min(cfg.max_calls),"cycle_limit":cycles.min(cfg.max_cycles),
                 "backend_configuration_attested":false,"weights_attested":false,
                 "permissions_restorable_from_settings":false
@@ -556,7 +559,7 @@ impl Session {
         mode: &str,
         collective: bool,
     ) -> Result<String> {
-        if self.cycle_limit == 0 {
+        if self.resources.cycles as usize >= self.cycle_limit {
             self.stop_reason = "budget_exhausted".into();
             return Ok("No reasoning cycle available".into());
         }
@@ -622,8 +625,18 @@ impl Session {
         }
         let mut answer = String::new();
         let mut last_hash = None;
-        for _ in 0..self.cycle_limit {
-            self.resources.cycles += 1;
+        for _ in 0..self
+            .cycle_limit
+            .saturating_sub(self.resources.cycles as usize)
+        {
+            let next = self.resources.cycles + 1;
+            self.store.event(
+                &self.task,
+                "cycle_reservation",
+                "jev-r",
+                json!({"format_version":1,"cycle":next}),
+            )?;
+            self.resources.cycles = next;
             let prompt = format!(
                 "{base}\nUnverified strategy: {}\nPrevious unverified answer: {}",
                 truncate(&strategy, 4000),
@@ -923,6 +936,15 @@ mod tests {
         assert_eq!(session.resources.tool_calls, 0);
         session.authorize_tool("knowledge.search").unwrap();
         assert_eq!(session.resources.tool_calls, 1);
+        let reservation = store.task(&task).unwrap()["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["kind"] == "tool_reservation")
+            .unwrap()
+            .clone();
+        assert_eq!(reservation["payload"]["invocation"], 1);
+        assert_eq!(reservation["payload"]["capability"], "knowledge.search");
         let trace = store.task(&task).unwrap();
         let events = trace["events"].as_array().unwrap();
         assert!(
@@ -934,6 +956,63 @@ mod tests {
         assert!(events.iter().any(|event| event["kind"] == "policy"
             && event["payload"]["allowed"] == false
             && event["payload"]["task_id"] == task));
+    }
+
+    #[tokio::test]
+    async fn repeated_solve_cannot_restart_exhausted_cycle_budget() {
+        let store = Arc::new(Store::in_memory().unwrap());
+        let task = store.create_task("fixture", "fast").unwrap();
+        let backend = Arc::new(Script(Mutex::new(
+            vec![("solver", "advisory answer")].into(),
+        )));
+        let mut session = Session::new(
+            Config::default(),
+            store.clone(),
+            backend,
+            task.clone(),
+            "fast",
+        )
+        .unwrap();
+        session.solve("fixture", "", "fast").await.unwrap();
+        session.solve("fixture", "", "fast").await.unwrap();
+        assert_eq!(session.resources.cycles, 1);
+        assert_eq!(session.resources.calls, 1);
+        assert_eq!(session.stop_reason, "budget_exhausted");
+        assert_eq!(
+            store.inference_audit(&task).unwrap()["remaining_inference_admission"]["cycles"],
+            0
+        );
+    }
+
+    #[tokio::test]
+    async fn resource_reservation_write_failures_prevent_tool_and_solver_dispatch() {
+        for kind in ["tool_reservation", "cycle_reservation"] {
+            let store = Arc::new(Store::in_memory().unwrap());
+            let task = store.create_task("fixture", "fast").unwrap();
+            let backend = Arc::new(Script(Mutex::new(VecDeque::new())));
+            let mut session = Session::new(
+                Config::default(),
+                store.clone(),
+                backend,
+                task.clone(),
+                "fast",
+            )
+            .unwrap();
+            store.lock().unwrap().execute_batch(&format!("CREATE TRIGGER fail_reservation BEFORE INSERT ON events WHEN NEW.kind='{kind}' BEGIN SELECT RAISE(ABORT,'fixture reservation failure'); END;")).unwrap();
+            if kind == "tool_reservation" {
+                assert!(session.authorize_tool("knowledge.search").is_err());
+                assert_eq!(session.resources.tool_calls, 0);
+            } else {
+                assert!(session.solve("fixture", "", "fast").await.is_err());
+                assert_eq!(session.resources.cycles, 0);
+                assert_eq!(session.resources.calls, 0);
+            }
+            assert!(!store.task(&task).unwrap()["events"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|e| e["kind"] == kind || e["kind"] == "model_dispatch"));
+        }
     }
 
     #[tokio::test]
