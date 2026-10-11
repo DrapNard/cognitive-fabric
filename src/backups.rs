@@ -18,6 +18,7 @@ use std::{
 
 #[derive(Debug, Serialize)]
 pub struct Snapshot {
+    pub rag_artifact_count: Option<usize>,
     pub path: PathBuf,
     pub checksum: String,
     pub bytes: u64,
@@ -28,6 +29,9 @@ pub struct Snapshot {
 }
 
 pub fn create(cfg: &Config, store: &Store) -> Result<Snapshot> {
+    create_with_rag(cfg, store, false)
+}
+pub fn create_with_rag(cfg: &Config, store: &Store, include_rag: bool) -> Result<Snapshot> {
     security::authorize("human-cli", "storage.backup")?;
     cfg.validate()?;
     cfg.prepare()?;
@@ -128,6 +132,13 @@ pub fn create(cfg: &Config, store: &Store) -> Result<Snapshot> {
             bail!("Backup configuration exceeds bounds")
         }
         target.pragma_update(None, "trusted_schema", false)?;
+        let rag_artifact_count = if include_rag {
+            Some(crate::rag_archive::capture(&target, cfg)?)
+        } else {
+            // Do not carry stale payloads when backing up a previously restored database.
+            target.execute_batch("DROP TABLE IF EXISTS backup_rag_artifacts;")?;
+            None
+        };
         target.execute_batch("CREATE TABLE IF NOT EXISTS backup_configuration (id INTEGER PRIMARY KEY CHECK(id=1), format_version INTEGER NOT NULL, body TEXT NOT NULL);")?;
         target.execute(
             "INSERT OR REPLACE INTO backup_configuration(id,format_version,body) VALUES(1,1,?1)",
@@ -177,11 +188,12 @@ pub fn create(cfg: &Config, store: &Store) -> Result<Snapshot> {
         fs::remove_file(&temporary)?;
         fs::File::open(&directory)?.sync_all()?;
         Ok(Snapshot {
+            rag_artifact_count,
             path: destination.clone(),
             checksum: hex::encode(hash.finalize()),
             bytes,
             schema_version: schema,
-            includes_external_artifacts: false,
+            includes_external_artifacts: include_rag,
             includes_configuration: true,
             automatic_task_replay: false,
         })

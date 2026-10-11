@@ -979,3 +979,15 @@ missing metadata before publication, legacy database-only restoration, checksum
 integrity, and actual CLI backup/restore without initializing an unused source.
 The source database is not modified by snapshot metadata insertion. External
 artifact/config lifecycle portability remains partial; weights are never copied.
+
+## RAG artifact recovery verification
+
+With FlatBuffers compiler/Rust 25.12.19, formatting, all-target check, all-target
+172 tests (163 library, three authentication, five managed process, one restore
+CLI) and Clippy with denied warnings pass. Archive tests cover RAG roundtrip,
+read-only permissions, canonical candidate paths, unchanged candidate status,
+changed restored/source hashes, tampered/missing/oversized payloads, malicious
+candidate triggers, and payload omission on default re-backup. The CLI integration
+exercises both explicit options alongside configuration recovery. Full tests use
+host access for sockets/processes. Neural files and arbitrary external archives
+are excluded; no automatic promotion, weight safety or full restoration is claimed.

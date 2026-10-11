@@ -10,11 +10,16 @@ fn cli_backup_and_explicit_restore_preserve_settings_in_a_new_workspace() {
         ..Config::default()
     };
     cfg.save().unwrap();
-    drop(Store::open(&cfg.db()).unwrap());
+    let store = Store::open(&cfg.db()).unwrap();
+    cogfabric::store::bootstrap(&store).unwrap();
+    let input = root.join("reviewed.md");
+    std::fs::write(&input, "Reviewed CLI archive fixture").unwrap();
+    cogfabric::evolution::create(&cfg, &store, "rust.s1", "rag", &input, "fixture", "CC0").unwrap();
+    drop(store);
     let backup = Command::new(env!("CARGO_BIN_EXE_cogfabric"))
         .arg("--home")
         .arg(&cfg.home)
-        .args(["--json", "backup"])
+        .args(["--json", "backup", "--include-rag-artifacts"])
         .output()
         .unwrap();
     assert!(
@@ -38,6 +43,7 @@ fn cli_backup_and_explicit_restore_preserve_settings_in_a_new_workspace() {
         ])
         .arg(&destination)
         .arg("--restore-configuration")
+        .arg("--restore-rag-artifacts")
         .output()
         .unwrap();
     assert!(
@@ -47,6 +53,13 @@ fn cli_backup_and_explicit_restore_preserve_settings_in_a_new_workspace() {
     );
     let result: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
     assert_eq!(result["configuration_restored"], true);
+    assert_eq!(result["rag_artifacts_restored"], 1);
+    assert_eq!(
+        std::fs::read_dir(destination.join("artifacts"))
+            .unwrap()
+            .count(),
+        1
+    );
     assert!(!root.join("unused-source").exists());
     let restored: Config =
         serde_json::from_slice(&std::fs::read(destination.join("config.json")).unwrap()).unwrap();

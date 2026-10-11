@@ -151,3 +151,40 @@ reserved directory. This is not atomic full workspace restoration: artifacts,
 model weights, missing external candidate paths and older-schema migration remain
 separate work. The earlier database-only instructions describe default behavior;
 new snapshots additionally include the configuration metadata described here.
+
+## Optional RAG artifact archives
+
+`backup --include-rag-artifacts` embeds the exact RAG candidate payloads referenced
+by the pinned database view in `backup_rag_artifacts`. Each payload must be valid
+UTF-8, nonempty, no larger than 256 KB, and match its registered SHA-256. Identical
+hashes are deduplicated. Capture permits at most 4,096 candidate rows, 4,096 unique
+payloads and 16 MB total (or the smaller configured artifact ceiling). Database and
+retained-backup byte limits still apply after insertion. Files are read through
+bounded no-follow readers; changed/missing files fail the backup. Neural adapters,
+base weights and unrelated directory contents are never copied. Default backups
+remove inherited archived payloads so opt-in remains explicit on each backup.
+
+`restore-database ... --restore-rag-artifacts` validates payload bounds/hashes and
+exact RAG candidate coverage before creating new owner-private quarantine. It
+creates read-only 0400 content-addressed `.md` files and transactionally rebases
+only RAG candidate paths to the canonical new workspace. Candidate status, model
+permissions, evaluations and promotion decisions are preserved, not upgraded.
+Candidate-table triggers are rejected before path updates. Optional configuration
+restoration may be combined; artifact admission uses the smaller current/restored
+ceiling. Restored payload writes remain bounded with checked deadlines; blocking
+filesystem operations are not hard real-time bounded.
+
+Reports expose `rag_artifact_count` on backups and `rag_artifacts_restored` on
+restoration; null means the option was not requested. `includes_external_artifacts`
+on the backup denotes included RAG payloads only. `external_artifacts_restored`
+remains false because this does not restore arbitrary external/neural artifacts.
+The restore report's checksum and byte count describe the source archive. Rebasing
+candidate paths changes restored database bytes; its live checksum will differ.
+The original archive remains unchanged and read-only.
+
+Old snapshots without embedded payloads fail an explicit artifact restore request,
+but retain normal database-only restoration. Validation failures publish no final
+database; later I/O/sync failures may leave a partial newly reserved directory or
+quarantine for inspection. Existing workspaces are never overwritten. Neural files,
+older-schema migrations and general portable external artifact bundles remain
+separate work. The earlier database-only sections describe default options.

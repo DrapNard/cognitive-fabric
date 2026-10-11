@@ -14,6 +14,7 @@ use std::{
 
 #[derive(Debug, Serialize)]
 pub struct Restored {
+    pub rag_artifacts_restored: Option<usize>,
     pub format_version: u16,
     pub restore_id: String,
     pub home: PathBuf,
@@ -40,6 +41,23 @@ pub fn database_with_configuration(
     checksum: &str,
     destination: &Path,
     restore_configuration: bool,
+) -> Result<Restored> {
+    database_with_options(
+        cfg,
+        snapshot,
+        checksum,
+        destination,
+        restore_configuration,
+        false,
+    )
+}
+pub fn database_with_options(
+    cfg: &Config,
+    snapshot: &Path,
+    checksum: &str,
+    destination: &Path,
+    restore_configuration: bool,
+    restore_rag: bool,
 ) -> Result<Restored> {
     security::authorize("human-cli", "storage.restore")?;
     cfg.validate()?;
@@ -143,6 +161,7 @@ pub fn database_with_configuration(
             [],
             |row| row.get::<_, u64>(0),
         )?;
+        let mut artifact_limit = cfg.max_artifact_bytes;
         let configuration = if restore_configuration {
             let (version, body): (u16, String) = db.query_row(
                 "SELECT format_version, body FROM backup_configuration WHERE id=1 AND length(CAST(body AS BLOB))<=64000",
@@ -154,6 +173,7 @@ pub fn database_with_configuration(
             let mut saved: Config = serde_json::from_str(&body)?;
             saved.home = destination.into();
             saved.validate()?;
+            artifact_limit = artifact_limit.min(saved.max_artifact_bytes);
             Some(serde_json::to_vec_pretty(&saved)?)
         } else {
             None
@@ -179,6 +199,28 @@ pub fn database_with_configuration(
         {
             bail!("Restore directory identity changed")
         }
+        let rag_artifacts_restored = if restore_rag {
+            let mut writable = Connection::open_with_flags(
+                &temporary,
+                OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NOFOLLOW,
+            )?;
+            writable.pragma_update(None, "trusted_schema", false)?;
+            writable.progress_handler(
+                1000,
+                Some(move || started.elapsed() > Duration::from_secs(10)),
+            );
+            let count = crate::rag_archive::restore(&mut writable, destination, artifact_limit)?;
+            drop(writable);
+            target.sync_all()?;
+            if target.metadata()?.len() > cfg.max_database_bytes
+                || started.elapsed() > Duration::from_secs(10)
+            {
+                bail!("RAG restoration exceeds resource bounds")
+            }
+            Some(count)
+        } else {
+            None
+        };
         fs::hard_link(&temporary, &published)?;
         fs::remove_file(&temporary)?;
         if let Some(configuration) = configuration {
@@ -193,6 +235,7 @@ pub fn database_with_configuration(
         }
         fs::File::open(destination)?.sync_all()?;
         let report = Restored {
+            rag_artifacts_restored,
             format_version: 1,
             restore_id: uuid::Uuid::new_v4().to_string(),
             home: destination.into(),

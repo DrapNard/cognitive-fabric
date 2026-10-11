@@ -54,7 +54,10 @@ enum Command {
         #[arg(long, default_value = "0")]
         after: u64,
     },
-    Backup,
+    Backup {
+        #[arg(long)]
+        include_rag_artifacts: bool,
+    },
     RestoreDatabase {
         snapshot: PathBuf,
         #[arg(long)]
@@ -63,6 +66,8 @@ enum Command {
         destination: PathBuf,
         #[arg(long)]
         restore_configuration: bool,
+        #[arg(long)]
+        restore_rag_artifacts: bool,
     },
     RetentionPreview {
         #[arg(long)]
@@ -313,15 +318,17 @@ async fn main() -> Result<()> {
         checksum,
         destination,
         restore_configuration,
+        restore_rag_artifacts,
     } = &cli.command
     {
         output(
-            &cogfabric::restore::database_with_configuration(
+            &cogfabric::restore::database_with_options(
                 &cfg,
                 snapshot,
                 checksum,
                 destination,
                 *restore_configuration,
+                *restore_rag_artifacts,
             )?,
             cli.json,
         )?;
@@ -388,7 +395,13 @@ async fn main() -> Result<()> {
             json!({"task_id":id,"accepted":service::cancel_task(&cfg,&id).await?})
         }
         Command::StorageStatus => serde_json::to_value(store.storage_stats()?)?,
-        Command::Backup => serde_json::to_value(cogfabric::backups::create(&cfg, &store)?)?,
+        Command::Backup {
+            include_rag_artifacts,
+        } => serde_json::to_value(cogfabric::backups::create_with_rag(
+            &cfg,
+            &store,
+            include_rag_artifacts,
+        )?)?,
         Command::RetentionPreview { before_unix, limit } => {
             serde_json::to_value(store.retention_preview(before_unix, limit)?)?
         }

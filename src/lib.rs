@@ -33,3 +33,4 @@ pub mod wire;
 pub mod gpu;
 
 pub mod credentials;
+mod rag_archive;

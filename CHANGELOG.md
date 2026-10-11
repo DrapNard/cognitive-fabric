@@ -353,3 +353,10 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   without persisting workspace paths or environment credentials.
 - Add explicit restore-configuration opt-in with validated settings, private
   no-overwrite output and backward-compatible database-only defaults.
+
+### RAG artifact recovery
+
+- Add explicit RAG payload capture and restoration with hashes, bounded deduplication,
+  private read-only quarantine and transactional candidate path rebasing.
+- Reject missing/tampered/oversized payloads and candidate triggers; preserve candidate
+  status and keep neural weights outside backups. Default backups omit payloads.

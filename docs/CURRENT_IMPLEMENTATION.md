@@ -194,3 +194,8 @@ New database backups include bounded effective configuration under the same
 checksum. Restore defaults to database-only; `--restore-configuration` explicitly
 validates and creates private settings for the new workspace. External artifact
 files and older-schema migration remain separate recovery work. See `STORAGE.md`.
+
+Optional `backup --include-rag-artifacts` and restore `--restore-rag-artifacts` now
+preserve checked RAG candidate files with private quarantine and rebased paths.
+Candidate status and promotion boundaries are preserved. Neural and unrelated
+external artifacts remain excluded; see `STORAGE.md` for scope and failure handling.

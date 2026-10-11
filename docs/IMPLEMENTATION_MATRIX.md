@@ -253,3 +253,10 @@ embedded versioned effective settings and explicit `--restore-configuration`.
 private new-path publication, invalid/missing metadata rejection, legacy default
 restoration and no task replay. External artifacts/weights and older-schema
 migration remain **Not implemented**; this does not complete full workspace restore.
+
+RAG candidate artifact recovery: **Implemented** as explicit bounded snapshot and
+restore options in `src/rag_archive.rs`, `src/backups.rs`, `src/restore.rs` and CLI.
+Tests verify checksummed read-only payload roundtrip, canonical path rebasing without
+status changes, malformed/missing/oversized payload and trigger rejection, opt-in
+re-backup behavior and actual CLI flags. Neural/unrelated external files remain
+excluded; general full external artifact restoration stays **Partial**.
