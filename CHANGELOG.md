@@ -2,6 +2,13 @@
 
 All notable changes are documented here in English.
 
+### Durable worker decision auditing
+
+- Require a trusted SQLite audit anchor for worker sessions; record bounded
+  metadata-only decisions, reservations and outcomes without prompts or answers.
+- Refuse dispatch on authorization-audit failure and atomically reject missing
+  anchors; test database reopen, privacy and injected write failures.
+
 ### Authorized inference worker sessions
 
 - Add worker-side host credential checks and immutable task/role grants.

@@ -272,6 +272,22 @@ impl Store {
         }
         Ok(())
     }
+    pub(crate) fn worker_audit(&self, anchor: &str, payload: Value) -> Result<()> {
+        let raw = payload.to_string();
+        if raw.len() > 4096 {
+            bail!("Worker audit exceeds metadata bounds")
+        }
+        // The existence check and insert are one statement, preventing retention
+        // from deleting the anchor between validation and recording.
+        let inserted = self.lock()?.execute(
+            "INSERT INTO events(task_id,kind,source,payload,created) SELECT id,'worker.audit','fabric',?2,?3 FROM tasks WHERE id=?1",
+            params![anchor, raw, now()],
+        )?;
+        if inserted != 1 {
+            bail!("Worker audit anchor no longer exists")
+        }
+        Ok(())
+    }
     pub fn task(&self, id: &str) -> Result<Value> {
         let db = self.lock()?;
         let task:Option<Value>=db.query_row("SELECT id,query,mode,status,answer FROM tasks WHERE id=?1",[id],|r| {

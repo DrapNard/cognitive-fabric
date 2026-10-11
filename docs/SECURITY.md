@@ -48,5 +48,11 @@ stale reply reuse. It grants no shell, file or worker-launch permission. Process
 credentials are not executable/weight attestation or isolation from same-user
 descriptor transfer. Worker sessions use trusted immutable task grants and
 cumulative ceilings, and drop inference on disconnect/shutdown. Production grant
-provisioning, process lifecycle and durable worker auditing remain unimplemented;
+provisioning, process lifecycle and worker crash reconciliation remain unimplemented;
 see `PROTOCOL.md` for the tested scope.
+
+Worker sessions require a trusted audit anchor. Atomic SQLite inserts record
+metadata-only decisions/outcomes there, including denied task claims. Authorization
+audit failures prevent inference; missing anchors cannot create orphan events.
+Abrupt process/future termination can leave an open session record and is not
+represented as successful cancellation or completion.

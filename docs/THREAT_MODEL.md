@@ -18,8 +18,13 @@ trusted task grants before dispatch. Bounded cumulative reservations and session
 limit repeated requests. Disconnect/shutdown drops active inference, but cannot
 prove an external GPU server stopped. These controls do not attest executable
 contents, isolate same-user compromise or provision grants securely by themselves.
-Worker launch, cross-process grant distribution and durable worker audits remain
+Worker launch, cross-process grant distribution and worker crash reconciliation remain
 release integration work; see `PROTOCOL.md`.
+
+Worker audit records use a trusted existing task anchor and bounded metadata.
+Authorization decisions must persist before inference; atomic anchor checks prevent
+orphan event insertion. Prompt/answer/error bodies are excluded. Abrupt termination
+can leave a session open, and post-inference audit failures cannot undo backend work.
 
 - Model alignment is **not** proven by deterministic policy checks.
 - LoRA model training cannot be made safe by a checksum check alone.

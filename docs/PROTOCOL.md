@@ -111,9 +111,22 @@ is still not guaranteed. Host task ceilings remain independently enforced.
 The supplied Rust `serve` API handles worker-side authorization; tests cover real
 adapter/worker round trips, cumulative budgets, forged actors/unapproved tasks,
 version/deadline denials and active cancellation. Production process launch,
-grant provisioning across processes, durable worker auditing, sandboxing and
+grant provisioning across processes, sandboxing and
 automatic replacement remain unfinished. Task grants are immutable for a session;
 new grants require trusted creation of another authority/session.
+
+Worker `serve` also requires an `Audit` bound by trusted setup to an existing
+SQLite task. Session start/stop/failure, authorization/denial and inference outcome
+events carry versioned session/module/task/correlation IDs and cumulative charged
+counts. Prompts, answers, backend errors and provider metadata are excluded.
+Unknown request tasks are recorded under the trusted anchor, never used as event
+owners. Anchor existence and event insertion are atomic. Audit failure before
+dispatch prevents inference; outcome-write failure closes the session, though
+already executed inference cannot be undone. Database busy/I/O blocking is subject
+to SQLite's existing limits rather than a hard real-time guarantee. A process
+crash or externally dropped serve future can leave an unterminated session record;
+durable worker crash reconciliation remains unfinished. In-memory Stores are
+useful for tests but do not supply persistence; operators must supply a file Store.
 
 ### Host-connected Unix inference adapters
 

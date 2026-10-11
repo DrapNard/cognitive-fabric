@@ -640,3 +640,23 @@ All 126 tests, workspace check, formatting and Clippy pass with FlatBuffers
 No autonomous process launch or sandbox guarantee is added. Trusted cross-process
 grant provisioning, worker audit persistence and production lifecycle remain
 incomplete. Dropped HTTP futures do not prove external GPU work stopped.
+
+## Durable worker audit attachment
+
+Worker serve now requires a trusted Audit object bound to an existing SQLite
+task. Bounded versioned metadata records session start/termination, authorization,
+denial, inference outcome and cumulative reservations. Untrusted requested task
+IDs appear only as claims inside records owned by the trusted anchor. Prompts,
+answers, backend errors and provider metadata are excluded. Anchor existence and
+insertion share one SQL statement, so removed anchors cannot produce orphan rows.
+Authorization-write failure prevents dispatch; post-inference audit failure closes
+the session but cannot undo inference. Expiry is rechecked after audit writes.
+
+Three new tests verify actual file database reopening and record privacy, denied
+task attachment, missing/deleted anchors and injected authorization-write failure
+with zero backend calls. All 129 Rust tests and mandatory quality checks passed;
+the eight worker tests and Clippy passed again after expiry rechecks. FlatBuffers
+remains 25.12.19. SQLite calls retain existing busy/I/O limits, not hard real-time
+guarantees. In-memory test stores do not supply durability. Abrupt process/future
+termination may leave an open audit session; crash reconciliation, production
+launch and cross-process grant provisioning remain incomplete.

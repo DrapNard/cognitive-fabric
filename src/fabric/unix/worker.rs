@@ -9,6 +9,50 @@ use anyhow::{anyhow, bail, Result};
 use std::{collections::BTreeMap, sync::Arc, time::Duration};
 use tokio::{io::AsyncReadExt, net::UnixStream, sync::watch};
 
+/// Audit attachment chosen by trusted setup, never by a request's task field.
+pub struct Audit {
+    store: Arc<crate::store::Store>,
+    anchor: String,
+    session: String,
+}
+impl Audit {
+    pub fn new(store: Arc<crate::store::Store>, anchor: &str) -> Result<Self> {
+        uuid::Uuid::parse_str(anchor)?;
+        let exists: bool = store.lock()?.query_row(
+            "SELECT EXISTS(SELECT 1 FROM tasks WHERE id=?1)",
+            [anchor],
+            |row| row.get(0),
+        )?;
+        if !exists {
+            bail!("Worker audit anchor must exist")
+        }
+        Ok(Self {
+            store,
+            anchor: anchor.into(),
+            session: uuid::Uuid::new_v4().to_string(),
+        })
+    }
+    fn record(&self, state: &str, authority: &Authority, packet: Option<&Packet>) -> Result<()> {
+        // No prompts, answers, backend errors or model-controlled metadata.
+        let request = packet.map(
+            |p| serde_json::json!({"task_id":p.header.task,"correlation_id":p.header.correlation}),
+        );
+        let charged_calls: u32 = authority.tasks.values().map(|u| u.calls).sum();
+        let reserved_output_tokens: u64 = authority.tasks.values().map(|u| u.tokens).sum();
+        let charged_prompt_bytes: u64 = authority.tasks.values().map(|u| u.bytes).sum();
+        self.store.worker_audit(
+            &self.anchor,
+            serde_json::json!({
+                "format_version":1,"session_id":self.session,"state":state,
+                "module_id":authority.descriptor.id,"module_version":authority.descriptor.version,
+                "approved_tasks":authority.tasks.len(),"request":request,
+                "charged_calls":charged_calls,"reserved_output_tokens":reserved_output_tokens,
+                "charged_prompt_bytes":charged_prompt_bytes
+            }),
+        )
+    }
+}
+
 #[derive(Clone, Copy)]
 pub struct Limits {
     pub calls_per_task: u32,
@@ -132,7 +176,10 @@ pub async fn serve(
     mut authority: Authority,
     backend: Arc<dyn InferenceBackend>,
     mut shutdown: watch::Receiver<bool>,
+    audit: Audit,
 ) -> Result<()> {
+    audit.record("session_started", &authority, None)?;
+    let result = async {
     authenticate(&stream, authority.host_uid, authority.host_pid)?;
     tokio::time::timeout(Duration::from_secs(300), async {
         for _ in 0..1024 {
@@ -142,7 +189,13 @@ pub async fn serve(
                 _ = shutdown.changed() => return Ok(()),
                 result = tokio::time::timeout(Duration::from_secs(10), read(&mut stream)) => result.map_err(|_| anyhow!("Worker idle/read deadline exhausted"))??,
             };
-            let remaining = authority.charge(&packet)?;
+            let remaining = match authority.charge(&packet) {
+                Ok(remaining) => remaining,
+                Err(error) => { audit.record("denied", &authority, Some(&packet))?; return Err(error); }
+            };
+            audit.record("authorized", &authority, Some(&packet))?;
+            let remaining = remaining.min(Duration::from_millis(packet.header.expires.saturating_sub(now_ms())));
+            if remaining.is_zero() { bail!("Worker deadline exhausted during authorization audit") }
             let Payload::Request { role, prompt, tokens } = &packet.payload else { unreachable!() };
             let mut extra = [0u8; 1];
             let result = tokio::select! {
@@ -159,6 +212,8 @@ pub async fn serve(
             let response = Packet { header: packet.header, payload };
             // Validate backend output locally before transmitting it.
             super::decode(&super::encode(&response)?)?;
+            audit.record(if matches!(response.payload, Payload::Response(_)) { "inference_completed" } else { "inference_failed" }, &authority, Some(&response))?;
+            if now_ms() >= response.header.expires { bail!("Worker deadline exhausted during outcome audit") }
             tokio::select! {
                 biased;
                 _ = shutdown.changed() => return Ok(()),
@@ -167,11 +222,48 @@ pub async fn serve(
         }
         bail!("Worker session exchange limit exhausted")
     }).await.map_err(|_| anyhow!("Worker session deadline exhausted"))?
+    }.await;
+    audit.record(
+        if result.is_ok() {
+            "session_stopped"
+        } else {
+            "session_failed"
+        },
+        &authority,
+        None,
+    )?;
+    result
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn audit() -> Audit {
+        let store = Arc::new(crate::store::Store::in_memory().unwrap());
+        let anchor = store.create_task("Worker fixture audit", "fast").unwrap();
+        Audit::new(store, &anchor).unwrap()
+    }
+    #[test]
+    fn missing_or_removed_audit_anchors_fail_without_orphan_records() {
+        let audit = audit();
+        let unknown = uuid::Uuid::new_v4().to_string();
+        assert!(Audit::new(audit.store.clone(), &unknown).is_err());
+        let authority = Authority::new(descriptor(), 0, 1, &[unknown], Limits::default()).unwrap();
+        audit
+            .store
+            .lock()
+            .unwrap()
+            .execute("DELETE FROM tasks WHERE id=?1", [&audit.anchor])
+            .unwrap();
+        assert!(audit.record("session_started", &authority, None).is_err());
+        let count: u32 = audit
+            .store
+            .lock()
+            .unwrap()
+            .query_row("SELECT count(*) FROM events", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
+    }
     use crate::{backend::Generation, fabric::Header};
     use std::{
         future::Future,
@@ -290,7 +382,7 @@ mod tests {
                 dropped: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             });
             let (shutdown, receiver) = watch::channel(false);
-            let handle = tokio::spawn(serve(worker, authority, backend.clone(), receiver));
+            let handle = tokio::spawn(serve(worker, authority, backend.clone(), receiver, audit()));
             write(&mut host, &packet(&task)).await.unwrap();
             backend.entered.notified().await;
             if disconnect {
@@ -324,6 +416,111 @@ mod tests {
         }
     }
     #[tokio::test]
+    async fn audit_is_durable_private_and_bound_to_the_trusted_anchor() {
+        let root =
+            std::env::temp_dir().join(format!("fabric-worker-audit-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        let path = root.join("audit.db");
+        let store = Arc::new(crate::store::Store::open(&path).unwrap());
+        let anchor = store.create_task("Worker audit", "fast").unwrap();
+        let task = uuid::Uuid::new_v4().to_string();
+        let forged = uuid::Uuid::new_v4().to_string();
+        let (mut host, worker) = UnixStream::pair().unwrap();
+        let authority = Authority::new(
+            descriptor(),
+            worker.peer_cred().unwrap().uid(),
+            std::process::id(),
+            std::slice::from_ref(&task),
+            Limits::default(),
+        )
+        .unwrap();
+        let (_shutdown, receiver) = watch::channel(false);
+        let handle = tokio::spawn(serve(
+            worker,
+            authority,
+            Arc::new(Fixture(AtomicUsize::new(0))),
+            receiver,
+            Audit::new(store.clone(), &anchor).unwrap(),
+        ));
+        let mut request = packet(&task);
+        if let Payload::Request { prompt, .. } = &mut request.payload {
+            *prompt = "PRIVATE PROMPT TOKEN".into();
+        }
+        write(&mut host, &request).await.unwrap();
+        read(&mut host).await.unwrap();
+        write(&mut host, &packet(&forged)).await.unwrap();
+        assert!(handle.await.unwrap().is_err());
+        drop(store);
+        let reopened = crate::store::Store::open(&path).unwrap();
+        let trace = reopened.task(&anchor).unwrap();
+        let events = trace["events"].as_array().unwrap();
+        let states: Vec<_> = events
+            .iter()
+            .map(|e| e["payload"]["state"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            states,
+            [
+                "session_started",
+                "authorized",
+                "inference_completed",
+                "denied",
+                "session_failed"
+            ]
+        );
+        assert_eq!(events[3]["payload"]["request"]["task_id"], forged);
+        assert_eq!(events[3]["payload"]["charged_calls"], 1);
+        assert!(!trace.to_string().contains("PRIVATE PROMPT TOKEN"));
+        assert!(!trace.to_string().contains("worker answer"));
+        assert!(events
+            .iter()
+            .all(|event| ["prompt", "text", "answer", "error"]
+                .iter()
+                .all(|field| event["payload"].get(*field).is_none())));
+        let count: u32 = reopened
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT count(*) FROM events WHERE task_id!=?1",
+                [&anchor],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 0);
+        drop(reopened);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn failed_authorization_audit_prevents_backend_dispatch() {
+        let store = Arc::new(crate::store::Store::in_memory().unwrap());
+        let anchor = store.create_task("Worker audit failure", "fast").unwrap();
+        store.lock().unwrap().execute_batch("CREATE TRIGGER deny_authorized_audit BEFORE INSERT ON events WHEN json_extract(NEW.payload,'$.state')='authorized' BEGIN SELECT RAISE(ABORT,'fixture audit failure'); END;").unwrap();
+        let task = uuid::Uuid::new_v4().to_string();
+        let (mut host, worker) = UnixStream::pair().unwrap();
+        let authority = Authority::new(
+            descriptor(),
+            worker.peer_cred().unwrap().uid(),
+            std::process::id(),
+            std::slice::from_ref(&task),
+            Limits::default(),
+        )
+        .unwrap();
+        let backend = Arc::new(Fixture(AtomicUsize::new(0)));
+        let (_shutdown, receiver) = watch::channel(false);
+        let handle = tokio::spawn(serve(
+            worker,
+            authority,
+            backend.clone(),
+            receiver,
+            Audit::new(store, &anchor).unwrap(),
+        ));
+        write(&mut host, &packet(&task)).await.unwrap();
+        assert!(handle.await.unwrap().is_err());
+        assert_eq!(backend.0.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
     async fn adapter_and_worker_exchange_only_preapproved_tasks() {
         let task = uuid::Uuid::new_v4().to_string();
         let (host, worker) = UnixStream::pair().unwrap();
@@ -341,7 +538,7 @@ mod tests {
                 .unwrap();
         let backend = Arc::new(Fixture(AtomicUsize::new(0)));
         let (shutdown, receiver) = watch::channel(false);
-        let handle = tokio::spawn(serve(worker, authority, backend.clone(), receiver));
+        let handle = tokio::spawn(serve(worker, authority, backend.clone(), receiver, audit()));
         assert_eq!(
             adapter
                 .generate_for(&task, "solver", "goal", 128)
@@ -373,7 +570,7 @@ mod tests {
         let backend = Arc::new(Fixture(AtomicUsize::new(0)));
         let (shutdown, receiver) = watch::channel(false);
         let worker_backend = backend.clone();
-        let handle = tokio::spawn(serve(worker, authority, worker_backend, receiver));
+        let handle = tokio::spawn(serve(worker, authority, worker_backend, receiver, audit()));
         write(&mut host, &packet(&task)).await.unwrap();
         assert!(matches!(
             read(&mut host).await.unwrap().payload,
@@ -404,7 +601,7 @@ mod tests {
             .unwrap();
             let backend = Arc::new(Fixture(AtomicUsize::new(0)));
             let (_shutdown, receiver) = watch::channel(false);
-            let handle = tokio::spawn(serve(worker, authority, backend.clone(), receiver));
+            let handle = tokio::spawn(serve(worker, authority, backend.clone(), receiver, audit()));
             let mut request = packet(&task);
             if forged_actor {
                 request.header.sender = "human-cli".into();
