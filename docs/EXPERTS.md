@@ -125,7 +125,11 @@ rules still apply, and at most one workflow is selected.
 
 Disabling a model affects new tasks, including tasks using frozen knowledge
 corpora; an already admitted task retains its copied registration. Missing or
-disabled bindings skip advice. Provider failure leaves consumed call charges in
+disabled bindings skip that candidate without inference and allow the next
+already routed workflow to be considered. Selection preserves router relevance
+order (tag match count, then ID), rather than registry iteration order. At most
+one available workflow is attempted; budget refusal or provider failure does
+not initiate another expert attempt. Provider failure leaves consumed call charges in
 place and continues main reasoning within remaining budgets; incomplete token and
 queue measurements remain unavailable. Advice never becomes verification evidence.
 Health reports registration availability, not endpoint readiness or model quality.

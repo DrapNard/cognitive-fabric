@@ -2,6 +2,13 @@
 
 All notable changes are documented here in English.
 
+### Ranked expert fallback
+
+- Select workflow experts in relevance order instead of registry ID order.
+- Skip unavailable model bindings without inference, allowing the next routed
+  workflow while retaining one attempted workflow and shared task limits.
+- Cover ranking, version replacement, disable fallback and admission audits.
+
 ### Expert model comparison disclosure
 
 - Include per-case registered expert configurations and checksums in comparisons.

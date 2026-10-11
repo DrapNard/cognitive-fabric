@@ -252,3 +252,73 @@ async fn expert_failure_preserves_charges_and_leaves_unknown_usage_unavailable()
         .iter()
         .any(|e| e["kind"] == "expert_failure"));
 }
+
+#[tokio::test]
+async fn expert_selection_obeys_route_rank_and_falls_back_before_model_dispatch() {
+    let store = Arc::new(Store::in_memory().unwrap());
+    let selection = register_model(&store, "http://127.0.0.1:9/v1");
+    let mut lower = workflow(&selection);
+    lower.id = "aaa.workflow.s1".into();
+    lower.model = None;
+    lower.workflow = Some("LOWER RANK SENTINEL".into());
+    let mut higher = lower.clone();
+    higher.id = "zzz.workflow.s1".into();
+    higher.tags.push("rust".into());
+    higher.workflow = Some("HIGHER RANK SENTINEL".into());
+    for manifest in [&lower, &higher] {
+        registry::register(&store, manifest).unwrap();
+        registry::activate(&store, &manifest.id, &manifest.version).unwrap();
+    }
+    let main = Arc::new(Main(Mutex::new(Vec::new())));
+    Engine::with_backend(config(), store.clone(), main.clone())
+        .run("Explain Rust ownership", "deep")
+        .await
+        .unwrap();
+    assert!(main
+        .0
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|p| p.contains("HIGHER RANK SENTINEL")));
+    assert!(!main
+        .0
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|p| p.contains("LOWER RANK SENTINEL")));
+    higher.version = "1.0.1".into();
+    higher.model = Some(selection.clone());
+    registry::register(&store, &higher).unwrap();
+    registry::activate(&store, &higher.id, &higher.version).unwrap();
+    store.set_model_enabled(&selection, false).unwrap();
+    main.0.lock().unwrap().clear();
+    let outcome = Engine::with_backend(config(), store.clone(), main.clone())
+        .run("Explain Rust ownership", "deep")
+        .await
+        .unwrap();
+    assert!(main
+        .0
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|p| p.contains("LOWER RANK SENTINEL")));
+    assert!(!main
+        .0
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|p| p.contains("HIGHER RANK SENTINEL")));
+    let trace = store.task(&outcome.task_id).unwrap();
+    let dispatches = trace["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| e["kind"] == "expert_dispatch")
+        .collect::<Vec<_>>();
+    assert_eq!(dispatches.len(), 2);
+    assert_eq!(dispatches[0]["payload"]["id"], higher.id);
+    assert_eq!(dispatches[0]["payload"]["admitted"], false);
+    assert_eq!(dispatches[1]["payload"]["id"], lower.id);
+    assert_eq!(dispatches[1]["payload"]["admitted"], true);
+    assert_eq!(outcome.status, "unverified");
+}

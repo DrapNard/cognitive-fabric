@@ -769,3 +769,17 @@ configuration; its checksum and unattested identity are preserved, and the repor
 flags loss of same-model configuration control. Existing single-model comparison
 coverage confirms the ordinary configuration flag. This does not verify loaded
 weights, domain quality, GPU integration or a real held-out performance advantage.
+
+## Ranked expert fallback (2026-10-11)
+
+With exact FlatBuffers 25.12.19 and `FLATC` set to the local compiler:
+`cargo fmt --all -- --check`, `cargo check --all-targets --offline`,
+`cargo test --all-targets --offline` and
+`cargo clippy --all-targets --offline -- -D warnings` all passed.
+The suite contains 148 unit tests and 5 process integration tests.
+
+The new regression gives a lexically later workflow a higher relevance score,
+checks its selection, replaces it with a registered-model version, disables that
+model and verifies fallback to the lower-ranked shared-backend workflow. Ordered
+admission audits show the unavailable candidate consumed no inference. General
+utility estimation and broader candidate scheduling remain incomplete.

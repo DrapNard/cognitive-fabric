@@ -53,7 +53,7 @@ remains a pre-release. `QUALITY_REVIEW.md` preserves verification history.
 | 12, 14 | CLI/service | Partial | `src/main.rs`: initialization/configuration, ask, service controls, task-specific socket progress/cancellation, skill lifecycle, ingestion/search, task traces, candidates/rollback, benchmark, self-test; real socket fixtures | Live residency lifecycle |
 | 12, 13 | Hardware/performance claims | Not implemented | No GPU/energy or large-model advantage claimed | Real local endpoint, hardware telemetry, equal-budget comparisons |
 
-All 152 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
+All 153 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
 all-target build checks and Clippy with denied warnings pass. Fixtures do not prove
 GPU integration, neural quality, immutable backend weights or live model switching.
 
@@ -122,7 +122,7 @@ observations, not isolated task peaks, backend residency or GPU measurements.
 The optional offline trainer now freezes bounded dataset input, rejects ambiguous/
 conflicting provenance, fails on passes with no supervised tokens, reserves separate
 output and records seeded configuration, dependency versions and hashed adapter
-inventory. Six standard-library preflight tests pass in addition to the 152 Rust
+inventory. Six standard-library preflight tests pass in addition to the 153 Rust
 tests. Level C stays Experimental: ML dependencies/weights are unavailable here,
 and base provenance manifests, independent neural evaluation, external isolation,
 actual training and adapter switching remain unverified. Promotion remains denied.
@@ -161,3 +161,9 @@ residency and live domain-quality measurements remain incomplete.
 Comparison reports now expose bound expert configurations and invalidate the
 same-model configuration-control flag when observed, including provider failures.
 Regression coverage checks experts-only disclosure and ordinary single-model arms.
+
+Expert selection now preserves the router's relevance ranking and skips disabled
+model bindings before dispatch, permitting another already routed workflow without
+spending calls on the unavailable candidate. Tests cover score/ID disagreement,
+version replacement, disable fallback and audited admission ordering. The router
+still returns at most two candidates; general utility-based scheduling is partial.

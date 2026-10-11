@@ -470,11 +470,21 @@ impl Engine {
                 mode
             };
             if experts && mode != "fast" {
-                if let Some(manifest) = pinned
-                    .manifests
-                    .iter()
-                    .find(|manifest| manifest.kind == "workflow" && skills.contains(&manifest.id))
-                {
+                // Preserve router score order rather than registry ID order. An
+                // unavailable model must not hide another already routed workflow.
+                for skill in &skills {
+                    let Some(manifest) = pinned
+                        .manifests
+                        .iter()
+                        .find(|manifest| manifest.kind == "workflow" && &manifest.id == skill)
+                    else {
+                        continue;
+                    };
+                    if manifest.model.is_some() && !pinned.expert_models.contains_key(&manifest.id)
+                    {
+                        self.store.event(&id,"expert_dispatch","jev-plus",json!({"id":manifest.id,"version":manifest.version,"admitted":false,"reason":"Bound expert model is unavailable","model":manifest.model,"verified":false}))?;
+                        continue;
+                    }
                     if let Some(advice) = session
                         .workflow_advice(
                             manifest,
@@ -494,6 +504,9 @@ impl Engine {
                         };
                         context.push_str(&advice.chars().take(limit).collect::<String>());
                     }
+                    // Refusal or failure after admission does not trigger extra
+                    // expert attempts or expand the task's inference budget.
+                    break;
                 }
             }
             session.verification_enabled = profile != ExecutionProfile::Alone;
