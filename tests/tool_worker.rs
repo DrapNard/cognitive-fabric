@@ -111,6 +111,7 @@ fn socket_service_launches_and_reaps_arithmetic_workers() {
     let cfg = Config {
         home: home.clone(),
         arithmetic_process: true,
+        sql_process: true,
         ..Config::default()
     };
     cfg.save().unwrap();
@@ -135,6 +136,20 @@ fn socket_service_launches_and_reaps_arithmetic_workers() {
         command(&home, &["ask", "calc: 8*9", "--mode", "fast", "--socket"]),
         "72",
     );
+    verify_sql(
+        &home,
+        command(
+            &home,
+            &[
+                "ask",
+                r#"sql:{"tables":[],"query":"SELECT 72 AS answer"}"#,
+                "--mode",
+                "fast",
+                "--socket",
+            ],
+        ),
+        72,
+    );
     assert!(command(&home, &["stop"]).status.success());
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
@@ -147,6 +162,102 @@ fn socket_service_launches_and_reaps_arithmetic_workers() {
     }
     assert!(!cfg.socket().exists());
     drop(service);
+    std::fs::remove_dir_all(home).unwrap();
+}
+
+fn verify_sql(home: &Path, output: Output, expected: i64) {
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let outcome: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let answer = outcome["answer"].as_str().unwrap();
+    let result: serde_json::Value = serde_json::from_str(answer).unwrap();
+    assert_eq!(result["rows"][0][0], expected);
+    let store = Store::open(&home.join("fabric.sqlite3")).unwrap();
+    let trace = store.task(outcome["task_id"].as_str().unwrap()).unwrap();
+    assert!(trace["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|e| e["kind"] == "tool_worker"
+            && e["payload"]["capability"] == "sql.query"
+            && e["payload"]["state"] == "authorized"));
+    drop(store);
+    verify(home, output, answer);
+}
+
+#[test]
+fn cli_launches_sql_worker_and_reaps_it_on_success_and_rejection() {
+    let home = std::env::temp_dir().join(format!("cogfabric-sql-worker-{}", uuid::Uuid::new_v4()));
+    let mut cfg = Config {
+        home: home.clone(),
+        arithmetic_process: true,
+        inference_process: true,
+        ..Config::default()
+    };
+    cfg.save().unwrap();
+    assert!(
+        command(&home, &["configure-sql-worker", "--enabled", "true"])
+            .status
+            .success()
+    );
+    verify_sql(
+        &home,
+        command(
+            &home,
+            &[
+                "ask",
+                r#"sql:{"tables":[{"name":"items","columns":["value"],"rows":[[20],[22]]}],"query":"SELECT sum(value) AS answer FROM items"}"#,
+                "--mode",
+                "fast",
+            ],
+        ),
+        42,
+    );
+    let rejected = command(
+        &home,
+        &[
+            "ask",
+            r#"sql:{"tables":[],"query":"SELECT random() AS value"}"#,
+            "--mode",
+            "fast",
+        ],
+    );
+    assert!(!rejected.status.success());
+    let outcome: serde_json::Value = serde_json::from_slice(&rejected.stdout).unwrap();
+    assert_ne!(outcome["status"], "completed");
+    let store = Store::open(&cfg.db()).unwrap();
+    let trace = store.task(outcome["task_id"].as_str().unwrap()).unwrap();
+    assert!(trace["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|e| e["kind"] == "tool_worker_process_stopped" && e["payload"]["reaped"] == true));
+    drop(store);
+    cfg.sql_process = true;
+    cfg.max_tool_calls = 1;
+    cfg.save().unwrap();
+    let denied = command(
+        &home,
+        &[
+            "ask",
+            r#"sql:{"tables":[],"query":"SELECT 42"}"#,
+            "--mode",
+            "fast",
+        ],
+    );
+    assert!(!denied.status.success());
+    let outcome: serde_json::Value = serde_json::from_slice(&denied.stdout).unwrap();
+    let store = Store::open(&cfg.db()).unwrap();
+    let trace = store.task(outcome["task_id"].as_str().unwrap()).unwrap();
+    assert!(!trace["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|e| e["kind"] == "tool_worker_process"));
+    drop(store);
     std::fs::remove_dir_all(home).unwrap();
 }
 

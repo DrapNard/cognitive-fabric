@@ -1511,3 +1511,15 @@ smoke script. Exact binary/script hashes and evidence directory are recorded in
 `RELEASE_AUDIT.md`; this closes the installed-source gap noted above for this
 commit. The script checks existing CLI/service behavior, while SQL Unix transport
 is covered by the actual child-process Rust test rather than automatic CLI launch.
+
+### Managed SQL worker integration (2026-10-11)
+
+All mandatory checks pass: formatting, offline all-target check/tests and Clippy
+with warnings denied. Tests total 304 (283 library, 21 integration), including
+SQL CLI/service success, unsafe-query cleanup and budget refusal without launch.
+Full test log: `/tmp/cogfabric-managed-sql-gate.log`; focused tool-worker log:
+`/tmp/cogfabric-managed-sql-tests.log`. FlatBuffers compiler/crate remains 25.12.19.
+The expanded smoke script passed against the current debug executable, including
+SQL worker configuration, rejected-query reaping, restored SQL configuration and
+socket SQL execution. Optimized installed verification must follow this source
+change before release. No live model, sandbox or automatic crash cleanup is proven.

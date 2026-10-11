@@ -181,3 +181,10 @@ launches one task-scoped built-in Rust worker for `ask 'calc: 6*7' --mode fast`,
 including socket-service asks after restart. Disable with `--enabled false`.
 The host retains budget checks and independent verification; this is process
 separation, not an executable sandbox. See [worker lifecycle](docs/WORKERS.md).
+
+Optional SQL workers: `cogfabric configure-sql-worker --enabled true` runs
+task-local SQL in a separate built-in Rust process. For example,
+`cogfabric ask 'sql:{"tables":[],"query":"SELECT 42 AS answer"}' --mode fast`
+returns independently checked results without model calls. Disable with
+`configure-sql-worker --enabled false`; restart an existing service after changing
+the setting. This preserves the inline-only SQL restrictions and task tool budgets.

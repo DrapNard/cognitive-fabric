@@ -201,6 +201,13 @@ impl Engine {
         {
             bail!("Managed arithmetic requires the default tool registry; custom modules need explicit lifecycle integration")
         }
+        if self.cfg.sql_process
+            && sql.as_ref().is_none_or(|h| {
+                h.descriptor().id != "sql.local" || h.descriptor().version != "1.0.0"
+            })
+        {
+            bail!("Managed SQL requires the default tool registry; custom modules need explicit lifecycle integration")
+        }
         let backend = self.backend.pin()?.unwrap_or_else(|| self.backend.clone());
         if self.process_inference {
             let modules = backend.modules()?;
@@ -241,6 +248,27 @@ impl Engine {
             tools.pin()?
         } else {
             arithmetic
+        };
+        let sql_process = if self.cfg.sql_process {
+            Some(Arc::new(
+                crate::fabric::tools::unix::process::ProcessTask::new_sql(
+                    self.cfg.clone(),
+                    self.store.clone(),
+                    &id,
+                    deadline,
+                )?,
+            ))
+        } else {
+            None
+        };
+        let task_sql_tools = sql_process
+            .as_ref()
+            .map(|process| crate::fabric::tools::Broker::with_sql(process.clone()))
+            .transpose()?;
+        let sql = if let Some(tools) = &task_sql_tools {
+            tools.pin_capability("sql.query")?
+        } else {
+            sql
         };
         let process = if self.process_inference {
             Some(Arc::new(crate::fabric::unix::process::ProcessTask::new(
@@ -684,6 +712,22 @@ impl Engine {
             Err(error) => Err(error),
         };
         let result = if let Some(process) = &tool_process {
+            match process.shutdown().await {
+                Ok(()) => result,
+                Err(error) => Err(error),
+            }
+        } else {
+            result
+        };
+        let result = match task_sql_tools
+            .as_ref()
+            .map(|tools| tools.shutdown())
+            .transpose()
+        {
+            Ok(_) => result,
+            Err(error) => Err(error),
+        };
+        let result = if let Some(process) = &sql_process {
             match process.shutdown().await {
                 Ok(()) => result,
                 Err(error) => Err(error),

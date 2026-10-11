@@ -2,6 +2,17 @@
 
 All notable changes are documented here in English.
 
+### Managed SQL task workers
+
+- Add opt-in `configure-sql-worker` for lazy task-scoped built-in SQL processes
+  in direct CLI and socket-service execution.
+- Reuse the bounded tool broker and owned startup/reaping lifecycle; retain
+  independent result checking and original task budget admission before launch.
+- Add SQL-only COTB v2 setup while preserving arithmetic-only v1; reject
+  capability/version mismatches and custom registry substitution.
+- Test real CLI/service SQL, unsafe-query cleanup, exhausted-budget refusal and
+  negative setup/scope boundaries. Crash cleanup and executable sandboxing remain open.
+
 ### Authenticated SQL process transport
 
 - Add task-scoped structured COGQ Unix RPC with approved UID/PID peers,

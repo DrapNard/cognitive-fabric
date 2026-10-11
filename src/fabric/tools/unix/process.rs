@@ -1,5 +1,9 @@
-//! Opt-in built-in arithmetic workers. No arbitrary executable is accepted.
+//! Opt-in built-in arithmetic and SQL workers. No arbitrary executable is accepted.
 use super::{authenticate, Grant, UnixArithmetic};
+use crate::fabric::tools::sql::{
+    unix::{Grant as SqlGrant, UnixSql},
+    LocalSql, SqlBackend,
+};
 use crate::{
     config::Config,
     fabric::{
@@ -28,19 +32,56 @@ mod generated {
 }
 use generated::tool_setup as fb;
 
+struct WorkerGrant {
+    task: String,
+    descriptor: Descriptor,
+    calls: u32,
+    seconds: u64,
+}
+impl WorkerGrant {
+    fn new(task: &str, descriptor: Descriptor, calls: u32, seconds: u64) -> Result<Self> {
+        if descriptor == sql_descriptor() {
+            SqlGrant::new(task, descriptor.clone(), calls, seconds)?;
+        } else {
+            Grant::new(task, descriptor.clone(), calls, seconds)?;
+        }
+        Ok(Self {
+            task: task.into(),
+            descriptor,
+            calls,
+            seconds,
+        })
+    }
+    fn arithmetic(&self) -> Result<Grant> {
+        Grant::new(
+            &self.task,
+            self.descriptor.clone(),
+            self.calls,
+            self.seconds,
+        )
+    }
+    fn sql(&self) -> Result<SqlGrant> {
+        SqlGrant::new(
+            &self.task,
+            self.descriptor.clone(),
+            self.calls,
+            self.seconds,
+        )
+    }
+}
 struct Setup {
-    grant: Grant,
+    grant: WorkerGrant,
     database_bytes: u64,
 }
 impl Setup {
     fn validate(&self) -> Result<()> {
-        Grant::new(
+        WorkerGrant::new(
             &self.grant.task,
             self.grant.descriptor.clone(),
             self.grant.calls,
             self.grant.seconds,
         )?;
-        if self.grant.descriptor != descriptor()
+        if (self.grant.descriptor != descriptor() && self.grant.descriptor != sql_descriptor())
             || self.grant.calls != 1
             || !(64_000_000..=2_000_000_000).contains(&self.database_bytes)
         {
@@ -52,7 +93,11 @@ impl Setup {
         self.validate()?;
         let mut b = flatbuffers::FlatBufferBuilder::new();
         let args = fb::BootstrapArgs {
-            version: 1,
+            version: if self.grant.descriptor == sql_descriptor() {
+                2
+            } else {
+                1
+            },
             task_id: Some(b.create_string(&self.grant.task)),
             module_id: Some(b.create_string(&self.grant.descriptor.id)),
             module_version: Some(b.create_string(&self.grant.descriptor.version)),
@@ -70,11 +115,11 @@ impl Setup {
             bail!("Invalid tool bootstrap frame")
         }
         let p = fb::root_as_bootstrap(bytes)?;
-        if p.version() != 1 {
+        if !matches!(p.version(), 1 | 2) {
             bail!("Unsupported tool bootstrap version")
         }
         let setup = Self {
-            grant: Grant::new(
+            grant: WorkerGrant::new(
                 p.task_id(),
                 Descriptor {
                     id: p.module_id().into(),
@@ -87,6 +132,9 @@ impl Setup {
             database_bytes: p.max_database_bytes(),
         };
         setup.validate()?;
+        if (p.version() == 2) != (setup.grant.descriptor == sql_descriptor()) {
+            bail!("Tool bootstrap version differs from capability")
+        }
         Ok(setup)
     }
     async fn send(&self, stream: &mut UnixStream) -> Result<()> {
@@ -120,6 +168,27 @@ fn descriptor() -> Descriptor {
         capability: "math.evaluate".into(),
     }
 }
+fn sql_descriptor() -> Descriptor {
+    Descriptor {
+        id: "sql.local".into(),
+        version: "1.0.0".into(),
+        capability: "sql.query".into(),
+    }
+}
+enum Adapter {
+    Arithmetic(UnixArithmetic),
+    Sql(UnixSql),
+}
+impl Adapter {
+    async fn close(&self) {
+        match self {
+            Self::Arithmetic(adapter) => {
+                adapter.connection.lock().await.stream.take();
+            }
+            Self::Sql(adapter) => adapter.close().await,
+        }
+    }
+}
 fn private_home(home: &Path) -> Result<std::fs::Metadata> {
     let metadata = std::fs::symlink_metadata(home)?;
     if !metadata.is_dir()
@@ -131,7 +200,7 @@ fn private_home(home: &Path) -> Result<std::fs::Metadata> {
     Ok(metadata)
 }
 struct Managed {
-    adapter: UnixArithmetic,
+    adapter: Adapter,
     child: Mutex<tokio::process::Child>,
     _directory: SocketDirectory,
     _lease: Option<crate::recovery::ExecutionLease>,
@@ -169,6 +238,16 @@ impl ProcessTask {
             starting: Mutex::new(None),
         })
     }
+    pub(crate) fn new_sql(
+        config: Config,
+        store: Arc<Store>,
+        task: &str,
+        deadline: Instant,
+    ) -> Result<Self> {
+        let mut process = Self::new(config, store, task, deadline)?;
+        process.descriptor = sql_descriptor();
+        Ok(process)
+    }
     async fn launch(&self) -> Result<Managed> {
         let lease = self.store.execution_lease()?;
         let running: bool = self.store.lock()?.query_row(
@@ -204,7 +283,11 @@ impl ProcessTask {
         command
             .arg("--home")
             .arg(&home)
-            .arg("arithmetic-worker")
+            .arg(if self.descriptor == sql_descriptor() {
+                "sql-worker"
+            } else {
+                "arithmetic-worker"
+            })
             .arg("--socket")
             .arg(&socket)
             .arg("--host-pid")
@@ -239,11 +322,25 @@ impl ProcessTask {
         };
         authenticate(&stream, metadata.uid(), pid)?;
         let setup = Setup {
-            grant: Grant::new(&self.task, self.descriptor.clone(), 1, seconds)?,
+            grant: WorkerGrant::new(&self.task, self.descriptor.clone(), 1, seconds)?,
             database_bytes: self.config.max_database_bytes,
         };
         setup.send(&mut stream).await?;
-        let adapter = UnixArithmetic::connected(stream, setup.grant, metadata.uid(), pid)?;
+        let adapter = if self.descriptor == sql_descriptor() {
+            Adapter::Sql(UnixSql::connected(
+                stream,
+                setup.grant.sql()?,
+                metadata.uid(),
+                pid,
+            )?)
+        } else {
+            Adapter::Arithmetic(UnixArithmetic::connected(
+                stream,
+                setup.grant.arithmetic()?,
+                metadata.uid(),
+                pid,
+            )?)
+        };
         self.store.event(
             &self.task,
             "tool_worker_ready",
@@ -261,7 +358,7 @@ impl ProcessTask {
     }
     pub(crate) async fn shutdown(&self) -> Result<()> {
         if let Some(worker) = self.worker.get() {
-            worker.adapter.connection.lock().await.stream.take();
+            worker.adapter.close().await;
             let mut child = worker.child.lock().await;
             return self.reap(&mut child).await;
         }
@@ -308,21 +405,54 @@ impl ArithmeticBackend for ProcessTask {
         expression: &'a str,
     ) -> Pin<Box<dyn Future<Output = Result<String>> + Send + 'a>> {
         Box::pin(async move {
-            if task != self.task || expression.is_empty() || expression.len() > 120 {
+            if self.descriptor != descriptor()
+                || task != self.task
+                || expression.is_empty()
+                || expression.len() > 120
+            {
                 bail!("Tool process request exceeds task/input scope")
             }
             let worker = self.worker.get_or_try_init(|| self.launch()).await?;
-            worker.adapter.evaluate_for(task, expression).await
+            match &worker.adapter {
+                Adapter::Arithmetic(adapter) => adapter.evaluate_for(task, expression).await,
+                Adapter::Sql(_) => bail!("SQL worker cannot execute arithmetic"),
+            }
         })
     }
 }
 
-pub async fn run_worker(home: &Path, socket: &Path, host_pid: u32) -> Result<()> {
+impl SqlBackend for ProcessTask {
+    fn module_descriptor(&self) -> Option<&Descriptor> {
+        Some(&self.descriptor)
+    }
+    fn query<'a>(
+        &'a self,
+        task: &'a str,
+        input: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<String>> + Send + 'a>> {
+        Box::pin(async move {
+            if self.descriptor != sql_descriptor() || task != self.task {
+                bail!("SQL process request exceeds task/capability scope")
+            }
+            crate::sql::parse_task(input)?;
+            let worker = self.worker.get_or_try_init(|| self.launch()).await?;
+            match &worker.adapter {
+                Adapter::Sql(adapter) => adapter.query(task, input).await,
+                Adapter::Arithmetic(_) => bail!("Arithmetic worker cannot execute SQL"),
+            }
+        })
+    }
+}
+
+pub async fn run_worker(home: &Path, socket: &Path, host_pid: u32, sql: bool) -> Result<()> {
     let metadata = private_home(home)?;
     let mut stream =
         tokio::time::timeout(Duration::from_secs(5), UnixStream::connect(socket)).await??;
     authenticate(&stream, metadata.uid(), host_pid)?;
     let setup = Setup::receive(&mut stream).await?;
+    if sql != (setup.grant.descriptor == sql_descriptor()) {
+        bail!("Worker entry point differs from granted capability")
+    }
     let store = Arc::new(Store::open_with_limit(
         &home.join("fabric.sqlite3"),
         setup.database_bytes,
@@ -336,16 +466,29 @@ pub async fn run_worker(home: &Path, socket: &Path, host_pid: u32) -> Result<()>
         bail!("Tool worker task is no longer running")
     }
     let (_stop, receive) = watch::channel(false);
-    super::serve(
-        stream,
-        setup.grant,
-        metadata.uid(),
-        host_pid,
-        Arc::new(LocalMath),
-        store,
-        receive,
-    )
-    .await
+    if sql {
+        crate::fabric::tools::sql::unix::serve(
+            stream,
+            setup.grant.sql()?,
+            metadata.uid(),
+            host_pid,
+            Arc::new(LocalSql),
+            store,
+            receive,
+        )
+        .await
+    } else {
+        super::serve(
+            stream,
+            setup.grant.arithmetic()?,
+            metadata.uid(),
+            host_pid,
+            Arc::new(LocalMath),
+            store,
+            receive,
+        )
+        .await
+    }
 }
 
 #[cfg(test)]
@@ -403,7 +546,8 @@ mod tests {
     #[test]
     fn bootstrap_round_trip_and_invalid_grants() {
         let mut setup = Setup {
-            grant: Grant::new(&uuid::Uuid::new_v4().to_string(), descriptor(), 1, 30).unwrap(),
+            grant: WorkerGrant::new(&uuid::Uuid::new_v4().to_string(), descriptor(), 1, 30)
+                .unwrap(),
             database_bytes: 256_000_000,
         };
         let bytes = setup.encode().unwrap();
@@ -418,6 +562,87 @@ mod tests {
         setup.grant.descriptor = descriptor();
         setup.database_bytes = 1;
         assert!(setup.encode().is_err());
+    }
+    #[test]
+    fn sql_bootstrap_is_versioned_and_cannot_cross_capabilities() {
+        let task = uuid::Uuid::new_v4().to_string();
+        let setup = Setup {
+            grant: WorkerGrant::new(&task, sql_descriptor(), 1, 30).unwrap(),
+            database_bytes: 256_000_000,
+        };
+        let bytes = setup.encode().unwrap();
+        assert_eq!(fb::root_as_bootstrap(&bytes).unwrap().version(), 2);
+        assert_eq!(
+            Setup::decode(&bytes).unwrap().grant.descriptor,
+            sql_descriptor()
+        );
+        assert!(setup.grant.arithmetic().is_err());
+        for (version, descriptor) in [
+            (1, sql_descriptor()),
+            (2, descriptor()),
+            (3, sql_descriptor()),
+        ] {
+            let mut b = flatbuffers::FlatBufferBuilder::new();
+            let args = fb::BootstrapArgs {
+                version,
+                task_id: Some(b.create_string(&task)),
+                module_id: Some(b.create_string(&descriptor.id)),
+                module_version: Some(b.create_string(&descriptor.version)),
+                capability: Some(b.create_string(&descriptor.capability)),
+                calls: 1,
+                seconds: 30,
+                max_database_bytes: 256_000_000,
+            };
+            let root = fb::Bootstrap::create(&mut b, &args);
+            fb::finish_bootstrap_buffer(&mut b, root);
+            assert!(Setup::decode(b.finished_data()).is_err());
+        }
+    }
+    #[tokio::test]
+    async fn sql_scope_and_custom_registry_are_denied_before_launch() {
+        let store = Arc::new(Store::in_memory().unwrap());
+        let task = store.create_task("SQL worker scope", "fast").unwrap();
+        let process = ProcessTask::new_sql(
+            Config::default(),
+            store.clone(),
+            &task,
+            Instant::now() + Duration::from_secs(10),
+        )
+        .unwrap();
+        assert!(process.evaluate("6*7").await.is_err());
+        assert!(process
+            .query(
+                &uuid::Uuid::new_v4().to_string(),
+                r#"{"tables":[],"query":"SELECT 1"}"#
+            )
+            .await
+            .is_err());
+        assert!(process.worker.get().is_none());
+        let engine = crate::engine::Engine::new(
+            Config {
+                sql_process: true,
+                ..Config::default()
+            },
+            store.clone(),
+        );
+        let mut replacement = sql_descriptor();
+        replacement.version = "2.0.0".into();
+        engine
+            .tools
+            .register_sql(replacement, Arc::new(LocalSql))
+            .unwrap();
+        assert!(engine
+            .run(r#"sql:{"tables":[],"query":"SELECT 1"}"#, "fast")
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("default tool registry"));
+        let tasks: u32 = store
+            .lock()
+            .unwrap()
+            .query_row("SELECT count(*) FROM tasks", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(tasks, 1);
     }
     #[tokio::test]
     async fn denied_scope_and_terminal_task_never_launch() {

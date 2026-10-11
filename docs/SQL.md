@@ -66,3 +66,11 @@ and no database name for these callbacks. The authorizer retains the table
 allowlist; schema, unknown, temporary and attached databases remain denied.
 See SQLite's authorizer contract: https://www.sqlite.org/c3ref/set_authorizer.html.
 Regression coverage checks both valid projections and negative table boundaries.
+
+Optional process execution is available through
+`configure-sql-worker --enabled true` (default false). Direct and socket asks then
+use an authenticated, one-call task-scoped built-in Rust worker; the host still
+performs fresh SQLite verification. Unsafe queries fail and the child is reaped;
+exhausted task tool budgets prevent launch. No model call, host SQL access or new
+permission is introduced. See `WORKERS.md` for setup, shutdown limits and the
+remaining absence of an executable sandbox and automatic crash cleanup.

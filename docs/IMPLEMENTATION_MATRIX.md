@@ -694,3 +694,20 @@ The SQL Unix source commit `af92168` subsequently passed a fresh optimized insta
 and existing installed CLI/service smoke workflow. See `RELEASE_AUDIT.md` for
 hashes and retained evidence. Automatic SQL worker provisioning is still absent;
 separate-process transport evidence comes from the Rust child-process regression.
+
+Managed SQL workers: **Implemented** for the built-in `sql.local` 1.0.0 module in
+CLI/service execution. Files: `src/fabric/tools/unix/process.rs`, `src/engine.rs`,
+`src/config.rs`, `src/main.rs`, `src/fabric/tools.rs`, `protocol/tool_bootstrap.fbs`.
+Tests: `tests/tool_worker.rs` real SQL CLI/service success, rejected unsafe query
+with confirmed reaping, exhausted budget with no child; process-unit regressions
+cover SQL COTB v2, arithmetic v1 compatibility, cross-capability/version refusal,
+wrong-task scope and custom-registry refusal before task creation. Shared startup
+ownership and cancellation/reaping paths remain covered. This supersedes the SQL
+provisioning limitation above; arbitrary executables, crash cleanup, independent
+SQL-engine implementations and live model measurements remain incomplete.
+
+Managed SQL integration validation passes all mandatory quality checks with 304
+Rust tests (283 library, 21 integration). The expanded smoke script also checks
+SQL worker configuration, success/rejection reaping, backup/restored worker state
+and actual socket SQL execution. Optimized installation verification is pending
+for this new source; live inference and broader release blockers remain open.

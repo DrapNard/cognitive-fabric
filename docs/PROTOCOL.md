@@ -391,3 +391,12 @@ limitation above, but automatic CLI/service SQL launch, grant delivery/reaping a
 arbitrary executable isolation remain incomplete. Trusted embedding code owns
 socket permissions and process lifecycle; OS identity does not attest executable
 contents or sandbox backend effects.
+
+Managed SQL provisioning now supersedes the SQL CLI/service lifecycle limitation
+above. `configure-sql-worker` enables same-binary task-scoped launch and reaping
+through the shared tool lifecycle. COTB v2 has the same bounded fields as v1 but
+permits only built-in `sql.local` 1.0.0 / `sql.query`; v1 remains arithmetic-only.
+Decoders reject capability/version mismatches, and each hidden worker entry point
+checks its intended capability before opening the task database. The original
+host budgets/deadline and COGQ v1 command validation remain authoritative.
+See `WORKERS.md` for cleanup bounds and remaining crash/sandbox limitations.

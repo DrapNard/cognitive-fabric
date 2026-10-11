@@ -95,6 +95,9 @@ pub struct UnixSql {
     connection: Mutex<Connection>,
 }
 impl UnixSql {
+    pub(crate) async fn close(&self) {
+        self.connection.lock().await.stream.take();
+    }
     pub fn connected(stream: UnixStream, grant: Grant, uid: u32, pid: u32) -> Result<Self> {
         authenticate(&stream, uid, pid)?;
         Ok(Self {

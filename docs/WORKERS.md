@@ -101,3 +101,28 @@ cleanup outcomes; no automatic crash cleanup or executable sandbox is claimed.
 This supersedes the arithmetic-specific provisioning/CLI lifecycle limitations
 above. General executable provisioning and non-arithmetic command routing remain
 **Partial / Not implemented**. Process overhead is not a measured speedup.
+
+### Managed built-in SQL workers
+
+`configure-sql-worker --enabled true` persists `sql_process` (default false).
+Disable with `--enabled false`; restart an existing service to apply changes.
+Direct and socket SQL asks lazily launch one same-binary `sql-worker` process;
+other task types launch no SQL child. Arithmetic/inference switches are independent.
+Task budget and permission admission precede launch, and the original task deadline
+still applies. The default `sql.local` 1.0.0 registry is required; custom replacement
+modules are refused before task creation rather than silently substituted.
+
+The shared launcher retains child ownership through failed/cancelled startup,
+uses private sockets, clears the environment, authenticates UID/PID, and sends
+one-call SQL-only COTB v2 setup. Arithmetic-only COTB v1 remains unchanged; mismatched
+versions/capabilities and worker entry points are rejected. Both use bounded setup
+frames/deadlines, database quotas and at most 30-second worker sessions. SQL commands
+use structured COGQ v1, with the existing inline-only SQLite restrictions. The host
+reruns the compiled SQLite checker before accepting results; no model call is added.
+
+Normal, failed and cancelled tasks close the stream, wait up to two seconds, then
+kill/reap with a further two-second ceiling. Inode/device checks protect socket
+cleanup. Actual CLI/service tests verify SQL success, unsafe-query cleanup and
+budget refusal without a child. These workers are trusted Rust processes with
+workspace access, not an executable sandbox. Runtime crashes can still leave stale
+resources; general executable loading and automatic crash cleanup remain unfinished.

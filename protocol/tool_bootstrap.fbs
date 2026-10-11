@@ -1,4 +1,5 @@
-// Host-authenticated grant for a built-in arithmetic worker; no executable paths.
+// Host-authenticated built-in worker grant; no executable paths.
+// Version 1 is arithmetic-only; version 2 is SQL-only with identical fields.
 namespace ToolSetup;
 table Bootstrap {
  version:ushort = 1;

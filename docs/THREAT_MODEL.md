@@ -188,3 +188,13 @@ cooperative SQLite cancellation for the built-in backend. Metadata excludes SQL
 and result/error bodies. This supersedes the SQL transport limitation above;
 automatic SQL worker provisioning, executable sandboxing and crash cleanup remain
 incomplete. Trusted hosts still supply sockets, grants, backends and child ownership.
+
+Managed SQL setup is now human-only through `tool.worker.configure`; opt-in
+`sql_process` defaults false. The shared launcher accepts only its current Rust
+executable, clears inherited environment, uses private authenticated sockets and
+provides one task/version/call grant via SQL-only COTB v2. Arithmetic v1 grants
+remain arithmetic-only. Original permission/tool budgets precede launch; host
+SQLite checking verifies outputs. Child ownership survives failed startup and
+normal cleanup confirms reaping. This supersedes SQL provisioning limitations;
+trusted worker code still has workspace access, so no sandbox or crash-cleanup
+guarantee is established.

@@ -131,3 +131,10 @@ immediately above. It verifies the existing installed CLI/service workflow;
 SQL Unix RPC itself is exercised by the separate-process Rust regression, since
 CLI/service SQL worker provisioning remains unfinished. Live inference, clean-OS
 setup and neural safety were not evaluated.
+
+Managed SQL CLI/service integration now passes mandatory quality checks and all
+304 tests (283 library, 21 integration). The expanded smoke script passed against
+the current debug executable, including SQL configuration, rejected-query reaping,
+restored SQL worker execution and socket SQL. Earlier installed evidence predates
+this source; repeat optimized installation verification before release. General
+executable lifecycle, crash cleanup and live inference remain incomplete.

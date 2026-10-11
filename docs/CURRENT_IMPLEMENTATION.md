@@ -427,3 +427,11 @@ permanently and metadata excludes query/result bodies. Automatic SQL process
 launch/bootstrap/reaping from CLI/service is still not implemented; the installed
 smoke evidence above predates this transport. Current mandatory checks pass with
 301 tests (281 library and 20 integration); real inference remains unverified.
+
+Managed SQL launch/cleanup is now implemented for direct CLI and socket service
+through opt-in `sql_process` / `configure-sql-worker`. It reuses owned startup and
+bounded reaping, adds SQL-only COTB v2 setup, and keeps arithmetic-only v1 intact.
+Custom SQL registries and exhausted tool budgets cannot silently launch a default
+worker. Actual CLI/service tests verify SQL execution and unsafe-query cleanup;
+independent host SQLite verification remains mandatory. This supersedes the SQL
+provisioning limitation above. Crash cleanup and executable sandboxing remain open.

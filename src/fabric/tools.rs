@@ -289,6 +289,22 @@ impl Broker {
         )?;
         Ok(broker)
     }
+    pub(crate) fn with_sql(backend: Arc<dyn sql::SqlBackend>) -> Result<Self> {
+        let (stop, _) = watch::channel(false);
+        let broker = Self {
+            registry: RwLock::new(Registry::default()),
+            stop: Arc::new(stop),
+        };
+        broker.register_sql(
+            Descriptor {
+                id: "sql.local".into(),
+                version: "1.0.0".into(),
+                capability: "sql.query".into(),
+            },
+            backend,
+        )?;
+        Ok(broker)
+    }
     pub fn register(
         &self,
         descriptor: Descriptor,

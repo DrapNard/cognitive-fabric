@@ -42,6 +42,13 @@ enum Command {
         #[arg(long)]
         host_pid: u32,
     },
+    #[command(hide = true)]
+    SqlWorker {
+        #[arg(long)]
+        socket: PathBuf,
+        #[arg(long)]
+        host_pid: u32,
+    },
     Init,
     Status,
     SelfTest,
@@ -180,6 +187,10 @@ enum Command {
     },
     ConfigShow,
     ConfigureToolWorker {
+        #[arg(long, action = clap::ArgAction::Set)]
+        enabled: bool,
+    },
+    ConfigureSqlWorker {
         #[arg(long, action = clap::ArgAction::Set)]
         enabled: bool,
     },
@@ -373,12 +384,20 @@ async fn main() -> Result<()> {
             .ok_or_else(|| anyhow::anyhow!("Worker requires an explicit home"))?;
         return cogfabric::fabric::unix::process::run_worker(home, socket, *host_pid).await;
     }
-    if let Command::ArithmeticWorker { socket, host_pid } = &cli.command {
+    if let Command::ArithmeticWorker { socket, host_pid }
+    | Command::SqlWorker { socket, host_pid } = &cli.command
+    {
         let home = cli
             .home
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("Tool worker requires an explicit home"))?;
-        return cogfabric::fabric::tools::unix::process::run_worker(home, socket, *host_pid).await;
+        return cogfabric::fabric::tools::unix::process::run_worker(
+            home,
+            socket,
+            *host_pid,
+            matches!(&cli.command, Command::SqlWorker { .. }),
+        )
+        .await;
     }
     let cfg = Config::load(cli.home, cli.backend)?;
     if let Command::RestoreDatabase {
@@ -409,7 +428,9 @@ async fn main() -> Result<()> {
     store::bootstrap(&store)?;
     let engine = Engine::new(cfg.clone(), store.clone());
     let response: Value = match cli.command {
-        Command::InferenceWorker { .. } | Command::ArithmeticWorker { .. } => {
+        Command::InferenceWorker { .. }
+        | Command::ArithmeticWorker { .. }
+        | Command::SqlWorker { .. } => {
             bail!("Worker must run before normal initialization")
         }
         Command::RestoreDatabase { .. } => {
@@ -554,6 +575,13 @@ async fn main() -> Result<()> {
             changed.arithmetic_process = enabled;
             changed.save()?;
             json!({"arithmetic_process":enabled,"sandboxed":false})
+        }
+        Command::ConfigureSqlWorker { enabled } => {
+            security::authorize("human-cli", "tool.worker.configure")?;
+            let mut changed = cfg.clone();
+            changed.sql_process = enabled;
+            changed.save()?;
+            json!({"sql_process":enabled,"sandboxed":false})
         }
         Command::ConfigureWorker { enabled } => {
             security::authorize("human-cli", "inference.worker.configure")?;

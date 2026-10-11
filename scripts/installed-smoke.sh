@@ -89,6 +89,19 @@ check_worker "$state" managed-arithmetic
 run managed-sql ask 'sql:{"tables":[],"query":"SELECT 42 AS total"}' --mode fast
 jq -e '.status == "completed" and .calls == 0 and (.answer | fromjson | .rows == [[42]])' "$evidence/managed-sql.json" >/dev/null
 check_sql managed-sql
+run sql-worker-configure configure-sql-worker --enabled true
+jq -e '.sql_process and (.sandboxed | not)' "$evidence/sql-worker-configure.json" >/dev/null
+run sql-process ask 'sql:{"tables":[],"query":"SELECT 84 AS total"}' --mode fast
+jq -e '.status == "completed" and .calls == 0 and (.answer | fromjson | .rows == [[84]])' "$evidence/sql-process.json" >/dev/null
+check_worker "$state" sql-process
+if run rejected-sql ask 'sql:{"tables":[],"query":"SELECT random() AS value"}' --mode fast 2>"$evidence/rejected-sql.stderr"; then
+    echo 'Unsafe SQL unexpectedly succeeded' >&2
+    exit 1
+else
+    [[ $? == 1 ]]
+fi
+jq -e '.status != "completed" and .calls == 0' "$evidence/rejected-sql.json" >/dev/null
+check_worker "$state" rejected-sql
 if run rejected-arithmetic ask 'calc: 1 / 0' --mode fast 2>"$evidence/rejected-arithmetic.stderr"; then
     echo 'Invalid arithmetic unexpectedly succeeded' >&2
     exit 1
@@ -105,10 +118,13 @@ jq -e --arg checksum "$checksum" '.source_checksum == $checksum and .configurati
 timeout 20s "$binary" --home "$evidence/restored" --backend demo --json self-test >"$evidence/restored-self-test.json"
 jq -e '.math_ok and .wire_ok' "$evidence/restored-self-test.json" >/dev/null
 run_at "$evidence/restored" restored-config config-show
-jq -e '.arithmetic_process' "$evidence/restored-config.json" >/dev/null
+jq -e '.arithmetic_process and .sql_process' "$evidence/restored-config.json" >/dev/null
 run_at "$evidence/restored" restored-arithmetic ask 'calc: 9 * 9' --mode fast
 jq -e '.answer == "81" and .status == "completed" and .calls == 0' "$evidence/restored-arithmetic.json" >/dev/null
 check_worker "$evidence/restored" restored-arithmetic
+run_at "$evidence/restored" restored-sql ask 'sql:{"tables":[],"query":"SELECT 81 AS total"}' --mode fast
+jq -e '.status == "completed" and .calls == 0 and (.answer | fromjson | .rows == [[81]])' "$evidence/restored-sql.json" >/dev/null
+check_worker "$evidence/restored" restored-sql
 "$binary" --home "$state" --backend demo serve >"$evidence/service.log" 2>&1 &
 service_pid=$!
 for ((attempt=0; attempt<200; attempt++)); do
@@ -122,7 +138,7 @@ jq -e '.answer == "120" and .status == "completed"' "$evidence/socket.json" >/de
 check_worker "$state" socket
 run socket-sql ask 'sql:{"tables":[],"query":"SELECT 72 AS total"}' --mode fast --socket
 jq -e '.status == "completed" and .calls == 0 and (.answer | fromjson | .rows == [[72]])' "$evidence/socket-sql.json" >/dev/null
-check_sql socket-sql
+check_worker "$state" socket-sql
 run service-stop stop
 wait "$service_pid"
 service_pid=''
