@@ -1449,3 +1449,18 @@ Integration tests assert zero inference calls, one audited arithmetic authorizat
 confirmed reaping, rejected-expression cleanup, and no launch when the math-tool
 allowance is exhausted after retrieval. The startup child fixture is included in
 the count. No live inference or sandbox isolation is established by these tests.
+
+
+### Typed SQL capability routing — 2026-10-11
+
+Formatting, offline all-target check, all-target tests (292 passed: 272 library,
+20 integration) and Clippy with warnings denied passed with FlatBuffers
+compiler/crate 25.12.19. Six new library tests cover typed scalar round trips,
+malformed/mixed frames, aliased decoded-size exhaustion, separate capability pins,
+replacement/unregistration/shutdown, denied actors, wrong/malformed answers,
+actual tool-budget refusal, unsafe SQL rejection and pending-future cancellation.
+A new real CLI test verifies SQL routing with both process settings enabled and
+no arithmetic/inference worker launch. The initial unprivileged broad tool test
+run could not open local sockets; the final full run used the required socket
+permissions and passed. SQL execution/checking is in-process; live inference,
+SQL process provisioning and arbitrary executable isolation remain unverified.

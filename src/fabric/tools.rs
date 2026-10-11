@@ -1,4 +1,4 @@
-//! Replaceable deterministic arithmetic modules; the runtime verifies their output.
+//! Version-pinned deterministic tool modules with independently checked results.
 use anyhow::{bail, Context, Result};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -13,6 +13,7 @@ mod generated {
     include!(concat!(env!("OUT_DIR"), "/tool_generated.rs"));
 }
 use generated::tool as fb;
+pub mod sql;
 pub mod unix;
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
 pub struct Descriptor {
@@ -29,9 +30,9 @@ impl Descriptor {
                 .bytes()
                 .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b"._-".contains(&b))
             || self.version.len() > 64
-            || self.capability != "math.evaluate"
+            || !matches!(self.capability.as_str(), "math.evaluate" | "sql.query")
         {
-            bail!("Invalid arithmetic module descriptor")
+            bail!("Invalid tool module descriptor")
         }
         semver::Version::parse(&self.version)?;
         Ok(())
@@ -150,9 +151,14 @@ struct Work {
     identity: Identity,
     reply: oneshot::Sender<Result<Vec<u8>>>,
 }
+#[derive(Clone)]
+enum Backend {
+    Arithmetic(Arc<dyn ArithmeticBackend>),
+    Sql(Arc<dyn sql::SqlBackend>),
+}
 struct Module {
     descriptor: Descriptor,
-    backend: Arc<dyn ArithmeticBackend>,
+    backend: Backend,
     queue: OnceCell<mpsc::Sender<Work>>,
     stop: Arc<watch::Sender<bool>>,
 }
@@ -178,6 +184,18 @@ impl Module {
                             continue;
                         }
                         let execution = async {
+                            let backend = match &backend {
+                                Backend::Sql(backend) => {
+                                    return sql::execute(
+                                        &work.bytes,
+                                        &work.identity,
+                                        &descriptor,
+                                        backend.as_ref(),
+                                    )
+                                    .await
+                                }
+                                Backend::Arithmetic(backend) => backend,
+                            };
                             let request = decode(&work.bytes)?;
                             if request.identity != work.identity
                                 || request.identity.module != descriptor.id
@@ -239,7 +257,19 @@ pub struct Broker {
 }
 impl Default for Broker {
     fn default() -> Self {
-        Self::with_arithmetic(Arc::new(LocalMath)).expect("Built-in arithmetic descriptor is valid")
+        let broker = Self::with_arithmetic(Arc::new(LocalMath))
+            .expect("Built-in arithmetic descriptor is valid");
+        broker
+            .register_sql(
+                Descriptor {
+                    id: "sql.local".into(),
+                    version: "1.0.0".into(),
+                    capability: "sql.query".into(),
+                },
+                Arc::new(sql::LocalSql),
+            )
+            .expect("Built-in SQL descriptor is valid");
+        broker
     }
 }
 impl Broker {
@@ -271,6 +301,23 @@ impl Broker {
         {
             bail!("Capability registration differs from backend transport identity")
         }
+        if descriptor.capability != "math.evaluate" {
+            bail!("Arithmetic registration requires math.evaluate")
+        }
+        self.register_backend(descriptor, Backend::Arithmetic(backend))
+    }
+    pub fn register_sql(
+        &self,
+        descriptor: Descriptor,
+        backend: Arc<dyn sql::SqlBackend>,
+    ) -> Result<()> {
+        descriptor.validate()?;
+        if descriptor.capability != "sql.query" {
+            bail!("SQL registration requires sql.query")
+        }
+        self.register_backend(descriptor, Backend::Sql(backend))
+    }
+    fn register_backend(&self, descriptor: Descriptor, backend: Backend) -> Result<()> {
         let mut registry = self
             .registry
             .write()
@@ -282,6 +329,13 @@ impl Broker {
                 .contains(&(descriptor.id.clone(), descriptor.version.clone()))
         {
             bail!("Capability version is immutable or registry stopped/full")
+        }
+        if registry
+            .active
+            .get(&descriptor.id)
+            .is_some_and(|m| m.descriptor.capability != descriptor.capability)
+        {
+            bail!("A module cannot change its capability during replacement")
         }
         if registry.active.values().any(|m| {
             m.descriptor.id != descriptor.id && m.descriptor.capability == descriptor.capability
@@ -322,13 +376,19 @@ impl Broker {
             .collect())
     }
     pub fn pin(&self) -> Result<Option<Handle>> {
+        self.pin_capability("math.evaluate")
+    }
+    pub fn pin_capability(&self, capability: &str) -> Result<Option<Handle>> {
+        if !matches!(capability, "math.evaluate" | "sql.query") {
+            bail!("Unsupported tool capability")
+        }
         Ok(self
             .registry
             .read()
             .map_err(|_| anyhow::anyhow!("Capability registry poisoned"))?
             .active
             .values()
-            .next()
+            .find(|m| m.descriptor.capability == capability)
             .cloned()
             .map(|module| Handle { module }))
     }
@@ -357,8 +417,8 @@ impl Handle {
         expression: &str,
     ) -> Result<String> {
         crate::security::TaskPolicy::reasoning(task)?.authorize(task, actor, "math.evaluate")?;
-        if *self.module.stop.borrow() {
-            bail!("Capability broker shut down")
+        if *self.module.stop.borrow() || self.module.descriptor.capability != "math.evaluate" {
+            bail!("Arithmetic capability unavailable")
         }
         if expression.is_empty() || expression.len() > 120 {
             bail!("Arithmetic request exceeds bounds")
@@ -377,6 +437,33 @@ impl Handle {
             answer: None,
             failed: false,
         })?;
+        let response = decode(&self.dispatch(bytes, identity.clone()).await?)?;
+        if response.identity != identity || response.identity.expires <= super::protocol::now_ms() {
+            bail!("Capability response identity or deadline mismatch")
+        }
+        if response.failed {
+            bail!("Arithmetic module rejected the request")
+        }
+        response.answer.context("Capability response has no answer")
+    }
+    pub(crate) async fn query_sql(&self, task: &str, actor: &str, raw: &str) -> Result<String> {
+        crate::security::TaskPolicy::reasoning(task)?.authorize(task, actor, "sql.query")?;
+        if self.module.descriptor.capability != "sql.query" || *self.module.stop.borrow() {
+            bail!("SQL capability unavailable")
+        }
+        let identity = Identity {
+            correlation: uuid::Uuid::new_v4().to_string(),
+            task: task.into(),
+            actor: actor.into(),
+            module: self.module.descriptor.id.clone(),
+            version: self.module.descriptor.version.clone(),
+            expires: super::protocol::now_ms().saturating_add(30000),
+        };
+        let bytes = sql::request(&identity, raw)?;
+        let response = self.dispatch(bytes, identity.clone()).await?;
+        sql::response(&response, &identity)
+    }
+    async fn dispatch(&self, bytes: Vec<u8>, identity: Identity) -> Result<Vec<u8>> {
         tokio::time::timeout(Duration::from_secs(30), async {
             let (reply, receive) = oneshot::channel();
             self.module
@@ -389,16 +476,7 @@ impl Handle {
                 })
                 .await
                 .context("Capability queue closed")?;
-            let response = decode(&receive.await.context("Capability worker stopped")??)?;
-            if response.identity != identity
-                || response.identity.expires <= super::protocol::now_ms()
-            {
-                bail!("Capability response identity or deadline mismatch")
-            }
-            if response.failed {
-                bail!("Arithmetic module rejected the request")
-            }
-            response.answer.context("Capability response has no answer")
+            receive.await.context("Capability worker stopped")?
         })
         .await
         .context("Capability dispatch deadline exhausted")?

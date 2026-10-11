@@ -2,6 +2,14 @@
 
 All notable changes are documented here in English.
 
+### Typed SQL capability modules
+
+- Route SQL through separately pinned, versioned tool modules and bounded queues.
+- Add structured COGQ FlatBuffers tables/cells/results with decoded allocation limits.
+- Independently rerun the constrained SQLite checker before accepting module output;
+  preserve task admission, cancellation and arithmetic protocol compatibility.
+- Keep SQL process provisioning and arbitrary executable tools explicitly unfinished.
+
 ### Managed arithmetic task workers
 
 - Add opt-in `configure-tool-worker` and same-binary lazy arithmetic workers for

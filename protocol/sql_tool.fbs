@@ -1,0 +1,22 @@
+// Structured inline SQL data. No JSON-encoded IPC payloads or database paths.
+namespace SqlTool;
+enum Kind:ubyte { Null, Integer, Real, Text, Boolean }
+table Cell { kind:Kind; integer:long; real:double; text:string; boolean:bool; }
+table Row { cells:[Cell] (required); }
+table Table { name:string (required); columns:[string] (required); rows:[Row] (required); }
+table Request { tables:[Table] (required); query:string (required); }
+table QueryResult { columns:[string] (required); rows:[Row] (required); }
+table Packet {
+ version:ushort = 1;
+ correlation_id:string (required);
+ task_id:string (required);
+ actor:string (required);
+ module_id:string (required);
+ module_version:string (required);
+ expires_at_ms:ulong;
+ request:Request;
+ result:QueryResult;
+ failed:bool;
+}
+root_type Packet;
+file_identifier "COGQ";

@@ -169,3 +169,13 @@ workspace and gives exactly one arithmetic call through authenticated COTB setup
 Original host tool allowances and deadlines remain authoritative. Ownership survives
 cancelled/failed startup and normal cleanup confirms child reaping. Runtime crashes
 can still leave stale resources; same-user code and database access are not sandboxed.
+
+
+SQL capability modules (`src/fabric/tools/sql.rs`) receive typed COGQ tables/rows/
+cells with frame, verifier traversal and decoded-byte limits, including shared
+FlatBuffers reference amplification checks. Registration is a trusted Rust API;
+metadata cannot grant capabilities. The default SQL backend retains inline-only
+SQLite authorization and resource limits. The host reruns that compiled checker
+before accepting replacement output as evidence. A replacement Rust backend is
+trusted code, not automatically isolated; verifying its answer does not prove
+absence of side effects. SQL Unix/process provisioning is not implemented yet.

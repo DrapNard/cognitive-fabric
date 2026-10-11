@@ -193,6 +193,7 @@ impl Engine {
         let deadline = execution_start.deadline;
         let model_registration = self.store.pin_model(&self.cfg)?;
         let arithmetic = self.tools.pin()?;
+        let sql = self.tools.pin_capability("sql.query")?;
         if self.cfg.arithmetic_process
             && arithmetic.as_ref().is_none_or(|h| {
                 h.descriptor().id != "arithmetic.local" || h.descriptor().version != "1.0.0"
@@ -281,7 +282,7 @@ impl Engine {
         )?;
         self.store
             .event(&id, "module_snapshot", "fabric", json!({"modules":modules}))?;
-        self.store.event(&id,"tool_modules","fabric",json!({"arithmetic":arithmetic.as_ref().map(|h|h.descriptor()),"permissions_granted":false}))?;
+        self.store.event(&id,"tool_modules","fabric",json!({"arithmetic":arithmetic.as_ref().map(|h|h.descriptor()),"sql":sql.as_ref().map(|h|h.descriptor()),"permissions_granted":false}))?;
         if let Some(corpus) = &self.corpus {
             self.store
                 .event(&id, "evaluation_corpus", "runtime", json!(corpus.metadata))?;
@@ -474,8 +475,19 @@ impl Engine {
             {
                 session.authorize_tool("sql.query")?;
                 let input_hash = store::sha256(raw.as_bytes());
+                let module = sql
+                    .as_ref()
+                    .ok_or_else(|| anyhow::anyhow!("No active SQL capability module"))?;
+                let routed = module.query_sql(&id, "jev-plus", raw).await;
+                self.store.event(&id, "tool_dispatch", "fabric", json!({"module_id":module.descriptor().id,"module_version":module.descriptor().version,"capability":"sql.query","response_available":routed.is_ok(),"verified":false}))?;
                 return match crate::sql::execute(raw.to_string()).await {
                     Ok(answer) => {
+                        let returned = routed?;
+                        if serde_json::from_str::<serde_json::Value>(&returned)?
+                            != serde_json::from_str::<serde_json::Value>(&answer)?
+                        {
+                            bail!("SQL module output failed independent verification")
+                        }
                         session.stop_reason = "verified".into();
                         evidence.push(format!(
                             "verified:sqlite_inline/v1:{input_hash}:{}",

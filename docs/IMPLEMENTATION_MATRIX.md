@@ -637,3 +637,35 @@ cleanup outcomes; no automatic crash cleanup or executable sandbox is claimed.
 This supersedes the arithmetic-specific provisioning/CLI lifecycle limitations
 above. General executable provisioning and non-arithmetic command routing remain
 **Partial / Not implemented**. Process overhead is not a measured speedup.
+
+
+### Typed SQL capability routing
+
+`src/fabric/tools.rs`, `src/fabric/tools/sql.rs` and `protocol/sql_tool.fbs` extend
+the shared tool registry beyond arithmetic. Default `sql.local` 1.0.0 implements
+`sql.query`; capability lookup pins SQL and arithmetic separately before execution.
+Trusted Rust hosts may register immutable SQL replacements. Active capability
+conflicts and changing an active module's capability are rejected. Unregistration
+preserves existing pins, while broker shutdown cancels current/retired work.
+Registry history remains bounded to 128 versions, with one active module per
+supported capability; each module has four queue slots and a 30-second dispatch
+ceiling under the original task deadline. Arbitrary capabilities are not accepted.
+
+COGQ v1 carries structured tables/rows/typed cells and structured results, not JSON
+strings inside IPC. Arithmetic COGT v1 remains unchanged. SQL frames are bounded
+to 256 KiB; verification caps depth at 16, table visits at 25,000 and apparent
+bytes at 1 MiB. Decoded cell budgets (32,000 request bytes / 16,384 response bytes)
+stop aliased FlatBuffers references from amplifying allocations. Existing input,
+identifier, table/row/column, cell and canonical result limits also apply.
+
+The Engine charges `sql.query` before dispatch, records the selected version and
+reruns the constrained SQLite checker before publishing verified evidence. This
+uses a fresh execution of the same compiled SQLite checker, not an independently
+implemented SQL engine. Wrong/malformed module output cannot establish proof.
+One authorized command includes both execution and checking, potentially two
+bounded SQLite runs (100 ms each), sharing the existing two blocking-worker slots.
+No model call or new permission is added. The default backend still uses only
+inline task-local data and denies host databases, mutations and unsafe functions.
+Registered Rust backend code is trusted host code and is not automatically sandboxed.
+SQL process transport/provisioning and broad executable tool loading remain
+**Partial / Not implemented**; arithmetic worker setup remains arithmetic-only.

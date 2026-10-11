@@ -149,3 +149,51 @@ fn socket_service_launches_and_reaps_arithmetic_workers() {
     drop(service);
     std::fs::remove_dir_all(home).unwrap();
 }
+
+#[test]
+fn sql_routes_by_capability_without_launching_arithmetic_or_inference_workers() {
+    let home = std::env::temp_dir().join(format!("cogfabric-sql-routing-{}", uuid::Uuid::new_v4()));
+    let cfg = Config {
+        home: home.clone(),
+        arithmetic_process: true,
+        inference_process: true,
+        ..Config::default()
+    };
+    cfg.save().unwrap();
+    let output = command(
+        &home,
+        &[
+            "ask",
+            r#"sql:{"tables":[],"query":"SELECT 42 AS answer"}"#,
+            "--mode",
+            "fast",
+        ],
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let outcome: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(outcome["status"], "completed");
+    assert_eq!(outcome["calls"], 0);
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(outcome["answer"].as_str().unwrap()).unwrap()
+            ["rows"][0][0],
+        42
+    );
+    let store = Store::open(&cfg.db()).unwrap();
+    let trace = store.task(outcome["task_id"].as_str().unwrap()).unwrap();
+    let events = trace["events"].as_array().unwrap();
+    assert!(events.iter().any(|e| e["kind"] == "tool_dispatch"
+        && e["payload"]["module_id"] == "sql.local"
+        && e["payload"]["capability"] == "sql.query"));
+    assert!(!events
+        .iter()
+        .any(|e| e["kind"] == "tool_worker_process" || e["kind"] == "worker_process"));
+    assert!(events.iter().any(|e| e["kind"] == "verification"
+        && e["payload"]["checker"] == "sqlite_inline/v1"
+        && e["payload"]["verified"] == true));
+    drop(store);
+    std::fs::remove_dir_all(home).unwrap();
+}

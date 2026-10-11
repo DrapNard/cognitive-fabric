@@ -17,20 +17,20 @@ use std::{
     time::{Duration, Instant},
 };
 
-#[derive(Deserialize)]
+#[derive(Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
-struct Table {
-    name: String,
-    columns: Vec<String>,
-    rows: Vec<Vec<Value>>,
+pub(crate) struct Table {
+    pub(crate) name: String,
+    pub(crate) columns: Vec<String>,
+    pub(crate) rows: Vec<Vec<Value>>,
 }
-#[derive(Deserialize)]
+#[derive(Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
-struct Task {
-    tables: Vec<Table>,
-    query: String,
+pub(crate) struct Task {
+    pub(crate) tables: Vec<Table>,
+    pub(crate) query: String,
 }
-fn identifier(name: &str) -> bool {
+pub(crate) fn identifier(name: &str) -> bool {
     (1..=32).contains(&name.len())
         && name.bytes().next().is_some_and(|b| b.is_ascii_lowercase())
         && name
@@ -51,6 +51,39 @@ fn cell(value: &Value) -> Result<SqlValue> {
             "SQL cells require bounded strings, signed integers, real numbers, booleans or null"
         ),
     })
+}
+
+pub(crate) fn parse_task(raw: &str) -> Result<Task> {
+    if raw.len() > 32_000 {
+        bail!("SQL task exceeds input limit")
+    }
+    let task: Task = serde_json::from_str(raw)?;
+    if task.tables.len() > 4 || task.query.trim().is_empty() || task.query.len() > 4096 {
+        bail!("Invalid SQL task bounds")
+    }
+    let mut names = BTreeSet::new();
+    for table in &task.tables {
+        let columns = table.columns.iter().collect::<BTreeSet<_>>();
+        if !identifier(&table.name)
+            || !names.insert(table.name.clone())
+            || table.columns.is_empty()
+            || table.columns.len() > 16
+            || columns.len() != table.columns.len()
+            || table.columns.iter().any(|name| !identifier(name))
+            || table.rows.len() > 256
+        {
+            bail!("Invalid or duplicate SQL table/column identity or size")
+        }
+        for row in &table.rows {
+            if row.len() != table.columns.len() {
+                bail!("SQL row width mismatch")
+            }
+            for value in row {
+                cell(value)?;
+            }
+        }
+    }
+    Ok(task)
 }
 
 pub async fn execute(raw: String) -> Result<String> {
@@ -82,38 +115,12 @@ fn evaluate_inner(raw: &str, cancelled: Arc<AtomicBool>) -> Result<String> {
     if cancelled.load(Ordering::Relaxed) {
         bail!("SQL task cancelled")
     }
-    if raw.len() > 32_000 {
-        bail!("SQL task exceeds input limit")
-    }
-    let task: Task = serde_json::from_str(raw)?;
-    if task.tables.len() > 4 || task.query.trim().is_empty() || task.query.len() > 4096 {
-        bail!("Invalid SQL task bounds")
-    }
-    let mut names = BTreeSet::new();
-    for table in &task.tables {
-        if cancelled.load(Ordering::Relaxed) {
-            bail!("SQL task cancelled")
-        }
-        let columns = table.columns.iter().collect::<BTreeSet<_>>();
-        if !identifier(&table.name)
-            || !names.insert(table.name.clone())
-            || table.columns.is_empty()
-            || table.columns.len() > 16
-            || columns.len() != table.columns.len()
-            || table.columns.iter().any(|name| !identifier(name))
-            || table.rows.len() > 256
-        {
-            bail!("Invalid or duplicate SQL table/column identity or size")
-        }
-        for row in &table.rows {
-            if row.len() != table.columns.len() {
-                bail!("SQL row width mismatch")
-            }
-            for value in row {
-                cell(value)?;
-            }
-        }
-    }
+    let task = parse_task(raw)?;
+    let names = task
+        .tables
+        .iter()
+        .map(|table| table.name.clone())
+        .collect::<BTreeSet<_>>();
     let db = Connection::open_in_memory()?;
     db.execute_batch("PRAGMA temp_store=MEMORY; PRAGMA max_page_count=128;")?;
     for (limit, maximum) in [
@@ -131,6 +138,9 @@ fn evaluate_inner(raw: &str, cancelled: Arc<AtomicBool>) -> Result<String> {
         db.set_limit(limit, maximum);
     }
     for table in &task.tables {
+        if cancelled.load(Ordering::Relaxed) {
+            bail!("SQL task cancelled")
+        }
         let columns = table
             .columns
             .iter()
