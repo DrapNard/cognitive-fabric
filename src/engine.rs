@@ -333,6 +333,35 @@ impl Engine {
                 evidence.push(format!("memory:{}:{}", memory.id, memory.checksum));
             }
             self.store.event(&id, "memory_retrieval", "memory", json!({"entries":memories.iter().map(|memory| json!({"id":memory.id,"checksum":memory.checksum,"task_id":memory.task_id,"kind":memory.kind})).collect::<Vec<_>>()}))?;
+            // Published episodes are untrusted: only a fresh independent check can
+            // reuse an answer, and only for this exact explicit structured goal.
+            if options.conversation_ref.is_none()
+                && matches!(profile, ExecutionProfile::Full | ExecutionProfile::Memory)
+            {
+                if let Some(criterion) = crate::verification::Criterion::from_query(query)? {
+                    for memory in memories.iter().filter(|memory| memory.query == query) {
+                        session.authorize_tool(criterion.capability())?;
+                        let checked = criterion.check(&memory.answer);
+                        self.store.event(
+                            &id,
+                            "verification",
+                            "verifier-r",
+                            json!({
+                                "criterion":criterion.name(),"verified":checked.is_ok(),
+                                "origin":"published_memory","memory_id":memory.id,
+                                "objective_hash":store::sha256(query.as_bytes()),
+                                "answer_hash":store::sha256(memory.answer.as_bytes()),
+                                "reason":checked.as_ref().err().map(ToString::to_string)
+                            }),
+                        )?;
+                        if checked.is_ok() {
+                            session.stop_reason = "verified_memory".into();
+                            evidence.push(format!("verified:{}", criterion.name()));
+                            return Ok((memory.answer.clone(), "completed".into()));
+                        }
+                    }
+                }
+            }
             if let Some(reference) = &options.conversation_ref {
                 session.authorize_tool("knowledge.search")?;
                 let previous = self.store.conversation_reference(reference)?;
@@ -619,6 +648,77 @@ mod expert_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn published_structured_answers_require_fresh_budgeted_verification() {
+        let query = r#"sort:{"values":[3,1,3]}"#;
+        for variant in 0..7 {
+            let store = Arc::new(Store::in_memory().unwrap());
+            let original = store.create_task(query, "fast").unwrap();
+            store
+                .finish_task(
+                    &original,
+                    "unverified",
+                    if variant == 1 { "[1,3]" } else { "[1,3,3]" },
+                )
+                .unwrap();
+            let memory = store
+                .publish_memory(
+                    &original,
+                    "episode",
+                    "Operator-reviewed history, answer remains untrusted",
+                )
+                .unwrap();
+            if variant == 2 {
+                store.revoke_memory(&memory.id).unwrap();
+            }
+            let cfg = Config {
+                interpret_goals: false,
+                max_tool_calls: if variant == 3 { 1 } else { 4 },
+                ..Config::default()
+            };
+            let engine = Engine::new(cfg, store.clone());
+            let outcome = engine
+                .run_profile(
+                    if variant == 4 {
+                        r#"sort:{"values":[3,1]}"#
+                    } else {
+                        query
+                    },
+                    "fast",
+                    if variant == 5 {
+                        ExecutionProfile::Memory
+                    } else if variant == 6 {
+                        ExecutionProfile::Alone
+                    } else {
+                        ExecutionProfile::Full
+                    },
+                )
+                .await
+                .unwrap();
+            if matches!(variant, 0 | 5) {
+                assert_eq!(outcome.status, "completed");
+                assert_eq!(outcome.answer, "[1,3,3]");
+                assert_eq!(outcome.calls, 0);
+                assert_eq!(outcome.resources.tool_calls, 2);
+                assert_eq!(outcome.stop_reason, "verified_memory");
+                assert!(outcome
+                    .evidence
+                    .contains(&"verified:integer_sort/v1".into()));
+                let trace = store.task(&outcome.task_id).unwrap();
+                assert!(trace["events"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|e| e["kind"] == "verification"
+                        && e["payload"]["origin"] == "published_memory"
+                        && e["payload"]["verified"] == true));
+            } else {
+                assert_ne!(outcome.stop_reason, "verified_memory");
+                assert_ne!(outcome.status, "completed");
+            }
+        }
+    }
+
     #[tokio::test]
     async fn inline_sql_is_budgeted_verified_and_excluded_from_alone_profile() {
         let store = Arc::new(Store::in_memory().unwrap());

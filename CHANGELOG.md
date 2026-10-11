@@ -453,3 +453,11 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   verification under an explicit task-scoped capability.
 - Record the actual successful criterion in Engine evidence instead of assuming
   every structured verifier is dependency ordering.
+
+### Independently checked structured-memory reuse
+
+- Reuse exact structured sorting/ordering answers from operator-published episodes
+  only after a fresh budgeted deterministic check.
+- Record current verification evidence and memory provenance, completing valid
+  matches without inference while retaining incorrect answers as untrusted data.
+- Preserve revocation, profile isolation and verification tool-budget denials.

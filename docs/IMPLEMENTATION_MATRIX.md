@@ -365,3 +365,11 @@ capability and records `integer_sort/v1` rather than ordering evidence. Tests co
 invalid/overflow/duplicate-loss answers, malformed criteria, bounded recursive
 revision, FAST rejection, denied verification budget and criterion-specific evidence.
 General independent task verification and live effectiveness remain **Partial**.
+
+Freshly verified structured-memory reuse: **Implemented** in `src/engine.rs`.
+Full/Memory profiles may complete exact `sort:`/`order:` goals from explicitly
+published episodes only after a new individually charged independent check and
+audit. No memory kind or historical status grants verification. Tests cover
+zero-inference success, wrong answers, revocation, changed goals, exhausted tool
+budget and actual CLI reuse. General fact verification and broad live memory
+benefit remain **Partial**; this claims no learned weights or benchmark advantage.

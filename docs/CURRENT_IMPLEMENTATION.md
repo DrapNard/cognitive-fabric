@@ -226,3 +226,10 @@ one to 256 signed 64-bit integers and optional descending order; Rust checks exa
 multiplicity and ordering before verified completion. Failed candidates can be
 revised within the existing cycles/tool/call ceilings. This is a bounded domain
 checker, not a general correctness evaluator or a measured live-model improvement.
+
+For exact explicit `sort:` and `order:` goals, Full/Memory execution can reuse an
+operator-published episode only after a fresh independently charged Rust check.
+A valid retrieved answer completes without inference; rejected answers remain
+advisory and normal reasoning continues within remaining limits. Unrelated goals,
+revoked entries, explicit conversation references and other ablation profiles do
+not gain this shortcut. A memory's prior status is never accepted as proof.

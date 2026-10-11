@@ -1134,3 +1134,14 @@ tool allowance is exhausted. Runtime evidence names integer_sort/v1 rather than
 mislabeling it dependency_order/v1. The checker is a pure bounded Rust capability
 with no host file/network access; scripted reasoning does not establish live-model
 quality or general independent verification.
+
+## Fresh structured-memory verification
+
+FlatBuffers 25.12.19 formatting, all-target check, 203 all-target tests (193
+library and 10 integration), and Clippy with denied warnings pass. Runtime tests
+cover zero-inference completion after rechecking an unverified published sorting
+answer, rejection of wrong/revoked/nonmatching answers, denied tool allowance,
+Full/Memory support and Alone profile isolation. The CLI integration publishes an
+episode and confirms fresh verified completion with zero model calls. Evidence is
+current deterministic checking, not the memory's historical status. No general
+fact trust, live reasoning quality or benchmark advantage is inferred.

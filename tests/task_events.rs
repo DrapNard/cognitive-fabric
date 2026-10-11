@@ -98,6 +98,36 @@ fn cli_pages_full_audit_history_with_stable_cursors() {
     let graph: serde_json::Value = serde_json::from_slice(&graph.stdout).unwrap();
     assert_eq!(graph["graph_recorded"], false);
     assert_eq!(graph["resume_authorized"], false);
+    let structured = r#"sort:{"values":[4,2,4]}"#;
+    let source = store.create_task(structured, "fast").unwrap();
+    store.finish_task(&source, "unverified", "[2,4,4]").unwrap();
+    store
+        .publish_memory(
+            &source,
+            "episode",
+            "Reviewed historical answer; must be checked again",
+        )
+        .unwrap();
+    let reused = Command::new(env!("CARGO_BIN_EXE_cogfabric"))
+        .arg("--home")
+        .arg(&home)
+        .args([
+            "--backend",
+            "demo",
+            "--json",
+            "ask",
+            structured,
+            "--mode",
+            "fast",
+        ])
+        .output()
+        .unwrap();
+    assert!(reused.status.success());
+    let reused: serde_json::Value = serde_json::from_slice(&reused.stdout).unwrap();
+    assert_eq!(reused["status"], "completed");
+    assert_eq!(reused["answer"], "[2,4,4]");
+    assert_eq!(reused["calls"], 0);
+    assert_eq!(reused["stop_reason"], "verified_memory");
     drop(store);
     std::fs::remove_dir_all(home).unwrap();
 }

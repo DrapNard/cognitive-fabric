@@ -36,3 +36,19 @@ applies only to the recorded arithmetic query, never a later goal. Retrieval doe
 not grant capabilities or change the later task's verification status. LLMs can
 still be influenced by hostile data, so deterministic permission enforcement remains
 independent of prompt instructions. No live-model poisoning resistance is claimed.
+
+## Fresh checks before structured answer reuse
+
+For an exact `sort:` or `order:` query, Full and Memory execution profiles may
+inspect their retrieved operator-published episodes for a reusable answer. Each
+attempt consumes the corresponding deterministic verifier capability and records
+fresh objective/answer hashes, memory identity and check outcome. The prior
+memory status and review note are never proof. Correct answers finish with
+`verified_memory` and no inference; incorrect answers leave ordinary bounded
+reasoning available. Revoked entries and nonmatching queries cannot be reused.
+
+Explicit conversation references disable this shortcut, as do other ablation
+profiles. Retrieval remains bounded to three memories; finding no exact match does
+not trigger an unrestricted history search. This establishes a concrete reusable
+solution path for bounded structured constraints, not general fact validation,
+weight learning, or a measured advantage on live-model benchmarks.
