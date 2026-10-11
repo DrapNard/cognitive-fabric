@@ -268,3 +268,11 @@ checked staging only, with limits/progress interruption and standalone publicati
 and failure before publication; CLI integration exercises the option. Future and
 unversioned schemas remain rejected. This supersedes prior older-schema blockers,
 while arbitrary external/neural artifacts remain outside the recovery implementation.
+
+Versioned task-progress module routing: **Implemented** for trusted embedding hosts
+in `src/events/modules.rs` and `src/events.rs`. Registration/discovery, immutable
+versions, pinned task/stage subscriptions and shared bounded queues work over COGE.
+Tests cover actual durable events, task/stage filtering before admission, replacement,
+unregistration, malformed descriptors, registry/subscriber bounds and overflow.
+General independent-process actor identities, executable module event handling and
+command routing remain **Partial / Not implemented**; no model permissions expand.

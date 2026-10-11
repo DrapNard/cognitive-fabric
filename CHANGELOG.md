@@ -367,3 +367,10 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   bounded transactional migrations to staging without modifying the source.
 - Record source/result schemas and preserve running tasks without replay; reject
   unknown versions and publish nothing on migration failure.
+
+### Versioned event module routing
+
+- Register/discover bounded host event modules and pin task/stage subscriptions to
+  immutable versions while retaining in-flight subscriptions across replacement.
+- Filter before shared bounded queue admission and preserve explicit overflow and
+  durable catch-up without granting model observation or execution permissions.

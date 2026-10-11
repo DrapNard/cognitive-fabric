@@ -1002,3 +1002,14 @@ and conflicting migration failure before publication. CLI flag coverage passes.
 The final diagnostic wording change is additionally checked by restore tests and
 Clippy. Future/unversioned schemas remain unsupported, and tests do not establish
 validity of arbitrary custom databases solely from their version number.
+
+## Host module progress routing
+
+All mandatory checks pass with FlatBuffers 25.12.19: fmt check, all-target check,
+all-target tests (176: 167 library, three authentication, five managed process,
+one restore CLI), and Clippy with denied warnings. New tests exercise persisted
+milestones with pinned module replacement/unregistration, task/stage isolation,
+content minimization, descriptor denials, immutable registry history/capacity and
+shared subscriber overflow/admission. Existing socket/process fixtures pass with
+host access. The feature is an in-process host routing API; authenticated external
+module provisioning and independent executable handlers remain unverified/absent.

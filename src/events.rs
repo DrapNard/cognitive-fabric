@@ -7,13 +7,14 @@ use std::sync::{
     Arc, Mutex,
 };
 use tokio::sync::mpsc;
+pub mod modules;
 #[allow(dead_code, unused_imports, clippy::all)]
 mod generated {
     include!(concat!(env!("OUT_DIR"), "/events_generated.rs"));
 }
 use generated::events as fb;
 
-#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u8)]
 pub enum Stage {
     Started,
@@ -213,12 +214,14 @@ impl Progress {
     }
 }
 struct Subscriber {
+    stages: Option<Vec<Stage>>,
     task: String,
     sender: mpsc::Sender<Arc<Vec<u8>>>,
     lost: Arc<AtomicBool>,
 }
 #[derive(Default)]
 pub(crate) struct Hub {
+    modules: Mutex<modules::Registry>,
     subscribers: Mutex<Vec<Subscriber>>,
 }
 pub struct Subscription {
@@ -227,6 +230,9 @@ pub struct Subscription {
 }
 impl Hub {
     pub(crate) fn subscribe(&self, task: &str) -> Result<Subscription> {
+        self.subscribe_filtered(task, None)
+    }
+    fn subscribe_filtered(&self, task: &str, stages: Option<Vec<Stage>>) -> Result<Subscription> {
         uuid::Uuid::parse_str(task)?;
         let mut subscribers = self
             .subscribers
@@ -239,6 +245,7 @@ impl Hub {
         let (sender, receiver) = mpsc::channel(16);
         let lost = Arc::new(AtomicBool::new(false));
         subscribers.push(Subscriber {
+            stages,
             task: task.into(),
             sender,
             lost: lost.clone(),
@@ -255,7 +262,12 @@ impl Hub {
             if subscriber.sender.is_closed() {
                 return false;
             }
-            if subscriber.task != event.task_id {
+            if subscriber.task != event.task_id
+                || subscriber
+                    .stages
+                    .as_ref()
+                    .is_some_and(|stages| !stages.contains(&event.stage))
+            {
                 return true;
             }
             match subscriber.sender.try_send(bytes.clone()) {

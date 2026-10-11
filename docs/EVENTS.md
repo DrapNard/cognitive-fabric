@@ -80,3 +80,31 @@ sequences are validated on both peers. SQLite is authoritative; writes from othe
 Store instances are available through reconnect/catch-up but do not trigger this
 service's live event hub. No exactly-once or cross-process publication guarantee
 is claimed.
+
+## Versioned host module subscriptions
+
+Embedding hosts can register `events::modules::EventModule` through
+`Store::register_event_module`, discover active descriptors, and unregister them.
+Descriptors contain a bounded local module ID, semantic version and a nonempty
+unique subset of typed `Stage` values. They contain no executable path or model
+instructions. The registry permits 32 active IDs and 128 immutable ID/version
+pairs per Store lifetime; unregistering does not erase version history.
+
+`Store::subscribe_module_progress(task, module_id)` subscribes a registered module
+to one existing task and pins that descriptor/stage filter. Replacement or
+unregistration affects future subscriptions; existing handles retain their pinned
+settings until dropped, overflow or Store shutdown. Inspect `descriptor()` and
+await `receive()` on `ModuleSubscription`. All module subscribers share the existing
+64-consumer ceiling and 16-frame queues with owner observers. Filtering happens
+before queue admission, so unrelated tasks/stages consume no consumer capacity.
+Overflow remains explicit and durable task progress supplies catch-up.
+
+Delivery uses the same verified COGE FlatBuffers frames and ordered after-commit
+publication as owner observation. Prompts, answers, arbitrary annotations and
+credentials remain excluded. No additional task execution or capabilities result.
+The registry and handles are trusted in-process host interfaces, not authenticated
+remote/module actors. They are process-local and are not restored from the database.
+Host application code must re-register modules on startup and release handles on
+cancellation. A descriptor string is routing metadata, not identity attestation.
+No new model permissions, executable plugins or general module command transport
+are introduced. General cross-process module registration/routing remains partial.

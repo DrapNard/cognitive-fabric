@@ -204,3 +204,8 @@ Recognized schema-1–5 snapshots now support explicit `--migrate-schema` restor
 through bounded existing migrations on a new staged copy. Source and destination
 schema versions are recorded; original files and task state are preserved. Unknown
 and unversioned snapshots remain rejected. See `STORAGE.md`.
+
+Trusted embedding hosts can register versioned event-module descriptors and
+subscribe to selected progress stages for one task. Handles pin filters/versions
+and share bounded FlatBuffers queues with owner observers. Registry state is
+process-local; cross-process actor provisioning remains incomplete. See `EVENTS.md`.
