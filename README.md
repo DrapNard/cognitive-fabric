@@ -167,7 +167,7 @@ Release gate evidence and remaining work are tracked in
 Operator-approved interrupted advisory tasks can use
 `cogfabric --home STATE resume-task TASK_UUID --human-approve`. Admission preserves
 original same-boot deadlines and budgets, refuses unresolved calls and only
-supports default Full/Collective advisory graphs and unconsumed solver boundaries
-after completed graphs, with direct or managed inference and validated original
-model registrations. See
+supports default Full/Collective advisory graphs and unconsumed solver boundaries,
+including FAST, whole-goal fallback and skipped-plan tasks, with direct or managed
+inference and validated original model registrations. See
 [recovery documentation](docs/RECOVERY.md) before using this command.

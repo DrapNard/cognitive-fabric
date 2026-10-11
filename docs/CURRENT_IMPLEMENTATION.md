@@ -275,3 +275,9 @@ revision strategy, repeat hash and cumulative reservation anchors. An unconsumed
 boundary following a completed advisory graph can resume without resetting cycles
 or repeat detection. Tampered/consumed boundaries and unresolved calls are refused.
 No-graph, within-cycle and general repeated resumption remain incomplete.
+
+
+Unconsumed solver-boundary recovery now also covers FAST tasks, malformed-plan
+whole-goal fallback and explicitly budget-skipped graphs. Valid planner output
+without its graph record is refused. Actual HTTP and budget/stopping regression
+tests pass; within-cycle and repeated recovery remain incomplete.

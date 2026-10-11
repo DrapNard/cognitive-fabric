@@ -514,3 +514,12 @@ stale or altered boundaries fail closed. Tests cover write failure, preservation
 of repeat stopping, tampering/consumption and actual resumed HTTP verification.
 This supersedes the blanket later-phase limitation above. Arbitrary within-cycle,
 no-graph and general repeated recovery remain **Partial / Not implemented**.
+
+
+Whole-goal and skipped-plan boundary recovery: **Implemented** in
+`src/recovery/continuation.rs`. Validated unconsumed boundaries admit FAST tasks,
+malformed-planner fallback and explicit budget-skipped graphs while preserving
+original resources and stopping state. A valid planner result with missing graph
+history fails closed. Tests include actual HTTP no-graph revision, FAST and skipped
+budgets plus missing-plan/consumed-boundary denials. This supersedes the preceding
+no-graph limitation; within-cycle and repeated recovery remain **Partial**.

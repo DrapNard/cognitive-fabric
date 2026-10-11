@@ -402,3 +402,17 @@ A process interruption after a new reservation still requires outcome inspection
 Historical tasks without boundaries retain their earlier supported recovery paths.
 Tests cover boundary-write failure, exact revision state, altered fields, consumed
 boundaries, repeat stopping and resumed verification through fixture HTTP.
+
+
+### Whole-goal and skipped-plan boundaries
+
+Unconsumed solver boundaries also support tasks without an advisory graph, including
+FAST execution and malformed-planner fallback, and graphs whose pending steps
+were explicitly skipped by budget admission. The same context/ledger/deadline and
+repeat-state checks apply. Missing graph data is refused when a recorded planner
+result parses as a valid plan; absence alone never authorizes reconstructing or
+ignoring a plan. Skipped graphs require an explicit solver boundary and never
+execute their skipped nodes during this recovery path. Tests cover real HTTP
+whole-goal revision, FAST zero-prior-call admission, budget-skipped plans, deleted
+valid graphs and consumed boundaries. This supersedes the no-graph limitation
+above. Within-cycle and general repeated continuation remain incomplete.

@@ -31,10 +31,9 @@ fn prepare(db: &rusqlite::Connection, task: &str) -> Result<Checkpoint> {
     if !matches!(status.as_str(), "running" | "interrupted") {
         bail!("Task is not abandoned or interrupted")
     }
-    let graph = graph.ok_or_else(|| anyhow::anyhow!("No saved advisory graph"))?;
     if subtasks
         .iter()
-        .any(|n| !matches!(n.state.as_str(), "pending" | "unverified"))
+        .any(|n| !matches!(n.state.as_str(), "pending" | "unverified" | "skipped"))
     {
         bail!("Continuation requires pending or recorded advisory nodes; running outcomes need reconciliation")
     }
@@ -205,7 +204,7 @@ fn prepare(db: &rusqlite::Connection, task: &str) -> Result<Checkpoint> {
             || (cycles==0 && (!previous.is_empty() || !v["last_answer_hash"].is_null()))
             || (cycles>0 && (v["last_answer_hash"] != sha256(previous.as_bytes())
                 || solver_texts.last_key_value().is_none_or(|(_,text)|text!=previous)))
-            || subtasks.iter().any(|n|n.state!="unverified")
+            || subtasks.iter().any(|n|!matches!(n.state.as_str(),"unverified"|"skipped"))
         { bail!("Reasoning boundary is stale, inconsistent or unsupported") }
         Ok(v)
     }).transpose()?;
@@ -215,50 +214,66 @@ fn prepare(db: &rusqlite::Connection, task: &str) -> Result<Checkpoint> {
         .iter()
         .filter(|c| c["call"].as_u64().unwrap() > calls_before)
         .collect::<Vec<_>>();
-    if tail.first().is_none_or(|c| c["role"] != "planner")
-        || (boundary.is_none() && tail.iter().skip(1).any(|c| c["role"] != "solver"))
-    {
-        bail!("Checkpoint is not in the pre-solver graph phase")
-    }
-    let planner = planner_texts
-        .get(&tail[0]["call"].as_u64().unwrap())
-        .ok_or_else(|| anyhow::anyhow!("Missing recorded planner result"))?;
-    if serde_json::to_value(crate::planning::Plan::parse(planner)?)?
-        != serde_json::to_value(&graph)?
-    {
-        bail!("Saved graph differs from charged planner result")
-    }
-    let completed = graph
-        .order()?
-        .into_iter()
-        .filter(|i| subtasks[*i].state == "unverified")
-        .collect::<Vec<_>>();
-    if (boundary.is_none() && tail.len() != completed.len() + 1) || tail.len() < completed.len() + 1
-    {
-        bail!("Saved graph and inference outcomes do not match")
-    }
-    if graph
-        .order()?
-        .iter()
-        .take(completed.len())
-        .copied()
-        .collect::<Vec<_>>()
-        != completed
-    {
-        bail!("Completed nodes are not a scheduler prefix")
-    }
-    for (call, index) in tail.iter().skip(1).zip(completed) {
-        if call["role"] != "solver" {
-            bail!("Invalid advisory result role")
-        }
-        let answer = solver_texts
-            .get(&call["call"].as_u64().unwrap())
-            .ok_or_else(|| anyhow::anyhow!("Missing advisory solver result"))?;
-        if subtasks[index].result.as_deref()
-            != Some(answer.chars().take(1200).collect::<String>().as_str())
+    if let Some(graph) = &graph {
+        if tail.first().is_none_or(|c| c["role"] != "planner")
+            || (boundary.is_none() && tail.iter().skip(1).any(|c| c["role"] != "solver"))
         {
-            bail!("Saved advisory result differs from charged inference")
+            bail!("Checkpoint is not in the pre-solver graph phase")
         }
+        let planner = planner_texts
+            .get(&tail[0]["call"].as_u64().unwrap())
+            .ok_or_else(|| anyhow::anyhow!("Missing recorded planner result"))?;
+        if serde_json::to_value(crate::planning::Plan::parse(planner)?)?
+            != serde_json::to_value(graph)?
+        {
+            bail!("Saved graph differs from charged planner result")
+        }
+        let completed = graph
+            .order()?
+            .into_iter()
+            .filter(|i| subtasks[*i].state == "unverified")
+            .collect::<Vec<_>>();
+        if (boundary.is_none() && tail.len() != completed.len() + 1)
+            || tail.len() < completed.len() + 1
+        {
+            bail!("Saved graph and inference outcomes do not match")
+        }
+        if graph
+            .order()?
+            .iter()
+            .take(completed.len())
+            .copied()
+            .collect::<Vec<_>>()
+            != completed
+        {
+            bail!("Completed nodes are not a scheduler prefix")
+        }
+        for (call, index) in tail.iter().skip(1).zip(completed) {
+            if call["role"] != "solver" {
+                bail!("Invalid advisory result role")
+            }
+            let answer = solver_texts
+                .get(&call["call"].as_u64().unwrap())
+                .ok_or_else(|| anyhow::anyhow!("Missing advisory solver result"))?;
+            if subtasks[index].result.as_deref()
+                != Some(answer.chars().take(1200).collect::<String>().as_str())
+            {
+                bail!("Saved advisory result differs from charged inference")
+            }
+        }
+    } else {
+        if boundary.is_none() {
+            bail!("No saved graph or unconsumed reasoning boundary")
+        }
+        if planner_texts
+            .values()
+            .any(|text| crate::planning::Plan::parse(text).is_ok())
+        {
+            bail!("A valid recorded planner result is missing its graph")
+        }
+    }
+    if boundary.is_none() && subtasks.iter().any(|n| n.state == "skipped") {
+        bail!("Skipped graphs require a saved solver boundary")
     }
     let admission = &audit["remaining_inference_admission"];
     if (boundary.is_none() && admission["cycles"].as_u64() != settings["cycle_limit"].as_u64())
@@ -753,17 +768,21 @@ mod tests {
     }
     #[tokio::test]
     async fn public_resume_uses_real_http_and_commits_a_durable_outcome() {
-        http_continuation(false, false).await;
+        http_continuation(false, false, false).await;
     }
     #[tokio::test]
     async fn registered_resume_uses_the_original_http_model() {
-        http_continuation(true, false).await;
+        http_continuation(true, false, false).await;
     }
     #[tokio::test]
     async fn public_resume_continues_a_saved_revision_through_http() {
-        http_continuation(false, true).await;
+        http_continuation(false, true, false).await;
     }
-    async fn http_continuation(registered: bool, revision: bool) {
+    #[tokio::test]
+    async fn public_resume_handles_a_whole_goal_revision_without_a_graph() {
+        http_continuation(false, true, true).await;
+    }
+    async fn http_continuation(registered: bool, revision: bool, no_graph: bool) {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let root =
             std::env::temp_dir().join(format!("fabric-continuation-{}", uuid::Uuid::new_v4()));
@@ -775,7 +794,9 @@ mod tests {
         if registered {
             register_saved_model(&store, &task);
         }
-        if revision {
+        if no_graph {
+            save_no_graph_boundary(&store, &task).await;
+        } else if revision {
             save_revision_boundary(&store, &task).await;
         }
         assert!(resume(store.clone(), &task, false, std::future::pending())
@@ -852,7 +873,13 @@ mod tests {
         assert_eq!(count, 1);
         assert_eq!(
             inference::audit_from(&db, &task).unwrap()["reserved_calls"],
-            if revision { 5 } else { 4 }
+            if no_graph {
+                3
+            } else if revision {
+                5
+            } else {
+                4
+            }
         );
         assert!(prepare(&db, &task).is_err());
         drop(db);
@@ -906,6 +933,109 @@ mod tests {
             store.lock().unwrap().execute(&format!("UPDATE events SET payload={mutation} WHERE task_id=?1 AND kind='execution_settings'"),[&task]).unwrap();
             assert!(prepare(&store.lock().unwrap(),&task).is_err(),"Accepted {mutation}");
         }
+    }
+    async fn save_no_graph_boundary(store: &Arc<Store>, task: &str) {
+        save_non_decomposed_boundary(store, task, "fallback").await;
+    }
+    async fn save_non_decomposed_boundary(store: &Arc<Store>, task: &str, kind: &str) {
+        let raw: String = store
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT payload FROM events WHERE task_id=?1 AND kind='execution_settings'",
+                [task],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let settings: Value = serde_json::from_str(&raw).unwrap();
+        let mut cfg: Config = serde_json::from_value(settings["configuration"].clone()).unwrap();
+        store.lock().unwrap().execute("DELETE FROM events WHERE task_id=?1 AND kind NOT IN ('execution_options','module_snapshot','model_registration')",[task]).unwrap();
+        let mode = if kind == "fast" { "fast" } else { "deep" };
+        let script = if kind == "fast" {
+            vec![("solver", "[1,2,3]")]
+        } else {
+            vec![
+                ("planner", if kind == "skipped" { PLAN } else { "no graph" }),
+                ("solver", "[3,2,1]"),
+                ("solver", "[1,2,3]"),
+            ]
+        };
+        if kind == "skipped" {
+            cfg.max_calls = 3;
+        }
+        store
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE tasks SET mode=?2 WHERE id=?1",
+                rusqlite::params![task, mode],
+            )
+            .unwrap();
+        let backend = Arc::new(Script(Mutex::new(script.into())));
+        let mut original = Session::new(cfg, store.clone(), backend, task.into(), mode).unwrap();
+        original.solve(QUERY, "", mode).await.unwrap();
+        let db = store.lock().unwrap();
+        let id:u64=db.query_row("SELECT id FROM events WHERE task_id=?1 AND kind='reasoning_boundary' AND json_extract(payload,'$.cycles_before')=?2",rusqlite::params![task,if kind=="fast" {0} else {1}],|r|r.get(0)).unwrap();
+        db.execute(
+            "DELETE FROM events WHERE task_id=?1 AND id>?2",
+            rusqlite::params![task, id],
+        )
+        .unwrap();
+    }
+    #[tokio::test]
+    async fn fast_and_budget_skipped_plans_resume_at_their_saved_boundaries() {
+        for kind in ["fast", "skipped"] {
+            let (store, task) = fixture().await;
+            save_non_decomposed_boundary(&store, &task, kind).await;
+            let saved = prepare(&store.lock().unwrap(), &task).unwrap();
+            if kind == "skipped" {
+                assert!(saved.subtasks.iter().all(|s| s.state == "skipped"));
+            } else {
+                assert!(saved.subtasks.is_empty());
+            }
+            let backend = Arc::new(Script(Mutex::new(vec![("solver", "[1,2,3]")].into())));
+            let mut resumed = Session::restored(
+                saved.cfg,
+                store.clone(),
+                backend,
+                task.clone(),
+                &saved.mode,
+                saved.state,
+            )
+            .unwrap();
+            resumed
+                .continue_solver(
+                    saved.boundary.as_ref().unwrap(),
+                    &saved.query,
+                    &saved.context,
+                    &saved.mode,
+                )
+                .await
+                .unwrap();
+            assert!(resumed.verified);
+            assert_eq!(resumed.resources.calls, if kind == "fast" { 1 } else { 3 });
+            assert_eq!(resumed.resources.cycles, if kind == "fast" { 1 } else { 2 });
+        }
+    }
+    #[tokio::test]
+    async fn no_graph_recovery_refuses_missing_valid_plans_and_consumed_boundaries() {
+        let (store, task) = fixture().await;
+        save_no_graph_boundary(&store, &task).await;
+        let saved = prepare(&store.lock().unwrap(), &task).unwrap();
+        assert!(saved.subtasks.is_empty());
+        assert_eq!(saved.state.resources.calls, 2);
+        store.lock().unwrap().execute("UPDATE events SET payload=json_set(payload,'$.text',?2,'$.node.content_hash',?3) WHERE task_id=?1 AND kind='reasoning' AND json_extract(payload,'$.node.role')='planner'",rusqlite::params![task,PLAN,sha256(PLAN.as_bytes())]).unwrap();
+        assert!(prepare(&store.lock().unwrap(), &task).is_err());
+        store.lock().unwrap().execute("UPDATE events SET payload=json_set(payload,'$.text','no graph','$.node.content_hash',?2) WHERE task_id=?1 AND kind='reasoning' AND json_extract(payload,'$.node.role')='planner'",rusqlite::params![task,sha256(b"no graph")]).unwrap();
+        store
+            .event(
+                &task,
+                "cycle_reservation",
+                "jev-r",
+                json!({"format_version":1,"cycle":2}),
+            )
+            .unwrap();
+        assert!(prepare(&store.lock().unwrap(), &task).is_err());
     }
     async fn save_revision_boundary(store: &Arc<Store>, task: &str) {
         let saved = prepare(&store.lock().unwrap(), task).unwrap();

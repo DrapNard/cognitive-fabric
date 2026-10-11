@@ -2,6 +2,13 @@
 
 All notable changes are documented here in English.
 
+### Whole-goal boundary recovery
+
+- Resume validated unconsumed boundaries for FAST and whole-goal fallback tasks
+  without requiring an advisory graph.
+- Preserve explicitly skipped plans and reject missing valid graph history;
+  verify HTTP revision, original budgets and consumed-boundary denials.
+
 ### Durable revision recovery
 
 - Persist exact bounded solver-boundary state before charging each reasoning cycle;

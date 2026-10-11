@@ -1358,3 +1358,13 @@ repeat detection after restoration and real HTTP continuation into independent
 verification. An initial restricted run could not bind fixture sockets; the full
 suite subsequently passed with local socket permission. No general within-cycle,
 no-graph or repeated recovery, model-quality gain or release completion is claimed.
+
+## Whole-goal boundary recovery (2026-10-11)
+
+Formatting, offline all-target checking, Clippy with warnings denied and all-target
+tests passed with FlatBuffers compiler/crate 25.12.19: 244 tests (227 library,
+17 integration). New coverage verifies real HTTP revision without a graph, FAST
+admission with zero prior inference, explicitly budget-skipped plans, refusal of
+missing valid graphs and consumed boundaries. Original counters and stopping
+state remain enforced; no new inference or authority is granted by absent plans.
+General repeated and within-cycle recovery remain unfinished.
