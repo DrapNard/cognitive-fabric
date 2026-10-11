@@ -158,3 +158,32 @@ model. True describes the absence of observed bound expert configurations, not
 proof of immutable weights, equal consumption, complete execution or statistical
 validity. Inspect `complete`, actual usage and per-case snapshots independently.
 Live model disable overrides frozen knowledge for later task starts.
+
+
+### Structured SQL result scoring
+
+Comparison cases may use `verification: sql_result_json_v1` with an explicit
+`sql:` objective and an operator-supplied expected result JSON string:
+
+```json
+{"input":"sql:{\"tables\":[{\"name\":\"items\",\"columns\":[\"amount\"],\"rows\":[[2],[3]]}],\"query\":\"SELECT sum(amount) AS total FROM items\"}","expected":"{\"columns\":[\"total\"],\"rows\":[[5]]}","verification":"sql_result_json_v1"}
+```
+
+The evaluator parses expected and actual results independently of the runtime
+status. Object field order and JSON whitespace do not affect equality. Column
+order, row order and cell values/types remain significant; use explicit `ORDER BY`
+when the intended answer requires deterministic ordering. SQL booleans are integer
+results, not JSON boolean cells. Strings are case-sensitive, including labels.
+
+Results require exactly `columns` and `rows`, 1–16 column labels of at most 128
+bytes, at most 64 rows and matching row widths. Cells are numbers, strings or null;
+objects, arrays and booleans are rejected. Duplicate/unknown fields and malformed
+or oversized JSON fail. Expected results are validated before tasks start and
+remain outside inference prompts. Only completed/unverified outcomes can pass;
+incorrect results cannot pass merely by claiming success.
+
+All arms use the same supplied labels. Tool-enabled arms execute the existing
+bounded SQLite capability; the alone baseline must produce its own result.
+This criterion checks equivalence to operator-reviewed expected data. It does not
+independently establish that those labels are correct, prove arbitrary SQL safety,
+or measure general reasoning quality. `bench` retains its existing text scoring.

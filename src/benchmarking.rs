@@ -25,6 +25,36 @@ enum Criterion {
     #[default]
     ExpectedOutputExactMatch,
     DependencyOrderV1,
+    SqlResultJsonV1,
+}
+
+#[derive(Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+struct SqlResult {
+    columns: Vec<String>,
+    rows: Vec<Vec<Value>>,
+}
+impl SqlResult {
+    fn parse(text: &str) -> Result<Self> {
+        if text.len() > 16384 {
+            bail!("SQL expected/result JSON exceeds bounds")
+        }
+        let result: Self = serde_json::from_str(text)?;
+        if result.columns.is_empty()
+            || result.columns.len() > 16
+            || result.columns.iter().any(|label| label.len() > 128)
+            || result.rows.len() > 64
+            || result.rows.iter().any(|row| {
+                row.len() != result.columns.len()
+                    || row.iter().any(|cell| {
+                        !matches!(cell, Value::Null | Value::Number(_) | Value::String(_))
+                    })
+            })
+        {
+            bail!("Invalid SQL expected/result shape")
+        }
+        Ok(result)
+    }
 }
 
 impl Case {
@@ -38,6 +68,15 @@ impl Case {
                 {
                     bail!("Exact-match case requires a bounded expected output")
                 }
+                Ok(None)
+            }
+            Criterion::SqlResultJsonV1 => {
+                if !self.input.starts_with("sql:") {
+                    bail!("SQL result criterion requires an explicit sql: objective")
+                }
+                SqlResult::parse(self.expected.as_deref().ok_or_else(|| {
+                    anyhow::anyhow!("SQL result criterion requires expected JSON")
+                })?)?;
                 Ok(None)
             }
             Criterion::DependencyOrderV1 => {
@@ -61,6 +100,14 @@ impl Case {
     ) -> bool {
         if !matches!(status, "completed" | "unverified") {
             return false;
+        }
+        if matches!(self.verification, Criterion::SqlResultJsonV1) {
+            return self
+                .expected
+                .as_deref()
+                .and_then(|text| SqlResult::parse(text).ok())
+                .zip(SqlResult::parse(answer).ok())
+                .is_some_and(|(expected, actual)| expected == actual);
         }
         match criterion {
             Some(criterion) => criterion.check(answer).is_ok(),
@@ -393,6 +440,87 @@ mod tests {
             } else {
                 assert!(models.is_empty());
             }
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn sql_comparison_scores_structured_results_without_trusting_status() {
+        let input = r#"sql:{"tables":[{"name":"items","columns":["amount"],"rows":[[2],[3]]}],"query":"SELECT sum(amount) AS total FROM items"}"#;
+        let expected = r#"{"rows":[[5]],"columns":["total"]}"#;
+        let case = Case {
+            input: input.into(),
+            expected: Some(expected.into()),
+            verification: Criterion::SqlResultJsonV1,
+        };
+        assert!(case.prepare().unwrap().is_none());
+        assert!(case.score(
+            None,
+            "unverified",
+            r#"{ "columns": ["total"], "rows": [[5]] }"#
+        ));
+        for answer in [
+            r#"{"columns":["total"],"rows":[[6]]}"#,
+            r#"{"columns":["total"],"rows":[["5"]]}"#,
+            r#"{"columns":["total"],"rows":[[5]],"extra":true}"#,
+            r#"{"columns":["total"],"rows":[[5]],"rows":[[6]]}"#,
+        ] {
+            assert!(!case.score(None, "completed", answer));
+        }
+        assert!(!case.score(None, "demo", expected));
+        assert!(!case.score(None, "failed", expected));
+        let root =
+            std::env::temp_dir().join(format!("fabric-sql-compare-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        let dataset = root.join("cases.jsonl");
+        std::fs::write(
+            &dataset,
+            json!({"input":input,"expected":expected,"verification":"sql_result_json_v1"})
+                .to_string(),
+        )
+        .unwrap();
+        let cfg = Config {
+            backend: "demo".into(),
+            ..Config::default()
+        };
+        let review = Review {
+            source: "fixture".into(),
+            license: "CC0".into(),
+            code_revision: "a".repeat(40),
+            held_out: true,
+            max_run_seconds: 10,
+        };
+        let report = compare(
+            &cfg,
+            Arc::new(Store::in_memory().unwrap()),
+            &dataset,
+            "deep",
+            None,
+            &review,
+        )
+        .await
+        .unwrap();
+        assert_eq!(report["complete"], true);
+        assert_eq!(report["arms"][0]["passed"], 0);
+        for arm in &report["arms"].as_array().unwrap()[1..] {
+            assert_eq!(arm["passed"], 1);
+            assert_eq!(arm["resources"]["model_calls"], 0);
+            let expected_tools = if matches!(arm["profile"].as_str(), Some("memory" | "experts")) {
+                2
+            } else {
+                1
+            };
+            assert_eq!(arm["resources"]["tool_calls"], expected_tools);
+        }
+        for invalid in [
+            json!({"input":"plain goal","expected":expected,"verification":"sql_result_json_v1"}),
+            json!({"input":input,"verification":"sql_result_json_v1"}),
+            json!({"input":input,"expected":"{}","verification":"sql_result_json_v1"}),
+        ] {
+            assert!(serde_json::from_value::<Case>(invalid)
+                .unwrap()
+                .prepare()
+                .is_err());
         }
         std::fs::remove_dir_all(root).unwrap();
     }

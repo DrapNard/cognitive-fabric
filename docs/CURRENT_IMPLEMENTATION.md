@@ -42,7 +42,7 @@ Quality requires operator-attested held-out data. Promotion checks quality,
 cumulative approved-version retrieval regressions and unchanged versions transactionally.
 Rollback restores approved stored snapshots. Neural promotion stays disabled.
 
-Verification: 153 tests, formatting, all-target check and Clippy pass using exact
+Verification: 154 tests, formatting, all-target check and Clippy pass using exact
 flatc/Rust FlatBuffers 25.12.19. HTTP fixtures and socket tests ran locally; no
 compatible live model server was available at the default endpoint. No neural
 quality, GPU integration, hot-swap, energy or model-superiority result is claimed.
@@ -151,3 +151,7 @@ same-model ablations; backend weights remain unattested.
 Offline training also requires reviewed hashed train/validation/test split
 metadata and rejects normalized prompt overlap before ML imports. Split identity
 is recorded, but semantic independence and neural acceptance remain unverified.
+
+SQL comparison cases can use structural JSON result scoring against reviewed
+expected labels, preserving cell types and row/column order while ignoring object
+field order and whitespace. Status alone cannot make a wrong answer pass.

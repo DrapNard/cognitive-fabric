@@ -2,6 +2,13 @@
 
 All notable changes are documented here in English.
 
+### Structured SQL comparison scoring
+
+- Add strict SQL result JSON comparison against operator-provided expected labels,
+  preserving types and ordering while ignoring JSON object order and whitespace.
+- Validate expected shapes before task creation and exclude failed/demo outcomes.
+- Cover six-profile inline SQL execution and wrong-value/type/status denials.
+
 ### Offline dataset split manifests
 
 - Require reviewed versioned train/validation/test identities before offline LoRA

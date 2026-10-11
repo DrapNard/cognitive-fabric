@@ -802,3 +802,18 @@ rows are returned to optimization; validation/test identity is recorded without
 claiming semantic independence or behavioral acceptance. Base-model provenance,
 actual GPU training, external isolation and independent neural acceptance remain
 release/research limitations, and neural promotion stays denied.
+
+## Structured SQL comparison criterion (2026-10-11)
+
+Using exact FlatBuffers 25.12.19, formatting, all-target Cargo check, all-target
+tests (149 unit + 5 process) and Clippy with denied warnings passed offline.
+The targeted six-profile SQL comparison regression also passed. Its initial
+resource assertion was corrected to account for separately charged reference
+search in memory/experts profiles; the runtime accounting was unchanged.
+
+Coverage checks formatting/object-order equivalence, wrong values/types,
+duplicate/unknown fields, status exclusion, expected-shape preflight and actual
+inline SQLite execution without model calls in tool-enabled profiles. Expected
+labels remain operator-supplied; this is structural result scoring, not a new
+neural evaluator or proof that supplied labels are correct. Real inference and
+the diverse held-out study remain outstanding.
