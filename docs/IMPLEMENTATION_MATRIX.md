@@ -284,3 +284,11 @@ and module-bound durable replay. Tests verify pending/buffered cancellation,
 capacity release without cancelling tasks, overflow replay, preserved pinned stages
 and cursor advancement through empty filtered pages. This strengthens host event
 lifecycle; external module provisioning and execution remain incomplete.
+
+Bounded audit inspection: **Implemented** in `Store::task_events_since` and CLI
+`task-events`, with stable indexed task-scoped pages. Full trace reads now fail
+explicitly on event/raw-byte ceilings and malformed/oversized history. Comparison
+reports select bounded identity events instead of materializing full traces.
+Tests cover page order/isolation/cursors, full count/byte bounds, malformed records
+and actual CLI pagination. This supports recovery inspection; automatic graph
+resumption and restoration of unknown interrupted inference usage remain incomplete.

@@ -209,3 +209,8 @@ Trusted embedding hosts can register versioned event-module descriptors and
 subscribe to selected progress stages for one task. Handles pin filters/versions
 and share bounded FlatBuffers queues with owner observers. Registry state is
 process-local; cross-process actor provisioning remains incomplete. See `EVENTS.md`.
+
+Full task trace reads now have event/raw-byte ceilings and strict JSON validation.
+`task-events` exposes bounded complete audit pages with durable cursors for larger
+histories. Comparison identity reporting avoids full-trace allocation. These changes
+support safe recovery inspection without replay; see `RECOVERY.md`.

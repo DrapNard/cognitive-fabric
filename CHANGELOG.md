@@ -381,3 +381,10 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   releasing queue capacity while handles remain alive.
 - Replay durable progress through the module's pinned task/stage filter, preserving
   pagination cursors across replacement, overflow and cancellation.
+
+### Bounded complete audit inspection
+
+- Add task-scoped task-events pagination with durable event sequences and stable
+  cursors, preserving full histories without unbounded trace allocation.
+- Refuse oversized/malformed full traces explicitly and read comparison model
+  identities from bounded selected audit records.

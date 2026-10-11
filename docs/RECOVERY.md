@@ -66,3 +66,27 @@ callback is removed on success or error.
 
 This reconciles audit history, not stale temporary socket directories or arbitrary
 executable processes. Operator-reviewed filesystem cleanup remains separate work.
+
+## Bounded audit inspection
+
+`cogfabric --json task-events TASK_UUID --after CURSOR` returns up to 32 complete
+audit events, each with its durable sequence, kind, source and parsed payload.
+Save `cursor` and continue while `more` is true. Empty terminal pages preserve the
+supplied cursor. IDs are global, so gaps caused by other tasks are normal; events
+remain scoped to the requested task. Unknown tasks, invalid/overflowing cursors,
+malformed JSON and oversized stored fields fail closed. This is read-only operator
+inspection, not replay of task execution or a checkpoint acceptance decision.
+
+`task` / `Store::task` full traces now refuse histories beyond 4,096 events or
+8,000,000 raw payload bytes and direct callers to pagination. Each event is bounded
+to 256 KiB payload plus 64-byte kind/source; SQL excludes oversized fields before
+copying them into Rust. Task query/answer and metadata fields are bounded too.
+The full trace includes each event sequence. Invalid JSON is an error rather than
+silently becoming null. The original durable audit is never truncated or deleted.
+
+A page holds at most 32 payloads of 256 KiB (8 MiB raw), with normal JSON parsing
+and serialization overhead in addition. These are allocation/admission bounds,
+not a hard process-memory quota or hard filesystem/SQLite execution deadline.
+The indexed `(task_id,id)` lookup supports ordered incremental inspection.
+Benchmark identity disclosure uses bounded selected audit records so large traces
+do not require full-trace allocation merely to report model configurations.

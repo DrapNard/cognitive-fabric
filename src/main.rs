@@ -195,6 +195,11 @@ enum Command {
     Task {
         id: String,
     },
+    TaskEvents {
+        id: String,
+        #[arg(long, default_value = "0")]
+        after: u64,
+    },
     Bench {
         file: PathBuf,
         #[arg(long, default_value = "fast")]
@@ -633,6 +638,7 @@ async fn main() -> Result<()> {
             json!({"revoked":id})
         }
         Command::Task { id } => store.task(&id)?,
+        Command::TaskEvents { id, after } => store.task_events_since(&id, after)?,
         Command::Bench { file, mode } => evaluation::benchmark(&engine, &file, &mode).await?,
         Command::Compare {
             file,

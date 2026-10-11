@@ -314,22 +314,58 @@ impl Store {
     }
     pub fn task(&self, id: &str) -> Result<Value> {
         let db = self.lock()?;
-        let task:Option<Value>=db.query_row("SELECT id,query,mode,status,answer FROM tasks WHERE id=?1",[id],|r| {
+        let task:Option<Value>=db.query_row("SELECT CASE WHEN length(CAST(id AS BLOB))<=64 THEN id END,CASE WHEN length(CAST(query AS BLOB))<=12000 THEN query END,CASE WHEN length(CAST(mode AS BLOB))<=32 THEN mode END,CASE WHEN length(CAST(status AS BLOB))<=64 THEN status END,CASE WHEN length(CAST(answer AS BLOB))<=262144 THEN answer END FROM tasks WHERE id=?1",[id],|r| {
             Ok(json!({"id":r.get::<_,String>(0)?,"query":r.get::<_,String>(1)?,"mode":r.get::<_,String>(2)?,
                 "status":r.get::<_,String>(3)?,"answer":r.get::<_,String>(4)?}))
         }).optional()?;
-        let mut stmt =
-            db.prepare("SELECT kind,source,payload FROM events WHERE task_id=?1 ORDER BY id")?;
-        let events = stmt
-            .query_map([id], |r| {
-                let payload: String = r.get(2)?;
-                Ok(
-                    json!({"kind":r.get::<_,String>(0)?,"source":r.get::<_,String>(1)?,
-                 "payload":serde_json::from_str::<Value>(&payload).unwrap_or(Value::Null)}),
-                )
-            })?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
+        let mut stmt = db.prepare("SELECT id,CASE WHEN length(CAST(kind AS BLOB))<=64 THEN kind END,CASE WHEN length(CAST(source AS BLOB))<=64 THEN source END,CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN payload END FROM events WHERE task_id=?1 ORDER BY id LIMIT 4097")?;
+        let mut rows = stmt.query([id])?;
+        let mut events = Vec::new();
+        let mut bytes = 0usize;
+        while let Some(row) = rows.next()? {
+            if events.len() >= 4096 {
+                bail!("Task trace exceeds event limit; use paged task-events")
+            }
+            let payload: String = row.get(3)?;
+            bytes += payload.len();
+            if bytes > 8_000_000 {
+                bail!("Task trace exceeds byte limit; use paged task-events")
+            }
+            events.push(json!({"sequence":row.get::<_,u64>(0)?,"kind":row.get::<_,String>(1)?,"source":row.get::<_,String>(2)?,"payload":serde_json::from_str::<Value>(&payload)?}));
+        }
         Ok(json!({"task":task,"events":events}))
+    }
+
+    /// Explicit bounded audit pages. Cursor advances across this task's actual
+    /// events; callers must preserve it even when event IDs have global gaps.
+    pub fn task_events_since(&self, id: &str, after: u64) -> Result<Value> {
+        crate::security::authorize("human-cli", "task.observe")?;
+        Uuid::parse_str(id)?;
+        let after = i64::try_from(after)?;
+        let db = self.lock()?;
+        let exists: bool = db.query_row(
+            "SELECT EXISTS(SELECT 1 FROM tasks WHERE id=?1)",
+            [id],
+            |r| r.get(0),
+        )?;
+        if !exists {
+            bail!("Unknown task")
+        }
+        let mut stmt=db.prepare("SELECT id,CASE WHEN length(CAST(kind AS BLOB))<=64 THEN kind END,CASE WHEN length(CAST(source AS BLOB))<=64 THEN source END,CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN payload END FROM events WHERE task_id=?1 AND id>?2 ORDER BY id LIMIT 33")?;
+        let mut rows = stmt.query(params![id, after])?;
+        let mut events = Vec::new();
+        let mut cursor = after as u64;
+        let mut more = false;
+        while let Some(row) = rows.next()? {
+            if events.len() == 32 {
+                more = true;
+                break;
+            }
+            let payload: String = row.get(3)?;
+            cursor = row.get(0)?;
+            events.push(json!({"sequence":cursor,"kind":row.get::<_,String>(1)?,"source":row.get::<_,String>(2)?,"payload":serde_json::from_str::<Value>(&payload)?}));
+        }
+        Ok(json!({"task_id":id,"cursor":cursor,"more":more,"events":events}))
     }
 
     pub fn conversation_reference(&self, id: &str) -> Result<Value> {
@@ -990,6 +1026,109 @@ pub fn route(skills: &[Skill], query: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn audit_pages_bound_reads_preserve_order_and_isolate_tasks() {
+        let store = Store::in_memory().unwrap();
+        let task = store.create_task("paged", "fast").unwrap();
+        let other = store.create_task("other", "fast").unwrap();
+        for index in 0..35 {
+            store
+                .event(&task, "audit", "runtime", json!({"index":index}))
+                .unwrap();
+            store
+                .event(&other, "audit", "runtime", json!({"private":true}))
+                .unwrap();
+        }
+        let first = store.task_events_since(&task, 0).unwrap();
+        assert_eq!(first["events"].as_array().unwrap().len(), 32);
+        assert_eq!(first["more"], true);
+        let second = store
+            .task_events_since(&task, first["cursor"].as_u64().unwrap())
+            .unwrap();
+        assert_eq!(second["events"].as_array().unwrap().len(), 3);
+        assert_eq!(second["more"], false);
+        assert_eq!(second["events"][0]["payload"]["index"], 32);
+        assert!(!first.to_string().contains("private"));
+        assert!(!second.to_string().contains("private"));
+        let empty = store
+            .task_events_since(&task, second["cursor"].as_u64().unwrap())
+            .unwrap();
+        assert_eq!(empty["cursor"], second["cursor"]);
+        assert!(empty["events"].as_array().unwrap().is_empty());
+        assert!(store.task_events_since(&task, u64::MAX).is_err());
+        assert!(store
+            .task_events_since(&Uuid::new_v4().to_string(), 0)
+            .is_err());
+    }
+    #[test]
+    fn full_trace_refuses_excessive_or_malformed_audit_without_truncating_success() {
+        let store = Store::in_memory().unwrap();
+        let task = store.create_task("bounded", "fast").unwrap();
+        {
+            let mut db = store.lock().unwrap();
+            let tx = db.transaction().unwrap();
+            for _ in 0..4097 {
+                tx.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'audit','runtime','{}',0)",[&task]).unwrap();
+            }
+            tx.commit().unwrap();
+        }
+        assert!(store
+            .task(&task)
+            .unwrap_err()
+            .to_string()
+            .contains("event limit"));
+        assert_eq!(
+            store.task_events_since(&task, 0).unwrap()["events"]
+                .as_array()
+                .unwrap()
+                .len(),
+            32
+        );
+        let db = store.lock().unwrap();
+        db.execute("DELETE FROM events WHERE task_id=?1", [&task])
+            .unwrap();
+        db.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'audit','runtime',?2,0)",params![task,"x".repeat(262145)]).unwrap();
+        drop(db);
+        assert!(store.task(&task).is_err());
+        assert!(store.task_events_since(&task, 0).is_err());
+        store
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE events SET payload='invalid json' WHERE task_id=?1",
+                [&task],
+            )
+            .unwrap();
+        assert!(store.task(&task).is_err());
+        assert!(store.task_events_since(&task, 0).is_err());
+    }
+    #[test]
+    fn full_trace_byte_ceiling_preserves_paged_history() {
+        let store = Store::in_memory().unwrap();
+        let task = store.create_task("large audit", "fast").unwrap();
+        for _ in 0..34 {
+            store
+                .event(
+                    &task,
+                    "audit",
+                    "runtime",
+                    json!({"body":"x".repeat(240000)}),
+                )
+                .unwrap();
+        }
+        assert!(store
+            .task(&task)
+            .unwrap_err()
+            .to_string()
+            .contains("byte limit"));
+        assert_eq!(
+            store.task_events_since(&task, 0).unwrap()["events"]
+                .as_array()
+                .unwrap()
+                .len(),
+            32
+        );
+    }
     fn database_path() -> std::path::PathBuf {
         std::env::temp_dir().join(format!("fabric-migration-{}.db", Uuid::new_v4()))
     }

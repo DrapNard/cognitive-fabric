@@ -1024,3 +1024,15 @@ state, durable audit preservation, overflow replay and pinned filter pagination
 through empty pages after module replacement. Socket/process fixtures ran with
 host access. Replay remains a trusted-host API and does not authenticate external
 modules or implement automatic task execution resumption.
+
+## Bounded audit trace verification
+
+FlatBuffers 25.12.19 mandatory checks pass: fmt check, all-target check, all-target
+182 tests (172 library, three authentication, five process, one restore CLI,
+one audit CLI), and Clippy with denied warnings. New regressions cover 32-event
+pages, interleaved task isolation/order, empty/unknown/overflowing cursors, 4,097
+full-trace records, raw-byte exhaustion, oversized payloads and invalid JSON.
+The actual CLI fixture follows a cursor through 35 complete audit events. Existing
+benchmark model/expert identity fixtures still pass after selected-record reads.
+Bounds describe raw data and rows; JSON overhead and SQLite blocking remain distinct
+from hard process/disk quotas. No audits or execution outcomes are modified.
