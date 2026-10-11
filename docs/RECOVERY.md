@@ -139,3 +139,26 @@ retroactively acquire them. Restoring a snapshot must not restore authority from
 its JSON: the deterministic kernel must issue new task-scoped permissions. Actual
 checkpoint continuation still requires graph validation, immutable references,
 remaining resource/time admission and handling of unrecorded calls.
+
+## Advisory graph recovery inspection
+
+`cogfabric --json graph-audit TASK_UUID` reconstructs a saved plan and subtask
+transitions in one read transaction. It validates the bounded acyclic plan,
+unchanged node definitions, dependency-result ordering and allowed state
+transitions. A plan saved before initial node writes reports `not_recorded` for
+those nodes; a task with no plan reports `graph_recorded: false`. Missing state is
+never guessed. Duplicate plans, changed definitions, unknown nodes, impossible
+transitions and oversized results fail closed.
+
+The report exposes node IDs, dependencies, objective/result hashes and recorded
+states, excluding objective and answer bodies. Results remain unverified advisory
+data even after every node finishes. Up to 17 selected events with 256 KiB payload
+bounds are read; each plan has at most four nodes and each result 1,200 characters.
+The current scheduler creates one plan per task. Repeated plans require a future
+explicit versioned graph protocol rather than implicit replacement here.
+
+This is inspection, not checkpoint execution: no permissions are restored, no
+inference is repeated, and `resume_authorized` remains false. Remaining budgets,
+immutable expert versions, unresolved reservations and verification state must be
+validated separately before implementing continuation. Hashes check consistency,
+not authenticity against a database owner who can rewrite history.

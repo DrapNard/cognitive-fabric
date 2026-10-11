@@ -963,6 +963,31 @@ mod tests {
         assert_eq!(nodes.len(), 2);
         assert_eq!(nodes[0]["payload"]["node"]["step"]["id"], "collect");
         assert_eq!(nodes[1]["payload"]["node"]["step"]["id"], "combine");
+        // Exercise recovery validation against the actual scheduler's durable events.
+        let store = Store::in_memory().unwrap();
+        let task = store.create_task("graph fixture", "standard").unwrap();
+        for event in trace["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|e| matches!(e["kind"].as_str(), Some("plan" | "subtask")))
+        {
+            store
+                .event(
+                    &task,
+                    event["kind"].as_str().unwrap(),
+                    event["source"].as_str().unwrap(),
+                    event["payload"].clone(),
+                )
+                .unwrap();
+        }
+        let audit = store.graph_audit(&task).unwrap();
+        assert_eq!(audit["nodes"].as_array().unwrap().len(), 2);
+        assert!(audit["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|n| n["state"] == "unverified"));
     }
 
     #[tokio::test]

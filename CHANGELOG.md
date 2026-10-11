@@ -408,3 +408,10 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   effective reasoning ceilings and execution options before model dispatch.
 - Fail closed on snapshot writes and preserve original settings without archiving
   workspace paths, environment credentials or restorable permission grants.
+
+### Validated advisory graph recovery inspection
+
+- Add operator `graph-audit` inspection of durable plans and subtask histories.
+- Reject changed definitions, invalid transitions and premature dependent execution;
+  report hashes and recorded states while keeping model results unverified.
+- Preserve missing state explicitly without granting resumption permissions.

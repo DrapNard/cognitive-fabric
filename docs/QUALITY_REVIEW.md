@@ -1068,3 +1068,14 @@ five-second progress callback; the test verifies rollback, callback removal and
 successful subsequent recovery. The deadline bounds SQLite computation and
 between-record processing, not filesystem I/O, fsync or busy waits. Reconciliation
 remains operator-only, lease-protected and does not replay inference.
+
+## Durable advisory graph inspection
+
+FlatBuffers 25.12.19 formatting, all-target check, 192 all-target tests (182
+library and 10 integration) and Clippy with denied warnings pass. Graph auditing
+is exercised against actual scheduler-generated events plus partial histories,
+unrelated-task isolation, dependency-order violations, invalid/duplicate
+transitions, oversized results, repeated plans and changed node definitions.
+The CLI integration checks inspection of a task with no graph. No automatic
+continuation, independent verification of advisory answers, or restored model
+authority is claimed. Inspection is bounded and excludes objective/result bodies.

@@ -79,6 +79,20 @@ fn cli_pages_full_audit_history_with_stable_cursors() {
     assert_eq!(audit["recorded_results"], outcome["calls"]);
     assert_eq!(audit["resume_authorized"], false);
     assert!(audit["input_tokens"].is_null());
+    let graph = Command::new(env!("CARGO_BIN_EXE_cogfabric"))
+        .arg("--home")
+        .arg(&home)
+        .args([
+            "--json",
+            "graph-audit",
+            outcome["task_id"].as_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(graph.status.success());
+    let graph: serde_json::Value = serde_json::from_slice(&graph.stdout).unwrap();
+    assert_eq!(graph["graph_recorded"], false);
+    assert_eq!(graph["resume_authorized"], false);
     drop(store);
     std::fs::remove_dir_all(home).unwrap();
 }

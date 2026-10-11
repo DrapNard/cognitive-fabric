@@ -200,6 +200,9 @@ enum Command {
         #[arg(long, default_value = "0")]
         after: u64,
     },
+    GraphAudit {
+        id: String,
+    },
     InferenceAudit {
         id: String,
     },
@@ -642,6 +645,7 @@ async fn main() -> Result<()> {
         }
         Command::Task { id } => store.task(&id)?,
         Command::TaskEvents { id, after } => store.task_events_since(&id, after)?,
+        Command::GraphAudit { id } => store.graph_audit(&id)?,
         Command::InferenceAudit { id } => store.inference_audit(&id)?,
         Command::Bench { file, mode } => evaluation::benchmark(&engine, &file, &mode).await?,
         Command::Compare {

@@ -314,3 +314,11 @@ a five-second SQLite progress deadline. Regression tests cover malformed/oversiz
 identities, oversized batches, expensive-trigger interruption, atomic rollback and
 callback cleanup. This improves reconciliation only; automatic resumption remains
 partial and external inference completion is still unknown.
+
+Durable advisory graph reconstruction: **Implemented** in `src/recovery/graph.rs`
+and `graph-audit`. Bounded transactional inspection validates pinned graph
+structure, per-node transitions and dependency ordering without upgrading results
+to evidence or revealing result bodies. Tests cover partial histories, isolation,
+malicious transitions, changed definitions, duplicate plans, real scheduler events
+and CLI inspection. Automatic checkpoint execution remains **Partial**: this is
+validated state reconstruction, not remaining-budget admission or replay authority.

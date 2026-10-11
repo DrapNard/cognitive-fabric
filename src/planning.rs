@@ -78,7 +78,8 @@ impl Plan {
     }
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct Subtask {
     pub step: Step,
     pub state: String,
