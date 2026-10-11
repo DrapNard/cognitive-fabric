@@ -315,6 +315,12 @@ impl Broker {
         if descriptor.capability != "sql.query" {
             bail!("SQL registration requires sql.query")
         }
+        if backend
+            .module_descriptor()
+            .is_some_and(|bound| bound != &descriptor)
+        {
+            bail!("SQL registration differs from backend transport identity")
+        }
         self.register_backend(descriptor, Backend::Sql(backend))
     }
     fn register_backend(&self, descriptor: Descriptor, backend: Backend) -> Result<()> {

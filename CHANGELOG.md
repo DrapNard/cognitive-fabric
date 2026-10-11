@@ -2,6 +2,16 @@
 
 All notable changes are documented here in English.
 
+### Authenticated SQL process transport
+
+- Add task-scoped structured COGQ Unix RPC with approved UID/PID peers,
+  fixed session deadlines, cumulative call grants and replay rejection.
+- Fail closed before backend execution when authorization audit persistence fails;
+  close cancelled or malformed exchanges and omit query/result bodies from audits.
+- Bind SQL registration to transport identity and reject cross-capability grants.
+- Verify actual child-process SQLite execution and negative transport boundaries.
+  Automatic SQL worker provisioning and executable sandboxing remain incomplete.
+
 ### Installed tool lifecycle verification
 
 - Extend installed smoke checks to managed arithmetic authorization/reaping,

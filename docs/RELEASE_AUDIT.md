@@ -110,3 +110,9 @@ older installed source evidence for tool routing. It does not establish clean-OS
 prerequisite setup, real inference/authentication, model switching, independent
 held-out results, executable sandboxing or neural safety. Future runtime changes
 must repeat installation verification before release; the project remains alpha.
+
+SQL Unix transport source now passes all mandatory checks and 301 tests (281
+library, 20 integration), including a separate-process SQLite exchange. See
+`QUALITY_REVIEW.md` for evidence. The installed executable recorded above predates
+this change; installation verification must be repeated before release. This adds
+a trusted-host transport API, not automatic SQL worker provisioning or sandboxing.

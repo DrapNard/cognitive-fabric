@@ -679,3 +679,13 @@ launches a functioning worker. Binary/script hashes, task traces and exact build
 identity are recorded in `RELEASE_AUDIT.md`. All 292 mandatory Rust tests and quality
 checks pass. This supersedes the earlier installed binary evidence, while final
 runtime changes, clean-OS setup and live inference still require verification.
+
+SQL process transport: **Implemented** for trusted Rust embedding through
+`src/fabric/tools/sql/unix.rs`; automatic CLI/service provisioning remains
+**Not implemented**. Tests cover actual child-process SQLite, exact UID/PID and
+task grants, cross-capability denials, immutable registration identity, cumulative
+calls, replay, corrupt/oversized responses, partial-frame/session deadlines,
+cancellation and failed authorization audit. Queries/results are excluded from
+worker metadata. All 301 Rust tests and mandatory quality checks pass. This
+supersedes the SQL transport limitation above, but does not establish sandboxing,
+crash cleanup or installed verification of the new runtime source.

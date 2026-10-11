@@ -179,3 +179,12 @@ SQLite authorization and resource limits. The host reruns that compiled checker
 before accepting replacement output as evidence. A replacement Rust backend is
 trusted code, not automatically isolated; verifying its answer does not prove
 absence of side effects. SQL Unix/process provisioning is not implemented yet.
+
+SQL Unix transport now authenticates exact host-approved UID/PID and enforces
+non-deserializable task/version/call/session grants. Authorization audit failure
+prevents backend execution; replay, malformed responses and cross-capability
+grants fail closed. Cancellation closes streams and drops pending futures, with
+cooperative SQLite cancellation for the built-in backend. Metadata excludes SQL
+and result/error bodies. This supersedes the SQL transport limitation above;
+automatic SQL worker provisioning, executable sandboxing and crash cleanup remain
+incomplete. Trusted hosts still supply sockets, grants, backends and child ownership.

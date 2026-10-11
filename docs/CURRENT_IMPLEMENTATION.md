@@ -418,3 +418,12 @@ inline task-local data and denies host databases, mutations and unsafe functions
 Registered Rust backend code is trusted host code and is not automatically sandboxed.
 SQL process transport/provisioning and broad executable tool loading remain
 **Partial / Not implemented**; arithmetic worker setup remains arithmetic-only.
+
+SQL Unix RPC is now implemented as a trusted-host embedding API; see
+`PROTOCOL.md` and `src/fabric/tools/sql/unix.rs`. Structured COGQ exchanges enforce
+UID/PID, task/version/call/session grants, replay rejection and audit-before-work.
+An actual child-process test executes SQLite. Cancelled/malformed exchanges close
+permanently and metadata excludes query/result bodies. Automatic SQL process
+launch/bootstrap/reaping from CLI/service is still not implemented; the installed
+smoke evidence above predates this transport. Current mandatory checks pass with
+301 tests (281 library and 20 integration); real inference remains unverified.

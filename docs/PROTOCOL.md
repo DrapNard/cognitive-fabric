@@ -366,3 +366,28 @@ inline task-local data and denies host databases, mutations and unsafe functions
 Registered Rust backend code is trusted host code and is not automatically sandboxed.
 SQL process transport/provisioning and broad executable tool loading remain
 **Partial / Not implemented**; arithmetic worker setup remains arithmetic-only.
+
+### Authenticated SQL Unix command transport
+
+`src/fabric/tools/sql/unix.rs` exposes trusted-host `Grant`, `UnixSql` and `serve`
+APIs over structured COGQ v1. Both peers require the host-approved UID and exact
+nonzero PID. Grants bind one task, immutable module/version, `sql.query`, 1–64
+calls and a fixed 1–300-second session. Arithmetic grants explicitly reject SQL
+capabilities, and SQL registration must match a transport's bound descriptor.
+Each request has a fresh correlation, authorized actor and at most 30-second
+expiry; replay and cumulative excess fail closed. Session time includes queueing
+and idle time. Frames remain at most 256 KiB, with two-second partial-frame/write
+limits and existing decoded allocation limits. Cancellation or corrupt responses
+permanently discard the connection; disconnect/shutdown drops pending backend
+futures. SQL execution retains cooperative SQLite cancellation and its VM limits.
+
+Workers require an existing audit task and execution lease. Authorization must
+persist before dispatch; metadata records session, module, task, correlation and
+charged calls without SQL, results or backend errors. Abrupt termination can omit
+terminal audit records. Nine focused tests include actual child-process SQLite
+execution, task/peer/grant denials, replay, excess calls, corrupt responses, timeout,
+cancellation and failed authorization audit. This supersedes the SQL transport
+limitation above, but automatic CLI/service SQL launch, grant delivery/reaping and
+arbitrary executable isolation remain incomplete. Trusted embedding code owns
+socket permissions and process lifecycle; OS identity does not attest executable
+contents or sandbox backend effects.

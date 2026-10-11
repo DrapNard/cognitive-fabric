@@ -1494,3 +1494,14 @@ older installed source evidence for tool routing. It does not establish clean-OS
 prerequisite setup, real inference/authentication, model switching, independent
 held-out results, executable sandboxing or neural safety. Future runtime changes
 must repeat installation verification before release; the project remains alpha.
+
+### SQL Unix transport verification (2026-10-11)
+
+Formatting, offline all-target check, all-target tests and Clippy with warnings
+denied pass with FlatBuffers compiler/crate 25.12.19. Tests total 301 (281 library,
+20 integration); the nine new focused transport tests also passed separately.
+Full output: `/tmp/cogfabric-sql-unix-gate.log`. Actual child-process SQLite and
+negative identity, replay, budget, framing, cancellation and audit-failure cases
+are covered. Installed evidence for source `6919087` predates this runtime change;
+repeat installation verification before release. Automatic SQL launch/reaping,
+real authenticated model inference and final release gates remain incomplete.

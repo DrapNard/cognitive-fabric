@@ -9,10 +9,10 @@ use tokio::{
     sync::{watch, Mutex},
 };
 
-fn authenticate(stream: &UnixStream, uid: u32, pid: u32) -> Result<()> {
+pub(super) fn authenticate(stream: &UnixStream, uid: u32, pid: u32) -> Result<()> {
     let peer = stream.peer_cred()?;
     if pid == 0 || peer.uid() != uid || peer.pid().map(|p| p as u32) != Some(pid) {
-        bail!("Arithmetic peer differs from host-approved process")
+        bail!("Tool peer differs from host-approved process")
     }
     Ok(())
 }
@@ -57,7 +57,10 @@ impl Grant {
     pub fn new(task: &str, descriptor: Descriptor, calls: u32, seconds: u64) -> Result<Self> {
         uuid::Uuid::parse_str(task)?;
         descriptor.validate()?;
-        if !(1..=64).contains(&calls) || !(1..=300).contains(&seconds) {
+        if descriptor.capability != "math.evaluate"
+            || !(1..=64).contains(&calls)
+            || !(1..=300).contains(&seconds)
+        {
             bail!("Arithmetic grant exceeds bounds")
         }
         Ok(Self {

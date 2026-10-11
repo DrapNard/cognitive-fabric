@@ -8,7 +8,12 @@ mod generated {
     include!(concat!(env!("OUT_DIR"), "/sql_tool_generated.rs"));
 }
 use generated::sql_tool as fb;
+pub mod unix;
 pub trait SqlBackend: Send + Sync {
+    fn module_descriptor(&self) -> Option<&Descriptor> {
+        None
+    }
+
     fn query<'a>(
         &'a self,
         task: &'a str,
