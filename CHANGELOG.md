@@ -2,6 +2,14 @@
 
 All notable changes are documented here in English.
 
+### Registered endpoint discovery
+
+- Add operator-only discovery across enabled registered model endpoints, including
+  expert configurations, with deduplicated bounded concurrent requests.
+- Report exact registration versions/checksums and missing advertised IDs; skip
+  disabled models and refuse oversized endpoint sets before network requests.
+- Keep advertisement separate from generation, loaded weights and residency claims.
+
 ### Optional operator GPU diagnostics
 
 - Add opt-in whole-device NVIDIA sampling with a fixed read-only command, bounded

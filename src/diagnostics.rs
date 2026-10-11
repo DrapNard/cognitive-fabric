@@ -98,9 +98,144 @@ pub async fn diagnose(cfg: &Config, store: &Store, probe_inference: bool) -> Res
     )
 }
 
+/// Inspect operator-registered endpoints without loading models or creating tasks.
+pub async fn registered_endpoints(store: &Store) -> Result<Value> {
+    security::authorize("human-cli", "inference.diagnose")?;
+    let mut endpoints = std::collections::BTreeMap::<String, Vec<crate::models::Registered>>::new();
+    let mut disabled = 0;
+    for model in store.models()? {
+        if model.enabled {
+            endpoints
+                .entry(model.manifest.api_base.clone())
+                .or_default()
+                .push(model);
+        } else {
+            disabled += 1;
+        }
+    }
+    if endpoints.len() > 8 {
+        bail!("Registered endpoint diagnostics allows at most eight enabled endpoints")
+    }
+    let mut pending = tokio::task::JoinSet::new();
+    for (endpoint, registrations) in endpoints {
+        pending.spawn(async move {
+            let cfg = Config { api_base:endpoint.clone(), ..Config::default() };
+            let started = tokio::time::Instant::now();
+            let response = advertised(&cfg).await;
+            let required = registrations.iter().map(|model| model.manifest.model.clone()).collect::<BTreeSet<_>>();
+            let identities = registrations.iter().map(|model| json!({"id":model.manifest.id,"version":model.manifest.version,"checksum":model.checksum,"requested_model":model.manifest.model})).collect::<Vec<_>>();
+            match response {
+                Ok(ids) => {
+                    let missing = required.difference(&ids).cloned().collect::<Vec<_>>();
+                    json!({"api_base":endpoint,"status":"responded","registrations":identities,"advertised_models":ids,"missing_registered_models":missing,"all_registered_models_advertised":missing.is_empty(),"elapsed_ms":started.elapsed().as_secs_f64()*1000.0})
+                }
+                Err(error) => json!({"api_base":endpoint,"status":"failed","registrations":identities,"error":error.to_string().chars().take(300).collect::<String>(),"all_registered_models_advertised":false,"elapsed_ms":started.elapsed().as_secs_f64()*1000.0}),
+            }
+        });
+    }
+    let mut reports = Vec::new();
+    while let Some(report) = pending.join_next().await {
+        reports.push(report?);
+    }
+    reports.sort_by(|left, right| left["api_base"].as_str().cmp(&right["api_base"].as_str()));
+    let healthy = reports
+        .iter()
+        .all(|report| report["all_registered_models_advertised"] == true);
+    Ok(
+        json!({"status":if reports.is_empty() {"not_applicable"} else if healthy {"responded"} else {"failed"},"endpoints":reports,"disabled_registrations_skipped":disabled,"generation_tested":false,"weights_attested":false}),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn registered_fixture(store: &Store, id: &str, model: &str, endpoint: &str) {
+        let file = std::env::temp_dir().join(format!(
+            "fabric-diagnostic-model-{}.json",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::write(&file,json!({"id":id,"version":"1.0.0","model":model,"api_base":endpoint,"source":"fixture","license":"CC0","context_tokens":4096,"max_output_tokens":512}).to_string()).unwrap();
+        store.register_model(&file).unwrap();
+        std::fs::remove_file(file).unwrap();
+    }
+    #[tokio::test]
+    async fn registered_discovery_deduplicates_endpoints_and_reports_missing_models() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let store = Store::in_memory().unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}/v1", listener.local_addr().unwrap());
+        registered_fixture(&store, "domain.present", "fixture", &endpoint);
+        registered_fixture(&store, "domain.missing", "missing-model", &endpoint);
+        registered_fixture(
+            &store,
+            "domain.disabled",
+            "disabled-model",
+            "http://127.0.0.1:9/v1",
+        );
+        store
+            .set_model_enabled(
+                &crate::models::Selection {
+                    id: "domain.disabled".into(),
+                    version: "1.0.0".into(),
+                },
+                false,
+            )
+            .unwrap();
+        let provider = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = [0u8; 4096];
+            let count = socket.read(&mut request).await.unwrap();
+            assert!(std::str::from_utf8(&request[..count])
+                .unwrap()
+                .starts_with("GET /v1/models "));
+            let body = r#"{"data":[{"id":"fixture"}]}"#;
+            socket.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",body.len(),body).as_bytes()).await.unwrap();
+        });
+        let report = registered_endpoints(&store).await.unwrap();
+        provider.await.unwrap();
+        assert_eq!(report["status"], "failed");
+        assert_eq!(report["endpoints"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            report["endpoints"][0]["registrations"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
+        assert_eq!(
+            report["endpoints"][0]["missing_registered_models"],
+            json!(["missing-model"])
+        );
+        assert_eq!(report["disabled_registrations_skipped"], 1);
+        assert_eq!(report["generation_tested"], false);
+        assert_eq!(
+            store
+                .lock()
+                .unwrap()
+                .query_row("SELECT count(*) FROM tasks", [], |row| row.get::<_, u64>(0))
+                .unwrap(),
+            0
+        );
+    }
+    #[tokio::test]
+    async fn registered_discovery_bounds_distinct_endpoints_before_network() {
+        let store = Store::in_memory().unwrap();
+        assert_eq!(
+            registered_endpoints(&store).await.unwrap()["status"],
+            "not_applicable"
+        );
+        for index in 0..9 {
+            registered_fixture(
+                &store,
+                &format!("domain.model{index}"),
+                "fixture",
+                &format!("http://127.0.0.1:{}/v1", 12000 + index),
+            );
+        }
+        let error = registered_endpoints(&store).await.unwrap_err().to_string();
+        assert!(error.contains("eight"));
+    }
+
     #[tokio::test]
     async fn offline_diagnostics_create_no_tasks_or_events() {
         let store = Store::in_memory().unwrap();

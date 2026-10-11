@@ -870,3 +870,26 @@ bounded process behavior only. These are whole-device observations, not task
 budgets, integrated energy or proof of real model loading/inference.
 
 NVIDIA query interface: https://docs.nvidia.com/deploy/nvidia-smi/index.html.
+
+## Registered endpoint diagnostics and live availability (2026-10-11)
+
+Exact FlatBuffers 25.12.19. Formatting, all-target Cargo check, all-target tests
+(158 unit + 5 process) and Clippy with denied warnings passed offline.
+New loopback fixtures verify endpoint deduplication, exact registration metadata,
+missing model IDs, disabled-model exclusion, empty registry and eight-endpoint
+preflight admission. Existing discovery fixtures cover redirects, malformed data,
+response bounds and missing primary/role model IDs.
+
+An actual CLI smoke registered explicitly labelled endpoint-unavailable fixture
+metadata in a temporary workspace, then ran diagnostics --probe-registered-models.
+It printed status failed and exited 1, with generation_tested false. No model
+weights were loaded or represented as real inference.
+
+The installed LM Studio CLI and two existing GGUF files (approximately 16 and
+21 GB) were observed. Server status reported not running. Both lms ps --json and
+lms ls --json ended with timeout waiting for daemon/API startup. No large model
+was loaded, no resident user model was unloaded, and no new weights were downloaded.
+This refines the blocker: local files exist, but a usable inference service and
+resource-appropriate live generation remain unverified. CLI documentation used
+https://lmstudio.ai/docs/cli and https://lmstudio.ai/docs/cli/local-models/load;
+model filename/proximity alone does not establish licensing or weight identity.

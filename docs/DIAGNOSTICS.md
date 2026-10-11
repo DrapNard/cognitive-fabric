@@ -61,3 +61,27 @@ fail the CLI's storage/model diagnostics. Successful hardware sampling remains
 unverified in this environment: the actual CLI found the NVIDIA driver unavailable.
 Parser and bounded same-binary child fixtures cover valid/missing/malformed values,
 timeout, overflow and cleanup; they do not prove GPU integration.
+
+
+## Registered model endpoint discovery
+
+`diagnostics --probe-registered-models` queries the local `/models` endpoint for
+every enabled registered model configuration, including potential workflow expert
+bindings. It requires the existing operator-only `inference.diagnose` capability.
+No task, model load or generation is started. Registrations are snapshotted for
+this diagnostic; disable affects later invocations.
+
+Requests are deduplicated by exact registered API base, with at most eight enabled
+endpoints per invocation. More endpoints fail before any network requests; disable
+unused configurations or inspect a smaller reviewed workspace. At most eight
+requests run concurrently, each under the existing three-second/64 KiB/256-ID
+limits, loopback restriction and no-proxy/no-redirect policy. Reports are sorted by
+API base and bind requested model IDs to exact registration versions/checksums.
+Disabled registrations are counted and skipped.
+
+Per-endpoint reports distinguish responded/failed and list missing registered IDs.
+An empty enabled registry is `not_applicable`; any failed endpoint or missing ID
+makes the aggregate failed and the CLI exit nonzero. Without the flag, discovery
+is `not_requested`. Provider advertisement remains a point-in-time observation,
+not proof of generation, loaded weights, compatible tokenization or GPU residency.
+The probe does not grant capabilities or change model/skill activation.
