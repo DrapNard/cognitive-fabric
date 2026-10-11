@@ -1191,3 +1191,13 @@ paired with Rust FlatBuffers 25.12.19. The actual CLI produces identical reports
 across repeated runs. Its 24 fixed probes are boundary regressions, not a general
 security failure estimate or evidence of neural safety. Live inference and broader
 adversarial evaluation remain release work.
+
+### Release checklist reconciliation
+
+Reviewed all 18 goal acceptance criteria against current transport, model, worker,
+recovery, evaluation and security documentation and source locations. The release
+audit preserves unverified live-generation, lifecycle, installation and benchmark
+gates. Ran the actual CI security command locally: 24/24 probes passed, 19 expected
+denials, zero unexpected accepts. All nine offline training preflight tests passed;
+no ML training or neural safety evaluation was performed. CI execution itself has
+not been observed. This documentation/workflow update changes no runtime code.

@@ -47,6 +47,7 @@ cargo test
 cargo run -- ask 'calc: (7 + 5) * 3'
 cargo run -- ask 'sql:{"tables":[],"query":"SELECT 2 + 3 AS total"}' --mode fast
 cargo run -- bench examples/arithmetic_bench.jsonl
+cargo run -- --json security-eval
 
 # Local LLM (e.g. LM Studio):
 export COGFABRIC_BACKEND=openai-local
@@ -139,3 +140,6 @@ all integers in the requested order, including duplicate counts. Ascending is th
 default. Inputs allow 1–256 signed 64-bit integers. A rejected candidate may be
 revised within the mode budget; a correct result records `integer_sort/v1` evidence.
 The demo backend is not a sorting model and is not evidence of live-model quality.
+
+Release gate evidence and remaining work are tracked in
+[the release audit](docs/RELEASE_AUDIT.md). This is still a pre-release.

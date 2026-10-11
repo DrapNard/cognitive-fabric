@@ -53,7 +53,7 @@ remains a pre-release. `QUALITY_REVIEW.md` preserves verification history.
 | 12, 14 | CLI/service | Partial | `src/main.rs`: initialization/configuration, ask, service controls, task-specific socket progress/cancellation, skill lifecycle, ingestion/search, task traces, candidates/rollback, benchmark, self-test; real socket fixtures | Live residency lifecycle |
 | 12, 13 | Hardware/performance claims | Partial | Optional whole-device GPU diagnostics sampled real host memory/utilization/power; no energy or large-model advantage claimed | Authenticated live inference, task-attributed telemetry and equal-budget comparisons |
 
-All 178 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
+All 214 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
 all-target build checks and Clippy with denied warnings pass. Fixtures do not prove
 GPU integration, neural quality, immutable backend weights or live model switching.
 
@@ -104,8 +104,8 @@ is introduced.
 `src/backups.rs` now creates consistent checked SQLite snapshots with owner-only
 storage, checksums, bounded admission and nonblocking backup leases. WAL-content,
 read-only restore, symlink/capacity/contention tests and an actual CLI copy/reopen
-smoke cover this path. This does not bundle external artifacts/configuration or
-provide full automated workspace restoration.
+smoke cover this path. Optional configuration and RAG artifact restoration are now implemented as
+described below; arbitrary external artifacts remain outside automated restore.
 
 Owner-authenticated independent-process progress streaming is now implemented by
 `src/service.rs`, `src/wire.rs` and `watch-task`. Tests cover catch-up/live ordering,

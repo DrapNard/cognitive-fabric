@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Release evidence reconciliation
+
+- Track all 18 goal acceptance criteria with current evidence and remaining proof.
+- Refresh the matrix test count and superseded recovery limitation; add the
+  offline security command to CI and the README.
+
 ### Reproducible offline security evaluation
 
 - Add `security-eval` with 24 fixed boundary probes, positive controls, fixture
