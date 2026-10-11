@@ -483,3 +483,12 @@ refusals, cancellation and terminal transaction failure. Default direct module
 Full/Collective tasks are supported; managed/registered/custom backends,
 post-solver phases and general repeated recovery remain **Partial / Not implemented**.
 See `RECOVERY.md` for exact admission, timing and provider-identity limitations.
+
+
+Registered direct backend continuation: **Implemented** in
+`src/recovery/continuation.rs`. Admission validates the original immutable manifest
+against both its task snapshot and current enabled registry entry, rejects changed
+endpoint/model/limits and never selects a newer version. Tests exercise real HTTP
+model selection and six missing/disabled/altered registration cases. This extends
+the preceding bounded recovery entry; managed/custom backends and later phases
+remain **Partial / Not implemented**. Provider weight identity remains unattested.

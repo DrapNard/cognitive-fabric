@@ -2,6 +2,13 @@
 
 All notable changes are documented here in English.
 
+### Registered model recovery
+
+- Continue interrupted advisory graphs with their original enabled registered
+  model version after verifying saved manifest and configuration identity.
+- Reject missing, disabled or changed registrations without model substitution;
+  verify actual HTTP model selection while retaining weight-attestation limits.
+
 ### Explicit interrupted advisory continuation
 
 - Resume validated pending advisory nodes without repeating completed steps or

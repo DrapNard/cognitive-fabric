@@ -51,7 +51,7 @@ fn prepare(db: &rusqlite::Connection, task: &str) -> Result<Checkpoint> {
     let mut solver_texts = BTreeMap::new();
     let mut planner_texts = BTreeMap::new();
     let mut bytes = 0usize;
-    let mut stmt = db.prepare("SELECT kind,CASE WHEN length(CAST(source AS BLOB))<=64 THEN source END,CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN payload END FROM events WHERE task_id=?1 AND kind IN ('execution_settings','execution_options','module_snapshot','reasoning_context','reasoning') ORDER BY id LIMIT 70")?;
+    let mut stmt = db.prepare("SELECT kind,CASE WHEN length(CAST(source AS BLOB))<=64 THEN source END,CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN payload END FROM events WHERE task_id=?1 AND kind IN ('execution_settings','execution_options','model_registration','module_snapshot','reasoning_context','reasoning') ORDER BY id LIMIT 70")?;
     let mut rows = stmt.query([task])?;
     let mut count = 0;
     while let Some(row) = rows.next()? {
@@ -104,8 +104,31 @@ fn prepare(db: &rusqlite::Connection, task: &str) -> Result<Checkpoint> {
         .ok_or_else(|| anyhow::anyhow!("Missing original settings"))?;
     let cfg: Config = serde_json::from_value(settings["configuration"].clone())?;
     cfg.validate()?;
-    if cfg.inference_process || cfg.model_registration.is_some() {
-        bail!("Managed or registered backend continuation is not supported yet")
+    if cfg.inference_process {
+        bail!("Managed backend continuation is not supported yet")
+    }
+    if let Some(selection) = &cfg.model_registration {
+        let registered = crate::models::registered_from(db, selection)?
+            .ok_or_else(|| anyhow::anyhow!("Original registered model is missing"))?;
+        let saved = snapshots
+            .get("model_registration")
+            .ok_or_else(|| anyhow::anyhow!("Missing original model registration snapshot"))?;
+        if !registered.enabled
+            || saved["registration"] != serde_json::to_value(&registered)?
+            || saved["weight_identity_verified"] != false
+            || cfg.backend != "openai-local"
+            || cfg.model != registered.manifest.model
+            || cfg.api_base != registered.manifest.api_base
+            || !cfg.role_profiles.is_empty()
+            || cfg.max_tokens > registered.manifest.max_output_tokens as usize
+        {
+            bail!("Original registered model is disabled or differs from its pinned configuration")
+        }
+    } else if snapshots
+        .get("model_registration")
+        .is_some_and(|saved| !saved["registration"].is_null())
+    {
+        bail!("Unexpected registered model snapshot")
     }
     let mode = settings["mode"].as_str().unwrap_or("").to_string();
     let options = snapshots
@@ -509,8 +532,108 @@ mod tests {
             );
         }
     }
+    fn register_saved_model(store: &Store, task: &str) -> crate::models::Selection {
+        let raw: String = store
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT payload FROM events WHERE task_id=?1 AND kind='execution_settings'",
+                [task],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let mut settings: Value = serde_json::from_str(&raw).unwrap();
+        let cfg: Config = serde_json::from_value(settings["configuration"].clone()).unwrap();
+        let manifest = crate::models::Manifest {
+            id: "local.resume".into(),
+            version: "1.0.0".into(),
+            model: cfg.model,
+            api_base: cfg.api_base,
+            source: "operator-fixture".into(),
+            license: "CC0".into(),
+            context_tokens: 8192,
+            max_output_tokens: 4096,
+            weights_sha256: None,
+        };
+        let file =
+            std::env::temp_dir().join(format!("fabric-resume-model-{}.json", uuid::Uuid::new_v4()));
+        std::fs::write(&file, serde_json::to_vec(&manifest).unwrap()).unwrap();
+        let registered = store.register_model(&file).unwrap();
+        std::fs::remove_file(file).unwrap();
+        let selection = crate::models::Selection {
+            id: manifest.id,
+            version: manifest.version,
+        };
+        settings["configuration"]["model_registration"] = serde_json::to_value(&selection).unwrap();
+        store
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE events SET payload=?2 WHERE task_id=?1 AND kind='execution_settings'",
+                rusqlite::params![task, settings.to_string()],
+            )
+            .unwrap();
+        store
+            .event(
+                task,
+                "model_registration",
+                "runtime",
+                json!({"registration":registered,"weight_identity_verified":false}),
+            )
+            .unwrap();
+        selection
+    }
+    #[tokio::test]
+    async fn registered_resume_requires_enabled_unchanged_pinned_configuration() {
+        for variant in 0..6 {
+            let (store, task) = fixture().await;
+            let selection = register_saved_model(&store, &task);
+            assert!(prepare(&store.lock().unwrap(), &task).is_ok());
+            match variant {
+                0 => store.set_model_enabled(&selection, false).unwrap(),
+                1 => {
+                    store
+                        .lock()
+                        .unwrap()
+                        .execute("DELETE FROM model_manifests", [])
+                        .unwrap();
+                }
+                2 => {
+                    store
+                        .lock()
+                        .unwrap()
+                        .execute("UPDATE model_manifests SET checksum=?1", ["0".repeat(64)])
+                        .unwrap();
+                }
+                3 => {
+                    store.lock().unwrap().execute("UPDATE events SET payload=json_set(payload,'$.registration.manifest.model','changed') WHERE kind='model_registration'",[]).unwrap();
+                }
+                4 => {
+                    store.lock().unwrap().execute("UPDATE events SET payload=json_set(payload,'$.configuration.model','changed') WHERE kind='execution_settings'",[]).unwrap();
+                }
+                _ => {
+                    store
+                        .lock()
+                        .unwrap()
+                        .execute("DELETE FROM events WHERE kind='model_registration'", [])
+                        .unwrap();
+                }
+            }
+            assert!(
+                prepare(&store.lock().unwrap(), &task).is_err(),
+                "Accepted registration mutation {variant}"
+            );
+        }
+    }
     #[tokio::test]
     async fn public_resume_uses_real_http_and_commits_a_durable_outcome() {
+        http_continuation(false).await;
+    }
+    #[tokio::test]
+    async fn registered_resume_uses_the_original_http_model() {
+        http_continuation(true).await;
+    }
+    async fn http_continuation(registered: bool) {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let root =
             std::env::temp_dir().join(format!("fabric-continuation-{}", uuid::Uuid::new_v4()));
@@ -519,6 +642,9 @@ mod tests {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let endpoint = format!("http://{}/v1", listener.local_addr().unwrap());
         store.lock().unwrap().execute("UPDATE events SET payload=json_set(payload,'$.configuration.api_base',?2) WHERE task_id=?1 AND kind='execution_settings'",rusqlite::params![task,endpoint]).unwrap();
+        if registered {
+            register_saved_model(&store, &task);
+        }
         assert!(resume(store.clone(), &task, false, std::future::pending())
             .await
             .is_err());
@@ -548,6 +674,10 @@ mod tests {
                             })
                             .unwrap();
                         if request.len() >= end + 4 + length {
+                            let body: Value =
+                                serde_json::from_slice(&request[end + 4..end + 4 + length])
+                                    .unwrap();
+                            assert_eq!(body["model"], "local-model");
                             break;
                         }
                     }

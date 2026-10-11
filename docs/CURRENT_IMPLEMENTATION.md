@@ -254,3 +254,9 @@ nodes remain advisory; pending nodes and whole-goal verification use fresh kerne
 authorization. Default direct Full/Collective tasks are tested through local HTTP.
 Managed/registered/custom backends and general multi-phase/repeated resumption
 remain unsupported. See `RECOVERY.md`; current mandatory suite has 232 tests.
+
+
+Registered direct models are now supported by advisory continuation when the
+original enabled registry version matches its saved manifest and configuration.
+Changed/missing/disabled versions are refused without substituting a newer model.
+HTTP fixtures verify the requested model identity; loaded weights remain unattested.

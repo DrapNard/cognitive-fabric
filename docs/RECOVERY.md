@@ -323,7 +323,11 @@ results and original inference/resource ledger must agree. Unresolved calls and
 running nodes are refused; completed advisory nodes remain unverified data.
 
 Only Full/Collective tasks using the original default direct inference module are
-currently supported. Registered models, managed workers, custom module versions,
+currently supported. Registered direct models additionally require an enabled
+original version whose validated manifest/checksum exactly matches the task
+snapshot and whose endpoint, model and output limits match the saved settings.
+Changes or missing versions fail admission; no newer version is selected.
+Managed workers, custom module versions,
 conversation references, explanation synthesis and graphs already in whole-goal
 reasoning are refused. A same-boot original deadline with positive remaining time
 is required. Rebooted, expired and legacy clocks never receive a new allowance.
@@ -343,7 +347,8 @@ persistence never retries an external request. Interrupted or repeated continuat
 is not generally supported: new context snapshots, failed nodes or unresolved
 outcomes require inspection and fail admission rather than being replayed.
 
-Tests cover real local HTTP continuation, reuse without repeated planner/completed
+Tests cover real local HTTP continuation with default and registered models,
+disabled/missing/tampered registrations, reuse without repeated planner/completed
 steps, cumulative charges, leases/operator approval, corrupted graph/context,
 unresolved calls, expired/unknown clocks, unsupported backends, cancellation and
 terminal audit rollback. The HTTP server is a deterministic fixture, not a real

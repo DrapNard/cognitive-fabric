@@ -1325,3 +1325,14 @@ rollback. After tightening the terminal running-task anchor, all five continuati
 tests passed again. Formatting, all-target checking and Clippy with warnings denied
 passed. HTTP results are deterministic fixtures; no live-model quality is claimed.
 General task/backend/phase resumption and release readiness remain incomplete.
+
+
+## Registered direct model continuation (2026-10-11)
+
+`cargo fmt --all -- --check`, offline all-target check, all-target Clippy with
+warnings denied and the full offline all-target test suite passed. The suite now
+contains 234 passing tests (219 library, 15 integration). New tests cover original
+registered model HTTP selection and six invalid registry/snapshot cases. These
+fixtures do not establish loaded-weight attestation or live-model quality. Exact
+FlatBuffers compiler/crate pairing remains 25.12.19. Managed/custom backend and
+later-phase recovery remain open.
