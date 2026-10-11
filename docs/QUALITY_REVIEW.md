@@ -660,3 +660,24 @@ remains 25.12.19. SQLite calls retain existing busy/I/O limits, not hard real-ti
 guarantees. In-memory test stores do not supply durability. Abrupt process/future
 termination may leave an open audit session; crash reconciliation, production
 launch and cross-process grant provisioning remain incomplete.
+
+## Typed single-task worker bootstrap
+
+Added COGB v1 schema and codec for a task UUID, pinned backend/model/role generation
+settings and cumulative worker ceilings. At most 16 KiB is accepted; existing
+Config validation enforces loopback endpoints and settings bounds. Duplicate
+roles, unknown versions, malformed/oversized frames and invalid ceilings fail
+closed. Workspace paths, executable permissions and model-registry authority are
+not transmitted. Trusted callers can convert validated settings into worker task
+authority. Authenticated receive checks OS UID/PID before bounded length-prefixed
+reads (10 seconds); send has a two-second deadline. Raw decode alone confers no
+sender authentication.
+
+Four codec/socket tests verify preserved settings, absent workspace paths,
+malformed/forged configuration and authenticated delivery. The existing complete
+adapter/worker test now consumes decoded bootstrap authority. All 133 Rust tests,
+workspace check, formatting and Clippy pass with exact flatc/runtime 25.12.19.
+The temporary compiler was absent and was rebuilt from the official v25.12.19
+source before verification; no generated files or compiler binaries were committed.
+Production process launch, lifecycle integration and crash reconciliation remain
+unfinished. Model names/configuration are declarations, not weight attestation.

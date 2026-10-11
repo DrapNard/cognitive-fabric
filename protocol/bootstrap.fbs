@@ -1,0 +1,22 @@
+// Trusted host bootstrap for one task's local inference worker.
+namespace Worker;
+table RoleProfile {
+  role:string (required);
+  model:string (required);
+  temperature:double;
+}
+table Bootstrap {
+  version:ushort = 1;
+  task_id:string (required);
+  backend:string (required);
+  model:string (required);
+  api_base:string (required);
+  temperature:double;
+  timeout_seconds:ulong;
+  max_calls:uint;
+  max_tokens:uint;
+  max_input_bytes:ulong;
+  role_profiles:[RoleProfile];
+}
+root_type Bootstrap;
+file_identifier "COGB";

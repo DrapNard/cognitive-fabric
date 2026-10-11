@@ -525,17 +525,21 @@ mod tests {
         let task = uuid::Uuid::new_v4().to_string();
         let (host, worker) = UnixStream::pair().unwrap();
         let uid = host.peer_cred().unwrap().uid();
-        let authority = Authority::new(
-            descriptor(),
+        let setup = super::super::bootstrap::Bootstrap {
+            task: task.clone(),
+            config: crate::config::Config::default(),
+        };
+        let setup = super::super::bootstrap::Bootstrap::decode(&setup.encode().unwrap()).unwrap();
+        let authority = setup.authority(uid, std::process::id()).unwrap();
+        let mut adapter_descriptor = descriptor();
+        adapter_descriptor.id = "inference.local".into();
+        let adapter = super::super::UnixInference::connected(
+            host,
+            adapter_descriptor,
             uid,
             std::process::id(),
-            std::slice::from_ref(&task),
-            Limits::default(),
         )
         .unwrap();
-        let adapter =
-            super::super::UnixInference::connected(host, descriptor(), uid, std::process::id())
-                .unwrap();
         let backend = Arc::new(Fixture(AtomicUsize::new(0)));
         let (shutdown, receiver) = watch::channel(false);
         let handle = tokio::spawn(serve(worker, authority, backend.clone(), receiver, audit()));

@@ -93,6 +93,20 @@ queueing, coordination, HTTP time and cancellation; it is not measured GPU time.
 
 ### Worker-side authority and bounded sessions
 
+`protocol/bootstrap.fbs` defines bounded COGB v1 bootstrap settings for one task.
+`fabric::unix::bootstrap::Bootstrap` validates task UUID, backend, loopback endpoint,
+model/role settings and resource ceilings using the existing Config rules. Frames
+are limited to 16 KiB; duplicate roles, unknown versions, malformed buffers and
+nonlocal endpoints fail closed. Generation settings are pinned in the frame;
+workspace paths, model-registry authority and executable grants are absent.
+`authority` converts validated settings to a single-task inference grant with the
+same cumulative ceilings. The codec does not authenticate its sender: callers must
+check peer credentials before accepting bootstrap data. This is the typed setup
+interface for process lifecycle integration, not a completed launcher. `receive`
+checks approved host UID/PID before reading a bounded length-prefixed frame under
+a ten-second deadline; `send` has a two-second write deadline. Role/model
+names remain declarations, not neural weight attestations.
+
 `fabric::unix::worker::Authority` is created by trusted setup code, not deserialized
 from requests. It pins the host UID/PID, module descriptor and 1–64 unique approved
 task UUIDs. Worker requests must match a grant, role-derived actor, destination,

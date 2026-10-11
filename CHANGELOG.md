@@ -2,6 +2,13 @@
 
 All notable changes are documented here in English.
 
+### Typed single-task worker bootstrap
+
+- Define bounded COGB FlatBuffers settings for a worker's approved task and pinned
+  generation configuration, with no filesystem paths or executable grants.
+- Validate version/role/configuration bounds and derive matching worker ceilings;
+  test decoded bootstrap through the adapter/worker exchange.
+
 ### Durable worker decision auditing
 
 - Require a trusted SQLite audit anchor for worker sessions; record bounded

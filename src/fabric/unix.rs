@@ -10,6 +10,7 @@ use tokio::{
     net::UnixStream,
     sync::Mutex,
 };
+pub mod bootstrap;
 pub mod worker;
 
 /// An immutable connected peer, supplied by trusted host code, never a model path.
