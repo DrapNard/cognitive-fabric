@@ -943,3 +943,18 @@ in a pure unit test. Bootstrap roundtrip preserves scope and absent legacy field
 remain unauthenticated. No real operator credential was read or live authenticated
 generation claimed. Full discovery authentication and cross-endpoint live behavior
 still need dedicated integration coverage beyond the shared credential helper.
+
+## Authentication boundary integration follow-up
+
+Dedicated CLI integration now covers both primary and registered-model discovery:
+matching scopes send the synthetic bearer, other scopes send no Authorization
+header, and escaped provider echoes cause a failed diagnostic without disclosing
+the token. Direct and managed tasks with a missing dedicated credential fail before
+any socket connection. Models cannot authorize authentication configuration.
+This closes the dedicated discovery-coverage gap above; live authenticated LM
+Studio generation remains unverified.
+
+All mandatory checks passed again with FlatBuffers 25.12.19: formatting, all-target
+check, all-target tests (168: 160 library, three authentication, five process), and
+Clippy with warnings denied. Network/process tests used host access; all credentials
+were synthetic and explicitly supplied or removed on child command environments.

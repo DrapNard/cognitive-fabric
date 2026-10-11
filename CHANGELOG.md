@@ -332,3 +332,10 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   generation, discovery and managed workers without persisting secret values.
 - Preserve backward-compatible typed bootstrap and reject literal or JSON-escaped
   provider credential echoes before task results are recorded.
+
+### Authentication boundary regressions
+
+- Verify scoped primary and registered discovery with actual CLI requests, including
+  absence of authorization on other scopes and safe escaped-echo failures.
+- Verify missing credentials prevent direct and managed connections and model
+  actors cannot authorize authentication configuration.

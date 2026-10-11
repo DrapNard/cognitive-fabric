@@ -233,3 +233,9 @@ changes cannot forward the primary token. Synthetic direct/managed tests reject
 escaped credential echoes without writing credentials to task traces or config.
 Real authenticated LM Studio generation remains **Not verified**. See
 `docs/AUTHENTICATION.md` for setup and residual same-user/provider risks.
+
+Authentication boundary follow-up: CLI integration verifies scoped and non-scoped
+primary/registered discovery, escaped echo rejection, and missing-credential
+failures before connecting for direct and managed tasks. `tests/inference_auth.rs`
+contains the evidence; full Rust regression count is 168. Actual server credentials
+and live successful generation remain external validation requirements.

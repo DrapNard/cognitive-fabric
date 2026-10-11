@@ -26,3 +26,8 @@ by a malicious authenticated provider. Credentials are not zeroized in memory.
 Synthetic integration tests cover direct and managed generation and escaped echoes.
 They do not prove live LM Studio authentication or reasoning quality. Real generation
 remains unverified until an operator supplies the server's credential locally.
+
+Additional CLI tests cover primary and registered discovery with matching and
+nonmatching scopes, escaped echoes, and missing credentials before any connection
+for direct and managed tasks. These fixtures use synthetic child environments and
+do not inspect the operator's credentials.
