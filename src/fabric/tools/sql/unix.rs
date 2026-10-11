@@ -193,7 +193,7 @@ pub async fn serve(
     let mut calls = 0;
     let mut seen = std::collections::BTreeSet::new();
     let record = |state: &str, calls: u32, correlation: Option<&str>| {
-        store.event(&grant.task, "tool_worker", "security-kernel", serde_json::json!({"session_id":session,"state":state,"charged_calls":calls,"correlation_id":correlation,"module_id":grant.descriptor.id,"module_version":grant.descriptor.version,"capability":"sql.query"}))
+        store.event(&grant.task, "tool_worker", "security-kernel", serde_json::json!({"format_version":1,"session_id":session,"state":state,"charged_calls":calls,"correlation_id":correlation,"module_id":grant.descriptor.id,"module_version":grant.descriptor.version,"capability":"sql.query"}))
     };
     record("started", calls, None)?;
     let result = tokio::time::timeout_at(deadline, async {

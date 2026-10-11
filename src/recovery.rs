@@ -76,27 +76,46 @@ impl Store {
         );
         let result = (|| -> Result<Vec<RecoveredWorker>> {
             let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-            let rows = tx.prepare("SELECT e.task_id,e.payload FROM events e JOIN tasks t ON t.id=e.task_id WHERE e.kind='worker.audit' AND json_extract(e.payload,'$.state')='session_started' AND NOT EXISTS (SELECT 1 FROM events f WHERE f.task_id=e.task_id AND f.kind='worker.audit' AND json_extract(f.payload,'$.session_id')=json_extract(e.payload,'$.session_id') AND json_extract(f.payload,'$.state') IN ('session_stopped','session_failed','session_interrupted')) ORDER BY e.id LIMIT 10001")?
-                .query_map([], |r| Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?)))?.collect::<rusqlite::Result<Vec<_>>>()?;
+            let rows = tx.prepare(
+                "SELECT e.task_id,e.kind,
+                    CASE WHEN length(CAST(e.payload AS BLOB))<=4096 THEN e.payload ELSE NULL END
+                 FROM events e JOIN tasks t ON t.id=e.task_id
+                 WHERE ((e.kind='worker.audit' AND json_extract(e.payload,'$.state')='session_started')
+                     OR (e.kind='tool_worker' AND json_extract(e.payload,'$.state')='started'))
+                 AND NOT EXISTS (
+                    SELECT 1 FROM events f WHERE f.task_id=e.task_id AND f.kind=e.kind
+                    AND json_extract(f.payload,'$.session_id')=json_extract(e.payload,'$.session_id')
+                    AND ((e.kind='worker.audit' AND json_extract(f.payload,'$.state')
+                            IN ('session_stopped','session_failed','session_interrupted'))
+                        OR (e.kind='tool_worker' AND json_extract(f.payload,'$.state')
+                            IN ('closed','failed','interrupted'))))
+                 ORDER BY e.id LIMIT 10001",
+            )?.query_map([], |r| Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,Option<String>>(2)?)))?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
             if rows.len() > 10000 {
                 bail!("Worker recovery exceeds 10,000 sessions; inspect offline")
             }
             let mut recovered = Vec::new();
             let mut seen = std::collections::BTreeSet::new();
-            for (anchor, raw) in rows {
+            for (anchor, kind, raw) in rows {
                 if started.elapsed() > std::time::Duration::from_secs(5) {
                     bail!("Worker recovery deadline exhausted")
                 }
                 uuid::Uuid::parse_str(&anchor)?;
-                if raw.len() > 4096 {
-                    bail!("Worker recovery metadata exceeds bounds")
-                }
+                let raw =
+                    raw.ok_or_else(|| anyhow::anyhow!("Worker recovery metadata exceeds bounds"))?;
                 let payload: serde_json::Value = serde_json::from_str(&raw)?;
                 let session = payload["session_id"]
                     .as_str()
                     .ok_or_else(|| anyhow::anyhow!("Missing worker session identity"))?;
                 uuid::Uuid::parse_str(session)?;
-                if payload["format_version"] != 1 || !seen.insert(session.to_string()) {
+                let tool = kind == "tool_worker";
+                // Tool v1 initially omitted the metadata version; retain recovery
+                // compatibility without admitting unknown explicit versions.
+                if ((!tool || payload.get("format_version").is_some())
+                    && payload["format_version"] != 1)
+                    || !seen.insert(session.to_string())
+                {
                     bail!("Invalid or duplicate worker recovery session")
                 }
                 let module = payload["module_id"]
@@ -105,14 +124,31 @@ impl Store {
                 let version = payload["module_version"]
                     .as_str()
                     .ok_or_else(|| anyhow::anyhow!("Missing worker module version"))?;
-                crate::fabric::ModuleDescriptor {
-                    id: module.into(),
-                    version: version.into(),
-                    roles: vec!["solver".into()],
-                }
-                .validate()?;
-                let record = serde_json::json!({"format_version":1,"session_id":session,"module_id":module,"module_version":version,"state":"session_interrupted","reason":"exclusive_runtime_lease","automatic_replay":false,"external_inference_stopped_verified":false,"resource_usage_complete":false});
-                tx.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES (?1,'worker.audit','human-cli',?2,unixepoch())", params![anchor,record.to_string()])?;
+                let capability = if tool {
+                    let capability = payload["capability"]
+                        .as_str()
+                        .ok_or_else(|| anyhow::anyhow!("Missing worker capability"))?;
+                    crate::fabric::tools::Descriptor {
+                        id: module.into(),
+                        version: version.into(),
+                        capability: capability.into(),
+                    }
+                    .validate()?;
+                    if payload["charged_calls"] != 0 {
+                        bail!("Invalid initial tool worker charge")
+                    }
+                    Some(capability)
+                } else {
+                    crate::fabric::ModuleDescriptor {
+                        id: module.into(),
+                        version: version.into(),
+                        roles: vec!["solver".into()],
+                    }
+                    .validate()?;
+                    None
+                };
+                let record = serde_json::json!({"format_version":1,"session_id":session,"module_id":module,"module_version":version,"capability":capability,"state":if tool {"interrupted"} else {"session_interrupted"},"reason":"exclusive_runtime_lease","automatic_replay":false,"external_inference_stopped_verified":false,"external_effects_stopped_verified":false,"resource_usage_complete":false});
+                tx.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES (?1,?2,'human-cli',?3,unixepoch())", params![anchor,kind,record.to_string()])?;
                 recovered.push(RecoveredWorker {
                     task_id: anchor,
                     session_id: session.into(),
@@ -199,6 +235,10 @@ pub struct RecoveredWorker {
     pub task_id: String,
     pub session_id: String,
 }
+
+#[cfg(test)]
+#[path = "recovery/tool_tests.rs"]
+mod tool_tests;
 
 #[cfg(test)]
 mod tests {

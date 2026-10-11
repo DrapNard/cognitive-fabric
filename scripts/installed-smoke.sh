@@ -156,4 +156,6 @@ jq -e '
     ([.events[] | select(.kind == "worker_process_stopped" and .payload.reaped)] | length) == 1 and
     ([.events[] | select(.kind == "worker_process_owned")][0].payload.pid == [.events[] | select(.kind == "worker_process_stopped")][0].payload.pid)
 ' "$evidence/inference-process-trace.json" >/dev/null
+run recovered-workers recover-workers
+jq -e '.interrupted_worker_sessions == [] and (.automatic_replay | not)' "$evidence/recovered-workers.json" >/dev/null
 echo 'Installed binary smoke checks passed; live inference and neural safety were not evaluated.'

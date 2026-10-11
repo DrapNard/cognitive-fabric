@@ -737,3 +737,18 @@ workflow and demo inference ownership/reaping checks. Exact build identity and
 hashes are recorded in `RELEASE_AUDIT.md`. The installed-source gap is closed for
 this commit; host-crash cleanup, general module lifecycle and live-model gates
 remain incomplete.
+
+Tool-worker audit recovery: **Implemented** in `src/recovery.rs`, sharing registry
+descriptor validation and the existing operator-only recovery command. New tool
+audit records are explicitly versioned; original unversioned records remain
+recoverable. `src/recovery/tool_tests.rs` covers mixed inference/math/SQL recovery,
+terminal-session exclusion, idempotence, preserved answers/charges, malformed or
+oversized metadata, audit-failure rollback and actual live socket worker lease
+exclusion. Combined batches retain 10,000-session and five-second limits. No tool
+replay, PID termination, external-effect proof or stale-file removal is implied.
+
+Mixed worker recovery validation passes all mandatory checks with 309 Rust tests
+(288 library, 21 integration). The expanded smoke workflow also confirms normal
+worker completion leaves no recoverable sessions. Optimized installation evidence
+must be refreshed after this source change. Stale-file cleanup, broader module
+lifecycle and live-model evaluation remain open.

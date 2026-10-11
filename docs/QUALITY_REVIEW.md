@@ -1551,3 +1551,16 @@ workflow, including demo inference launch/ownership/handoff/matching reap.
 The pending installed-source gap above is closed for this commit; cancellation
 and audit-failure startup coverage comes from the real-child Rust regressions.
 No real model or host-crash behavior is inferred from the demo workflow.
+
+### Mixed tool/inference worker recovery (2026-10-11)
+
+All mandatory checks pass: formatting, offline all-target check/tests and Clippy
+with warnings denied, using FlatBuffers 25.12.19. Tests total 309 (288 library,
+21 integration). Focused recovery tests passed, including mixed idempotent repair,
+closed-session exclusion, unchanged task answers/charge events, transactional
+rollback for invalid capabilities/charges/formats/oversized metadata and audit
+failure, and live arithmetic/SQL socket lease exclusion. Full log:
+`/tmp/cogfabric-tool-recovery-gate.log`. The expanded smoke workflow passes against
+the current debug executable and verifies recovery remains empty after normal
+worker completion. Optimized installed verification is pending for this source.
+No tool replay, PID termination, file cleanup or external-effect proof is inferred.

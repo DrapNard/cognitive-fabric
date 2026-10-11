@@ -215,7 +215,7 @@ pub async fn serve(
             "tool_worker",
             "security-kernel",
             serde_json::json!({
-                "session_id":session,"state":state,"charged_calls":calls,
+                "format_version":1,"session_id":session,"state":state,"charged_calls":calls,
                 "correlation_id":correlation,"module_id":grant.descriptor.id,
                 "module_version":grant.descriptor.version,"capability":"math.evaluate"
             }),

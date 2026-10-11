@@ -205,3 +205,11 @@ initialization cannot silently retry. Normal shutdown confirms reaping of retain
 startup children with existing bounds. This improves live-runtime failure
 containment; host death, stale directories and provider GPU work remain outside
 that guarantee. No additional model capability, credential or executable is granted.
+
+Operator worker recovery now repairs abandoned arithmetic/SQL audit sessions
+under the same exclusive lease as inference. Live workers block reconciliation;
+all metadata validation and audit insertion share one bounded transaction. Tool
+format/capability/version and initial charges are validated, with bounded legacy
+format compatibility. Results and charged events are preserved. Interruption
+records explicitly leave resource completion and external-effect stopping unknown;
+recovery neither replays commands nor kills PIDs or removes files.

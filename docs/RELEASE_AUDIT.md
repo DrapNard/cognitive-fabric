@@ -4,14 +4,14 @@ This checklist preserves the 18 acceptance criteria in the goal objective. It is
 an evidence inventory, not a release approval. The canonical French architecture
 and the broader implementation matrix remain authoritative. Earlier test counts
 in the quality review are historical milestones. Current local verification is
-306 Rust tests (285 library, 21 integration), formatting, all-target checking and
+309 Rust tests (288 library, 21 integration), formatting, all-target checking and
 Clippy with warnings denied, using FlatBuffers compiler/crate 25.12.19.
 
 | Goal criterion | Evidence inspected | Assessment / remaining proof |
 |---|---|---|
 | 1. Workspace builds | `Cargo.toml`, all-target check | Passed locally; isolated optimized source installation also passed with cached dependencies. |
 | 2. Formatting and Clippy | Mandatory checks in `QUALITY_REVIEW.md` | Passed locally. |
-| 3. Mandatory tests | All-target test results, `tests/` | 306 passed; fixtures do not establish live model quality. |
+| 3. Mandatory tests | All-target test results, `tests/` | 309 passed; fixtures do not establish live model quality. |
 | 4. FlatBuffers IPC | `protocol/`, `src/wire.rs`, `src/fabric/`, malformed/compatibility/socket tests | Implemented for present transports; authenticated process event delivery/replay is now tested; broader module compatibility remains partial. |
 | 5. CLI/service communication | `src/service.rs`, socket tests, `tests/process_worker.rs` | Tested local transport, progress and cancellation; no general independent plugin service is claimed. |
 | 6. Compatible local LLM | `src/backend.rs`, `tests/inference_auth.rs`, `AUTHENTICATION.md` | Synthetic authenticated HTTP works; real LM Studio generation last returned 401. Not passed. |
@@ -175,3 +175,10 @@ service, skill rollback and restore. Evidence:
 `/tmp/cogfabric-inference-startup-installed-smoke.log`. This closes the pending
 installed-source gap above. Real authenticated inference, host-crash cleanup,
 clean-OS setup and independent live benchmarks remain unverified.
+
+Mixed inference/math/SQL worker audit recovery passes mandatory checks and all
+309 tests (288 library, 21 integration), including live tool lease exclusion and
+mixed rollback/idempotence. The expanded debug smoke workflow confirms recovery
+is empty after clean completion. Prior optimized evidence predates this source;
+refresh installed verification before release. This is audit recovery, not
+stale-directory cleanup or proof of completed external effects.

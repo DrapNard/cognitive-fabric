@@ -408,3 +408,9 @@ than relying solely on kill-on-drop. Unfinished startup cannot automatically
 retry. COGB/COGM wire layouts and task permissions are unchanged. This addresses
 interrupted initialization within a live runtime, not crash recovery or backend
 GPU cancellation.
+
+Tool-worker audit metadata now declares format 1. Recovery accepts the original
+missing-format records but rejects unknown explicit versions. `recover-workers`
+reconciles tool `started` sessions to `interrupted` only under exclusive runtime
+ownership, preserving existing charges and answers. No COGT/COGQ wire schema or
+permission changes are required; see `RECOVERY.md` for mixed-transaction limits.

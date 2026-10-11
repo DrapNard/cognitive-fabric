@@ -22,7 +22,7 @@ pub struct Descriptor {
     pub capability: String,
 }
 impl Descriptor {
-    fn validate(&self) -> Result<()> {
+    pub(crate) fn validate(&self) -> Result<()> {
         if self.id.is_empty()
             || self.id.len() > 64
             || !self

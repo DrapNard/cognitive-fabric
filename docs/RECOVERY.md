@@ -459,3 +459,24 @@ solver. They also verify repeat-stop refusal and atomic checkpoint-failure rollb
 This adds a specific within-cycle reconciliation path. Unknown inference outcomes,
 arbitrary critic/reflection positions and general within-cycle recovery remain
 unfinished; no missing provider result is invented or replayed.
+
+### Arithmetic and SQL worker audit recovery
+
+`recover-workers` now also reconciles `tool_worker` sessions whose `started`
+record has no matching `closed`, `failed` or `interrupted` terminal record.
+It uses the same exclusive runtime lease and immediate transaction as inference
+recovery; the 10,000-session and five-second progress limits cover the combined
+batch. A live arithmetic/SQL worker holds a shared lease and blocks recovery.
+Task answers/statuses and existing authorization/charge events remain unchanged.
+Recovery adds metadata-only `interrupted` events with module/version/capability,
+explicitly unknown resource completion and external-effect stopping. It does not
+refund calls, replay SQL/arithmetic, kill recorded PIDs or remove temporary files.
+
+Metadata requires valid task/session IDs, supported capability names and module
+versions, and a zero initial call charge. New tool audit records use metadata
+format 1; the original records without a format field remain recoverable. Unknown
+explicit formats fail closed. Payloads over 4 KiB are rejected before copying them
+into Rust. Malformed metadata or any audit failure rolls back the entire mixed
+batch, including inference changes. Closed sessions stay untouched and repeated
+recovery is empty. These are audit repairs under cooperative ownership, not proof
+that arbitrary external effects stopped after a host crash.

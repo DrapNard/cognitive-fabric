@@ -2,6 +2,16 @@
 
 All notable changes are documented here in English.
 
+### Recover abandoned tool-worker audit sessions
+
+- Extend exclusive-lease worker recovery to arithmetic and SQL sessions alongside
+  inference, using one bounded transaction and combined session ceiling.
+- Validate tool identity/capability/version metadata, retain compatibility with
+  initial unversioned tool audit records, and reject oversized payload copies.
+- Preserve task answers and existing charges; record interruption without tool
+  replay, PID killing or invented external-effect/resource completion.
+- Test mixed idempotent recovery, malformed metadata, rollback and live tool leases.
+
 ### Interrupted inference-worker startup cleanup
 
 - Retain child, socket and execution-lease ownership before connection/setup awaits.

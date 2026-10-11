@@ -137,3 +137,10 @@ cancellation, failed ownership audit, refusal to retry and identity-checked sock
 cleanup. The existing `worker_process` event still measures completed handoff;
 none of these records proves loaded weights or external GPU cancellation. Runtime
 crashes and stale-resource cleanup remain open.
+
+`recover-workers` now includes abandoned arithmetic/SQL audit sessions alongside
+inference. Live tool leases block it; mixed recovery is transactional, bounded and
+idempotent, preserving task results and existing call charges. It records unknown
+completion rather than replaying tools or killing PIDs. See `RECOVERY.md` for
+metadata validation and legacy audit compatibility. Temporary-file cleanup and
+broader host-crash recovery remain separate work.

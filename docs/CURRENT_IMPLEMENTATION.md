@@ -441,3 +441,10 @@ records launch intent and owned PID separately, and reaps failed/cancelled start
 through normal bounded cleanup. Retry of an unfinished startup is refused. A real
 child regression covers cancellation, ownership-audit failure, retry refusal and
 socket-directory removal. Crash cleanup and external GPU cancellation remain unproven.
+
+Worker audit recovery now includes arithmetic and SQL sessions in the same
+exclusive-lease transaction as inference. Mixed batches preserve task results and
+charges, validate bounded metadata and record interruption without replay/PID
+killing. Live tool sessions block recovery; malformed metadata and audit failures
+roll back the batch. Legacy unversioned tool audit starts remain supported.
+Filesystem cleanup and broader module lifecycle remain incomplete.
