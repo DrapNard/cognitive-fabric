@@ -133,34 +133,52 @@ impl Store {
             anyhow::anyhow!("Cannot recover while an engine holds a lease: {error}")
         })?;
         let mut db = self.lock()?;
-        let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-        let ids = tx
-            .prepare("SELECT id FROM tasks WHERE status='running' ORDER BY created,id LIMIT 10001")?
+        let started = std::time::Instant::now();
+        db.progress_handler(
+            1000,
+            Some(move || started.elapsed() > std::time::Duration::from_secs(5)),
+        );
+        let result = (|| -> Result<Vec<String>> {
+            let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+            let ids = tx
+            .prepare("SELECT CASE WHEN length(CAST(id AS BLOB))<=64 THEN id END FROM tasks WHERE status='running' ORDER BY created,id LIMIT 10001")?
             .query_map([], |row| row.get::<_, String>(0))?
             .collect::<rusqlite::Result<Vec<_>>>()?;
-        if ids.len() > 10000 {
-            bail!("Recovery exceeds 10,000 tasks; inspect state offline")
-        }
-        let mut progress = Vec::new();
-        for id in &ids {
-            tx.execute("UPDATE tasks SET status='interrupted',answer='Task interrupted before a durable terminal result; no automatic replay',updated=unixepoch() WHERE id=?1 AND status='running'", [id])?;
-            tx.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES (?1,'recovery','human-cli',?2,unixepoch())", params![id,serde_json::json!({"status":"interrupted","reason":"exclusive_runtime_lease","automatic_replay":false,"resource_usage_complete":false,"subtask_results_verified":false}).to_string()])?;
-            progress.push(
-                crate::events::Progress::from_audit(
-                    tx.last_insert_rowid() as u64,
-                    id,
-                    "recovery",
-                    "human-cli",
-                    &serde_json::json!({"status":"interrupted"}),
-                )?
-                .expect("Recovery is a typed event"),
-            );
-        }
-        tx.commit()?;
-        for event in &progress {
-            self.events.publish(event)?;
-        }
-        Ok(ids)
+            if ids.len() > 10000 {
+                bail!("Recovery exceeds 10,000 tasks; inspect state offline")
+            }
+            for id in &ids {
+                uuid::Uuid::parse_str(id)?;
+            }
+            let mut progress = Vec::new();
+            for id in &ids {
+                if started.elapsed() > std::time::Duration::from_secs(5) {
+                    bail!("Task recovery deadline exhausted")
+                }
+                tx.execute("UPDATE tasks SET status='interrupted',answer='Task interrupted before a durable terminal result; no automatic replay',updated=unixepoch() WHERE id=?1 AND status='running'", [id])?;
+                tx.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES (?1,'recovery','human-cli',?2,unixepoch())", params![id,serde_json::json!({"status":"interrupted","reason":"exclusive_runtime_lease","automatic_replay":false,"resource_usage_complete":false,"subtask_results_verified":false}).to_string()])?;
+                progress.push(
+                    crate::events::Progress::from_audit(
+                        tx.last_insert_rowid() as u64,
+                        id,
+                        "recovery",
+                        "human-cli",
+                        &serde_json::json!({"status":"interrupted"}),
+                    )?
+                    .expect("Recovery is a typed event"),
+                );
+            }
+            if started.elapsed() > std::time::Duration::from_secs(5) {
+                bail!("Task recovery deadline exhausted")
+            }
+            tx.commit()?;
+            for event in &progress {
+                self.events.publish(event)?;
+            }
+            Ok(ids)
+        })();
+        db.progress_handler(0, None::<fn() -> bool>);
+        result
     }
 }
 
@@ -442,6 +460,89 @@ mod tests {
         drop(store);
         std::fs::remove_dir_all(root).unwrap();
     }
+    #[test]
+    fn task_recovery_rejects_invalid_ids_and_oversized_batches_atomically() {
+        let root = std::env::temp_dir().join(format!(
+            "fabric-task-recovery-bounds-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let store = Store::open(&root.join("state.db")).unwrap();
+        let valid = store.create_task("unfinished", "fast").unwrap();
+        for invalid in ["invalid".to_string(), "x".repeat(1024)] {
+            store.lock().unwrap().execute("INSERT INTO tasks(id,query,mode,status,created,updated) VALUES (?1,'fixture','fast','running',0,0)", [&invalid]).unwrap();
+            assert!(store.recover_tasks().is_err());
+            assert_eq!(store.task(&valid).unwrap()["task"]["status"], "running");
+            store
+                .lock()
+                .unwrap()
+                .execute("DELETE FROM tasks WHERE id=?1", [&invalid])
+                .unwrap();
+        }
+        store.lock().unwrap().execute_batch("WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE x<10000) INSERT INTO tasks(id,query,mode,status,created,updated) SELECT printf('%032x',x),'fixture','fast','running',0,0 FROM n;").unwrap();
+        assert!(store
+            .recover_tasks()
+            .unwrap_err()
+            .to_string()
+            .contains("10,000"));
+        assert_eq!(
+            store
+                .lock()
+                .unwrap()
+                .query_row(
+                    "SELECT count(*) FROM tasks WHERE status='running'",
+                    [],
+                    |r| r.get::<_, u32>(0)
+                )
+                .unwrap(),
+            10001
+        );
+        assert_eq!(
+            store
+                .lock()
+                .unwrap()
+                .query_row(
+                    "SELECT count(*) FROM events WHERE kind='recovery'",
+                    [],
+                    |r| r.get::<_, u32>(0)
+                )
+                .unwrap(),
+            0
+        );
+        drop(store);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn task_recovery_deadline_rolls_back_and_removes_progress_callback() {
+        let root = std::env::temp_dir().join(format!(
+            "fabric-task-recovery-deadline-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let store = Store::open(&root.join("state.db")).unwrap();
+        let task = store.create_task("unfinished", "fast").unwrap();
+        store.lock().unwrap().execute_batch("CREATE TRIGGER slow_recovery BEFORE UPDATE ON tasks BEGIN SELECT (WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE x<100000000) SELECT sum(x) FROM n); END;").unwrap();
+        assert!(store.recover_tasks().is_err());
+        // A callback left installed would interrupt this statement after 1,000 opcodes.
+        let sum: u64 = store.lock().unwrap().query_row("WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE x<10000) SELECT sum(x) FROM n", [], |r| r.get(0)).unwrap();
+        assert_eq!(sum, 50005000);
+        assert_eq!(store.task(&task).unwrap()["task"]["status"], "running");
+        assert_eq!(
+            store.task(&task).unwrap()["events"]
+                .as_array()
+                .unwrap()
+                .len(),
+            0
+        );
+        store
+            .lock()
+            .unwrap()
+            .execute_batch("DROP TRIGGER slow_recovery")
+            .unwrap();
+        assert_eq!(store.recover_tasks().unwrap(), vec![task]);
+        drop(store);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn recovery_transactions_roll_back_and_lease_substitutions_fail() {
         use std::os::unix::fs::{symlink, PermissionsExt};

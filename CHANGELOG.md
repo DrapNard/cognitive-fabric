@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Bounded interrupted-task reconciliation
+
+- Bound and validate recovered task identities before updating durable state.
+- Apply a five-second SQLite progress deadline with atomic rollback and callback
+  cleanup, including when stored triggers perform expensive work.
+
 ### Reviewed comparison dataset pins
 
 - Allow comparison runs to require an operator-reviewed SHA-256 before creating

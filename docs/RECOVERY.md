@@ -13,7 +13,12 @@ requires an exclusive nonblocking flock, then one immediate SQLite transaction.
 Other local processes cannot start Engine execution during recovery. Recovery
 fails while any engine lease is held, even within the same process. Kernel locks
 release on process death; neither a PID file nor task age establishes abandonment.
-A crash during recovery rolls back task and audit writes together. Batches above
+A crash during recovery rolls back task and audit writes together. Task identities
+are bounded before allocation and validated as UUIDs before any update. SQLite
+checks a five-second recovery deadline every 1,000 virtual-machine instructions,
+with additional checks between task updates and before commit. Deadline failure
+rolls back the batch and removes the temporary callback. SQLite busy waits,
+filesystem I/O and fsync are not hard real-time bounded. Batches above
 10,000 unfinished tasks fail closed for offline inspection.
 
 The persistent lease file is `fabric.sqlite3.runtime.lock` beside the database.

@@ -307,3 +307,10 @@ Embedding validation now rejects invalid configuration before task creation.
 Tests cover durable original settings, ordering before dispatch, private path
 exclusion and snapshot write failure containment. Backend attestation and restored
 permissions are explicitly false; automatic checkpoint continuation remains partial.
+
+Task recovery execution bounds: **Implemented** in `src/recovery.rs`. Exclusive
+lease-protected reconciliation validates bounded UUIDs before updates and applies
+a five-second SQLite progress deadline. Regression tests cover malformed/oversized
+identities, oversized batches, expensive-trigger interruption, atomic rollback and
+callback cleanup. This improves reconciliation only; automatic resumption remains
+partial and external inference completion is still unknown.

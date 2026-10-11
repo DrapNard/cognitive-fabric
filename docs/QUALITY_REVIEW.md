@@ -1057,3 +1057,14 @@ configuration without task creation, original settings retained after engine
 changes, snapshots preceding dispatch, excluded workspace paths and injected
 snapshot write failure with zero dispatches. No backend attestation or automatic
 resumption is inferred; initialization failure can require explicit task recovery.
+
+## Interrupted-task reconciliation bounds
+
+FlatBuffers 25.12.19 formatting, all-target check, all-target tests (190: 180
+library and 10 integration), and Clippy with denied warnings pass. New negative
+coverage rejects malformed/oversized task identities and 10,001-task batches
+without partial writes. An expensive SQLite trigger is interrupted by the
+five-second progress callback; the test verifies rollback, callback removal and
+successful subsequent recovery. The deadline bounds SQLite computation and
+between-record processing, not filesystem I/O, fsync or busy waits. Reconciliation
+remains operator-only, lease-protected and does not replay inference.
