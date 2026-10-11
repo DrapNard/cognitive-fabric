@@ -503,3 +503,14 @@ a lease test verifies shared worker access and exclusive recovery refusal.
 Canonical private workspace storage is required. This supersedes the managed-mode
 limitation above; custom modules, later phases, repeated recovery and external GPU
 termination remain **Partial / Not implemented / Not verified**.
+
+
+Durable reasoning boundaries and revision continuation: **Implemented (bounded
+scope)** in `src/reasoning.rs` and `src/recovery/continuation.rs`. Before charging a
+new solver cycle, the runtime persists bounded strategy/previous-answer/repeat
+state and ledger anchors. Unconsumed boundaries following a completed advisory
+graph can resume with original cycles, budgets and independent verification;
+stale or altered boundaries fail closed. Tests cover write failure, preservation
+of repeat stopping, tampering/consumption and actual resumed HTTP verification.
+This supersedes the blanket later-phase limitation above. Arbitrary within-cycle,
+no-graph and general repeated recovery remain **Partial / Not implemented**.

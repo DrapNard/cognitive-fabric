@@ -2,6 +2,15 @@
 
 All notable changes are documented here in English.
 
+### Durable revision recovery
+
+- Persist exact bounded solver-boundary state before charging each reasoning cycle;
+  stop dispatch if checkpoint persistence fails.
+- Resume unconsumed boundaries after completed advisory graphs with original cycle,
+  resource and repeat-detection state; reject altered or consumed checkpoints.
+- Verify resumed independent checks through local HTTP without extra planner or
+  advisory calls. Arbitrary within-cycle and no-graph recovery remain incomplete.
+
 ### Managed worker task recovery
 
 - Continue validated advisory graphs through a fresh authenticated inference worker

@@ -1347,3 +1347,14 @@ shared access and recovery refusal. Actual CLI integration tests run a fresh chi
 worker through authenticated typed IPC and fixture HTTP, verifying successful
 continuation and cancellation with child reaping and unresolved call reservations.
 No external GPU shutdown, real-model quality or general-phase recovery is claimed.
+
+## Durable solver-boundary recovery (2026-10-11)
+
+Formatting, offline all-target checking, Clippy with warnings denied and all-target
+regressions passed with FlatBuffers compiler/crate 25.12.19. The suite has 241
+passing tests (224 library, 17 integration). New checks cover boundary persistence
+before reservation, exact failed-answer/revision state, altered/stale boundaries,
+repeat detection after restoration and real HTTP continuation into independent
+verification. An initial restricted run could not bind fixture sockets; the full
+suite subsequently passed with local socket permission. No general within-cycle,
+no-graph or repeated recovery, model-quality gain or release completion is claimed.

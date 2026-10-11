@@ -268,3 +268,10 @@ then provisions only remaining worker budgets and reaps the fresh child on succe
 or cancellation. Actual CLI/process/HTTP tests cover both paths. Host enforcement
 retains the precise original deadline; worker shutdown has a bounded cleanup grace.
 Custom backend versions and later-phase recovery remain incomplete.
+
+
+Solver cycles now persist bounded reasoning boundaries with previous answer,
+revision strategy, repeat hash and cumulative reservation anchors. An unconsumed
+boundary following a completed advisory graph can resume without resetting cycles
+or repeat detection. Tampered/consumed boundaries and unresolved calls are refused.
+No-graph, within-cycle and general repeated resumption remain incomplete.

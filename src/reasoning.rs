@@ -60,6 +60,7 @@ pub struct Session {
     pub(crate) verification_enabled: bool,
     pub subtasks: Vec<Subtask>,
     subtask_started: Option<(usize, Instant, Resources)>,
+    resume_answer: Option<(String, Option<String>)>,
     pub(crate) checker_binding: Option<serde_json::Value>,
     cfg: Config,
     store: Arc<Store>,
@@ -200,6 +201,7 @@ impl Session {
             verification_enabled: true,
             subtasks: Vec::new(),
             subtask_started: None,
+            resume_answer: None,
             checker_binding: None,
             complete_usage: true,
             complete_queue_metrics: true,
@@ -315,6 +317,27 @@ impl Session {
             self.subtask_event(index)?;
         }
         self.execute_remaining_plan(order, base).await
+    }
+
+    pub(crate) async fn continue_solver(
+        &mut self,
+        boundary: &serde_json::Value,
+        query: &str,
+        context: &str,
+        mode: &str,
+    ) -> Result<String> {
+        self.resume_answer = Some((
+            boundary["previous_answer"].as_str().unwrap().into(),
+            boundary["last_answer_hash"].as_str().map(String::from),
+        ));
+        self.solve_with_strategy(
+            query,
+            context,
+            mode,
+            true,
+            Some(boundary["strategy"].as_str().unwrap().into()),
+        )
+        .await
     }
 
     pub(crate) async fn continue_graph(
@@ -829,8 +852,8 @@ impl Session {
                 }
             }
         }
-        let mut answer = String::new();
-        let mut last_hash = None;
+        let (mut answer, mut last_hash) = self.resume_answer.take().unwrap_or_default();
+        self.has_solution = self.resources.cycles > 0 || !answer.is_empty();
         for _ in 0..self
             .cycle_limit
             .saturating_sub(self.resources.cycles as usize)
@@ -839,6 +862,25 @@ impl Session {
                 self.stop_reason = "budget_exhausted".into();
                 break;
             }
+            // A durable boundary describes the exact next solver input and the
+            // stopping state. It grants no permission and reserves no fresh budget.
+            let boundary = json!({
+                "format_version":1,"phase":"ready_solver","mode":mode,
+                "objective_hash":crate::store::sha256(query.as_bytes()),
+                "context_hash":crate::store::sha256(context.as_bytes()),
+                "prompt_base_hash":crate::store::sha256(base.as_bytes()),
+                "strategy":truncate(&strategy,4000),"previous_answer":answer,
+                "last_answer_hash":last_hash,"calls_before":self.resources.calls,
+                "cycles_before":self.resources.cycles,"tool_calls_before":self.resources.tool_calls,
+                "reserved_output_tokens":self.resources.reserved_output_tokens,
+                "charged_prompt_bytes":self.resources.prompt_bytes,
+                "permissions_restorable":false,"subtask_results_verified":false
+            });
+            if serde_json::to_vec(&boundary)?.len() > 262144 {
+                bail!("Reasoning boundary exceeds durable checkpoint limit")
+            }
+            self.store
+                .event(&self.task, "reasoning_boundary", "jev-r", boundary)?;
             let next = self.resources.cycles + 1;
             self.store.event(
                 &self.task,
@@ -962,6 +1004,94 @@ mod tests {
     use super::*;
     use crate::engine::Engine;
     use std::{collections::VecDeque, future::Future, pin::Pin, sync::Mutex};
+
+    #[tokio::test]
+    async fn durable_revision_boundaries_preserve_repeat_detection_and_original_charges() {
+        let store = Arc::new(Store::in_memory().unwrap());
+        let task = store
+            .create_task(r#"sort:{"values":[2,1,2]}"#, "deep")
+            .unwrap();
+        let cfg = Config {
+            backend: "openai-local".into(),
+            ..Config::default()
+        };
+        let backend = Arc::new(Script(Mutex::new(
+            vec![
+                ("planner", "no graph"),
+                ("solver", "[2,1,2]"),
+                ("solver", "[1,2,2]"),
+            ]
+            .into(),
+        )));
+        let mut session = Session::new(cfg, store.clone(), backend, task.clone(), "deep").unwrap();
+        assert_eq!(
+            session
+                .solve(r#"sort:{"values":[2,1,2]}"#, "reference bytes", "deep")
+                .await
+                .unwrap(),
+            "[1,2,2]"
+        );
+        let trace = store.task(&task).unwrap();
+        let boundaries = trace["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|e| e["kind"] == "reasoning_boundary")
+            .map(|e| &e["payload"])
+            .collect::<Vec<_>>();
+        assert_eq!(boundaries.len(), 2);
+        assert_eq!(boundaries[0]["previous_answer"], "");
+        assert!(boundaries[0]["last_answer_hash"].is_null());
+        assert_eq!(boundaries[0]["calls_before"], 1);
+        assert_eq!(boundaries[0]["cycles_before"], 0);
+        assert_eq!(boundaries[1]["previous_answer"], "[2,1,2]");
+        assert_eq!(
+            boundaries[1]["last_answer_hash"],
+            crate::store::sha256(b"[2,1,2]")
+        );
+        assert_eq!(boundaries[1]["calls_before"], 2);
+        assert_eq!(boundaries[1]["cycles_before"], 1);
+        assert_eq!(boundaries[1]["tool_calls_before"], 1);
+        assert_eq!(boundaries[1]["reserved_output_tokens"], 640);
+        assert_eq!(
+            boundaries[1]["context_hash"],
+            crate::store::sha256(b"reference bytes")
+        );
+        assert_eq!(boundaries[1]["permissions_restorable"], false);
+        assert!(boundaries[1]["strategy"]
+            .as_str()
+            .unwrap()
+            .starts_with("Independent checker rejected"));
+    }
+    #[tokio::test]
+    async fn boundary_persistence_failure_prevents_cycle_reservation_and_solver_dispatch() {
+        let store = Arc::new(Store::in_memory().unwrap());
+        let task = store.create_task("Unverified objective", "fast").unwrap();
+        let backend = Arc::new(Script(Mutex::new(VecDeque::new())));
+        let mut session = Session::new(
+            Config::default(),
+            store.clone(),
+            backend,
+            task.clone(),
+            "fast",
+        )
+        .unwrap();
+        store.lock().unwrap().execute_batch("CREATE TRIGGER reject_boundary BEFORE INSERT ON events WHEN NEW.kind='reasoning_boundary' BEGIN SELECT RAISE(ABORT,'fixture checkpoint failure'); END;").unwrap();
+        assert!(session
+            .solve("Unverified objective", "", "fast")
+            .await
+            .is_err());
+        assert_eq!(session.resources.calls, 0);
+        assert_eq!(session.resources.cycles, 0);
+        assert!(!store.task(&task).unwrap()["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| matches!(
+                e["kind"].as_str(),
+                Some("model_dispatch" | "cycle_reservation")
+            )));
+    }
 
     struct Script(Mutex<VecDeque<(&'static str, &'static str)>>);
     #[tokio::test]

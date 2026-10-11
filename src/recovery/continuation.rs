@@ -22,6 +22,7 @@ struct Checkpoint {
     context: String,
     mode: String,
     subtasks: Vec<Subtask>,
+    boundary: Option<Value>,
     state: RestoredState,
 }
 
@@ -71,7 +72,8 @@ fn prepare(db: &rusqlite::Connection, task: &str) -> Result<Checkpoint> {
             let node: Node = serde_json::from_value(payload["node"].clone())?;
             if node.id != nodes.len()
                 || node.parent != nodes.last().map(|n: &Node| n.id)
-                || node.cycle != 0
+                || node.cycle > 16
+                || nodes.last().is_some_and(|n: &Node| n.cycle > node.cycle)
             {
                 bail!("Saved reasoning nodes are not contiguous")
             }
@@ -172,6 +174,41 @@ fn prepare(db: &rusqlite::Connection, task: &str) -> Result<Checkpoint> {
     if calls_before != recorded_before {
         bail!("Context charge anchor differs from dispatch history")
     }
+    if audit["remaining_inference_admission"]["cycles"]
+        .as_u64()
+        .is_none()
+        || audit["remaining_inference_admission"]["tool_calls"]
+            .as_u64()
+            .is_none()
+    {
+        bail!("Missing durable cycle or tool allowance")
+    }
+    use rusqlite::OptionalExtension;
+    let boundary_row: Option<(u64,String,String)> = db.query_row("SELECT id,CASE WHEN length(CAST(source AS BLOB))<=64 THEN source END,CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN payload END FROM events WHERE task_id=?1 AND kind='reasoning_boundary' ORDER BY id DESC LIMIT 1",[task],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?;
+    let boundary = boundary_row.map(|(id,source,raw)| -> Result<Value> {
+        if source != "jev-r" { bail!("Invalid reasoning boundary source") }
+        let v: Value = serde_json::from_str(&raw)?;
+        let later: u64 = db.query_row("SELECT count(*) FROM events WHERE task_id=?1 AND id>?2 AND kind IN ('model_dispatch','cycle_reservation','tool_reservation')",rusqlite::params![task,id],|r|r.get(0))?;
+        let admission=&audit["remaining_inference_admission"];
+        let cycles=settings["cycle_limit"].as_u64().unwrap()-admission["cycles"].as_u64().unwrap();
+        let previous=v["previous_answer"].as_str().ok_or_else(||anyhow::anyhow!("Missing prior answer"))?;
+        let strategy=v["strategy"].as_str().ok_or_else(||anyhow::anyhow!("Missing revision strategy"))?;
+        if later != 0 || v["format_version"] != 1 || v["phase"] != "ready_solver"
+            || v["mode"] != mode || v["objective_hash"] != context["objective_hash"]
+            || v["context_hash"] != context["context_hash"] || v["prompt_base_hash"] != context["prompt_base_hash"]
+            || v["calls_before"] != audit["reserved_calls"] || v["cycles_before"] != cycles
+            || v["tool_calls_before"] != cfg.max_tool_calls as u64-admission["tool_calls"].as_u64().unwrap()
+            || v["reserved_output_tokens"] != audit["reserved_output_tokens"]
+            || v["charged_prompt_bytes"] != audit["charged_prompt_bytes"]
+            || v["permissions_restorable"] != false || v["subtask_results_verified"] != false
+            || previous.len()>96000 || strategy.chars().count()>4000
+            || (cycles==0 && (!previous.is_empty() || !v["last_answer_hash"].is_null()))
+            || (cycles>0 && (v["last_answer_hash"] != sha256(previous.as_bytes())
+                || solver_texts.last_key_value().is_none_or(|(_,text)|text!=previous)))
+            || subtasks.iter().any(|n|n.state!="unverified")
+        { bail!("Reasoning boundary is stale, inconsistent or unsupported") }
+        Ok(v)
+    }).transpose()?;
     let tail = audit["calls"]
         .as_array()
         .unwrap()
@@ -179,7 +216,7 @@ fn prepare(db: &rusqlite::Connection, task: &str) -> Result<Checkpoint> {
         .filter(|c| c["call"].as_u64().unwrap() > calls_before)
         .collect::<Vec<_>>();
     if tail.first().is_none_or(|c| c["role"] != "planner")
-        || tail.iter().skip(1).any(|c| c["role"] != "solver")
+        || (boundary.is_none() && tail.iter().skip(1).any(|c| c["role"] != "solver"))
     {
         bail!("Checkpoint is not in the pre-solver graph phase")
     }
@@ -196,7 +233,8 @@ fn prepare(db: &rusqlite::Connection, task: &str) -> Result<Checkpoint> {
         .into_iter()
         .filter(|i| subtasks[*i].state == "unverified")
         .collect::<Vec<_>>();
-    if tail.len() != completed.len() + 1 {
+    if (boundary.is_none() && tail.len() != completed.len() + 1) || tail.len() < completed.len() + 1
+    {
         bail!("Saved graph and inference outcomes do not match")
     }
     if graph
@@ -210,6 +248,9 @@ fn prepare(db: &rusqlite::Connection, task: &str) -> Result<Checkpoint> {
         bail!("Completed nodes are not a scheduler prefix")
     }
     for (call, index) in tail.iter().skip(1).zip(completed) {
+        if call["role"] != "solver" {
+            bail!("Invalid advisory result role")
+        }
         let answer = solver_texts
             .get(&call["call"].as_u64().unwrap())
             .ok_or_else(|| anyhow::anyhow!("Missing advisory solver result"))?;
@@ -220,7 +261,8 @@ fn prepare(db: &rusqlite::Connection, task: &str) -> Result<Checkpoint> {
         }
     }
     let admission = &audit["remaining_inference_admission"];
-    if admission["cycles"].as_u64() != settings["cycle_limit"].as_u64()
+    if (boundary.is_none() && admission["cycles"].as_u64() != settings["cycle_limit"].as_u64())
+        || admission["cycles"].as_u64().unwrap_or(0) == 0
         || admission["tool_calls"].as_u64().is_none()
         || admission["calls"].as_u64().unwrap_or(0) == 0
     {
@@ -235,9 +277,15 @@ fn prepare(db: &rusqlite::Connection, task: &str) -> Result<Checkpoint> {
         .filter(|n| *n > 0)
         .ok_or_else(|| anyhow::anyhow!("Original execution deadline is expired or unavailable"))?;
     security::TaskPolicy::reasoning(task)?.authorize(task, "jev-r", "llm.generate")?;
+    let used_cycles =
+        settings["cycle_limit"].as_u64().unwrap() - admission["cycles"].as_u64().unwrap();
+    if nodes.iter().any(|n| n.cycle as u64 > used_cycles) {
+        bail!("Reasoning node exceeds charged cycle history")
+    }
     let resources = Resources {
         calls: audit["reserved_calls"].as_u64().unwrap() as u32,
-        cycles: 0,
+        cycles: (settings["cycle_limit"].as_u64().unwrap() - admission["cycles"].as_u64().unwrap())
+            as u32,
         tool_calls: cfg.max_tool_calls - admission["tool_calls"].as_u64().unwrap() as u32,
         reserved_output_tokens: audit["reserved_output_tokens"].as_u64().unwrap() as usize,
         prompt_bytes: audit["charged_prompt_bytes"].as_u64().unwrap() as usize,
@@ -251,6 +299,7 @@ fn prepare(db: &rusqlite::Connection, task: &str) -> Result<Checkpoint> {
         context: text.into(),
         mode,
         subtasks,
+        boundary,
         state: RestoredState {
             resources,
             nodes,
@@ -373,12 +422,27 @@ pub async fn resume(
         &checkpoint.mode,
         checkpoint.state,
     )?;
-    let execution = session.continue_graph(
-        checkpoint.subtasks,
-        &checkpoint.query,
-        &checkpoint.context,
-        &checkpoint.mode,
-    );
+    let execution = async {
+        if let Some(boundary) = &checkpoint.boundary {
+            session
+                .continue_solver(
+                    boundary,
+                    &checkpoint.query,
+                    &checkpoint.context,
+                    &checkpoint.mode,
+                )
+                .await
+        } else {
+            session
+                .continue_graph(
+                    checkpoint.subtasks,
+                    &checkpoint.query,
+                    &checkpoint.context,
+                    &checkpoint.mode,
+                )
+                .await
+        }
+    };
     let mut outcome = tokio::select! {
         biased;
         _ = cancel => Err(anyhow::anyhow!("Continuation cancelled")),
@@ -689,13 +753,17 @@ mod tests {
     }
     #[tokio::test]
     async fn public_resume_uses_real_http_and_commits_a_durable_outcome() {
-        http_continuation(false).await;
+        http_continuation(false, false).await;
     }
     #[tokio::test]
     async fn registered_resume_uses_the_original_http_model() {
-        http_continuation(true).await;
+        http_continuation(true, false).await;
     }
-    async fn http_continuation(registered: bool) {
+    #[tokio::test]
+    async fn public_resume_continues_a_saved_revision_through_http() {
+        http_continuation(false, true).await;
+    }
+    async fn http_continuation(registered: bool, revision: bool) {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let root =
             std::env::temp_dir().join(format!("fabric-continuation-{}", uuid::Uuid::new_v4()));
@@ -707,6 +775,9 @@ mod tests {
         if registered {
             register_saved_model(&store, &task);
         }
+        if revision {
+            save_revision_boundary(&store, &task).await;
+        }
         assert!(resume(store.clone(), &task, false, std::future::pending())
             .await
             .is_err());
@@ -716,7 +787,11 @@ mod tests {
             .is_err());
         drop(lease);
         let server = tokio::spawn(async move {
-            for answer in ["remaining advice", "[1,2,3]"] {
+            for answer in if revision {
+                vec!["[1,2,3]"]
+            } else {
+                vec!["remaining advice", "[1,2,3]"]
+            } {
                 let (mut socket, _) = listener.accept().await.unwrap();
                 let mut request = Vec::new();
                 loop {
@@ -756,7 +831,7 @@ mod tests {
         .unwrap()
         .unwrap();
         assert_eq!(report["status"], "completed");
-        assert_eq!(report["new_calls"], 2);
+        assert_eq!(report["new_calls"], if revision { 1 } else { 2 });
         server.await.unwrap();
         let db = store.lock().unwrap();
         let (status, answer): (String, String) = db
@@ -777,7 +852,7 @@ mod tests {
         assert_eq!(count, 1);
         assert_eq!(
             inference::audit_from(&db, &task).unwrap()["reserved_calls"],
-            4
+            if revision { 5 } else { 4 }
         );
         assert!(prepare(&db, &task).is_err());
         drop(db);
@@ -830,6 +905,118 @@ mod tests {
             let (store,task)=fixture().await;
             store.lock().unwrap().execute(&format!("UPDATE events SET payload={mutation} WHERE task_id=?1 AND kind='execution_settings'"),[&task]).unwrap();
             assert!(prepare(&store.lock().unwrap(),&task).is_err(),"Accepted {mutation}");
+        }
+    }
+    async fn save_revision_boundary(store: &Arc<Store>, task: &str) {
+        let saved = prepare(&store.lock().unwrap(), task).unwrap();
+        let backend = Arc::new(Script(Mutex::new(
+            vec![
+                ("solver", "remaining advice"),
+                ("solver", "[3,2,1]"),
+                ("solver", "[1,2,3]"),
+            ]
+            .into(),
+        )));
+        let mut original = Session::restored(
+            saved.cfg,
+            store.clone(),
+            backend,
+            task.to_string(),
+            &saved.mode,
+            saved.state,
+        )
+        .unwrap();
+        original
+            .continue_graph(saved.subtasks, &saved.query, &saved.context, &saved.mode)
+            .await
+            .unwrap();
+        // Retain exactly the committed boundary preceding the second solver.
+        // This models process loss before its next cycle reservation/dispatch.
+        let db = store.lock().unwrap();
+        let id:u64=db.query_row("SELECT id FROM events WHERE task_id=?1 AND kind='reasoning_boundary' AND json_extract(payload,'$.cycles_before')=1",[task],|r|r.get(0)).unwrap();
+        db.execute(
+            "DELETE FROM events WHERE task_id=?1 AND id>?2",
+            rusqlite::params![task, id],
+        )
+        .unwrap();
+        db.execute("DELETE FROM events WHERE task_id=?1 AND kind='reasoning_context' AND id!=(SELECT min(id) FROM events WHERE task_id=?1 AND kind='reasoning_context')",[task]).unwrap();
+        drop(db);
+    }
+    #[tokio::test]
+    async fn resumes_a_revision_boundary_and_retains_repeat_stopping_state() {
+        for repeat in [false, true] {
+            let (store, task) = fixture().await;
+            save_revision_boundary(&store, &task).await;
+            let saved = prepare(&store.lock().unwrap(), &task).unwrap();
+            let original_boundary = saved.boundary.clone().unwrap();
+            for (field, value) in [
+                ("phase", json!("unknown")),
+                ("calls_before", json!(0)),
+                ("previous_answer", json!("changed")),
+                ("last_answer_hash", json!("changed")),
+                ("tool_calls_before", json!(0)),
+            ] {
+                let mut changed = original_boundary.clone();
+                changed[field] = value;
+                store.lock().unwrap().execute("UPDATE events SET payload=?2 WHERE task_id=?1 AND kind='reasoning_boundary' AND id=(SELECT max(id) FROM events WHERE task_id=?1 AND kind='reasoning_boundary')",rusqlite::params![task,changed.to_string()]).unwrap();
+                assert!(
+                    prepare(&store.lock().unwrap(), &task).is_err(),
+                    "Accepted altered {field}"
+                );
+            }
+            store.lock().unwrap().execute("UPDATE events SET payload=?2 WHERE task_id=?1 AND kind='reasoning_boundary' AND id=(SELECT max(id) FROM events WHERE task_id=?1 AND kind='reasoning_boundary')",rusqlite::params![task,original_boundary.to_string()]).unwrap();
+            store
+                .event(
+                    &task,
+                    "cycle_reservation",
+                    "jev-r",
+                    json!({"format_version":1,"cycle":2}),
+                )
+                .unwrap();
+            assert!(
+                prepare(&store.lock().unwrap(), &task).is_err(),
+                "Consumed boundary was accepted"
+            );
+            store
+                .lock()
+                .unwrap()
+                .execute(
+                    "DELETE FROM events WHERE id=(SELECT max(id) FROM events WHERE task_id=?1)",
+                    [&task],
+                )
+                .unwrap();
+            assert_eq!(saved.state.resources.cycles, 1);
+            assert_eq!(saved.state.resources.calls, 4);
+            let backend = Arc::new(Script(Mutex::new(
+                vec![("solver", if repeat { "[3,2,1]" } else { "[1,2,3]" })].into(),
+            )));
+            let mut resumed = Session::restored(
+                saved.cfg,
+                store.clone(),
+                backend.clone(),
+                task.clone(),
+                &saved.mode,
+                saved.state,
+            )
+            .unwrap();
+            let answer = resumed
+                .continue_solver(
+                    saved.boundary.as_ref().unwrap(),
+                    &saved.query,
+                    &saved.context,
+                    &saved.mode,
+                )
+                .await
+                .unwrap();
+            assert_eq!(resumed.resources.calls, 5);
+            assert_eq!(resumed.resources.cycles, 2);
+            assert_eq!(resumed.resources.reserved_output_tokens, 1408);
+            assert!(backend.0.lock().unwrap().is_empty());
+            assert_eq!(resumed.verified, !repeat);
+            assert_eq!(answer, if repeat { "[3,2,1]" } else { "[1,2,3]" });
+            if repeat {
+                assert_eq!(resumed.stop_reason, "no_progress");
+            }
         }
     }
 }

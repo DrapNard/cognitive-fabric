@@ -373,3 +373,32 @@ CLI tests exercise actual resumed worker success and cancellation during HTTP,
 assert child reaping and preserve unresolved cumulative charges. General later-phase
 and repeated recovery, custom executable backends and stale-directory cleanup
 remain unfinished.
+
+
+## Solver-cycle boundaries
+
+The runtime now persists a bounded `reasoning_boundary` before each new solver
+cycle and before charging that cycle. It records hashes of the original objective,
+context and prompt base, the exact truncated strategy used by the next prompt,
+the previous full answer, repeat-detection hash and cumulative call/cycle/tool/input/
+output reservations. Checkpoint persistence failure prevents the next reservation
+and model dispatch. These are runtime state and untrusted answer/advice bytes,
+never restored permissions or independent proof. Each record is at most 256 KiB;
+there are at most the configured cycle limit (maximum 16) per execution session.
+This adds bounded database writes/hashing, without extra inference calls.
+
+`resume-task` also accepts an unconsumed `ready_solver` boundary after a completed
+advisory graph. All graph results must be recorded and still correlated to the
+original planner and advisory calls. Its resource anchors and context hashes must
+match the current original ledger, its prior answer/hash must match the latest
+solver result, and no subsequent cycle/tool/model reservation may exist. Restored
+cycle counts and repeat detection prevent a new recursion allowance or an extra
+revision after a repeated rejected answer. Normal verification charges apply.
+
+This extends the earlier pre-solver-only limitation. It does not resume an arbitrary
+instruction inside a cycle, replay a consumed boundary, repair unresolved calls,
+handle tasks lacking a recorded graph, or support general repeated continuation.
+A process interruption after a new reservation still requires outcome inspection.
+Historical tasks without boundaries retain their earlier supported recovery paths.
+Tests cover boundary-write failure, exact revision state, altered fields, consumed
+boundaries, repeat stopping and resumed verification through fixture HTTP.
