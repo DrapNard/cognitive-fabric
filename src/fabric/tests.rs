@@ -47,6 +47,56 @@ fn request(header: Header) -> Packet {
     }
 }
 
+struct TaskEcho;
+impl InferenceBackend for TaskEcho {
+    fn generate<'a>(
+        &'a self,
+        _role: &'a str,
+        _prompt: &'a str,
+        _tokens: usize,
+    ) -> Pin<Box<dyn Future<Output = Result<Generation>> + Send + 'a>> {
+        Box::pin(async { bail!("Task identity was lost") })
+    }
+    fn generate_for<'a>(
+        &'a self,
+        task: &'a str,
+        _role: &'a str,
+        _prompt: &'a str,
+        _tokens: usize,
+    ) -> Pin<Box<dyn Future<Output = Result<Generation>> + Send + 'a>> {
+        Box::pin(async move {
+            Ok(Generation {
+                text: task.into(),
+                model: "task-identity-fixture".into(),
+                input_tokens: None,
+                output_tokens: None,
+                elapsed_ms: 0.0,
+                queue_wait_ms: None,
+            })
+        })
+    }
+}
+
+#[tokio::test]
+async fn direct_and_pinned_dispatch_preserve_task_identity_and_reject_invalid_ids() {
+    let broker = Broker::with_inference(Arc::new(TaskEcho));
+    let pinned = broker.pin().unwrap().unwrap();
+    let first = uuid::Uuid::new_v4().to_string();
+    let second = uuid::Uuid::new_v4().to_string();
+    for backend in [&broker as &dyn InferenceBackend, pinned.as_ref()] {
+        let (a, b) = tokio::join!(
+            backend.generate_for(&first, "solver", "first goal", 128),
+            backend.generate_for(&second, "solver", "second goal", 128)
+        );
+        assert_eq!(a.unwrap().text, first);
+        assert_eq!(b.unwrap().text, second);
+        assert!(backend
+            .generate_for("forged-task", "solver", "goal", 128)
+            .await
+            .is_err());
+    }
+}
+
 #[test]
 fn queue_metrics_preserve_absence_and_reject_invalid_values() {
     for wait in [

@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Task identity propagation correction
+
+- Preserve caller task UUIDs in direct broker inference dispatch, matching the
+  pinned engine path; reject malformed IDs before invoking the backend.
+- Test concurrent distinct tasks through both entry points.
+
 ## [1.0.0] - 2026-10-09
 
 ### Added

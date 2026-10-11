@@ -230,6 +230,19 @@ struct Pinned {
     routes: BTreeMap<String, Arc<Module>>,
 }
 impl InferenceBackend for Broker {
+    fn generate_for<'a>(
+        &'a self,
+        task: &'a str,
+        role: &'a str,
+        prompt: &'a str,
+        max_tokens: usize,
+    ) -> Pin<Box<dyn Future<Output = Result<Generation>> + Send + 'a>> {
+        Box::pin(async move {
+            self.snapshot()?
+                .generate_for(task, role, prompt, max_tokens)
+                .await
+        })
+    }
     fn modules(&self) -> Result<Vec<ModuleDescriptor>> {
         self.discover()
     }

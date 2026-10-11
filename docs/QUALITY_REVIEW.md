@@ -595,3 +595,12 @@ Clippy checks and CLI build pass with FlatBuffers 25.12.19. Actual isolated CLI
 smoke restored a 188,416-byte backup, independently matched its SHA-256 before
 reopen, and retained completed result 56 plus all 11 audit events. The configured
 control home was not created. No live inference or task replay occurred.
+
+## Direct broker task identity
+
+The broker inherited the backend's default generate_for method, which discarded
+the supplied task ID before generating a new one. Engine-pinned dispatch was
+unaffected. Explicit forwarding now preserves the caller UUID through both paths.
+A task-aware fixture observes concurrent distinct UUIDs and rejects malformed
+IDs on each path. All 115 Rust tests, workspace check, formatting and Clippy pass
+with FlatBuffers 25.12.19. No new capability or process authentication is granted.
