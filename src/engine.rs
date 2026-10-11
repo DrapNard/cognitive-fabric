@@ -649,6 +649,62 @@ mod expert_tests;
 mod tests {
     use super::*;
     #[tokio::test]
+    async fn reasoning_retains_original_reference_context_after_document_changes() {
+        let store = Arc::new(Store::in_memory().unwrap());
+        store::bootstrap(&store).unwrap();
+        let doc = store::Document {
+            id: uuid::Uuid::new_v4().to_string(),
+            skill_id: "rust.s1".into(),
+            title: "Ownership fixture".into(),
+            body: "Rust ownership original reference context".into(),
+            source: "operator-local".into(),
+            license: "CC0".into(),
+        };
+        store.add_document(&doc).unwrap();
+        let engine = Engine::new(
+            Config {
+                interpret_goals: false,
+                ..Config::default()
+            },
+            store.clone(),
+        );
+        let outcome = engine.run("Explain Rust ownership", "fast").await.unwrap();
+        store
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE documents SET body='changed after execution' WHERE id=?1",
+                [&doc.id],
+            )
+            .unwrap();
+        let trace = store.task(&outcome.task_id).unwrap();
+        let events = trace["events"].as_array().unwrap();
+        let snapshot = events
+            .iter()
+            .find(|e| e["kind"] == "reasoning_context")
+            .unwrap();
+        let payload = &snapshot["payload"];
+        let context = payload["context"].as_str().unwrap();
+        assert!(context.contains(&doc.body));
+        assert!(!context.contains("changed after execution"));
+        assert_eq!(payload["context_hash"], store::sha256(context.as_bytes()));
+        assert_eq!(
+            payload["objective_hash"],
+            store::sha256(b"Explain Rust ownership")
+        );
+        assert_eq!(payload["permissions_restorable"], false);
+        assert!(
+            snapshot["sequence"].as_u64().unwrap()
+                < events
+                    .iter()
+                    .find(|e| e["kind"] == "model_dispatch")
+                    .unwrap()["sequence"]
+                    .as_u64()
+                    .unwrap()
+        );
+    }
+
+    #[tokio::test]
     async fn published_structured_answers_require_fresh_budgeted_verification() {
         let query = r#"sort:{"values":[3,1,3]}"#;
         for variant in 0..7 {

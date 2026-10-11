@@ -373,3 +373,11 @@ audit. No memory kind or historical status grants verification. Tests cover
 zero-inference success, wrong answers, revocation, changed goals, exhausted tool
 budget and actual CLI reuse. General fact verification and broad live memory
 benefit remain **Partial**; this claims no learned weights or benchmark advantage.
+
+Immutable assembled reasoning inputs: **Implemented** in `src/reasoning.rs`.
+Versioned context snapshots preserve actual objective/reference/advice bytes and
+hashes before planning/solving; raw and serialized bounds and audit-write failures
+prevent later dispatch. Tests mutate a retrieved document after execution and
+verify retained original context/hash/order, inject snapshot failure and reject
+oversized/escaped inputs. This preserves recovery evidence; validated replay,
+remaining-time admission and actual continuation remain **Partial**.

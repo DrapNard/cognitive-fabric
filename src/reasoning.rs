@@ -585,6 +585,9 @@ impl Session {
             self.stop_reason = "budget_exhausted".into();
             return Ok("No reasoning cycle available".into());
         }
+        if query.trim().is_empty() || query.len() > 12000 || context.len() > 96000 {
+            bail!("Reasoning objective or context exceeds bounds")
+        }
         let criterion = if self.verification_enabled {
             crate::verification::Criterion::from_query(query)?
         } else {
@@ -596,6 +599,19 @@ impl Session {
         } else {
             base
         };
+        self.store.event(
+            &self.task,
+            "reasoning_context",
+            "jev-r",
+            json!({
+                "format_version":1,"objective":query,"context":context,
+                "objective_hash":crate::store::sha256(query.as_bytes()),
+                "context_hash":crate::store::sha256(context.as_bytes()),
+                "prompt_base_hash":crate::store::sha256(base.as_bytes()),
+                "calls_before":self.resources.calls,"cycles_before":self.resources.cycles,
+                "untrusted_data":true,"permissions_restorable":false
+            }),
+        )?;
         let mut strategy = String::new();
         if collective && mode != "fast" && self.call_limit >= 2 && self.cfg.max_tokens >= 640 {
             if let Some(plan) = self.call("planner", &base, 256).await? {
@@ -1040,6 +1056,63 @@ mod tests {
         assert!(events.iter().any(|event| event["kind"] == "policy"
             && event["payload"]["allowed"] == false
             && event["payload"]["task_id"] == task));
+    }
+
+    #[tokio::test]
+    async fn oversized_reasoning_inputs_fail_before_dispatch_or_snapshot_write() {
+        for (query, context) in [
+            ("fixture".into(), "x".repeat(96001)),
+            ("x".repeat(12001), String::new()),
+            (" ".into(), String::new()),
+            ("fixture".into(), "\0".repeat(50000)),
+        ] {
+            let store = Arc::new(Store::in_memory().unwrap());
+            let task = store.create_task("fixture", "deep").unwrap();
+            let mut session = Session::new(
+                Config::default(),
+                store.clone(),
+                Arc::new(Script(Mutex::new(VecDeque::new()))),
+                task.clone(),
+                "deep",
+            )
+            .unwrap();
+            assert!(session.solve(&query, &context, "deep").await.is_err());
+            assert_eq!(session.resources.calls, 0);
+            assert!(!store.task(&task).unwrap()["events"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|e| e["kind"] == "reasoning_context"));
+        }
+    }
+
+    #[tokio::test]
+    async fn reasoning_context_failure_prevents_planning_and_solver_dispatch() {
+        let store = Arc::new(Store::in_memory().unwrap());
+        let task = store.create_task("fixture", "deep").unwrap();
+        let mut session = Session::new(
+            Config::default(),
+            store.clone(),
+            Arc::new(Script(Mutex::new(VecDeque::new()))),
+            task.clone(),
+            "deep",
+        )
+        .unwrap();
+        store.lock().unwrap().execute_batch("CREATE TRIGGER reject_context BEFORE INSERT ON events WHEN NEW.kind='reasoning_context' BEGIN SELECT RAISE(ABORT,'fixture context failure'); END;").unwrap();
+        assert!(session
+            .solve("fixture", "untrusted reference", "deep")
+            .await
+            .is_err());
+        assert_eq!(session.resources.calls, 0);
+        assert_eq!(session.resources.cycles, 0);
+        assert!(!store.task(&task).unwrap()["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| matches!(
+                e["kind"].as_str(),
+                Some("model_dispatch" | "cycle_reservation")
+            )));
     }
 
     #[tokio::test]

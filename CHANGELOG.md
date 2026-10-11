@@ -461,3 +461,10 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
 - Record current verification evidence and memory provenance, completing valid
   matches without inference while retaining incorrect answers as untrusted data.
 - Preserve revocation, profile isolation and verification tool-budget denials.
+
+### Durable assembled reasoning inputs
+
+- Preserve exact objective/reference/advice context and hashes before planning or
+  solving, independent of later source-document changes.
+- Bound raw/serialized snapshots and prevent subsequent inference when persistence
+  fails; keep saved external data separate from permissions.

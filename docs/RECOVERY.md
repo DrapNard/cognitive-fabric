@@ -214,3 +214,24 @@ or blocking custom backends, and shutdown/final audit writes may outlast the
 execution deadline. Monotonic Instant values cannot be restored across processes;
 remaining recovery wall time stays unknown. No clock-based resume authorization
 or hard real-time guarantee is implied.
+
+## Immutable reasoning input snapshots
+
+Before planning/solving, Session writes reasoning_context version 1 with the exact
+original objective and assembled reference/advice context, their SHA-256 hashes,
+the initial prompt-base hash and prior call/cycle charges. Source data remains
+explicitly untrusted and grants no restorable permissions. The snapshot retains
+inputs even if documents or registries later change. Interface/expert inference
+may already have occurred while assembling context; this is not their prompt log.
+
+Embedded inputs are bounded to a nonempty 12,000-byte objective and 96,000-byte
+context before snapshot serialization, with the existing 256 KiB serialized audit
+ceiling. JSON escaping can reach that ceiling even below raw input limits; failure
+prevents subsequent planner/solver dispatch. Actual inference prompt limits still
+apply independently. The snapshot contains the reference content sent to reasoning,
+so it is private task history subject to the normal storage/retention policy.
+
+Inspect it with task/task-events. Hashes establish local consistency, not owner
+resistance or external provenance. Older tasks cannot reconstruct missing context
+from mutable references. This supplies durable inputs for future continuation but
+does not restore graphs, authorize replay or establish remaining wall time.

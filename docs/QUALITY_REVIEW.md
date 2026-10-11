@@ -1145,3 +1145,14 @@ Full/Memory support and Alone profile isolation. The CLI integration publishes a
 episode and confirms fresh verified completion with zero model calls. Evidence is
 current deterministic checking, not the memory's historical status. No general
 fact trust, live reasoning quality or benchmark advantage is inferred.
+
+## Durable assembled reasoning context
+
+FlatBuffers 25.12.19 formatting, all-target check, 206 all-target tests (196
+library and 10 integration), and Clippy with denied warnings pass. Tests verify
+original retrieved context/hash persistence after document changes, snapshot
+ordering before solver dispatch, no inference after injected snapshot-write
+failure, and rejection of oversized objectives/contexts or JSON-escaped payloads
+exceeding the audit ceiling. Snapshots remain private untrusted task data; they
+do not attest source authenticity or authorize replay, and no automatic checkpoint
+continuation or cross-process wall allowance is established.
