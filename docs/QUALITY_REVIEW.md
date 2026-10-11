@@ -1336,3 +1336,14 @@ registered model HTTP selection and six invalid registry/snapshot cases. These
 fixtures do not establish loaded-weight attestation or live-model quality. Exact
 FlatBuffers compiler/crate pairing remains 25.12.19. Managed/custom backend and
 later-phase recovery remain open.
+
+
+## Managed advisory continuation (2026-10-11)
+
+Formatting, offline all-target checking, all-target Clippy with warnings denied and
+all-target tests passed using exact FlatBuffers compiler/crate 25.12.19. There are
+237 passing tests (220 library, 17 integration). The new lease test verifies worker
+shared access and recovery refusal. Actual CLI integration tests run a fresh child
+worker through authenticated typed IPC and fixture HTTP, verifying successful
+continuation and cancellation with child reaping and unresolved call reservations.
+No external GPU shutdown, real-model quality or general-phase recovery is claimed.

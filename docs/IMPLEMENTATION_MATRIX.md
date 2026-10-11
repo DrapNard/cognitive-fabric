@@ -492,3 +492,14 @@ endpoint/model/limits and never selects a newer version. Tests exercise real HTT
 model selection and six missing/disabled/altered registration cases. This extends
 the preceding bounded recovery entry; managed/custom backends and later phases
 remain **Partial / Not implemented**. Provider weight identity remains unattested.
+
+
+Managed-worker advisory continuation: **Implemented** in `src/recovery.rs`,
+`src/recovery/continuation.rs` and `tests/resume_worker.rs`. Transaction-protected
+lease conversion permits a fresh same-binary worker with only remaining resource
+grants while preserving exact host deadline enforcement. Actual CLI success and
+in-flight HTTP cancellation tests assert reaping and cumulative unresolved charges;
+a lease test verifies shared worker access and exclusive recovery refusal.
+Canonical private workspace storage is required. This supersedes the managed-mode
+limitation above; custom modules, later phases, repeated recovery and external GPU
+termination remain **Partial / Not implemented / Not verified**.

@@ -260,3 +260,11 @@ Registered direct models are now supported by advisory continuation when the
 original enabled registry version matches its saved manifest and configuration.
 Changed/missing/disabled versions are refused without substituting a newer model.
 HTTP fixtures verify the requested model identity; loaded weights remain unattested.
+
+
+Managed same-binary inference workers now support advisory continuation. Admission
+converts exclusive ownership to shared execution inside its write transaction,
+then provisions only remaining worker budgets and reaps the fresh child on success
+or cancellation. Actual CLI/process/HTTP tests cover both paths. Host enforcement
+retains the precise original deadline; worker shutdown has a bounded cleanup grace.
+Custom backend versions and later-phase recovery remain incomplete.

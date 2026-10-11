@@ -17,6 +17,15 @@ use std::{
 
 pub(crate) struct ExecutionLease(#[allow(dead_code)] File);
 impl ExecutionLease {
+    /// Convert only while holding the admission SQLite write transaction: flock
+    /// conversion may briefly release ownership. Failure must roll back admission.
+    pub(crate) fn into_shared(self) -> Result<Self> {
+        if unsafe { libc::flock(self.0.as_raw_fd(), libc::LOCK_SH | libc::LOCK_NB) } != 0 {
+            return Err(std::io::Error::last_os_error().into());
+        }
+        Ok(self)
+    }
+
     pub(crate) fn acquire(path: &Path, exclusive: bool) -> Result<Self> {
         let file = OpenOptions::new()
             .read(true)
@@ -193,6 +202,21 @@ pub struct RecoveredWorker {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn admission_lease_conversion_allows_workers_but_blocks_recovery() {
+        let path =
+            std::env::temp_dir().join(format!("fabric-lease-conversion-{}", uuid::Uuid::new_v4()));
+        let exclusive = super::ExecutionLease::acquire(&path, true).unwrap();
+        assert!(super::ExecutionLease::acquire(&path, false).is_err());
+        let shared = exclusive.into_shared().unwrap();
+        let worker = super::ExecutionLease::acquire(&path, false).unwrap();
+        assert!(super::ExecutionLease::acquire(&path, true).is_err());
+        drop(worker);
+        drop(shared);
+        assert!(super::ExecutionLease::acquire(&path, true).is_ok());
+        std::fs::remove_file(path).unwrap();
+    }
+
     use super::*;
     fn worker_start(store: &Store, task: &str, session: &str) {
         store.worker_audit(task, serde_json::json!({"format_version":1,"session_id":session,"module_id":"inference.local","module_version":"1.0.0","state":"session_started"})).unwrap();

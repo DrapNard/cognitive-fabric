@@ -104,9 +104,6 @@ fn prepare(db: &rusqlite::Connection, task: &str) -> Result<Checkpoint> {
         .ok_or_else(|| anyhow::anyhow!("Missing original settings"))?;
     let cfg: Config = serde_json::from_value(settings["configuration"].clone())?;
     cfg.validate()?;
-    if cfg.inference_process {
-        bail!("Managed backend continuation is not supported yet")
-    }
     if let Some(selection) = &cfg.model_registration {
         let registered = crate::models::registered_from(db, selection)?
             .ok_or_else(|| anyhow::anyhow!("Original registered model is missing"))?;
@@ -277,8 +274,10 @@ pub async fn resume(
         .runtime_lock
         .as_deref()
         .ok_or_else(|| anyhow::anyhow!("Continuation requires a persistent store"))?;
-    let _lease = ExecutionLease::acquire(path, true)
-        .map_err(|_| anyhow::anyhow!("Cannot continue while runtime leases are held"))?;
+    let mut lease = Some(
+        ExecutionLease::acquire(path, true)
+            .map_err(|_| anyhow::anyhow!("Cannot continue while runtime leases are held"))?,
+    );
     let checkpoint = {
         let mut db = store.lock()?;
         let started = Instant::now();
@@ -288,7 +287,31 @@ pub async fn resume(
         );
         let prepared = (|| -> Result<Checkpoint> {
             let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-            let checkpoint = prepare(&tx, task)?;
+            let mut checkpoint = prepare(&tx, task)?;
+            if checkpoint.cfg.inference_process {
+                checkpoint.cfg.home = path
+                    .parent()
+                    .ok_or_else(|| anyhow::anyhow!("Missing worker workspace"))?
+                    .into();
+                use std::os::unix::fs::PermissionsExt;
+                let metadata = std::fs::symlink_metadata(&checkpoint.cfg.home)?;
+                if !metadata.is_dir() || metadata.permissions().mode() & 0o777 != 0o700 {
+                    bail!("Managed continuation requires a private existing workspace")
+                }
+                let mut expected = checkpoint.cfg.db().into_os_string();
+                expected.push(".runtime.lock");
+                if path.as_os_str() != expected {
+                    bail!("Managed continuation requires the canonical workspace database")
+                }
+                // No inference has begun. A competing exclusive owner during conversion
+                // cannot commit recovery while this write transaction remains open.
+                lease = Some(
+                    lease
+                        .take()
+                        .expect("Admission owns its lease")
+                        .into_shared()?,
+                );
+            }
             tx.execute(
                 "UPDATE tasks SET status='running',updated=unixepoch() WHERE id=?1",
                 [task],
@@ -305,9 +328,43 @@ pub async fn resume(
     };
     let prior_calls = checkpoint.state.resources.calls;
     let deadline = checkpoint.state.deadline;
-    let backend: Arc<dyn InferenceBackend> = Arc::new(crate::fabric::Broker::with_inference(
-        Arc::new(LocalBackend(checkpoint.cfg.clone())),
-    ));
+    let process = if checkpoint.cfg.inference_process {
+        let mut cfg = checkpoint.cfg.clone();
+        cfg.max_calls = cfg
+            .max_calls
+            .min(match checkpoint.mode.as_str() {
+                "fast" => 1,
+                "standard" => 4,
+                "deep" => 10,
+                "research" => 18,
+                _ => 0,
+            })
+            .saturating_sub(checkpoint.state.resources.calls as usize);
+        cfg.max_tokens = cfg
+            .max_tokens
+            .saturating_sub(checkpoint.state.resources.reserved_output_tokens);
+        cfg.max_input_bytes = cfg
+            .max_input_bytes
+            .saturating_sub(checkpoint.state.resources.prompt_bytes);
+        cfg.max_wall_seconds = deadline
+            .saturating_duration_since(Instant::now())
+            .as_secs()
+            .saturating_add(1)
+            .min(cfg.max_wall_seconds);
+        Some(Arc::new(crate::fabric::unix::process::ProcessTask::new(
+            cfg,
+            store.clone(),
+            task,
+        )?))
+    } else {
+        None
+    };
+    let inference: Arc<dyn InferenceBackend> = match &process {
+        Some(process) => process.clone(),
+        None => Arc::new(LocalBackend(checkpoint.cfg.clone())),
+    };
+    let backend: Arc<dyn InferenceBackend> =
+        Arc::new(crate::fabric::Broker::with_inference(inference));
     let mut session = Session::restored(
         checkpoint.cfg,
         store.clone(),
@@ -322,12 +379,17 @@ pub async fn resume(
         &checkpoint.context,
         &checkpoint.mode,
     );
-    let outcome = tokio::select! {
+    let mut outcome = tokio::select! {
         biased;
         _ = cancel => Err(anyhow::anyhow!("Continuation cancelled")),
         _ = tokio::time::sleep_until(tokio::time::Instant::from_std(deadline)) => Err(anyhow::anyhow!("Original continuation deadline exhausted")),
         result = execution => result,
     };
+    if let Some(process) = &process {
+        if let Err(error) = process.shutdown().await {
+            outcome = Err(error);
+        }
+    }
     session.finish_metrics();
     let (answer, status) = match outcome {
         Ok(answer) if session.verified => (answer, "completed"),
@@ -763,7 +825,7 @@ mod tests {
         for mutation in [
             "json_set(payload,'$.execution_clock',NULL)",
             "json_set(payload,'$.execution_clock.started_ns',0,'$.execution_clock.deadline_ns',json_extract(payload,'$.configuration.max_wall_seconds')*1000000000)",
-            "json_set(payload,'$.configuration.inference_process',json('true'))",
+
         ] {
             let (store,task)=fixture().await;
             store.lock().unwrap().execute(&format!("UPDATE events SET payload={mutation} WHERE task_id=?1 AND kind='execution_settings'"),[&task]).unwrap();

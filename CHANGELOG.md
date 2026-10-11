@@ -2,6 +2,14 @@
 
 All notable changes are documented here in English.
 
+### Managed worker task recovery
+
+- Continue validated advisory graphs through a fresh authenticated inference worker
+  with remaining resource grants and the original host deadline.
+- Convert admission ownership to shared execution under the database transaction;
+  reap resumed children on completion or cancellation without replaying unknown calls.
+- Verify actual CLI/process/HTTP behavior and exclusive recovery refusal.
+
 ### Registered model recovery
 
 - Continue interrupted advisory graphs with their original enabled registered

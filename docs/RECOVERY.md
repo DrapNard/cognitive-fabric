@@ -315,8 +315,13 @@ remains false; no inference or graph nodes are replayed by inspection.
 ## Explicit advisory graph continuation
 
 `cogfabric --home STATE resume-task TASK_UUID --human-approve` can continue a
-recorded advisory graph before the original whole-goal solver starts. It holds an
-exclusive runtime lease throughout execution. Admission uses one immediate
+recorded advisory graph before the original whole-goal solver starts. Direct
+execution holds an exclusive runtime lease throughout. Managed-worker admission
+converts to a shared execution lease inside the SQLite write transaction, before
+commit or inference. A competing exclusive owner cannot commit recovery during
+that transaction; failed lease conversion rolls admission back. Shared ownership
+then prevents reconciliation while allowing the new worker to hold its own lease.
+Admission uses one immediate
 transaction with a five-second SQLite progress deadline. The saved context hashes,
 chronological call anchor, planner output, graph definitions, completed-node
 results and original inference/resource ledger must agree. Unresolved calls and
@@ -327,7 +332,7 @@ currently supported. Registered direct models additionally require an enabled
 original version whose validated manifest/checksum exactly matches the task
 snapshot and whose endpoint, model and output limits match the saved settings.
 Changes or missing versions fail admission; no newer version is selected.
-Managed workers, custom module versions,
+Custom module versions,
 conversation references, explanation synthesis and graphs already in whole-goal
 reasoning are refused. A same-boot original deadline with positive remaining time
 is required. Rebooted, expired and legacy clocks never receive a new allowance.
@@ -353,3 +358,18 @@ steps, cumulative charges, leases/operator approval, corrupted graph/context,
 unresolved calls, expired/unknown clocks, unsupported backends, cancellation and
 terminal audit rollback. The HTTP server is a deterministic fixture, not a real
 model-quality evaluation. General graph recovery remains partial.
+
+
+Managed continuation launches a fresh authenticated same-binary worker, not a saved
+PID. It requires the canonical `fabric.sqlite3` database in a private workspace.
+The new worker grant receives remaining calls, output reservations and prompt bytes;
+its whole-second session bound rounds remaining time upward while the host enforces
+the original precise deadline. Existing explicit process shutdown closes transport,
+waits and reaps the child on success, cancellation or inference failure. Cleanup
+may take its bounded grace period after the inference deadline. This neither
+replays unresolved work nor proves an external GPU server stopped. Old interrupted
+worker audit sessions remain available for explicit `recover-workers` inspection.
+CLI tests exercise actual resumed worker success and cancellation during HTTP,
+assert child reaping and preserve unresolved cumulative charges. General later-phase
+and repeated recovery, custom executable backends and stale-directory cleanup
+remain unfinished.
