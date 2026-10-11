@@ -47,6 +47,7 @@ pub struct Engine {
     pub cfg: Config,
     pub store: Arc<Store>,
     pub broker: Arc<crate::fabric::Broker>,
+    pub tools: Arc<crate::fabric::tools::Broker>,
     backend: Arc<dyn InferenceBackend>,
     corpus: Option<Arc<crate::corpus::FrozenCorpus>>,
     process_inference: bool,
@@ -70,6 +71,7 @@ impl Engine {
             store,
             backend: broker.clone(),
             broker,
+            tools: Arc::new(crate::fabric::tools::Broker::default()),
             corpus: None,
             process_inference: false,
         }
@@ -190,6 +192,7 @@ impl Engine {
         let start = execution_start.instant;
         let deadline = execution_start.deadline;
         let model_registration = self.store.pin_model(&self.cfg)?;
+        let arithmetic = self.tools.pin()?;
         let backend = self.backend.pin()?.unwrap_or_else(|| self.backend.clone());
         if self.process_inference {
             let modules = backend.modules()?;
@@ -250,6 +253,7 @@ impl Engine {
         )?;
         self.store
             .event(&id, "module_snapshot", "fabric", json!({"modules":modules}))?;
+        self.store.event(&id,"tool_modules","fabric",json!({"arithmetic":arithmetic.as_ref().map(|h|h.descriptor()),"permissions_granted":false}))?;
         if let Some(corpus) = &self.corpus {
             self.store
                 .event(&id, "evaluation_corpus", "runtime", json!(corpus.metadata))?;
@@ -407,8 +411,16 @@ impl Engine {
                 math::extract(query).filter(|_| profile != ExecutionProfile::Alone)
             {
                 session.authorize_tool("math.evaluate")?;
+                let module = arithmetic
+                    .as_ref()
+                    .ok_or_else(|| anyhow::anyhow!("No active arithmetic capability module"))?;
+                let routed = module.evaluate(&id, "jev-plus", expression).await;
+                self.store.event(&id,"tool_dispatch","fabric",json!({"module_id":module.descriptor().id,"module_version":module.descriptor().version,"capability":"math.evaluate","response_available":routed.is_ok(),"verified":false}))?;
                 return match math::calculate(expression) {
                     Ok(answer) => {
+                        if routed? != answer {
+                            bail!("Arithmetic module output failed independent verification")
+                        }
                         evidence.push("verified:arithmetic_parser".into());
                         session.stop_reason = "verified".into();
                         self.store.event(

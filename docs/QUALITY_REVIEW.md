@@ -1412,3 +1412,14 @@ The existing separate-process event fixture and complete inference/recovery suit
 also pass. Schema changes append fields while v1 emission remains unchanged;
 replay explicitly selects v2. Automatic provisioning and general module command
 transport remain incomplete; no exactly-once or live-model claim is made.
+
+
+### Typed arithmetic routing — 2026-10-11
+
+Using FlatBuffers compiler/crate 25.12.19, formatting, offline all-target check,
+all-target tests (268 passed: 251 library and 17 integration) and Clippy with
+warnings denied passed. Full tests included local sockets and child processes.
+Five new tests cover immutable pins/replacement, task actor/input denials,
+malformed packets, independent rejection of wrong backend output, zero tool
+allowance and active/buffered shutdown. No live model was invoked. General process
+tool transport and model effectiveness remain unverified/incomplete.

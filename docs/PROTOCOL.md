@@ -258,3 +258,23 @@ midstream version changes and verify event/cursor equality and monotonic cursors
 The appended FlatBuffers field defaults to zero for legacy frames. Old strict v1
 readers reject v2 rather than silently interpreting replay control. Existing COGE
 and COGF schemas remain unchanged. Bounds and reconnect semantics are in EVENTS.md.
+
+
+### Typed arithmetic module dispatch
+
+`src/fabric/tools.rs` and `protocol/tool.fbs` implement replaceable host-registered
+arithmetic modules over verified COGT FlatBuffers request/response frames. Tasks
+pin immutable module versions before execution. Registration/discovery, conflict
+rejection and unregistration preserve existing pins; shutdown revokes retired pins
+and cancels active/queued futures. Four queued requests, 8 KiB frames, 120-byte
+expressions, 256-byte answers and a 30-second dispatch ceiling bound this adapter;
+the Engine's original task deadline and charged tool allowance still apply.
+
+Only `math.evaluate` from task-scoped `jev-plus` is supported. Registration is a
+trusted Rust host API, not an IPC permission grant. The Engine independently
+recomputes arithmetic before marking evidence verified; module output alone is
+never proof. This adds no inference calls. Backend errors become generic failures.
+Service shutdown also stops this broker. These are in-process typed queues, not
+an authenticated process tool transport, executable sandbox or general command
+registry. SQL and other capabilities remain outside this adapter. General module
+command routing/provisioning and executable lifecycle remain **Partial**.

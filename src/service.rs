@@ -115,7 +115,8 @@ where
         }
     }
     let broker_result = engine.broker.shutdown();
-    result.and(broker_result)
+    let tool_result = engine.tools.shutdown();
+    result.and(broker_result).and(tool_result)
 }
 
 async fn stopped(receiver: &mut watch::Receiver<bool>) {

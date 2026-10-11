@@ -14,6 +14,7 @@ use std::{
 };
 use tokio::sync::{mpsc, oneshot, watch, OnceCell};
 pub(crate) mod protocol;
+pub mod tools;
 pub mod unix;
 use protocol::{actor, decode, encode, now_ms, Header, Packet, Payload, ROLES};
 #[cfg(test)]

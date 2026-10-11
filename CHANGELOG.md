@@ -2,6 +2,13 @@
 
 All notable changes are documented here in English.
 
+### Typed arithmetic module dispatch
+
+- Route arithmetic through bounded version-pinned FlatBuffers module queues.
+- Retain task permission/budget enforcement and independently reject wrong answers.
+- Cancel active and retired module versions during service shutdown.
+- Keep general process command routing explicitly incomplete.
+
 ### Durable module event replay
 
 - Add explicit COGS v2 catch-up with filtered cursor advancement and deduplicated

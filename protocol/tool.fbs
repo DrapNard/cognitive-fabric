@@ -1,0 +1,17 @@
+// Bounded deterministic capability RPC. Registry metadata never grants permission.
+namespace Tool;
+table Packet {
+ version:ushort = 1;
+ correlation_id:string (required);
+ task_id:string (required);
+ actor:string (required);
+ module_id:string (required);
+ module_version:string (required);
+ capability:string (required);
+ expires_at_ms:ulong;
+ expression:string;
+ answer:string;
+ failed:bool;
+}
+root_type Packet;
+file_identifier "COGT";
