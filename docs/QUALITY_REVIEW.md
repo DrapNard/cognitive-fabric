@@ -1079,3 +1079,14 @@ transitions, oversized results, repeated plans and changed node definitions.
 The CLI integration checks inspection of a task with no graph. No automatic
 continuation, independent verification of advisory answers, or restored model
 authority is claimed. Inspection is bounded and excludes objective/result bodies.
+
+## Original inference admission reconstruction
+
+FlatBuffers 25.12.19 formatting, all-target check, 194 all-target tests (184
+library and 10 integration), and Clippy with denied warnings pass. New tests
+verify that unmatched calls retain reserved charges and reject mode mismatch,
+late/duplicate snapshots, uncorrelated legacy results, and original call/output/
+prompt budget overdraws. Actual runtime and CLI reports include remaining call
+admission. Missing snapshots retain null admission; other resource allowances
+remain unavailable rather than inferred. No replay, permission restoration or
+checkpoint execution is established.

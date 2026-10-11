@@ -106,7 +106,7 @@ result-recorded state without prompts or answer bodies. Result hashes and role/c
 identity are checked. Duplicate/unmatched results, invalid metrics, noncontiguous
 reservations and oversized history fail closed.
 
-At most 64 reservations and 128 selected audit records are admitted, with the
+At most 64 reservations, 128 inference records and one settings record are admitted, with the
 existing 256 KiB payload bound. Provider token totals are available only when every
 reservation has a matched recorded result with both usage values and no legacy
 uncorrelated results. Missing/legacy usage remains null. Legacy reasoning events
@@ -162,3 +162,21 @@ inference is repeated, and `resume_authorized` remains false. Remaining budgets,
 immutable expert versions, unresolved reservations and verification state must be
 validated separately before implementing continuation. Hashes check consistency,
 not authenticity against a database owner who can rewrite history.
+
+## Saved inference admission ceilings
+
+`inference-audit` validates a recorded execution_settings snapshot against the task
+mode and deterministic mode/config ceilings before calculating
+`remaining_inference_admission`. The report subtracts every recorded call,
+output-token reservation and prompt-byte charge from its original saved limit.
+Unmatched calls retain their entire charge; provider-reported token usage never
+refunds reserved output. Later workspace configuration changes are irrelevant.
+
+Without a settings snapshot this field is null. Duplicate, late, invalid or
+mode-mismatched snapshots, inconsistent effective ceilings, uncorrelated legacy
+results alongside new settings and charges exceeding original limits fail closed.
+Time, cycle and tool allowances remain null because this inference ledger does
+not prove their remaining budgets. These three remaining inference allowances
+are bookkeeping only: `resume_authorized` stays false, including when all call
+results are present. They do not attest backend settings, restore permissions or
+prove external inference terminated.

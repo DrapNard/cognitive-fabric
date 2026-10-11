@@ -79,6 +79,11 @@ fn cli_pages_full_audit_history_with_stable_cursors() {
     assert_eq!(audit["recorded_results"], outcome["calls"]);
     assert_eq!(audit["resume_authorized"], false);
     assert!(audit["input_tokens"].is_null());
+    assert_eq!(audit["remaining_inference_admission"]["calls"], 0);
+    assert_eq!(
+        audit["remaining_inference_admission"]["resume_authorized"],
+        false
+    );
     let graph = Command::new(env!("CARGO_BIN_EXE_cogfabric"))
         .arg("--home")
         .arg(&home)

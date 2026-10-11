@@ -415,3 +415,10 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
 - Reject changed definitions, invalid transitions and premature dependent execution;
   report hashes and recorded states while keeping model results unverified.
 - Preserve missing state explicitly without granting resumption permissions.
+
+### Original inference budget reconstruction
+
+- Validate durable execution settings and mode ceilings during inference auditing.
+- Report remaining inference admission allowances while retaining all charges for
+  unrecorded calls; reject histories exceeding their original saved limits.
+- Keep unproven time/cycle/tool allowances unavailable and resumption unauthorized.

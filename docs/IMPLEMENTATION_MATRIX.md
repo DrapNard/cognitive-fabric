@@ -322,3 +322,11 @@ to evidence or revealing result bodies. Tests cover partial histories, isolation
 malicious transitions, changed definitions, duplicate plans, real scheduler events
 and CLI inspection. Automatic checkpoint execution remains **Partial**: this is
 validated state reconstruction, not remaining-budget admission or replay authority.
+
+Saved inference admission reconstruction: **Implemented** in
+`src/recovery/inference.rs`. Original validated runtime settings and deterministic
+mode ceilings bound remaining calls, reserved output and prompt-byte charges;
+unrecorded results never refund charges. Tests cover runtime/CLI reports, missing
+legacy snapshots, invalid/late/duplicate snapshots, mode mismatch, uncorrelated
+results and overdrawn budgets. Wall-time/cycle/tool reconstruction and actual
+checkpoint continuation remain **Partial**, with no resumed execution authority.

@@ -19,22 +19,63 @@ impl Store {
         )?;
         let mut calls = BTreeMap::<u64, Value>::new();
         let mut legacy = 0usize;
+        let mut settings: Option<(crate::config::Config, u64)> = None;
         {
-            let mut stmt=tx.prepare("SELECT kind,CASE WHEN length(CAST(source AS BLOB))<=64 THEN source END,CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN payload END FROM events WHERE task_id=?1 AND kind IN ('model_dispatch','reasoning') ORDER BY id LIMIT 129")?;
+            let mut stmt=tx.prepare("SELECT kind,CASE WHEN length(CAST(source AS BLOB))<=64 THEN source END,CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN payload END FROM events WHERE task_id=?1 AND kind IN ('execution_settings','model_dispatch','reasoning') ORDER BY id LIMIT 130")?;
             let mut rows = stmt.query([task])?;
             let mut count = 0;
+            let mut inference_count = 0;
             while let Some(row) = rows.next()? {
                 count += 1;
-                if count > 128 {
+                if count > 129 {
                     bail!("Inference audit exceeds bounded call history")
                 }
                 let kind: String = row.get(0)?;
                 let source: String = row.get(1)?;
+                let raw: String = row.get(2)?;
+                let payload: Value = serde_json::from_str(&raw)?;
+                if kind == "execution_settings" {
+                    if source != "runtime"
+                        || settings.is_some()
+                        || !calls.is_empty()
+                        || legacy != 0
+                        || payload["format_version"] != 1
+                    {
+                        bail!("Invalid execution settings history")
+                    }
+                    let cfg: crate::config::Config =
+                        serde_json::from_value(payload["configuration"].clone())?;
+                    cfg.validate()?;
+                    let mode = payload["mode"].as_str().unwrap_or("");
+                    let (calls, cycles) = match mode {
+                        "fast" => (1, 1),
+                        "standard" => (4, 1),
+                        "deep" => (10, 3),
+                        "research" => (18, 4),
+                        _ => bail!("Invalid saved reasoning mode"),
+                    };
+                    let task_mode: String = tx.query_row(
+                        "SELECT CASE WHEN length(mode)<=32 THEN mode END FROM tasks WHERE id=?1",
+                        [task],
+                        |r| r.get(0),
+                    )?;
+                    if mode != task_mode
+                        || payload["call_limit"].as_u64() != Some(calls.min(cfg.max_calls as u64))
+                        || payload["cycle_limit"].as_u64()
+                            != Some(cycles.min(cfg.max_cycles as u64))
+                    {
+                        bail!("Invalid saved execution ceilings")
+                    }
+                    settings = Some((cfg, payload["call_limit"].as_u64().unwrap()));
+                    continue;
+                }
+                inference_count += 1;
+                if inference_count > 128 {
+                    bail!("Inference audit exceeds bounded call history")
+                }
                 if source != "jev-r" {
                     bail!("Unexpected inference audit source")
                 }
-                let raw: String = row.get(2)?;
-                let payload: Value = serde_json::from_str(&raw)?;
                 if kind == "model_dispatch" {
                     let call = payload["call"]
                         .as_u64()
@@ -121,11 +162,30 @@ impl Store {
                     .ok_or_else(|| anyhow::anyhow!("Inference audit metric overflow"))
             })
         };
+        let remaining = if let Some((cfg, limit)) = settings {
+            let used_calls = calls.len() as u64;
+            let reserved = sum("reserved_output_tokens")?;
+            let input = sum("prompt_bytes")?;
+            if legacy != 0
+                || used_calls > limit
+                || reserved > cfg.max_tokens as u64
+                || input > cfg.max_input_bytes as u64
+            {
+                bail!(
+                    "Recorded inference exceeds saved execution limits or has uncorrelated results"
+                )
+            }
+            Some(
+                json!({"calls":limit-used_calls,"reserved_output_tokens":cfg.max_tokens as u64-reserved,"prompt_bytes":cfg.max_input_bytes as u64-input,"wall_time":null,"cycles":null,"tool_calls":null,"resume_authorized":false}),
+            )
+        } else {
+            None
+        };
         Ok(
             json!({"format_version":1,"task_id":task,"task_status":status,"reserved_calls":calls.len(),"recorded_results":recorded,"results_not_recorded":calls.len()-recorded,"legacy_results_without_call_identity":legacy,
             "reserved_output_tokens":sum("reserved_output_tokens")?,"charged_prompt_bytes":sum("prompt_bytes")?,"reported_usage_complete":complete,
             "input_tokens":if complete {Some(sum("input_tokens")?)} else {None},"output_tokens":if complete {Some(sum("output_tokens")?)} else {None},
-            "calls":calls.values().collect::<Vec<_>>(),"automatic_replay":false,"resume_authorized":false,"weights_attested":false}),
+            "remaining_inference_admission":remaining,"calls":calls.values().collect::<Vec<_>>(),"automatic_replay":false,"resume_authorized":false,"weights_attested":false}),
         )
     }
 }
@@ -172,6 +232,64 @@ mod tests {
         assert_eq!(report["results_not_recorded"], 1);
         assert_eq!(report["resume_authorized"], false);
     }
+    fn settings(store: &Store, task: &str, cfg: &crate::config::Config, call_limit: u64) {
+        store.event(task, "execution_settings", "runtime", json!({"format_version":1,"configuration":cfg,"mode":"standard","call_limit":call_limit,"cycle_limit":1})).unwrap();
+    }
+    #[test]
+    fn remaining_admission_keeps_unrecorded_calls_charged() {
+        let store = Store::in_memory().unwrap();
+        let task = store.create_task("fixture", "standard").unwrap();
+        let cfg = crate::config::Config::default();
+        settings(&store, &task, &cfg, 4);
+        dispatch(&store, &task, 1);
+        let report = store.inference_audit(&task).unwrap();
+        assert_eq!(report["remaining_inference_admission"]["calls"], 3);
+        assert_eq!(
+            report["remaining_inference_admission"]["reserved_output_tokens"],
+            cfg.max_tokens - 384
+        );
+        assert_eq!(
+            report["remaining_inference_admission"]["prompt_bytes"],
+            cfg.max_input_bytes - 123
+        );
+        assert!(report["remaining_inference_admission"]["wall_time"].is_null());
+        assert!(report["input_tokens"].is_null());
+        assert_eq!(report["results_not_recorded"], 1);
+    }
+    #[test]
+    fn rejects_invalid_snapshots_and_overdrawn_original_budgets() {
+        for variant in 0..7 {
+            let store = Store::in_memory().unwrap();
+            let task = store
+                .create_task("fixture", if variant == 0 { "fast" } else { "standard" })
+                .unwrap();
+            let cfg = crate::config::Config {
+                max_calls: if variant == 1 { 1 } else { 8 },
+                max_tokens: if variant == 2 { 100 } else { 1600 },
+                max_input_bytes: if variant == 3 { 100 } else { 128000 },
+                ..crate::config::Config::default()
+            };
+            if variant == 4 {
+                dispatch(&store, &task, 1);
+            }
+            settings(&store, &task, &cfg, if variant == 1 { 1 } else { 4 });
+            if variant == 5 {
+                settings(&store, &task, &cfg, 4);
+            }
+            if variant != 4 {
+                dispatch(&store, &task, 1);
+            }
+            if variant == 1 {
+                dispatch(&store, &task, 2);
+            }
+            if variant == 6 {
+                let mut old = response(1);
+                old.as_object_mut().unwrap().remove("call");
+                store.event(&task, "reasoning", "jev-r", old).unwrap();
+            }
+            assert!(store.inference_audit(&task).is_err(), "variant {variant}");
+        }
+    }
     #[test]
     fn rejects_duplicate_unmatched_and_tampered_call_results() {
         for variant in 0..5 {
@@ -213,5 +331,6 @@ mod tests {
         assert_eq!(report["recorded_results"], outcome.calls);
         assert_eq!(report["results_not_recorded"], 0);
         assert_eq!(report["reported_usage_complete"], false);
+        assert_eq!(report["remaining_inference_admission"]["calls"], 0);
     }
 }
