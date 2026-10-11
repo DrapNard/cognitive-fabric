@@ -75,8 +75,8 @@ live operator policy. Use identical reviewed corpus/configuration across repeate
 runs; model identifiers do not establish actual parameter counts.
 
 The canonical initial suite still requires 100–200 diverse technical/reasoning
-cases, including ambiguity, unseen cases and objectives requiring tools. That
-curated dataset and measured live-model study remain incomplete. The arithmetic
+cases, including ambiguity, unseen cases and objectives requiring tools. A provisional 100-case authored corpus now lives in `evaluation/`; independent
+curation, held-out review and the measured live-model study remain incomplete. The arithmetic
 example validates runner mechanics only. No performance-superiority or larger-model
 equivalence is claimed.
 
@@ -187,3 +187,9 @@ bounded SQLite capability; the alone baseline must produce its own result.
 This criterion checks equivalence to operator-reviewed expected data. It does not
 independently establish that those labels are correct, prove arbitrary SQL safety,
 or measure general reasoning quality. `bench` retains its existing text scoring.
+
+The provisional corpus spans ten self-contained categories and includes arithmetic,
+ordering and SQL criteria. Its manifest explicitly withholds independent-review,
+held-out and live-evaluation claims. Thirty deterministic cases are checked by
+existing framework tools; all labels still need independent review. See
+`../evaluation/README.md` before attempting performance or safety conclusions.

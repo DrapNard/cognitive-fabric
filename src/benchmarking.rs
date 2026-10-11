@@ -525,6 +525,66 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 
+    #[tokio::test]
+    async fn authored_v1_suite_has_bounded_unique_cases_and_checked_tool_labels() {
+        let bytes = include_bytes!("../evaluation/v1_cases.jsonl");
+        let manifest: Value =
+            serde_json::from_str(include_str!("../evaluation/v1_manifest.json")).unwrap();
+        assert_eq!(manifest["sha256"], store::sha256(bytes));
+        assert_eq!(manifest["case_count"], 100);
+        assert_eq!(manifest["independent_review_completed"], false);
+        assert_eq!(manifest["held_out_independence_verified"], false);
+        assert_eq!(manifest["live_model_evaluation_completed"], false);
+        let entries = manifest["cases"].as_array().unwrap();
+        let cases = std::str::from_utf8(bytes)
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str::<Case>(line).unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(cases.len(), 100);
+        assert_eq!(entries.len(), cases.len());
+        let mut unique = std::collections::BTreeSet::new();
+        let mut ids = std::collections::BTreeSet::new();
+        let mut categories = std::collections::BTreeMap::<String, usize>::new();
+        let mut checked = 0;
+        for (index, (case, entry)) in cases.iter().zip(entries).enumerate() {
+            assert!(case.input.len() <= 12000);
+            assert!(unique.insert(normalize(&case.input)));
+            assert!(ids.insert(entry["id"].as_str().unwrap()));
+            assert_eq!(entry["line"], index + 1);
+            *categories
+                .entry(entry["category"].as_str().unwrap().to_string())
+                .or_default() += 1;
+            let criterion = case.prepare().unwrap();
+            if let Some(expression) = crate::math::extract(&case.input) {
+                let answer = crate::math::calculate(expression).unwrap();
+                assert!(
+                    case.score(None, "completed", &answer),
+                    "Arithmetic case {}",
+                    index + 1
+                );
+                checked += 1;
+            } else if let Some(raw) = case.input.strip_prefix("sql:") {
+                let answer = crate::sql::execute(raw.to_string())
+                    .await
+                    .unwrap_or_else(|error| panic!("SQL case {}: {error:#}", index + 1));
+                assert!(
+                    case.score(None, "completed", &answer),
+                    "SQL case {}",
+                    index + 1
+                );
+                checked += 1;
+            } else if let Some(criterion) = criterion {
+                let witness = serde_json::to_string(&entry["valid_order_example"]).unwrap();
+                assert!(case.score(Some(&criterion), "unverified", &witness));
+                checked += 1;
+            }
+        }
+        assert_eq!(checked, 30);
+        assert_eq!(categories.len(), 10);
+        assert!(categories.values().all(|count| *count == 10));
+    }
+
     #[test]
     fn memory_totals_use_maxima_and_preserve_unavailable_samples() {
         let mut outcome = crate::engine::Outcome {

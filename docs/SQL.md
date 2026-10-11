@@ -59,3 +59,10 @@ experts, dynamic tool manifests and isolated external connectors remain incomple
 
 The enforcement uses SQLite's documented [authorizer](https://www.sqlite.org/c3ref/set_authorizer.html)
 and [progress callbacks](https://www.sqlite.org/c3ref/progress_handler.html).
+
+Column-less table reads (for example `COUNT(*)` or constant projections) are
+allowed only for declared inline tables. SQLite may supply an empty column name
+and no database name for these callbacks. The authorizer retains the table
+allowlist; schema, unknown, temporary and attached databases remain denied.
+See SQLite's authorizer contract: https://www.sqlite.org/c3ref/set_authorizer.html.
+Regression coverage checks both valid projections and negative table boundaries.

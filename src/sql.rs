@@ -152,8 +152,15 @@ fn evaluate_inner(raw: &str, cancelled: Arc<AtomicBool>) -> Result<String> {
     db.authorizer(Some(move |context: AuthContext<'_>| {
         let allowed = match context.action {
             AuthAction::Select | AuthAction::Recursive => true,
-            AuthAction::Read { table_name, .. } => {
-                context.database_name == Some("main") && names.contains(table_name)
+            AuthAction::Read {
+                table_name,
+                column_name,
+            } => {
+                // SQLite uses a column-less read with no database name for
+                // count(*) and constant projections over an authorized table.
+                names.contains(table_name)
+                    && (context.database_name == Some("main")
+                        || (context.database_name.is_none() && column_name.is_empty()))
             }
             AuthAction::Function { function_name } => matches!(
                 function_name.to_ascii_lowercase().as_str(),
@@ -244,6 +251,27 @@ mod tests {
     fn task(query: &str) -> String {
         json!({"tables":[{"name":"items","columns":["name","amount"],"rows":[["a",2],["b",3]]}],"query":query}).to_string()
     }
+    #[test]
+    fn columnless_reads_allow_only_declared_inline_tables() {
+        let answer: Value =
+            serde_json::from_str(&evaluate(&task("SELECT count(*) AS n FROM items")).unwrap())
+                .unwrap();
+        assert_eq!(answer, json!({"columns":["n"],"rows":[[2]]}));
+        let answer: Value =
+            serde_json::from_str(&evaluate(&task("SELECT 1 AS value FROM main.items")).unwrap())
+                .unwrap();
+        assert_eq!(answer, json!({"columns":["value"],"rows":[[1],[1]]}));
+        for query in [
+            "SELECT count(*) FROM sqlite_schema",
+            "SELECT 1 FROM sqlite_schema",
+            "SELECT count(*) FROM temp.items",
+            "SELECT count(*) FROM missing",
+            "ATTACH DATABASE ':memory:' AS other",
+        ] {
+            assert!(evaluate(&task(query)).is_err(), "{query}");
+        }
+    }
+
     #[test]
     fn aggregates_only_inline_data_and_preserves_types() {
         assert!(evaluate(r#"{"tables":[],"query":"SELECT * FROM items"}"#).is_err());

@@ -2,6 +2,16 @@
 
 All notable changes are documented here in English.
 
+### Provisional v1 evaluation corpus
+
+- Add 100 original self-contained synthetic tasks in ten categories with stable
+  IDs, hashed provenance inventory and explicit incomplete review flags.
+- Validate corpus bounds/uniqueness and recompute thirty deterministic tool cases.
+- Fix column-less SQLite reads for declared inline tables, with regressions retaining
+  schema, unknown-table, temporary-database and attach denials.
+- Document independent review and live evaluation gates without claiming held-out
+  independence, neural safety or measured model performance.
+
 ### Structured SQL comparison scoring
 
 - Add strict SQL result JSON comparison against operator-provided expected labels,

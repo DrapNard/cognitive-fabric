@@ -817,3 +817,22 @@ inline SQLite execution without model calls in tool-enabled profiles. Expected
 labels remain operator-supplied; this is structural result scoring, not a new
 neural evaluator or proof that supplied labels are correct. Real inference and
 the diverse held-out study remain outstanding.
+
+## Provisional corpus and column-less SQL reads (2026-10-11)
+
+Exact flatc/Rust FlatBuffers 25.12.19. Formatting, all-target Cargo check,
+all-target tests (151 unit + 5 process) and Clippy with denied warnings passed
+using offline dependencies. The new corpus regression validates 100 cases in ten
+categories, hashes/IDs/bounds and thirty deterministic arithmetic/SQL/order cases.
+
+The first corpus run exposed a real count(*) failure: the SQLite authorizer
+reported Read(items, empty-column) without a database name. The narrow fix permits
+that special callback only for declared inline tables. A dedicated regression
+retains schema, unknown-table, temp-table and attach denials. SQLite documents
+column-less reads at https://www.sqlite.org/c3ref/set_authorizer.html.
+
+The corpus is original synthetic data, not independently reviewed held-out data.
+Its manifest explicitly sets independent review, held-out independence and live
+model evaluation to false. The other seventy labels need independent review;
+the thirty framework-checked cases also need external oracle review. No live
+100-case comparison or model-quality/security performance claim was made.
