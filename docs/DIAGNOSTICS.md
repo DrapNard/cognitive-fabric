@@ -57,8 +57,9 @@ https://docs.nvidia.com/deploy/nvidia-smi/index.html.
 
 Missing executable, inaccessible driver or unsupported platform produces
 `status: unavailable` and null devices. Optional GPU unavailability alone does not
-fail the CLI's storage/model diagnostics. Successful hardware sampling remains
-unverified in this environment: the actual CLI found the NVIDIA driver unavailable.
+fail the CLI's storage/model diagnostics. An earlier sandboxed CLI found the driver unavailable. A subsequent host-access
+CLI sampled real device memory, utilization and power successfully. Device access
+therefore affects availability; no task attribution or inference quality follows.
 Parser and bounded same-binary child fixtures cover valid/missing/malformed values,
 timeout, overflow and cleanup; they do not prove GPU integration.
 

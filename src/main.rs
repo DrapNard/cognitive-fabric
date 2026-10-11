@@ -200,6 +200,8 @@ enum Command {
         #[arg(long)]
         code_revision: String,
         #[arg(long)]
+        dataset_sha256: Option<String>,
+        #[arg(long)]
         held_out: bool,
         #[arg(long, default_value = "1800")]
         max_run_seconds: u64,
@@ -602,6 +604,7 @@ async fn main() -> Result<()> {
             source,
             license,
             code_revision,
+            dataset_sha256,
             held_out,
             max_run_seconds,
         } => {
@@ -615,6 +618,7 @@ async fn main() -> Result<()> {
                     source,
                     license,
                     code_revision,
+                    expected_dataset_sha256: dataset_sha256,
                     held_out,
                     max_run_seconds,
                 },

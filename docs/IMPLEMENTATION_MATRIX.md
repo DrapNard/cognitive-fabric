@@ -51,9 +51,9 @@ remains a pre-release. `QUALITY_REVIEW.md` preserves verification history.
 | 10, 11 | Security kernel | Partial | `src/security.rs`: immutable task/actor scope intersected with global policy, per-dispatch audits, deny-default capabilities, bounded no-follow reads; replay/actor/promotion denials and artifact tampering tests | Authenticated independent module identities and isolation before executable experts; signatures/attestations and neural behavioral evaluator absent |
 | 13 | Reproducible evaluation | Partial | `src/evaluation.rs`, `src/benchmarking.rs`, `src/corpus.rs`: expected exact-match benchmarks, six isolated same-model ablation profiles plus optional larger baseline, per-arm resources, reviewed dataset hashes, bounded read-only corpus snapshots and durable run cancellation; profile/isolation/deadline tests | 100–200 diverse held-out tasks, robustness/security/regression reports, measured live-model comparisons |
 | 12, 14 | CLI/service | Partial | `src/main.rs`: initialization/configuration, ask, service controls, task-specific socket progress/cancellation, skill lifecycle, ingestion/search, task traces, candidates/rollback, benchmark, self-test; real socket fixtures | Live residency lifecycle |
-| 12, 13 | Hardware/performance claims | Not implemented | No GPU/energy or large-model advantage claimed | Real local endpoint, hardware telemetry, equal-budget comparisons |
+| 12, 13 | Hardware/performance claims | Partial | Optional whole-device GPU diagnostics sampled real host memory/utilization/power; no energy or large-model advantage claimed | Authenticated live inference, task-attributed telemetry and equal-budget comparisons |
 
-All 163 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
+All 164 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
 all-target build checks and Clippy with denied warnings pass. Fixtures do not prove
 GPU integration, neural quality, immutable backend weights or live model switching.
 
@@ -122,7 +122,7 @@ observations, not isolated task peaks, backend residency or GPU measurements.
 The optional offline trainer now freezes bounded dataset input, rejects ambiguous/
 conflicting provenance, fails on passes with no supervised tokens, reserves separate
 output and records seeded configuration, dependency versions and hashed adapter
-inventory. Nine standard-library preflight tests pass in addition to the 163 Rust
+inventory. Nine standard-library preflight tests pass in addition to the 164 Rust
 tests. Level C stays Experimental: ML dependencies/weights are unavailable here,
 and base provenance manifests, independent neural evaluation, external isolation,
 actual training and adapter switching remain unverified. Promotion remains denied.
@@ -208,3 +208,19 @@ skips disabled registrations and refuses more than eight distinct endpoints befo
 network access. Fixtures cover missing advertisements, deduplication and admission.
 Live generation/residency remains unverified; local LM Studio CLI startup timed out
 despite existing GGUF files, so absence of weights is not assumed.
+
+Comparison runs can now pin an operator-reviewed dataset SHA-256 before task
+creation. Reports distinguish prior operator pinning from observed byte hashes.
+Regression coverage confirms malformed/mismatching pins and even whitespace-only
+changes create no additional tasks. This proves byte binding, not independent
+review, contamination resistance or the still-outstanding live-model study.
+
+Host-access validation refined earlier sandbox observations: the framework GPU
+diagnostic sampled a real 12 GiB device, LM Studio API access succeeded, and an
+existing local model loaded with 35% GPU offload / 2,048 context / one prediction.
+Discovery and inference then returned HTTP 401 because the server requires
+authentication. No credentials were searched or authentication disabled. The
+temporary model was unloaded and the previously stopped server was stopped again;
+loaded-model inspection returned empty. Successful generation remains unverified.
+Explicit protected operator-supplied API authentication is the next integration
+gap; external operator model loading is not automatic framework residency control.

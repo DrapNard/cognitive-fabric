@@ -44,7 +44,8 @@ Before claiming held-out results:
    results, failure cases and limitations. Review bound expert model disclosures.
 
 After that review, use the normal `compare` command described in
-`../docs/BENCHMARKING.md`, supplying this dataset and its actual reviewed provenance.
+`../docs/BENCHMARKING.md`, supplying this dataset, its actual reviewed provenance and
+`--dataset-sha256` with the approved file hash.
 Do not pass `--held-out` merely because this file exists. The current manifest
 supplies no such attestation. Do not use `bench` for the mixed suite: dependency
 ordering uses constraint scoring and SQL uses structural result scoring.

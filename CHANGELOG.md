@@ -2,6 +2,13 @@
 
 All notable changes are documented here in English.
 
+### Reviewed comparison dataset pins
+
+- Allow comparison runs to require an operator-reviewed SHA-256 before creating
+  tasks, rejecting malformed pins and changed bytes without inference.
+- Distinguish prior dataset pinning from the observed hash in reports while
+  retaining independent-review and held-out limitations.
+
 ### Registered endpoint discovery
 
 - Add operator-only discovery across enabled registered model endpoints, including

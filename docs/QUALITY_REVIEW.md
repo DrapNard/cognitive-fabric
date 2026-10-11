@@ -893,3 +893,38 @@ This refines the blocker: local files exist, but a usable inference service and
 resource-appropriate live generation remain unverified. CLI documentation used
 https://lmstudio.ai/docs/cli and https://lmstudio.ai/docs/cli/local-models/load;
 model filename/proximity alone does not establish licensing or weight identity.
+
+## Reviewed dataset pins and host integration probe (2026-10-11)
+
+Exact FlatBuffers 25.12.19. Formatting, all-target Cargo check, all-target tests
+(159 unit + 5 process) and Clippy with denied warnings passed offline. The new
+regression verifies an approved byte hash, malformed/mismatching pin refusal and
+whitespace-only source changes without additional tasks. An actual negative CLI
+comparison exited 1 with zero tasks for a mismatching --dataset-sha256.
+
+The default endpoint still refused connections in an explicit host-access curl
+probe. However, host-access lms ps subsequently succeeded with an empty model list,
+refining earlier sandboxed daemon timeouts. Host NVIDIA queries and the actual
+framework diagnostics --probe-gpu then succeeded: total memory 12,884,901,888 bytes,
+used 3,182,428,160 bytes, utilization 18%, reported power 44.78 W in that sample.
+These are whole-device observations, not model/task attribution or energy.
+
+LM Studio estimated 6.24 GiB GPU / 17.54 GiB total for the existing 27B Q4_K_M
+model at 35% offload, context 2,048 and one parallel prediction. A temporary unique
+identifier cognitive-fabric-live-validation loaded successfully; LM Studio reported
+29.68 s load time and 15.66 GiB size. These are provider CLI observations, not a
+framework model-load metric or attested weights. The server was started on loopback
+port 1234 only, with no CORS change or credential access.
+
+Actual framework discovery failed its HTTP status check; a FAST generation request
+returned HTTP 401 Unauthorized. Task 40f0f62d-6397-4b90-a3b3-f53ad06f9b5f failed
+honestly with one charged call, 384 reserved output tokens and unknown token usage.
+No model output or performance advantage was fabricated. Authentication was not
+weakened and no token was searched. The owned identifier was explicitly unloaded,
+the server restored to its prior stopped state, and lms ps returned []. Explicit
+protected operator-supplied bearer authentication is the next integration gap.
+
+Only temporary framework workspaces were configured. No weights were downloaded,
+modified or committed. No independent held-out study or successful real inference
+was completed. Earlier statements about unavailable hardware/services reflect
+sandboxed observations and are superseded by this more precise host evidence.

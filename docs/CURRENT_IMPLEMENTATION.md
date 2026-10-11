@@ -42,7 +42,7 @@ Quality requires operator-attested held-out data. Promotion checks quality,
 cumulative approved-version retrieval regressions and unchanged versions transactionally.
 Rollback restores approved stored snapshots. Neural promotion stays disabled.
 
-Verification: 163 tests, formatting, all-target check and Clippy pass using exact
+Verification: 164 tests, formatting, all-target check and Clippy pass using exact
 flatc/Rust FlatBuffers 25.12.19. HTTP fixtures and socket tests ran locally; no
 compatible live model server was available at the default endpoint. No neural
 quality, GPU integration, hot-swap, energy or model-superiority result is claimed.
@@ -173,3 +173,14 @@ Operator diagnostics can inspect enabled registered model endpoints with bounded
 deduplicated discovery, including potential workflow experts. Advertised IDs are
 not loaded-weight or successful-generation evidence. Local model files were found,
 but LM Studio's local API startup timed out; real inference remains unverified.
+
+Comparison CLI supports an optional reviewed dataset hash pin, rejecting changed
+bytes before execution and recording the operator pin separately from actual
+content identity. This does not establish held-out independence or label quality.
+
+A later host-access check succeeded where sandboxed checks failed: actual framework
+GPU telemetry sampled a 12 GiB device, and LM Studio loaded an existing quantized
+model for a bounded test. Its authenticated HTTP server returned 401 for discovery
+and generation; no successful model answer is claimed. The owned test model was
+unloaded and the server returned to its prior stopped state. Protected explicit
+operator API credentials remain an integration gap; none were accessed or stored.

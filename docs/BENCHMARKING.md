@@ -193,3 +193,20 @@ ordering and SQL criteria. Its manifest explicitly withholds independent-review,
 held-out and live-evaluation claims. Thirty deterministic cases are checked by
 existing framework tools; all labels still need independent review. See
 `../evaluation/README.md` before attempting performance or safety conclusions.
+
+
+### Pin reviewed dataset bytes
+
+After review, pass `--dataset-sha256 LOWERCASE_SHA256` to `compare` to require the
+exact reviewed file bytes. The runner hashes its bounded read-once snapshot and
+rejects malformed or mismatching pins before creating any tasks or making model
+calls. Even semantically equivalent whitespace changes need a new reviewed hash.
+The file is not reread during execution.
+
+Reports record `reviewed_dataset_checksum_operator_attested` and
+`dataset_checksum_operator_pinned` separately from the actual dataset checksum.
+Without this optional flag the actual checksum is still recorded, but no prior
+byte identity is enforced. Pinning establishes content identity only: it does not
+verify source/license declarations, reviewer independence, contamination checks,
+held-out status or expected-label correctness. It does not make the provisional
+repository suite reviewed automatically.

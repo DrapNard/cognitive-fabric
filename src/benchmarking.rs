@@ -124,6 +124,7 @@ pub struct Review {
     pub license: String,
     pub code_revision: String,
     pub held_out: bool,
+    pub expected_dataset_sha256: Option<String>,
     pub max_run_seconds: u64,
 }
 
@@ -254,6 +255,19 @@ where
         bail!("Larger baseline requires a distinct bounded model identifier")
     }
     let bytes = security::read_regular_bytes(dataset, 2_000_000)?;
+    let dataset_checksum = store::sha256(&bytes);
+    if let Some(expected) = &review.expected_dataset_sha256 {
+        if expected.len() != 64
+            || !expected
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        {
+            bail!("Reviewed dataset checksum must be 64 lowercase hexadecimal digits")
+        }
+        if expected != &dataset_checksum {
+            bail!("Dataset differs from the operator-pinned reviewed checksum")
+        }
+    }
     let raw = std::str::from_utf8(&bytes)?;
     let cases = raw
         .lines()
@@ -377,7 +391,7 @@ where
         }
     }
     Ok(
-        json!({"format_version":1,"dataset_checksum":store::sha256(&bytes),"dataset_source":review.source,"dataset_license":review.license,"held_out_operator_attested":true,
+        json!({"format_version":1,"dataset_checksum":dataset_checksum,"reviewed_dataset_checksum_operator_attested":review.expected_dataset_sha256,"dataset_checksum_operator_pinned":review.expected_dataset_sha256.is_some(),"dataset_source":review.source,"dataset_license":review.license,"held_out_operator_attested":true,
         "code_revision_operator_attested":review.code_revision,"package_version":env!("CARGO_PKG_VERSION"),"configuration":common,"mode":mode,"corpus_snapshot":corpus.metadata,"snapshot_elapsed_ms":snapshot_ms,
         "small_model_ablation_configuration_controlled":!details.iter().any(|detail| detail["bound_expert_models"].as_array().is_some_and(|models| !models.is_empty())),
         "case_count":cases.len(),"complete":!stopped,"stop_reason":if cancelled {"cancelled"} else if stopped {"run_deadline"} else {"completed"},"elapsed_ms":started.elapsed().as_secs_f64()*1000.0,"larger_baseline_configured":larger.is_some(),
@@ -420,6 +434,7 @@ mod tests {
             license: "CC0".into(),
             code_revision: "a".repeat(40),
             held_out: true,
+            expected_dataset_sha256: None,
             max_run_seconds: 10,
         };
         let report = compare(&cfg, store, &dataset, "deep", None, &review)
@@ -488,6 +503,7 @@ mod tests {
             license: "CC0".into(),
             code_revision: "a".repeat(40),
             held_out: true,
+            expected_dataset_sha256: None,
             max_run_seconds: 10,
         };
         let report = compare(
@@ -585,6 +601,64 @@ mod tests {
         assert!(categories.values().all(|count| *count == 10));
     }
 
+    #[tokio::test]
+    async fn reviewed_dataset_hash_pins_bytes_and_rejects_changes_before_tasks() {
+        let root =
+            std::env::temp_dir().join(format!("fabric-pinned-dataset-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        let file = root.join("cases.jsonl");
+        let data = r#"{"input":"calc: 7 * 6","expected":"42"}"#;
+        std::fs::write(&file, data).unwrap();
+        let checksum = store::sha256(data.as_bytes());
+        let mut review = Review {
+            source: "fixture".into(),
+            license: "CC0".into(),
+            code_revision: "a".repeat(40),
+            held_out: true,
+            expected_dataset_sha256: Some(checksum.clone()),
+            max_run_seconds: 10,
+        };
+        let cfg = Config {
+            backend: "demo".into(),
+            ..Config::default()
+        };
+        let store = Arc::new(Store::in_memory().unwrap());
+        let report = compare(&cfg, store.clone(), &file, "deep", None, &review)
+            .await
+            .unwrap();
+        assert_eq!(report["dataset_checksum"], checksum);
+        assert_eq!(
+            report["reviewed_dataset_checksum_operator_attested"],
+            checksum
+        );
+        assert_eq!(report["dataset_checksum_operator_pinned"], true);
+        let count = || {
+            store
+                .lock()
+                .unwrap()
+                .query_row("SELECT count(*) FROM tasks", [], |row| row.get::<_, u64>(0))
+                .unwrap()
+        };
+        let original_count = count();
+        assert_eq!(original_count, 6);
+        for invalid in ["A".repeat(64), "0".repeat(63), "0".repeat(64)] {
+            review.expected_dataset_sha256 = Some(invalid);
+            assert!(compare(&cfg, store.clone(), &file, "deep", None, &review)
+                .await
+                .is_err());
+            assert_eq!(count(), original_count);
+        }
+        review.expected_dataset_sha256 = Some(checksum);
+        std::fs::write(&file, format!("{data}\n")).unwrap();
+        assert!(compare(&cfg, store.clone(), &file, "deep", None, &review)
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("differs"));
+        assert_eq!(count(), original_count);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn memory_totals_use_maxima_and_preserve_unavailable_samples() {
         let mut outcome = crate::engine::Outcome {
@@ -666,6 +740,7 @@ mod tests {
             license: "CC0-1.0".into(),
             code_revision: "a".repeat(40),
             held_out: true,
+            expected_dataset_sha256: None,
             max_run_seconds: 10,
         };
         let report = compare(&cfg, store, &dataset, "deep", None, &review)
@@ -729,6 +804,7 @@ mod tests {
             license: "CC0-1.0".into(),
             code_revision: "a".repeat(40),
             held_out: true,
+            expected_dataset_sha256: None,
             max_run_seconds: 10,
         };
         assert!(compare(
@@ -777,6 +853,7 @@ mod tests {
             license: "CC0-1.0".into(),
             code_revision: "b".repeat(40),
             held_out: true,
+            expected_dataset_sha256: None,
             max_run_seconds: 1,
         };
         let report = compare(&cfg, store.clone(), &dataset, "deep", None, &review)
@@ -807,6 +884,7 @@ mod tests {
             license: "CC0-1.0".into(),
             code_revision: "a".repeat(40),
             held_out: true,
+            expected_dataset_sha256: None,
             max_run_seconds: 10,
         };
         let report = compare(&cfg, store.clone(), &dataset, "deep", None, &review)
