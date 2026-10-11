@@ -1523,3 +1523,10 @@ The expanded smoke script passed against the current debug executable, including
 SQL worker configuration, rejected-query reaping, restored SQL configuration and
 socket SQL execution. Optimized installed verification must follow this source
 change before release. No live model, sandbox or automatic crash cleanup is proven.
+
+The optimized installation of managed SQL source `04a3a03` passed the expanded
+installed smoke script. SQL processes execute from both CLI/service, rejected
+queries are reaped and restored configuration launches functioning SQL workers.
+See `RELEASE_AUDIT.md` for exact build identity, hashes and retained evidence.
+This closes the pending optimized-install gap for this source; other release
+gates remain open.

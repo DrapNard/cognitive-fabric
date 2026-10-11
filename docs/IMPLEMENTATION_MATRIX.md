@@ -711,3 +711,9 @@ Rust tests (283 library, 21 integration). The expanded smoke script also checks
 SQL worker configuration, success/rejection reaping, backup/restored worker state
 and actual socket SQL execution. Optimized installation verification is pending
 for this new source; live inference and broader release blockers remain open.
+
+Optimized installed validation of `04a3a03` now passes the expanded smoke workflow,
+including actual managed SQL CLI/service execution, rejected-query cleanup and
+restored SQL process configuration. Exact hashes/evidence appear in
+`RELEASE_AUDIT.md`; the pending installed-source gap above is closed for this
+commit. Crash cleanup, general executable integration and live measurements remain open.
