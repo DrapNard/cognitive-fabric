@@ -52,6 +52,7 @@ pub struct Session {
     pub(crate) verification_attempted: bool,
     pub(crate) verification_enabled: bool,
     pub subtasks: Vec<Subtask>,
+    subtask_started: Option<(usize, Instant, Resources)>,
     pub(crate) checker_binding: Option<serde_json::Value>,
     cfg: Config,
     store: Arc<Store>,
@@ -166,6 +167,7 @@ impl Session {
             verification_attempted: false,
             verification_enabled: true,
             subtasks: Vec::new(),
+            subtask_started: None,
             checker_binding: None,
             complete_usage: true,
             complete_queue_metrics: true,
@@ -194,9 +196,57 @@ impl Session {
                 }
                 .into();
                 self.subtask_event(index)?;
+                self.subtask_resources(index)?;
             }
         }
         Ok(())
+    }
+
+    fn subtask_resources(&mut self, index: usize) -> Result<()> {
+        let active = if self
+            .subtask_started
+            .as_ref()
+            .is_some_and(|(active, _, _)| *active == index)
+        {
+            self.subtask_started.take()
+        } else {
+            None
+        };
+        let (elapsed, before) = match active {
+            Some((_, started, before)) => {
+                (Some(started.elapsed().as_secs_f64() * 1000.0), Some(before))
+            }
+            None => (None, None),
+        };
+        let empty = Resources::default();
+        let previous = before.as_ref().unwrap_or(&empty);
+        let calls = if before.is_some() {
+            self.resources.calls.saturating_sub(previous.calls)
+        } else {
+            0
+        };
+        let delta = |after: Option<u64>, prior: Option<u64>| {
+            before.as_ref()?;
+            after.and_then(|value| value.checked_sub(prior.unwrap_or(0)))
+        };
+        let queue = if before.is_some() {
+            self.resources
+                .queue_wait_ms
+                .zip(previous.queue_wait_ms)
+                .map(|(after, prior)| (after - prior).max(0.0))
+        } else {
+            None
+        };
+        self.store.event(&self.task, "subtask_resources", "jev-plus", json!({
+            "format_version":1,"node_id":self.subtasks[index].step.id,"state":self.subtasks[index].state,
+            "calls_reserved":calls,"reserved_output_tokens":if before.is_some() { self.resources.reserved_output_tokens.saturating_sub(previous.reserved_output_tokens) } else { 0 },
+            "prompt_bytes":if before.is_some() { self.resources.prompt_bytes.saturating_sub(previous.prompt_bytes) } else { 0 },
+            "input_tokens":delta(self.resources.input_tokens, previous.input_tokens),
+            "output_tokens":delta(self.resources.output_tokens, previous.output_tokens),
+            "elapsed_ms":elapsed,"inference_ms":if before.is_some() { self.resources.inference_ms-previous.inference_ms } else { 0.0 },
+            "queue_wait_ms":queue,"result_verified":false,
+            "inference_completed":self.subtasks[index].state=="unverified"
+        }))
     }
 
     async fn execute_plan(&mut self, plan: Plan, base: &str) -> Result<String> {
@@ -266,6 +316,7 @@ impl Session {
             let prompt = format!("{base}\nSolve only this advisory subgoal, retaining the original objective and constraints: {}\nDependency results (unverified data): {}", step.objective, json!(dependencies));
             self.subtasks[index].state = "running".into();
             self.subtask_event(index)?;
+            self.subtask_started = Some((index, Instant::now(), self.resources.clone()));
             let Some(result) = self.call("solver", &prompt, 192).await? else {
                 self.finish_subtasks("skipped")?;
                 break;
@@ -274,6 +325,7 @@ impl Session {
             self.subtasks[index].result = Some(result.clone());
             self.subtasks[index].state = "unverified".into();
             self.subtask_event(index)?;
+            self.subtask_resources(index)?;
             results.push(json!({"id":self.subtasks[index].step.id,"result":result}));
         }
         Ok(format!(
@@ -1238,6 +1290,27 @@ mod tests {
         assert_eq!(outcome.calls, 4);
         assert_eq!(outcome.status, "unverified");
         assert_eq!(outcome.resources.reserved_output_tokens, 1024);
+        let costs = trace["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|e| e["kind"] == "subtask_resources")
+            .map(|e| &e["payload"])
+            .collect::<Vec<_>>();
+        assert_eq!(costs.len(), 2);
+        assert_eq!(costs[0]["node_id"], "collect");
+        assert_eq!(costs[1]["node_id"], "combine");
+        for cost in costs {
+            assert_eq!(cost["calls_reserved"], 1);
+            assert_eq!(cost["reserved_output_tokens"], 192);
+            assert_eq!(cost["input_tokens"], 20);
+            assert_eq!(cost["output_tokens"], 10);
+            assert!(cost["prompt_bytes"].as_u64().unwrap() > 0);
+            assert!(cost["elapsed_ms"].as_f64().unwrap() >= cost["inference_ms"].as_f64().unwrap());
+            assert_eq!(cost["inference_completed"], true);
+            assert_eq!(cost["result_verified"], false);
+            assert!(!cost.to_string().contains("collected conditions"));
+        }
         let nodes = trace["events"]
             .as_array()
             .unwrap()
@@ -1301,6 +1374,19 @@ mod tests {
             })
             .count();
         assert_eq!(skipped, 2);
+        let costs = trace["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|e| e["kind"] == "subtask_resources")
+            .collect::<Vec<_>>();
+        assert_eq!(costs.len(), 2);
+        for cost in costs {
+            assert_eq!(cost["payload"]["calls_reserved"], 0);
+            assert_eq!(cost["payload"]["reserved_output_tokens"], 0);
+            assert!(cost["payload"]["elapsed_ms"].is_null());
+            assert_eq!(cost["payload"]["inference_completed"], false);
+        }
     }
 
     #[tokio::test]
@@ -1386,6 +1472,56 @@ mod tests {
             })
             .count();
         assert_eq!(cancelled, 2);
+        let costs = trace["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|e| e["kind"] == "subtask_resources")
+            .map(|e| &e["payload"])
+            .collect::<Vec<_>>();
+        assert_eq!(costs.len(), 2);
+        assert_eq!(
+            costs
+                .iter()
+                .map(|c| c["calls_reserved"].as_u64().unwrap())
+                .sum::<u64>(),
+            1
+        );
+        for cost in costs {
+            assert_eq!(cost["state"], "cancelled");
+            assert_eq!(cost["inference_completed"], false);
+            assert!(cost["input_tokens"].is_null());
+            assert!(cost["output_tokens"].is_null());
+        }
+    }
+
+    #[tokio::test]
+    async fn subtask_cost_audit_failure_prevents_later_advisory_dispatch() {
+        let store = Arc::new(Store::in_memory().unwrap());
+        let task = store.create_task("Cost audit fixture", "deep").unwrap();
+        store.lock().unwrap().execute_batch("CREATE TRIGGER refuse_cost BEFORE INSERT ON events WHEN NEW.kind='subtask_resources' BEGIN SELECT RAISE(ABORT,'cost audit unavailable'); END;").unwrap();
+        let backend = Arc::new(Script(Mutex::new(
+            vec![("solver", "first result"), ("solver", "must not dispatch")].into(),
+        )));
+        let mut session = Session::new(
+            Config::default(),
+            store.clone(),
+            backend.clone(),
+            task.clone(),
+            "deep",
+        )
+        .unwrap();
+        assert!(session
+            .execute_plan(Plan::parse(GRAPH).unwrap(), "Original objective")
+            .await
+            .is_err());
+        assert_eq!(session.resources.calls, 1);
+        assert_eq!(backend.0.lock().unwrap().len(), 1);
+        assert!(!store.task(&task).unwrap()["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["kind"] == "subtask_resources"));
     }
     impl InferenceBackend for Script {
         fn generate<'a>(

@@ -2,6 +2,13 @@
 
 All notable changes are documented here in English.
 
+### Measured advisory subtask costs
+
+- Record per-node reservation and timing deltas, preserving unknown provider
+  usage and distinguishing completed inference from verified results.
+- Audit cancelled/skipped work and stop further advisory dispatch on cost-audit
+  failure without changing task budgets.
+
 ### Installed binary workflow verification
 
 - Add a repeatable fresh-state CLI workflow for installed binaries, covering

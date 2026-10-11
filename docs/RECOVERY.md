@@ -261,3 +261,24 @@ original provider/resource metrics remain unknown. The full original objective
 is checked even if the saved solver result came from a subgoal. Only satisfying
 that original explicit criterion permits completion. General free-form answers,
 missing results and automatic graph continuation remain unsupported.
+
+## Per-subtask scheduling cost records
+
+New scheduler executions write `subtask_resources` events alongside terminal
+advisory node transitions. Each bounded metadata record identifies the node and
+state, reserved call/output/prompt-byte deltas, observed inference and elapsed
+milliseconds, optional provider-token and broker queue-wait deltas, and explicit
+`result_verified: false`. Inspect them with task/task-events.
+
+Skipped pending nodes have zero reservations and unavailable elapsed/provider
+metrics. A cancelled running node retains its reservations and measured pending
+inference time while missing provider usage stays null. Completed advisory
+inference is distinct from a verified result. A cost-audit failure halts subsequent
+advisory dispatch rather than silently dropping the measurement.
+
+Deltas are taken from the original Session counters; no resource budget is reset
+or refunded. If cumulative usage or queue metrics were already incomplete, local
+deltas also remain unavailable. These are observations for future scheduling
+analysis, not a utility predictor, restored budget ledger, parallel scheduler or
+permission to resume an interrupted graph. Existing versioned reservations remain
+authoritative for recovery admission; legacy traces can lack these records.

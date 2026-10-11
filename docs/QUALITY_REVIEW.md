@@ -1282,3 +1282,19 @@ arithmetic examples all passed deterministically, which proves no live LLM quali
 held-out benchmark improvement or neural safety. The service is stopped by the
 script and its socket removal is checked; retained temporary files contain only
 synthetic demonstration data.
+
+## Per-subtask resource observations
+
+Formatting, all-target check, 223 tests (209 library, 14 integration) and Clippy
+with warnings denied pass offline with FlatBuffers compiler/crate 25.12.19.
+The dependency fixture verifies two distinct one-call/192-token reservations,
+provider deltas and measured timings without exposing result bodies. Budget-skip
+fixtures retain zero charges and unavailable timing; cancellation retains one
+reserved incomplete call and null provider usage. Injected cost-audit failure
+prevents the next advisory dispatch. Existing graph reconstruction still validates
+the scheduler's node histories; cost records do not alter recovery budgets.
+
+Instrumentation adds at most four small terminal-node metadata events and one
+active counter/timestamp snapshot per plan; no new model calls, concurrency or
+privileges are introduced. General module scheduling and measured utility-based
+escalation remain incomplete, and no live-model efficiency gain is inferred.
