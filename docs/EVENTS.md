@@ -108,3 +108,21 @@ Host application code must re-register modules on startup and release handles on
 cancellation. A descriptor string is routing metadata, not identity attestation.
 No new model permissions, executable plugins or general module command transport
 are introduced. General cross-process module registration/routing remains partial.
+
+## Observer cancellation and module replay
+
+`Subscription::cancel()` closes only that observer and discards buffered frames.
+`receive_until(cancel_future)` gives an immediately ready cancellation priority over
+queued delivery, closes observation and returns `None`. Future receives also return
+`None`; task execution and durable audits are unchanged. Closing releases shared
+subscription capacity even while the Rust handle remains alive. The same methods
+are available on `ModuleSubscription`. Cancellation intentionally abandons live
+delivery; durable history remains the recovery source.
+
+`ModuleSubscription::progress_since(store, cursor)` binds replay to its original
+task UUID and pinned stage filter, including after replacement, overflow or
+cancellation. It uses the existing bounded durable scanner; filtering preserves
+`cursor` and `more`. Empty filtered pages may still advance the cursor and require
+another page. Subscribe before catch-up and deduplicate live/replayed sequences.
+No events from unrelated tasks or newly configured module stages enter replay.
+The supplied Store remains a trusted host reference, not an IPC identity assertion.

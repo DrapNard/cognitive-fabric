@@ -374,3 +374,10 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   immutable versions while retaining in-flight subscriptions across replacement.
 - Filter before shared bounded queue admission and preserve explicit overflow and
   durable catch-up without granting model observation or execution permissions.
+
+### Event observer cancellation and recovery
+
+- Close pending/buffered observations explicitly without cancelling task execution,
+  releasing queue capacity while handles remain alive.
+- Replay durable progress through the module's pinned task/stage filter, preserving
+  pagination cursors across replacement, overflow and cancellation.

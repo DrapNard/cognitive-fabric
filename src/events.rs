@@ -225,6 +225,7 @@ pub(crate) struct Hub {
     subscribers: Mutex<Vec<Subscriber>>,
 }
 pub struct Subscription {
+    cancelled: bool,
     receiver: mpsc::Receiver<Arc<Vec<u8>>>,
     lost: Arc<AtomicBool>,
 }
@@ -250,7 +251,11 @@ impl Hub {
             sender,
             lost: lost.clone(),
         });
-        Ok(Subscription { receiver, lost })
+        Ok(Subscription {
+            receiver,
+            lost,
+            cancelled: false,
+        })
     }
     pub(crate) fn publish(&self, event: &Progress) -> Result<()> {
         let bytes = Arc::new(event.encode()?);
@@ -283,7 +288,26 @@ impl Hub {
     }
 }
 impl Subscription {
+    /// Close this observer and release queued data without cancelling its task.
+    pub fn cancel(&mut self) {
+        self.cancelled = true;
+        self.receiver.close();
+        while self.receiver.try_recv().is_ok() {}
+    }
+    pub async fn receive_until(
+        &mut self,
+        cancel: impl std::future::Future<Output = ()>,
+    ) -> Result<Option<Progress>> {
+        tokio::select! {
+            biased;
+            _ = cancel => { self.cancel(); Ok(None) },
+            event = self.receive() => event,
+        }
+    }
     pub async fn receive(&mut self) -> Result<Option<Progress>> {
+        if self.cancelled {
+            return Ok(None);
+        }
         if self.lost.load(Ordering::Acquire) {
             bail!("Progress events lost; reload durable task history and resubscribe")
         }

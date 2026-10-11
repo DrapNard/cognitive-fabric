@@ -2,7 +2,7 @@
 
 Direct and task-pinned inference broker dispatch both preserve caller task UUIDs.
 Concurrent distinct-task and malformed-task regressions cover this boundary in
-`src/fabric/tests.rs`; separate-process authentication remains incomplete.
+`src/fabric/tests.rs`; general independent actor provisioning remains incomplete.
 
 `src/fabric/unix.rs` adds host-connected inference transport authenticated against
 approved OS peer UID/PID, validated correlated COGM frames and cancellation-safe
@@ -43,22 +43,23 @@ remains a pre-release. `QUALITY_REVIEW.md` preserves verification history.
 | 4, 9 | Jev+ coordination | Partial | `src/engine.rs`, `src/planning.rs`, `src/store.rs::route`: capability routing/gaps, bounded topological subtask execution, admission budgets; dependency and budget tests | General module scheduling, measured escalation policy, automatic subtask resumption and broader scheduling telemetry |
 | 5 | Jev-R reasoning | Partial | `src/reasoning.rs`: planner/solver/explorer/critic/reflector, strict recursive revisions, no-progress stopping, unverified subtask results and original-goal synthesis; order, revision and cancellation tests | General independent executable verifiers and live-model effectiveness measurements |
 | 6 | Expert network | Partial | `src/registry.rs`: immutable semantic-versioned reference manifests, dependency/reverse-dependency checks, health, activate/disable/metadata rollback, bounded registry; lifecycle/tampering tests | Dynamic executable tool experts, measured workflow usefulness; backend loading/unloading; neural adapters remain experimental |
-| 7 | Persistent memory | Partial | `src/store.rs`: SQLite WAL/FTS5, schema migrations through 6, durable task/events, isolated explicit history, pinned registry/document snapshots, explicit lease-protected interrupted-task recovery, immutable versioned local model manifests and task selection snapshots, operator-published episodic snapshots, recomputed arithmetic memory, revocation and payload quotas, SQLite page ceilings, global task admission and reviewed retention; migration/isolation/tampering/deletion-rollback tests | Broader independent fact verifiers, backend model residency, physical WAL/filesystem bounds, full artifact/configuration restore and automatic checkpoint resumption |
+| 7 | Persistent memory | Partial | `src/store.rs`: SQLite WAL/FTS5, schema migrations through 6, durable task/events, isolated explicit history, pinned registry/document snapshots, explicit lease-protected interrupted-task recovery, immutable versioned local model manifests and task selection snapshots, operator-published episodic snapshots, recomputed arithmetic memory, revocation and payload quotas, SQLite page ceilings, global task admission and reviewed retention; migration/isolation/tampering/deletion-rollback tests | Broader independent fact verifiers, backend model residency, physical WAL/filesystem bounds, general external/neural artifact portability and automatic checkpoint resumption |
 | 8 A/B | RAG evolution | Partial | `src/evolution.rs`, `src/evaluation.rs`: content-addressed quarantine, hashes/provenance/deduplication/quotas, isolated held-out retrieval, bounded cumulative approved-version regression gates and immutable accepted suites, atomic paired review records, transactional human promotion/rollback; integrity, regression, concurrency and rollback tests | Stronger poisoning/security evaluation, automatic source discovery and cleaning; dataset independence remains operator-attested |
 | 8 C | Offline neural adaptation | Experimental | `training/train_lora.py`, inactive artifact registration; neural evaluation/promotion denied | Base-model provenance and independent neural evaluation manifests, actual training and externally isolated pipeline; no hot-swap claim |
 | 8 D, 14 | Novel neural reconstruction | Not implemented | Research only; no trained Jev networks or superiority claims | Separate research and independent evaluations, beyond proven v1.0 infrastructure |
 | 9 | Resource enforcement | Partial | `src/config.rs`, `src/reasoning.rs`: FAST/STANDARD/DEEP/RESEARCH ceilings, calls/cycles/reserved outputs/prompt bytes/tools/time, cancellation; exhaustion tests; optional provider usage and measured inference duration | Exact input-token preflight, model-load cost and retry metrics, process-isolated inference/GPU memory and optional energy telemetry |
 | 10, 11 | Security kernel | Partial | `src/security.rs`: immutable task/actor scope intersected with global policy, per-dispatch audits, deny-default capabilities, bounded no-follow reads; replay/actor/promotion denials and artifact tampering tests | Authenticated independent module identities and isolation before executable experts; signatures/attestations and neural behavioral evaluator absent |
-| 13 | Reproducible evaluation | Partial | `src/evaluation.rs`, `src/benchmarking.rs`, `src/corpus.rs`: expected exact-match benchmarks, six isolated same-model ablation profiles plus optional larger baseline, per-arm resources, reviewed dataset hashes, bounded read-only corpus snapshots and durable run cancellation; profile/isolation/deadline tests | 100–200 diverse held-out tasks, robustness/security/regression reports, measured live-model comparisons |
+| 13 | Reproducible evaluation | Partial | `src/evaluation.rs`, `src/benchmarking.rs`, `src/corpus.rs`: expected exact-match benchmarks, six isolated same-model ablation profiles plus optional larger baseline, per-arm resources, reviewed dataset hashes, bounded read-only corpus snapshots and durable run cancellation; profile/isolation/deadline tests | Independent review of the provisional 100-case corpus, unseen technical tasks, robustness/security studies and measured live-model comparisons |
 | 12, 14 | CLI/service | Partial | `src/main.rs`: initialization/configuration, ask, service controls, task-specific socket progress/cancellation, skill lifecycle, ingestion/search, task traces, candidates/rollback, benchmark, self-test; real socket fixtures | Live residency lifecycle |
 | 12, 13 | Hardware/performance claims | Partial | Optional whole-device GPU diagnostics sampled real host memory/utilization/power; no energy or large-model advantage claimed | Authenticated live inference, task-attributed telemetry and equal-budget comparisons |
 
-All 164 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
+All 178 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
 all-target build checks and Clippy with denied warnings pass. Fixtures do not prove
 GPU integration, neural quality, immutable backend weights or live model switching.
 
-The last live endpoint check found no server at `127.0.0.1:1234`. Live inference is
-therefore unverified. It is not a blocker for implementing independent infrastructure,
+The latest host validation loaded an installed LM Studio model, but inference
+returned HTTP 401. Scoped authentication is implemented and fixture-tested;
+successful live generation remains unverified without an operator credential. It is not a blocker for implementing independent infrastructure,
 but it is a release gate. No stable release tag or remote publication is authorized.
 
 Independent verification now additionally supports explicit `order:` dependency
@@ -222,8 +223,9 @@ Discovery and inference then returned HTTP 401 because the server requires
 authentication. No credentials were searched or authentication disabled. The
 temporary model was unloaded and the previously stopped server was stopped again;
 loaded-model inspection returned empty. Successful generation remains unverified.
-Explicit protected operator-supplied API authentication is the next integration
-gap; external operator model loading is not automatic framework residency control.
+Scoped operator-supplied API authentication is now implemented and fixture-tested;
+an operator credential is still needed for live generation. External model loading
+is not automatic framework residency control.
 
 Scoped local API authentication: **Implemented** for direct HTTP generation,
 primary and registered discovery, and managed-worker forwarding. See
@@ -276,3 +278,9 @@ Tests cover actual durable events, task/stage filtering before admission, replac
 unregistration, malformed descriptors, registry/subscriber bounds and overflow.
 General independent-process actor identities, executable module event handling and
 command routing remain **Partial / Not implemented**; no model permissions expand.
+
+Event observer recovery: **Implemented** via explicit cancellation/receive-until
+and module-bound durable replay. Tests verify pending/buffered cancellation,
+capacity release without cancelling tasks, overflow replay, preserved pinned stages
+and cursor advancement through empty filtered pages. This strengthens host event
+lifecycle; external module provisioning and execution remain incomplete.

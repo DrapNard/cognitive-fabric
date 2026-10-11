@@ -38,6 +38,7 @@ pub(super) struct Registry {
 }
 
 pub struct ModuleSubscription {
+    task: String,
     descriptor: EventModule,
     subscription: Subscription,
 }
@@ -47,6 +48,27 @@ impl ModuleSubscription {
     }
     pub async fn receive(&mut self) -> Result<Option<Progress>> {
         self.subscription.receive().await
+    }
+    pub fn cancel(&mut self) {
+        self.subscription.cancel();
+    }
+    pub async fn receive_until(
+        &mut self,
+        cancel: impl std::future::Future<Output = ()>,
+    ) -> Result<Option<Progress>> {
+        self.subscription.receive_until(cancel).await
+    }
+    /// Replay retains the original task and version's stage filter, including
+    /// after replacement, overflow or cancellation. Always advance page.cursor.
+    pub fn progress_since(
+        &self,
+        store: &crate::store::Store,
+        after: u64,
+    ) -> Result<super::ProgressPage> {
+        let mut page = store.progress_since(&self.task, after)?;
+        page.events
+            .retain(|event| self.descriptor.stages.contains(&event.stage));
+        Ok(page)
     }
 }
 impl crate::store::Store {
@@ -118,6 +140,7 @@ impl crate::store::Store {
             .events
             .subscribe_filtered(task, Some(descriptor.stages.clone()))?;
         Ok(ModuleSubscription {
+            task: task.into(),
             descriptor,
             subscription,
         })
@@ -236,6 +259,10 @@ mod tests {
             .to_string()
             .contains("lost"));
         assert_eq!(store.progress_since(&task, 0).unwrap().events.len(), 17);
+        assert_eq!(
+            subscription.progress_since(&store, 0).unwrap().events.len(),
+            17
+        );
         let mut subscriptions = Vec::new();
         for _ in 0..64 {
             subscriptions.push(
@@ -294,5 +321,113 @@ mod capacity_tests {
                 stages: vec![Stage::Finished]
             })
             .is_err());
+    }
+}
+
+#[cfg(test)]
+mod recovery_tests {
+    use super::*;
+    #[tokio::test]
+    async fn pinned_replay_preserves_filtered_page_cursors_after_replacement() {
+        let store = crate::store::Store::in_memory().unwrap();
+        let task = store.create_task("replay", "fast").unwrap();
+        let other = store.create_task("unrelated", "fast").unwrap();
+        store
+            .register_event_module(EventModule {
+                id: "observer".into(),
+                version: "1.0.0".into(),
+                stages: vec![Stage::Finished],
+            })
+            .unwrap();
+        let mut observer = store.subscribe_module_progress(&task, "observer").unwrap();
+        for _ in 0..40 {
+            store
+                .event(&task, "route", "jev-plus", serde_json::json!({}))
+                .unwrap();
+        }
+        store
+            .event(
+                &other,
+                "outcome",
+                "runtime",
+                serde_json::json!({"status":"completed"}),
+            )
+            .unwrap();
+        store
+            .event(
+                &task,
+                "outcome",
+                "runtime",
+                serde_json::json!({"status":"unverified"}),
+            )
+            .unwrap();
+        store
+            .register_event_module(EventModule {
+                id: "observer".into(),
+                version: "2.0.0".into(),
+                stages: vec![Stage::Routing],
+            })
+            .unwrap();
+        let first = observer.progress_since(&store, 0).unwrap();
+        assert!(first.more);
+        assert!(first.events.is_empty());
+        assert!(first.cursor > 0);
+        let second = observer.progress_since(&store, first.cursor).unwrap();
+        assert!(!second.more);
+        assert_eq!(second.events.len(), 1);
+        assert_eq!(second.events[0].stage, Stage::Finished);
+        assert_eq!(second.events[0].task_id, task);
+        assert_eq!(
+            observer.receive().await.unwrap().unwrap().sequence,
+            second.events[0].sequence
+        );
+        observer.cancel();
+        assert!(observer.receive().await.unwrap().is_none());
+        assert_eq!(
+            observer
+                .progress_since(&store, first.cursor)
+                .unwrap()
+                .events
+                .len(),
+            1
+        );
+        assert!(observer.progress_since(&store, u64::MAX).is_err());
+    }
+    #[tokio::test]
+    async fn observer_cancellation_closes_pending_and_buffered_delivery_without_cancelling_task() {
+        let store = crate::store::Store::in_memory().unwrap();
+        let task = store.create_task("still running", "fast").unwrap();
+        let mut pending = store.subscribe_progress(&task).unwrap();
+        let (send, receive) = tokio::sync::oneshot::channel();
+        tokio::spawn(async move {
+            tokio::task::yield_now().await;
+            send.send(()).unwrap();
+        });
+        assert!(tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            pending.receive_until(async { receive.await.unwrap() })
+        )
+        .await
+        .unwrap()
+        .unwrap()
+        .is_none());
+        assert!(pending.receive().await.unwrap().is_none());
+        let mut subscriptions = Vec::new();
+        for _ in 0..64 {
+            subscriptions.push(store.subscribe_progress(&task).unwrap());
+        }
+        assert!(store.subscribe_progress(&task).is_err());
+        store
+            .event(&task, "route", "jev-plus", serde_json::json!({}))
+            .unwrap();
+        assert!(subscriptions[0]
+            .receive_until(async {})
+            .await
+            .unwrap()
+            .is_none());
+        assert!(subscriptions[0].receive().await.unwrap().is_none());
+        assert!(store.subscribe_progress(&task).is_ok());
+        assert_eq!(store.task(&task).unwrap()["task"]["status"], "running");
+        assert_eq!(store.progress_since(&task, 0).unwrap().events.len(), 1);
     }
 }

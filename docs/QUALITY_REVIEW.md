@@ -1013,3 +1013,14 @@ content minimization, descriptor denials, immutable registry history/capacity an
 shared subscriber overflow/admission. Existing socket/process fixtures pass with
 host access. The feature is an in-process host routing API; authenticated external
 module provisioning and independent executable handlers remain unverified/absent.
+
+## Observer cancellation and pinned replay
+
+FlatBuffers 25.12.19 mandatory checks pass: fmt check, all-target check, all-target
+178 tests (169 library, three authentication, five process, one restore CLI), and
+Clippy with warnings denied. Tests cover cancellation while pending and buffered,
+ready-cancel priority, post-cancel closure/capacity release, unchanged running-task
+state, durable audit preservation, overflow replay and pinned filter pagination
+through empty pages after module replacement. Socket/process fixtures ran with
+host access. Replay remains a trusted-host API and does not authenticate external
+modules or implement automatic task execution resumption.
