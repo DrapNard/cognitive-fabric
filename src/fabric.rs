@@ -12,7 +12,7 @@ use std::{
     sync::{Arc, RwLock},
     time::Duration,
 };
-use tokio::sync::{mpsc, oneshot, OnceCell};
+use tokio::sync::{mpsc, oneshot, watch, OnceCell};
 pub(crate) mod protocol;
 pub mod unix;
 use protocol::{actor, decode, encode, now_ms, Header, Packet, Payload, ROLES};
@@ -64,6 +64,7 @@ struct Module {
     descriptor: ModuleDescriptor,
     backend: Arc<dyn InferenceBackend>,
     queue: OnceCell<mpsc::Sender<Work>>,
+    shutdown: Arc<watch::Sender<bool>>,
 }
 
 fn same_header(left: &Header, right: &Header) -> bool {
@@ -81,8 +82,14 @@ impl Module {
             let (sender, mut receiver) = mpsc::channel::<Work>(4);
             let backend = self.backend.clone();
             let descriptor = self.descriptor.clone();
+            let mut shutdown = self.shutdown.subscribe();
             tokio::spawn(async move {
-                while let Some(mut work) = receiver.recv().await {
+                loop {
+                    let mut work = tokio::select! {
+                        biased;
+                        _ = shutdown.wait_for(|stopped| *stopped) => break,
+                        work = receiver.recv() => match work { Some(work) => work, None => break },
+                    };
                     if work.reply.is_closed() { continue; }
                     let queue_wait_ms = work.enqueued.elapsed().as_secs_f64() * 1000.0;
                     let result = async {
@@ -94,6 +101,7 @@ impl Module {
                         let remaining = Duration::from_millis(packet.header.expires.saturating_sub(now_ms()));
                         let result = tokio::select! {
                             biased;
+                            _ = shutdown.wait_for(|stopped| *stopped) => return Err(anyhow!("Module broker shut down")),
                             _ = work.reply.closed() => return Err(anyhow!("Module caller cancelled")),
                             result = tokio::time::timeout(remaining, backend.generate_for(&packet.header.task, &role, &prompt, tokens)) => result.map_err(|_| anyhow!("Module deadline exhausted"))?,
                         };
@@ -120,6 +128,7 @@ struct Registry {
 
 pub struct Broker {
     registry: RwLock<Registry>,
+    shutdown: Arc<watch::Sender<bool>>,
 }
 impl Broker {
     pub fn with_inference(backend: Arc<dyn InferenceBackend>) -> Self {
@@ -128,10 +137,12 @@ impl Broker {
             version: "1.0.0".into(),
             roles: ROLES.iter().map(|role| role.to_string()).collect(),
         };
+        let shutdown = Arc::new(watch::channel(false).0);
         let module = Arc::new(Module {
             descriptor: descriptor.clone(),
             backend,
             queue: OnceCell::new(),
+            shutdown: shutdown.clone(),
         });
         let mut registry = Registry::default();
         registry
@@ -140,6 +151,7 @@ impl Broker {
         registry.active.insert(descriptor.id, module);
         Self {
             registry: RwLock::new(registry),
+            shutdown,
         }
     }
 
@@ -154,6 +166,9 @@ impl Broker {
             .registry
             .write()
             .map_err(|_| anyhow!("Module registry poisoned"))?;
+        if *self.shutdown.borrow() {
+            bail!("Module broker shut down")
+        }
         if registry.seen.len() >= 128
             || registry
                 .seen
@@ -186,8 +201,21 @@ impl Broker {
                 descriptor,
                 backend,
                 queue: OnceCell::new(),
+                shutdown: self.shutdown.clone(),
             }),
         );
+        Ok(())
+    }
+
+    /// Stop all versions, including modules retained by already pinned tasks.
+    /// Dropping backend futures does not prove an external inference server stopped.
+    pub fn shutdown(&self) -> Result<()> {
+        let mut registry = self
+            .registry
+            .write()
+            .map_err(|_| anyhow!("Module registry poisoned"))?;
+        self.shutdown.send_replace(true);
+        registry.active.clear();
         Ok(())
     }
 
@@ -217,6 +245,9 @@ impl Broker {
             .registry
             .read()
             .map_err(|_| anyhow!("Module registry poisoned"))?;
+        if *self.shutdown.borrow() {
+            bail!("Module broker shut down")
+        }
         let mut routes = BTreeMap::new();
         for module in registry.active.values() {
             for role in &module.descriptor.roles {
@@ -291,6 +322,9 @@ impl InferenceBackend for Pinned {
                 .routes
                 .get(role)
                 .context("No registered module for inference role")?;
+            if *module.shutdown.borrow() {
+                bail!("Module broker shut down")
+            }
             let sender = actor(role)?;
             TaskPolicy::reasoning(task)?.authorize(task, sender, "llm.generate")?;
             let header = Header {

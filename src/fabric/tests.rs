@@ -417,3 +417,76 @@ async fn bounded_queue_rejects_overflow_and_drops_cancelled_inference() {
     .await
     .unwrap();
 }
+
+#[tokio::test]
+async fn shutdown_cancels_retired_pinned_versions_and_queued_work() {
+    let backend = Arc::new(Hanging {
+        entered: tokio::sync::Notify::new(),
+        cancelled: Arc::new(AtomicBool::new(false)),
+    });
+    let broker = Broker::with_inference(backend.clone());
+    let pinned = broker.pin().unwrap().unwrap();
+    let running_backend = pinned.clone();
+    let running =
+        tokio::spawn(async move { running_backend.generate("solver", "running", 128).await });
+    backend.entered.notified().await;
+    let queued_backend = pinned.clone();
+    let queued =
+        tokio::spawn(async move { queued_backend.generate("solver", "queued", 128).await });
+    let snapshot = broker.snapshot().unwrap();
+    let queue = snapshot.routes["solver"].queue().await;
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while queue.capacity() != 3 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    broker
+        .register(
+            ModuleDescriptor {
+                id: "inference.local".into(),
+                version: "2.0.0".into(),
+                roles: vec!["solver".into()],
+            },
+            Arc::new(Fixed("replacement", AtomicUsize::new(0))),
+        )
+        .unwrap();
+    broker.unregister("inference.local").unwrap();
+    broker.shutdown().unwrap();
+    broker.shutdown().unwrap();
+    tokio::time::timeout(Duration::from_secs(1), async {
+        assert!(running.await.unwrap().is_err());
+        assert!(queued.await.unwrap().is_err());
+    })
+    .await
+    .unwrap();
+    assert!(backend.cancelled.load(Ordering::SeqCst));
+    assert!(pinned
+        .generate("solver", "after shutdown", 128)
+        .await
+        .is_err());
+    assert!(broker.pin().is_err());
+    assert!(broker.discover().unwrap().is_empty());
+    assert!(broker
+        .register(
+            ModuleDescriptor {
+                id: "other".into(),
+                version: "1.0.0".into(),
+                roles: vec!["solver".into()],
+            },
+            Arc::new(Fixed("forbidden", AtomicUsize::new(0)))
+        )
+        .is_err());
+}
+
+#[tokio::test]
+async fn shutdown_before_queue_initialization_prevents_backend_dispatch() {
+    let backend = Arc::new(Fixed("never", AtomicUsize::new(0)));
+    let broker = Broker::with_inference(backend.clone());
+    let pinned = broker.pin().unwrap().unwrap();
+    broker.shutdown().unwrap();
+    assert!(pinned.generate("solver", "goal", 128).await.is_err());
+    assert!(broker.generate("solver", "goal", 128).await.is_err());
+    assert_eq!(backend.1.load(Ordering::SeqCst), 0);
+}

@@ -2,6 +2,13 @@
 
 All notable changes are documented here in English.
 
+### Host inference broker shutdown
+
+- Stop current and retired task-pinned inference modules with one permanent
+  host-controlled signal; cancel active futures and discard queued work.
+- Refuse new registration, pinning and dispatch after shutdown while preserving
+  ordinary replacement and unregistration behavior.
+
 ### Release evidence reconciliation
 
 - Track all 18 goal acceptance criteria with current evidence and remaining proof.

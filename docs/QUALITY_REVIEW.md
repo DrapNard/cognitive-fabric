@@ -1201,3 +1201,17 @@ gates. Ran the actual CI security command locally: 24/24 probes passed, 19 expec
 denials, zero unexpected accepts. All nine offline training preflight tests passed;
 no ML training or neural safety evaluation was performed. CI execution itself has
 not been observed. This documentation/workflow update changes no runtime code.
+
+## Broker shutdown lifecycle
+
+Targeted tests cover cancelling an active retired module version, discarding queued
+work, permanent admission refusal, idempotence and stopping before lazy queue
+initialization. Existing replacement tests preserve normal task pinning semantics.
+The host stop operation grants no model authority and does not assert external
+server termination or joined worker-loop completion.
+
+All mandatory checks pass for this change: formatting, all-target check, 216 tests
+(204 library, 12 integration), and Clippy with warnings denied. Commands used
+offline dependencies and the exact FlatBuffers 25.12.19 compiler/crate pairing.
+No per-request threads, new queues or inference calls are introduced; each broker
+adds one shared stop signal and workers check it before waiting/dispatching.

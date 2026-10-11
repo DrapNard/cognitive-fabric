@@ -53,7 +53,7 @@ remains a pre-release. `QUALITY_REVIEW.md` preserves verification history.
 | 12, 14 | CLI/service | Partial | `src/main.rs`: initialization/configuration, ask, service controls, task-specific socket progress/cancellation, skill lifecycle, ingestion/search, task traces, candidates/rollback, benchmark, self-test; real socket fixtures | Live residency lifecycle |
 | 12, 13 | Hardware/performance claims | Partial | Optional whole-device GPU diagnostics sampled real host memory/utilization/power; no energy or large-model advantage claimed | Authenticated live inference, task-attributed telemetry and equal-budget comparisons |
 
-All 214 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
+All 216 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
 all-target build checks and Clippy with denied warnings pass. Fixtures do not prove
 GPU integration, neural quality, immutable backend weights or live model switching.
 
@@ -410,3 +410,11 @@ fixture hashes and failure exit status. Unit tests verify deterministic reports;
 `tests/security_evaluation.rs` checks the actual CLI. Broad adversarial evaluation,
 live injection/poisoning, sandbox escapes and module peer authentication remain
 **Not implemented** by this suite. It cannot approve neural candidates.
+
+Host inference broker shutdown: **Implemented** in `src/fabric.rs`. An explicit
+permanent stop signal reaches current and retired task-pinned versions, cancels
+active futures, discards queued work and prevents subsequent registration/pinning
+or dispatch. Tests in `src/fabric/tests.rs` cover retained versions after replace/
+unregister, buffered work, cancellation, idempotence and pre-initialization stop.
+Worker-loop exit is asynchronous; general executable lifecycle and external
+inference termination remain unproven.

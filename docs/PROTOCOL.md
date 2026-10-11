@@ -216,3 +216,16 @@ frames omit them and decode as unavailable. Values must be finite and within
 0–300,000 ms, the maximum module request lifetime. The runtime broker overwrites
 backend queue claims with its own enqueue-to-worker-receive measurement. Absent,
 negative, nonfinite and over-limit cases have compatibility/negative tests.
+
+## Host inference broker shutdown
+
+`Broker::shutdown()` permanently stops one broker and all module versions it
+created, including retired versions retained by pinned tasks. It clears active
+discovery, refuses registration/new pinning/dispatch, signals active backend
+futures for cancellation and drops queued replies. Shutdown is idempotent; worker
+loops observe the signal asynchronously, and the method does not join them.
+Ordinary replacement/unregistration still permits already pinned tasks to finish.
+This trusted Rust host API is not exposed as a model capability or an
+unauthenticated protocol command. Dropping an HTTP inference future cannot prove
+that the external server stopped GPU work. General executable lifecycle and
+independent actor provisioning remain incomplete.
