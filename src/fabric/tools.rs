@@ -13,7 +13,8 @@ mod generated {
     include!(concat!(env!("OUT_DIR"), "/tool_generated.rs"));
 }
 use generated::tool as fb;
-#[derive(Clone, Debug, serde::Serialize)]
+pub mod unix;
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
 pub struct Descriptor {
     pub id: String,
     pub version: String,
@@ -37,10 +38,23 @@ impl Descriptor {
     }
 }
 pub trait ArithmeticBackend: Send + Sync {
+    /// Fixed transport identity, when the backend is bound to a remote grant.
+    fn module_descriptor(&self) -> Option<&Descriptor> {
+        None
+    }
+
     fn evaluate<'a>(
         &'a self,
         expression: &'a str,
     ) -> Pin<Box<dyn Future<Output = Result<String>> + Send + 'a>>;
+
+    fn evaluate_for<'a>(
+        &'a self,
+        _task: &'a str,
+        expression: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<String>> + Send + 'a>> {
+        self.evaluate(expression)
+    }
 }
 struct LocalMath;
 impl ArithmeticBackend for LocalMath {
@@ -181,7 +195,9 @@ impl Module {
                             let expression = request
                                 .expression
                                 .context("Capability worker expects a request")?;
-                            let result = backend.evaluate(&expression).await;
+                            let result = backend
+                                .evaluate_for(&request.identity.task, &expression)
+                                .await;
                             let response = match result {
                                 Ok(answer) if answer.len() <= 256 => Packet {
                                     identity: request.identity,
@@ -248,6 +264,12 @@ impl Broker {
         backend: Arc<dyn ArithmeticBackend>,
     ) -> Result<()> {
         descriptor.validate()?;
+        if backend
+            .module_descriptor()
+            .is_some_and(|bound| bound != &descriptor)
+        {
+            bail!("Capability registration differs from backend transport identity")
+        }
         let mut registry = self
             .registry
             .write()

@@ -149,3 +149,14 @@ overflow/timeouts end observation without cancelling task execution. Trusted hos
 code still provisions streams, grants and child lifecycles. No executable integrity,
 same-owner isolation, general module command authorization or automatic remote
 registration is established by this observer transport.
+
+
+Arithmetic process commands (`src/fabric/tools/unix.rs`) require host-provided,
+non-deserializable task/version/call/session grants and approved UID/PID peers.
+Requests cannot create grants. Authorization audit failure prevents execution;
+malformed/uncorrelated exchanges and duplicate correlations fail closed. Cancelling
+an exchange discards its stream, and disconnect drops pending backend futures.
+The host controls socket permissions, child creation and grant provisioning.
+This transport does not isolate executable code, attest backend identity beyond
+OS credentials, stop arbitrary external side effects, or protect against a
+compromised same-user host. Tool-worker lifecycle automation remains unfinished.

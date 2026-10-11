@@ -2,6 +2,15 @@
 
 All notable changes are documented here in English.
 
+### Authenticated arithmetic process transport
+
+- Carry task-scoped arithmetic commands over mutually authenticated Unix sockets.
+- Enforce immutable task/version/call/session grants and audit before execution.
+- Reject duplicate correlations, forged responses, malformed frames and pipelining;
+  close cancelled exchanges and drop pending worker futures on disconnect.
+- Verify actual arithmetic in a separate process; automatic tool-worker provisioning
+  and executable lifecycle remain incomplete.
+
 ### Typed arithmetic module dispatch
 
 - Route arithmetic through bounded version-pinned FlatBuffers module queues.

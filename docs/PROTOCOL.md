@@ -278,3 +278,27 @@ Service shutdown also stops this broker. These are in-process typed queues, not
 an authenticated process tool transport, executable sandbox or general command
 registry. SQL and other capabilities remain outside this adapter. General module
 command routing/provisioning and executable lifecycle remain **Partial**.
+
+
+### Authenticated arithmetic process transport
+
+`src/fabric/tools/unix.rs` extends COGT command dispatch to an already connected
+Unix socket. Both sides authenticate trusted UID/PID expectations. Immutable,
+non-deserializable host grants restrict one task/module/version, 1–64 cumulative
+calls and a 1–300 second session. The adapter carries actual broker task identity;
+unscoped dispatch is denied. Four-byte big-endian lengths bound verified frames
+to 8 KiB; partial frames and writes have two-second deadlines. Each exchange has
+at most 30 seconds and both sides enforce their fixed session deadline.
+
+Worker authorization is audited before execution; audit failure prevents dispatch.
+Correlation replay, changed tasks/versions, exceeded calls, malformed frames and
+pipelining fail closed. Cancellation discards the client stream permanently;
+worker disconnect/shutdown/expiry drops pending backend futures. Backend failures
+are generic and audits exclude expressions, answers and backend error bodies.
+A separate child-process regression executes actual arithmetic. This is a trusted
+embedding API: automatic task-grant provisioning, executable launch/reaping,
+service/CLI tool-worker setup and other tool capabilities remain incomplete.
+Dropping a future is not proof that arbitrary external side effects stopped;
+this transport provides no executable sandbox or model attestation. Abrupt worker
+termination may omit the terminal audit record. Original Engine tool allowances
+and independent arithmetic verification still apply; grants cannot expand policy.

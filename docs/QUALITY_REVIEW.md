@@ -1423,3 +1423,16 @@ Five new tests cover immutable pins/replacement, task actor/input denials,
 malformed packets, independent rejection of wrong backend output, zero tool
 allowance and active/buffered shutdown. No live model was invoked. General process
 tool transport and model effectiveness remain unverified/incomplete.
+
+
+### Authenticated arithmetic process commands — 2026-10-11
+
+Mandatory formatting, offline all-target check, all-target tests (278 passed:
+261 library and 17 integration) and Clippy with warnings denied passed with exact
+FlatBuffers compiler/crate 25.12.19. Ten new test entries include the child fixture
+and real separate-process arithmetic, broker reuse/call limits, peer/task denials,
+forged responses/frame lengths, cancellation, partial-frame/session deadlines,
+duplicate-correlation denial and authorization-audit failure before backend work.
+Registration also rejects a descriptor differing from its socket backend grant.
+No live inference or arbitrary executable sandbox was tested. Automatic tool-worker
+launch, task-grant provisioning and service/CLI integration remain incomplete.
