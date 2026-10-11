@@ -836,3 +836,19 @@ Its manifest explicitly sets independent review, held-out independence and live
 model evaluation to false. The other seventy labels need independent review;
 the thirty framework-checked cases also need external oracle review. No live
 100-case comparison or model-quality/security performance claim was made.
+
+## Optional reasoning admission reservations (2026-10-11)
+
+With exact FlatBuffers 25.12.19, all mandatory checks passed offline:
+formatting, all-target Cargo check, all-target tests (152 unit + 5 process),
+and Clippy with denied warnings. The new regression covers four combinations of
+call, output-token and cumulative input-byte constraints in DEEP/RESEARCH modes.
+
+Decomposition now includes bounded dependency JSON expansion and reserves the
+first whole-goal prompt before starting subtasks. Research exploration preserves
+one final solver call, 384 output tokens and prompt headroom. Tests verify retained
+whole-goal answers, exhausted optional-stage admission, audits and unchanged hard
+ceilings. Conservative bounds may skip graphs that short outputs would permit;
+this trades optional inference for completion capacity rather than increasing
+limits. Wall time/cancellation and model correctness remain separate constraints.
+No crash-resumable graph or measured utility policy is claimed.

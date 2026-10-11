@@ -25,8 +25,9 @@ can justify a reflector and another solver. Invalid critique, no useful revision
 identical candidate hashes, cycle/call/token/byte ceilings, timeouts or
 cancellation stop execution. A missing budget never fabricates a successful answer.
 
-Verifier-R is deterministic and independent of model assertions. The current
-executable criterion is bounded arithmetic evaluation. General generated answers
+Verifier-R is deterministic and independent of model assertions. Current
+executable criteria include bounded arithmetic, dependency-order checks and
+explicit inline SQL execution. General generated answers
 are marked `unverified`, even when critics approve them. Retrieved documents are
 reference evidence, never permissions or instructions. A benchmark can separately
 verify an answer against its supplied held-out expected result using exact match.
@@ -39,7 +40,7 @@ in stable topological order, sequentially to avoid redundant GPU residency.
 Each subtask receives only its predecessor results and the original objective
 with pinned references. Outputs remain unverified advice. A final whole-goal
 solver combines the results; subgoals cannot replace the original request.
-Call/token admission reserves that solver before decomposition starts; insufficient
+Call/token/prompt-byte admission reserves that solver before decomposition starts; insufficient
 budget skips all subtasks. Invalid plans fall back to the original objective.
 Pending/running nodes become cancelled, failed or skipped on termination.
 Graph and state transitions are persisted in task events, including dependency
@@ -55,8 +56,26 @@ GPU memory, load costs, energy and peak RAM remain unavailable.
 
 Input prompt bytes are enforced independently. Exact input-token preflight needs
 a compatible tokenizer/counting endpoint and is not yet implemented; byte limits
-must not be described as exact token limits. General independent executable verifiers and crash recovery remain pending.
+must not be described as exact token limits. Broader independent executable verifiers and crash-resumable graphs remain pending;
+operator-only interrupted-task reconciliation is described in RECOVERY.md.
 
 The optional interface and synthesis stages share these budgets. See
 LANGUAGE_INTERFACE.md. Exact input-token preflight and general independent
 executable verifiers remain pending; per-role model configuration is implemented.
+
+## Preserve the first whole-goal solver
+
+Decomposition admission now bounds every subgoal prompt, including worst-case JSON
+escaping of its capped predecessor results, and reserves the first whole-goal
+prompt. Strategies are capped at 4,000 characters (at most 16,000 UTF-8 bytes).
+Prompts must also fit the 32,000-byte inference transport bound. These conservative
+bounds can refuse a graph that would fit with unusually short results; refusal
+falls back to whole-goal solving instead of consuming its byte budget.
+
+Research exploration independently requires two remaining calls, 512 reserved
+output tokens (128 explorer + 384 solver), and prompt-byte headroom for both.
+Admit/skip decisions and reserved prompt bytes are audited. This protects the
+first whole-goal attempt; it does not reserve all future critique/revision stages
+or guarantee model quality. Wall time and cancellation can still stop any stage.
+Tests cover prompt-limited decomposition, call-limited and token-limited exploration,
+and combined low-budget fallback without expanding operator ceilings.

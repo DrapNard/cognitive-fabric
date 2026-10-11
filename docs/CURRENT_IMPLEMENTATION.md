@@ -42,7 +42,7 @@ Quality requires operator-attested held-out data. Promotion checks quality,
 cumulative approved-version retrieval regressions and unchanged versions transactionally.
 Rollback restores approved stored snapshots. Neural promotion stays disabled.
 
-Verification: 156 tests, formatting, all-target check and Clippy pass using exact
+Verification: 157 tests, formatting, all-target check and Clippy pass using exact
 flatc/Rust FlatBuffers 25.12.19. HTTP fixtures and socket tests ran locally; no
 compatible live model server was available at the default endpoint. No neural
 quality, GPU integration, hot-swap, energy or model-superiority result is claimed.
@@ -160,3 +160,7 @@ The evaluation directory now supplies a provisional 100-case authored corpus and
 hashed inventory. Ten categories include deterministic tools and ambiguity/policy
 reasoning. Independent review, held-out status and live performance remain unproven;
 no benchmark accuracy or security result is inferred from format/oracle tests.
+
+Optional decomposition/exploration now preserves the first whole-goal solver's
+call, output-token and prompt-byte capacity. Conservative dependency escaping
+bounds and audited skips prevent advisory stages consuming its reserved budget.

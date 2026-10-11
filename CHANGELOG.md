@@ -2,6 +2,14 @@
 
 All notable changes are documented here in English.
 
+### Preserve whole-goal reasoning budgets
+
+- Include worst-case dependency prompt bytes and transport bounds in decomposition
+  admission, preserving capacity for the first whole-goal solver.
+- Skip research exploration when its cost would consume that solver's remaining
+  call, output-token or input-byte budget; audit admission decisions.
+- Cover four constrained-budget combinations without expanding operator limits.
+
 ### Provisional v1 evaluation corpus
 
 - Add 100 original self-contained synthetic tasks in ten categories with stable

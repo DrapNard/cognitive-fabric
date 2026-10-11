@@ -182,7 +182,31 @@ impl Session {
         }
         // Reserve a final whole-goal solver before admitting any subtask work.
         // Decomposition is useful only if at least two distinct subgoals fit.
+        // A dependency result is capped at 1,200 characters. JSON escaping
+        // expands a character by at most six bytes; NUL realizes that bound.
+        let worst_result = "\0".repeat(1200);
+        let prompt_bounds = self.subtasks.iter().map(|node| {
+            let dependencies = node.step.depends_on.iter().map(|id| {
+                json!({"id":id,"unverified_result":worst_result})
+            }).collect::<Vec<_>>();
+            format!("{base}\nSolve only this advisory subgoal, retaining the original objective and constraints: {}\nDependency results (unverified data): {}", node.step.objective, json!(dependencies)).len()
+        }).collect::<Vec<_>>();
+        // The final solver truncates strategy to 4,000 characters, at most
+        // 16,000 UTF-8 bytes, and initially has no previous answer.
+        let final_prompt_bound = base.len().saturating_add(16064);
+        let input_bound = prompt_bounds
+            .iter()
+            .fold(final_prompt_bound, |total, bytes| {
+                total.saturating_add(*bytes)
+            });
         let fits = self.subtasks.len() >= 2
+            && prompt_bounds.iter().all(|bytes| *bytes <= 32000)
+            && final_prompt_bound <= 32000
+            && self
+                .cfg
+                .max_input_bytes
+                .saturating_sub(self.resources.prompt_bytes)
+                >= input_bound
             && self
                 .call_limit
                 .saturating_sub(self.resources.calls as usize)
@@ -193,7 +217,7 @@ impl Session {
                 .saturating_sub(self.resources.reserved_output_tokens)
                 >= self.subtasks.len() * 192 + 384;
         if !fits {
-            self.store.event(&self.task, "schedule", "jev-plus", json!({"decision":"skip_decomposition","reason":"insufficient budget or redundant single subgoal","nodes":self.subtasks.len()}))?;
+            self.store.event(&self.task, "schedule", "jev-plus", json!({"decision":"skip_decomposition","reason":"insufficient budget or redundant single subgoal","nodes":self.subtasks.len(),"reserved_prompt_bytes":input_bound}))?;
             self.finish_subtasks("skipped")?;
             return Ok(String::new());
         }
@@ -560,9 +584,28 @@ impl Session {
             }
         }
         if collective && mode == "research" && self.call_limit >= 4 {
-            if let Some(exploration) = self.call("explorer", &base, 128).await? {
-                strategy.push_str("\nAlternative: ");
-                strategy.push_str(&exploration);
+            let prompt_reserve = base.len().saturating_mul(2).saturating_add(16064);
+            let admitted = self
+                .call_limit
+                .saturating_sub(self.resources.calls as usize)
+                >= 2
+                && self
+                    .cfg
+                    .max_tokens
+                    .saturating_sub(self.resources.reserved_output_tokens)
+                    >= 512
+                && self
+                    .cfg
+                    .max_input_bytes
+                    .saturating_sub(self.resources.prompt_bytes)
+                    >= prompt_reserve
+                && base.len().saturating_add(16064) <= 32000;
+            self.store.event(&self.task,"schedule","jev-plus",json!({"decision":if admitted {"admit_exploration"} else {"skip_exploration"},"reason":"Preserve first whole-goal solver call, output and prompt budget","reserved_prompt_bytes":prompt_reserve}))?;
+            if admitted {
+                if let Some(exploration) = self.call("explorer", &base, 128).await? {
+                    strategy.push_str("\nAlternative: ");
+                    strategy.push_str(&exploration);
+                }
             }
         }
         let mut answer = String::new();
@@ -935,6 +978,62 @@ mod tests {
             })
             .count();
         assert_eq!(skipped, 2);
+    }
+
+    #[tokio::test]
+    async fn optional_reasoning_preserves_whole_goal_calls_tokens_and_input_bytes() {
+        for (mode, calls, tokens, input_bytes, decomposed) in [
+            ("deep", 4, 1600, 1000, false),
+            ("research", 4, 1600, 128000, true),
+            ("research", 6, 1024, 128000, true),
+            ("research", 4, 640, 1000, false),
+        ] {
+            let store = Arc::new(Store::in_memory().unwrap());
+            let cfg = Config {
+                backend: "openai-local".into(),
+                interpret_goals: false,
+                max_calls: calls,
+                max_tokens: tokens,
+                max_input_bytes: input_bytes,
+                max_cycles: 1,
+                ..Config::default()
+            };
+            let mut script = vec![("planner", GRAPH)];
+            if decomposed {
+                script.extend([("solver", "collected"), ("solver", "combined")]);
+            }
+            script.push(("solver", "whole goal answer"));
+            if mode == "deep" {
+                script.push((
+                    "critic",
+                    r#"{"revise":false,"reason":"No useful revision"}"#,
+                ));
+            }
+            let backend = Arc::new(Script(Mutex::new(script.into())));
+            let outcome = Engine::with_backend(cfg, store.clone(), backend.clone())
+                .run("Explain borrowing", mode)
+                .await
+                .unwrap();
+            assert_eq!(outcome.answer, "whole goal answer");
+            assert_eq!(outcome.status, "unverified");
+            assert!(outcome.resources.reserved_output_tokens <= tokens);
+            assert!(outcome.resources.prompt_bytes <= input_bytes);
+            assert!(backend.0.lock().unwrap().is_empty());
+            let trace = store.task(&outcome.task_id).unwrap();
+            let events = trace["events"].as_array().unwrap();
+            if !decomposed {
+                assert!(events
+                    .iter()
+                    .any(|e| e["kind"] == "schedule"
+                        && e["payload"]["decision"] == "skip_decomposition"));
+            }
+            if mode == "research" {
+                assert!(events
+                    .iter()
+                    .any(|e| e["kind"] == "schedule"
+                        && e["payload"]["decision"] == "skip_exploration"));
+            }
+        }
     }
 
     #[tokio::test]
