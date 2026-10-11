@@ -752,3 +752,20 @@ All 145 tests (141 unit plus 4 process integration), formatting, workspace check
 and Clippy pass with FlatBuffers 25.12.19. No live-model/GPU quality claim is added.
 Stale temporary-resource cleanup and generalized executable lifecycle remain
 unfinished; recovery remains cooperative with the documented lease-inode caveats.
+
+## Registered expert comparison disclosure (2026-10-11)
+
+Exact flatc/Rust FlatBuffers pairing: 25.12.19. Commands used
+`FLATC=/tmp/cogfabric-flatbuffers/build/flatc` and offline Cargo dependencies.
+
+- `cargo fmt --all -- --check`: passed.
+- `cargo check --all-targets --offline`: passed.
+- `cargo test --all-targets --offline`: 147 unit and 5 process tests passed.
+- `cargo clippy --all-targets --offline -- -D warnings`: passed.
+
+New regression exercises all six comparison profiles with a registered expert
+whose local provider fails. Only the experts profile discloses the pinned expert
+configuration; its checksum and unattested identity are preserved, and the report
+flags loss of same-model configuration control. Existing single-model comparison
+coverage confirms the ordinary configuration flag. This does not verify loaded
+weights, domain quality, GPU integration or a real held-out performance advantage.

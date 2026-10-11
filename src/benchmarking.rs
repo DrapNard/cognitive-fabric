@@ -314,8 +314,15 @@ where
                     }
                 })
                 .collect::<Vec<_>>();
+            let expert_models = trace["events"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|event| event["kind"] == "expert_model_snapshot")
+                .map(|event| event["payload"].clone())
+                .collect::<Vec<_>>();
             details.push(json!({"case_index":case_index,"arm_index":arm_index,"execution_position":position,"profile":profile,"configured_model":model,
-                "reported_models":models,"passed":passed,"expected":case.expected,"input":case.input,"outcome":outcome,"verification":case.verification}));
+                "reported_models":models,"bound_expert_models":expert_models,"passed":passed,"expected":case.expected,"input":case.input,"outcome":outcome,"verification":case.verification}));
             if cancelled || tokio::time::Instant::now() >= deadline {
                 stopped = true;
                 break 'cases;
@@ -325,16 +332,71 @@ where
     Ok(
         json!({"format_version":1,"dataset_checksum":store::sha256(&bytes),"dataset_source":review.source,"dataset_license":review.license,"held_out_operator_attested":true,
         "code_revision_operator_attested":review.code_revision,"package_version":env!("CARGO_PKG_VERSION"),"configuration":common,"mode":mode,"corpus_snapshot":corpus.metadata,"snapshot_elapsed_ms":snapshot_ms,
+        "small_model_ablation_configuration_controlled":!details.iter().any(|detail| detail["bound_expert_models"].as_array().is_some_and(|models| !models.is_empty())),
         "case_count":cases.len(),"complete":!stopped,"stop_reason":if cancelled {"cancelled"} else if stopped {"run_deadline"} else {"completed"},"elapsed_ms":started.elapsed().as_secs_f64()*1000.0,"larger_baseline_configured":larger.is_some(),
         "arms":arms.iter().enumerate().map(|(index,(profile,model,_))| json!({"index":index,"profile":profile,"model":model,"executed":counts[index],"passed":scores[index],"resources":totals[index],"accuracy":if counts[index]>0 {Some(scores[index] as f64/counts[index] as f64)} else {None}})).collect::<Vec<_>>(),
         "details":details,"unavailable_metrics":["peak_memory","gpu_memory","energy","model_load_cost","general_security_failure_rate"],
-        "limitations":["Held-out independence and code revision are operator-attested","Backend model labels do not attest immutable weights","Exact-match and dependency-order criteria do not establish broad reasoning quality","Retrieval uses one read-only SQLite snapshot; checksum includes unrelated stored history","Snapshot bounds are 64 MB and temporarily require an additional serialization buffer","Live model availability, weight identity and server state are not frozen","Different arms consume different amounts within the same operator ceilings; inspect actual usage"]}),
+        "limitations":["Held-out independence and code revision are operator-attested","Backend model labels do not attest immutable weights","A bound expert model configuration invalidates the same-model ablation control, even if advice is refused or fails; inspect per-case bound_expert_models","Exact-match and dependency-order criteria do not establish broad reasoning quality","Retrieval uses one read-only SQLite snapshot; checksum includes unrelated stored history","Snapshot bounds are 64 MB and temporarily require an additional serialization buffer","Live model availability, weight identity and server state are not frozen","Different arms consume different amounts within the same operator ceilings; inspect actual usage"]}),
     )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn bound_expert_models_disclose_configuration_confounding_even_on_failure() {
+        let root =
+            std::env::temp_dir().join(format!("fabric-expert-compare-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        let dataset = root.join("cases.jsonl");
+        std::fs::write(
+            &dataset,
+            r#"{"input":"Explain ownership","expected":"held-out answer"}"#,
+        )
+        .unwrap();
+        let model_file = root.join("model.json");
+        std::fs::write(&model_file, r#"{"id":"domain.local","version":"1.0.0","model":"domain-model","api_base":"http://127.0.0.1:9/v1","source":"fixture","license":"CC0","context_tokens":4096,"max_output_tokens":512}"#).unwrap();
+        let store = Arc::new(Store::in_memory().unwrap());
+        let registered = store.register_model(&model_file).unwrap();
+        let manifest = serde_json::from_value(json!({"id":"rust.model.s1","version":"1.0.0","kind":"workflow","description":"Reviewed advice","tags":["ownership"],"source":"fixture","license":"CC0","workflow":"Inspect ownership","model":{"id":"domain.local","version":"1.0.0"}})).unwrap();
+        crate::registry::register(&store, &manifest).unwrap();
+        crate::registry::activate(&store, "rust.model.s1", "1.0.0").unwrap();
+        let cfg = Config {
+            backend: "demo".into(),
+            interpret_goals: false,
+            max_calls: 4,
+            max_cycles: 1,
+            ..Config::default()
+        };
+        let review = Review {
+            source: "fixture".into(),
+            license: "CC0".into(),
+            code_revision: "a".repeat(40),
+            held_out: true,
+            max_run_seconds: 10,
+        };
+        let report = compare(&cfg, store, &dataset, "deep", None, &review)
+            .await
+            .unwrap();
+        assert_eq!(report["complete"], true);
+        assert_eq!(
+            report["small_model_ablation_configuration_controlled"],
+            false
+        );
+        for detail in report["details"].as_array().unwrap() {
+            let models = detail["bound_expert_models"].as_array().unwrap();
+            if detail["profile"] == "experts" {
+                assert_eq!(models.len(), 1);
+                assert_eq!(models[0]["requested_model"], "domain-model");
+                assert_eq!(models[0]["model_checksum"], registered.checksum);
+                assert_eq!(models[0]["weights_attested"], false);
+            } else {
+                assert!(models.is_empty());
+            }
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn memory_totals_use_maxima_and_preserve_unavailable_samples() {
         let mut outcome = crate::engine::Outcome {
@@ -563,6 +625,10 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(report["complete"], true);
+        assert_eq!(
+            report["small_model_ablation_configuration_controlled"],
+            true
+        );
         assert_eq!(report["corpus_snapshot"]["frozen"], true);
         assert_eq!(
             report["corpus_snapshot"]["database_snapshot_checksum"]

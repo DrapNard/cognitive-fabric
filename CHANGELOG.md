@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Expert model comparison disclosure
+
+- Include per-case registered expert configurations and checksums in comparisons.
+- Flag separately bound expert configurations as confounding same-model ablations,
+  including failed/refused advice, without treating metadata as weight attestation.
+
 ### Registered-model workflow experts
 
 - Bind workflow advice to immutable enabled local model registrations while sharing

@@ -24,8 +24,9 @@ Use `compare DATASET --mode deep --source SOURCE --license LICENSE --held-out
 `--larger-model MODEL_ID`. Supply the same `--home` and local inference configuration
 as normal execution. Use `--json` and redirect stdout to retain the report.
 
-The six small-model profiles use one configured model and temperature; per-role
-model overrides are cleared to avoid confounding the same-model comparison.
+The six profiles share one configured primary model and temperature; per-role
+model overrides are cleared. Explicit registered workflow bindings can still
+select a separate expert model in the experts arm.
 Operator call/cycle/token/byte/tool/time ceilings remain common. Actual consumption
 differs and is reported, rather than artificially forcing every arm to spend the
 same amount. The optional larger baseline uses the same single-solver path.
@@ -140,3 +141,20 @@ corresponding aggregate unavailable. For independently attributable memory
 comparisons, run arms in separately measured processes with backend telemetry.
 Diagnostics exposes the same optional runtime-process measurements without
 creating tasks. Non-Linux platforms report unavailable values.
+
+
+### Expert model configuration disclosure
+
+Each case includes `bound_expert_models`, copied from its durable task snapshots:
+expert identity, exact model registration, manifest checksum, requested model and
+`weights_attested:false`. This records configuration even when advice is refused
+or provider inference fails; successful provider labels remain in `reported_models`.
+No provider success or weight identity is inferred from a snapshot.
+
+`small_model_ablation_configuration_controlled` is false whenever any executed
+case snapshots a separately bound expert configuration. Treat such a report as a
+multi-model comparison, even if the declared model string matches the primary
+model. True describes the absence of observed bound expert configurations, not
+proof of immutable weights, equal consumption, complete execution or statistical
+validity. Inspect `complete`, actual usage and per-case snapshots independently.
+Live model disable overrides frozen knowledge for later task starts.
