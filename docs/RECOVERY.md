@@ -115,3 +115,22 @@ resumption, attest weights or decide that a model answer is verified. A cryptogr
 content hash checks local consistency, not trust against a hostile database owner.
 This is a prerequisite for reviewed checkpoint continuation; automatic graph
 resumption still needs pinned configuration, state and remaining-budget admission.
+
+## Durable execution settings
+
+New sessions record version-1 execution_settings before inference: validated runtime
+configuration, requested reasoning mode and effective call/cycle ceilings. Engine
+execution_options additionally records the ablation profile, explanation option
+and explicit conversation reference. Workspace paths are excluded by configuration
+serialization; dedicated environment credentials are never serialized. The engine
+validates embedded configuration before task creation, and Session validates its
+own entry point too. Snapshot write failures prevent model dispatch; initialization
+failure may leave a running row for explicit lease-protected recovery.
+
+These are runtime admission/settings records, not permission grants or backend
+weight/configuration attestation. Custom backends and independently registered
+modules may have settings outside Config. Existing tasks without snapshots cannot
+retroactively acquire them. Restoring a snapshot must not restore authority from
+its JSON: the deterministic kernel must issue new task-scoped permissions. Actual
+checkpoint continuation still requires graph validation, immutable references,
+remaining resource/time admission and handling of unrecorded calls.

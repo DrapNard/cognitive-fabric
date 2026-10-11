@@ -176,6 +176,7 @@ impl Engine {
         F: std::future::Future<Output = ()>,
     {
         let (options, task_id) = execution_options;
+        self.cfg.validate()?;
         if query.trim().is_empty() || query.len() > 12_000 {
             bail!("Query is empty or exceeds 12,000 bytes")
         }
@@ -235,6 +236,8 @@ impl Engine {
             id.clone(),
             mode,
         )?;
+        self.store.event(&id,"execution_options","runtime",json!({"format_version":1,
+            "profile":profile,"explain":options.explain,"conversation_ref":options.conversation_ref}))?;
         self.store.event(
             &id,
             "intent",
@@ -1063,5 +1066,94 @@ mod tests {
         assert_eq!(result.answer, "36");
         assert_eq!(result.calls, 0);
         let _ = std::fs::remove_file(path);
+    }
+}
+
+#[cfg(test)]
+mod execution_settings_tests {
+    use super::*;
+    #[tokio::test]
+    async fn rejects_invalid_embedding_configuration_before_creating_tasks() {
+        for invalid in 0..3 {
+            let store = Arc::new(Store::in_memory().unwrap());
+            let mut cfg = Config::default();
+            match invalid {
+                0 => cfg.max_calls = 65,
+                1 => cfg.max_wall_seconds = 0,
+                _ => cfg.api_base = "http://192.0.2.1/v1".into(),
+            }
+            assert!(Engine::new(cfg, store.clone())
+                .run("Explain ownership", "fast")
+                .await
+                .is_err());
+            let tasks: u64 = store
+                .lock()
+                .unwrap()
+                .query_row("SELECT count(*) FROM tasks", [], |r| r.get(0))
+                .unwrap();
+            assert_eq!(tasks, 0);
+        }
+    }
+    #[tokio::test]
+    async fn settings_are_durable_before_calls_and_keep_original_configuration() {
+        let store = Arc::new(Store::in_memory().unwrap());
+        let cfg = Config {
+            max_calls: 3,
+            max_cycles: 2,
+            interpret_goals: false,
+            home: "/private/source-path".into(),
+            ..Config::default()
+        };
+        let mut engine = Engine::new(cfg, store.clone());
+        let outcome = engine.run("Explain ownership", "fast").await.unwrap();
+        engine.cfg.max_calls = 4;
+        let trace = store.task(&outcome.task_id).unwrap();
+        let events = trace["events"].as_array().unwrap();
+        let settings = events
+            .iter()
+            .find(|e| e["kind"] == "execution_settings")
+            .unwrap();
+        assert_eq!(settings["payload"]["configuration"]["max_calls"], 3);
+        assert_eq!(settings["payload"]["call_limit"], 1);
+        assert_eq!(settings["payload"]["cycle_limit"], 1);
+        assert_eq!(settings["payload"]["weights_attested"], false);
+        assert_eq!(
+            settings["payload"]["permissions_restorable_from_settings"],
+            false
+        );
+        assert!(!settings.to_string().contains("private/source-path"));
+        assert!(
+            settings["sequence"].as_u64().unwrap()
+                < events
+                    .iter()
+                    .find(|e| e["kind"] == "model_dispatch")
+                    .unwrap()["sequence"]
+                    .as_u64()
+                    .unwrap()
+        );
+        let options = events
+            .iter()
+            .find(|e| e["kind"] == "execution_options")
+            .unwrap();
+        assert_eq!(options["payload"]["profile"], "full");
+    }
+    #[tokio::test]
+    async fn snapshot_write_failure_never_dispatches_inference() {
+        let store = Arc::new(Store::in_memory().unwrap());
+        store.lock().unwrap().execute_batch("CREATE TRIGGER reject_settings BEFORE INSERT ON events WHEN NEW.kind='execution_settings' BEGIN SELECT RAISE(ABORT,'snapshot failure'); END;").unwrap();
+        assert!(Engine::new(Config::default(), store.clone())
+            .run("Explain ownership", "fast")
+            .await
+            .is_err());
+        let dispatches: u64 = store
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT count(*) FROM events WHERE kind='model_dispatch'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(dispatches, 0);
     }
 }

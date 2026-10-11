@@ -395,3 +395,10 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   transactional inference-audit summary for recovery inspection.
 - Validate result identity/hashes and preserve unknown legacy or unrecorded usage
   without refunding reservations, exposing answers or authorizing replay.
+
+### Durable task execution settings
+
+- Validate embedded runtime configuration before task creation and persist settings,
+  effective reasoning ceilings and execution options before model dispatch.
+- Fail closed on snapshot writes and preserve original settings without archiving
+  workspace paths, environment credentials or restorable permission grants.

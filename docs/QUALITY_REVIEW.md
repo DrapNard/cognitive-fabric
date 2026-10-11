@@ -1047,3 +1047,13 @@ usage, pending/legacy unknown totals, duplicate/unmatched identities, malformed
 call IDs, forged content hashes and output over-allocation. The CLI fixture runs
 demo reasoning then inspects its ledger without claiming real provider usage.
 No automatic replay, weight attestation or task resumption is established.
+
+## Durable task settings verification
+
+FlatBuffers 25.12.19 mandatory checks pass: fmt check, all-target check, all-target
+188 tests (178 library, three authentication, five process, one restore CLI,
+one audit CLI), and Clippy with denied warnings. Tests cover invalid embedding
+configuration without task creation, original settings retained after engine
+changes, snapshots preceding dispatch, excluded workspace paths and injected
+snapshot write failure with zero dispatches. No backend attestation or automatic
+resumption is inferred; initialization failure can require explicit task recovery.

@@ -102,6 +102,7 @@ impl Session {
         task: String,
         mode: &str,
     ) -> Result<Self> {
+        cfg.validate()?;
         let (calls, cycles) = match mode {
             "fast" => (1, 1),
             "standard" => (4, 1),
@@ -110,6 +111,17 @@ impl Session {
             _ => bail!("Unknown reasoning mode"),
         };
         let policy = security::TaskPolicy::reasoning(&task)?;
+        store.event(
+            &task,
+            "execution_settings",
+            "runtime",
+            json!({
+                "format_version":1,"configuration":cfg,"mode":mode,
+                "call_limit":calls.min(cfg.max_calls),"cycle_limit":cycles.min(cfg.max_cycles),
+                "backend_configuration_attested":false,"weights_attested":false,
+                "permissions_restorable_from_settings":false
+            }),
+        )?;
         store.event(
             &task,
             "policy_snapshot",

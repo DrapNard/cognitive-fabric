@@ -300,3 +300,10 @@ hashes and allocations while preserving unknown legacy/interrupted usage. Tests
 cover runtime/CLI production of call IDs, incomplete/legacy reports and malformed,
 duplicate/unmatched/tampered records. This does not authorize replay or complete
 automatic graph resumption; remaining-state/budget/configuration checks still apply.
+
+Durable execution settings: **Implemented** in Engine/Session before inference,
+with runtime configuration, effective call/cycle limits and execution options.
+Embedding validation now rejects invalid configuration before task creation.
+Tests cover durable original settings, ordering before dispatch, private path
+exclusion and snapshot write failure containment. Backend attestation and restored
+permissions are explicitly false; automatic checkpoint continuation remains partial.
