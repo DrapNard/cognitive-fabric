@@ -22,6 +22,7 @@ pub mod recovery;
 pub mod registry;
 pub mod restore;
 pub mod security;
+pub mod security_evaluation;
 pub mod service;
 pub mod sql;
 pub mod storage;

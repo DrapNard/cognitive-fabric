@@ -401,3 +401,12 @@ checker identities; tests cover malformed bindings, legacy hashes, replacement,
 disabling, pinned historical proofs and independent recursive verification.
 Registration grants no capabilities; arbitrary executable experts and dynamic
 implementation loading remain **Partial / Not implemented**.
+
+### Offline security boundary evaluation — Implemented (bounded scope)
+
+`src/security_evaluation.rs` and the `security-eval` CLI provide 24 reproducible
+permission, task-isolation, FlatBuffers and manifest probes with positive controls,
+fixture hashes and failure exit status. Unit tests verify deterministic reports;
+`tests/security_evaluation.rs` checks the actual CLI. Broad adversarial evaluation,
+live injection/poisoning, sandbox escapes and module peer authentication remain
+**Not implemented** by this suite. It cannot approve neural candidates.

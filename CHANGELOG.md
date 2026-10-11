@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Reproducible offline security evaluation
+
+- Add `security-eval` with 24 fixed boundary probes, positive controls, fixture
+  hashes, detailed results and unsuccessful exit status on mismatches.
+- Explicitly report unmeasured security risks and exclude neural safety claims.
+
 ### Bounded interrupted-task reconciliation
 
 - Bound and validate recovered task identities before updating durable state.

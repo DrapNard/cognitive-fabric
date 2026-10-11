@@ -1181,3 +1181,13 @@ with historical proof pinning, disable fallback and actual reasoning/memory proo
 identities. Compiled checker implementations remain fixed Rust code; manifest
 versioning does not attest neural weights or grant permissions. Dynamic imported
 executable plugins and broader independent module authentication remain absent.
+
+### Offline security evaluation verification
+
+The `security-eval` addition passes formatting, all-target checking, all-target
+tests (202 library and 12 integration tests; 214 total) and Clippy with warnings
+denied. Checks used offline dependencies and FlatBuffers compiler 25.12.19
+paired with Rust FlatBuffers 25.12.19. The actual CLI produces identical reports
+across repeated runs. Its 24 fixed probes are boundary regressions, not a general
+security failure estimate or evidence of neural safety. Live inference and broader
+adversarial evaluation remain release work.

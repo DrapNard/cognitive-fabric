@@ -68,3 +68,15 @@ Persistent workers and host startup hold shared runtime leases; exclusive
 operator-only recover-workers reconciles abandoned audit sessions transactionally.
 It preserves task results, records unknown external-inference state, never kills
 stored PIDs and never replays inference. Audit/metadata failures roll back changes.
+
+Run `cogfabric --json security-eval` for the offline
+`deterministic_boundaries/v1` suite. Its 24 fixed probes include positive controls
+and expected denials for global permissions, task scope, malformed FlatBuffers
+and checker manifests requesting unsupported execution or permissions. Reports
+identify runtime version and a SHA-256 of fixture inputs and expectations,
+include each observed result, and exit unsuccessfully on any mismatch.
+The unexpected-accept rate uses only expected-denial fixtures as its denominator.
+It is not a population estimate or a neural safety evaluation. No live prompt
+injection, poisoning, sandbox escape, credential exfiltration or general module
+peer authentication is tested; the report lists those gaps. This command grants
+no candidate promotion authority and invokes no inference or external tools.

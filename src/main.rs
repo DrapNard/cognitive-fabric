@@ -38,6 +38,7 @@ enum Command {
     Init,
     Status,
     SelfTest,
+    SecurityEval,
     Diagnostics {
         #[arg(long)]
         probe_inference: bool,
@@ -500,6 +501,15 @@ async fn main() -> Result<()> {
             changed.inference_process = enabled;
             changed.save()?;
             json!({"inference_process":enabled,"sandboxed":false})
+        }
+        Command::SecurityEval => {
+            let report = cogfabric::security_evaluation::run()?;
+            let success = report["success"] == true;
+            output(report, cli.json)?;
+            if !success {
+                anyhow::bail!("Security boundary evaluation failed")
+            }
+            return Ok(());
         }
         Command::SelfTest => {
             let math = engine.run("calc: (7 + 5) * 3", "fast").await?;
