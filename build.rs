@@ -5,6 +5,7 @@ fn main() {
     println!("cargo:rerun-if-changed=protocol/module.fbs");
     println!("cargo:rerun-if-changed=protocol/events.fbs");
     println!("cargo:rerun-if-changed=protocol/bootstrap.fbs");
+    println!("cargo:rerun-if-changed=protocol/event_stream.fbs");
     println!("cargo:rerun-if-env-changed=FLATC");
     let compiler = env::var_os("FLATC").unwrap_or_else(|| "flatc".into());
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR must be set by Cargo"));
@@ -25,6 +26,7 @@ fn main() {
         .arg("protocol/module.fbs")
         .arg("protocol/events.fbs")
         .arg("protocol/bootstrap.fbs")
+        .arg("protocol/event_stream.fbs")
         .status()
         .expect("flatc was not found. Install FlatBuffers compiler (e.g. pacman -S flatbuffers).");
     assert!(status.success(), "flatc could not compile protocol schemas");

@@ -11,7 +11,7 @@ pub struct EventModule {
     pub stages: Vec<Stage>,
 }
 impl EventModule {
-    fn validate(&self) -> Result<()> {
+    pub(super) fn validate(&self) -> Result<()> {
         if self.id.is_empty()
             || self.id.len() > 64
             || !self

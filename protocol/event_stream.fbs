@@ -1,0 +1,15 @@
+// Host-approved task-scoped event modules; no command or permission payloads.
+namespace EventStream;
+enum Kind:ubyte { Open, Progress, Closed, Error }
+enum Cause:ubyte { None, Completed, Cancelled, Timeout, Limit, Lost, Protocol }
+table Packet {
+ version:ushort = 1;
+ kind:Kind;
+ cause:Cause;
+ module_id:string (required);
+ module_version:string (required);
+ task_id:string (required);
+ event:[ubyte];
+}
+root_type Packet;
+file_identifier "COGS";

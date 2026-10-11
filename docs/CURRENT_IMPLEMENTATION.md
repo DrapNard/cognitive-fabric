@@ -296,3 +296,10 @@ repeats the saved inference or treats rejection as success. Repeated failed answ
 unsupported state and unavailable budgets do not receive a revision; checkpoint
 write failures roll back verification charges. Arbitrary within-cycle recovery
 and unknown inference outcomes remain unsupported.
+
+
+Host embedding APIs now deliver task-scoped progress to authenticated separate
+processes using versioned COGS/COGE FlatBuffers, pinned module/stage grants and
+bounded queues/timeouts. Actual child-process and negative transport tests pass.
+Socket/child provisioning remains host-owned; general executable registration,
+command routing and automatic IPC replay are still incomplete.

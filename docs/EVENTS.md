@@ -126,3 +126,43 @@ cancellation. It uses the existing bounded durable scanner; filtering preserves
 another page. Subscribe before catch-up and deduplicate live/replayed sequences.
 No events from unrelated tasks or newly configured module stages enter replay.
 The supplied Store remains a trusted host reference, not an IPC identity assertion.
+
+
+## Authenticated process event modules
+
+`events::unix` adds a trusted embedding-host API for event consumers in separate
+local processes. The host registers an `EventModule`, accepts an already connected
+Unix stream, and calls `EventSession::connected(store, task, module_id, stream,
+uid, pid)` with an explicitly approved peer UID/PID. Kernel peer credentials must
+match before subscription. `session.grant()` supplies the immutable task/module
+version/stage grant to trusted provisioning code. The consumer constructs an
+`EventReceiver` with that grant and the expected host UID/PID. Neither peer chooses
+an executable, self-registers through IPC, or receives task/tool authority.
+
+`EventSession::serve(seconds, cancel)` emits a typed open frame, filtered live
+progress and a terminal control frame. Sessions permit 1–300 seconds after opening
+and at most 4,096 events, with two-second write deadlines. Consumers require each
+complete frame within ten seconds, including idle time. All streams share the
+existing 64-subscription and 16-frame queue ceilings. Queue loss is an explicit
+error; a slow peer cannot block event producers. Upstream bytes are forbidden and
+close the session as a protocol error. Host cancellation closes observation only.
+Registry replacement/unregistration preserves the existing pinned stream grant.
+
+`protocol/event_stream.fbs` defines version-1 COGS frames (8 KB maximum), wrapping
+verified COGE progress with exact task/module/version identity. Wrong protocol,
+identity, stage, packet shape or non-increasing event sequence fails closed.
+Cancelling a receiver future permanently drops its connection. `end_reason()`
+distinguishes normal terminal observation, cancellation, timeout and frame limit;
+`Completed` means a Finished milestone was observed, including unverified outcomes.
+Transport closure never proves task verification. Abrupt I/O/audit failure may
+leave only the durable session-start audit; delivery is not exactly once.
+
+The host owns socket creation/permissions, child lifecycle and trusted grant
+provisioning; the library does not start a plugin listener or expose a new CLI
+endpoint. Live delivery observes this Store instance. Durable replay remains the
+existing pinned `ModuleSubscription::progress_since` API; automatic IPC replay
+and general module commands/registration are not implemented by this stream.
+UID/PID checks do not attest executable contents or isolate malicious same-owner
+code. Tests exercise a real child process, forged credentials, wrong grants,
+malformed/versioned packets, stage/task denials, overflow, cancellation and
+session/incomplete-frame deadlines. No new model capabilities are introduced.

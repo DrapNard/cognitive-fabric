@@ -541,3 +541,13 @@ inference. Original budgets/context/deadline and repeat stopping remain enforced
 write failure rolls back proof, tool charge and boundary together. Tests cover
 actual HTTP continuation, repeated-answer refusal and fault rollback. Unknown
 outcomes and arbitrary within-cycle phases remain **Partial / Not implemented**.
+
+
+Authenticated process event-module delivery: **Implemented (host API)** in
+`src/events/unix.rs`, `protocol/event_stream.fbs` and generator integration.
+COGS wraps verified task-scoped progress with pinned module versions/stage grants;
+both sides authenticate approved UID/PID peers. Bounded lifetimes/frames/queues,
+cancellation and explicit overflow/protocol errors are tested, including a real
+child process. Registry/filter replacement semantics persist. Automatic provisioning,
+IPC replay, service/CLI listener integration and general module command routing
+remain **Partial / Not implemented**; no executable attestation is claimed.

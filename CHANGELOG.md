@@ -2,6 +2,15 @@
 
 All notable changes are documented here in English.
 
+### Authenticated process event modules
+
+- Deliver filtered task progress to host-approved local processes using versioned
+  FlatBuffers envelopes, mutual UID/PID checks and pinned module/stage grants.
+- Bound frames, queues, lifetimes and writes; reject upstream commands and report
+  loss explicitly while preserving task execution during observer cancellation.
+- Test real child-process delivery, malformed identities/frames, overflow and
+  deterministic deadlines. General module command routing remains incomplete.
+
 ### Failed-answer revision reconciliation
 
 - Prepare an admitted revision boundary after a fresh independent rejection of a

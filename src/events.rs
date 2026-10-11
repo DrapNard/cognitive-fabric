@@ -8,6 +8,7 @@ use std::sync::{
 };
 use tokio::sync::mpsc;
 pub mod modules;
+pub mod unix;
 #[allow(dead_code, unused_imports, clippy::all)]
 mod generated {
     include!(concat!(env!("OUT_DIR"), "/events_generated.rs"));

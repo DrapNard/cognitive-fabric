@@ -140,3 +140,12 @@ environment; bootstrap contains scope metadata only. Exact raw/decoded echoes ar
 rejected before task persistence. This does not defeat transformed exfiltration by
 a malicious provider, same-user process inspection or administrator access. See
 `AUTHENTICATION.md`. Authentication configuration remains human-only.
+
+
+Host-approved event-module streams now authenticate expected UID/PID credentials
+on both ends and bind every FlatBuffers frame to one task, module version and
+stage grant. Incoming command bytes, wrong grants and malformed packets are denied;
+overflow/timeouts end observation without cancelling task execution. Trusted host
+code still provisions streams, grants and child lifecycles. No executable integrity,
+same-owner isolation, general module command authorization or automatic remote
+registration is established by this observer transport.

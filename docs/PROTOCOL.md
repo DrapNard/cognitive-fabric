@@ -236,3 +236,16 @@ preserves durable task cancellation before revoking retained inference handles.
 External users retaining that service broker or a pin cannot dispatch after
 service completion. Socket setup failure does not stop a broker whose service
 never began. Broker worker loops still exit asynchronously.
+
+
+## Process event stream (COGS v1)
+
+`protocol/event_stream.fbs` wraps COGE progress in a task/module/version-bound
+FlatBuffers packet. Frames use a four-byte big-endian length and an 8 KB ceiling.
+Open, Progress, Closed and Error shapes have independently validated cause/event
+combinations. Unknown versions/kinds/causes, wrong pinned identities and invalid
+nested COGE frames are rejected. Consumers additionally enforce stage grants and
+increasing durable sequences. Host-approved UID/PID Unix credentials authenticate
+both sides; a string descriptor alone does not establish identity. No upstream
+commands or registration messages are accepted. Existing COGE/COGF layouts are
+unchanged. See `EVENTS.md` for lifetime, queue and provisioning limitations.

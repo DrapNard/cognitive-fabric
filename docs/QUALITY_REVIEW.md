@@ -1388,3 +1388,15 @@ create a freshly checked revision without repeated inference, execute it through
 HTTP, refuse repeat-stopped answers and roll back tool/proof writes when boundary
 persistence fails. Unknown provider outcomes and arbitrary within-cycle phases
 remain unsupported; this supplies no model-quality or release-readiness claim.
+
+## Authenticated process event modules (2026-10-11)
+
+Formatting, offline all-target checking, all-target Clippy with warnings denied and
+all-target tests passed with FlatBuffers compiler/crate 25.12.19: 258 tests
+(241 library, 17 integration). Eight new tests include a separate child process,
+mutual UID/PID checks, immutable grant/version scope, unknown protocol shapes,
+malformed frames, task/stage denials, overflow, observer cancellation and virtual
+session/partial-frame deadlines. COGS schema generation uses the same exact compiler
+pairing. Delivery remains a trusted host observer API; no general module command
+execution, automatic provisioning, executable attestation or live-model gain is
+claimed. Existing inference, service, persistence and recovery regressions pass.
