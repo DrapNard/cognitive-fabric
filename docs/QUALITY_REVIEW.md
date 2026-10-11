@@ -1564,3 +1564,10 @@ failure, and live arithmetic/SQL socket lease exclusion. Full log:
 the current debug executable and verifies recovery remains empty after normal
 worker completion. Optimized installed verification is pending for this source.
 No tool replay, PID termination, file cleanup or external-effect proof is inferred.
+
+Optimized installation of mixed recovery source `dbb9c47` passed the expanded
+installed workflow, including empty recovery after clean tool/inference completion.
+Exact source/binary/script identity and retained evidence are recorded in
+`RELEASE_AUDIT.md`. The installed-source gap above is closed for this commit;
+abandoned/malformed/live-session proof comes from the recovery regressions, not
+a simulated host crash in the smoke script.

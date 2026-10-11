@@ -182,3 +182,18 @@ mixed rollback/idempotence. The expanded debug smoke workflow confirms recovery
 is empty after clean completion. Prior optimized evidence predates this source;
 refresh installed verification before release. This is audit recovery, not
 stale-directory cleanup or proof of completed external effects.
+
+Optimized mixed-worker recovery verification (2026-10-11): source
+`dbb9c47dfe5a8c7ed2f3710054873982e10e2729` was installed with
+`FLATC=/tmp/cogfabric-flatbuffers/build/flatc cargo install --offline --locked --path . --root /tmp/cogfabric-v1-tool-recovery-install-20261011`.
+Cargo reported 45.63 seconds for the optimized build. Binary SHA-256:
+`3e94eefd0686b688b50df7ed6b4d156e2577ffab726bfd2506f48fc5b09903c4`.
+Smoke script SHA-256:
+`3b87a03d93397c14073359b64a2ac659ada908b7caf4a37623300969dece1d17`.
+The installed workflow passed, including clean inference/tool completion followed
+by empty `recover-workers`, along with CLI/service, rollback and restore checks.
+Evidence: `/tmp/cogfabric-installed-smoke.4mpTND`; log:
+`/tmp/cogfabric-tool-recovery-installed-smoke.log`. This closes the pending
+installed-source gap above. Abandoned-session behavior is proven by mixed/live
+socket Rust regressions; the smoke script does not simulate a host crash. Stale
+files, general module lifecycle and live-model release gates remain open.

@@ -752,3 +752,9 @@ Mixed worker recovery validation passes all mandatory checks with 309 Rust tests
 worker completion leaves no recoverable sessions. Optimized installation evidence
 must be refreshed after this source change. Stale-file cleanup, broader module
 lifecycle and live-model evaluation remain open.
+
+Optimized installed validation of `dbb9c47` now passes the expanded workflow,
+including CLI recovery after clean completion. `RELEASE_AUDIT.md` records hashes
+and evidence. The installed-source gap is closed for this commit; the mixed/live
+recovery regressions establish abandoned-session behavior. Stale filesystem
+resources and broader module lifecycle remain incomplete.
