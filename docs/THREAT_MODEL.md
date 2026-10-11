@@ -18,8 +18,9 @@ trusted task grants before dispatch. Bounded cumulative reservations and session
 limit repeated requests. Disconnect/shutdown drops active inference, but cannot
 prove an external GPU server stopped. These controls do not attest executable
 contents, isolate same-user compromise or provision grants securely by themselves.
-Worker launch, cross-process grant distribution and worker crash reconciliation remain
-release integration work; see `PROTOCOL.md`.
+Managed same-binary workers now receive authenticated task grants and are reaped
+on task termination. General executable isolation and worker crash reconciliation
+remain release integration work; see `WORKERS.md` and `PROTOCOL.md`.
 
 Worker audit records use a trusted existing task anchor and bounded metadata.
 Authorization decisions must persist before inference; atomic anchor checks prevent

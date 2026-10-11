@@ -50,11 +50,15 @@ pub struct Engine {
     pub broker: Arc<crate::fabric::Broker>,
     backend: Arc<dyn InferenceBackend>,
     corpus: Option<Arc<crate::corpus::FrozenCorpus>>,
+    process_inference: bool,
 }
 impl Engine {
     pub fn new(cfg: Config, store: Arc<Store>) -> Self {
+        let process_inference = cfg.inference_process;
         let backend = Arc::new(LocalBackend(cfg.clone()));
-        Self::with_backend(cfg, store, backend)
+        let mut engine = Self::with_backend(cfg, store, backend);
+        engine.process_inference = process_inference;
+        engine
     }
     pub fn with_backend(
         cfg: Config,
@@ -68,6 +72,7 @@ impl Engine {
             backend: broker.clone(),
             broker,
             corpus: None,
+            process_inference: false,
         }
     }
     pub(crate) fn with_frozen_corpus(mut self, corpus: Arc<crate::corpus::FrozenCorpus>) -> Self {
@@ -183,12 +188,40 @@ impl Engine {
         let model_registration = self.store.pin_model(&self.cfg)?;
         let start = Instant::now();
         let backend = self.backend.pin()?.unwrap_or_else(|| self.backend.clone());
-        let modules = backend.modules()?;
+        if self.process_inference {
+            let modules = backend.modules()?;
+            if modules.len() != 1
+                || modules[0].id != "inference.local"
+                || modules[0].version != "1.0.0"
+                || modules[0].roles
+                    != crate::fabric::protocol::ROLES
+                        .iter()
+                        .map(|role| (*role).to_string())
+                        .collect::<Vec<_>>()
+            {
+                bail!("Managed process mode requires the default inference registry; custom process modules need explicit lifecycle integration")
+            }
+        }
         let _execution_lease = self.store.execution_lease()?;
         let id = match task_id {
             Some(id) => self.store.create_named_task(&id, query, mode)?,
             None => self.store.create_task(query, mode)?,
         };
+        let process = if self.process_inference {
+            Some(Arc::new(crate::fabric::unix::process::ProcessTask::new(
+                self.cfg.clone(),
+                self.store.clone(),
+                &id,
+            )?))
+        } else {
+            None
+        };
+        let backend: Arc<dyn InferenceBackend> = if let Some(process) = &process {
+            Arc::new(crate::fabric::Broker::with_inference(process.clone()))
+        } else {
+            backend
+        };
+        let modules = backend.modules()?;
         self.store.event(
             &id,
             "model_registration",
@@ -482,6 +515,14 @@ impl Engine {
             _=cancel=>Ok(("Task cancelled".into(),"cancelled".into())),
             _=tokio::time::sleep(Duration::from_secs(self.cfg.max_wall_seconds))=>Ok(("Task wall clock budget exhausted".into(),"exhausted".into())),
             result=execution=>result,
+        };
+        let result = if let Some(process) = &process {
+            match process.shutdown().await {
+                Ok(()) => result,
+                Err(error) => Err(error),
+            }
+        } else {
+            result
         };
         session.finish_metrics();
         session.sample_process_memory();

@@ -82,6 +82,7 @@ pub fn authorize(principal: &str, capability: &str) -> Result<()> {
             capability,
             "knowledge.ingest"
                 | "inference.diagnose"
+                | "inference.worker.configure"
                 | "model.register"
                 | "model.select"
                 | "model.lifecycle"

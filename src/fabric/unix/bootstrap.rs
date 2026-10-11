@@ -103,6 +103,7 @@ impl Bootstrap {
             max_tokens: u32::try_from(self.config.max_tokens)?,
             max_input_bytes: self.config.max_input_bytes as u64,
             role_profiles: Some(builder.create_vector(&profiles)),
+            max_database_bytes: self.config.max_database_bytes,
         };
         let root = fb::Bootstrap::create(&mut builder, &args);
         builder.finish(root, Some("COGB"));
@@ -137,6 +138,7 @@ impl Bootstrap {
             max_calls: packet.max_calls() as usize,
             max_tokens: packet.max_tokens() as usize,
             max_input_bytes: usize::try_from(packet.max_input_bytes())?,
+            max_database_bytes: packet.max_database_bytes(),
             interpret_goals: false,
             synthesize_results: false,
             ..Config::default()
@@ -228,6 +230,7 @@ mod tests {
                 max_tokens: 512,
                 max_input_bytes: 4096,
                 role_profiles: Some(profiles),
+                max_database_bytes: 256_000_000,
             };
             let root = fb::Bootstrap::create(&mut builder, &args);
             builder.finish(root, Some("COGB"));
@@ -238,6 +241,8 @@ mod tests {
     fn roundtrip_preserves_generation_settings_without_paths_or_extra_authority() {
         let mut config = Config {
             home: "/private/workspace".into(),
+            inference_process: true,
+            max_database_bytes: 64_000_000,
             model: "pinned-model".into(),
             max_calls: 4,
             max_tokens: 512,
@@ -275,6 +280,8 @@ mod tests {
         assert!(decoded.config.home.as_os_str().is_empty());
         assert!(decoded.config.model_registration.is_none());
         assert!(!decoded.config.interpret_goals);
+        assert!(!decoded.config.inference_process);
+        assert_eq!(decoded.config.max_database_bytes, 64_000_000);
         assert!(!bytes.windows(18).any(|w| w == b"/private/workspace"));
     }
     #[test]

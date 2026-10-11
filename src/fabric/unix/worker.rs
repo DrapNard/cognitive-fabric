@@ -1,5 +1,7 @@
 //! Bounded worker sessions with authority supplied by trusted host setup only.
-use super::{authenticate, read, write};
+#[cfg(test)]
+use super::read;
+use super::{authenticate, read_optional, write};
 use crate::{
     backend::InferenceBackend,
     fabric::{actor, now_ms, ModuleDescriptor, Packet, Payload},
@@ -187,7 +189,7 @@ pub async fn serve(
             let packet = tokio::select! {
                 biased;
                 _ = shutdown.changed() => return Ok(()),
-                result = tokio::time::timeout(Duration::from_secs(10), read(&mut stream)) => result.map_err(|_| anyhow!("Worker idle/read deadline exhausted"))??,
+                result = tokio::time::timeout(Duration::from_secs(10), read_optional(&mut stream)) => match result.map_err(|_| anyhow!("Worker idle/read deadline exhausted"))?? { Some(packet) => packet, None => return Ok(()) },
             };
             let remaining = match authority.charge(&packet) {
                 Ok(remaining) => remaining,

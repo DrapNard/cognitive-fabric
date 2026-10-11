@@ -47,8 +47,9 @@ It closes a connection on cancellation or invalid transport responses to prevent
 stale reply reuse. It grants no shell, file or worker-launch permission. Process
 credentials are not executable/weight attestation or isolation from same-user
 descriptor transfer. Worker sessions use trusted immutable task grants and
-cumulative ceilings, and drop inference on disconnect/shutdown. Production grant
-provisioning, process lifecycle and worker crash reconciliation remain unimplemented;
+cumulative ceilings, and drop inference on disconnect/shutdown. Opt-in managed
+workers launch only the current executable and receive authenticated single-task
+grants. General executable lifecycle/isolation and worker crash reconciliation remain unimplemented;
 see `PROTOCOL.md` for the tested scope.
 
 Worker sessions require a trusted audit anchor. Atomic SQLite inserts record
@@ -56,3 +57,9 @@ metadata-only decisions/outcomes there, including denied task claims. Authorizat
 audit failures prevent inference; missing anchors cannot create orphan events.
 Abrupt process/future termination can leave an open session record and is not
 represented as successful cancellation or completion.
+
+Only human-cli can configure managed worker mode. It defaults off, clears the
+child environment and creates private socket resources; task ownership closes
+and reaps the child, with kill-on-drop fallback. This adds process coordination,
+not shell execution or a sandbox. Same-user worker code retains database access.
+Custom registries are rejected in this mode instead of silently replaced.

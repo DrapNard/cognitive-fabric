@@ -102,7 +102,7 @@ workspace paths, model-registry authority and executable grants are absent.
 `authority` converts validated settings to a single-task inference grant with the
 same cumulative ceilings. The codec does not authenticate its sender: callers must
 check peer credentials before accepting bootstrap data. This is the typed setup
-interface for process lifecycle integration, not a completed launcher. `receive`
+interface used by the opt-in same-binary managed launcher. `receive`
 checks approved host UID/PID before reading a bounded length-prefixed frame under
 a ten-second deadline; `send` has a two-second write deadline. Role/model
 names remain declarations, not neural weight attestations.
@@ -124,9 +124,9 @@ is still not guaranteed. Host task ceilings remain independently enforced.
 
 The supplied Rust `serve` API handles worker-side authorization; tests cover real
 adapter/worker round trips, cumulative budgets, forged actors/unapproved tasks,
-version/deadline denials and active cancellation. Production process launch,
-grant provisioning across processes, sandboxing and
-automatic replacement remain unfinished. Task grants are immutable for a session;
+version/deadline denials and active cancellation. The managed launcher supplies
+single-task grants to its own worker executable; generalized executable module
+launch, sandboxing and automatic replacement remain unfinished. Task grants are immutable for a session;
 new grants require trusted creation of another authority/session.
 
 Worker `serve` also requires an `Audit` bound by trusted setup to an existing
@@ -163,9 +163,15 @@ Tests include a separate fixture process authenticated by its actual PID plus
 wrong UID/PID, forged task, oversized length and cancellation denials. This is a
 connected-process identity check, not executable attestation, sandboxing or neural
 weight verification. Same-user compromise and inherited/passed descriptors remain
-outside isolation guarantees. Production worker grant provisioning,
-launch/lifecycle and general module event routing remain incomplete; remote
+outside isolation guarantees. Generalized executable module lifecycle,
+crash reconciliation and general module event routing remain incomplete; remote
 computation may continue after the host closes its connection.
+
+`configure-worker --enabled true` selects managed task-local inference in new
+Engines/services. The host launches its own hidden worker entry point, provisions
+authenticated COGB settings, and explicitly closes/reaps the child on termination.
+No process launches until the first model call. See `WORKERS.md` for ownership,
+fallback cleanup, timing scope and remaining limitations.
 
 `protocol/events.fbs` adds independent `COGE` version-1 frames generated with the
 same pinned flatc/Rust 25.12.19 pair. Bounded typed milestones cross local Tokio

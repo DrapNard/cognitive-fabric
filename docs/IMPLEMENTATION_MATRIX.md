@@ -7,21 +7,24 @@ Concurrent distinct-task and malformed-task regressions cover this boundary in
 `src/fabric/unix.rs` adds host-connected inference transport authenticated against
 approved OS peer UID/PID, validated correlated COGM frames and cancellation-safe
 connection disposal. A separate test process verifies real process communication.
-Production worker lifecycle and general actor routing
-remain incomplete; this adapter is not an executable sandbox or attestation.
+General actor routing remains incomplete; this adapter is not an executable
+sandbox or attestation.
 
 `src/fabric/unix/worker.rs` now implements worker-side authorization with immutable
 host/task grants, cumulative resource ceilings and disconnect/shutdown cancellation.
 Tests cover the complete Rust adapter/worker exchange and negative grants/budgets.
 Worker sessions require bounded SQLite audit attachment and fail closed on
 authorization-write failure; reopening/privacy/failure tests verify this path.
-Production launch, cross-process grant provisioning, worker crash reconciliation and
-general actor routing remain incomplete.
+Opt-in same-binary task workers now launch through `src/fabric/unix/process.rs`,
+receive authenticated grants, reuse pinned settings and are closed/reaped at task
+termination. CLI integration tests cover demo execution, zero-process arithmetic
+and pending HTTP cancellation. Worker crash reconciliation, generalized executable
+module lifecycle and general actor routing remain incomplete. See `WORKERS.md`.
 
 `protocol/bootstrap.fbs` and `src/fabric/unix/bootstrap.rs` provide validated typed
 single-task setup and pinned generation settings. Codec/negative tests and the
 worker round-trip cover grant conversion. Authenticated bounded bootstrap delivery
-has a real socket fixture; production process launch remains pending.
+has a real socket fixture and is used by the managed launcher.
 
 The complete French `ARCHITECTURE.md` remains canonical. This matrix describes
 current evidence on `develop/v1.0`, not a reduced target architecture. The project
@@ -44,7 +47,7 @@ remains a pre-release. `QUALITY_REVIEW.md` preserves verification history.
 | 12, 14 | CLI/service | Partial | `src/main.rs`: initialization/configuration, ask, service controls, task-specific socket progress/cancellation, skill lifecycle, ingestion/search, task traces, candidates/rollback, benchmark, self-test; real socket fixtures | Live residency lifecycle |
 | 12, 13 | Hardware/performance claims | Not implemented | No GPU/energy or large-model advantage claimed | Real local endpoint, hardware telemetry, equal-budget comparisons |
 
-All 133 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
+All 138 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
 all-target build checks and Clippy with denied warnings pass. Fixtures do not prove
 GPU integration, neural quality, immutable backend weights or live model switching.
 
@@ -113,7 +116,7 @@ observations, not isolated task peaks, backend residency or GPU measurements.
 The optional offline trainer now freezes bounded dataset input, rejects ambiguous/
 conflicting provenance, fails on passes with no supervised tokens, reserves separate
 output and records seeded configuration, dependency versions and hashed adapter
-inventory. Six standard-library preflight tests pass in addition to the 133 Rust
+inventory. Six standard-library preflight tests pass in addition to the 138 Rust
 tests. Level C stays Experimental: ML dependencies/weights are unavailable here,
 and base provenance manifests, independent neural evaluation, external isolation,
 actual training and adapter switching remain unverified. Promotion remains denied.

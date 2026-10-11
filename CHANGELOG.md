@@ -2,6 +2,15 @@
 
 All notable changes are documented here in English.
 
+### Managed same-binary inference workers
+
+- Add opt-in configure-worker mode with lazy per-task child launch, authenticated
+  typed bootstrap and pinned generation/database ceilings.
+- Reuse one child across role calls, explicitly close/reap on task completion or
+  cancellation, and retain kill-on-drop fallback plus identity-checked cleanup.
+- Record launch handoff/reaping metadata; test actual CLI process execution,
+  zero-process arithmetic, pending HTTP cancellation and custom-registry refusal.
+
 ### Typed single-task worker bootstrap
 
 - Define bounded COGB FlatBuffers settings for a worker's approved task and pinned

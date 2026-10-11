@@ -17,6 +17,7 @@ table Bootstrap {
   max_tokens:uint;
   max_input_bytes:ulong;
   role_profiles:[RoleProfile];
+  max_database_bytes:ulong = 256000000;
 }
 root_type Bootstrap;
 file_identifier "COGB";

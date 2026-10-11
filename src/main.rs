@@ -28,6 +28,13 @@ struct Cli {
 }
 #[derive(Subcommand)]
 enum Command {
+    #[command(hide = true)]
+    InferenceWorker {
+        #[arg(long)]
+        socket: PathBuf,
+        #[arg(long)]
+        host_pid: u32,
+    },
     Init,
     Status,
     SelfTest,
@@ -110,6 +117,10 @@ enum Command {
         temperature: f64,
     },
     ConfigShow,
+    ConfigureWorker {
+        #[arg(long, action = clap::ArgAction::Set)]
+        enabled: bool,
+    },
     Ask {
         query: String,
         #[arg(long, default_value = "standard")]
@@ -276,6 +287,13 @@ fn output<T: Serialize>(value: T, force_json: bool) -> Result<()> {
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
+    if let Command::InferenceWorker { socket, host_pid } = &cli.command {
+        let home = cli
+            .home
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Worker requires an explicit home"))?;
+        return cogfabric::fabric::unix::process::run_worker(home, socket, *host_pid).await;
+    }
     let cfg = Config::load(cli.home, cli.backend)?;
     if let Command::RestoreDatabase {
         snapshot,
@@ -294,6 +312,7 @@ async fn main() -> Result<()> {
     store::bootstrap(&store)?;
     let engine = Engine::new(cfg.clone(), store.clone());
     let response: Value = match cli.command {
+        Command::InferenceWorker { .. } => bail!("Worker must run before normal initialization"),
         Command::RestoreDatabase { .. } => {
             bail!("Restore must run before workspace initialization")
         }
@@ -369,8 +388,10 @@ async fn main() -> Result<()> {
         Command::Init => {
             json!({"home":cfg.home,"version":env!("CARGO_PKG_VERSION"),"skills":store.skills()?.len()})
         }
-        Command::Status => json!({"home":cfg.home,"backend":cfg.backend,"model":cfg.model,
-            "skills":store.skills()?.len(),"candidates":store.candidates()?.len()}),
+        Command::Status => {
+            json!({"home":cfg.home,"backend":cfg.backend,"model":cfg.model,"inference_process":cfg.inference_process,
+            "skills":store.skills()?.len(),"candidates":store.candidates()?.len()})
+        }
         Command::ConfigureLocal {
             model,
             api_base,
@@ -395,6 +416,13 @@ async fn main() -> Result<()> {
             json!({"saved":true,"configuration":settings})
         }
         Command::ConfigShow => serde_json::to_value(&cfg)?,
+        Command::ConfigureWorker { enabled } => {
+            security::authorize("human-cli", "inference.worker.configure")?;
+            let mut changed = cfg.clone();
+            changed.inference_process = enabled;
+            changed.save()?;
+            json!({"inference_process":enabled,"sandboxed":false})
+        }
         Command::SelfTest => {
             let math = engine.run("calc: (7 + 5) * 3", "fast").await?;
             let wire = cogfabric::wire::new_request("calc: 7 * 6".into(), "fast".into());

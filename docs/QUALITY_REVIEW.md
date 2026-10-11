@@ -681,3 +681,33 @@ The temporary compiler was absent and was rebuilt from the official v25.12.19
 source before verification; no generated files or compiler binaries were committed.
 Production process launch, lifecycle integration and crash reconciliation remain
 unfinished. Model names/configuration are declarations, not weight attestation.
+
+## Managed same-binary inference lifecycle
+
+Added opt-in persisted inference_process mode and operator-only configure-worker.
+Engine tasks lazily launch the current executable's internal worker entry point,
+with cleared environment and private temporary socket resources. Both peers check
+OS credentials; bootstrap settings pin one task and generation/database ceilings.
+Child startup reads no mutable workspace configuration. One child is reused across
+roles; zero-inference tasks launch none. Custom registries fail explicitly instead
+of being silently replaced. Injected fixture backends retain their implementation.
+
+Task termination closes the stream, waits two seconds, requests termination if
+needed and waits two more seconds for reaping; cleanup errors fail the task.
+Kill-on-drop remains a fallback. Socket cleanup checks directory/socket identities.
+Clean idle EOF is distinguished from partial frames. Launch handoff and confirmed
+reaping metadata are audited; no model-load, child/GPU memory or sandbox proof is
+claimed. Execution budgets stop reasoning; cleanup can add bounded grace time.
+
+All 138 tests (135 unit plus 3 actual CLI integration tests), workspace check,
+formatting and Clippy pass with FlatBuffers 25.12.19. The integration tests verify
+one demo child reused across a task, arithmetic without a child, and Ctrl-C during
+pending loopback HTTP inference with disconnect and confirmed reaping. An initial
+Clippy test-module placement warning was corrected. A fresh isolated diagnostic
+probe of 127.0.0.1:1234/v1/models failed; live generation was not tested. The demo
+and HTTP fixtures do not establish model quality or GPU operation.
+
+Managed mode is same-user coordination, not arbitrary executable isolation.
+General module lifecycle, crash/audit reconciliation and stale temporary-resource
+cleanup remain incomplete. Worker sessions retain their tighter 300-second/idle
+ceilings; no automatic restart or task replay is provided. See `WORKERS.md`.

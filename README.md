@@ -2,7 +2,11 @@
 
 **Author:** DrapNard  
 **Language:** Rust (runtime), Python (optional offline model training)
-**Status:** **Verified Rust alpha baseline** — builds and 133 regression tests pass; v1.0 integration requirements remain incomplete.
+**Status:** **Verified Rust alpha baseline** — builds and 138 regression tests pass; v1.0 integration requirements remain incomplete.
+
+Optional managed inference workers: use `configure-worker --enabled true` to run
+each task's inference adapter in a host-authenticated child process. See
+[managed workers](docs/WORKERS.md) for limits, cancellation and remaining gaps.
 **License:** Apache-2.0 (framework only)
 
 This branch corrects the original v1.0 implementation's technology mismatch:

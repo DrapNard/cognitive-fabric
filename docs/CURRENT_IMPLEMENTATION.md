@@ -42,12 +42,18 @@ Quality requires operator-attested held-out data. Promotion checks quality,
 cumulative approved-version retrieval regressions and unchanged versions transactionally.
 Rollback restores approved stored snapshots. Neural promotion stays disabled.
 
-Verification: 133 tests, formatting, all-target check and Clippy pass using exact
+Verification: 138 tests, formatting, all-target check and Clippy pass using exact
 flatc/Rust FlatBuffers 25.12.19. HTTP fixtures and socket tests ran locally; no
 compatible live model server was available at the default endpoint. No neural
 quality, GPU integration, hot-swap, energy or model-superiority result is claimed.
 See `IMPLEMENTATION_MATRIX.md` for every remaining engineering requirement and
 `QUALITY_REVIEW.md` for actual command evidence.
+
+Optional managed worker mode now launches the same Rust executable lazily per
+task, provisions authenticated typed settings and closes/reaps it on completion
+or cancellation. Three actual CLI integration tests cover demo role execution,
+zero-process arithmetic and Ctrl-C during pending HTTP inference. This is process
+coordination, not an executable sandbox or model-loading proof. See `WORKERS.md`.
 
 `benchmarking.rs` now runs explicit execution ablations under common operator
 ceilings, rotates arm order, excludes expected answers from inference, records

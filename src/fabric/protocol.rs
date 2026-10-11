@@ -10,7 +10,7 @@ mod generated {
 use generated::fabric as fb;
 
 pub(super) const MAX_FRAME: usize = 256 * 1024;
-pub(super) const ROLES: [&str; 7] = [
+pub(crate) const ROLES: [&str; 7] = [
     "interface",
     "planner",
     "solver",
