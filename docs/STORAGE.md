@@ -90,3 +90,36 @@ the copy owner-writable (0600), and open that directory with `--home`. Keep the
 original backup read-only. This procedure does not replace a live database and does
 not restore missing configuration/artifacts automatically. Validate task traces,
 registry state and artifact availability before using a restored workspace.
+
+## Restore into a new directory
+
+`cogfabric restore-database SNAPSHOT --checksum SAVED_SHA256 --destination NEW_HOME`
+automates the database-only procedure for current schema-6 standalone backups.
+The destination must not exist, even as an empty directory or symlink; its parent
+must already exist. No active workspace is replaced. This command runs before
+ordinary workspace initialization, so it does not create the configured source
+home, open its database or start an engine. It may read that home's configuration
+for limits. Only human-cli/storage.restore is authorized.
+
+The command copies through bounded 64 KB buffers, checks the saved SHA-256 and
+file identities, and opens the staged database read-only for SQLite quick_check,
+schema and journal validation. Live WAL databases and other schema versions are
+rejected. Input bytes cannot exceed the configured database ceiling. Copy and
+validation check a ten-second deadline; blocking I/O/sync and SQLite callbacks
+are not hard real-time guarantees. Publication uses a no-overwrite hard link,
+with private 0700 directory/0600 database permissions and durability syncs.
+
+`restore-manifest.json` records a versioned restore UUID, source checksum, byte
+count, schema and count of running tasks not replayed. It is provenance metadata,
+not an ongoing checksum of a database later modified by normal execution. No
+configuration, external artifacts, model weights or candidate paths are restored
+or rewritten. Absent configuration uses normal defaults on the next CLI run.
+Inspect traces/artifact availability and run explicit recover-tasks for abandoned
+work; restoration never infers completion or resumes execution.
+
+Failures can leave the newly reserved private directory or partial metadata;
+publication/sync errors can leave a valid database despite an error. Inspect it
+before retrying with another new destination. No existing directory is cleaned up
+or overwritten. Same-user hostile tampering remains outside an absolute isolation
+guarantee. Full artifact/configuration archives and older-schema migration restore
+remain separate work.

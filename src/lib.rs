@@ -20,6 +20,7 @@ pub mod planning;
 pub mod reasoning;
 pub mod recovery;
 pub mod registry;
+pub mod restore;
 pub mod security;
 pub mod service;
 pub mod sql;

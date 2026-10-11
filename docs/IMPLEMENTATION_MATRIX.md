@@ -21,7 +21,7 @@ remains a pre-release. `QUALITY_REVIEW.md` preserves verification history.
 | 12, 14 | CLI/service | Partial | `src/main.rs`: initialization/configuration, ask, service controls, task-specific socket progress/cancellation, skill lifecycle, ingestion/search, task traces, candidates/rollback, benchmark, self-test; real socket fixtures | Live residency lifecycle |
 | 12, 13 | Hardware/performance claims | Not implemented | No GPU/energy or large-model advantage claimed | Real local endpoint, hardware telemetry, equal-budget comparisons |
 
-All 112 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
+All 114 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
 all-target build checks and Clippy with denied warnings pass. Fixtures do not prove
 GPU integration, neural quality, immutable backend weights or live model switching.
 
@@ -90,7 +90,7 @@ observations, not isolated task peaks, backend residency or GPU measurements.
 The optional offline trainer now freezes bounded dataset input, rejects ambiguous/
 conflicting provenance, fails on passes with no supervised tokens, reserves separate
 output and records seeded configuration, dependency versions and hashed adapter
-inventory. Six standard-library preflight tests pass in addition to the 112 Rust
+inventory. Six standard-library preflight tests pass in addition to the 114 Rust
 tests. Level C stays Experimental: ML dependencies/weights are unavailable here,
 and base provenance manifests, independent neural evaluation, external isolation,
 actual training and adapter switching remain unverified. Promotion remains denied.
@@ -110,3 +110,11 @@ execution order, dependency results, profile isolation, version replacement and
 budget refusals. This implements bounded multi-step advice; executable/conditional
 workflow interpreters, measured utility and independent-model experts remain
 incomplete. See `EXPERTS.md`.
+
+`src/restore.rs` and `restore-database` now automate current-schema database-only
+restoration into an exclusively new private directory, with saved-hash verification,
+SQLite validation, no-overwrite publication and a private versioned restore record.
+Tests cover preserved running state without replay, existing paths, checksum/
+symlink/corruption/schema/WAL denials and model permission denial. This does not
+restore configuration/artifacts or automatically migrate older snapshots; full
+workspace restoration remains partial. See `STORAGE.md`.

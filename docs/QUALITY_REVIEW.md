@@ -569,3 +569,29 @@ call/token/input-byte refusal. All 112 Rust tests, fmt/check/Clippy and CLI buil
 pass with FlatBuffers 25.12.19. CLI smoke registered/activated the structured
 example in an isolated /tmp home and reported valid dependency metadata. Execution
 tests use the recording fixture backend; no live model-quality claim is made.
+
+## Checked database restoration into new workspaces
+
+Added operator-only restore-database before normal CLI Store/Engine initialization.
+Exclusive mkdir refuses existing paths; bounded no-follow reads copy one reviewed
+standalone snapshot through 64 KB buffers. Saved SHA-256, source/staging identities,
+SQLite quick_check, DELETE journal and exact schema 6 must pass before no-overwrite
+publication. A private versioned restore manifest records provenance without
+altering the copied database. Model actors have no restore capability.
+
+Running tasks remain unchanged and are never replayed. Configuration, external
+artifacts/weights and candidate paths are not replaced. Input uses the configured
+DB ceiling; ten-second copy/validation checks are soft around blocking I/O/SQLite
+and fsync. Failed attempts can leave a reserved private directory; publication/
+sync failure can leave valid data despite an error. Same-owner hostile tampering
+is outside an absolute guarantee; source/staging/parent identity checks reduce
+accidental replacement risk. Older-schema migration and full workspace archives
+remain incomplete.
+
+Tests cover copied state, unchanged running status, provenance records, destination
+and file permissions, existing paths, checksum/symlink/corruption/schema/WAL
+denials and model authorization denial. All 114 Rust tests, mandatory format/check/
+Clippy checks and CLI build pass with FlatBuffers 25.12.19. Actual isolated CLI
+smoke restored a 188,416-byte backup, independently matched its SHA-256 before
+reopen, and retained completed result 56 plus all 11 audit events. The configured
+control home was not created. No live inference or task replay occurred.

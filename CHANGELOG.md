@@ -183,3 +183,10 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   legacy hashes and shared-backend behavior.
 - Execute declared dependencies under shared budgets, audit step/result identities,
   and keep advice unverified and isolated from baseline profiles.
+
+### Development: restore verified database snapshots into new workspaces
+
+- Add operator-only checksum/integrity-checked database restoration with private
+  staging, no-overwrite publication and a durable provenance record.
+- Refuse existing destinations, unsupported schemas and live WAL inputs; retain
+  task state without automatic replay or configuration/artifact substitution.

@@ -43,6 +43,13 @@ enum Command {
         after: u64,
     },
     Backup,
+    RestoreDatabase {
+        snapshot: PathBuf,
+        #[arg(long)]
+        checksum: String,
+        #[arg(long)]
+        destination: PathBuf,
+    },
     RetentionPreview {
         #[arg(long)]
         before_unix: u64,
@@ -270,11 +277,26 @@ fn output<T: Serialize>(value: T, force_json: bool) -> Result<()> {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
     let cfg = Config::load(cli.home, cli.backend)?;
+    if let Command::RestoreDatabase {
+        snapshot,
+        checksum,
+        destination,
+    } = &cli.command
+    {
+        output(
+            &cogfabric::restore::database(&cfg, snapshot, checksum, destination)?,
+            cli.json,
+        )?;
+        return Ok(());
+    }
     cfg.prepare()?;
     let store = Arc::new(Store::open_with_limit(&cfg.db(), cfg.max_database_bytes)?);
     store::bootstrap(&store)?;
     let engine = Engine::new(cfg.clone(), store.clone());
     let response: Value = match cli.command {
+        Command::RestoreDatabase { .. } => {
+            bail!("Restore must run before workspace initialization")
+        }
         Command::WatchTask { id, after } => {
             let mut subscription = service::subscribe_progress(&cfg, &id, after).await?;
             loop {
