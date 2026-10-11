@@ -604,3 +604,21 @@ unaffected. Explicit forwarding now preserves the caller UUID through both paths
 A task-aware fixture observes concurrent distinct UUIDs and rejects malformed
 IDs on each path. All 115 Rust tests, workspace check, formatting and Clippy pass
 with FlatBuffers 25.12.19. No new capability or process authentication is granted.
+
+## Host-connected Unix inference adapter
+
+Trusted host code can register an already-connected UnixInference adapter with
+an immutable descriptor and approved peer UID/PID. OS credential checks precede
+use. Four-byte length-prefixed COGM frames enforce existing bounds, task policy,
+roles, correlation/version/expiry and output-token ceilings. Serialized exchanges
+have a 300-second ceiling; the surrounding broker supplies bounded admission.
+Taking ownership of the stream before I/O means cancellation or invalid responses
+permanently close it, preventing stale cross-task response reuse.
+
+Six tests cover reusable exchanges, real separate-process credentials and broker
+dispatch, wrong UID/PID, malformed task/role, forged task response, oversized frame
+length and cancellation disposal. The child is a deterministic fixture, not a
+model or sandbox. All 121 tests, workspace check, formatting and Clippy pass with
+FlatBuffers 25.12.19. No new dependency, model process launch, executable permission
+or remote network access is added. Worker-side authorization, production lifecycle,
+executable attestation, isolation and general routing remain unfinished.

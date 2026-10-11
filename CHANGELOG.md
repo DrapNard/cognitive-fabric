@@ -2,6 +2,13 @@
 
 All notable changes are documented here in English.
 
+### Host-connected inference process transport
+
+- Add a Unix inference adapter with host-approved OS peer UID/PID checks,
+  bounded FlatBuffers exchanges and immutable task/module correlation.
+- Close cancelled or invalid exchanges permanently; verify communication with a
+  separate local fixture process without exposing process spawning to models.
+
 ### Task identity propagation correction
 
 - Preserve caller task UUIDs in direct broker inference dispatch, matching the

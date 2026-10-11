@@ -91,6 +91,31 @@ queueing, coordination, HTTP time and cancellation; it is not measured GPU time.
 
 ## Progress envelope
 
+### Host-connected Unix inference adapters
+
+`fabric::unix::UnixInference::connected` accepts an already-connected UnixStream,
+immutable module descriptor and host-approved peer UID/PID. OS credentials must
+match both values, and platforms without peer PID support fail closed. Trusted
+host code supplies and registers the adapter; no model-supplied socket path,
+process spawning, executable discovery or self-registration is exposed.
+
+Requests and responses use four-byte big-endian lengths and verified COGM frames
+with the same 256 KiB bound. Registered roles, task policy, version, task and
+correlation UUIDs, expiry and output-token ceilings are checked. Exchanges are
+serialized, with a 300-second ceiling including waiting. Use the broker to enforce
+its four-slot admission queue rather than creating unbounded direct callers.
+Any cancelled, malformed, mismatched or failed transport exchange closes the
+adapter permanently; explicit host replacement is required. Valid remote error
+packets may reuse the connection. This prevents stale response reuse across tasks.
+
+Tests include a separate fixture process authenticated by its actual PID plus
+wrong UID/PID, forged task, oversized length and cancellation denials. This is a
+connected-process identity check, not executable attestation, sandboxing or neural
+weight verification. Same-user compromise and inherited/passed descriptors remain
+outside isolation guarantees. Worker-side authorization, production worker
+launch/lifecycle and general module event routing remain incomplete; remote
+computation may continue after the host closes its connection.
+
 `protocol/events.fbs` adds independent `COGE` version-1 frames generated with the
 same pinned flatc/Rust 25.12.19 pair. Bounded typed milestones cross local Tokio
 subscription queues; no JSON message payload replaces internal FlatBuffers.

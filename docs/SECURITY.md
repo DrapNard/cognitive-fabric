@@ -40,3 +40,11 @@ versions. FlatBuffers headers are checked against those handles; string actor
 fields alone confer no authority. Queues, expiry and cancellation are enforced
 outside the backend. Trusted in-process Rust adapters are not a sandbox for
 third-party executable code. See `PROTOCOL.md` for remaining process boundaries.
+
+The optional host-connected Unix inference adapter checks peer UID/PID against
+explicit host-approved values and validates task/module-correlated FlatBuffers.
+It closes a connection on cancellation or invalid transport responses to prevent
+stale reply reuse. It grants no shell, file or worker-launch permission. Process
+credentials are not executable/weight attestation or isolation from same-user
+descriptor transfer. Worker-side policy and production process lifecycle remain
+unimplemented; see `PROTOCOL.md` for the adapter's tested scope.
