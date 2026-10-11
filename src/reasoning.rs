@@ -348,7 +348,7 @@ impl Session {
             model: report.model,
             content_hash: crate::store::sha256(report.text.as_bytes()),
         };
-        self.store.event(&self.task,"reasoning","jev-r",json!({"node":node,"text":report.text,"input_tokens":report.input_tokens,"output_tokens":report.output_tokens,"inference_ms":report.elapsed_ms,"queue_wait_ms":report.queue_wait_ms}))?;
+        self.store.event(&self.task,"reasoning","jev-r",json!({"call":self.resources.calls,"node":node,"text":report.text,"input_tokens":report.input_tokens,"output_tokens":report.output_tokens,"inference_ms":report.elapsed_ms,"queue_wait_ms":report.queue_wait_ms}))?;
         self.nodes.push(node);
         Ok(Some(report.text))
     }

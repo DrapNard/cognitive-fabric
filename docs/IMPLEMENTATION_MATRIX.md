@@ -292,3 +292,11 @@ reports select bounded identity events instead of materializing full traces.
 Tests cover page order/isolation/cursors, full count/byte bounds, malformed records
 and actual CLI pagination. This supports recovery inspection; automatic graph
 resumption and restoration of unknown interrupted inference usage remain incomplete.
+
+Inference reservation recovery evidence: **Implemented** in
+`src/recovery/inference.rs` and `inference-audit`. New reasoning events correlate
+results to charged calls; bounded transactional inspection validates identities,
+hashes and allocations while preserving unknown legacy/interrupted usage. Tests
+cover runtime/CLI production of call IDs, incomplete/legacy reports and malformed,
+duplicate/unmatched/tampered records. This does not authorize replay or complete
+automatic graph resumption; remaining-state/budget/configuration checks still apply.

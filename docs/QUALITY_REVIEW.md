@@ -1036,3 +1036,14 @@ The actual CLI fixture follows a cursor through 35 complete audit events. Existi
 benchmark model/expert identity fixtures still pass after selected-record reads.
 Bounds describe raw data and rows; JSON overhead and SQLite blocking remain distinct
 from hard process/disk quotas. No audits or execution outcomes are modified.
+
+## Durable inference audit verification
+
+With FlatBuffers 25.12.19, formatting, all-target check, full all-target tests
+(185: 175 library, three authentication, five process, one restore CLI, one audit
+CLI) and Clippy with denied warnings pass. Final extended audit CLI coverage and
+Clippy also pass. Regressions cover actual runtime call IDs, complete provider
+usage, pending/legacy unknown totals, duplicate/unmatched identities, malformed
+call IDs, forged content hashes and output over-allocation. The CLI fixture runs
+demo reasoning then inspects its ledger without claiming real provider usage.
+No automatic replay, weight attestation or task resumption is established.

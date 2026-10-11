@@ -90,3 +90,28 @@ not a hard process-memory quota or hard filesystem/SQLite execution deadline.
 The indexed `(task_id,id)` lookup supports ordered incremental inspection.
 Benchmark identity disclosure uses bounded selected audit records so large traces
 do not require full-trace allocation merely to report model configurations.
+
+## Inference reservation audit
+
+`cogfabric --json inference-audit TASK_UUID` reconstructs the recorded reservation
+ledger in one read transaction. New reasoning results carry their charged `call`
+number, correlating them with prior model_dispatch reservations. The summary exposes
+call/role, reserved output tokens, prompt-byte charges, reported model/usage and
+result-recorded state without prompts or answer bodies. Result hashes and role/call
+identity are checked. Duplicate/unmatched results, invalid metrics, noncontiguous
+reservations and oversized history fail closed.
+
+At most 64 reservations and 128 selected audit records are admitted, with the
+existing 256 KiB payload bound. Provider token totals are available only when every
+reservation has a matched recorded result with both usage values and no legacy
+uncorrelated results. Missing/legacy usage remains null. Legacy reasoning events
+without call identity are counted explicitly, never matched by guessing their role
+or position. Per-call known usage remains visible even when totals are unavailable.
+
+`result_not_recorded` does not assert that an inference is still running, failed,
+or consumed zero resources: crashes, failed calls and incomplete audit writes can
+all produce it. The command does not refund reservations, retry calls, authorize
+resumption, attest weights or decide that a model answer is verified. A cryptographic
+content hash checks local consistency, not trust against a hostile database owner.
+This is a prerequisite for reviewed checkpoint continuation; automatic graph
+resumption still needs pinned configuration, state and remaining-budget admission.

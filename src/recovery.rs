@@ -1,4 +1,5 @@
 //! Kernel-released execution leases distinguish live engines from abandoned tasks.
+mod inference;
 use crate::{security, store::Store};
 use anyhow::{bail, Result};
 use rusqlite::params;

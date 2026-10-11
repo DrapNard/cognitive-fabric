@@ -388,3 +388,10 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   cursors, preserving full histories without unbounded trace allocation.
 - Refuse oversized/malformed full traces explicitly and read comparison model
   identities from bounded selected audit records.
+
+### Durable inference reservation correlation
+
+- Record charged call identity with reasoning results and expose a bounded,
+  transactional inference-audit summary for recovery inspection.
+- Validate result identity/hashes and preserve unknown legacy or unrecorded usage
+  without refunding reservations, exposing answers or authorizing replay.

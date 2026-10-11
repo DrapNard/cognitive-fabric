@@ -47,6 +47,38 @@ fn cli_pages_full_audit_history_with_stable_cursors() {
     assert_eq!(second["events"].as_array().unwrap().len(), 3);
     assert_eq!(second["events"][0]["payload"]["index"], 32);
     assert_eq!(second["more"], false);
+    let outcome = Command::new(env!("CARGO_BIN_EXE_cogfabric"))
+        .arg("--home")
+        .arg(&home)
+        .args([
+            "--backend",
+            "demo",
+            "--json",
+            "ask",
+            "Explain ownership",
+            "--mode",
+            "fast",
+        ])
+        .output()
+        .unwrap();
+    assert!(outcome.status.success());
+    let outcome: serde_json::Value = serde_json::from_slice(&outcome.stdout).unwrap();
+    let audit = Command::new(env!("CARGO_BIN_EXE_cogfabric"))
+        .arg("--home")
+        .arg(&home)
+        .args([
+            "--json",
+            "inference-audit",
+            outcome["task_id"].as_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(audit.status.success());
+    let audit: serde_json::Value = serde_json::from_slice(&audit.stdout).unwrap();
+    assert_eq!(audit["reserved_calls"], outcome["calls"]);
+    assert_eq!(audit["recorded_results"], outcome["calls"]);
+    assert_eq!(audit["resume_authorized"], false);
+    assert!(audit["input_tokens"].is_null());
     drop(store);
     std::fs::remove_dir_all(home).unwrap();
 }

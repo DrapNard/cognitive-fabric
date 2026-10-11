@@ -214,3 +214,8 @@ Full task trace reads now have event/raw-byte ceilings and strict JSON validatio
 `task-events` exposes bounded complete audit pages with durable cursors for larger
 histories. Comparison identity reporting avoids full-trace allocation. These changes
 support safe recovery inspection without replay; see `RECOVERY.md`.
+
+New reasoning results carry their charged call identity. `inference-audit` reads
+bounded durable reservations/results without exposing prompts/answers, and keeps
+legacy or unrecorded usage unavailable. It grants no resumption authority; see
+`RECOVERY.md` for limits and remaining checkpoint requirements.
