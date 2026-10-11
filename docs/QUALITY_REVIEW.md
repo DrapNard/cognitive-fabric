@@ -711,3 +711,22 @@ Managed mode is same-user coordination, not arbitrary executable isolation.
 General module lifecycle, crash/audit reconciliation and stale temporary-resource
 cleanup remain incomplete. Worker sessions retain their tighter 300-second/idle
 ceilings; no automatic restart or task replay is provided. See `WORKERS.md`.
+
+## Approved worker lifetime and incomplete-frame deadlines
+
+Managed bootstrap now appends the approved task max_wall_seconds. Its default
+300 preserves legacy frames; explicit lifetimes validate within 1–3600 seconds.
+Worker authority pins that lifetime and audits it. Idle waits consume the total
+monotonic session budget rather than an unrelated ten-second idle cutoff.
+After the first frame byte, the remaining prefix/body has a ten-second deadline,
+preserving bounded partial-frame handling. Individual RPC deadlines and exchange
+ceilings remain independent. Existing database/I/O and cleanup caveats still apply.
+
+Two virtual-time regressions verify idle gaps above ten seconds, session expiry
+and incomplete-frame denial with zero backend calls. Bootstrap tests verify the
+3600-second setting, invalid limits and a physically absent appended field with
+the legacy 300-second default. Tokio virtual-time support is a test dependency.
+All 140 tests (137 unit and 3 process integration), mandatory workspace checks,
+formatting and Clippy pass with FlatBuffers 25.12.19. Bootstrap tests/Clippy passed
+again after the explicit absent-field assertion. Worker crash reconciliation and
+general module lifecycle remain incomplete; no live model/GPU claim is added.

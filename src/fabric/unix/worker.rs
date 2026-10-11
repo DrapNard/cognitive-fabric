@@ -47,7 +47,7 @@ impl Audit {
             serde_json::json!({
                 "format_version":1,"session_id":self.session,"state":state,
                 "module_id":authority.descriptor.id,"module_version":authority.descriptor.version,
-                "approved_tasks":authority.tasks.len(),"request":request,
+                "approved_tasks":authority.tasks.len(),"request":request,"session_seconds":authority.session_seconds,
                 "charged_calls":charged_calls,"reserved_output_tokens":reserved_output_tokens,
                 "charged_prompt_bytes":charged_prompt_bytes
             }),
@@ -78,6 +78,7 @@ pub struct Authority {
     host_pid: u32,
     tasks: BTreeMap<String, Usage>,
     limits: Limits,
+    session_seconds: u64,
 }
 #[derive(Default)]
 struct Usage {
@@ -116,7 +117,15 @@ impl Authority {
             host_pid,
             tasks: approved,
             limits,
+            session_seconds: 300,
         })
+    }
+    pub fn with_session_seconds(mut self, seconds: u64) -> Result<Self> {
+        if !(1..=3600).contains(&seconds) {
+            bail!("Worker lifetime exceeds approved bounds")
+        }
+        self.session_seconds = seconds;
+        Ok(self)
     }
     fn charge(&mut self, packet: &Packet) -> Result<Duration> {
         let Payload::Request {
@@ -171,7 +180,7 @@ impl Authority {
     }
 }
 
-/// Serve one authenticated connection for at most 300 seconds/1024 exchanges.
+/// Serve one authenticated connection for its approved lifetime/1024 exchanges.
 /// Disconnect, extra pipelined bytes, shutdown or expiry drops active inference.
 pub async fn serve(
     mut stream: UnixStream,
@@ -183,13 +192,13 @@ pub async fn serve(
     audit.record("session_started", &authority, None)?;
     let result = async {
     authenticate(&stream, authority.host_uid, authority.host_pid)?;
-    tokio::time::timeout(Duration::from_secs(300), async {
+    tokio::time::timeout(Duration::from_secs(authority.session_seconds), async {
         for _ in 0..1024 {
             if *shutdown.borrow() { return Ok(()); }
             let packet = tokio::select! {
                 biased;
                 _ = shutdown.changed() => return Ok(()),
-                result = tokio::time::timeout(Duration::from_secs(10), read_optional(&mut stream)) => match result.map_err(|_| anyhow!("Worker idle/read deadline exhausted"))?? { Some(packet) => packet, None => return Ok(()) },
+                result = read_optional(&mut stream) => match result? { Some(packet) => packet, None => return Ok(()) },
             };
             let remaining = match authority.charge(&packet) {
                 Ok(remaining) => remaining,
@@ -240,10 +249,80 @@ pub async fn serve(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::io::AsyncWriteExt;
     fn audit() -> Audit {
         let store = Arc::new(crate::store::Store::in_memory().unwrap());
         let anchor = store.create_task("Worker fixture audit", "fast").unwrap();
         Audit::new(store, &anchor).unwrap()
+    }
+    #[tokio::test(start_paused = true)]
+    async fn approved_lifetime_allows_idle_time_before_the_next_request() {
+        let task = uuid::Uuid::new_v4().to_string();
+        let (mut host, worker) = UnixStream::pair().unwrap();
+        let authority = Authority::new(
+            descriptor(),
+            worker.peer_cred().unwrap().uid(),
+            std::process::id(),
+            std::slice::from_ref(&task),
+            Limits::default(),
+        )
+        .unwrap()
+        .with_session_seconds(30)
+        .unwrap();
+        let (_shutdown, receiver) = watch::channel(false);
+        let handle = tokio::spawn(serve(
+            worker,
+            authority,
+            Arc::new(Fixture(AtomicUsize::new(0))),
+            receiver,
+            audit(),
+        ));
+        tokio::task::yield_now().await;
+        tokio::time::advance(Duration::from_secs(11)).await;
+        assert!(!handle.is_finished());
+        write(&mut host, &packet(&task)).await.unwrap();
+        assert!(matches!(
+            read(&mut host).await.unwrap().payload,
+            Payload::Response(_)
+        ));
+        drop(host);
+        handle.await.unwrap().unwrap();
+    }
+    #[tokio::test(start_paused = true)]
+    async fn incomplete_frames_and_session_expiry_remain_bounded() {
+        for partial in [false, true] {
+            let task = uuid::Uuid::new_v4().to_string();
+            let (mut host, worker) = UnixStream::pair().unwrap();
+            let authority = Authority::new(
+                descriptor(),
+                worker.peer_cred().unwrap().uid(),
+                std::process::id(),
+                std::slice::from_ref(&task),
+                Limits::default(),
+            )
+            .unwrap()
+            .with_session_seconds(if partial { 30 } else { 1 })
+            .unwrap();
+            if partial {
+                host.write_u8(0).await.unwrap();
+                worker.readable().await.unwrap();
+            }
+            let (_shutdown, receiver) = watch::channel(false);
+            let backend = Arc::new(Fixture(AtomicUsize::new(0)));
+            let handle = tokio::spawn(serve(worker, authority, backend.clone(), receiver, audit()));
+            tokio::task::yield_now().await;
+            tokio::time::advance(Duration::from_secs(if partial { 11 } else { 2 })).await;
+            let error = handle.await.unwrap().unwrap_err().to_string();
+            assert!(
+                error.contains(if partial {
+                    "Incomplete Unix module frame"
+                } else {
+                    "Worker session deadline"
+                }),
+                "{error}"
+            );
+            assert_eq!(backend.0.load(Ordering::SeqCst), 0);
+        }
     }
     #[test]
     fn missing_or_removed_audit_anchors_fail_without_orphan_records() {
@@ -303,6 +382,18 @@ mod tests {
     #[test]
     fn authority_bounds_tokens_bytes_deadlines_and_versions() {
         let task = uuid::Uuid::new_v4().to_string();
+        for seconds in [0, 3601] {
+            assert!(Authority::new(
+                descriptor(),
+                0,
+                1,
+                std::slice::from_ref(&task),
+                Limits::default()
+            )
+            .unwrap()
+            .with_session_seconds(seconds)
+            .is_err());
+        }
         for limits in [
             Limits {
                 output_tokens_per_task: 128,

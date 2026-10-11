@@ -56,14 +56,18 @@ async fn read_optional(stream: &mut UnixStream) -> Result<Option<Packet>> {
     if stream.read(&mut prefix[..1]).await? == 0 {
         return Ok(None);
     }
-    stream.read_exact(&mut prefix[1..]).await?;
-    let length = u32::from_be_bytes(prefix) as usize;
-    if !(8..=super::protocol::MAX_FRAME).contains(&length) {
-        bail!("Invalid Unix module frame length")
-    }
-    let mut bytes = vec![0; length];
-    stream.read_exact(&mut bytes).await?;
-    Ok(Some(decode(&bytes)?))
+    tokio::time::timeout(Duration::from_secs(10), async {
+        stream.read_exact(&mut prefix[1..]).await?;
+        let length = u32::from_be_bytes(prefix) as usize;
+        if !(8..=super::protocol::MAX_FRAME).contains(&length) {
+            bail!("Invalid Unix module frame length")
+        }
+        let mut bytes = vec![0; length];
+        stream.read_exact(&mut bytes).await?;
+        Ok(Some(decode(&bytes)?))
+    })
+    .await
+    .map_err(|_| anyhow!("Incomplete Unix module frame deadline exhausted"))?
 }
 
 async fn write(stream: &mut UnixStream, packet: &Packet) -> Result<()> {

@@ -116,8 +116,10 @@ before inference. This is mutual connected-peer checking, not executable attesta
 Per-task cumulative ceilings default to 8 calls, 1600 reserved output tokens and
 128 KB prompt bytes; configurable ceilings are bounded to 128 calls, 1,048,576
 tokens and 4 MiB prompt bytes. Reservations count failed calls. Session limits
-are 300 seconds and 1024 exchanges; idle/incomplete reads allow 10 seconds, writes
-2 seconds. One inference runs at a time. Disconnect, pipelined bytes, shutdown,
+follow the approved task wall ceiling (1–3600 seconds; standalone authorities
+default to 300) and 1024 exchanges. Idle time consumes the session lifetime;
+after the first frame byte, the remaining prefix/body allows 10 seconds. Writes
+allow 2 seconds. One inference runs at a time. Disconnect, pipelined bytes, shutdown,
 expiry or invalid output terminates the session and drops the backend future.
 Closing the shutdown channel also stops the session. Backend-side GPU cancellation
 is still not guaranteed. Host task ceilings remain independently enforced.
@@ -128,6 +130,11 @@ version/deadline denials and active cancellation. The managed launcher supplies
 single-task grants to its own worker executable; generalized executable module
 launch, sandboxing and automatic replacement remain unfinished. Task grants are immutable for a session;
 new grants require trusted creation of another authority/session.
+
+COGB appends max_wall_seconds with the legacy 300-second default. Current managed
+launchers send the task's configured ceiling; invalid/zero/over-limit lifetimes
+fail validation. The worker audits its approved lifetime. Runtime expiration is
+monotonic, while each request also retains the bounded absolute expiry check.
 
 Worker `serve` also requires an `Audit` bound by trusted setup to an existing
 SQLite task. Session start/stop/failure, authorization/denial and inference outcome

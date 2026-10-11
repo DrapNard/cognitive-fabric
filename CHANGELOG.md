@@ -2,6 +2,13 @@
 
 All notable changes are documented here in English.
 
+### Task-bound worker lifetime
+
+- Pin worker lifetime to the approved task wall ceiling through an additive
+  bootstrap field, retaining the legacy 300-second default.
+- Permit idle gaps within that lifetime while limiting incomplete frames to ten
+  seconds from the first byte; verify expiration with deterministic virtual time.
+
 ### Managed same-binary inference workers
 
 - Add opt-in configure-worker mode with lazy per-task child launch, authenticated

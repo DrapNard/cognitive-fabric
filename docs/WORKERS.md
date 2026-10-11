@@ -34,10 +34,13 @@ runtime/process crashes. Socket cleanup checks directory and socket identities.
 No automatic restart, task replay or permission expansion occurs on failure.
 
 The execution wall-clock ceiling ends reasoning; child cleanup may add up to four
-seconds plus existing database/I/O delays. Worker sessions currently have their
-independent 300-second lifetime, 1024-exchange bound and ten-second idle deadline.
-A longer configured task may encounter that tighter worker ceiling. This is a
-documented limitation of the initial lifecycle integration.
+seconds plus existing database/I/O delays. Managed worker lifetime follows the
+task's approved max_wall_seconds (1–3600 seconds), with 1024 exchanges maximum.
+Trusted standalone worker authorities default to 300 seconds and may explicitly
+select a bounded lifetime. Waiting between calls consumes that lifetime; once a
+frame begins, its remaining prefix/body must arrive within ten seconds. Individual
+inference RPCs retain their independent 300-second ceiling. Legacy bootstrap
+frames without the appended lifetime field retain the 300-second worker default.
 
 The worker_process audit records PID and launch_handoff_ms, measured through
 spawn, connection and bootstrap send. This does not measure model loading or prove

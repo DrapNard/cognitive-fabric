@@ -61,7 +61,8 @@ impl Bootstrap {
                 output_tokens_per_task: self.config.max_tokens as u64,
                 prompt_bytes_per_task: self.config.max_input_bytes as u64,
             },
-        )
+        )?
+        .with_session_seconds(self.config.max_wall_seconds)
     }
     fn validate(&self) -> Result<()> {
         uuid::Uuid::parse_str(&self.task)?;
@@ -104,6 +105,7 @@ impl Bootstrap {
             max_input_bytes: self.config.max_input_bytes as u64,
             role_profiles: Some(builder.create_vector(&profiles)),
             max_database_bytes: self.config.max_database_bytes,
+            max_wall_seconds: self.config.max_wall_seconds,
         };
         let root = fb::Bootstrap::create(&mut builder, &args);
         builder.finish(root, Some("COGB"));
@@ -139,6 +141,7 @@ impl Bootstrap {
             max_tokens: packet.max_tokens() as usize,
             max_input_bytes: usize::try_from(packet.max_input_bytes())?,
             max_database_bytes: packet.max_database_bytes(),
+            max_wall_seconds: packet.max_wall_seconds(),
             interpret_goals: false,
             synthesize_results: false,
             ..Config::default()
@@ -197,7 +200,7 @@ mod tests {
     }
     #[test]
     fn forged_versions_duplicate_roles_and_nonlocal_settings_fail_decode() {
-        for invalid in 0..3 {
+        for invalid in 0..4 {
             let mut builder = flatbuffers::FlatBufferBuilder::new();
             let role = builder.create_string("solver");
             let model = builder.create_string("fixture");
@@ -231,6 +234,7 @@ mod tests {
                 max_input_bytes: 4096,
                 role_profiles: Some(profiles),
                 max_database_bytes: 256_000_000,
+                max_wall_seconds: if invalid == 3 { 3601 } else { 300 },
             };
             let root = fb::Bootstrap::create(&mut builder, &args);
             builder.finish(root, Some("COGB"));
@@ -243,6 +247,7 @@ mod tests {
             home: "/private/workspace".into(),
             inference_process: true,
             max_database_bytes: 64_000_000,
+            max_wall_seconds: 3600,
             model: "pinned-model".into(),
             max_calls: 4,
             max_tokens: 512,
@@ -282,6 +287,25 @@ mod tests {
         assert!(!decoded.config.interpret_goals);
         assert!(!decoded.config.inference_process);
         assert_eq!(decoded.config.max_database_bytes, 64_000_000);
+        assert_eq!(decoded.config.max_wall_seconds, 3600);
+        let legacy = Bootstrap {
+            task: original.task.clone(),
+            config: Config {
+                max_wall_seconds: 300,
+                ..Config::default()
+            },
+        }
+        .encode()
+        .unwrap();
+        let table = flatbuffers::root::<fb::Bootstrap>(&legacy).unwrap();
+        assert_eq!(
+            table._tab.vtable().get(fb::Bootstrap::VT_MAX_WALL_SECONDS),
+            0
+        );
+        assert_eq!(
+            Bootstrap::decode(&legacy).unwrap().config.max_wall_seconds,
+            300
+        );
         assert!(!bytes.windows(18).any(|w| w == b"/private/workspace"));
     }
     #[test]
