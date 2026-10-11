@@ -53,7 +53,7 @@ remains a pre-release. `QUALITY_REVIEW.md` preserves verification history.
 | 12, 14 | CLI/service | Partial | `src/main.rs`: initialization/configuration, ask, service controls, task-specific socket progress/cancellation, skill lifecycle, ingestion/search, task traces, candidates/rollback, benchmark, self-test; real socket fixtures | Live residency lifecycle |
 | 12, 13 | Hardware/performance claims | Partial | Optional whole-device GPU diagnostics sampled real host memory/utilization/power; no energy or large-model advantage claimed | Authenticated live inference, task-attributed telemetry and equal-budget comparisons |
 
-All 223 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
+All 227 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
 all-target build checks and Clippy with denied warnings pass. Fixtures do not prove
 GPU integration, neural quality, immutable backend weights or live model switching.
 
@@ -464,3 +464,11 @@ timing and optional provider/queue deltas without result bodies or verification
 claims. Tests cover dependency execution, skipped/cancelled nodes, unavailable
 usage and audit failure stopping subsequent dispatch. Expected-utility estimation,
 parallel/general module scheduling and automatic resumption remain **Partial**.
+
+Same-boot execution deadline evidence: **Implemented** in `src/execution_clock.rs`,
+Engine/Session settings and recovery inference audits. Original pre-setup Linux
+boot-time snapshots reconstruct decreasing/expired nanosecond allowance without
+civil timestamps. Tests cover actual kernel observation, separate CLI processes,
+setup exhaustion, reboot mismatch, backwards time and malformed snapshots. Legacy,
+other-boot and unavailable clocks do not receive a fresh allowance. Actual graph
+continuation remains **Partial / Not implemented**; inspection grants no authority.

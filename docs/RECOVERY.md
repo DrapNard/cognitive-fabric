@@ -282,3 +282,31 @@ deltas also remain unavailable. These are observations for future scheduling
 analysis, not a utility predictor, restored budget ledger, parallel scheduler or
 permission to resume an interrupted graph. Existing versioned reservations remain
 authoritative for recovery admission; legacy traces can lack these records.
+
+## Same-boot remaining wall-time evidence
+
+New execution settings optionally include a versioned Linux `CLOCK_BOOTTIME`
+snapshot and kernel boot UUID. Engine captures it before model pinning/setup and
+passes the original start into Session; standalone sessions capture their own
+start. The snapshot's nanosecond allowance must equal the original validated
+configuration, with strict clock/version/UUID/field checks.
+
+`inference-audit` now reports `remaining_inference_admission.wall_time` for these
+snapshots. On the same boot, `remaining_ns` decreases against the kernel clock and
+saturates at zero; `expired` is explicit. Another boot yields `different_boot`
+with null remaining time, and unavailable kernel observations remain unavailable.
+A backwards clock observation fails inspection. Legacy/unsupported-platform
+snapshots retain null wall-time evidence. No civil timestamp, PID age, new process
+start or configuration reload grants additional time.
+
+CLOCK_BOOTTIME includes machine suspend, so this recovery observation can expire
+more conservatively than the live process-local monotonic timer. The snapshot is
+local evidence, not clock attestation or protection against an owner rewriting the
+database, a changed time namespace or a compromised kernel. Restoring a database
+onto another boot does not make its deadline portable. Fresh clocks cannot replace
+missing legacy evidence.
+
+This closes same-boot elapsed-time reconstruction only. Task state, original
+permissions, immutable context/dependencies, all reservations and outstanding
+outcomes still require validation before any continuation. `resume_authorized`
+remains false; no inference or graph nodes are replayed by inspection.

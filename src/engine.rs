@@ -9,10 +9,9 @@ use crate::{
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::{
-    sync::Arc,
-    time::{Duration, Instant},
-};
+#[cfg(test)]
+use std::time::Duration;
+use std::{sync::Arc, time::Instant};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Outcome {
@@ -186,8 +185,10 @@ impl Engine {
         if let Some(reference) = &options.conversation_ref {
             uuid::Uuid::parse_str(reference)?;
         }
-        let start = Instant::now();
-        let deadline = start + Duration::from_secs(self.cfg.max_wall_seconds);
+        let execution_start =
+            crate::execution_clock::ExecutionStart::new(self.cfg.max_wall_seconds);
+        let start = execution_start.instant;
+        let deadline = execution_start.deadline;
         let model_registration = self.store.pin_model(&self.cfg)?;
         let backend = self.backend.pin()?.unwrap_or_else(|| self.backend.clone());
         if self.process_inference {
@@ -230,12 +231,13 @@ impl Engine {
             "runtime",
             json!({"registration":model_registration,"weight_identity_verified":false}),
         )?;
-        let mut session = Session::new(
+        let mut session = Session::new_started(
             self.cfg.clone(),
             self.store.clone(),
             backend,
             id.clone(),
             mode,
+            execution_start,
         )?;
         session.restrict_deadline(deadline);
         self.store.event(&id,"execution_options","runtime",json!({"format_version":1,
@@ -1342,6 +1344,18 @@ mod execution_settings_tests {
         assert_eq!(outcome.status, "exhausted");
         assert_eq!(outcome.calls, 0);
         assert_eq!(outcome.resources.tool_calls, 0);
+        #[cfg(target_os = "linux")]
+        {
+            let audit = store.inference_audit(&outcome.task_id).unwrap();
+            assert_eq!(
+                audit["remaining_inference_admission"]["wall_time"]["remaining_ns"],
+                0
+            );
+            assert_eq!(
+                audit["remaining_inference_admission"]["wall_time"]["expired"],
+                true
+            );
+        }
         assert!(!store.task(&outcome.task_id).unwrap()["events"]
             .as_array()
             .unwrap()

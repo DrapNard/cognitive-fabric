@@ -27,6 +27,7 @@ pub(super) fn audit_from(db: &rusqlite::Connection, task: &str) -> Result<Value>
     let mut calls = BTreeMap::<u64, Value>::new();
     let mut legacy = 0usize;
     let mut settings: Option<(crate::config::Config, u64, u64, bool)> = None;
+    let mut execution_clock = None;
     let mut tools = 0u64;
     let mut cycles = 0u64;
     {
@@ -79,6 +80,12 @@ pub(super) fn audit_from(db: &rusqlite::Connection, task: &str) -> Result<Value>
                     Some(v) if *v == 1 => true,
                     _ => bail!("Unsupported resource reservation version"),
                 };
+                if let Some(clock) = payload.get("execution_clock").filter(|v| !v.is_null()) {
+                    let clock: crate::execution_clock::Snapshot =
+                        serde_json::from_value(clock.clone())?;
+                    clock.validate(cfg.max_wall_seconds)?;
+                    execution_clock = Some(clock);
+                }
                 settings = Some((
                     cfg,
                     payload["call_limit"].as_u64().unwrap(),
@@ -228,7 +235,7 @@ pub(super) fn audit_from(db: &rusqlite::Connection, task: &str) -> Result<Value>
             bail!("Recorded inference exceeds saved execution limits or has uncorrelated results")
         }
         Some(
-            json!({"calls":limit-used_calls,"reserved_output_tokens":cfg.max_tokens as u64-reserved,"prompt_bytes":cfg.max_input_bytes as u64-input,"wall_time":null,"cycles":if durable {Some(cycle_limit-cycles)} else {None},"tool_calls":if durable {Some(cfg.max_tool_calls as u64-tools)} else {None},"resume_authorized":false}),
+            json!({"calls":limit-used_calls,"reserved_output_tokens":cfg.max_tokens as u64-reserved,"prompt_bytes":cfg.max_input_bytes as u64-input,"wall_time":execution_clock.as_ref().map(|clock| clock.remaining()).transpose()?,"cycles":if durable {Some(cycle_limit-cycles)} else {None},"tool_calls":if durable {Some(cfg.max_tool_calls as u64-tools)} else {None},"resume_authorized":false}),
         )
     } else {
         None
@@ -430,5 +437,48 @@ mod tests {
         assert_eq!(report["reported_usage_complete"], false);
         assert_eq!(report["remaining_inference_admission"]["calls"], 0);
         assert_eq!(report["remaining_inference_admission"]["cycles"], 0);
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod clock_tests {
+    use super::*;
+    #[test]
+    fn saved_clock_is_validated_and_reboot_never_grants_a_new_allowance() {
+        for variant in 0..6 {
+            let store = Store::in_memory().unwrap();
+            let task = store.create_task("clock fixture", "standard").unwrap();
+            let cfg = crate::config::Config {
+                max_wall_seconds: 1,
+                ..Default::default()
+            };
+            let start = crate::execution_clock::ExecutionStart::new(1);
+            let mut clock =
+                serde_json::to_value(start.clock.expect("Linux clock unavailable")).unwrap();
+            match variant {
+                1 => clock["format_version"] = json!(2),
+                2 => clock["deadline_ns"] = json!(clock["deadline_ns"].as_u64().unwrap() + 1),
+                3 => clock["boot_id"] = json!("not-a-boot-id"),
+                4 => clock["boot_id"] = json!(uuid::Uuid::new_v4().to_string()),
+                5 => clock["permissions"] = json!(["shell"]),
+                _ => {}
+            }
+            store.event(&task,"execution_settings","runtime",json!({"format_version":1,"configuration":cfg,"mode":"standard","call_limit":4,"cycle_limit":1,"execution_clock":clock})).unwrap();
+            let report = store.inference_audit(&task);
+            if variant == 0 {
+                let report = report.unwrap();
+                let time = &report["remaining_inference_admission"]["wall_time"];
+                assert_eq!(time["status"], "same_boot");
+                assert!(time["remaining_ns"].as_u64().unwrap() <= 1_000_000_000);
+                assert_eq!(report["resume_authorized"], false);
+            } else if variant == 4 {
+                let report = report.unwrap();
+                let time = &report["remaining_inference_admission"]["wall_time"];
+                assert_eq!(time["status"], "different_boot");
+                assert!(time["remaining_ns"].is_null());
+            } else {
+                assert!(report.is_err(), "variant {variant}");
+            }
+        }
     }
 }

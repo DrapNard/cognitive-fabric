@@ -2,6 +2,13 @@
 
 All notable changes are documented here in English.
 
+### Boot-bound recovery deadline evidence
+
+- Persist original pre-setup Linux boot-time snapshots and reconstruct remaining
+  wall allowance across processes on the same boot.
+- Reject malformed/backwards clocks and preserve unavailable time after reboot
+  or for legacy settings, without authorizing task replay.
+
 ### Measured advisory subtask costs
 
 - Record per-node reservation and timing deltas, preserving unknown provider

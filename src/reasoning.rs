@@ -121,7 +121,19 @@ impl Session {
         mode: &str,
     ) -> Result<Self> {
         cfg.validate()?;
-        let deadline = Instant::now() + Duration::from_secs(cfg.max_wall_seconds);
+        let start = crate::execution_clock::ExecutionStart::new(cfg.max_wall_seconds);
+        Self::new_started(cfg, store, backend, task, mode, start)
+    }
+    pub(crate) fn new_started(
+        cfg: Config,
+        store: Arc<Store>,
+        backend: Arc<dyn InferenceBackend>,
+        task: String,
+        mode: &str,
+        start: crate::execution_clock::ExecutionStart,
+    ) -> Result<Self> {
+        cfg.validate()?;
+        let deadline = start.deadline;
         let (calls, cycles) = match mode {
             "fast" => (1, 1),
             "standard" => (4, 1),
@@ -135,7 +147,7 @@ impl Session {
             "execution_settings",
             "runtime",
             json!({
-                "format_version":1,"resource_reservations_version":1,"configuration":cfg,"mode":mode,
+                "format_version":1,"resource_reservations_version":1,"configuration":cfg,"mode":mode,"execution_clock":start.clock,
                 "call_limit":calls.min(cfg.max_calls),"cycle_limit":cycles.min(cfg.max_cycles),
                 "backend_configuration_attested":false,"weights_attested":false,
                 "permissions_restorable_from_settings":false

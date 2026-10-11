@@ -1298,3 +1298,19 @@ Instrumentation adds at most four small terminal-node metadata events and one
 active counter/timestamp snapshot per plan; no new model calls, concurrency or
 privileges are introduced. General module scheduling and measured utility-based
 escalation remain incomplete, and no live-model efficiency gain is inferred.
+
+## Boot-bound recovery clock evidence
+
+Formatting, all-target checking, 227 tests (212 library, 15 integration) and
+Clippy with warnings denied pass offline with FlatBuffers compiler/crate 25.12.19.
+Tests cover actual bounded kernel clock reads, synthetic expiration/backwards time,
+malformed clock/version/allowance/UUID/field denials, different-boot null allowance,
+and separate real CLI processes observing decreasing original remaining time.
+The existing slow-setup regression now proves zero recovered wall allowance after
+setup exhausts a one-second task. Legacy snapshots preserve null wall evidence.
+
+Engine captures once before setup; Session receives that start rather than making
+a fresh deadline. Optional Linux clock evidence adds one bounded fixed-path boot
+UUID read and kernel clock observation at task start/audit, without network or
+model calls. It is not attested time, portable restoration across boots or replay
+authority. Resume authorization remains false and graph continuation is incomplete.
