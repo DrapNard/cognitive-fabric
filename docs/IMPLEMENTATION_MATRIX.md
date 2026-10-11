@@ -758,3 +758,10 @@ including CLI recovery after clean completion. `RELEASE_AUDIT.md` records hashes
 and evidence. The installed-source gap is closed for this commit; the mixed/live
 recovery regressions establish abandoned-session behavior. Stale filesystem
 resources and broader module lifecycle remain incomplete.
+
+Worker-file cleanup: **Experimental / unfinished**. The current working slice
+journals managed socket identities and adds bounded preview/apply commands under
+an exclusive runtime lease. Formatting and all-target checking pass, but focused
+cleanup tests, negative filesystem/race tests, full regression checks and installed
+validation have not been completed. Do not treat this slice as release-ready.
+The last fully validated baseline is `169daa4` (309 tests and installed checks).

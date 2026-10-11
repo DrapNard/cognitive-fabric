@@ -31,6 +31,30 @@ pub(crate) struct SocketDirectory {
     socket: Option<(u64, u64)>,
 }
 impl SocketDirectory {
+    pub(crate) fn record(&self, store: &Store, task: &str) -> Result<()> {
+        let (socket_device, socket_inode) =
+            self.socket.context("Worker socket identity missing")?;
+        let record = crate::recovery::worker_files::SocketRecord {
+            format_version: 1,
+            name: self
+                .path
+                .file_name()
+                .and_then(|s| s.to_str())
+                .context("Invalid worker directory name")?
+                .into(),
+            uid: unsafe { libc::geteuid() },
+            directory_device: self.dev,
+            directory_inode: self.ino,
+            socket_device,
+            socket_inode,
+        };
+        store.event(
+            task,
+            "worker_socket",
+            "fabric",
+            serde_json::to_value(record)?,
+        )
+    }
     pub(crate) fn bind_tool() -> Result<(Self, UnixListener, PathBuf)> {
         let directory =
             PathBuf::from("/tmp").join(format!("cogfabric-tool-worker-{}", uuid::Uuid::new_v4()));
@@ -135,6 +159,7 @@ impl ProcessTask {
         socket: SocketDirectory,
         lease: Option<crate::recovery::ExecutionLease>,
     ) -> Result<tokio::sync::MutexGuard<'_, Option<Starting>>> {
+        socket.record(&self.store, &self.task)?;
         self.store.event(
             &self.task,
             "worker_process_launch",

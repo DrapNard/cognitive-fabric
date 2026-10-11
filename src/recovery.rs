@@ -3,6 +3,7 @@ pub mod continuation;
 mod graph;
 mod inference;
 mod result;
+pub mod worker_files;
 use crate::{security, store::Store};
 use anyhow::{bail, Result};
 use rusqlite::params;

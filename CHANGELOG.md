@@ -705,3 +705,9 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   events, keeping compiled criterion identity separate from manifest version.
 - Reject unsupported checker identities, workflows, model bindings and permissions;
   preserve existing manifest hashes and fixed kernel authorization.
+
+### Work in progress: journaled worker-file cleanup
+
+- Preserve the unfinished socket-journaling and operator preview/apply slice for
+  private repository publication. It formats and compiles; cleanup-specific tests
+  and full validation are pending. This is experimental and not a release gate pass.

@@ -71,6 +71,17 @@ enum Command {
     },
     RecoverTasks,
     RecoverWorkers,
+    WorkerFilesPreview {
+        #[arg(long, default_value_t = 0)]
+        after: u64,
+        #[arg(long, default_value_t = 128)]
+        limit: u32,
+    },
+    WorkerFilesApply {
+        plan: PathBuf,
+        #[arg(long)]
+        human_approve: bool,
+    },
     StorageStatus,
     WatchTask {
         id: String,
@@ -530,6 +541,18 @@ async fn main() -> Result<()> {
         }
         Command::RecoverWorkers => {
             json!({"interrupted_worker_sessions":store.recover_workers()?,"automatic_replay":false,"external_inference_stopped_verified":false})
+        }
+        Command::WorkerFilesPreview { after, limit } => {
+            serde_json::to_value(store.preview_worker_files(after, limit)?)?
+        }
+        Command::WorkerFilesApply {
+            plan,
+            human_approve,
+        } => {
+            let bytes = security::read_regular_bytes(&plan, 256_000)?;
+            let plan: cogfabric::recovery::worker_files::CleanupPlan =
+                serde_json::from_slice(&bytes)?;
+            json!({"removed_directories":store.clean_worker_files(&plan, human_approve)?,"processes_killed":false})
         }
         Command::Init => {
             json!({"home":cfg.home,"version":env!("CARGO_PKG_VERSION"),"skills":store.skills()?.len()})

@@ -279,6 +279,7 @@ impl ProcessTask {
             bail!("Tool worker database differs from workspace storage")
         }
         let (guard, listener, socket) = SocketDirectory::bind_tool()?;
+        guard.record(&self.store, &self.task)?;
         let mut command = tokio::process::Command::new(std::env::current_exe()?);
         command
             .arg("--home")
