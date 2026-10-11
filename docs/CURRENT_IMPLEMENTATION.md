@@ -219,3 +219,10 @@ New reasoning results carry their charged call identity. `inference-audit` reads
 bounded durable reservations/results without exposing prompts/answers, and keeps
 legacy or unrecorded usage unavailable. It grants no resumption authority; see
 `RECOVERY.md` for limits and remaining checkpoint requirements.
+
+Independent structured verification now also supports integer sorting, in addition
+to dependency ordering, arithmetic and inline read-only SQL. `sort:` goals declare
+one to 256 signed 64-bit integers and optional descending order; Rust checks exact
+multiplicity and ordering before verified completion. Failed candidates can be
+revised within the existing cycles/tool/call ceilings. This is a bounded domain
+checker, not a general correctness evaluator or a measured live-model improvement.

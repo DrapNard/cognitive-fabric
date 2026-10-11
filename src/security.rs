@@ -18,6 +18,7 @@ impl TaskPolicy {
                 ("jev-plus", "knowledge.search"),
                 ("jev-plus", "math.evaluate"),
                 ("jev-plus", "ordering.verify"),
+                ("jev-plus", "sorting.verify"),
                 ("jev-plus", "sql.query"),
             ],
         )
@@ -76,7 +77,11 @@ pub fn authorize(principal: &str, capability: &str) -> Result<()> {
         ),
         "jev-plus" => matches!(
             capability,
-            "knowledge.search" | "math.evaluate" | "ordering.verify" | "sql.query"
+            "knowledge.search"
+                | "math.evaluate"
+                | "ordering.verify"
+                | "sorting.verify"
+                | "sql.query"
         ),
         "human-cli" => matches!(
             capability,

@@ -526,7 +526,12 @@ impl Engine {
             let status = if !session.has_solution {
                 "exhausted"
             } else if session.verified {
-                evidence.push("verified:dependency_order/v1".into());
+                evidence.push(format!(
+                    "verified:{}",
+                    session.verified_criterion.ok_or_else(|| anyhow::anyhow!(
+                        "Verified result lacks criterion identity"
+                    ))?
+                ));
                 "completed"
             } else if session.verification_attempted {
                 "rejected"

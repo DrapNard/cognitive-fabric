@@ -1122,3 +1122,15 @@ manifest/checksum fields and oversized row IDs/versions through both listing and
 exact lookup. SQL field guards prevent oversized values from being copied into
 Rust; registry count bounds remain unchanged. No loaded-weight attestation or
 trust against an owner rewriting both data and hashes is implied.
+
+## Independent integer-sort verifier
+
+FlatBuffers 25.12.19 formatting, all-target check, 202 all-target tests (192
+library and 10 integration), and Clippy with denied warnings pass. Tests cover
+signed integer extremes, duplicate preservation, ascending/descending direction,
+float/overflow and unexpected metadata rejection, 256-value bounds, scripted
+DEEP revision after a failed check, FAST rejection and denied verification when
+tool allowance is exhausted. Runtime evidence names integer_sort/v1 rather than
+mislabeling it dependency_order/v1. The checker is a pure bounded Rust capability
+with no host file/network access; scripted reasoning does not establish live-model
+quality or general independent verification.

@@ -127,3 +127,15 @@ Inspect [database limits and reviewed retention](docs/STORAGE.md).
 Local servers requiring bearer authentication can use opt-in, endpoint-scoped
 operator credentials. See [authentication setup](docs/AUTHENTICATION.md); secret
 values are supplied through the launching environment and never saved in config.
+
+Independent numeric-sorting verification accepts an explicit structured goal:
+
+```bash
+cogfabric ask 'sort:{"values":[3,-1,3,0],"descending":false}' --mode deep
+```
+
+A configured local model supplies the answer; Rust verifies a JSON array containing
+all integers in the requested order, including duplicate counts. Ascending is the
+default. Inputs allow 1–256 signed 64-bit integers. A rejected candidate may be
+revised within the mode budget; a correct result records `integer_sort/v1` evidence.
+The demo backend is not a sorting model and is not evidence of live-model quality.

@@ -100,6 +100,7 @@ impl Store {
                                         | "math.evaluate"
                                         | "sql.query"
                                         | "ordering.verify"
+                                        | "sorting.verify"
                                 )
                             )
                         {

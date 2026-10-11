@@ -1,4 +1,4 @@
-//! Independent, bounded checks of explicitly supplied dependency-order constraints.
+//! Independent bounded checks of explicit dependency-order and integer-sort constraints.
 use anyhow::{bail, Result};
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
@@ -79,9 +79,113 @@ impl Ordering {
     }
 }
 
+/// Checks an operator-supplied multiset and direction; no model confidence is used.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Sorting {
+    values: Vec<i64>,
+    #[serde(default)]
+    descending: bool,
+}
+impl Sorting {
+    fn parse(raw: &str) -> Result<Self> {
+        if raw.len() > 10000 {
+            bail!("Sorting criterion exceeds byte limit")
+        }
+        let criterion: Self = serde_json::from_str(raw)?;
+        if !(1..=256).contains(&criterion.values.len()) {
+            bail!("Sorting requires one to 256 integers")
+        }
+        Ok(criterion)
+    }
+    fn check(&self, answer: &str) -> Result<()> {
+        if answer.len() > 8192 {
+            bail!("Sorting answer exceeds byte limit")
+        }
+        let actual: Vec<i64> = serde_json::from_str(answer)?;
+        let mut expected = self.values.clone();
+        expected.sort_unstable();
+        if self.descending {
+            expected.reverse();
+        }
+        if actual != expected {
+            bail!("Answer must preserve every integer and multiplicity in the requested order")
+        }
+        Ok(())
+    }
+}
+
+pub(crate) enum Criterion {
+    Ordering(Ordering),
+    Sorting(Sorting),
+}
+impl Criterion {
+    pub(crate) fn from_query(query: &str) -> Result<Option<Self>> {
+        if let Some(raw) = query.strip_prefix("sort:") {
+            return Ok(Some(Self::Sorting(Sorting::parse(raw)?)));
+        }
+        Ok(Ordering::from_query(query)?.map(Self::Ordering))
+    }
+    pub(crate) fn capability(&self) -> &'static str {
+        match self {
+            Self::Ordering(_) => "ordering.verify",
+            Self::Sorting(_) => "sorting.verify",
+        }
+    }
+    pub(crate) fn name(&self) -> &'static str {
+        match self {
+            Self::Ordering(_) => "dependency_order/v1",
+            Self::Sorting(_) => "integer_sort/v1",
+        }
+    }
+    pub(crate) fn instruction(&self) -> &'static str {
+        match self {
+            Self::Ordering(_) => "Return only a JSON array containing every declared node exactly once, respecting every before pair.",
+            Self::Sorting(_) => "Return only a JSON array of all supplied integers in the requested order (ascending by default), preserving duplicates. No prose or extra fields.",
+        }
+    }
+    pub(crate) fn check(&self, answer: &str) -> Result<()> {
+        match self {
+            Self::Ordering(c) => c.check(answer),
+            Self::Sorting(c) => c.check(answer),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn sorting_preserves_multiplicity_direction_and_integer_bounds() {
+        let criterion = Criterion::from_query(r#"sort:{"values":[3,-1,3,0]}"#)
+            .unwrap()
+            .unwrap();
+        criterion.check("[-1,0,3,3]").unwrap();
+        for wrong in [
+            "[-1,0,3]",
+            "[3,3,0,-1]",
+            "[-1,0,3,4]",
+            "[-1,0,3,3.0]",
+            r#"{"verified":true}"#,
+        ] {
+            assert!(criterion.check(wrong).is_err());
+        }
+        Criterion::from_query(
+            r#"sort:{"values":[-9223372036854775808,9223372036854775807],"descending":true}"#,
+        )
+        .unwrap()
+        .unwrap()
+        .check("[9223372036854775807,-9223372036854775808]")
+        .unwrap();
+        for raw in [
+            r#"{"values":[]}"#,
+            r#"{"values":[1],"permissions":["shell"]}"#,
+            r#"{"values":[9223372036854775808]}"#,
+        ] {
+            assert!(Criterion::from_query(&format!("sort:{raw}")).is_err());
+        }
+        assert!(Sorting::parse(&serde_json::json!({"values":vec![1;257]}).to_string()).is_err());
+    }
     #[test]
     fn checks_all_constraints_and_rejects_untrusted_extensions() {
         let c = Ordering::from_query(r#"order:{"nodes":["a","b","c"],"before":[["a","c"]]}"#)

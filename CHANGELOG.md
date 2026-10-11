@@ -445,3 +445,11 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   identities, even when their manifest checksums are valid.
 - Bound stored manifest, identifier, version and checksum reads before Rust
   allocation and add tampered/oversized registry regression coverage.
+
+### Independent integer sorting verification
+
+- Add bounded `sort:` goals with deterministic ordering and multiplicity checks.
+- Route checker failures through existing bounded Jev-R revision and charge each
+  verification under an explicit task-scoped capability.
+- Record the actual successful criterion in Engine evidence instead of assuming
+  every structured verifier is dependency ordering.

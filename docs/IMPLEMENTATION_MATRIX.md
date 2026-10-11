@@ -356,3 +356,12 @@ both paths exclude oversized payload/checksum fields before Rust allocation.
 Regression tests cover changed IDs/versions with recomputed valid hashes and
 oversized manifests, checksums, row IDs and versions. This strengthens discovery
 and version references; server-loaded weight identity remains unattested.
+
+Independent integer sorting verification: **Implemented** in `src/verification.rs`
+and Jev-R/Engine criterion dispatch. Explicit `sort:` goals preserve signed 64-bit
+integer multiplicity and ascending/descending order, with bounded input/output and
+strict metadata parsing. The checker uses an individually charged `sorting.verify`
+capability and records `integer_sort/v1` rather than ordering evidence. Tests cover
+invalid/overflow/duplicate-loss answers, malformed criteria, bounded recursive
+revision, FAST rejection, denied verification budget and criterion-specific evidence.
+General independent task verification and live effectiveness remain **Partial**.
