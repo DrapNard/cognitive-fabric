@@ -184,3 +184,8 @@ model for a bounded test. Its authenticated HTTP server returned 401 for discove
 and generation; no successful model answer is claimed. The owned test model was
 unloaded and the server returned to its prior stopped state. Protected explicit
 operator API credentials remain an integration gap; none were accessed or stored.
+
+Opt-in local bearer authentication now binds the dedicated operator environment
+credential to one local API scope, including managed workers and discovery.
+Synthetic direct/managed generation and escaped-echo regression tests pass.
+Live authenticated generation remains unverified; see `AUTHENTICATION.md`.

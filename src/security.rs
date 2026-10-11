@@ -84,6 +84,7 @@ pub fn authorize(principal: &str, capability: &str) -> Result<()> {
                 | "telemetry.gpu"
                 | "inference.diagnose"
                 | "inference.worker.configure"
+                | "inference.auth.configure"
                 | "model.register"
                 | "model.select"
                 | "model.lifecycle"

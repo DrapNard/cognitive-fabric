@@ -27,7 +27,12 @@ async fn advertised(cfg: &Config) -> Result<BTreeSet<String>> {
         .redirect(reqwest::redirect::Policy::none())
         .timeout(Duration::from_secs(3))
         .build()?;
-    let mut response = client.get(endpoint).send().await?;
+    let credential = crate::credentials::resolve(cfg)?;
+    let mut request = client.get(endpoint);
+    if let Some(credential) = &credential {
+        request = credential.apply(request)?;
+    }
+    let mut response = request.send().await?;
     if !response.status().is_success() {
         bail!("Model discovery returned a non-success status")
     }
@@ -41,7 +46,16 @@ async fn advertised(cfg: &Config) -> Result<BTreeSet<String>> {
         }
         bytes.extend_from_slice(&chunk);
     }
-    let models: Models = serde_json::from_slice(&bytes)?;
+    if let Some(credential) = &credential {
+        credential.reject_echo(&bytes)?;
+    }
+    let value: Value = serde_json::from_slice(&bytes)
+        .map_err(|_| anyhow::anyhow!("Invalid discovery JSON response"))?;
+    if let Some(credential) = &credential {
+        credential.reject_echo(&serde_json::to_vec(&value)?)?;
+    }
+    let models: Models = serde_json::from_value(value)
+        .map_err(|_| anyhow::anyhow!("Invalid discovery model response"))?;
     if models.data.len() > 256
         || models.data.iter().any(|m| {
             m.id.trim().is_empty() || m.id.len() > 256 || m.id.chars().any(char::is_control)
@@ -99,7 +113,7 @@ pub async fn diagnose(cfg: &Config, store: &Store, probe_inference: bool) -> Res
 }
 
 /// Inspect operator-registered endpoints without loading models or creating tasks.
-pub async fn registered_endpoints(store: &Store) -> Result<Value> {
+pub async fn registered_endpoints(cfg: &Config, store: &Store) -> Result<Value> {
     security::authorize("human-cli", "inference.diagnose")?;
     let mut endpoints = std::collections::BTreeMap::<String, Vec<crate::models::Registered>>::new();
     let mut disabled = 0;
@@ -118,8 +132,9 @@ pub async fn registered_endpoints(store: &Store) -> Result<Value> {
     }
     let mut pending = tokio::task::JoinSet::new();
     for (endpoint, registrations) in endpoints {
+        let mut cfg = cfg.clone();
+        cfg.api_base = endpoint.clone();
         pending.spawn(async move {
-            let cfg = Config { api_base:endpoint.clone(), ..Config::default() };
             let started = tokio::time::Instant::now();
             let response = advertised(&cfg).await;
             let required = registrations.iter().map(|model| model.manifest.model.clone()).collect::<BTreeSet<_>>();
@@ -191,7 +206,9 @@ mod tests {
             let body = r#"{"data":[{"id":"fixture"}]}"#;
             socket.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",body.len(),body).as_bytes()).await.unwrap();
         });
-        let report = registered_endpoints(&store).await.unwrap();
+        let report = registered_endpoints(&Config::default(), &store)
+            .await
+            .unwrap();
         provider.await.unwrap();
         assert_eq!(report["status"], "failed");
         assert_eq!(report["endpoints"].as_array().unwrap().len(), 1);
@@ -221,7 +238,9 @@ mod tests {
     async fn registered_discovery_bounds_distinct_endpoints_before_network() {
         let store = Store::in_memory().unwrap();
         assert_eq!(
-            registered_endpoints(&store).await.unwrap()["status"],
+            registered_endpoints(&Config::default(), &store)
+                .await
+                .unwrap()["status"],
             "not_applicable"
         );
         for index in 0..9 {
@@ -232,7 +251,10 @@ mod tests {
                 &format!("http://127.0.0.1:{}/v1", 12000 + index),
             );
         }
-        let error = registered_endpoints(&store).await.unwrap_err().to_string();
+        let error = registered_endpoints(&Config::default(), &store)
+            .await
+            .unwrap_err()
+            .to_string();
         assert!(error.contains("eight"));
     }
 

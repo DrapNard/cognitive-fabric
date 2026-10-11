@@ -224,3 +224,12 @@ temporary model was unloaded and the previously stopped server was stopped again
 loaded-model inspection returned empty. Successful generation remains unverified.
 Explicit protected operator-supplied API authentication is the next integration
 gap; external operator model loading is not automatic framework residency control.
+
+Scoped local API authentication: **Implemented** for direct HTTP generation,
+primary and registered discovery, and managed-worker forwarding. See
+`src/credentials.rs`, `src/backend.rs`, `src/diagnostics.rs`, typed bootstrap and
+`tests/inference_auth.rs`. Operator configuration persists scope only; endpoint
+changes cannot forward the primary token. Synthetic direct/managed tests reject
+escaped credential echoes without writing credentials to task traces or config.
+Real authenticated LM Studio generation remains **Not verified**. See
+`docs/AUTHENTICATION.md` for setup and residual same-user/provider risks.

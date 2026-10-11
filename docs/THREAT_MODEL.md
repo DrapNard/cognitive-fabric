@@ -130,3 +130,13 @@ query with cleared environment, bounded output/time and child cleanup. No runtim
 model/tool API selects executable paths or arguments. The installed utility/driver
 is trusted host software; this is not sandboxing or task-attributed GPU accounting.
 No GPU setters, weight loading or new model permissions are introduced.
+
+### Opt-in inference credentials
+
+The operator can bind a dedicated environment bearer credential to one validated
+local API scope. Registered model endpoint changes do not inherit authorization
+for another endpoint. Workers receive only this credential after clearing their
+environment; bootstrap contains scope metadata only. Exact raw/decoded echoes are
+rejected before task persistence. This does not defeat transformed exfiltration by
+a malicious provider, same-user process inspection or administrator access. See
+`AUTHENTICATION.md`. Authentication configuration remains human-only.

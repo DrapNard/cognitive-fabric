@@ -127,7 +127,13 @@ impl ProcessTask {
         let socket_metadata = std::fs::symlink_metadata(&socket)?;
         guard.socket = Some((socket_metadata.dev(), socket_metadata.ino()));
         std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o600))?;
-        let mut child = tokio::process::Command::new(std::env::current_exe()?)
+        let credential = if self.cfg.backend == "openai-local" {
+            crate::credentials::resolve(&self.cfg)?
+        } else {
+            None
+        };
+        let mut command = tokio::process::Command::new(std::env::current_exe()?);
+        command
             .arg("--home")
             .arg(&home)
             .arg("inference-worker")
@@ -139,8 +145,11 @@ impl ProcessTask {
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
-            .kill_on_drop(true)
-            .spawn()?;
+            .kill_on_drop(true);
+        if let Some(credential) = credential {
+            credential.forward(&mut command);
+        }
+        let mut child = command.spawn()?;
         let pid = child.id().context("Worker process has no PID")?;
         let stream = tokio::select! {
             result = tokio::time::timeout(Duration::from_secs(10), listener.accept()) => result.context("Worker connection deadline exhausted")??.0,

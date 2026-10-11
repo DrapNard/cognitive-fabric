@@ -123,3 +123,7 @@ Manage [registered local model configurations](docs/MODELS.md).
 Observe [typed task progress and durable catch-up](docs/EVENTS.md).
 
 Inspect [database limits and reviewed retention](docs/STORAGE.md).
+
+Local servers requiring bearer authentication can use opt-in, endpoint-scoped
+operator credentials. See [authentication setup](docs/AUTHENTICATION.md); secret
+values are supplied through the launching environment and never saved in config.

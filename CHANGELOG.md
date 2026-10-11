@@ -325,3 +325,10 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   staging, no-overwrite publication and a durable provenance record.
 - Refuse existing destinations, unsupported schemas and live WAL inputs; retain
   task state without automatic replay or configuration/artifact substitution.
+
+### Scoped operator inference authentication
+
+- Support opt-in environment bearer credentials for one local API scope across
+  generation, discovery and managed workers without persisting secret values.
+- Preserve backward-compatible typed bootstrap and reject literal or JSON-escaped
+  provider credential echoes before task results are recorded.

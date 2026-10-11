@@ -121,6 +121,10 @@ enum Command {
         #[arg(long, default_value = "0.15")]
         temperature: f64,
     },
+    ConfigureAuth {
+        #[arg(long, action = clap::ArgAction::Set)]
+        enabled: bool,
+    },
     ConfigShow,
     ConfigureWorker {
         #[arg(long, action = clap::ArgAction::Set)]
@@ -352,7 +356,7 @@ async fn main() -> Result<()> {
                 serde_json::json!({"status":"not_requested"})
             };
             report["registered_model_discovery"] = if probe_registered_models {
-                cogfabric::diagnostics::registered_endpoints(&store).await?
+                cogfabric::diagnostics::registered_endpoints(&cfg, &store).await?
             } else {
                 serde_json::json!({"status":"not_requested"})
             };
@@ -440,6 +444,13 @@ async fn main() -> Result<()> {
             }
             settings.save()?;
             json!({"saved":true,"configuration":settings})
+        }
+        Command::ConfigureAuth { enabled } => {
+            security::authorize("human-cli", "inference.auth.configure")?;
+            let mut settings = cfg.clone();
+            settings.inference_auth_scope = enabled.then(|| cfg.api_base.clone());
+            settings.save()?;
+            json!({"saved":true,"inference_auth_scope":settings.inference_auth_scope,"credential_environment_variable":cogfabric::credentials::ENVIRONMENT_VARIABLE,"credential_stored":false})
         }
         Command::ConfigShow => serde_json::to_value(&cfg)?,
         Command::ConfigureWorker { enabled } => {

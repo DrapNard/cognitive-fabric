@@ -22,6 +22,7 @@ pub struct Config {
     pub format_version: u16,
     pub backend: String,
     pub inference_process: bool,
+    pub inference_auth_scope: Option<String>,
     pub model: String,
     pub model_registration: Option<crate::models::Selection>,
     pub api_base: String,
@@ -47,6 +48,7 @@ impl Default for Config {
             format_version: 1,
             backend: "demo".into(),
             inference_process: false,
+            inference_auth_scope: None,
             model: "local-model".into(),
             model_registration: None,
             api_base: "http://127.0.0.1:1234/v1".into(),
@@ -107,6 +109,12 @@ impl Config {
     }
 
     pub fn validate(&self) -> Result<()> {
+        if let Some(scope) = &self.inference_auth_scope {
+            if scope.len() > 2048 {
+                bail!("Inference credential scope exceeds bounds")
+            }
+            crate::backend::local_endpoint(scope)?;
+        }
         if let Some(selection) = &self.model_registration {
             selection.validate()?;
         }

@@ -106,6 +106,11 @@ impl Bootstrap {
             role_profiles: Some(builder.create_vector(&profiles)),
             max_database_bytes: self.config.max_database_bytes,
             max_wall_seconds: self.config.max_wall_seconds,
+            inference_auth_scope: self
+                .config
+                .inference_auth_scope
+                .as_ref()
+                .map(|scope| builder.create_string(scope)),
         };
         let root = fb::Bootstrap::create(&mut builder, &args);
         builder.finish(root, Some("COGB"));
@@ -127,6 +132,9 @@ impl Bootstrap {
             || packet.backend().len() > 32
             || packet.model().len() > 256
             || packet.api_base().len() > 2048
+            || packet
+                .inference_auth_scope()
+                .is_some_and(|scope| scope.len() > 2048)
             || packet.role_profiles().is_some_and(|p| p.len() > 7)
         {
             bail!("Worker bootstrap identity or bounds invalid")
@@ -142,6 +150,7 @@ impl Bootstrap {
             max_input_bytes: usize::try_from(packet.max_input_bytes())?,
             max_database_bytes: packet.max_database_bytes(),
             max_wall_seconds: packet.max_wall_seconds(),
+            inference_auth_scope: packet.inference_auth_scope().map(str::to_string),
             interpret_goals: false,
             synthesize_results: false,
             ..Config::default()
@@ -235,6 +244,7 @@ mod tests {
                 role_profiles: Some(profiles),
                 max_database_bytes: 256_000_000,
                 max_wall_seconds: if invalid == 3 { 3601 } else { 300 },
+                inference_auth_scope: None,
             };
             let root = fb::Bootstrap::create(&mut builder, &args);
             builder.finish(root, Some("COGB"));
@@ -249,6 +259,7 @@ mod tests {
             max_database_bytes: 64_000_000,
             max_wall_seconds: 3600,
             model: "pinned-model".into(),
+            inference_auth_scope: Some("http://127.0.0.1:1234/v1".into()),
             max_calls: 4,
             max_tokens: 512,
             max_input_bytes: 4096,
@@ -269,6 +280,10 @@ mod tests {
         let decoded = Bootstrap::decode(&bytes).unwrap();
         assert_eq!(decoded.task, original.task);
         assert_eq!(decoded.config.model, "pinned-model");
+        assert_eq!(
+            decoded.config.inference_auth_scope,
+            original.config.inference_auth_scope
+        );
         assert_eq!(
             decoded.config.role_profiles["solver"].model,
             "pinned-solver"
@@ -298,6 +313,18 @@ mod tests {
         .encode()
         .unwrap();
         let table = flatbuffers::root::<fb::Bootstrap>(&legacy).unwrap();
+        assert_eq!(
+            table
+                ._tab
+                .vtable()
+                .get(fb::Bootstrap::VT_INFERENCE_AUTH_SCOPE),
+            0
+        );
+        assert!(Bootstrap::decode(&legacy)
+            .unwrap()
+            .config
+            .inference_auth_scope
+            .is_none());
         assert_eq!(
             table._tab.vtable().get(fb::Bootstrap::VT_MAX_WALL_SECONDS),
             0

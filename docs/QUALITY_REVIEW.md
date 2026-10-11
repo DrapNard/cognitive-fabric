@@ -928,3 +928,18 @@ Only temporary framework workspaces were configured. No weights were downloaded,
 modified or committed. No independent held-out study or successful real inference
 was completed. Earlier statements about unavailable hardware/services reflect
 sandboxed observations and are superseded by this more precise host evidence.
+
+## Scoped inference authentication verification
+
+With FlatBuffers compiler/Rust pairing 25.12.19, the following checks passed:
+`cargo fmt --all -- --check`, `cargo check --all-targets --offline`,
+`cargo test --all-targets --offline`, and
+`cargo clippy --all-targets --offline -- -D warnings`.
+The suite contains 166 tests: 160 library tests, one authentication integration
+and five managed-process integrations. Network/process tests ran with host access.
+The authentication integration exercises four direct/managed and safe/escaped-echo
+combinations using synthetic credentials; scope mismatch refuses credential reads
+in a pure unit test. Bootstrap roundtrip preserves scope and absent legacy fields
+remain unauthenticated. No real operator credential was read or live authenticated
+generation claimed. Full discovery authentication and cross-endpoint live behavior
+still need dedicated integration coverage beyond the shared credential helper.

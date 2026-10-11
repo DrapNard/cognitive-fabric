@@ -147,19 +147,19 @@ pub async fn generate_report(
         .redirect(reqwest::redirect::Policy::none())
         .timeout(Duration::from_secs(cfg.timeout_seconds))
         .build()?;
-    let mut response = client
-        .post(endpoint)
-        .json(&json!({
-            "model": model, "stream": false, "temperature": temperature,
-            "max_tokens": max_tokens,
-            "messages": [
-                {"role":"system", "content":system},
-                {"role":"user", "content": prompt}
-            ]
-        }))
-        .send()
-        .await?
-        .error_for_status()?;
+    let credential = crate::credentials::resolve(cfg)?;
+    let mut request = client.post(endpoint).json(&json!({
+        "model": model, "stream": false, "temperature": temperature,
+        "max_tokens": max_tokens,
+        "messages": [
+            {"role":"system", "content":system},
+            {"role":"user", "content": prompt}
+        ]
+    }));
+    if let Some(credential) = &credential {
+        request = credential.apply(request)?;
+    }
+    let mut response = request.send().await?.error_for_status()?;
     if !response.status().is_success() {
         bail!("Inference endpoint returned a non-success status")
     }
@@ -176,7 +176,14 @@ pub async fn generate_report(
         }
         body.extend_from_slice(&chunk);
     }
-    let response: serde_json::Value = serde_json::from_slice(&body)?;
+    if let Some(credential) = &credential {
+        credential.reject_echo(&body)?;
+    }
+    let response: serde_json::Value = serde_json::from_slice(&body)
+        .map_err(|_| anyhow::anyhow!("Invalid inference JSON response"))?;
+    if let Some(credential) = &credential {
+        credential.reject_echo(&serde_json::to_vec(&response)?)?;
+    }
     let text = response
         .pointer("/choices/0/message/content")
         .and_then(|v| v.as_str())

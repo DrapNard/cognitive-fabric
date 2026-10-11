@@ -31,3 +31,5 @@ mod verification;
 pub mod wire;
 
 pub mod gpu;
+
+pub mod credentials;
