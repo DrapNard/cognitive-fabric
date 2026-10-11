@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Authorized inference worker sessions
+
+- Add worker-side host credential checks and immutable task/role grants.
+- Enforce cumulative task budgets, bounded sessions and active cancellation on
+  host disconnect/shutdown; reject forged identities before inference.
+
 ### Host-connected inference process transport
 
 - Add a Unix inference adapter with host-approved OS peer UID/PID checks,

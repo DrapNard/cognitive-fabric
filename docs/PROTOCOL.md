@@ -91,6 +91,30 @@ queueing, coordination, HTTP time and cancellation; it is not measured GPU time.
 
 ## Progress envelope
 
+### Worker-side authority and bounded sessions
+
+`fabric::unix::worker::Authority` is created by trusted setup code, not deserialized
+from requests. It pins the host UID/PID, module descriptor and 1–64 unique approved
+task UUIDs. Worker requests must match a grant, role-derived actor, destination,
+version and an expiry at most 300 seconds ahead. Unapproved tasks close the session
+before inference. This is mutual connected-peer checking, not executable attestation.
+
+Per-task cumulative ceilings default to 8 calls, 1600 reserved output tokens and
+128 KB prompt bytes; configurable ceilings are bounded to 128 calls, 1,048,576
+tokens and 4 MiB prompt bytes. Reservations count failed calls. Session limits
+are 300 seconds and 1024 exchanges; idle/incomplete reads allow 10 seconds, writes
+2 seconds. One inference runs at a time. Disconnect, pipelined bytes, shutdown,
+expiry or invalid output terminates the session and drops the backend future.
+Closing the shutdown channel also stops the session. Backend-side GPU cancellation
+is still not guaranteed. Host task ceilings remain independently enforced.
+
+The supplied Rust `serve` API handles worker-side authorization; tests cover real
+adapter/worker round trips, cumulative budgets, forged actors/unapproved tasks,
+version/deadline denials and active cancellation. Production process launch,
+grant provisioning across processes, durable worker auditing, sandboxing and
+automatic replacement remain unfinished. Task grants are immutable for a session;
+new grants require trusted creation of another authority/session.
+
 ### Host-connected Unix inference adapters
 
 `fabric::unix::UnixInference::connected` accepts an already-connected UnixStream,
@@ -112,7 +136,7 @@ Tests include a separate fixture process authenticated by its actual PID plus
 wrong UID/PID, forged task, oversized length and cancellation denials. This is a
 connected-process identity check, not executable attestation, sandboxing or neural
 weight verification. Same-user compromise and inherited/passed descriptors remain
-outside isolation guarantees. Worker-side authorization, production worker
+outside isolation guarantees. Production worker grant provisioning,
 launch/lifecycle and general module event routing remain incomplete; remote
 computation may continue after the host closes its connection.
 

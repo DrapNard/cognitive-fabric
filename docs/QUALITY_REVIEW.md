@@ -622,3 +622,21 @@ model or sandbox. All 121 tests, workspace check, formatting and Clippy pass wit
 FlatBuffers 25.12.19. No new dependency, model process launch, executable permission
 or remote network access is added. Worker-side authorization, production lifecycle,
 executable attestation, isolation and general routing remain unfinished.
+
+## Worker-side inference authority
+
+Worker Authority is trusted, non-deserializable setup holding approved host
+UID/PID, immutable descriptor and at most 64 task UUID grants. Frames cannot add
+grants. Each dispatch checks destination/version, role-derived actor, task scope
+and bounded expiry, then charges cumulative calls/reserved output/prompt bytes.
+Sessions are sequential and bounded by 300 seconds/1024 exchanges; reads/writes
+have additional deadlines. Disconnect, extra bytes, shutdown and expiry drop the
+backend future. Provider output is independently validated before transmission.
+
+Five tests cover adapter/worker exchange, cumulative call/token/byte ceilings,
+task/actor/version/deadline denials and active disconnect/shutdown cancellation.
+All 126 tests, workspace check, formatting and Clippy pass with FlatBuffers
+25.12.19. Initial Clippy findings in test slice construction were corrected.
+No autonomous process launch or sandbox guarantee is added. Trusted cross-process
+grant provisioning, worker audit persistence and production lifecycle remain
+incomplete. Dropped HTTP futures do not prove external GPU work stopped.

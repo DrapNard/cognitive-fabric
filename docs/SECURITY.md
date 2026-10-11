@@ -46,5 +46,7 @@ explicit host-approved values and validates task/module-correlated FlatBuffers.
 It closes a connection on cancellation or invalid transport responses to prevent
 stale reply reuse. It grants no shell, file or worker-launch permission. Process
 credentials are not executable/weight attestation or isolation from same-user
-descriptor transfer. Worker-side policy and production process lifecycle remain
-unimplemented; see `PROTOCOL.md` for the adapter's tested scope.
+descriptor transfer. Worker sessions use trusted immutable task grants and
+cumulative ceilings, and drop inference on disconnect/shutdown. Production grant
+provisioning, process lifecycle and durable worker auditing remain unimplemented;
+see `PROTOCOL.md` for the tested scope.

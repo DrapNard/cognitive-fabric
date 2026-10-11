@@ -10,6 +10,7 @@ use tokio::{
     net::UnixStream,
     sync::Mutex,
 };
+pub mod worker;
 
 /// An immutable connected peer, supplied by trusted host code, never a model path.
 /// Failed or cancelled exchanges permanently close this adapter to avoid reusing

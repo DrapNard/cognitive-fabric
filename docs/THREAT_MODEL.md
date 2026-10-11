@@ -13,6 +13,14 @@
 
 ## Explicit non-goals
 
+Connected inference workers authenticate the host UID/PID and require immutable
+trusted task grants before dispatch. Bounded cumulative reservations and sessions
+limit repeated requests. Disconnect/shutdown drops active inference, but cannot
+prove an external GPU server stopped. These controls do not attest executable
+contents, isolate same-user compromise or provision grants securely by themselves.
+Worker launch, cross-process grant distribution and durable worker audits remain
+release integration work; see `PROTOCOL.md`.
+
 - Model alignment is **not** proven by deterministic policy checks.
 - LoRA model training cannot be made safe by a checksum check alone.
 - Source code forks can remove local safeguards.
