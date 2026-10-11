@@ -135,6 +135,33 @@ fn normalize(text: &str) -> String {
         .to_lowercase()
 }
 
+// Missing deadline/cancellation outcomes cannot support a paired comparison.
+fn paired_changes(results: &[Vec<Option<bool>>], arm_count: usize) -> Vec<Value> {
+    (1..arm_count).map(|arm| {
+        let mut both_passed = 0usize;
+        let mut both_failed = 0usize;
+        let mut improved = Vec::new();
+        let mut regressed = Vec::new();
+        for (case, outcomes) in results.iter().enumerate() {
+            match (outcomes[0], outcomes[arm]) {
+                (Some(true), Some(true)) => both_passed += 1,
+                (Some(false), Some(false)) => both_failed += 1,
+                (Some(false), Some(true)) => improved.push(case),
+                (Some(true), Some(false)) => regressed.push(case),
+                _ => {}
+            }
+        }
+        let paired = both_passed + both_failed + improved.len() + regressed.len();
+        let baseline_passed = both_passed + regressed.len();
+        json!({"baseline_arm_index":0,"arm_index":arm,"paired_cases":paired,
+            "unpaired_cases":results.len()-paired,"both_passed":both_passed,"both_failed":both_failed,
+            "improved_cases":improved,"regressed_cases":regressed,
+            "regression_fraction_of_paired_cases":if paired>0 {Some(regressed.len() as f64/paired as f64)} else {None},
+            "regression_fraction_of_baseline_passes":if baseline_passed>0 {Some(regressed.len() as f64/baseline_passed as f64)} else {None},
+            "paired_accuracy_delta":if paired>0 {Some((improved.len() as f64-regressed.len() as f64)/paired as f64)} else {None}})
+    }).collect()
+}
+
 #[derive(Clone, Default, serde::Serialize)]
 struct Totals {
     model_calls: u64,
@@ -334,6 +361,7 @@ where
     let mut scores = vec![0usize; arms.len()];
     let mut counts = vec![0usize; arms.len()];
     let mut totals = vec![Totals::default(); arms.len()];
+    let mut paired_results = vec![vec![None; arms.len()]; cases.len()];
     let mut stopped = false;
     let mut cancelled = false;
     tokio::pin!(cancel);
@@ -360,6 +388,7 @@ where
                 &outcome.answer,
             );
             scores[arm_index] += usize::from(passed);
+            paired_results[case_index][arm_index] = Some(passed);
             totals[arm_index].add(&outcome, counts[arm_index] == 0);
             counts[arm_index] += 1;
             let trace = store.task(&outcome.task_id)?;
@@ -396,6 +425,7 @@ where
         "small_model_ablation_configuration_controlled":!details.iter().any(|detail| detail["bound_expert_models"].as_array().is_some_and(|models| !models.is_empty())),
         "case_count":cases.len(),"complete":!stopped,"stop_reason":if cancelled {"cancelled"} else if stopped {"run_deadline"} else {"completed"},"elapsed_ms":started.elapsed().as_secs_f64()*1000.0,"larger_baseline_configured":larger.is_some(),
         "arms":arms.iter().enumerate().map(|(index,(profile,model,_))| json!({"index":index,"profile":profile,"model":model,"executed":counts[index],"passed":scores[index],"resources":totals[index],"accuracy":if counts[index]>0 {Some(scores[index] as f64/counts[index] as f64)} else {None}})).collect::<Vec<_>>(),
+        "paired_changes_against_small_model_alone":paired_changes(&paired_results,arms.len()),
         "details":details,"unavailable_metrics":["peak_memory","gpu_memory","energy","model_load_cost","general_security_failure_rate"],
         "limitations":["Held-out independence and code revision are operator-attested","Backend model labels do not attest immutable weights","A bound expert model configuration invalidates the same-model ablation control, even if advice is refused or fails; inspect per-case bound_expert_models","Exact-match and dependency-order criteria do not establish broad reasoning quality","Retrieval uses one read-only SQLite snapshot; checksum includes unrelated stored history","Snapshot bounds are 64 MB and temporarily require an additional serialization buffer","Live model availability, weight identity and server state are not frozen","Different arms consume different amounts within the same operator ceilings; inspect actual usage"]}),
     )
@@ -403,6 +433,31 @@ where
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn paired_regressions_exclude_missing_results_and_preserve_denominators() {
+        use super::*;
+        let results = vec![
+            vec![Some(true), Some(false)],
+            vec![Some(false), Some(true)],
+            vec![Some(true), Some(true)],
+            vec![Some(false), Some(false)],
+            vec![None, Some(false)],
+            vec![Some(true), None],
+        ];
+        let report = &paired_changes(&results, 2)[0];
+        assert_eq!(report["paired_cases"], 4);
+        assert_eq!(report["unpaired_cases"], 2);
+        assert_eq!(report["improved_cases"], json!([1]));
+        assert_eq!(report["regressed_cases"], json!([0]));
+        assert_eq!(report["regression_fraction_of_paired_cases"], 0.25);
+        assert_eq!(report["regression_fraction_of_baseline_passes"], 0.5);
+        assert_eq!(report["paired_accuracy_delta"], 0.0);
+        let empty = paired_changes(&[vec![None, Some(true)]], 2);
+        assert!(empty[0]["paired_accuracy_delta"].is_null());
+        assert!(empty[0]["regression_fraction_of_paired_cases"].is_null());
+        let failed = paired_changes(&[vec![Some(false), Some(false)]], 2);
+        assert!(failed[0]["regression_fraction_of_baseline_passes"].is_null());
+    }
     use super::*;
     #[tokio::test]
     async fn bound_expert_models_disclose_configuration_confounding_even_on_failure() {
@@ -518,6 +573,17 @@ mod tests {
         .unwrap();
         assert_eq!(report["complete"], true);
         assert_eq!(report["arms"][0]["passed"], 0);
+        for change in report["paired_changes_against_small_model_alone"]
+            .as_array()
+            .unwrap()
+        {
+            assert_eq!(change["paired_cases"], 1);
+            assert_eq!(change["unpaired_cases"], 0);
+            assert_eq!(change["improved_cases"], json!([0]));
+            assert_eq!(change["regressed_cases"], json!([]));
+            assert_eq!(change["paired_accuracy_delta"], 1.0);
+            assert!(change["regression_fraction_of_baseline_passes"].is_null());
+        }
         for arm in &report["arms"].as_array().unwrap()[1..] {
             assert_eq!(arm["passed"], 1);
             assert_eq!(arm["resources"]["model_calls"], 0);

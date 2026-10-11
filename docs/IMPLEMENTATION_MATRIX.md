@@ -239,3 +239,10 @@ primary/registered discovery, escaped echo rejection, and missing-credential
 failures before connecting for direct and managed tasks. `tests/inference_auth.rs`
 contains the evidence; full Rust regression count is 168. Actual server credentials
 and live successful generation remain external validation requirements.
+
+Paired comparison reporting: **Implemented** in `src/benchmarking.rs` against the
+small-model-alone arm. Reports include improved/regressed case indices, paired and
+unpaired coverage, explicit denominators and null unavailable rates. Unit tests
+cover incomplete/zero-denominator outcomes; the real six-arm SQLite fixture checks
+aggregation from executed tasks. This supplies descriptive dataset regression
+metrics, not the outstanding live held-out robustness or security study.

@@ -339,3 +339,10 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   absence of authorization on other scopes and safe escaped-echo failures.
 - Verify missing credentials prevent direct and managed connections and model
   actors cannot authorize authentication configuration.
+
+### Paired comparison changes
+
+- Report per-arm case improvements and regressions against small-model-alone,
+  with paired coverage, explicit denominators and unavailable empty rates.
+- Exclude unexecuted deadline/cancellation cases from comparisons and expose their
+  count instead of treating missing outcomes as successes or failures.

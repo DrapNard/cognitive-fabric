@@ -210,3 +210,23 @@ byte identity is enforced. Pinning establishes content identity only: it does no
 verify source/license declarations, reviewer independence, contamination checks,
 held-out status or expected-label correctness. It does not make the provisional
 repository suite reviewed automatically.
+
+### Paired improvements and regressions
+
+`paired_changes_against_small_model_alone` compares each other arm (including the
+optional larger baseline) with arm zero on jointly executed case indices only.
+It lists improved and regressed zero-based case indices, both-pass/both-fail
+counts, paired/unpaired counts, and paired accuracy delta. Match indices to
+`details` to inspect actual task traces and resources.
+
+`regression_fraction_of_paired_cases` divides regressions by all jointly executed
+cases. `regression_fraction_of_baseline_passes` divides by baseline successes in
+that same paired subset. A zero denominator yields null, never zero. Deadline or
+cancellation omissions are unpaired rather than failed cases. An executed outcome
+still uses the normal independent expected-label/constraint criterion; failed
+execution statuses cannot pass merely because their answer matches.
+
+These are descriptive changes on the supplied corpus, not statistical significance,
+held-out robustness, causal proof or general security failure rates. Partial runs
+can have a biased paired subset; inspect coverage before drawing conclusions.
+No extra inference, permissions or task executions are added by aggregation.

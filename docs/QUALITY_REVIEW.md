@@ -958,3 +958,12 @@ All mandatory checks passed again with FlatBuffers 25.12.19: formatting, all-tar
 check, all-target tests (168: 160 library, three authentication, five process), and
 Clippy with warnings denied. Network/process tests used host access; all credentials
 were synthetic and explicitly supplied or removed on child command environments.
+
+## Paired benchmark change reporting
+
+All mandatory checks passed with FlatBuffers 25.12.19: formatting, all-target check,
+all-target test (169 tests: 161 library, three authentication, five process), and
+Clippy with warnings denied. Tests cover improvement/regression/both-pass/both-fail,
+missing baseline/arm outcomes, zero denominators, and actual six-arm SQLite results.
+Aggregation introduces no model calls or permissions. Optional larger baselines
+use the same paired machinery; no live performance measurement is inferred.
