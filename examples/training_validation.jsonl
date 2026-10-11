@@ -1,0 +1,4 @@
+{"prompt": "How should a task report a missing measurement?", "response": "Report the measurement as unavailable instead of inventing a value.", "source": "original-demo", "license": "CC0-1.0"}
+{"prompt": "What belongs in a reproducible test report?", "response": "Record the inputs, configuration, observed outputs and checks actually executed.", "source": "original-demo", "license": "CC0-1.0"}
+{"prompt": "When should an adapter candidate become active?", "response": "After independent evaluation and explicit authorized operator approval.", "source": "original-demo", "license": "CC0-1.0"}
+{"prompt": "What does a content hash demonstrate?", "response": "It identifies bytes; it does not establish correctness or safety.", "source": "original-demo", "license": "CC0-1.0"}

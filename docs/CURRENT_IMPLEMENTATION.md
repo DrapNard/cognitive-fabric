@@ -119,7 +119,7 @@ private files and serialized admission. They preserve committed WAL state and
 publish a checksummed read-only standalone database. Full artifact/configuration
 restore and automatic replay are not implemented. See `STORAGE.md`.
 
-Offline training preflight now has six standard-library tests, frozen input hashes,
+Offline training preflight now has nine standard-library tests, frozen input hashes,
 strict provenance/deduplication, a no-supervised-token termination guard, disjoint
 new output and bounded adapter inventories. This improves the experimental script;
 no actual ML training, isolation, neural evaluation or promotion is proven.
@@ -147,3 +147,7 @@ Comparison reports disclose per-case bound expert model snapshots and flag the
 loss of the same-model configuration control, including refused/failed expert
 advice. This prevents separately configured experts being described as ordinary
 same-model ablations; backend weights remain unattested.
+
+Offline training also requires reviewed hashed train/validation/test split
+metadata and rejects normalized prompt overlap before ML imports. Split identity
+is recorded, but semantic independence and neural acceptance remain unverified.

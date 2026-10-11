@@ -783,3 +783,22 @@ checks its selection, replaces it with a registered-model version, disables that
 model and verifies fallback to the lower-ranked shared-backend workflow. Ordered
 admission audits show the unavailable candidate consumed no inference. General
 utility estimation and broader candidate scheduling remain incomplete.
+
+## Offline split manifest preflight (2026-10-11)
+
+`python3 -m unittest discover -s training -v`: nine standard-library tests passed.
+An actual CLI dry-run using `examples/training_splits.json` validated all three
+four-row demo splits, reported `training_started:false` and
+`semantic_independence_verified:false`, and created no adapter output.
+
+Exact FlatBuffers 25.12.19 remains in use. Formatting, all-target Cargo check,
+all-target Rust tests (148 unit + 5 process) and Clippy with denied warnings passed
+with offline dependencies. No real ML training or neural evaluation was run.
+
+The manifest preflight rejects hash changes even when the changed dataset remains
+valid, normalized prompt overlap, path traversal, symlinks, unsupported versions,
+duplicate/unknown fields and mismatched selected training paths. Only training
+rows are returned to optimization; validation/test identity is recorded without
+claiming semantic independence or behavioral acceptance. Base-model provenance,
+actual GPU training, external isolation and independent neural acceptance remain
+release/research limitations, and neural promotion stays denied.

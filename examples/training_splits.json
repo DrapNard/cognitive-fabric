@@ -1,0 +1,19 @@
+{
+  "format_version": 1,
+  "source": "Original repository demonstration; not an independently reviewed neural evaluation suite",
+  "license": "CC0-1.0",
+  "splits": {
+    "train": {
+      "file": "training_examples.jsonl",
+      "sha256": "e4f37f14b0e305000ad5821036785bc9faee7b4361bebc442411cd3b549b201a"
+    },
+    "validation": {
+      "file": "training_validation.jsonl",
+      "sha256": "d9d708d4a32731efbdbf502ee1c1b82c27e11fab45b1270dd6485fae4fa13f1d"
+    },
+    "test": {
+      "file": "training_test.jsonl",
+      "sha256": "ecbda7e9ef31259411ea5f9ce19af99efcec5402ae017db5601d9d7848c9ce91"
+    }
+  }
+}

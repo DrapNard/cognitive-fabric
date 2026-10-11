@@ -45,7 +45,7 @@ remains a pre-release. `QUALITY_REVIEW.md` preserves verification history.
 | 6 | Expert network | Partial | `src/registry.rs`: immutable semantic-versioned reference manifests, dependency/reverse-dependency checks, health, activate/disable/metadata rollback, bounded registry; lifecycle/tampering tests | Dynamic executable tool experts, measured workflow usefulness; backend loading/unloading; neural adapters remain experimental |
 | 7 | Persistent memory | Partial | `src/store.rs`: SQLite WAL/FTS5, schema migrations through 6, durable task/events, isolated explicit history, pinned registry/document snapshots, explicit lease-protected interrupted-task recovery, immutable versioned local model manifests and task selection snapshots, operator-published episodic snapshots, recomputed arithmetic memory, revocation and payload quotas, SQLite page ceilings, global task admission and reviewed retention; migration/isolation/tampering/deletion-rollback tests | Broader independent fact verifiers, backend model residency, physical WAL/filesystem bounds, full artifact/configuration restore and automatic checkpoint resumption |
 | 8 A/B | RAG evolution | Partial | `src/evolution.rs`, `src/evaluation.rs`: content-addressed quarantine, hashes/provenance/deduplication/quotas, isolated held-out retrieval, bounded cumulative approved-version regression gates and immutable accepted suites, atomic paired review records, transactional human promotion/rollback; integrity, regression, concurrency and rollback tests | Stronger poisoning/security evaluation, automatic source discovery and cleaning; dataset independence remains operator-attested |
-| 8 C | Offline neural adaptation | Experimental | `training/train_lora.py`, inactive artifact registration; neural evaluation/promotion denied | Validated training/dataset/evaluation manifests and an independently tested isolated offline pipeline; no hot-swap claim |
+| 8 C | Offline neural adaptation | Experimental | `training/train_lora.py`, inactive artifact registration; neural evaluation/promotion denied | Base-model provenance and independent neural evaluation manifests, actual training and externally isolated pipeline; no hot-swap claim |
 | 8 D, 14 | Novel neural reconstruction | Not implemented | Research only; no trained Jev networks or superiority claims | Separate research and independent evaluations, beyond proven v1.0 infrastructure |
 | 9 | Resource enforcement | Partial | `src/config.rs`, `src/reasoning.rs`: FAST/STANDARD/DEEP/RESEARCH ceilings, calls/cycles/reserved outputs/prompt bytes/tools/time, cancellation; exhaustion tests; optional provider usage and measured inference duration | Exact input-token preflight, model-load cost and retry metrics, process-isolated inference/GPU memory and optional energy telemetry |
 | 10, 11 | Security kernel | Partial | `src/security.rs`: immutable task/actor scope intersected with global policy, per-dispatch audits, deny-default capabilities, bounded no-follow reads; replay/actor/promotion denials and artifact tampering tests | Authenticated independent module identities and isolation before executable experts; signatures/attestations and neural behavioral evaluator absent |
@@ -122,7 +122,7 @@ observations, not isolated task peaks, backend residency or GPU measurements.
 The optional offline trainer now freezes bounded dataset input, rejects ambiguous/
 conflicting provenance, fails on passes with no supervised tokens, reserves separate
 output and records seeded configuration, dependency versions and hashed adapter
-inventory. Six standard-library preflight tests pass in addition to the 153 Rust
+inventory. Nine standard-library preflight tests pass in addition to the 153 Rust
 tests. Level C stays Experimental: ML dependencies/weights are unavailable here,
 and base provenance manifests, independent neural evaluation, external isolation,
 actual training and adapter switching remain unverified. Promotion remains denied.
@@ -167,3 +167,10 @@ model bindings before dispatch, permitting another already routed workflow witho
 spending calls on the unavailable candidate. Tests cover score/ID disagreement,
 version replacement, disable fallback and audited admission ordering. The router
 still returns at most two candidates; general utility-based scheduling is partial.
+
+Offline training now requires a bounded versioned dataset split manifest with
+provenance, exact file hashes and normalized prompt disjointness across training,
+validation and test. Only training rows reach optimization; tests cover changed
+inputs, overlap, path/version/field denials and dry-run behavior. Semantic split
+independence, base-weight provenance, real training, external isolation and an
+independent neural evaluator remain unproven. Level C remains Experimental.

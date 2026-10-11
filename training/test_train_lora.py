@@ -19,6 +19,16 @@ class TrainingPreflightTests(unittest.TestCase):
                       "source": "operator-reviewed", "license": "CC0-1.0"}
                      for index in range(4)]
         self.dataset.write_text("\n".join(json.dumps(row) for row in self.rows), encoding="utf-8")
+        self.manifest = self.root / "splits.json"
+        splits = {}
+        for name in ("train", "validation", "test"):
+            split = self.dataset if name == "train" else self.root / f"{name}.jsonl"
+            if name != "train":
+                split.write_text("\n".join(json.dumps(dict(row, prompt=f"{name} {index}"))
+                                          for index, row in enumerate(self.rows)), encoding="utf-8")
+            splits[name] = {"file": split.name, "sha256": sha256(split.read_bytes()).hexdigest()}
+        self.review = {"format_version": 1, "source": "reviewed fixture", "license": "CC0-1.0", "splits": splits}
+        self.manifest.write_text(json.dumps(self.review), encoding="utf-8")
         self.base = self.root / "base"
         self.base.mkdir()
 
@@ -80,9 +90,53 @@ class TrainingPreflightTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             train_lora.describe_artifacts(output)
 
+    def test_split_manifest_pins_hashes_and_returns_only_training_rows(self):
+        rows, review = train_lora.load_split_manifest(self.manifest, self.dataset)
+        self.assertEqual(rows, self.rows)
+        self.assertTrue(review["prompt_disjoint"])
+        self.assertFalse(review["semantic_independence_verified"])
+        self.assertEqual(review["manifest_sha256"], sha256(self.manifest.read_bytes()).hexdigest())
+        self.assertEqual(set(review["splits"]), {"train", "validation", "test"})
+        self.assertNotIn("response", json.dumps(review))
+        test_split = self.root / "test.jsonl"
+        test_split.write_text(test_split.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "hash mismatch"):
+            train_lora.load_split_manifest(self.manifest, self.dataset)
+
+    def test_split_overlap_and_unsafe_manifest_entries_fail(self):
+        validation = self.root / "validation.jsonl"
+        rows = [dict(row, prompt=f"validation {index}") for index, row in enumerate(self.rows)]
+        rows[0]["prompt"] = " Task   0 "
+        validation.write_text("\n".join(json.dumps(row) for row in rows), encoding="utf-8")
+        self.review["splits"]["validation"]["sha256"] = sha256(validation.read_bytes()).hexdigest()
+        self.manifest.write_text(json.dumps(self.review), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "overlap"):
+            train_lora.load_split_manifest(self.manifest, self.dataset)
+        for filename in ("../data.jsonl", "/tmp/data.jsonl", ".", "..", "sub/data.jsonl"):
+            self.review["splits"]["train"]["file"] = filename
+            self.manifest.write_text(json.dumps(self.review), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "filename"):
+                train_lora.load_split_manifest(self.manifest, self.dataset)
+
+    def test_split_manifest_rejects_versions_unknown_fields_and_symlinks(self):
+        for change in ({"format_version": True}, {"format_version": 2}, {"extra": "ignored"}, {"license": "bad\nlicense"}):
+            self.manifest.write_text(json.dumps(dict(self.review, **change)), encoding="utf-8")
+            with self.assertRaises(ValueError):
+                train_lora.load_split_manifest(self.manifest, self.dataset)
+        self.manifest.write_text(json.dumps(self.review), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "differs"):
+            train_lora.load_split_manifest(self.manifest, self.root / "other.jsonl")
+        link = self.root / "linked-review.json"
+        link.symlink_to(self.manifest)
+        with self.assertRaises(OSError):
+            train_lora.load_split_manifest(link, self.dataset)
+        self.manifest.write_text('{"format_version":1,"format_version":1}', encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "Duplicate"):
+            train_lora.load_split_manifest(self.manifest, self.dataset)
+
     def test_dry_run_hash_and_output_separation(self):
         command = [sys.executable, str(Path(train_lora.__file__)), "--base-model", str(self.base),
-                   "--dataset", str(self.dataset), "--output", str(self.root / "candidate"), "--dry-run"]
+                   "--dataset", str(self.dataset), "--dataset-manifest", str(self.manifest), "--output", str(self.root / "candidate"), "--dry-run"]
         result = subprocess.run(command, capture_output=True, text=True, timeout=10, check=True)
         report = json.loads(result.stdout)
         self.assertFalse(report["training_started"])

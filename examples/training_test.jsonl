@@ -1,0 +1,4 @@
+{"prompt": "What should happen when a task reaches its hard call limit?", "response": "Stop further model dispatch and report the exhausted budget.", "source": "original-demo", "license": "CC0-1.0"}
+{"prompt": "Can a model grant itself a tool permission?", "response": "No. Deterministic services outside the model enforce tool permissions.", "source": "original-demo", "license": "CC0-1.0"}
+{"prompt": "What should a runtime do with malformed internal frames?", "response": "Reject them before dispatch or accessing unvalidated fields.", "source": "original-demo", "license": "CC0-1.0"}
+{"prompt": "Does a successful retrieval test prove neural safety?", "response": "No. Retrieval quality and neural safety require different evaluations.", "source": "original-demo", "license": "CC0-1.0"}

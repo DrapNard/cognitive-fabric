@@ -73,6 +73,65 @@ def validate_rows(text: str) -> list[dict]:
     return rows
 
 
+def load_split_manifest(path: Path, training_path: Path) -> tuple[list[dict], dict]:
+    """Verify reviewed split identities before importing any ML dependencies.
+
+    Prompt disjointness detects exact normalized reuse, not semantic leakage.
+    Only training rows are returned to the optimizer.
+    """
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK)
+    with os.fdopen(fd, "rb") as stream:
+        metadata = os.fstat(stream.fileno())
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_size > 32_000:
+            raise ValueError("Split manifest must be a regular file at most 32 KB")
+        data = stream.read(32_001)
+    if len(data) > 32_000:
+        raise ValueError("Split manifest exceeds 32 KB")
+    manifest = json.loads(data.decode("utf-8"), object_pairs_hook=unique_object)
+    if not isinstance(manifest, dict) or set(manifest) != {"format_version", "source", "license", "splits"}:
+        raise ValueError("Invalid split manifest fields")
+    if type(manifest["format_version"]) is not int or manifest["format_version"] != 1:
+        raise ValueError("Unsupported split manifest version")
+    for field, maximum in (("source", 2048), ("license", 256)):
+        value = manifest[field]
+        if not isinstance(value, str) or not value.strip() or len(value) > maximum or not value.isprintable():
+            raise ValueError("Invalid split manifest provenance")
+    splits = manifest["splits"]
+    if not isinstance(splits, dict) or set(splits) != {"train", "validation", "test"}:
+        raise ValueError("Require train, validation and test splits")
+    seen = set()
+    reports = {}
+    training_rows = None
+    for name in ("train", "validation", "test"):
+        entry = splits[name]
+        if not isinstance(entry, dict) or set(entry) != {"file", "sha256"}:
+            raise ValueError("Invalid split entry")
+        filename, expected = entry["file"], entry["sha256"]
+        if (not isinstance(filename, str) or not 1 <= len(filename) <= 128
+                or filename in {".", ".."}
+                or any(c not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.-" for c in filename)):
+            raise ValueError("Split file must be a single bounded local filename")
+        if not isinstance(expected, str) or len(expected) != 64 or any(c not in "0123456789abcdef" for c in expected):
+            raise ValueError("Invalid split hash")
+        split_path = path.parent / filename
+        if name == "train" and split_path.resolve() != training_path.resolve():
+            raise ValueError("Training dataset differs from reviewed split manifest")
+        rows, digest = load_data(split_path)
+        if digest != expected:
+            raise ValueError("Split dataset hash mismatch")
+        prompts = {sha256(" ".join(row["prompt"].split()).encode()).hexdigest() for row in rows}
+        if seen.intersection(prompts):
+            raise ValueError("Normalized prompt overlap across dataset splits")
+        seen.update(prompts)
+        reports[name] = {"file": filename, "sha256": digest, "examples": len(rows)}
+        if name == "train":
+            training_rows = rows
+    return training_rows, {"manifest_sha256": sha256(data).hexdigest(),
+                           "source": manifest["source"], "license": manifest["license"],
+                           "splits": reports, "prompt_disjoint": True,
+                           "semantic_independence_verified": False}
+
+
 def require_progress(previous_step: int, current_step: int) -> None:
     if previous_step == current_step:
         raise ValueError("No supervised tokens survived truncation in a complete dataset pass")
@@ -113,6 +172,8 @@ def main() -> None:
     p = argparse.ArgumentParser(description="Offline LoRA adapter training (human-invoked)")
     p.add_argument("--base-model", type=Path, required=True, help="Existing local HF model directory")
     p.add_argument("--dataset", type=Path, required=True)
+    p.add_argument("--dataset-manifest", type=Path, required=True,
+                   help="Reviewed hashed train/validation/test split manifest")
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--max-steps", type=int, default=30)
     p.add_argument("--max-length", type=int, default=512)
@@ -121,7 +182,8 @@ def main() -> None:
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--dry-run", action="store_true")
     args = p.parse_args()
-    rows, dataset_hash = load_data(args.dataset)
+    rows, dataset_review = load_split_manifest(args.dataset_manifest, args.dataset)
+    dataset_hash = dataset_review["splits"]["train"]["sha256"]
     if not args.base_model.is_dir() or args.base_model.is_symlink():
         p.error("--base-model must be a local directory")
     if args.max_steps < 1 or args.max_steps > 10000 or args.max_length not in range(64, 4097):
@@ -139,7 +201,7 @@ def main() -> None:
     if args.dry_run:
         print(json.dumps({"status": "validated", "examples": len(rows),
                           "base_model": str(base), "dataset_sha256": dataset_hash,
-                          "seed": args.seed, "training_started": False}, indent=2))
+                          "seed": args.seed, "dataset_review": dataset_review, "training_started": False}, indent=2))
         return
 
     import torch
@@ -217,7 +279,7 @@ def main() -> None:
     model.save_pretrained(str(args.output), safe_serialization=True)
     metadata = {"base_model": str(args.base_model.resolve()), "examples": len(rows),
                 "run_id": str(uuid4()), "artifacts": describe_artifacts(args.output),
-                "format_version": 1, "steps": step, "final_loss": losses[-1], "dataset_sha256": dataset_hash,
+                "format_version": 1, "dataset_review": dataset_review, "steps": step, "final_loss": losses[-1], "dataset_sha256": dataset_hash,
                 "consumed_rows_sha256": sha256(json.dumps(rows, sort_keys=True, separators=(",", ":")).encode()).hexdigest(),
                 "seed": args.seed, "rank": args.rank, "max_length": args.max_length,
                 "qlora": args.qlora,

@@ -9,12 +9,33 @@ is disabled. Level D architecture reconstruction remains future research.
 
 `training/train_lora.py` is manually invoked outside the Rust service. Run
 `python3 training/train_lora.py --base-model LOCAL_HF_DIRECTORY --dataset DATA.jsonl
---output NEW_DIRECTORY --dry-run` to validate bounded input without ML dependencies
+--dataset-manifest SPLITS.json --output NEW_DIRECTORY --dry-run` to validate bounded input without ML dependencies
 or training. Four distinct prompt/response rows with source/license are required;
 unknown/duplicate fields, conflicting normalized prompts and invalid provenance
 fail. The dataset is read once with no-follow regular-file checks and an 8 MB cap.
 The recorded file hash and consumed-row hash describe that snapshot, even if the
 source later changes. The output must be new and disjoint from the base directory.
+
+The required version-1 split manifest has exactly `format_version`, `source`,
+`license` and `splits`. Each of `train`, `validation` and `test` declares exactly
+`file` and `sha256`. Files are single ASCII filenames beside the manifest; paths,
+symlinks, unknown/duplicate fields and unsupported versions fail. The manifest is
+bounded to 32 KB. Each split uses the same 8 MB / 4,096 distinct-row limits and
+requires at least four examples. All file hashes must match, and normalized
+whitespace prompt hashes must be disjoint across the three splits. The selected
+`--dataset` must match the manifest's training file.
+
+`examples/training_splits.json` and its three companion datasets demonstrate the
+format. They are tiny authored examples, not an independent neural safety suite
+or evidence of model quality. Review real source/licensing and independence before
+using real datasets; update hashes after any approved content change.
+
+Preflight returns only training rows to the optimizer. Validation/test contents
+are checked and then discarded; their hashes, sizes in examples and provenance
+are recorded with the manifest hash. No automatic validation score or neural
+acceptance gate is implemented. Exact prompt disjointness does not detect semantic
+paraphrases, overlap with base-model training or prior contamination. The report
+therefore sets `semantic_independence_verified:false`.
 
 Real training needs separately installed torch, transformers, peft and safetensors
 (plus bitsandbytes for QLoRA). The loader requests local files, no remote model
@@ -30,7 +51,7 @@ Output is reserved privately before loading/training; failures can leave an
 inactive partial directory. Never reuse it as successful output.
 
 Successful runs emit a versioned unreviewed training manifest with a run UUID,
-seed/configuration, dependency versions, snapshot hashes and a bounded adapter
+seed/configuration, dependency versions, reviewed split identities and a bounded adapter
 inventory (16 regular non-pickle files, 64 MB total). Inventory hashes establish
 content identity, not valid weights or neural safety. Base-weight attestation,
 isolated execution and independent evaluation are explicitly false. Model source/

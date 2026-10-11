@@ -2,6 +2,14 @@
 
 All notable changes are documented here in English.
 
+### Offline dataset split manifests
+
+- Require reviewed versioned train/validation/test identities before offline LoRA
+  training; verify hashes and reject cross-split normalized prompt reuse.
+- Record split provenance and hashes while keeping held-out rows out of optimization.
+- Add small format examples and negative preflight tests; neural evaluation and
+  promotion remain disabled.
+
 ### Ranked expert fallback
 
 - Select workflow experts in relevance order instead of registry ID order.
