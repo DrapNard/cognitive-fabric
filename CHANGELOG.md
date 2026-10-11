@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Service-owned broker cleanup
+
+- Stop the shared inference broker after service handlers finish cancellation,
+  revoking retained inference pins when the service exits.
+- Verify typed STOP and host shutdown alongside durable task cancellation.
+
 ### Host inference broker shutdown
 
 - Stop current and retired task-pinned inference modules with one permanent

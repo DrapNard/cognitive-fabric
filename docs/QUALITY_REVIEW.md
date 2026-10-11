@@ -1215,3 +1215,14 @@ All mandatory checks pass for this change: formatting, all-target check, 216 tes
 offline dependencies and the exact FlatBuffers 25.12.19 compiler/crate pairing.
 No per-request threads, new queues or inference calls are introduced; each broker
 adds one shared stop signal and workers check it before waiting/dispatching.
+
+## Service broker shutdown integration
+
+Formatting, all-target check, all 216 tests (204 library, 12 integration) and
+Clippy with warnings denied pass with compiler/crate FlatBuffers 25.12.19 and
+offline dependencies. Extended real socket tests verify retained pin refusal
+after typed STOP, broker cleanup following host shutdown and disconnect/task
+cancellation, and preserved durable cancelled status. Broker shutdown occurs
+after handler joins so normal service cancellation keeps precedence over module
+errors. No additional inference, queues, model privileges or external server
+termination claims are introduced. General module routing remains incomplete.

@@ -418,3 +418,10 @@ or dispatch. Tests in `src/fabric/tests.rs` cover retained versions after replac
 unregister, buffered work, cancellation, idempotence and pre-initialization stop.
 Worker-loop exit is asynchronous; general executable lifecycle and external
 inference termination remain unproven.
+
+Service broker lifecycle integration: **Implemented** in `src/service.rs`. Normal
+shutdown joins task handlers before stopping the shared broker, so retained pins
+cannot continue inference after service completion. Socket tests cover typed STOP
+with an incomplete client and host-triggered shutdown during pending HTTP work,
+while retaining durable cancelled task status. General module routing is still
+incomplete; this adds no model capability.

@@ -50,7 +50,7 @@ pub async fn serve(engine: Engine) -> Result<()> {
     .await
 }
 
-/// Stop accepting, cancel in-flight tasks, join handlers, then remove our socket.
+/// Stop accepting, cancel tasks, join handlers, stop the shared broker, then remove our socket.
 pub async fn serve_until<F>(engine: Engine, shutdown: F) -> Result<()>
 where
     F: Future<Output = ()>,
@@ -114,7 +114,8 @@ where
             eprintln!("Socket handler failed during shutdown: {err}");
         }
     }
-    result
+    let broker_result = engine.broker.shutdown();
+    result.and(broker_result)
 }
 
 async fn stopped(receiver: &mut watch::Receiver<bool>) {
@@ -877,7 +878,10 @@ mod tests {
 
     #[tokio::test]
     async fn typed_stop_joins_incomplete_clients() {
+        use crate::backend::InferenceBackend;
         let (cfg, engine) = setup();
+        let broker = engine.broker.clone();
+        let pinned = broker.pin().unwrap().unwrap();
         let (_stop, task) = start(engine).await;
         let mut incomplete = UnixStream::connect(cfg.socket()).await.unwrap();
         incomplete.write_all(&[0, 0]).await.unwrap();
@@ -891,6 +895,12 @@ mod tests {
             .unwrap()
             .unwrap();
         assert!(!cfg.socket().exists());
+        assert!(broker.discover().unwrap().is_empty());
+        assert!(broker.pin().is_err());
+        assert!(pinned
+            .generate("solver", "after service stop", 128)
+            .await
+            .is_err());
         std::fs::remove_dir_all(cfg.home).unwrap();
     }
 
@@ -903,6 +913,7 @@ mod tests {
             cfg.api_base = format!("http://{}/v1", http.local_addr().unwrap());
             let store = Arc::new(Store::open(&cfg.db()).unwrap());
             let engine = Engine::new(cfg.clone(), store);
+            let broker = engine.broker.clone();
             let (accepted, received) = oneshot::channel();
             let backend = tokio::spawn(async move {
                 let (stream, _) = http.accept().await.unwrap();
@@ -1010,6 +1021,7 @@ mod tests {
                 stop.take().unwrap().send(()).unwrap();
             }
             service.await.unwrap().unwrap();
+            assert!(broker.discover().unwrap().is_empty());
             backend.abort();
             let _ = backend.await;
             std::fs::remove_dir_all(cfg.home).unwrap();

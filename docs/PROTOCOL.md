@@ -229,3 +229,10 @@ This trusted Rust host API is not exposed as a model capability or an
 unauthenticated protocol command. Dropping an HTTP inference future cannot prove
 that the external server stopped GPU work. General executable lifecycle and
 independent actor provisioning remain incomplete.
+
+The Unix service invokes broker shutdown after cancelling and joining its task
+handlers, including owner STOP, host shutdown and listener-error exits. This
+preserves durable task cancellation before revoking retained inference handles.
+External users retaining that service broker or a pin cannot dispatch after
+service completion. Socket setup failure does not stop a broker whose service
+never began. Broker worker loops still exit asynchronously.
