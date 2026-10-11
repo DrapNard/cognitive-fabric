@@ -400,3 +400,11 @@ Decoders reject capability/version mismatches, and each hidden worker entry poin
 checks its intended capability before opening the task database. The original
 host budgets/deadline and COGQ v1 command validation remain authoritative.
 See `WORKERS.md` for cleanup bounds and remaining crash/sandbox limitations.
+
+Managed inference startup ownership now begins immediately after spawn, before
+connection/bootstrap awaits. Launch-intent and owned-PID metadata precede handoff;
+audit failure or cancellation retains the child for bounded reap/cleanup rather
+than relying solely on kill-on-drop. Unfinished startup cannot automatically
+retry. COGB/COGM wire layouts and task permissions are unchanged. This addresses
+interrupted initialization within a live runtime, not crash recovery or backend
+GPU cancellation.

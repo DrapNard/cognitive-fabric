@@ -2,6 +2,15 @@
 
 All notable changes are documented here in English.
 
+### Interrupted inference-worker startup cleanup
+
+- Retain child, socket and execution-lease ownership before connection/setup awaits.
+- Persist launch intent before spawning and owned PID before handoff; fail closed
+  when audits fail and refuse implicit retry of an unfinished initialization.
+- Reap failed/cancelled startups through the normal bounded cleanup path.
+- Test real child cancellation, failed ownership audit, retry refusal and socket
+  cleanup. Host crashes and stale-resource recovery remain separate work.
+
 ### Managed SQL task workers
 
 - Add opt-in `configure-sql-worker` for lazy task-scoped built-in SQL processes

@@ -435,3 +435,9 @@ Custom SQL registries and exhausted tool budgets cannot silently launch a defaul
 worker. Actual CLI/service tests verify SQL execution and unsafe-query cleanup;
 independent host SQLite verification remains mandatory. This supersedes the SQL
 provisioning limitation above. Crash cleanup and executable sandboxing remain open.
+
+Inference worker startup now owns the child/socket/lease before handoff awaits,
+records launch intent and owned PID separately, and reaps failed/cancelled startup
+through normal bounded cleanup. Retry of an unfinished startup is refused. A real
+child regression covers cancellation, ownership-audit failure, retry refusal and
+socket-directory removal. Crash cleanup and external GPU cancellation remain unproven.

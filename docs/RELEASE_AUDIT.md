@@ -4,14 +4,14 @@ This checklist preserves the 18 acceptance criteria in the goal objective. It is
 an evidence inventory, not a release approval. The canonical French architecture
 and the broader implementation matrix remain authoritative. Earlier test counts
 in the quality review are historical milestones. Current local verification is
-304 Rust tests (283 library, 21 integration), formatting, all-target checking and
+306 Rust tests (285 library, 21 integration), formatting, all-target checking and
 Clippy with warnings denied, using FlatBuffers compiler/crate 25.12.19.
 
 | Goal criterion | Evidence inspected | Assessment / remaining proof |
 |---|---|---|
 | 1. Workspace builds | `Cargo.toml`, all-target check | Passed locally; isolated optimized source installation also passed with cached dependencies. |
 | 2. Formatting and Clippy | Mandatory checks in `QUALITY_REVIEW.md` | Passed locally. |
-| 3. Mandatory tests | All-target test results, `tests/` | 304 passed; fixtures do not establish live model quality. |
+| 3. Mandatory tests | All-target test results, `tests/` | 306 passed; fixtures do not establish live model quality. |
 | 4. FlatBuffers IPC | `protocol/`, `src/wire.rs`, `src/fabric/`, malformed/compatibility/socket tests | Implemented for present transports; authenticated process event delivery/replay is now tested; broader module compatibility remains partial. |
 | 5. CLI/service communication | `src/service.rs`, socket tests, `tests/process_worker.rs` | Tested local transport, progress and cancellation; no general independent plugin service is claimed. |
 | 6. Compatible local LLM | `src/backend.rs`, `tests/inference_auth.rs`, `AUTHENTICATION.md` | Synthetic authenticated HTTP works; real LM Studio generation last returned 401. Not passed. |
@@ -152,3 +152,11 @@ and restored SQL worker configuration. Evidence:
 `/tmp/cogfabric-managed-sql-installed-smoke.log`. This supersedes the pending
 optimized-install gap above. It does not establish clean-OS setup, real model
 inference/switching, independent held-out results or crash cleanup.
+
+Inference startup ownership now survives interrupted/failed handoff; all mandatory
+checks pass with 306 tests (285 library, 21 integration). Actual child tests cover
+cancellation and audit failure, retry refusal and confirmed cleanup. The smoke
+script now checks demo inference launch/ownership/handoff/reaping and passes against
+the debug executable. Prior optimized-install evidence predates this runtime change;
+repeat installed verification before release. Crash cleanup and live inference
+remain incomplete.

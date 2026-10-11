@@ -1530,3 +1530,17 @@ queries are reaped and restored configuration launches functioning SQL workers.
 See `RELEASE_AUDIT.md` for exact build identity, hashes and retained evidence.
 This closes the pending optimized-install gap for this source; other release
 gates remain open.
+
+### Inference startup ownership (2026-10-11)
+
+Formatting, offline all-target checking/tests and Clippy with warnings denied
+pass. Tests total 306 (285 library, 21 integration), using FlatBuffers 25.12.19.
+Focused real-child tests verify cancellation and owned-PID audit failure before
+handoff, second-launch refusal, forced reap and socket cleanup. Existing CLI/HTTP
+worker regressions also pass. Full log:
+`/tmp/cogfabric-inference-startup-gate.log`; focused log:
+`/tmp/cogfabric-inference-startup-tests.log`. The expanded smoke script passes
+against the current debug executable and now checks demo inference launch intent,
+owned PID, completed handoff and matching reaped PID. Optimized installed
+verification must follow this runtime change. Host crashes and actual authenticated
+model behavior remain unverified.

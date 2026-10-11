@@ -198,3 +198,10 @@ SQLite checking verifies outputs. Child ownership survives failed startup and
 normal cleanup confirms reaping. This supersedes SQL provisioning limitations;
 trusted worker code still has workspace access, so no sandbox or crash-cleanup
 guarantee is established.
+
+Inference worker ownership now persists through interrupted connection/bootstrap
+and audit failure. Launch intent precedes spawn; owned PID precedes handoff; failed
+initialization cannot silently retry. Normal shutdown confirms reaping of retained
+startup children with existing bounds. This improves live-runtime failure
+containment; host death, stale directories and provider GPU work remain outside
+that guarantee. No additional model capability, credential or executable is granted.

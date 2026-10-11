@@ -717,3 +717,17 @@ including actual managed SQL CLI/service execution, rejected-query cleanup and
 restored SQL process configuration. Exact hashes/evidence appear in
 `RELEASE_AUDIT.md`; the pending installed-source gap above is closed for this
 commit. Crash cleanup, general executable integration and live measurements remain open.
+
+Inference startup failure containment: **Implemented** in
+`src/fabric/unix/process.rs`. Ownership of child/socket/lease survives cancelled
+connection/setup and failed ownership audit; shutdown handles both initialized and
+unfinished workers with bounded wait/kill/reap. Launch intent and owned PID are
+persisted separately from completed handoff. Actual child tests cover cancellation,
+audit failure, second-launch refusal and socket removal. Host crash/stale resources
+and external GPU cancellation remain unresolved; no permission or wire change occurs.
+
+Inference startup ownership validation: all mandatory quality checks pass with
+306 tests (285 library, 21 integration). The expanded smoke workflow also checks
+one demo inference child from launch intent through owned PID, handoff and matching
+reap; debug execution passes. Optimized installed verification is pending for this
+new source. This does not establish host-crash cleanup or real model behavior.

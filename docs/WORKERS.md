@@ -126,3 +126,14 @@ cleanup. Actual CLI/service tests verify SQL success, unsafe-query cleanup and
 budget refusal without a child. These workers are trusted Rust processes with
 workspace access, not an executable sandbox. Runtime crashes can still leave stale
 resources; general executable loading and automatic crash cleanup remain unfinished.
+
+Inference startup now retains child/socket/execution-lease ownership before any
+connection or bootstrap await. `worker_process_launch` records intent before spawn;
+`worker_process_owned` records the owned PID before handoff. Failed or cancelled
+initialization leaves that child available for the same bounded shutdown/reaping
+path even when the worker's initialization cell is empty. An unfinished startup
+cannot implicitly retry and create another child. Actual child regressions cover
+cancellation, failed ownership audit, refusal to retry and identity-checked socket
+cleanup. The existing `worker_process` event still measures completed handoff;
+none of these records proves loaded weights or external GPU cancellation. Runtime
+crashes and stale-resource cleanup remain open.

@@ -143,4 +143,17 @@ run service-stop stop
 wait "$service_pid"
 service_pid=''
 [[ ! -e "$state/fabric.sock" ]]
+run inference-worker-configure configure-worker --enabled true
+jq -e '.inference_process' "$evidence/inference-worker-configure.json" >/dev/null
+run inference-process ask 'Explain Rust ownership' --mode fast
+jq -e '.status == "demo" and .calls > 0' "$evidence/inference-process.json" >/dev/null
+inference_task=$(jq -er '.task_id' "$evidence/inference-process.json")
+run inference-process-trace task "$inference_task"
+jq -e '
+    ([.events[] | select(.kind == "worker_process_launch")] | length) == 1 and
+    ([.events[] | select(.kind == "worker_process_owned")] | length) == 1 and
+    ([.events[] | select(.kind == "worker_process")] | length) == 1 and
+    ([.events[] | select(.kind == "worker_process_stopped" and .payload.reaped)] | length) == 1 and
+    ([.events[] | select(.kind == "worker_process_owned")][0].payload.pid == [.events[] | select(.kind == "worker_process_stopped")][0].payload.pid)
+' "$evidence/inference-process-trace.json" >/dev/null
 echo 'Installed binary smoke checks passed; live inference and neural safety were not evaluated.'

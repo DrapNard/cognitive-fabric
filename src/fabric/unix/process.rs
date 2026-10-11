@@ -72,19 +72,31 @@ struct Managed {
     _socket: SocketDirectory,
     _lease: Option<crate::recovery::ExecutionLease>,
 }
+struct Starting {
+    child: tokio::process::Child,
+    socket: SocketDirectory,
+    lease: Option<crate::recovery::ExecutionLease>,
+}
 pub struct ProcessTask {
     cfg: Config,
     store: Arc<Store>,
     task: String,
     worker: OnceCell<Managed>,
+    starting: Mutex<Option<Starting>>,
 }
 impl ProcessTask {
     pub async fn shutdown(&self) -> Result<()> {
-        let Some(worker) = self.worker.get() else {
-            return Ok(());
-        };
-        worker.adapter.stream.lock().await.take();
-        let mut child = worker.child.lock().await;
+        if let Some(worker) = self.worker.get() {
+            worker.adapter.stream.lock().await.take();
+            let mut child = worker.child.lock().await;
+            return self.reap(&mut child).await;
+        }
+        if let Some(mut starting) = self.starting.lock().await.take() {
+            return self.reap(&mut starting.child).await;
+        }
+        Ok(())
+    }
+    async fn reap(&self, child: &mut tokio::process::Child) -> Result<()> {
         let pid = child.id();
         let mut forced = false;
         let status = match tokio::time::timeout(Duration::from_secs(2), child.wait()).await {
@@ -114,7 +126,39 @@ impl ProcessTask {
             store,
             task: task.into(),
             worker: OnceCell::new(),
+            starting: Mutex::new(None),
         })
+    }
+    async fn spawn_owned(
+        &self,
+        command: &mut tokio::process::Command,
+        socket: SocketDirectory,
+        lease: Option<crate::recovery::ExecutionLease>,
+    ) -> Result<tokio::sync::MutexGuard<'_, Option<Starting>>> {
+        self.store.event(
+            &self.task,
+            "worker_process_launch",
+            "fabric",
+            serde_json::json!({"sandboxed":false}),
+        )?;
+        let mut pending = self.starting.lock().await;
+        if pending.is_some() {
+            bail!("An unfinished inference worker startup cannot be retried")
+        }
+        let child = command.spawn()?;
+        let pid = child.id().context("Worker process has no PID")?;
+        *pending = Some(Starting {
+            child,
+            socket,
+            lease,
+        });
+        self.store.event(
+            &self.task,
+            "worker_process_owned",
+            "fabric",
+            serde_json::json!({"pid":pid,"sandboxed":false}),
+        )?;
+        Ok(pending)
     }
     async fn launch(&self) -> Result<Managed> {
         let lease = self.store.execution_lease()?;
@@ -169,11 +213,17 @@ impl ProcessTask {
         if let Some(credential) = credential {
             credential.forward(&mut command);
         }
-        let mut child = command.spawn()?;
-        let pid = child.id().context("Worker process has no PID")?;
+        let mut pending = self.spawn_owned(&mut command, guard, lease).await?;
+        let pid = pending
+            .as_ref()
+            .and_then(|s| s.child.id())
+            .context("Worker process has no PID")?;
+        let starting = pending
+            .as_mut()
+            .context("Worker startup ownership missing")?;
         let stream = tokio::select! {
             result = tokio::time::timeout(Duration::from_secs(10), listener.accept()) => result.context("Worker connection deadline exhausted")??.0,
-            result = child.wait() => bail!("Worker exited before connecting: {:?}", result?),
+            result = starting.child.wait() => bail!("Worker exited before connecting: {:?}", result?),
         };
         super::authenticate(&stream, metadata.uid(), pid)?;
         let mut stream = stream;
@@ -195,11 +245,12 @@ impl ProcessTask {
         )?;
         self.store.event(&self.task, "worker_process", "fabric", serde_json::json!({"pid":pid,"launch_handoff_ms":started.elapsed().as_secs_f64()*1000.0,"weight_loading_measured":false,"sandboxed":false}))?;
         drop(listener);
+        let starting = pending.take().context("Worker startup ownership missing")?;
         Ok(Managed {
             adapter,
-            child: Mutex::new(child),
-            _socket: guard,
-            _lease: lease,
+            child: Mutex::new(starting.child),
+            _socket: starting.socket,
+            _lease: starting.lease,
         })
     }
 }
@@ -269,6 +320,87 @@ pub async fn run_worker(home: &Path, socket: &Path, host_pid: u32) -> Result<()>
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn startup_child_fixture() {
+        if std::env::var_os("COGFABRIC_TEST_INFERENCE_STARTUP_HOLD").is_some() {
+            std::thread::sleep(Duration::from_secs(10));
+        }
+    }
+    #[tokio::test]
+    async fn cancelled_startup_and_owned_audit_failure_retain_reapable_children() {
+        for fail_audit in [false, true] {
+            let store = Arc::new(Store::in_memory().unwrap());
+            let task = store
+                .create_task("Inference startup ownership", "fast")
+                .unwrap();
+            let process =
+                Arc::new(ProcessTask::new(Config::default(), store.clone(), &task).unwrap());
+            if fail_audit {
+                store.lock().unwrap().execute_batch("CREATE TRIGGER fail_owned BEFORE INSERT ON events WHEN NEW.kind='worker_process_owned' BEGIN SELECT RAISE(ABORT,'audit unavailable'); END;").unwrap();
+            }
+            let (socket, listener, path) = SocketDirectory::bind_tool().unwrap();
+            let directory = path.parent().unwrap().to_path_buf();
+            let entered = Arc::new(tokio::sync::Notify::new());
+            let startup_process = process.clone();
+            let startup_entered = entered.clone();
+            let startup = tokio::spawn(async move {
+                let mut command = tokio::process::Command::new(std::env::current_exe().unwrap());
+                command
+                    .args([
+                        "--exact",
+                        "fabric::unix::process::tests::startup_child_fixture",
+                    ])
+                    .env("COGFABRIC_TEST_INFERENCE_STARTUP_HOLD", "1")
+                    .stdout(std::process::Stdio::null())
+                    .kill_on_drop(true);
+                let owned = startup_process
+                    .spawn_owned(&mut command, socket, None)
+                    .await?;
+                startup_entered.notify_one();
+                let _owned = owned;
+                std::future::pending::<Result<()>>().await
+            });
+            if fail_audit {
+                assert!(startup.await.unwrap().is_err());
+            } else {
+                entered.notified().await;
+                startup.abort();
+                assert!(startup.await.unwrap_err().is_cancelled());
+            }
+            assert!(process.worker.get().is_none());
+            assert!(process.starting.lock().await.is_some());
+            // A failed initialization must not silently spawn a second child.
+            let (another_socket, another_listener, another_path) =
+                SocketDirectory::bind_tool().unwrap();
+            let mut unused_command =
+                tokio::process::Command::new("/nonexistent-inference-test-command");
+            assert!(process
+                .spawn_owned(&mut unused_command, another_socket, None)
+                .await
+                .err()
+                .unwrap()
+                .to_string()
+                .contains("cannot be retried"));
+            drop(another_listener);
+            assert!(!another_path.parent().unwrap().exists());
+            drop(listener);
+            process.shutdown().await.unwrap();
+            assert!(process.starting.lock().await.is_none());
+            assert!(!directory.exists());
+            let trace = store.task(&task).unwrap();
+            assert_eq!(
+                trace["events"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .filter(|e| e["kind"] == "worker_process_stopped"
+                        && e["payload"]["reaped"] == true
+                        && e["payload"]["forced"] == true)
+                    .count(),
+                1
+            );
+        }
+    }
     #[tokio::test]
     async fn wrong_task_never_initializes_a_process() {
         let store = Arc::new(Store::in_memory().unwrap());
