@@ -53,7 +53,7 @@ remains a pre-release. `QUALITY_REVIEW.md` preserves verification history.
 | 12, 14 | CLI/service | Partial | `src/main.rs`: initialization/configuration, ask, service controls, task-specific socket progress/cancellation, skill lifecycle, ingestion/search, task traces, candidates/rollback, benchmark, self-test; real socket fixtures | Live residency lifecycle |
 | 12, 13 | Hardware/performance claims | Partial | Optional whole-device GPU diagnostics sampled real host memory/utilization/power; no energy or large-model advantage claimed | Authenticated live inference, task-attributed telemetry and equal-budget comparisons |
 
-All 216 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
+All 219 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
 all-target build checks and Clippy with denied warnings pass. Fixtures do not prove
 GPU integration, neural quality, immutable backend weights or live model switching.
 
@@ -425,3 +425,11 @@ cannot continue inference after service completion. Socket tests cover typed STO
 with an incomplete client and host-triggered shutdown during pending HTTP work,
 while retaining durable cancelled task status. General module routing is still
 incomplete; this adds no model capability.
+
+Native residency inspection: **Implemented** in `src/residency.rs` and
+`residency-status`. Bounded LM Studio native inventory distinguishes installed
+models from loaded instances, with dedicated opt-in credentials and no mutations.
+Unit and actual CLI HTTP tests cover identities, native endpoint constraints,
+separate authentication, escaped token echo rejection, redirects, malformed and
+oversized responses. Physical load/unload ownership and live validation remain
+**Not implemented / Not verified**. See `MODELS.md`.

@@ -1226,3 +1226,15 @@ cancellation, and preserved durable cancelled status. Broker shutdown occurs
 after handler joins so normal service cancellation keeps precedence over module
 errors. No additional inference, queues, model privileges or external server
 termination claims are introduced. General module routing remains incomplete.
+
+## Native residency inventory
+
+Formatting, all-target check, 219 tests (206 library, 13 integration) and Clippy
+with denied warnings pass offline with FlatBuffers compiler/crate 25.12.19.
+Actual CLI HTTP fixtures cover authenticated/unauthenticated inventories, separate
+credential selection, escaped token echoes, redirects, response-size bounds and
+malformed JSON. Unit tests cover duplicate model/instance IDs, unsupported types,
+invalid context capacities and native endpoint restrictions. Observations are
+server-reported only; real authenticated LM Studio inventory, physical lifecycle
+operations and automatic model switching remain unverified/incomplete. The
+read-only command performs one bounded request and adds no runtime inference cost.

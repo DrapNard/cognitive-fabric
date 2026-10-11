@@ -96,6 +96,12 @@ enum Command {
     CancelTask {
         id: String,
     },
+    ResidencyStatus {
+        #[arg(long)]
+        api_base: String,
+        #[arg(long)]
+        authenticate: bool,
+    },
     Models,
     ModelRegister {
         manifest: PathBuf,
@@ -502,6 +508,10 @@ async fn main() -> Result<()> {
             changed.save()?;
             json!({"inference_process":enabled,"sandboxed":false})
         }
+        Command::ResidencyStatus {
+            api_base,
+            authenticate,
+        } => cogfabric::residency::status(&api_base, authenticate).await?,
         Command::SecurityEval => {
             let report = cogfabric::security_evaluation::run()?;
             let success = report["success"] == true;

@@ -67,3 +67,30 @@ manifest payloads above 16,000 bytes, identifiers/versions above 64 bytes and
 checksums other than 64 bytes before copying those fields into Rust. Invalid
 records fail the operation rather than being silently skipped. Hashes prove local
 consistency only; an owner able to rewrite the database can rewrite its checksums.
+
+## Native LM Studio residency inventory
+
+`cogfabric --json residency-status --api-base http://127.0.0.1:1234/api/v1`
+queries native v1 inventory and reports installed model keys and each loaded
+instance ID/context capacity. Unlike OpenAI model advertisement, the native
+response explicitly describes residency. Observations remain server-reported,
+not weight attestation, framework ownership or successful generation evidence.
+See the [native API specification](https://lmstudio.ai/docs/developer/rest/list).
+
+Authentication is separately opt-in: `--authenticate` reads only
+`COGFABRIC_RESIDENCY_API_KEY` from the invoking process environment. Set it locally,
+never in chat or a manifest. The inference credential is never forwarded to the
+native endpoint. No token or response body is saved; exact raw/JSON-decoded token
+echoes are rejected. Transformed exfiltration and same-user process compromise
+remain outside this protection.
+
+Only literal-loopback HTTP (or pinned localhost), the explicit `/api/v1` base and
+fixed GET `/models` are accepted. Proxies and redirects are disabled; requests
+have a three-second timeout and 256 KiB response ceiling. Inventory is bounded
+to 256 model keys, 32 instances per model, 1,024 total unique instance IDs and
+validated context capacities. Duplicate identities and incomplete inventories
+fail closed. Unknown provider metadata is ignored rather than becoming commands.
+This operator-only read command performs no load, unload, download or mutation.
+It provides instance identity needed by the subsequent lifecycle implementation;
+ownership-aware loading/unloading, model switching and real authenticated host
+validation remain incomplete.

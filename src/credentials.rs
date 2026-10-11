@@ -10,7 +10,7 @@ pub const ENVIRONMENT_VARIABLE: &str = "COGFABRIC_INFERENCE_API_KEY";
 // Deliberately neither Debug nor Serialize. Configuration stores only the scope.
 pub(crate) struct Bearer(String);
 impl Bearer {
-    fn new(value: String) -> Result<Self> {
+    pub(crate) fn new(value: String) -> Result<Self> {
         if value.is_empty()
             || value.len() > 4096
             || !value

@@ -2,6 +2,13 @@
 
 All notable changes are documented here in English.
 
+### Native local model residency inspection
+
+- Add bounded operator-only LM Studio native inventory with installed keys,
+  loaded instance IDs and reported context capacities.
+- Require an explicit native endpoint and separate opt-in credential; reject
+  redirects, malformed/oversized inventories and protected credential echoes.
+
 ### Service-owned broker cleanup
 
 - Stop the shared inference broker after service handlers finish cancellation,
