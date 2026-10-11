@@ -81,6 +81,7 @@ pub fn authorize(principal: &str, capability: &str) -> Result<()> {
         "human-cli" => matches!(
             capability,
             "knowledge.ingest"
+                | "telemetry.gpu"
                 | "inference.diagnose"
                 | "inference.worker.configure"
                 | "model.register"

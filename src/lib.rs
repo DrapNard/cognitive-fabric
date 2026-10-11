@@ -29,3 +29,5 @@ pub mod store;
 pub mod telemetry;
 mod verification;
 pub mod wire;
+
+pub mod gpu;

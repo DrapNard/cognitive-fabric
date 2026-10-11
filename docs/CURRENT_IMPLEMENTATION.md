@@ -42,7 +42,7 @@ Quality requires operator-attested held-out data. Promotion checks quality,
 cumulative approved-version retrieval regressions and unchanged versions transactionally.
 Rollback restores approved stored snapshots. Neural promotion stays disabled.
 
-Verification: 157 tests, formatting, all-target check and Clippy pass using exact
+Verification: 161 tests, formatting, all-target check and Clippy pass using exact
 flatc/Rust FlatBuffers 25.12.19. HTTP fixtures and socket tests ran locally; no
 compatible live model server was available at the default endpoint. No neural
 quality, GPU integration, hot-swap, energy or model-superiority result is claimed.
@@ -164,3 +164,7 @@ no benchmark accuracy or security result is inferred from format/oracle tests.
 Optional decomposition/exploration now preserves the first whole-goal solver's
 call, output-token and prompt-byte capacity. Conservative dependency escaping
 bounds and audited skips prevent advisory stages consuming its reserved budget.
+
+Optional operator GPU diagnostics use one fixed bounded NVIDIA query and report
+whole-device observations separately from task metrics. The actual driver is
+unavailable here; live GPU values, energy and task attribution remain unverified.

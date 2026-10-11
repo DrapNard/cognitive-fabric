@@ -124,3 +124,9 @@ The image remains in process memory; reports expose only its hash/size and captu
 time. It retains the original reviewed corpus for that run, including subsequently
 revoked entries; cancel the run if that evidence must no longer be used. No model
 permissions or expected test outputs are added to inference contexts.
+
+Operator-only GPU diagnostics may run one fixed `/usr/bin/nvidia-smi` read-only
+query with cleared environment, bounded output/time and child cleanup. No runtime
+model/tool API selects executable paths or arguments. The installed utility/driver
+is trusted host software; this is not sandboxing or task-attributed GPU accounting.
+No GPU setters, weight loading or new model permissions are introduced.

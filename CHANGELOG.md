@@ -2,6 +2,14 @@
 
 All notable changes are documented here in English.
 
+### Optional operator GPU diagnostics
+
+- Add opt-in whole-device NVIDIA sampling with a fixed read-only command, bounded
+  output/deadline and child termination/reaping on failure.
+- Parse memory units, optional utilization/power and distinct device identities;
+  retain unsupported or failed measurements as unavailable.
+- Keep GPU observations outside task accounting and deny the capability to models.
+
 ### Preserve whole-goal reasoning budgets
 
 - Include worst-case dependency prompt bytes and transport bounds in decomposition

@@ -29,3 +29,35 @@ Tests cover offline operation without task creation, loopback GET behavior,
 redirect rejection, malformed/duplicate/oversized responses, missing configured
 models and denial to reasoning actors. The live CLI smoke check found the default
 local endpoint unavailable and correctly returned exit status 1.
+
+
+## Optional NVIDIA observations
+
+`diagnostics --probe-gpu` performs one operator-authorized `telemetry.gpu` query.
+It launches only `/usr/bin/nvidia-smi` with fixed read-only query arguments, no
+shell/PATH lookup, cleared environment and no stdin. Models receive no executable
+path, arguments or GPU capability. The installed NVIDIA executable/driver remains
+trusted system software, not a sandboxed plugin. Standard diagnostics performs no
+GPU process launch and reports `not_requested`.
+
+The child has a two-second query deadline, 16 KiB stdout limit and discarded stderr.
+Failure/overflow/timeout triggers termination and up to two seconds for reaping;
+kill-on-drop is a fallback on dropped ownership. General process-crash guarantees
+and external driver cancellation are not provided. At most sixteen unique device
+rows are accepted, with strict shape/range/unit checks. Unsupported fields remain
+null; malformed data makes the complete sample unavailable.
+
+Samples expose whole-device UUID, total/used memory bytes, utilization percent and
+reported power watts. Memory query MiB values are converted to bytes. Power is the
+reported sample, not an integrated energy measurement. `energy_joules` is null and
+`task_attributed` is false: other processes and model servers can contribute to
+all observations. These fields do not change task budgets or benchmark totals.
+See NVIDIA's query documentation:
+https://docs.nvidia.com/deploy/nvidia-smi/index.html.
+
+Missing executable, inaccessible driver or unsupported platform produces
+`status: unavailable` and null devices. Optional GPU unavailability alone does not
+fail the CLI's storage/model diagnostics. Successful hardware sampling remains
+unverified in this environment: the actual CLI found the NVIDIA driver unavailable.
+Parser and bounded same-binary child fixtures cover valid/missing/malformed values,
+timeout, overflow and cleanup; they do not prove GPU integration.

@@ -53,7 +53,7 @@ remains a pre-release. `QUALITY_REVIEW.md` preserves verification history.
 | 12, 14 | CLI/service | Partial | `src/main.rs`: initialization/configuration, ask, service controls, task-specific socket progress/cancellation, skill lifecycle, ingestion/search, task traces, candidates/rollback, benchmark, self-test; real socket fixtures | Live residency lifecycle |
 | 12, 13 | Hardware/performance claims | Not implemented | No GPU/energy or large-model advantage claimed | Real local endpoint, hardware telemetry, equal-budget comparisons |
 
-All 157 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
+All 161 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
 all-target build checks and Clippy with denied warnings pass. Fixtures do not prove
 GPU integration, neural quality, immutable backend weights or live model switching.
 
@@ -122,7 +122,7 @@ observations, not isolated task peaks, backend residency or GPU measurements.
 The optional offline trainer now freezes bounded dataset input, rejects ambiguous/
 conflicting provenance, fails on passes with no supervised tokens, reserves separate
 output and records seeded configuration, dependency versions and hashed adapter
-inventory. Nine standard-library preflight tests pass in addition to the 157 Rust
+inventory. Nine standard-library preflight tests pass in addition to the 161 Rust
 tests. Level C stays Experimental: ML dependencies/weights are unavailable here,
 and base provenance manifests, independent neural evaluation, external isolation,
 actual training and adapter switching remain unverified. Promotion remains denied.
@@ -193,3 +193,10 @@ bounds and reserves the first whole-goal prompt as well as calls/output tokens.
 Research exploration preserves that solver's remaining calls/tokens/input bytes.
 Four constrained-budget regressions verify whole-goal fallback and audited skips;
 this is bounded scheduling, not measured utility estimation or resumable graphs.
+
+Optional operator GPU observations are implemented in `src/gpu.rs` and
+`diagnostics --probe-gpu`: fixed read-only NVIDIA query, bounded child/output, strict
+units/ranges, unsupported values preserved as unavailable and explicit whole-device
+scope. Parser and timeout/overflow/reaping fixtures pass. The actual driver probe
+failed here, so live GPU integration, task attribution, energy and load-cost
+measurement remain unverified. No GPU data is fabricated or added to task totals.

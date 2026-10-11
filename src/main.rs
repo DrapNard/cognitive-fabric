@@ -41,6 +41,8 @@ enum Command {
     Diagnostics {
         #[arg(long)]
         probe_inference: bool,
+        #[arg(long)]
+        probe_gpu: bool,
     },
     RecoverTasks,
     RecoverWorkers,
@@ -333,8 +335,17 @@ async fn main() -> Result<()> {
             }
             return Ok(());
         }
-        Command::Diagnostics { probe_inference } => {
-            let report = cogfabric::diagnostics::diagnose(&cfg, &store, probe_inference).await?;
+        Command::Diagnostics {
+            probe_inference,
+            probe_gpu,
+        } => {
+            let mut report =
+                cogfabric::diagnostics::diagnose(&cfg, &store, probe_inference).await?;
+            report["gpu_telemetry"] = if probe_gpu {
+                cogfabric::gpu::sample().await?
+            } else {
+                serde_json::json!({"status":"not_requested"})
+            };
             if report["registered_selection_valid"] == false
                 || report["inference_discovery"]["status"] == "failed"
                 || report["inference_discovery"]["all_configured_models_advertised"] == false

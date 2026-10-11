@@ -852,3 +852,21 @@ ceilings. Conservative bounds may skip graphs that short outputs would permit;
 this trades optional inference for completion capacity rather than increasing
 limits. Wall time/cancellation and model correctness remain separate constraints.
 No crash-resumable graph or measured utility policy is claimed.
+
+## Optional operator GPU diagnostics (2026-10-11)
+
+Exact FlatBuffers 25.12.19 remains in use. Formatting, all-target Cargo check,
+all-target tests (156 unit + 5 process) and Clippy with denied warnings passed
+with offline dependencies. GPU coverage includes strict parser/range/unit/missing
+value cases, reasoning-actor denial, and same-binary children that overflow output
+or stall until timeout. Cleanup must reap before returning the expected failure.
+
+An actual CLI invocation with an isolated temporary demo workspace and
+`diagnostics --probe-gpu` returned unavailable/null device metrics because NVIDIA's
+driver query failed. No tasks, inference or GPU setters were requested. The fixed
+utility exists here but could not communicate with the NVIDIA driver. Successful
+GPU hardware sampling is therefore unverified; fixtures establish parser and
+bounded process behavior only. These are whole-device observations, not task
+budgets, integrated energy or proof of real model loading/inference.
+
+NVIDIA query interface: https://docs.nvidia.com/deploy/nvidia-smi/index.html.
