@@ -65,7 +65,8 @@ impl Store {
             tx.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'tool_reservation','security-kernel',?2,unixepoch())",params![task,json!({"format_version":1,"invocation":tools+1,"actor":"jev-plus","capability":criterion.capability(),"origin":"operator_recovery"}).to_string()])?;
             let checked = criterion.check(answer);
             let verified = checked.is_ok();
-            let proof = json!({"criterion":criterion.name(),"verified":verified,"origin":"saved_solver_recovery","objective_hash":sha256(query.as_bytes()),"answer_hash":sha256(answer.as_bytes()),"reason":checked.err().map(|e|e.to_string())});
+            let rejection = checked.as_ref().err().map(ToString::to_string);
+            let proof = json!({"criterion":criterion.name(),"verified":verified,"origin":"saved_solver_recovery","objective_hash":sha256(query.as_bytes()),"answer_hash":sha256(answer.as_bytes()),"reason":rejection});
             tx.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'verification','verifier-r',?2,unixepoch())",params![task,proof.to_string()])?;
             if verified {
                 tx.execute(
@@ -73,7 +74,12 @@ impl Store {
                     params![task, answer],
                 )?;
             }
-            let report = json!({"format_version":1,"task_id":task,"status":if verified {"completed"} else {status.as_str()},"verified":verified,"criterion":criterion.name(),"answer_hash":sha256(answer.as_bytes()),"automatic_replay":false,"inference_repeated":false,"remaining_tool_calls":remaining-1,"resource_usage_complete":false,"reported_inference_usage_complete":audit["reported_usage_complete"],"subtask_results_verified":false});
+            let revision_ready = if let Some(reason) = rejection.as_deref() {
+                super::continuation::record_failed_revision(&tx, task, &audit, &saved, reason)?
+            } else {
+                false
+            };
+            let report = json!({"format_version":1,"task_id":task,"status":if verified {"completed"} else {status.as_str()},"verified":verified,"revision_ready":revision_ready,"criterion":criterion.name(),"answer_hash":sha256(answer.as_bytes()),"automatic_replay":false,"inference_repeated":false,"remaining_tool_calls":remaining-1,"resource_usage_complete":false,"reported_inference_usage_complete":audit["reported_usage_complete"],"subtask_results_verified":false});
             tx.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'recovery','human-cli',?2,unixepoch())",params![task,report.to_string()])?;
             let progress = crate::events::Progress::from_audit(
                 tx.last_insert_rowid() as u64,

@@ -352,6 +352,72 @@ fn prepare(db: &rusqlite::Connection, task: &str) -> Result<Checkpoint> {
     })
 }
 
+/// Construct a revision boundary only after a fresh failed independent check.
+/// The caller's transaction owns both verification charges and this checkpoint.
+pub(super) fn record_failed_revision(
+    db: &rusqlite::Connection,
+    task: &str,
+    audit: &Value,
+    saved: &Value,
+    reason: &str,
+) -> Result<bool> {
+    use rusqlite::OptionalExtension;
+    let admission = &audit["remaining_inference_admission"];
+    let cycles: u64 = db.query_row(
+        "SELECT count(*) FROM events WHERE task_id=?1 AND kind='cycle_reservation'",
+        [task],
+        |r| r.get(0),
+    )?;
+    if cycles == 0
+        || saved["node"]["cycle"] != cycles
+        || saved["call"] != audit["reserved_calls"]
+        || admission["calls"].as_u64().unwrap_or(0) == 0
+        || admission["cycles"].as_u64().unwrap_or(0) == 0
+        || admission["tool_calls"].as_u64().unwrap_or(0) <= 1
+        || admission["reserved_output_tokens"].as_u64().unwrap_or(0) < 384
+    {
+        return Ok(false);
+    }
+    let previous:Option<String>=db.query_row("SELECT json_extract(payload,'$.node.content_hash') FROM events WHERE task_id=?1 AND kind='reasoning' AND json_extract(payload,'$.node.role')='solver' AND json_extract(payload,'$.node.cycle')>0 ORDER BY id DESC LIMIT 1 OFFSET 1",[task],|r|r.get(0)).optional()?;
+    if previous
+        .as_ref()
+        .is_some_and(|hash| saved["node"]["content_hash"] == *hash)
+    {
+        return Ok(false);
+    }
+    let raw:Option<String>=db.query_row("SELECT CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN payload END FROM events WHERE task_id=?1 AND kind='reasoning_context' ORDER BY id LIMIT 1",[task],|r|r.get(0)).optional()?;
+    let Some(raw) = raw else { return Ok(false) };
+    let context: Value = serde_json::from_str(&raw)?;
+    let mode: String = db.query_row(
+        "SELECT CASE WHEN length(mode)<=16 THEN mode END FROM tasks WHERE id=?1",
+        [task],
+        |r| r.get(0),
+    )?;
+    let tools: u64 = db.query_row(
+        "SELECT count(*) FROM events WHERE task_id=?1 AND kind='tool_reservation'",
+        [task],
+        |r| r.get(0),
+    )?;
+    let boundary = json!({"format_version":1,"phase":"ready_solver","mode":mode,
+        "objective_hash":context["objective_hash"],"context_hash":context["context_hash"],"prompt_base_hash":context["prompt_base_hash"],
+        "strategy":format!("Independent checker rejected the candidate: {reason}"),"previous_answer":saved["text"],
+        "last_answer_hash":saved["node"]["content_hash"],"calls_before":audit["reserved_calls"],"cycles_before":cycles,
+        "tool_calls_before":tools,"reserved_output_tokens":audit["reserved_output_tokens"],"charged_prompt_bytes":audit["charged_prompt_bytes"],
+        "permissions_restorable":false,"subtask_results_verified":false,"origin":"operator_failed_result_recovery"});
+    let raw = serde_json::to_string(&boundary)?;
+    if raw.len() > 262144 {
+        bail!("Recovered revision checkpoint exceeds bounds")
+    }
+    db.execute_batch("SAVEPOINT recovered_revision")?;
+    db.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'reasoning_boundary','jev-r',?2,unixepoch())",rusqlite::params![task,raw])?;
+    if prepare(db, task).is_err() {
+        db.execute_batch("ROLLBACK TO recovered_revision; RELEASE recovered_revision")?;
+        return Ok(false);
+    }
+    db.execute_batch("RELEASE recovered_revision")?;
+    Ok(true)
+}
+
 pub async fn resume(
     store: Arc<Store>,
     task: &str,
@@ -797,21 +863,25 @@ mod tests {
     }
     #[tokio::test]
     async fn public_resume_uses_real_http_and_commits_a_durable_outcome() {
-        http_continuation(false, false, false).await;
+        http_continuation(false, false, false, false).await;
     }
     #[tokio::test]
     async fn registered_resume_uses_the_original_http_model() {
-        http_continuation(true, false, false).await;
+        http_continuation(true, false, false, false).await;
     }
     #[tokio::test]
     async fn public_resume_continues_a_saved_revision_through_http() {
-        http_continuation(false, true, false).await;
+        http_continuation(false, true, false, false).await;
     }
     #[tokio::test]
     async fn public_resume_handles_a_whole_goal_revision_without_a_graph() {
-        http_continuation(false, true, true).await;
+        http_continuation(false, true, true, false).await;
     }
-    async fn http_continuation(registered: bool, revision: bool, no_graph: bool) {
+    #[tokio::test]
+    async fn recovered_failed_solver_continues_through_real_http_without_replay() {
+        http_continuation(false, true, false, true).await;
+    }
+    async fn http_continuation(registered: bool, revision: bool, no_graph: bool, failed: bool) {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let root =
             std::env::temp_dir().join(format!("fabric-continuation-{}", uuid::Uuid::new_v4()));
@@ -827,6 +897,12 @@ mod tests {
             save_no_graph_boundary(&store, &task).await;
         } else if revision {
             save_revision_boundary(&store, &task).await;
+        }
+        if failed {
+            truncate_after_last_solver(&store, &task);
+            let report = store.recover_verified_result(&task).unwrap();
+            assert_eq!(report["revision_ready"], true);
+            assert_eq!(store.inference_audit(&task).unwrap()["reserved_calls"], 4);
         }
         assert!(resume(store.clone(), &task, false, std::future::pending())
             .await
@@ -1296,5 +1372,113 @@ mod tests {
             prepare(&store.lock().unwrap(), &task).is_err(),
             "Exceeded bounded context history"
         );
+    }
+    fn truncate_after_last_solver(store: &Store, task: &str) {
+        let db = store.lock().unwrap();
+        let id:u64=db.query_row("SELECT max(id) FROM events WHERE task_id=?1 AND kind='reasoning' AND json_extract(payload,'$.node.role')='solver'",[task],|r|r.get(0)).unwrap();
+        db.execute(
+            "DELETE FROM events WHERE task_id=?1 AND id>?2",
+            rusqlite::params![task, id],
+        )
+        .unwrap();
+    }
+    #[tokio::test]
+    async fn failed_saved_solver_recovery_prepares_a_fresh_revision_without_repeating_inference() {
+        let root =
+            std::env::temp_dir().join(format!("fabric-failed-revision-{}", uuid::Uuid::new_v4()));
+        let (store, task) =
+            fixture_in(Arc::new(Store::open(&root.join("state.db")).unwrap())).await;
+        save_revision_boundary(&store, &task).await;
+        truncate_after_last_solver(&store, &task);
+        assert!(prepare(&store.lock().unwrap(), &task).is_err());
+        let report = store.recover_verified_result(&task).unwrap();
+        assert_eq!(report["verified"], false);
+        assert_eq!(report["revision_ready"], true);
+        assert_eq!(report["inference_repeated"], false);
+        let saved = prepare(&store.lock().unwrap(), &task).unwrap();
+        assert_eq!(saved.state.resources.calls, 4);
+        assert_eq!(saved.state.resources.cycles, 1);
+        assert_eq!(saved.state.resources.tool_calls, 1);
+        let backend = Arc::new(Script(Mutex::new(vec![("solver", "[1,2,3]")].into())));
+        let mut resumed = Session::restored(
+            saved.cfg,
+            store.clone(),
+            backend,
+            task.clone(),
+            &saved.mode,
+            saved.state,
+        )
+        .unwrap();
+        resumed
+            .continue_solver(
+                saved.boundary.as_ref().unwrap(),
+                &saved.query,
+                &saved.context,
+                &saved.mode,
+            )
+            .await
+            .unwrap();
+        assert!(resumed.verified);
+        assert_eq!(resumed.resources.calls, 5);
+        assert_eq!(resumed.resources.tool_calls, 2);
+        drop(resumed);
+        drop(store);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[tokio::test]
+    async fn recovered_revision_audit_failure_rolls_back_fresh_verification_charges() {
+        let root = std::env::temp_dir().join(format!(
+            "fabric-failed-revision-audit-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let (store, task) =
+            fixture_in(Arc::new(Store::open(&root.join("state.db")).unwrap())).await;
+        save_revision_boundary(&store, &task).await;
+        truncate_after_last_solver(&store, &task);
+        store.lock().unwrap().execute_batch("CREATE TRIGGER reject_revision BEFORE INSERT ON events WHEN NEW.kind='reasoning_boundary' BEGIN SELECT RAISE(ABORT,'fixture revision write failure'); END;").unwrap();
+        assert!(store.recover_verified_result(&task).is_err());
+        assert_eq!(
+            store.inference_audit(&task).unwrap()["remaining_inference_admission"]["tool_calls"],
+            4
+        );
+        assert_eq!(store.task(&task).unwrap()["task"]["status"], "interrupted");
+        drop(store);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[tokio::test]
+    async fn repeated_failed_solver_results_do_not_receive_another_revision() {
+        let root =
+            std::env::temp_dir().join(format!("fabric-repeat-revision-{}", uuid::Uuid::new_v4()));
+        let (store, task) =
+            fixture_in(Arc::new(Store::open(&root.join("state.db")).unwrap())).await;
+        save_revision_boundary(&store, &task).await;
+        let saved = prepare(&store.lock().unwrap(), &task).unwrap();
+        let backend = Arc::new(Script(Mutex::new(vec![("solver", "[3,2,1]")].into())));
+        let mut resumed = Session::restored(
+            saved.cfg,
+            store.clone(),
+            backend,
+            task.clone(),
+            &saved.mode,
+            saved.state,
+        )
+        .unwrap();
+        resumed
+            .continue_solver(
+                saved.boundary.as_ref().unwrap(),
+                &saved.query,
+                &saved.context,
+                &saved.mode,
+            )
+            .await
+            .unwrap();
+        truncate_after_last_solver(&store, &task);
+        let report = store.recover_verified_result(&task).unwrap();
+        assert_eq!(report["revision_ready"], false);
+        assert!(prepare(&store.lock().unwrap(), &task).is_err());
+        assert_eq!(store.inference_audit(&task).unwrap()["reserved_calls"], 5);
+        drop(resumed);
+        drop(store);
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

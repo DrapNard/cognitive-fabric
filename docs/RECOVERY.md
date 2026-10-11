@@ -434,3 +434,28 @@ wrong chronological anchors, exhausted cycles and excessive assemblies. This
 supersedes the blanket repeated-recovery limitation above. Repeating recovery
 inside consumed cycles or with unresolved inference remains unsupported; arbitrary
 within-cycle repair is not inferred from duplicate context acceptance.
+
+
+### Recovering a recorded failed solver answer
+
+`recover-verified-result TASK_UUID` still performs a freshly charged independent
+sort/order check without inference. When the answer fails, its report now includes
+`revision_ready`. A true value means a new bounded solver boundary was saved from
+that rejection; it does not mean the task succeeded or that inference restarted.
+The operator can subsequently use `resume-task TASK_UUID --human-approve`.
+
+Admission requires the latest recorded inference to be that whole-goal solver,
+its cycle to match the charged cycle ledger, remaining calls/cycles/output and a
+future verification allowance, and no repeated rejected whole-goal answer. The
+candidate boundary is checked through normal continuation admission, including
+context, original deadline, backend version, graph and permission boundaries.
+Unsupported/expired state retains the failed verification charge and reports false
+without retaining a boundary. Checkpoint-write failure rolls back the complete
+verification transaction. Existing successful result recovery is unchanged.
+
+Tests model interruption after a solver result but before verification, then
+prepare and execute the next revision through fixture HTTP without repeating that
+solver. They also verify repeat-stop refusal and atomic checkpoint-failure rollback.
+This adds a specific within-cycle reconciliation path. Unknown inference outcomes,
+arbitrary critic/reflection positions and general within-cycle recovery remain
+unfinished; no missing provider result is invented or replayed.

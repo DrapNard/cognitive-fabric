@@ -288,3 +288,11 @@ context/settings/deadline and cumulative counters. Each new context assembly mus
 match the original bytes and its chronological call/cycle anchors; history is
 bounded to 17 assemblies. Tests cover two resumptions, unchanged settings, exhausted
 cycles and tampering. Arbitrary within-cycle repair remains incomplete.
+
+
+Failed structured saved-answer recovery can now report `revision_ready` and retain
+an admitted next-solver boundary after a fresh charged independent check. It never
+repeats the saved inference or treats rejection as success. Repeated failed answers,
+unsupported state and unavailable budgets do not receive a revision; checkpoint
+write failures roll back verification charges. Arbitrary within-cycle recovery
+and unknown inference outcomes remain unsupported.

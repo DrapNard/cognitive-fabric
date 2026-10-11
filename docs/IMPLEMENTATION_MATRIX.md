@@ -532,3 +532,12 @@ regression execution retains one settings record, cumulative charges and the
 original cycle cap. Tampered counters/context, consumed/exhausted boundaries and
 excess history fail closed. This supersedes the general repeated-boundary limit;
 arbitrary within-cycle recovery remains **Partial / Not implemented**.
+
+
+Failed saved-answer revision reconciliation: **Implemented (structured criteria)**
+in `src/recovery/result.rs` and `src/recovery/continuation.rs`. A fresh independent
+sort/order rejection may save an admitted next-solver boundary without repeating
+inference. Original budgets/context/deadline and repeat stopping remain enforced;
+write failure rolls back proof, tool charge and boundary together. Tests cover
+actual HTTP continuation, repeated-answer refusal and fault rollback. Unknown
+outcomes and arbitrary within-cycle phases remain **Partial / Not implemented**.

@@ -1378,3 +1378,13 @@ settings record and the original call/cycle ledger. Changed context bytes and
 chronological counters, exhausted cycles and more than 17 assemblies are refused.
 Existing HTTP/process tests also pass. This validates saved-boundary repetition,
 not recovery inside consumed cycles or external inference termination.
+
+## Failed saved-answer reconciliation (2026-10-11)
+
+Formatting, offline all-target checking, Clippy with warnings denied and all-target
+tests passed with FlatBuffers compiler/crate 25.12.19: 250 tests (233 library,
+17 integration). New tests reconcile interruption after a recorded failed solver,
+create a freshly checked revision without repeated inference, execute it through
+HTTP, refuse repeat-stopped answers and roll back tool/proof writes when boundary
+persistence fails. Unknown provider outcomes and arbitrary within-cycle phases
+remain unsupported; this supplies no model-quality or release-readiness claim.

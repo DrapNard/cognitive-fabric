@@ -2,6 +2,15 @@
 
 All notable changes are documented here in English.
 
+### Failed-answer revision reconciliation
+
+- Prepare an admitted revision boundary after a fresh independent rejection of a
+  fully recorded whole-goal solver answer, without repeating inference.
+- Preserve original allowances and repeat stopping; roll back proof, tool charge
+  and boundary together on checkpoint persistence failure.
+- Report revision readiness separately from verified success and require explicit
+  continuation before generating a new answer.
+
 ### Repeated boundary recovery
 
 - Admit later unconsumed solver boundaries while retaining the original context,

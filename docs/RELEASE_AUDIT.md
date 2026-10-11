@@ -4,14 +4,14 @@ This checklist preserves the 18 acceptance criteria in the goal objective. It is
 an evidence inventory, not a release approval. The canonical French architecture
 and the broader implementation matrix remain authoritative. Earlier test counts
 in the quality review are historical milestones. Current local verification is
-246 Rust tests (229 library, 17 integration), formatting, all-target checking and
+250 Rust tests (233 library, 17 integration), formatting, all-target checking and
 Clippy with warnings denied, using FlatBuffers compiler/crate 25.12.19.
 
 | Goal criterion | Evidence inspected | Assessment / remaining proof |
 |---|---|---|
 | 1. Workspace builds | `Cargo.toml`, all-target check | Passed locally; isolated optimized source installation also passed with cached dependencies. |
 | 2. Formatting and Clippy | Mandatory checks in `QUALITY_REVIEW.md` | Passed locally. |
-| 3. Mandatory tests | All-target test results, `tests/` | 246 passed; fixtures do not establish live model quality. |
+| 3. Mandatory tests | All-target test results, `tests/` | 250 passed; fixtures do not establish live model quality. |
 | 4. FlatBuffers IPC | `protocol/`, `src/wire.rs`, `src/fabric/`, malformed/compatibility/socket tests | Implemented for present transports; broader module compatibility remains partial. |
 | 5. CLI/service communication | `src/service.rs`, socket tests, `tests/process_worker.rs` | Tested local transport, progress and cancellation; no general independent plugin service is claimed. |
 | 6. Compatible local LLM | `src/backend.rs`, `tests/inference_auth.rs`, `AUTHENTICATION.md` | Synthetic authenticated HTTP works; real LM Studio generation last returned 401. Not passed. |
@@ -40,7 +40,8 @@ Clippy with warnings denied, using FlatBuffers compiler/crate 25.12.19.
    audit inspection alone never authorizes continuation. Explicit pre-solver default-module
    continuation, including validated registered models, managed workers and unconsumed
    solver-cycle boundaries with completed, skipped or absent graphs, now has HTTP and failure regression tests; general backend/phase
-   continuation inside a consumed cycle is still incomplete. Repeated unconsumed
+   arbitrary continuation inside a consumed cycle is still incomplete; recorded
+   structured failed answers can now prepare a freshly checked revision. Repeated unconsumed
    boundaries now preserve original context and cumulative limits.
 3. Extend fixture-tested explicit native load/unload into residency scheduling
    with enforceable ownership and recoverable uncertain outcomes. Current native
