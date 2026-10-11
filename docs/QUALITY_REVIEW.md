@@ -1400,3 +1400,15 @@ session/partial-frame deadlines. COGS schema generation uses the same exact comp
 pairing. Delivery remains a trusted host observer API; no general module command
 execution, automatic provisioning, executable attestation or live-model gain is
 claimed. Existing inference, service, persistence and recovery regressions pass.
+
+## Durable authenticated module replay (2026-10-11)
+
+Formatting, offline all-target checking, Clippy with warnings denied and all-target
+tests passed with FlatBuffers compiler/crate 25.12.19: 263 tests (246 library,
+17 integration). Five new tests cover filtered replay/cursor advancement,
+reconnect after unregistration with the original grant, live overlap deduplication,
+v1/v2 compatibility, cursor/version denials and cursor-only frame/session limits.
+The existing separate-process event fixture and complete inference/recovery suite
+also pass. Schema changes append fields while v1 emission remains unchanged;
+replay explicitly selects v2. Automatic provisioning and general module command
+transport remain incomplete; no exactly-once or live-model claim is made.

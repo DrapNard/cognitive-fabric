@@ -551,3 +551,13 @@ cancellation and explicit overflow/protocol errors are tested, including a real
 child process. Registry/filter replacement semantics persist. Automatic provisioning,
 IPC replay, service/CLI listener integration and general module command routing
 remain **Partial / Not implemented**; no executable attestation is claimed.
+
+
+Durable authenticated module replay: **Implemented (host API)** in
+`src/events/unix.rs`, `src/events/modules.rs` and COGS v2. Pinned filtered replay
+advances empty-page cursors, deduplicates overlap with live queues and restores
+host-retained grants after registry replacement/unregistration. Version-one live
+output remains compatible; wrong versions/cursors and receiver frame/time
+exhaustion fail closed. Five additional regression tests cover replay/reconnect,
+pinned filtering and negative limits. This supersedes the IPC replay limitation;
+automatic provisioning and general command routing remain **Partial**.

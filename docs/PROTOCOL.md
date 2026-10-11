@@ -249,3 +249,12 @@ increasing durable sequences. Host-approved UID/PID Unix credentials authenticat
 both sides; a string descriptor alone does not establish identity. No upstream
 commands or registration messages are accepted. Existing COGE/COGF layouts are
 unchanged. See `EVENTS.md` for lifetime, queue and provisioning limitations.
+
+
+COGS v2 appends a cursor field and Cursor packet kind for explicitly requested
+module replay. `serve_from` emits v2; `serve` preserves v1 live-only output. New
+readers accept both versions, require zero cursor/no Cursor packets for v1, reject
+midstream version changes and verify event/cursor equality and monotonic cursors.
+The appended FlatBuffers field defaults to zero for legacy frames. Old strict v1
+readers reject v2 rather than silently interpreting replay control. Existing COGE
+and COGF schemas remain unchanged. Bounds and reconnect semantics are in EVENTS.md.

@@ -166,3 +166,38 @@ UID/PID checks do not attest executable contents or isolate malicious same-owner
 code. Tests exercise a real child process, forged credentials, wrong grants,
 malformed/versioned packets, stage/task denials, overflow, cancellation and
 session/incomplete-frame deadlines. No new model capabilities are introduced.
+
+
+## Durable process-stream catch-up (COGS v2)
+
+`EventSession::serve_from(seconds, after, cancel)` explicitly selects COGS v2,
+replays bounded durable pages through the pinned stage filter, then switches to
+live delivery. Subscribe/construct the session before starting catch-up; queued
+live events already covered by a replay cursor are discarded. `Cursor` control
+frames advance through empty filtered pages without exposing excluded events.
+`EventReceiver::cursor()` returns the latest consumed durable position, including
+cursor/terminal frames; save it before reconnecting. A cancelled receive permanently
+drops that connection while preserving the last consumed cursor for recovery.
+
+Keep the trusted `Grant` returned by `session.grant()` and use
+`EventSession::reconnect(store, grant, stream, uid, pid)` to restore the exact
+original task/version/stage scope even after registry replacement or unregistration.
+The host supplies the grant; IPC never restores permissions from received strings.
+The receiver must use the same grant and authenticate the new approved host peer.
+Host provisioning and child/socket lifecycle remain external responsibilities.
+
+Replay counts both events and cursor markers toward the 4,096-frame session cap;
+all existing session/write/queue limits apply. Consumers additionally cap total
+frames at 4,098 (including Open/Closed) and wall time at 305 seconds from connection,
+so a malicious cursor-only peer cannot prolong processing indefinitely. A normal
+limit/timeout closes with the last consumed cursor; reconnect to continue. SQLite
+is authoritative, delivery is not exactly once, and abrupt connection/audit loss
+can require replay of already written frames.
+
+The original `serve` API continues emitting live-only v1 frames. New receivers
+accept v1 and v2; midstream version changes, backwards cursors, event/cursor
+mismatches and v1 cursor packets fail closed. Old v1 readers reject v2 explicitly.
+Tests cover filtered empty-page advancement, saved-position reconnect after
+unregistration, replay/live overlap, pinned filters, protocol compatibility and
+cursor-only frame/time exhaustion. This supersedes the IPC-replay limitation
+above; automatic provisioning and general module commands remain incomplete.

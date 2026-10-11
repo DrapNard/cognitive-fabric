@@ -43,6 +43,33 @@ pub struct ModuleSubscription {
     subscription: Subscription,
 }
 impl ModuleSubscription {
+    /// Trusted host restoration of a previously pinned observer grant.
+    pub(super) fn restore(
+        store: &crate::store::Store,
+        task: &str,
+        descriptor: EventModule,
+    ) -> Result<Self> {
+        crate::security::authorize("human-cli", "task.observe")?;
+        uuid::Uuid::parse_str(task)?;
+        descriptor.validate()?;
+        let exists: bool = store.lock()?.query_row(
+            "SELECT EXISTS(SELECT 1 FROM tasks WHERE id=?1)",
+            [task],
+            |r| r.get(0),
+        )?;
+        if !exists {
+            bail!("Unknown task")
+        }
+        let subscription = store
+            .events
+            .subscribe_filtered(task, Some(descriptor.stages.clone()))?;
+        Ok(Self {
+            task: task.into(),
+            descriptor,
+            subscription,
+        })
+    }
+
     pub fn descriptor(&self) -> &EventModule {
         &self.descriptor
     }

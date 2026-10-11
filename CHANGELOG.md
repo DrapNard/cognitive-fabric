@@ -2,6 +2,14 @@
 
 All notable changes are documented here in English.
 
+### Durable module event replay
+
+- Add explicit COGS v2 catch-up with filtered cursor advancement and deduplicated
+  replay/live delivery, preserving live-only v1 compatibility.
+- Restore host-retained task/version/stage grants after registry changes; reject
+  backwards cursors, version changes and receiver frame/time exhaustion.
+- Keep automatic provisioning and general module commands outside this observer API.
+
 ### Authenticated process event modules
 
 - Deliver filtered task progress to host-approved local processes using versioned

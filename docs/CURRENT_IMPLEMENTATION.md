@@ -303,3 +303,10 @@ processes using versioned COGS/COGE FlatBuffers, pinned module/stage grants and
 bounded queues/timeouts. Actual child-process and negative transport tests pass.
 Socket/child provisioning remains host-owned; general executable registration,
 command routing and automatic IPC replay are still incomplete.
+
+
+Authenticated process module streams now support COGS v2 durable replay followed
+by deduplicated live delivery. Saved cursors advance through filtered pages and
+host-retained grants restore task/version/stage scope after registry changes.
+Version-one live output is preserved. Receiver frame/time limits and version/cursor
+validation are tested; provisioning and general command routing remain incomplete.
