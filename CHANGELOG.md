@@ -468,3 +468,11 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   solving, independent of later source-document changes.
 - Bound raw/serialized snapshots and prevent subsequent inference when persistence
   fails; keep saved external data separate from permissions.
+
+### Checked saved-result recovery
+
+- Add operator recovery of abandoned structured tasks from a saved solver answer,
+  with a fresh independent check and no inference replay.
+- Validate and charge the original resource ledger transactionally; reject live
+  leases, unresolved calls, missing allowances and terminal-task rewrites.
+- Preserve failed-check charges while rolling back audit-write failures atomically.

@@ -233,3 +233,10 @@ A valid retrieved answer completes without inference; rejected answers remain
 advisory and normal reasoning continues within remaining limits. Unrelated goals,
 revoked entries, explicit conversation references and other ablation profiles do
 not gain this shortcut. A memory's prior status is never accepted as proof.
+
+`recover-verified-result` now reconciles abandoned explicit sort/order tasks whose
+saved solver answer passes a fresh independent check. It requires exclusive
+runtime ownership, a fully correlated bounded ledger and remaining verification
+allowance, then atomically commits proof/status without repeating inference.
+Unsupported or unresolved tasks remain interrupted; general continuation is still
+incomplete. See RECOVERY.md for failed-check charges and transactional behavior.

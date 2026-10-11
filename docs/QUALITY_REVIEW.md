@@ -1156,3 +1156,17 @@ failure, and rejection of oversized objectives/contexts or JSON-escaped payloads
 exceeding the audit ceiling. Snapshots remain private untrusted task data; they
 do not attest source authenticity or authorize replay, and no automatic checkpoint
 continuation or cross-process wall allowance is established.
+
+## Independently checked saved-result recovery
+
+FlatBuffers 25.12.19 formatting, all-target check, 210 all-target tests (199
+library and 11 integration), and Clippy with denied warnings pass. Tests exercise
+exclusive-lease denial, abandoned running/interrupted completion, fresh sorting
+and ordering checks, unchanged inference charges, reopen durability, terminal and
+model-actor denials, incorrect answers, forged result hashes, genuinely unresolved
+reservations, missing tool allowance, unsupported objectives and transactional
+rollback after injected audit failure. Actual CLI recovery completes a saved
+sorting result without inference. Incorrect checks retain their charge; provider
+usage remains unknown where absent and whole-resource completeness stays false.
+This recovers provable terminal answers, not arbitrary subtask graphs or missing
+results, and grants no restarted inference or restored wall allowance.

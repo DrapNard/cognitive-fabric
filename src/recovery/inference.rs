@@ -12,231 +12,233 @@ impl Store {
         uuid::Uuid::parse_str(task)?;
         let mut db = self.lock()?;
         let tx = db.transaction()?;
-        let status: String = tx.query_row(
-            "SELECT CASE WHEN length(status)<=64 THEN status END FROM tasks WHERE id=?1",
-            [task],
-            |r| r.get(0),
-        )?;
-        let mut calls = BTreeMap::<u64, Value>::new();
-        let mut legacy = 0usize;
-        let mut settings: Option<(crate::config::Config, u64, u64, bool)> = None;
-        let mut tools = 0u64;
-        let mut cycles = 0u64;
-        {
-            let mut stmt=tx.prepare("SELECT kind,CASE WHEN length(CAST(source AS BLOB))<=64 THEN source END,CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN payload END FROM events WHERE task_id=?1 AND kind IN ('execution_settings','model_dispatch','reasoning','tool_reservation','cycle_reservation') ORDER BY id LIMIT 210")?;
-            let mut rows = stmt.query([task])?;
-            let mut count = 0;
-            let mut inference_count = 0;
-            while let Some(row) = rows.next()? {
-                count += 1;
-                if count > 209 {
-                    bail!("Inference audit exceeds bounded call history")
+        let report = audit_from(&tx, task)?;
+        tx.commit()?;
+        Ok(report)
+    }
+}
+
+pub(super) fn audit_from(db: &rusqlite::Connection, task: &str) -> Result<Value> {
+    let status: String = db.query_row(
+        "SELECT CASE WHEN length(status)<=64 THEN status END FROM tasks WHERE id=?1",
+        [task],
+        |r| r.get(0),
+    )?;
+    let mut calls = BTreeMap::<u64, Value>::new();
+    let mut legacy = 0usize;
+    let mut settings: Option<(crate::config::Config, u64, u64, bool)> = None;
+    let mut tools = 0u64;
+    let mut cycles = 0u64;
+    {
+        let mut stmt=db.prepare("SELECT kind,CASE WHEN length(CAST(source AS BLOB))<=64 THEN source END,CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN payload END FROM events WHERE task_id=?1 AND kind IN ('execution_settings','model_dispatch','reasoning','tool_reservation','cycle_reservation') ORDER BY id LIMIT 210")?;
+        let mut rows = stmt.query([task])?;
+        let mut count = 0;
+        let mut inference_count = 0;
+        while let Some(row) = rows.next()? {
+            count += 1;
+            if count > 209 {
+                bail!("Inference audit exceeds bounded call history")
+            }
+            let kind: String = row.get(0)?;
+            let source: String = row.get(1)?;
+            let raw: String = row.get(2)?;
+            let payload: Value = serde_json::from_str(&raw)?;
+            if kind == "execution_settings" {
+                if source != "runtime"
+                    || settings.is_some()
+                    || !calls.is_empty()
+                    || legacy != 0
+                    || payload["format_version"] != 1
+                {
+                    bail!("Invalid execution settings history")
                 }
-                let kind: String = row.get(0)?;
-                let source: String = row.get(1)?;
-                let raw: String = row.get(2)?;
-                let payload: Value = serde_json::from_str(&raw)?;
-                if kind == "execution_settings" {
-                    if source != "runtime"
-                        || settings.is_some()
-                        || !calls.is_empty()
-                        || legacy != 0
-                        || payload["format_version"] != 1
-                    {
-                        bail!("Invalid execution settings history")
-                    }
-                    let cfg: crate::config::Config =
-                        serde_json::from_value(payload["configuration"].clone())?;
-                    cfg.validate()?;
-                    let mode = payload["mode"].as_str().unwrap_or("");
-                    let (calls, cycles) = match mode {
-                        "fast" => (1, 1),
-                        "standard" => (4, 1),
-                        "deep" => (10, 3),
-                        "research" => (18, 4),
-                        _ => bail!("Invalid saved reasoning mode"),
-                    };
-                    let task_mode: String = tx.query_row(
-                        "SELECT CASE WHEN length(mode)<=32 THEN mode END FROM tasks WHERE id=?1",
-                        [task],
-                        |r| r.get(0),
-                    )?;
-                    if mode != task_mode
-                        || payload["call_limit"].as_u64() != Some(calls.min(cfg.max_calls as u64))
-                        || payload["cycle_limit"].as_u64()
-                            != Some(cycles.min(cfg.max_cycles as u64))
-                    {
-                        bail!("Invalid saved execution ceilings")
-                    }
-                    let durable = match payload.get("resource_reservations_version") {
-                        None => false,
-                        Some(v) if *v == 1 => true,
-                        _ => bail!("Unsupported resource reservation version"),
-                    };
-                    settings = Some((
-                        cfg,
-                        payload["call_limit"].as_u64().unwrap(),
-                        payload["cycle_limit"].as_u64().unwrap(),
-                        durable,
-                    ));
-                    continue;
+                let cfg: crate::config::Config =
+                    serde_json::from_value(payload["configuration"].clone())?;
+                cfg.validate()?;
+                let mode = payload["mode"].as_str().unwrap_or("");
+                let (calls, cycles) = match mode {
+                    "fast" => (1, 1),
+                    "standard" => (4, 1),
+                    "deep" => (10, 3),
+                    "research" => (18, 4),
+                    _ => bail!("Invalid saved reasoning mode"),
+                };
+                let task_mode: String = db.query_row(
+                    "SELECT CASE WHEN length(mode)<=32 THEN mode END FROM tasks WHERE id=?1",
+                    [task],
+                    |r| r.get(0),
+                )?;
+                if mode != task_mode
+                    || payload["call_limit"].as_u64() != Some(calls.min(cfg.max_calls as u64))
+                    || payload["cycle_limit"].as_u64() != Some(cycles.min(cfg.max_cycles as u64))
+                {
+                    bail!("Invalid saved execution ceilings")
                 }
-                if matches!(kind.as_str(), "tool_reservation" | "cycle_reservation") {
-                    let Some((cfg, _, cycle_limit, true)) = settings.as_ref() else {
-                        bail!("Resource reservation has no compatible settings")
-                    };
-                    if payload["format_version"] != 1 {
-                        bail!("Unsupported resource reservation")
-                    }
-                    if kind == "tool_reservation" {
-                        if source != "security-kernel"
-                            || payload["actor"] != "jev-plus"
-                            || payload["invocation"].as_u64() != Some(tools + 1)
-                            || tools >= cfg.max_tool_calls as u64
-                            || !matches!(
-                                payload["capability"].as_str(),
-                                Some(
-                                    "knowledge.search"
-                                        | "math.evaluate"
-                                        | "sql.query"
-                                        | "ordering.verify"
-                                        | "sorting.verify"
-                                )
-                            )
-                        {
-                            bail!("Invalid durable tool reservation")
-                        }
-                        tools += 1;
-                    } else {
-                        if source != "jev-r"
-                            || payload["cycle"].as_u64() != Some(cycles + 1)
-                            || cycles >= *cycle_limit
-                        {
-                            bail!("Invalid durable cycle reservation")
-                        }
-                        cycles += 1;
-                    }
-                    continue;
+                let durable = match payload.get("resource_reservations_version") {
+                    None => false,
+                    Some(v) if *v == 1 => true,
+                    _ => bail!("Unsupported resource reservation version"),
+                };
+                settings = Some((
+                    cfg,
+                    payload["call_limit"].as_u64().unwrap(),
+                    payload["cycle_limit"].as_u64().unwrap(),
+                    durable,
+                ));
+                continue;
+            }
+            if matches!(kind.as_str(), "tool_reservation" | "cycle_reservation") {
+                let Some((cfg, _, cycle_limit, true)) = settings.as_ref() else {
+                    bail!("Resource reservation has no compatible settings")
+                };
+                if payload["format_version"] != 1 {
+                    bail!("Unsupported resource reservation")
                 }
-                inference_count += 1;
-                if inference_count > 128 {
-                    bail!("Inference audit exceeds bounded call history")
-                }
-                if source != "jev-r" {
-                    bail!("Unexpected inference audit source")
-                }
-                if kind == "model_dispatch" {
-                    let call = payload["call"]
-                        .as_u64()
-                        .ok_or_else(|| anyhow::anyhow!("Missing inference call identity"))?;
-                    let role = payload["role"].as_str().unwrap_or("");
-                    let allocation = payload["allocation"].as_u64().unwrap_or(0);
-                    let prompt_bytes = payload["prompt_bytes"]
-                        .as_u64()
-                        .ok_or_else(|| anyhow::anyhow!("Missing inference prompt charge"))?;
-                    if call != calls.len() as u64 + 1
-                        || call > 64
-                        || !(1..=16384).contains(&allocation)
-                        || prompt_bytes > 32000
+                if kind == "tool_reservation" {
+                    if source != "security-kernel"
+                        || payload["actor"] != "jev-plus"
+                        || payload["invocation"].as_u64() != Some(tools + 1)
+                        || tools >= cfg.max_tool_calls as u64
                         || !matches!(
-                            role,
-                            "interface"
-                                | "synthesizer"
-                                | "planner"
-                                | "solver"
-                                | "critic"
-                                | "reflector"
-                                | "explorer"
+                            payload["capability"].as_str(),
+                            Some(
+                                "knowledge.search"
+                                    | "math.evaluate"
+                                    | "sql.query"
+                                    | "ordering.verify"
+                                    | "sorting.verify"
+                            )
                         )
                     {
-                        bail!("Invalid inference reservation history")
+                        bail!("Invalid durable tool reservation")
                     }
-                    calls.insert(call,json!({"call":call,"role":role,"reserved_output_tokens":allocation,"prompt_bytes":prompt_bytes,"state":"result_not_recorded","model":null,"input_tokens":null,"output_tokens":null}));
+                    tools += 1;
                 } else {
-                    let Some(call) = payload["call"].as_u64() else {
-                        if !payload["call"].is_null() {
-                            bail!("Invalid inference result call identity")
-                        }
-                        legacy += 1;
-                        continue;
-                    };
-                    let record = calls
-                        .get_mut(&call)
-                        .ok_or_else(|| anyhow::anyhow!("Inference result has no reservation"))?;
-                    let text = payload["text"]
-                        .as_str()
-                        .ok_or_else(|| anyhow::anyhow!("Missing recorded inference text"))?;
-                    let model = payload["node"]["model"].as_str().unwrap_or("");
-                    if record["state"] != "result_not_recorded"
-                        || record["role"] != payload["node"]["role"]
-                        || model.is_empty()
-                        || model.len() > 256
-                        || text.len() > 96000
-                        || payload["node"]["content_hash"] != sha256(text.as_bytes())
+                    if source != "jev-r"
+                        || payload["cycle"].as_u64() != Some(cycles + 1)
+                        || cycles >= *cycle_limit
                     {
-                        bail!("Invalid recorded inference result identity")
+                        bail!("Invalid durable cycle reservation")
                     }
-                    for field in ["input_tokens", "output_tokens"] {
-                        if !payload[field].is_null() && payload[field].as_u64().is_none() {
-                            bail!("Invalid inference usage metric")
-                        }
-                        record[field] = payload[field].clone();
-                    }
-                    if record["output_tokens"]
-                        .as_u64()
-                        .is_some_and(|n| n > record["reserved_output_tokens"].as_u64().unwrap())
-                    {
-                        bail!("Recorded output exceeds reservation")
-                    }
-                    record["model"] = json!(model);
-                    record["state"] = json!("result_recorded");
+                    cycles += 1;
                 }
+                continue;
+            }
+            inference_count += 1;
+            if inference_count > 128 {
+                bail!("Inference audit exceeds bounded call history")
+            }
+            if source != "jev-r" {
+                bail!("Unexpected inference audit source")
+            }
+            if kind == "model_dispatch" {
+                let call = payload["call"]
+                    .as_u64()
+                    .ok_or_else(|| anyhow::anyhow!("Missing inference call identity"))?;
+                let role = payload["role"].as_str().unwrap_or("");
+                let allocation = payload["allocation"].as_u64().unwrap_or(0);
+                let prompt_bytes = payload["prompt_bytes"]
+                    .as_u64()
+                    .ok_or_else(|| anyhow::anyhow!("Missing inference prompt charge"))?;
+                if call != calls.len() as u64 + 1
+                    || call > 64
+                    || !(1..=16384).contains(&allocation)
+                    || prompt_bytes > 32000
+                    || !matches!(
+                        role,
+                        "interface"
+                            | "synthesizer"
+                            | "planner"
+                            | "solver"
+                            | "critic"
+                            | "reflector"
+                            | "explorer"
+                    )
+                {
+                    bail!("Invalid inference reservation history")
+                }
+                calls.insert(call,json!({"call":call,"role":role,"reserved_output_tokens":allocation,"prompt_bytes":prompt_bytes,"state":"result_not_recorded","model":null,"input_tokens":null,"output_tokens":null}));
+            } else {
+                let Some(call) = payload["call"].as_u64() else {
+                    if !payload["call"].is_null() {
+                        bail!("Invalid inference result call identity")
+                    }
+                    legacy += 1;
+                    continue;
+                };
+                let record = calls
+                    .get_mut(&call)
+                    .ok_or_else(|| anyhow::anyhow!("Inference result has no reservation"))?;
+                let text = payload["text"]
+                    .as_str()
+                    .ok_or_else(|| anyhow::anyhow!("Missing recorded inference text"))?;
+                let model = payload["node"]["model"].as_str().unwrap_or("");
+                if record["state"] != "result_not_recorded"
+                    || record["role"] != payload["node"]["role"]
+                    || model.is_empty()
+                    || model.len() > 256
+                    || text.len() > 96000
+                    || payload["node"]["content_hash"] != sha256(text.as_bytes())
+                {
+                    bail!("Invalid recorded inference result identity")
+                }
+                for field in ["input_tokens", "output_tokens"] {
+                    if !payload[field].is_null() && payload[field].as_u64().is_none() {
+                        bail!("Invalid inference usage metric")
+                    }
+                    record[field] = payload[field].clone();
+                }
+                if record["output_tokens"]
+                    .as_u64()
+                    .is_some_and(|n| n > record["reserved_output_tokens"].as_u64().unwrap())
+                {
+                    bail!("Recorded output exceeds reservation")
+                }
+                record["model"] = json!(model);
+                record["state"] = json!("result_recorded");
             }
         }
-        tx.commit()?;
-        let recorded = calls
+    }
+    let recorded = calls
+        .values()
+        .filter(|r| r["state"] == "result_recorded")
+        .count();
+    let complete = legacy == 0
+        && !calls.is_empty()
+        && recorded == calls.len()
+        && calls
             .values()
-            .filter(|r| r["state"] == "result_recorded")
-            .count();
-        let complete = legacy == 0
-            && !calls.is_empty()
-            && recorded == calls.len()
-            && calls.values().all(|r| {
-                r["input_tokens"].as_u64().is_some() && r["output_tokens"].as_u64().is_some()
-            });
-        let sum = |field: &str| -> Result<u64> {
-            calls.values().try_fold(0u64, |total, r| {
-                total
-                    .checked_add(r[field].as_u64().unwrap_or(0))
-                    .ok_or_else(|| anyhow::anyhow!("Inference audit metric overflow"))
-            })
-        };
-        let remaining = if let Some((cfg, limit, cycle_limit, durable)) = settings {
-            let used_calls = calls.len() as u64;
-            let reserved = sum("reserved_output_tokens")?;
-            let input = sum("prompt_bytes")?;
-            if legacy != 0
-                || used_calls > limit
-                || reserved > cfg.max_tokens as u64
-                || input > cfg.max_input_bytes as u64
-            {
-                bail!(
-                    "Recorded inference exceeds saved execution limits or has uncorrelated results"
-                )
-            }
-            Some(
-                json!({"calls":limit-used_calls,"reserved_output_tokens":cfg.max_tokens as u64-reserved,"prompt_bytes":cfg.max_input_bytes as u64-input,"wall_time":null,"cycles":if durable {Some(cycle_limit-cycles)} else {None},"tool_calls":if durable {Some(cfg.max_tool_calls as u64-tools)} else {None},"resume_authorized":false}),
-            )
-        } else {
-            None
-        };
-        Ok(
-            json!({"format_version":1,"task_id":task,"task_status":status,"reserved_calls":calls.len(),"recorded_results":recorded,"results_not_recorded":calls.len()-recorded,"legacy_results_without_call_identity":legacy,
+            .all(|r| r["input_tokens"].as_u64().is_some() && r["output_tokens"].as_u64().is_some());
+    let sum = |field: &str| -> Result<u64> {
+        calls.values().try_fold(0u64, |total, r| {
+            total
+                .checked_add(r[field].as_u64().unwrap_or(0))
+                .ok_or_else(|| anyhow::anyhow!("Inference audit metric overflow"))
+        })
+    };
+    let remaining = if let Some((cfg, limit, cycle_limit, durable)) = settings {
+        let used_calls = calls.len() as u64;
+        let reserved = sum("reserved_output_tokens")?;
+        let input = sum("prompt_bytes")?;
+        if legacy != 0
+            || used_calls > limit
+            || reserved > cfg.max_tokens as u64
+            || input > cfg.max_input_bytes as u64
+        {
+            bail!("Recorded inference exceeds saved execution limits or has uncorrelated results")
+        }
+        Some(
+            json!({"calls":limit-used_calls,"reserved_output_tokens":cfg.max_tokens as u64-reserved,"prompt_bytes":cfg.max_input_bytes as u64-input,"wall_time":null,"cycles":if durable {Some(cycle_limit-cycles)} else {None},"tool_calls":if durable {Some(cfg.max_tool_calls as u64-tools)} else {None},"resume_authorized":false}),
+        )
+    } else {
+        None
+    };
+    Ok(
+        json!({"format_version":1,"task_id":task,"task_status":status,"reserved_calls":calls.len(),"recorded_results":recorded,"results_not_recorded":calls.len()-recorded,"legacy_results_without_call_identity":legacy,
             "reserved_output_tokens":sum("reserved_output_tokens")?,"charged_prompt_bytes":sum("prompt_bytes")?,"reported_usage_complete":complete,
             "input_tokens":if complete {Some(sum("input_tokens")?)} else {None},"output_tokens":if complete {Some(sum("output_tokens")?)} else {None},
             "remaining_inference_admission":remaining,"calls":calls.values().collect::<Vec<_>>(),"automatic_replay":false,"resume_authorized":false,"weights_attested":false}),
-        )
-    }
+    )
 }
 
 #[cfg(test)]

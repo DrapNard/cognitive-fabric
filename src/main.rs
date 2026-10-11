@@ -46,6 +46,9 @@ enum Command {
         #[arg(long)]
         probe_registered_models: bool,
     },
+    RecoverVerifiedResult {
+        id: String,
+    },
     RecoverTasks,
     RecoverWorkers,
     StorageStatus,
@@ -446,6 +449,7 @@ async fn main() -> Result<()> {
             store.set_model_enabled(&cogfabric::models::Selection { id, version }, false)?;
             json!({"enabled":false})
         }
+        Command::RecoverVerifiedResult { id } => store.recover_verified_result(&id)?,
         Command::RecoverTasks => {
             json!({"interrupted_tasks":store.recover_tasks()?,"automatic_replay":false})
         }

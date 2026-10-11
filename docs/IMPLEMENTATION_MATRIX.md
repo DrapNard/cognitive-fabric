@@ -381,3 +381,14 @@ prevent later dispatch. Tests mutate a retrieved document after execution and
 verify retained original context/hash/order, inject snapshot failure and reject
 oversized/escaped inputs. This preserves recovery evidence; validated replay,
 remaining-time admission and actual continuation remain **Partial**.
+
+Checked saved-result recovery: **Implemented** in `src/recovery/result.rs` and
+`recover-verified-result`. Under exclusive runtime ownership, one immediate
+transaction validates the original bounded inference ledger and independently
+checks the latest solver answer against an explicit original sort/order criterion.
+Remaining verification allowance is charged; valid answers complete without new
+inference, failed checks preserve task state with durable charges, and SQL/audit
+failure rolls back. Tests cover leases, reopen durability, terminal/actor denials,
+wrong/tampered/unresolved answers, exhausted budgets, atomic failure and real CLI
+use. This completes a concrete result-reconciliation path; arbitrary graph
+continuation, missing outcomes and recovered wall-time admission remain **Partial**.

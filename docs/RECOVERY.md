@@ -235,3 +235,29 @@ Inspect it with task/task-events. Hashes establish local consistency, not owner
 resistance or external provenance. Older tasks cannot reconstruct missing context
 from mutable references. This supplies durable inputs for future continuation but
 does not restore graphs, authorize replay or establish remaining wall time.
+
+## Recover a provable saved answer
+
+`cogfabric --json recover-verified-result TASK_UUID` can finish an abandoned
+running/interrupted `sort:` or `order:` task using its latest saved solver answer.
+It obtains exclusive runtime ownership, then validates the original inference
+ledger and checks the answer against the original task criterion in one immediate
+SQLite transaction. All inference reservations must have correlated results and
+a versioned ledger must prove a remaining verification-tool allowance. Legacy,
+malformed, over-budget, unresolved and already-terminal cases fail closed.
+
+The fresh deterministic check consumes one original tool allowance. Correct
+answers atomically become completed with a verification/recovery audit. Incorrect
+answers leave task status/answer unchanged while retaining the check's tool charge
+and audit; the JSON report says verified false. Audit-write/deadline failures roll
+back the whole transaction. Repeating successful recovery refuses the now-terminal
+task. Recovery has a five-second SQLite computation deadline with the same I/O
+caveats as recover-tasks, and publishes typed recovery progress after commit.
+
+This is an explicit operator reconciliation check, not restarted inference or a
+fresh task wall allowance. It grants no model permissions and runs no shell or
+external code. No graph nodes are replayed or declared verified, and unknown
+original provider/resource metrics remain unknown. The full original objective
+is checked even if the saved solver result came from a subgoal. Only satisfying
+that original explicit criterion permits completion. General free-form answers,
+missing results and automatic graph continuation remain unsupported.
