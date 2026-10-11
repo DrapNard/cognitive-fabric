@@ -342,3 +342,10 @@ reference admission and actual continuation remain **Partial**.
 Repeated Session solve calls now share the original cycle ceiling rather than
 restarting it; a regression test checks one exhausted FAST session remains at
 one cycle and one inference call after another solve request.
+
+Shared monotonic execution deadline: **Implemented** in Engine/Session. Setup time
+consumes the original wall budget; sessions reject expired tool/cycle/model
+admission and cap request timeout by remaining time. Tests exercise slow setup,
+zero post-expiry dispatch and refusal to extend a restricted deadline. Blocking
+callbacks/I/O are not preemptible; cross-process wall-time recovery remains
+**Partial** and no fresh allowance is granted by recovery inspection.

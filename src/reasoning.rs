@@ -55,6 +55,7 @@ pub struct Session {
     store: Arc<Store>,
     backend: Arc<dyn InferenceBackend>,
     task: String,
+    deadline: Instant,
     call_limit: usize,
     cycle_limit: usize,
     complete_usage: bool,
@@ -65,6 +66,9 @@ pub struct Session {
 }
 
 impl Session {
+    pub(crate) fn restrict_deadline(&mut self, deadline: Instant) {
+        self.deadline = self.deadline.min(deadline);
+    }
     pub fn finish_metrics(&mut self) {
         if let Some(start) = self.inference_started.take() {
             self.resources.inference_ms += start.elapsed().as_secs_f64() * 1000.0;
@@ -76,6 +80,10 @@ impl Session {
         self.resources.process_lifetime_peak_rss_bytes = memory.lifetime_peak_rss_bytes;
     }
     pub fn authorize_tool(&mut self, capability: &str) -> Result<()> {
+        if Instant::now() >= self.deadline {
+            self.stop_reason = "budget_exhausted".into();
+            bail!("Task wall clock budget exhausted")
+        }
         let decision = self
             .policy
             .authorize(&self.task, "jev-plus", capability)
@@ -96,6 +104,10 @@ impl Session {
         self.store.event(&self.task, "tool_reservation", "security-kernel",
             json!({"format_version":1,"invocation":next,"actor":"jev-plus","capability":capability}))?;
         self.resources.tool_calls = next;
+        if Instant::now() >= self.deadline {
+            self.stop_reason = "budget_exhausted".into();
+            bail!("Task wall clock budget exhausted")
+        }
         Ok(())
     }
     pub fn new(
@@ -106,6 +118,7 @@ impl Session {
         mode: &str,
     ) -> Result<Self> {
         cfg.validate()?;
+        let deadline = Instant::now() + Duration::from_secs(cfg.max_wall_seconds);
         let (calls, cycles) = match mode {
             "fast" => (1, 1),
             "standard" => (4, 1),
@@ -132,6 +145,7 @@ impl Session {
             policy.snapshot(),
         )?;
         Ok(Self {
+            deadline,
             call_limit: calls.min(cfg.max_calls),
             cycle_limit: cycles.min(cfg.max_cycles),
             cfg,
@@ -284,7 +298,8 @@ impl Session {
             .cfg
             .max_tokens
             .saturating_sub(self.resources.reserved_output_tokens);
-        if self.resources.calls as usize >= self.call_limit
+        if Instant::now() >= self.deadline
+            || self.resources.calls as usize >= self.call_limit
             || remaining < allocation
             || prompt.len()
                 > self
@@ -310,9 +325,14 @@ impl Session {
         let previous_output = self.resources.output_tokens.take();
         let previous_queue = self.resources.queue_wait_ms.take();
         self.store.event(&self.task,"model_dispatch","jev-r",json!({"role":role,"call":self.resources.calls,"allocation":allocation,"prompt_bytes":prompt.len()}))?;
+        if Instant::now() >= self.deadline {
+            self.stop_reason = "budget_exhausted".into();
+            return Ok(None);
+        }
         self.inference_started = Some(Instant::now());
         let report: Generation = tokio::time::timeout(
-            Duration::from_secs(self.cfg.timeout_seconds),
+            Duration::from_secs(self.cfg.timeout_seconds)
+                .min(self.deadline.saturating_duration_since(Instant::now())),
             backend.generate_for(&self.task, role, prompt, allocation),
         )
         .await
@@ -559,7 +579,7 @@ impl Session {
         mode: &str,
         collective: bool,
     ) -> Result<String> {
-        if self.resources.cycles as usize >= self.cycle_limit {
+        if Instant::now() >= self.deadline || self.resources.cycles as usize >= self.cycle_limit {
             self.stop_reason = "budget_exhausted".into();
             return Ok("No reasoning cycle available".into());
         }
@@ -629,6 +649,10 @@ impl Session {
             .cycle_limit
             .saturating_sub(self.resources.cycles as usize)
         {
+            if Instant::now() >= self.deadline {
+                self.stop_reason = "budget_exhausted".into();
+                break;
+            }
             let next = self.resources.cycles + 1;
             self.store.event(
                 &self.task,
@@ -707,7 +731,8 @@ impl Session {
                     break;
                 }
             };
-            if self.resources.cycles as usize >= self.cycle_limit {
+            if Instant::now() >= self.deadline || self.resources.cycles as usize >= self.cycle_limit
+            {
                 self.stop_reason = "cycle_limit".into();
                 break;
             }
@@ -956,6 +981,42 @@ mod tests {
         assert!(events.iter().any(|event| event["kind"] == "policy"
             && event["payload"]["allowed"] == false
             && event["payload"]["task_id"] == task));
+    }
+
+    #[tokio::test]
+    async fn expired_session_rejects_tools_cycles_and_model_dispatch() {
+        let store = Arc::new(Store::in_memory().unwrap());
+        let task = store.create_task("fixture", "fast").unwrap();
+        let mut session = Session::new(
+            Config::default(),
+            store.clone(),
+            Arc::new(Script(Mutex::new(VecDeque::new()))),
+            task.clone(),
+            "fast",
+        )
+        .unwrap();
+        let expired = Instant::now() - Duration::from_secs(1);
+        session.restrict_deadline(expired);
+        session.restrict_deadline(Instant::now() + Duration::from_secs(60));
+        assert!(session.authorize_tool("knowledge.search").is_err());
+        assert!(session
+            .call("solver", "fixture", 384)
+            .await
+            .unwrap()
+            .is_none());
+        session.solve("fixture", "", "fast").await.unwrap();
+        assert_eq!(session.resources.calls, 0);
+        assert_eq!(session.resources.cycles, 0);
+        assert_eq!(session.resources.tool_calls, 0);
+        assert_eq!(session.stop_reason, "budget_exhausted");
+        assert!(!store.task(&task).unwrap()["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| matches!(
+                e["kind"].as_str(),
+                Some("model_dispatch" | "tool_reservation" | "cycle_reservation")
+            )));
     }
 
     #[tokio::test]

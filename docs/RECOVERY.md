@@ -197,3 +197,20 @@ this completeness marker, so zero observed reservations cannot imply zero usage.
 A reservation proves admission only, not that an operation ran or succeeded.
 Remaining resource counts do not grant permission, authorize replay or prove that
 an interrupted external process stopped. Actual continuation remains unimplemented.
+
+## Runtime deadline enforcement
+
+Engine wall time now starts before model pinning and setup, and Session receives
+the same monotonic deadline. Expired setup finishes exhausted without polling
+execution; ready cancellation retains priority. Session independently refuses new
+tool admissions, reasoning cycles and inference after its deadline. Its deadline
+can only be tightened, and each inference timeout is capped by remaining task time.
+Reservation writes that consume the remaining time retain their charges while
+preventing subsequent tool/model dispatch.
+
+This prevents setup or repeated Session entry points from adding execution time.
+It cannot preempt synchronous Rust callbacks, database I/O, filesystem operations
+or blocking custom backends, and shutdown/final audit writes may outlast the
+execution deadline. Monotonic Instant values cannot be restored across processes;
+remaining recovery wall time stays unknown. No clock-based resume authorization
+or hard real-time guarantee is implied.

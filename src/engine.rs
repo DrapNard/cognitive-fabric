@@ -186,8 +186,9 @@ impl Engine {
         if let Some(reference) = &options.conversation_ref {
             uuid::Uuid::parse_str(reference)?;
         }
-        let model_registration = self.store.pin_model(&self.cfg)?;
         let start = Instant::now();
+        let deadline = start + Duration::from_secs(self.cfg.max_wall_seconds);
+        let model_registration = self.store.pin_model(&self.cfg)?;
         let backend = self.backend.pin()?.unwrap_or_else(|| self.backend.clone());
         if self.process_inference {
             let modules = backend.modules()?;
@@ -236,6 +237,7 @@ impl Engine {
             id.clone(),
             mode,
         )?;
+        session.restrict_deadline(deadline);
         self.store.event(&id,"execution_options","runtime",json!({"format_version":1,
             "profile":profile,"explain":options.explain,"conversation_ref":options.conversation_ref}))?;
         self.store.event(
@@ -546,10 +548,15 @@ impl Engine {
             }
             Ok((answer, status.to_string()))
         };
+        let deadline_reached = async {
+            if Instant::now() < deadline {
+                tokio::time::sleep_until(tokio::time::Instant::from_std(deadline)).await;
+            }
+        };
         let result: Result<(String, String)> = tokio::select! {
             biased;
             _=cancel=>Ok(("Task cancelled".into(),"cancelled".into())),
-            _=tokio::time::sleep(Duration::from_secs(self.cfg.max_wall_seconds))=>Ok(("Task wall clock budget exhausted".into(),"exhausted".into())),
+            _=deadline_reached=>Ok(("Task wall clock budget exhausted".into(),"exhausted".into())),
             result=execution=>result,
         };
         let result = if let Some(process) = &process {
@@ -1072,6 +1079,48 @@ mod tests {
 #[cfg(test)]
 mod execution_settings_tests {
     use super::*;
+    struct SlowPin;
+    impl InferenceBackend for SlowPin {
+        fn pin(&self) -> Result<Option<Arc<dyn InferenceBackend>>> {
+            std::thread::sleep(Duration::from_millis(1100));
+            Ok(None)
+        }
+        fn generate<'a>(
+            &'a self,
+            _role: &'a str,
+            _prompt: &'a str,
+            _tokens: usize,
+        ) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = Result<crate::backend::Generation>> + Send + 'a>,
+        > {
+            panic!("Inference must not start after setup consumes the deadline")
+        }
+    }
+    #[tokio::test]
+    async fn setup_time_consumes_original_wall_budget_without_inference() {
+        let store = Arc::new(Store::in_memory().unwrap());
+        let cfg = Config {
+            backend: "openai-local".into(),
+            interpret_goals: false,
+            max_wall_seconds: 1,
+            ..Config::default()
+        };
+        let mut engine = Engine::with_backend(cfg, store.clone(), Arc::new(SlowPin));
+        // Exercise setup latency directly; the normal Broker pins its registry.
+        engine.backend = Arc::new(SlowPin);
+        let outcome = engine.run("Explain ownership", "fast").await.unwrap();
+        assert_eq!(outcome.status, "exhausted");
+        assert_eq!(outcome.calls, 0);
+        assert_eq!(outcome.resources.tool_calls, 0);
+        assert!(!store.task(&outcome.task_id).unwrap()["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| matches!(
+                e["kind"].as_str(),
+                Some("model_dispatch" | "tool_reservation" | "cycle_reservation")
+            )));
+    }
     #[tokio::test]
     async fn rejects_invalid_embedding_configuration_before_creating_tasks() {
         for invalid in 0..3 {

@@ -431,3 +431,10 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   rejecting forged, discontinuous or over-budget charges.
 - Keep older histories unknown and preserve deny-by-default permissions.
 - Enforce the original cycle ceiling across repeated solve calls on one Session.
+
+### Shared task deadlines
+
+- Charge setup time to the original task wall budget and share its monotonic
+  deadline with reasoning sessions.
+- Reject expired tool/cycle/inference admission and cap inference timeouts by
+  remaining task time, preserving cancellation priority.

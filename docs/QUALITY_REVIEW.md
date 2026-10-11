@@ -1101,3 +1101,14 @@ restart the session cycle budget, and durable auditing rejects forged sources,
 capabilities, numbering, incompatible settings and cycle overdraw. Actual runtime
 cycles are reconstructed. Wall time remains unavailable and no continuation or
 external-operation completion is inferred from reservation records.
+
+## Shared monotonic task deadline
+
+FlatBuffers 25.12.19 formatting, all-target check, 199 all-target tests (189
+library and 10 integration), and Clippy with denied warnings pass. A slow-pinning
+backend fixture consumes the full one-second setup budget and verifies exhausted
+status with no tool, cycle or model dispatch. An expired standalone Session
+rejects all three admissions, and a later attempted deadline extension has no
+effect. Request timeouts are capped by remaining monotonic allowance. Synchronous
+callbacks/I/O are not preemptible, cleanup may exceed execution time, and no
+cross-process clock restoration or automatic resumption is claimed.
