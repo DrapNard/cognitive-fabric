@@ -188,3 +188,26 @@ database; later I/O/sync failures may leave a partial newly reserved directory o
 quarantine for inspection. Existing workspaces are never overwritten. Neural files,
 older-schema migrations and general portable external artifact bundles remain
 separate work. The earlier database-only sections describe default options.
+
+## Explicit older-schema migration
+
+`restore-database ... --migrate-schema` permits recognized schema versions 1–5.
+The default still requires current schema 6. Future schemas and unversioned/schema-0
+files remain rejected even with opt-in. The source checksum is verified before
+migration; only the newly staged private copy is upgraded through the existing
+transactional Store migrations. The copy is checked again, checkpointed and
+returned to standalone DELETE-journal mode before publication. No tasks are replayed
+and no existing workspace is replaced. Migration failure publishes no final database.
+
+Restore records distinguish `source_schema_version` from resulting `schema_version`.
+The source checksum/bytes remain archive provenance; migrated destination bytes
+will differ. The configured database page ceiling and checked ten-second overall
+restore deadline apply; SQLite progress callbacks interrupt long migration SQL.
+Filesystem sync and short SQLite operations are not hard real-time bounded.
+Configuration/RAG restoration can be combined only when their required metadata
+is actually present. Old snapshots do not gain missing configuration or artifacts.
+
+Regression fixtures cover versions 1–5, preserved source bytes/running state,
+standalone output and transactional failure; the CLI fixture verifies the flag.
+Earlier notes describing older migrations as separate work are superseded by this
+explicit recognized-version option. Unknown/custom schemas still need review.

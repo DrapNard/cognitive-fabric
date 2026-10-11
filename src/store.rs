@@ -139,6 +139,29 @@ impl Store {
             crate::storage::DEFAULT_DATABASE_BYTES,
         )
     }
+    pub(crate) fn migrate_snapshot(
+        path: &Path,
+        maximum: u64,
+        started: std::time::Instant,
+    ) -> Result<()> {
+        let db = Connection::open_with_flags(
+            path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE | rusqlite::OpenFlags::SQLITE_OPEN_NOFOLLOW,
+        )?;
+        db.pragma_update(None, "trusted_schema", false)?;
+        db.progress_handler(
+            1000,
+            Some(move || started.elapsed() > std::time::Duration::from_secs(10)),
+        );
+        let store = Self::initialize(db, maximum)?;
+        let db = store.lock()?;
+        db.execute_batch("PRAGMA wal_checkpoint(TRUNCATE); PRAGMA journal_mode=DELETE;")?;
+        let check: String = db.query_row("PRAGMA quick_check(1)", [], |r| r.get(0))?;
+        if check != "ok" {
+            bail!("Migrated snapshot failed consistency checking")
+        }
+        Ok(())
+    }
     fn initialize(mut db: Connection, maximum_bytes: u64) -> Result<Self> {
         crate::storage::configure(&db, maximum_bytes)?;
         db.busy_timeout(std::time::Duration::from_secs(5))?;

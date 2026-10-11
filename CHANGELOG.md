@@ -360,3 +360,10 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   private read-only quarantine and transactional candidate path rebasing.
 - Reject missing/tampered/oversized payloads and candidate triggers; preserve candidate
   status and keep neural weights outside backups. Default backups omit payloads.
+
+### Explicit snapshot schema migration
+
+- Restore recognized schema-1–5 snapshots only with migrate-schema opt-in, applying
+  bounded transactional migrations to staging without modifying the source.
+- Record source/result schemas and preserve running tasks without replay; reject
+  unknown versions and publish nothing on migration failure.

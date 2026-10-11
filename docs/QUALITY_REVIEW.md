@@ -991,3 +991,14 @@ candidate triggers, and payload omission on default re-backup. The CLI integrati
 exercises both explicit options alongside configuration recovery. Full tests use
 host access for sockets/processes. Neural files and arbitrary external archives
 are excluded; no automatic promotion, weight safety or full restoration is claimed.
+
+## Explicit schema migration restore verification
+
+FlatBuffers 25.12.19 checks pass: formatting, all-target check, full all-target
+173 tests (164 library, three authentication, five process, one restore CLI), and
+Clippy with warnings denied. Fixtures cover source schemas 1–5, byte-preserved
+originals, current standalone output, running tasks without replay, default refusal
+and conflicting migration failure before publication. CLI flag coverage passes.
+The final diagnostic wording change is additionally checked by restore tests and
+Clippy. Future/unversioned schemas remain unsupported, and tests do not establish
+validity of arbitrary custom databases solely from their version number.

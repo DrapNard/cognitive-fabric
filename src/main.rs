@@ -68,6 +68,8 @@ enum Command {
         restore_configuration: bool,
         #[arg(long)]
         restore_rag_artifacts: bool,
+        #[arg(long)]
+        migrate_schema: bool,
     },
     RetentionPreview {
         #[arg(long)]
@@ -319,16 +321,18 @@ async fn main() -> Result<()> {
         destination,
         restore_configuration,
         restore_rag_artifacts,
+        migrate_schema,
     } = &cli.command
     {
         output(
-            &cogfabric::restore::database_with_options(
+            &cogfabric::restore::database_with_migration(
                 &cfg,
                 snapshot,
                 checksum,
                 destination,
                 *restore_configuration,
                 *restore_rag_artifacts,
+                *migrate_schema,
             )?,
             cli.json,
         )?;

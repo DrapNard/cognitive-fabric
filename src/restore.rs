@@ -14,6 +14,7 @@ use std::{
 
 #[derive(Debug, Serialize)]
 pub struct Restored {
+    pub source_schema_version: u32,
     pub rag_artifacts_restored: Option<usize>,
     pub format_version: u16,
     pub restore_id: String,
@@ -58,6 +59,25 @@ pub fn database_with_options(
     destination: &Path,
     restore_configuration: bool,
     restore_rag: bool,
+) -> Result<Restored> {
+    database_with_migration(
+        cfg,
+        snapshot,
+        checksum,
+        destination,
+        restore_configuration,
+        restore_rag,
+        false,
+    )
+}
+pub fn database_with_migration(
+    cfg: &Config,
+    snapshot: &Path,
+    checksum: &str,
+    destination: &Path,
+    restore_configuration: bool,
+    restore_rag: bool,
+    migrate: bool,
 ) -> Result<Restored> {
     security::authorize("human-cli", "storage.restore")?;
     cfg.validate()?;
@@ -153,8 +173,8 @@ pub fn database_with_options(
             bail!("Snapshot failed SQLite consistency checking")
         }
         let schema: u32 = db.pragma_query_value(None, "user_version", |row| row.get(0))?;
-        if schema != 6 {
-            bail!("Restore requires the current schema version 6; older snapshots need a separately reviewed migration")
+        if schema != 6 && (!migrate || !(1..6).contains(&schema)) {
+            bail!("Restore requires schema version 6 or explicit migration of recognized versions 1-5")
         }
         let running = db.query_row(
             "SELECT count(*) FROM tasks WHERE status='running'",
@@ -199,6 +219,15 @@ pub fn database_with_options(
         {
             bail!("Restore directory identity changed")
         }
+        if schema != 6 {
+            crate::store::Store::migrate_snapshot(&temporary, cfg.max_database_bytes, started)?;
+            target.sync_all()?;
+            if target.metadata()?.len() > cfg.max_database_bytes
+                || started.elapsed() > Duration::from_secs(10)
+            {
+                bail!("Schema migration exceeds restore bounds")
+            }
+        }
         let rag_artifacts_restored = if restore_rag {
             let mut writable = Connection::open_with_flags(
                 &temporary,
@@ -235,13 +264,14 @@ pub fn database_with_options(
         }
         fs::File::open(destination)?.sync_all()?;
         let report = Restored {
+            source_schema_version: schema,
             rag_artifacts_restored,
             format_version: 1,
             restore_id: uuid::Uuid::new_v4().to_string(),
             home: destination.into(),
             source_checksum: actual,
             bytes,
-            schema_version: schema,
+            schema_version: 6,
             running_tasks_not_replayed: running,
             configuration_restored: restore_configuration,
             external_artifacts_restored: false,
@@ -279,6 +309,108 @@ pub fn database_with_options(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn migrates_known_older_snapshots_only_with_explicit_opt_in() {
+        use std::os::unix::fs::PermissionsExt;
+        let root =
+            std::env::temp_dir().join(format!("fabric-restore-migration-{}", uuid::Uuid::new_v4()));
+        let cfg = Config {
+            home: root.join("source"),
+            ..Config::default()
+        };
+        cfg.prepare().unwrap();
+        let store = crate::store::Store::open(&cfg.db()).unwrap();
+        let task = store
+            .create_task("Do not replay this task", "fast")
+            .unwrap();
+        let backup = crate::backups::create(&cfg, &store).unwrap();
+        let legacy = root.join("schema-five.db");
+        fs::copy(&backup.path, &legacy).unwrap();
+        fs::set_permissions(&legacy, fs::Permissions::from_mode(0o600)).unwrap();
+        let db = Connection::open(&legacy).unwrap();
+        db.execute_batch("DROP INDEX idx_tasks_status; DROP INDEX event_conversation_task; DROP TABLE retention_audit; PRAGMA user_version=5;").unwrap();
+        drop(db);
+        let bytes = fs::read(&legacy).unwrap();
+        let hash = crate::store::sha256(&bytes);
+        assert!(database(&cfg, &legacy, &hash, &root.join("default-rejected")).is_err());
+        let destination = root.join("migrated");
+        let report =
+            database_with_migration(&cfg, &legacy, &hash, &destination, false, false, true)
+                .unwrap();
+        assert_eq!(report.source_schema_version, 5);
+        assert_eq!(report.schema_version, 6);
+        assert_eq!(report.running_tasks_not_replayed, 1);
+        assert_eq!(fs::read(&legacy).unwrap(), bytes);
+        let db = Connection::open_with_flags(
+            destination.join("fabric.sqlite3"),
+            OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .unwrap();
+        let schema: u32 = db
+            .pragma_query_value(None, "user_version", |r| r.get(0))
+            .unwrap();
+        assert_eq!(schema, 6);
+        let journal: String = db
+            .pragma_query_value(None, "journal_mode", |r| r.get(0))
+            .unwrap();
+        assert_eq!(journal, "delete");
+        let status: String = db
+            .query_row("SELECT status FROM tasks WHERE id=?1", [task], |r| r.get(0))
+            .unwrap();
+        assert_eq!(status, "running");
+        drop(db);
+        for version in 1..5 {
+            let source = root.join(format!("schema-{version}.db"));
+            fs::write(&source, &bytes).unwrap();
+            let db = Connection::open(&source).unwrap();
+            db.execute_batch("DROP TABLE model_audit; DROP TABLE model_manifests;")
+                .unwrap();
+            if version < 4 {
+                db.execute_batch(
+                    "DROP TRIGGER memory_insert; DROP TABLE memory_index; DROP TABLE memories;",
+                )
+                .unwrap();
+            }
+            if version < 3 {
+                db.execute_batch("DROP TABLE evaluation_datasets;").unwrap();
+            }
+            if version < 2 {
+                db.execute_batch("DROP TABLE expert_audit; DROP TABLE expert_manifests; ALTER TABLE skills DROP COLUMN enabled;").unwrap();
+            }
+            db.pragma_update(None, "user_version", version).unwrap();
+            drop(db);
+            let original = fs::read(&source).unwrap();
+            let hash = crate::store::sha256(&original);
+            let output = root.join(format!("migrated-{version}"));
+            let report =
+                database_with_migration(&cfg, &source, &hash, &output, false, false, true).unwrap();
+            assert_eq!(report.source_schema_version, version);
+            assert_eq!(report.schema_version, 6);
+            assert_eq!(fs::read(&source).unwrap(), original);
+            let db = Connection::open_with_flags(
+                output.join("fabric.sqlite3"),
+                OpenFlags::SQLITE_OPEN_READ_ONLY,
+            )
+            .unwrap();
+            assert_eq!(
+                db.pragma_query_value(None, "user_version", |r| r.get::<_, u32>(0))
+                    .unwrap(),
+                6
+            );
+        }
+        let db = Connection::open(&legacy).unwrap();
+        db.execute_batch("CREATE TABLE retention_audit(invalid TEXT);")
+            .unwrap();
+        drop(db);
+        let hash = crate::store::sha256(&fs::read(&legacy).unwrap());
+        let rejected = root.join("migration-failed");
+        assert!(
+            database_with_migration(&cfg, &legacy, &hash, &rejected, false, false, true).is_err()
+        );
+        assert!(!rejected.join("fabric.sqlite3").exists());
+        drop(store);
+        fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn restores_explicit_configuration_and_rejects_invalid_embedded_settings() {
         let root =

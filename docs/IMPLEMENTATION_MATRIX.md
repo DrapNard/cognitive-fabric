@@ -260,3 +260,11 @@ Tests verify checksummed read-only payload roundtrip, canonical path rebasing wi
 status changes, malformed/missing/oversized payload and trigger rejection, opt-in
 re-backup behavior and actual CLI flags. Neural/unrelated external files remain
 excluded; general full external artifact restoration stays **Partial**.
+
+Older snapshot migration: **Implemented** for explicit `--migrate-schema` on versions
+1–5. `src/store.rs::migrate_snapshot` applies existing transactional migrations to
+checked staging only, with limits/progress interruption and standalone publication.
+`src/restore.rs` tests all recognized versions, source preservation, no task replay
+and failure before publication; CLI integration exercises the option. Future and
+unversioned schemas remain rejected. This supersedes prior older-schema blockers,
+while arbitrary external/neural artifacts remain outside the recovery implementation.

@@ -199,3 +199,8 @@ Optional `backup --include-rag-artifacts` and restore `--restore-rag-artifacts` 
 preserve checked RAG candidate files with private quarantine and rebased paths.
 Candidate status and promotion boundaries are preserved. Neural and unrelated
 external artifacts remain excluded; see `STORAGE.md` for scope and failure handling.
+
+Recognized schema-1–5 snapshots now support explicit `--migrate-schema` restoration
+through bounded existing migrations on a new staged copy. Source and destination
+schema versions are recorded; original files and task state are preserved. Unknown
+and unversioned snapshots remain rejected. See `STORAGE.md`.
