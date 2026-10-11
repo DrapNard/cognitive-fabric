@@ -163,3 +163,9 @@ The demo backend is not a sorting model and is not evidence of live-model qualit
 
 Release gate evidence and remaining work are tracked in
 [the release audit](docs/RELEASE_AUDIT.md). This is still a pre-release.
+
+Operator-approved interrupted advisory tasks can use
+`cogfabric --home STATE resume-task TASK_UUID --human-approve`. Admission preserves
+original same-boot deadlines and budgets, refuses unresolved calls and only
+supports the default direct Full/Collective pre-solver graph phase. See
+[recovery documentation](docs/RECOVERY.md) before using this command.

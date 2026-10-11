@@ -2,6 +2,15 @@
 
 All notable changes are documented here in English.
 
+### Explicit interrupted advisory continuation
+
+- Resume validated pending advisory nodes without repeating completed steps or
+  resetting original resource/deadline ceilings; require operator approval.
+- Correlate planner graphs, saved context and solver results with charged calls;
+  refuse unsupported or unresolved checkpoints and preserve fresh authorization.
+- Atomically persist terminal reports and typed outcomes; disclose partial timing
+  and backend identity limits. General multi-phase recovery remains incomplete.
+
 ### Boot-bound recovery deadline evidence
 
 - Persist original pre-setup Linux boot-time snapshots and reconstruct remaining

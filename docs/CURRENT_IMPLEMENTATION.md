@@ -246,3 +246,11 @@ to compiled integer-sort/dependency-order verifiers. Existing immutable lifecycl
 dependency validation and task pinning apply; actual proof events record the
 selected manifest version separately from the compiled criterion version. No
 imported code or new permissions are accepted. See EXPERTS.md.
+
+
+Explicit `resume-task --human-approve` now resumes validated pre-solver advisory
+work using original resource charges and same-boot deadline evidence. Completed
+nodes remain advisory; pending nodes and whole-goal verification use fresh kernel
+authorization. Default direct Full/Collective tasks are tested through local HTTP.
+Managed/registered/custom backends and general multi-phase/repeated resumption
+remain unsupported. See `RECOVERY.md`; current mandatory suite has 232 tests.

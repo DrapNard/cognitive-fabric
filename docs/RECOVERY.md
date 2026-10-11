@@ -310,3 +310,41 @@ This closes same-boot elapsed-time reconstruction only. Task state, original
 permissions, immutable context/dependencies, all reservations and outstanding
 outcomes still require validation before any continuation. `resume_authorized`
 remains false; no inference or graph nodes are replayed by inspection.
+
+
+## Explicit advisory graph continuation
+
+`cogfabric --home STATE resume-task TASK_UUID --human-approve` can continue a
+recorded advisory graph before the original whole-goal solver starts. It holds an
+exclusive runtime lease throughout execution. Admission uses one immediate
+transaction with a five-second SQLite progress deadline. The saved context hashes,
+chronological call anchor, planner output, graph definitions, completed-node
+results and original inference/resource ledger must agree. Unresolved calls and
+running nodes are refused; completed advisory nodes remain unverified data.
+
+Only Full/Collective tasks using the original default direct inference module are
+currently supported. Registered models, managed workers, custom module versions,
+conversation references, explanation synthesis and graphs already in whole-goal
+reasoning are refused. A same-boot original deadline with positive remaining time
+is required. Rebooted, expired and legacy clocks never receive a new allowance.
+The restored backend uses the original saved configuration; this is no attestation
+that the provider still serves identical weights. Fresh kernel authorization is
+constructed rather than restored from model text or saved permissions. Compiled
+core verification is used; historical checker expert metadata is not reselected.
+
+Completed steps are reused, pending steps run under the original remaining calls,
+output/input reservations and tool limits, then normal whole-goal solving and
+independent verification proceed. If remaining decomposition is unaffordable, the
+existing budgeted whole-goal fallback applies. Reports expose cumulative charges,
+while inference/queue timing covers this continuation only. Unavailable prior
+provider usage stays unavailable. Final task status, report and typed outcome are
+committed atomically. Cancellation preserves dispatched reservations; failed
+persistence never retries an external request. Interrupted or repeated continuation
+is not generally supported: new context snapshots, failed nodes or unresolved
+outcomes require inspection and fail admission rather than being replayed.
+
+Tests cover real local HTTP continuation, reuse without repeated planner/completed
+steps, cumulative charges, leases/operator approval, corrupted graph/context,
+unresolved calls, expired/unknown clocks, unsupported backends, cancellation and
+terminal audit rollback. The HTTP server is a deterministic fixture, not a real
+model-quality evaluation. General graph recovery remains partial.

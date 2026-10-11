@@ -1314,3 +1314,14 @@ a fresh deadline. Optional Linux clock evidence adds one bounded fixed-path boot
 UUID read and kernel clock observation at task start/audit, without network or
 model calls. It is not attested time, portable restoration across boots or replay
 authority. Resume authorization remains false and graph continuation is incomplete.
+
+## Explicit advisory continuation (2026-10-11)
+
+The all-target offline suite passed 232 tests (217 library, 15 integration) with
+FlatBuffers compiler/crate 25.12.19. Five new continuation tests exercise pending
+node reuse, real local HTTP responses, checkpoint corruption, original deadlines,
+unsupported configuration, cancellation, exclusive leases and terminal audit
+rollback. After tightening the terminal running-task anchor, all five continuation
+tests passed again. Formatting, all-target checking and Clippy with warnings denied
+passed. HTTP results are deterministic fixtures; no live-model quality is claimed.
+General task/backend/phase resumption and release readiness remain incomplete.

@@ -47,6 +47,11 @@ enum Command {
         #[arg(long)]
         probe_registered_models: bool,
     },
+    ResumeTask {
+        id: String,
+        #[arg(long)]
+        human_approve: bool,
+    },
     RecoverVerifiedResult {
         id: String,
     },
@@ -529,6 +534,12 @@ async fn main() -> Result<()> {
             changed.inference_process = enabled;
             changed.save()?;
             json!({"inference_process":enabled,"sandboxed":false})
+        }
+        Command::ResumeTask { id, human_approve } => {
+            cogfabric::recovery::continuation::resume(store.clone(), &id, human_approve, async {
+                let _ = tokio::signal::ctrl_c().await;
+            })
+            .await?
         }
         Command::ResidencyLoad {
             api_base,

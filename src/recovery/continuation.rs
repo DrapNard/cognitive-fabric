@@ -1,0 +1,643 @@
+//! Explicit continuation of a fully recorded pre-solver advisory graph.
+use super::{graph, inference, ExecutionLease};
+use crate::{
+    backend::{InferenceBackend, LocalBackend},
+    config::Config,
+    planning::Subtask,
+    reasoning::{Node, Resources, RestoredState, Session},
+    security,
+    store::{sha256, Store},
+};
+use anyhow::{bail, Result};
+use serde_json::{json, Value};
+use std::{
+    collections::BTreeMap,
+    sync::Arc,
+    time::{Duration, Instant},
+};
+
+struct Checkpoint {
+    cfg: Config,
+    query: String,
+    context: String,
+    mode: String,
+    subtasks: Vec<Subtask>,
+    state: RestoredState,
+}
+
+fn prepare(db: &rusqlite::Connection, task: &str) -> Result<Checkpoint> {
+    let (status, graph, subtasks) = graph::graph_from(db, task)?;
+    if !matches!(status.as_str(), "running" | "interrupted") {
+        bail!("Task is not abandoned or interrupted")
+    }
+    let graph = graph.ok_or_else(|| anyhow::anyhow!("No saved advisory graph"))?;
+    if subtasks
+        .iter()
+        .any(|n| !matches!(n.state.as_str(), "pending" | "unverified"))
+    {
+        bail!("Continuation requires pending or recorded advisory nodes; running outcomes need reconciliation")
+    }
+    let query: String = db.query_row(
+        "SELECT CASE WHEN length(CAST(query AS BLOB))<=12000 THEN query END FROM tasks WHERE id=?1",
+        [task],
+        |r| r.get(0),
+    )?;
+    let audit = inference::audit_from(db, task)?;
+    if audit["results_not_recorded"] != 0 || audit["legacy_results_without_call_identity"] != 0 {
+        bail!("Unresolved inference prevents graph continuation")
+    }
+    let mut snapshots = BTreeMap::<String, Value>::new();
+    let mut nodes = Vec::new();
+    let mut solver_texts = BTreeMap::new();
+    let mut planner_texts = BTreeMap::new();
+    let mut bytes = 0usize;
+    let mut stmt = db.prepare("SELECT kind,CASE WHEN length(CAST(source AS BLOB))<=64 THEN source END,CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN payload END FROM events WHERE task_id=?1 AND kind IN ('execution_settings','execution_options','module_snapshot','reasoning_context','reasoning') ORDER BY id LIMIT 70")?;
+    let mut rows = stmt.query([task])?;
+    let mut count = 0;
+    while let Some(row) = rows.next()? {
+        count += 1;
+        let kind: String = row.get(0)?;
+        let source: String = row.get(1)?;
+        let raw: String = row.get(2)?;
+        bytes += raw.len();
+        if count > 69 || bytes > 8_000_000 {
+            bail!("Checkpoint exceeds bounded history")
+        }
+        let payload: Value = serde_json::from_str(&raw)?;
+        if kind == "reasoning" {
+            if source != "jev-r" {
+                bail!("Invalid saved reasoning source")
+            }
+            let node: Node = serde_json::from_value(payload["node"].clone())?;
+            if node.id != nodes.len()
+                || node.parent != nodes.last().map(|n: &Node| n.id)
+                || node.cycle != 0
+            {
+                bail!("Saved reasoning nodes are not contiguous")
+            }
+            if node.role == "planner" {
+                planner_texts.insert(
+                    payload["call"].as_u64().unwrap_or(0),
+                    payload["text"].as_str().unwrap_or("").to_string(),
+                );
+            }
+            if node.role == "solver" {
+                solver_texts.insert(
+                    payload["call"].as_u64().unwrap_or(0),
+                    payload["text"].as_str().unwrap_or("").to_string(),
+                );
+            }
+            nodes.push(node);
+        } else {
+            let expected = match kind.as_str() {
+                "module_snapshot" => "fabric",
+                "reasoning_context" => "jev-r",
+                _ => "runtime",
+            };
+            if source != expected || snapshots.insert(kind, payload).is_some() {
+                bail!("Invalid or repeated checkpoint snapshot")
+            }
+        }
+    }
+    let settings = snapshots
+        .get("execution_settings")
+        .ok_or_else(|| anyhow::anyhow!("Missing original settings"))?;
+    let cfg: Config = serde_json::from_value(settings["configuration"].clone())?;
+    cfg.validate()?;
+    if cfg.inference_process || cfg.model_registration.is_some() {
+        bail!("Managed or registered backend continuation is not supported yet")
+    }
+    let mode = settings["mode"].as_str().unwrap_or("").to_string();
+    let options = snapshots
+        .get("execution_options")
+        .ok_or_else(|| anyhow::anyhow!("Missing execution options"))?;
+    if options["format_version"] != 1
+        || !matches!(options["profile"].as_str(), Some("full" | "collective"))
+        || options["explain"] != false
+        || !options["conversation_ref"].is_null()
+    {
+        bail!("Unsupported continuation execution options")
+    }
+    let modules = snapshots
+        .get("module_snapshot")
+        .ok_or_else(|| anyhow::anyhow!("Missing pinned modules"))?;
+    let expected =
+        json!([{"id":"inference.local","version":"1.0.0","roles":crate::fabric::protocol::ROLES}]);
+    if modules["modules"] != expected {
+        bail!("Unsupported pinned inference modules")
+    }
+    let context = snapshots
+        .get("reasoning_context")
+        .ok_or_else(|| anyhow::anyhow!("Missing immutable context"))?;
+    let text = context["context"]
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("Missing context bytes"))?;
+    if context["format_version"] != 1
+        || context["objective"] != query
+        || text.len() > 96000
+        || context["objective_hash"] != sha256(query.as_bytes())
+        || context["context_hash"] != sha256(text.as_bytes())
+        || context["prompt_base_hash"]
+            != sha256(Session::prompt_base(&query, text, true)?.as_bytes())
+        || context["untrusted_data"] != true
+        || context["permissions_restorable"] != false
+        || context["cycles_before"] != 0
+    {
+        bail!("Invalid original reasoning context")
+    }
+    let calls_before = context["calls_before"]
+        .as_u64()
+        .ok_or_else(|| anyhow::anyhow!("Missing context charge anchor"))?;
+    let recorded_before: u64 = db.query_row("SELECT count(*) FROM events WHERE task_id=?1 AND kind='model_dispatch' AND id < (SELECT id FROM events WHERE task_id=?1 AND kind='reasoning_context')", [task], |r| r.get(0))?;
+    if calls_before != recorded_before {
+        bail!("Context charge anchor differs from dispatch history")
+    }
+    let tail = audit["calls"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|c| c["call"].as_u64().unwrap() > calls_before)
+        .collect::<Vec<_>>();
+    if tail.first().is_none_or(|c| c["role"] != "planner")
+        || tail.iter().skip(1).any(|c| c["role"] != "solver")
+    {
+        bail!("Checkpoint is not in the pre-solver graph phase")
+    }
+    let planner = planner_texts
+        .get(&tail[0]["call"].as_u64().unwrap())
+        .ok_or_else(|| anyhow::anyhow!("Missing recorded planner result"))?;
+    if serde_json::to_value(crate::planning::Plan::parse(planner)?)?
+        != serde_json::to_value(&graph)?
+    {
+        bail!("Saved graph differs from charged planner result")
+    }
+    let completed = graph
+        .order()?
+        .into_iter()
+        .filter(|i| subtasks[*i].state == "unverified")
+        .collect::<Vec<_>>();
+    if tail.len() != completed.len() + 1 {
+        bail!("Saved graph and inference outcomes do not match")
+    }
+    if graph
+        .order()?
+        .iter()
+        .take(completed.len())
+        .copied()
+        .collect::<Vec<_>>()
+        != completed
+    {
+        bail!("Completed nodes are not a scheduler prefix")
+    }
+    for (call, index) in tail.iter().skip(1).zip(completed) {
+        let answer = solver_texts
+            .get(&call["call"].as_u64().unwrap())
+            .ok_or_else(|| anyhow::anyhow!("Missing advisory solver result"))?;
+        if subtasks[index].result.as_deref()
+            != Some(answer.chars().take(1200).collect::<String>().as_str())
+        {
+            bail!("Saved advisory result differs from charged inference")
+        }
+    }
+    let admission = &audit["remaining_inference_admission"];
+    if admission["cycles"].as_u64() != settings["cycle_limit"].as_u64()
+        || admission["tool_calls"].as_u64().is_none()
+        || admission["calls"].as_u64().unwrap_or(0) == 0
+    {
+        bail!("No valid pre-solver remaining admission")
+    }
+    let clock: crate::execution_clock::Snapshot =
+        serde_json::from_value(settings["execution_clock"].clone())?;
+    clock.validate(cfg.max_wall_seconds)?;
+    let observed = Instant::now();
+    let remaining = clock.remaining()?["remaining_ns"]
+        .as_u64()
+        .filter(|n| *n > 0)
+        .ok_or_else(|| anyhow::anyhow!("Original execution deadline is expired or unavailable"))?;
+    security::TaskPolicy::reasoning(task)?.authorize(task, "jev-r", "llm.generate")?;
+    let resources = Resources {
+        calls: audit["reserved_calls"].as_u64().unwrap() as u32,
+        cycles: 0,
+        tool_calls: cfg.max_tool_calls - admission["tool_calls"].as_u64().unwrap() as u32,
+        reserved_output_tokens: audit["reserved_output_tokens"].as_u64().unwrap() as usize,
+        prompt_bytes: audit["charged_prompt_bytes"].as_u64().unwrap() as usize,
+        input_tokens: audit["input_tokens"].as_u64(),
+        output_tokens: audit["output_tokens"].as_u64(),
+        ..Default::default()
+    };
+    Ok(Checkpoint {
+        cfg,
+        query,
+        context: text.into(),
+        mode,
+        subtasks,
+        state: RestoredState {
+            resources,
+            nodes,
+            deadline: observed + Duration::from_nanos(remaining),
+        },
+    })
+}
+
+pub async fn resume(
+    store: Arc<Store>,
+    task: &str,
+    human_approve: bool,
+    cancel: impl std::future::Future<Output = ()>,
+) -> Result<Value> {
+    security::authorize("human-cli", "task.resume")?;
+    if !human_approve {
+        bail!("Task continuation requires explicit operator approval")
+    }
+    uuid::Uuid::parse_str(task)?;
+    let path = store
+        .runtime_lock
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("Continuation requires a persistent store"))?;
+    let _lease = ExecutionLease::acquire(path, true)
+        .map_err(|_| anyhow::anyhow!("Cannot continue while runtime leases are held"))?;
+    let checkpoint = {
+        let mut db = store.lock()?;
+        let started = Instant::now();
+        db.progress_handler(
+            1000,
+            Some(move || started.elapsed() > Duration::from_secs(5)),
+        );
+        let prepared = (|| -> Result<Checkpoint> {
+            let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+            let checkpoint = prepare(&tx, task)?;
+            tx.execute(
+                "UPDATE tasks SET status='running',updated=unixepoch() WHERE id=?1",
+                [task],
+            )?;
+            tx.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'continuation','human-cli',?2,unixepoch())",rusqlite::params![task,json!({"state":"started","format_version":1,"original_budget_preserved":true,"prior_timing_complete":false,"subtask_results_verified":false}).to_string()])?;
+            if started.elapsed() > Duration::from_secs(5) {
+                bail!("Continuation admission deadline exhausted")
+            }
+            tx.commit()?;
+            Ok(checkpoint)
+        })();
+        db.progress_handler(0, None::<fn() -> bool>);
+        prepared?
+    };
+    let prior_calls = checkpoint.state.resources.calls;
+    let deadline = checkpoint.state.deadline;
+    let backend: Arc<dyn InferenceBackend> = Arc::new(crate::fabric::Broker::with_inference(
+        Arc::new(LocalBackend(checkpoint.cfg.clone())),
+    ));
+    let mut session = Session::restored(
+        checkpoint.cfg,
+        store.clone(),
+        backend,
+        task.into(),
+        &checkpoint.mode,
+        checkpoint.state,
+    )?;
+    let execution = session.continue_graph(
+        checkpoint.subtasks,
+        &checkpoint.query,
+        &checkpoint.context,
+        &checkpoint.mode,
+    );
+    let outcome = tokio::select! {
+        biased;
+        _ = cancel => Err(anyhow::anyhow!("Continuation cancelled")),
+        _ = tokio::time::sleep_until(tokio::time::Instant::from_std(deadline)) => Err(anyhow::anyhow!("Original continuation deadline exhausted")),
+        result = execution => result,
+    };
+    session.finish_metrics();
+    let (answer, status) = match outcome {
+        Ok(answer) if session.verified => (answer, "completed"),
+        Ok(answer) if session.has_solution => (answer, "unverified"),
+        Ok(answer) => (answer, "exhausted"),
+        Err(_) => (
+            "Continuation interrupted; inspect durable call outcomes before another attempt".into(),
+            "interrupted",
+        ),
+    };
+    session.finish_subtasks(if status == "interrupted" {
+        "failed"
+    } else {
+        status
+    })?;
+    let report = json!({"format_version":1,"task_id":task,"status":status,"answer":answer,
+        "verified":session.verified,"criterion":session.verified_criterion,
+        "new_calls":session.resources.calls-prior_calls,"charged_resources":session.resources,
+        "timing_scope":"continuation_only","prior_timing_complete":false,"subtask_results_verified":false,"automatic_replay":false});
+    let mut db = store.lock()?;
+    let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+    let updated = tx.execute(
+        "UPDATE tasks SET status=?2,answer=?3,updated=unixepoch() WHERE id=?1 AND status='running'",
+        rusqlite::params![task, status, answer],
+    )?;
+    if updated != 1 {
+        bail!("Continuation lost its running task anchor")
+    }
+    tx.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'continuation','human-cli',?2,unixepoch())",rusqlite::params![task,serde_json::to_string(&report)?])?;
+    let outcome = json!({"status":status,"resources":session.resources,"verified":session.verified,"origin":"operator_continuation","timing_scope":"continuation_only"});
+    tx.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'outcome','jev-plus',?2,unixepoch())",rusqlite::params![task,outcome.to_string()])?;
+    let progress = crate::events::Progress::from_audit(
+        tx.last_insert_rowid() as u64,
+        task,
+        "outcome",
+        "jev-plus",
+        &outcome,
+    )?
+    .expect("Outcome has a typed event");
+    tx.commit()?;
+    drop(db);
+    store.events.publish(&progress)?;
+    Ok(report)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::backend::Generation;
+    use std::{collections::VecDeque, future::Future, pin::Pin, sync::Mutex};
+    const QUERY: &str = r#"sort:{"values":[3,1,2]}"#;
+    const PLAN: &str = r#"{"steps":[{"id":"a","objective":"Inspect input","depends_on":[]},{"id":"b","objective":"Combine advice","depends_on":["a"]}]}"#;
+    struct Script(Mutex<VecDeque<(&'static str, &'static str)>>);
+    impl InferenceBackend for Script {
+        fn generate<'a>(
+            &'a self,
+            role: &'a str,
+            _: &'a str,
+            _: usize,
+        ) -> Pin<Box<dyn Future<Output = Result<Generation>> + Send + 'a>> {
+            let (expected, text) = self
+                .0
+                .lock()
+                .unwrap()
+                .pop_front()
+                .expect("Unexpected repeated inference");
+            assert_eq!(role, expected);
+            Box::pin(async move {
+                Ok(Generation {
+                    text: text.into(),
+                    model: "fixture/v1".into(),
+                    input_tokens: Some(20),
+                    output_tokens: Some(10),
+                    elapsed_ms: 1.0,
+                    queue_wait_ms: None,
+                })
+            })
+        }
+    }
+    async fn fixture() -> (Arc<Store>, String) {
+        fixture_in(Arc::new(Store::in_memory().unwrap())).await
+    }
+    async fn fixture_in(store: Arc<Store>) -> (Arc<Store>, String) {
+        let task = store.create_task(QUERY, "deep").unwrap();
+        let cfg = Config {
+            backend: "openai-local".into(),
+            interpret_goals: false,
+            max_tokens: 3000,
+            ..Config::default()
+        };
+        let backend = Arc::new(Script(Mutex::new(
+            vec![("planner", PLAN), ("solver", "original advice")].into(),
+        )));
+        let mut session = Session::new(cfg, store.clone(), backend, task.clone(), "deep").unwrap();
+        store.event(&task,"execution_options","runtime",json!({"format_version":1,"profile":"full","explain":false,"conversation_ref":null})).unwrap();
+        store.event(&task,"module_snapshot","fabric",json!({"modules":[{"id":"inference.local","version":"1.0.0","roles":crate::fabric::protocol::ROLES}]})).unwrap();
+        store.event(&task,"reasoning_context","jev-r",json!({"format_version":1,"objective":QUERY,"context":"","objective_hash":sha256(QUERY.as_bytes()),"context_hash":sha256(b""),"prompt_base_hash":sha256(Session::prompt_base(QUERY,"",true).unwrap().as_bytes()),"calls_before":0,"cycles_before":0,"untrusted_data":true,"permissions_restorable":false})).unwrap();
+        session
+            .call("planner", "planning", 256)
+            .await
+            .unwrap()
+            .unwrap();
+        let plan = crate::planning::Plan::parse(PLAN).unwrap();
+        store
+            .event(
+                &task,
+                "plan",
+                "planner-r",
+                json!({"graph":plan,"trusted_permissions":false}),
+            )
+            .unwrap();
+        let mut nodes = plan
+            .steps
+            .into_iter()
+            .map(|step| Subtask {
+                step,
+                state: "pending".into(),
+                result: None,
+            })
+            .collect::<Vec<_>>();
+        for node in &nodes {
+            store
+                .event(&task, "subtask", "jev-plus", json!({"node":node}))
+                .unwrap();
+        }
+        nodes[0].state = "running".into();
+        store
+            .event(&task, "subtask", "jev-plus", json!({"node":nodes[0]}))
+            .unwrap();
+        session
+            .call("solver", "advisory", 192)
+            .await
+            .unwrap()
+            .unwrap();
+        nodes[0].state = "unverified".into();
+        nodes[0].result = Some("original advice".into());
+        store
+            .event(&task, "subtask", "jev-plus", json!({"node":nodes[0]}))
+            .unwrap();
+        store.finish_task(&task, "interrupted", "").unwrap();
+        (store, task)
+    }
+    #[tokio::test]
+    async fn continues_only_pending_nodes_and_preserves_original_charges() {
+        let (store, task) = fixture().await;
+        let saved = prepare(&store.lock().unwrap(), &task).unwrap();
+        assert_eq!(saved.state.resources.calls, 2);
+        let backend = Arc::new(Script(Mutex::new(
+            vec![("solver", "remaining advice"), ("solver", "[1,2,3]")].into(),
+        )));
+        let mut session = Session::restored(
+            saved.cfg,
+            store.clone(),
+            backend.clone(),
+            task.clone(),
+            &saved.mode,
+            saved.state,
+        )
+        .unwrap();
+        let answer = session
+            .continue_graph(saved.subtasks, &saved.query, &saved.context, &saved.mode)
+            .await
+            .unwrap();
+        assert_eq!(answer, "[1,2,3]");
+        assert!(session.verified);
+        assert_eq!(session.resources.calls, 4);
+        assert_eq!(session.resources.reserved_output_tokens, 1024);
+        assert!(backend.0.lock().unwrap().is_empty());
+        assert_eq!(
+            inference::audit_from(&store.lock().unwrap(), &task).unwrap()["results_not_recorded"],
+            0
+        );
+    }
+    #[tokio::test]
+    async fn rejects_changed_graph_context_and_unresolved_dispatch() {
+        for variant in 0..4 {
+            let (store, task) = fixture().await;
+            match variant {
+                0 => {
+                    store.lock().unwrap().execute("UPDATE events SET payload=json_set(payload,'$.graph.steps[0].objective','Changed objective') WHERE task_id=?1 AND kind='plan'",[&task]).unwrap();
+                }
+                1 => {
+                    store.lock().unwrap().execute("UPDATE events SET payload=json_set(payload,'$.calls_before',1) WHERE task_id=?1 AND kind='reasoning_context'",[&task]).unwrap();
+                }
+                2 => {
+                    store
+                        .event(
+                            &task,
+                            "model_dispatch",
+                            "jev-r",
+                            json!({"call":3,"role":"solver","allocation":192,"prompt_bytes":10}),
+                        )
+                        .unwrap();
+                }
+                _ => {
+                    store.lock().unwrap().execute("UPDATE events SET payload=json_set(payload,'$.context','Changed context') WHERE task_id=?1 AND kind='reasoning_context'",[&task]).unwrap();
+                }
+            }
+            assert!(
+                prepare(&store.lock().unwrap(), &task).is_err(),
+                "Accepted variant {variant}"
+            );
+        }
+    }
+    #[tokio::test]
+    async fn public_resume_uses_real_http_and_commits_a_durable_outcome() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let root =
+            std::env::temp_dir().join(format!("fabric-continuation-{}", uuid::Uuid::new_v4()));
+        let (store, task) =
+            fixture_in(Arc::new(Store::open(&root.join("state.db")).unwrap())).await;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}/v1", listener.local_addr().unwrap());
+        store.lock().unwrap().execute("UPDATE events SET payload=json_set(payload,'$.configuration.api_base',?2) WHERE task_id=?1 AND kind='execution_settings'",rusqlite::params![task,endpoint]).unwrap();
+        assert!(resume(store.clone(), &task, false, std::future::pending())
+            .await
+            .is_err());
+        let lease = store.execution_lease().unwrap();
+        assert!(resume(store.clone(), &task, true, std::future::pending())
+            .await
+            .is_err());
+        drop(lease);
+        let server = tokio::spawn(async move {
+            for answer in ["remaining advice", "[1,2,3]"] {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut request = Vec::new();
+                loop {
+                    let mut chunk = [0; 4096];
+                    let n = socket.read(&mut chunk).await.unwrap();
+                    assert!(n > 0);
+                    request.extend_from_slice(&chunk[..n]);
+                    assert!(request.len() < 131072);
+                    if let Some(end) = request.windows(4).position(|w| w == b"\r\n\r\n") {
+                        let headers = String::from_utf8_lossy(&request[..end]);
+                        let length = headers
+                            .lines()
+                            .find_map(|l| {
+                                l.to_ascii_lowercase()
+                                    .strip_prefix("content-length: ")
+                                    .and_then(|n| n.parse::<usize>().ok())
+                            })
+                            .unwrap();
+                        if request.len() >= end + 4 + length {
+                            break;
+                        }
+                    }
+                }
+                let body=json!({"model":"fixture/v1","choices":[{"message":{"content":answer}}],"usage":{"prompt_tokens":20,"completion_tokens":10}}).to_string();
+                socket.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",body.len(),body).as_bytes()).await.unwrap();
+            }
+        });
+        let report = tokio::time::timeout(
+            Duration::from_secs(10),
+            resume(store.clone(), &task, true, std::future::pending()),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(report["status"], "completed");
+        assert_eq!(report["new_calls"], 2);
+        server.await.unwrap();
+        let db = store.lock().unwrap();
+        let (status, answer): (String, String) = db
+            .query_row(
+                "SELECT status,answer FROM tasks WHERE id=?1",
+                [&task],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!((status.as_str(), answer.as_str()), ("completed", "[1,2,3]"));
+        let count: u32 = db
+            .query_row(
+                "SELECT count(*) FROM events WHERE task_id=?1 AND kind='execution_settings'",
+                [&task],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+        assert_eq!(
+            inference::audit_from(&db, &task).unwrap()["reserved_calls"],
+            4
+        );
+        assert!(prepare(&db, &task).is_err());
+        drop(db);
+        drop(store);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[tokio::test]
+    async fn cancellation_and_terminal_audit_failure_preserve_durable_charges() {
+        for fail in [false, true] {
+            let root = std::env::temp_dir().join(format!(
+                "fabric-cancel-continuation-{}",
+                uuid::Uuid::new_v4()
+            ));
+            let (store, task) =
+                fixture_in(Arc::new(Store::open(&root.join("state.db")).unwrap())).await;
+            if fail {
+                store.lock().unwrap().execute_batch("CREATE TRIGGER reject_finished BEFORE INSERT ON events WHEN NEW.kind='outcome' BEGIN SELECT RAISE(ABORT,'fixture outcome failure'); END;").unwrap();
+            }
+            let result = resume(store.clone(), &task, true, std::future::ready(())).await;
+            if fail {
+                assert!(result.is_err())
+            } else {
+                let report = result.unwrap();
+                assert_eq!(report["status"], "interrupted");
+                assert_eq!(report["new_calls"], 0);
+            }
+            let db = store.lock().unwrap();
+            let status: String = db
+                .query_row("SELECT status FROM tasks WHERE id=?1", [&task], |r| {
+                    r.get(0)
+                })
+                .unwrap();
+            assert_eq!(status, if fail { "running" } else { "interrupted" });
+            assert_eq!(
+                inference::audit_from(&db, &task).unwrap()["reserved_calls"],
+                2
+            );
+            drop(db);
+            drop(store);
+            std::fs::remove_dir_all(root).unwrap();
+        }
+    }
+    #[tokio::test]
+    async fn refuses_unknown_expired_clocks_and_unsupported_configuration() {
+        for mutation in [
+            "json_set(payload,'$.execution_clock',NULL)",
+            "json_set(payload,'$.execution_clock.started_ns',0,'$.execution_clock.deadline_ns',json_extract(payload,'$.configuration.max_wall_seconds')*1000000000)",
+            "json_set(payload,'$.configuration.inference_process',json('true'))",
+        ] {
+            let (store,task)=fixture().await;
+            store.lock().unwrap().execute(&format!("UPDATE events SET payload={mutation} WHERE task_id=?1 AND kind='execution_settings'"),[&task]).unwrap();
+            assert!(prepare(&store.lock().unwrap(),&task).is_err(),"Accepted {mutation}");
+        }
+    }
+}

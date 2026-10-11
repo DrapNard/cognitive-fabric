@@ -472,3 +472,14 @@ civil timestamps. Tests cover actual kernel observation, separate CLI processes,
 setup exhaustion, reboot mismatch, backwards time and malformed snapshots. Legacy,
 other-boot and unavailable clocks do not receive a fresh allowance. Actual graph
 continuation remains **Partial / Not implemented**; inspection grants no authority.
+
+
+Explicit pre-solver advisory continuation: **Implemented (bounded scope)** in
+`src/recovery/continuation.rs`, `src/reasoning.rs` and `resume-task`. Original
+same-boot deadlines and resource charges survive restoration; completed nodes
+are correlated to saved planner/solver output and reused as unverified advice.
+Five regression tests include actual HTTP, corrupted checkpoints, lease/approval
+refusals, cancellation and terminal transaction failure. Default direct module
+Full/Collective tasks are supported; managed/registered/custom backends,
+post-solver phases and general repeated recovery remain **Partial / Not implemented**.
+See `RECOVERY.md` for exact admission, timing and provider-identity limitations.
