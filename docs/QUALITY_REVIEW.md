@@ -1608,3 +1608,9 @@ Log: `/tmp/cogfabric-inference-rollback-full-tests.log`. Three regressions verif
 original backend/queue reuse at the history ceiling, preserved role pins,
 conflicts, absent versions and shutdown. This does not prove remote health or
 external model weight switching. Optimized installation needs refreshing.
+
+Optimized installation and installed smoke subsequently passed for `dec46fa`;
+`RELEASE_AUDIT.md` records the binary hash and evidence. A separate installed
+socket-service test passed real Ollama sorting with independent verification and
+confirmed child/service cleanup. This closes the installation gap above, without
+establishing clean-OS prerequisites or general live-model reasoning quality.

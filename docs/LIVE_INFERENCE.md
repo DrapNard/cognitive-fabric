@@ -59,3 +59,24 @@ The available 27B model is not the intended small-model baseline. LM Studio was
 offline during these observations; its earlier 401 result does not invalidate
 this compatible-endpoint success. Real LM Studio authentication/switching, small
 baseline availability, held-out review and equal-budget studies remain open.
+
+## Installed socket service — 2026-10-12
+
+Optimized source `dec46fa` was tested through a fresh owner-local socket service
+with the same bounded model settings and managed inference enabled. The actual
+query `sort:{"values":[9,-2,9,0]}` returned `[-2,0,9,9]`, completed/verified, with
+`verified:integer_sort/v1`. One call/cycle consumed two tool calls, reserving 384
+output tokens. Provider usage: 97 input / 63 output tokens. End-to-end time:
+40655.618962 ms; inference time: 40652.959121 ms; queue wait: 0.007795 ms.
+These timings include the observed request path and do not isolate cold loading.
+
+Task: `d77a142e-b1cd-45fd-b3a5-f5f1a21d2143`. The trace recorded a 3.355072 ms
+worker handoff followed by exit zero, `reaped: true`, `forced: false`. Service STOP
+returned accepted/inactive; the service exited and removed its socket. Evidence:
+`/tmp/cogfabric-live-service.6LePf9/{outcome.json,trace.json,service.log,stop.json}`.
+The installed binary SHA-256 is
+`6aec07685580e3e519571e5a1047af52e07592b1b3fcf93c5e50f98217766354`.
+To repeat, start `cogfabric --home "$live_home" serve` with the bounded settings,
+submit the above goal via `ask --socket --mode fast`, inspect `task`, and stop with
+`stop`. This proves one installed service integration case, not general model
+quality, weight identity, isolation, switching or an equal-budget comparison.

@@ -796,3 +796,10 @@ shutdown/unknown versions and the 128-version bound. All mandatory quality check
 pass with 324 tests (303 library, 21 integration). Retention keeps inactive backend
 references until shutdown; remote health/grant renewal, automatic executable
 lifecycle and real weight residency/switching remain partial. See `MODELS.md`.
+
+Optimized installation of `dec46fa` and the complete installed smoke workflow
+passed. A separate installed socket service executed one real Ollama sorting task
+with negative/duplicate values, independent Rust proof, confirmed worker reaping
+and service/socket cleanup. See `RELEASE_AUDIT.md` / `LIVE_INFERENCE.md` for hashes,
+times and scope. Live model switching and controlled performance studies remain
+unverified; model advertisement is not loaded-weight attestation.

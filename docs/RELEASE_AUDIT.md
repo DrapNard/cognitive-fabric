@@ -236,3 +236,16 @@ workflow passed. Evidence: `/tmp/cogfabric-installed-smoke.7BRTBp`; logs:
 proof after the runtime change. Live observations in `LIVE_INFERENCE.md` used the
 debug executable separately; installed smoke still uses deterministic demo models.
 No clean-OS setup, independent benchmark or neural safety claim follows.
+
+Optimized inference-rollback verification (2026-10-12): source `dec46fa` installed
+successfully with `FLATC=/tmp/cogfabric-flatbuffers-build/flatc cargo install --offline --locked --path . --root /tmp/cogfabric-v1-inference-rollback-install-20261012`.
+Cargo reported 48.89 seconds. Binary SHA-256:
+`6aec07685580e3e519571e5a1047af52e07592b1b3fcf93c5e50f98217766354`.
+The unchanged smoke script passed; evidence:
+`/tmp/cogfabric-installed-smoke.4S9cEL`; logs:
+`/tmp/cogfabric-inference-rollback-install.log`,
+`/tmp/cogfabric-inference-rollback-installed-smoke.log`.
+A separate fresh installed socket service also passed real Ollama sorting with
+independent proof, confirmed worker reaping and service socket removal; see
+`LIVE_INFERENCE.md`. This closes the installed-source gap for inference rollback
+and adds a real installed service case. No clean-OS setup or benchmark gain is claimed.
