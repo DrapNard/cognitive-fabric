@@ -750,3 +750,11 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
 - Preserve in-flight subscription and durable replay filters across rollback.
 - Enforce active/history capacity and reject unknown/redefined versions without
   adding observer permissions or executable loading.
+
+### Configure bounded interface reservations
+
+- Add operator-selected structured-interpretation output allocation within task
+  ceilings, preserving the legacy 128-token default and configuration identity.
+- Pass the admitted reservation through existing typed inference commands.
+- Test legacy settings, invalid limits, exact charging and refusal before dispatch
+  when the reservation cannot fit. Empty provider output remains a visible failure.

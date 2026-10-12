@@ -191,6 +191,8 @@ enum Command {
         role: Option<String>,
         #[arg(long, default_value = "0.15")]
         temperature: f64,
+        #[arg(long)]
+        interface_tokens: Option<usize>,
     },
     ConfigureAuth {
         #[arg(long, action = clap::ArgAction::Set)]
@@ -566,10 +568,14 @@ async fn main() -> Result<()> {
             api_base,
             role,
             temperature,
+            interface_tokens,
         } => {
             let mut settings = cfg.clone();
             settings.backend = "openai-local".into();
             settings.model_registration = None;
+            if let Some(tokens) = interface_tokens {
+                settings.interface_tokens = tokens;
+            }
             if let Some(endpoint) = api_base {
                 settings.api_base = endpoint;
             }

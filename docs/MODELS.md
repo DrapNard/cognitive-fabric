@@ -167,3 +167,20 @@ constructor. Unix adapters expose their actual connected descriptor, so discover
 and task pins no longer advertise unrelated local roles. This checks trusted
 metadata consistency, not executable identity or loaded weights; a malicious
 in-process implementation can lie about its descriptor.
+
+### Bounded interface output allocation
+
+`configure-local --model MODEL --interface-tokens 384` selects the host's output
+reservation for the structured language interface. `interface_tokens` defaults to
+128 and accepts 1–4096. It does not raise total tokens, calls, prompt bytes or wall
+limits. If its full reservation cannot fit, no interface inference is dispatched;
+ordinary remaining-budget behavior still applies. Larger allocations can leave
+less capacity for solving and do not guarantee valid JSON or better answers.
+
+The host sends the admitted per-call token limit through existing typed inference
+frames. Worker bootstrap's cumulative ceilings remain authoritative; workers do
+not interpret human goals, so this host scheduling option needs no IPC schema
+change. Saved nondefault settings are included in task configuration snapshots,
+backups and restoration; default serialization omits the new field to preserve
+legacy configuration identity. Old configurations deserialize to 128. Empty
+provider text remains a visible failure, never an inferred answer or free retry.

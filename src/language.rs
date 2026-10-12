@@ -91,15 +91,17 @@ mod integration_tests {
     struct Script {
         queue: Mutex<VecDeque<(&'static str, &'static str)>>,
         prompts: Mutex<Vec<String>>,
+        allocations: Mutex<Vec<usize>>,
     }
     impl InferenceBackend for Script {
         fn generate<'a>(
             &'a self,
             role: &'a str,
             prompt: &'a str,
-            _tokens: usize,
+            tokens: usize,
         ) -> Pin<Box<dyn Future<Output = Result<Generation>> + Send + 'a>> {
             self.prompts.lock().unwrap().push(prompt.into());
+            self.allocations.lock().unwrap().push(tokens);
             let (expected, text) = self
                 .queue
                 .lock()
@@ -130,6 +132,7 @@ mod integration_tests {
         let backend = Arc::new(Script {
             queue: Mutex::new(script.into()),
             prompts: Mutex::new(Vec::new()),
+            allocations: Mutex::new(Vec::new()),
         });
         (
             path,
@@ -138,6 +141,30 @@ mod integration_tests {
         )
     }
 
+    #[tokio::test]
+    async fn configured_interface_reservation_is_charged_and_cannot_exceed_task_ceiling() {
+        for ceiling in [128, 384] {
+            let (path, mut engine, script) = setup(vec![(
+                "interface",
+                r#"{"objective":"Change a setting","constraints":[],"required_capabilities":[],"clarification":"Which setting?"}"#,
+            )]);
+            engine.cfg.interface_tokens = 384;
+            engine.cfg.max_tokens = ceiling;
+            let result = engine.run("Change it", "standard").await.unwrap();
+            if ceiling == 384 {
+                assert_eq!(result.status, "needs_clarification");
+                assert_eq!(result.calls, 1);
+                assert_eq!(result.resources.reserved_output_tokens, 384);
+                assert_eq!(*script.allocations.lock().unwrap(), vec![384]);
+            } else {
+                assert_eq!(result.calls, 0);
+                assert_eq!(result.resources.reserved_output_tokens, 0);
+                assert!(script.allocations.lock().unwrap().is_empty());
+            }
+            drop(engine);
+            std::fs::remove_file(path).unwrap();
+        }
+    }
     #[tokio::test]
     async fn interpretation_cannot_replace_the_goal_or_grant_a_capability() {
         let (path, engine, script) = setup(vec![

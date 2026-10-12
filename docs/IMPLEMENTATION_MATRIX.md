@@ -53,7 +53,7 @@ remains a pre-release. `QUALITY_REVIEW.md` preserves verification history.
 | 12, 14 | CLI/service | Partial | `src/main.rs`: initialization/configuration, ask, service controls, task-specific socket progress/cancellation, skill lifecycle, ingestion/search, task traces, candidates/rollback, benchmark, self-test; real socket fixtures | Live residency lifecycle |
 | 12, 13 | Hardware/performance claims | Partial | Optional whole-device GPU diagnostics sampled real host memory/utilization/power; no energy or large-model advantage claimed | Task-attributed telemetry, real model switching and equal-budget comparisons |
 
-All 327 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
+All 329 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
 all-target build checks and Clippy with denied warnings pass. Fixtures do not prove
 GPU integration, neural quality, immutable backend weights or live model switching.
 
@@ -840,3 +840,11 @@ solver execution: the provider returned empty text under the interface's fixed
 charged call; no structured-goal success is claimed. `LIVE_INFERENCE.md` records
 actual settings and timing. This is a newly observed language integration gap,
 not evidence against the independently verified direct/socket sorting cases.
+
+Language-interface allocation: **Implemented** in `src/config.rs`, `src/engine.rs`
+and `src/main.rs`. Operators can set `interface_tokens` / `configure-local
+--interface-tokens` (default 128, bounded 1–4096) within original cumulative
+ceilings. `src/config.rs` and `src/language.rs` regressions cover legacy settings,
+invalid limits, exact backend allocation/charges and no dispatch when it cannot
+fit. All mandatory checks pass with 329 tests (308 library, 21 integration).
+Larger allocations do not guarantee valid provider output or permission changes.

@@ -38,6 +38,8 @@ pub struct Config {
     pub temperature: f64,
     pub role_profiles: BTreeMap<String, RoleProfile>,
     pub interpret_goals: bool,
+    #[serde(skip_serializing_if = "default_interface_tokens")]
+    pub interface_tokens: usize,
     pub synthesize_results: bool,
     pub max_artifact_bytes: u64,
     pub max_database_bytes: u64,
@@ -66,6 +68,7 @@ impl Default for Config {
             temperature: 0.15,
             role_profiles: BTreeMap::new(),
             interpret_goals: true,
+            interface_tokens: 128,
             synthesize_results: false,
             max_artifact_bytes: 256_000_000,
             max_database_bytes: crate::storage::DEFAULT_DATABASE_BYTES,
@@ -132,6 +135,7 @@ impl Config {
             || self.max_calls > 64
             || self.max_cycles > 16
             || self.max_tokens > 16_384
+            || !(1..=4096).contains(&self.interface_tokens)
             || self.max_input_bytes > 1_000_000
             || self.max_tool_calls > 64
             || self.max_artifact_bytes > 2_000_000_000
@@ -202,9 +206,38 @@ impl Config {
     }
 }
 
+fn default_interface_tokens(value: &usize) -> bool {
+    *value == 128
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn interface_reservation_defaults_preserve_legacy_settings_and_remain_bounded() {
+        let mut cfg = Config::default();
+        let legacy = serde_json::to_value(&cfg).unwrap();
+        assert!(legacy.get("interface_tokens").is_none());
+        assert_eq!(
+            serde_json::from_value::<Config>(legacy)
+                .unwrap()
+                .interface_tokens,
+            128
+        );
+        cfg.interface_tokens = 384;
+        let raw = serde_json::to_value(&cfg).unwrap();
+        assert_eq!(raw["interface_tokens"], 384);
+        assert_eq!(
+            serde_json::from_value::<Config>(raw)
+                .unwrap()
+                .interface_tokens,
+            384
+        );
+        for invalid in [0, 4097, usize::MAX] {
+            cfg.interface_tokens = invalid;
+            assert!(cfg.validate().is_err());
+        }
+    }
 
     #[test]
     fn persistent_profiles_roundtrip_with_owner_only_permissions() {

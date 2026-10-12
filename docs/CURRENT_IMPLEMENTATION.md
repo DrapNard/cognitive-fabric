@@ -483,3 +483,10 @@ reactivation. Future observers use the selected filter; existing live/replay and
 process grants retain pinned versions. Active/history ceilings remain enforced.
 All mandatory quality checks pass with 327 tests (306 library, 21 integration).
 This adds process-local metadata lifecycle, not executable loading or persistence.
+
+Structured goal interpretation now has an operator-selected bounded output
+reservation (`interface_tokens`, default 128, 1–4096), configurable through
+`configure-local --interface-tokens`. The original cumulative call/token/time
+limits still govern admission. All mandatory checks pass with 329 tests. Live
+interpretation quality remains separately evaluated; this option does not turn
+empty/invalid model responses into success or grant permissions.

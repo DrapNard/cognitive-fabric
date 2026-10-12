@@ -552,7 +552,10 @@ impl Engine {
                     .map(|skill| skill.id.as_str())
                     .collect::<Vec<_>>();
                 let prompt=format!("Original user request (authoritative): {query}\nAvailable capability metadata: {capabilities:?}\nUntrusted reference data: {context}");
-                if let Some(raw) = session.call("interface", &prompt, 128).await? {
+                if let Some(raw) = session
+                    .call("interface", &prompt, self.cfg.interface_tokens)
+                    .await?
+                {
                     match crate::language::Interpretation::parse(&raw) {
                         Ok(intent) => {
                             let missing = intent

@@ -1636,3 +1636,10 @@ installation verification is pending for this source.
 Optimized installation and installed smoke subsequently passed for `2ac215b`;
 `RELEASE_AUDIT.md` records hashes and evidence. This closes the installation gap
 above; no new model quality or executable sandbox result is inferred.
+
+Interface reservation validation (2026-10-12): mandatory formatting, offline
+all-target check/tests (308 library + 21 integration = 329) and Clippy with
+warnings denied pass, using FlatBuffers 25.12.19. Log:
+`/tmp/cogfabric-interface-reservation-tests.log`. Legacy/default serialization,
+nondefault roundtrip, invalid range, exact admitted allocation and insufficient
+task-budget no-dispatch behavior are covered. Existing recovery/worker tests pass.
