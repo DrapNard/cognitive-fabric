@@ -540,3 +540,20 @@ bytes, budgets or permissions. Older nonempty unquoted-reference hashes are refu
 with an explicit unsupported/altered-prompt error. There is no automatic conversion
 to a different prompt or fallback to the earlier injection-vulnerable representation.
 An operator must start a separately reviewed new task when formats are incompatible.
+
+## Compiled role prompt identity
+
+New execution settings record `runtime_role_prompts_sha256`, computed from the
+versioned canonical list of local-adapter role/system prompts, including the
+shared untrusted-reference boundary. The same construction supplies actual local
+HTTP system messages. Continuation requires the recorded fingerprint to match
+current compiled defaults before any dispatch or new reservation. Missing, null
+or mismatched fingerprints fail closed. Older tasks remain inspectable and retain
+their charged history; there is no automatic fingerprint migration or budget
+reset. Audit reconciliation and independently checked result recovery remain
+separate operations.
+
+This identifies compiled default instructions, not provider behavior, tokenizer,
+weights or arbitrary trusted-host backend implementations. It grants no new
+permissions. A malicious same-owner database writer can replace hashes; this is
+cooperative version consistency, not executable or database attestation.

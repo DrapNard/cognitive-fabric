@@ -638,3 +638,12 @@ versions, active selection, local availability and ranks through typed, bounded
 FlatBuffers. Existing active-only `modules` remains compatible. All 361 tests and
 quality checks pass, including real socket and debug CLI/service smoke. Discovery
 does not launch inference, grant permissions or attest physical model residency.
+
+### Compiled prompt consistency on continuation (2026-10-13)
+
+New execution settings capture the default compiled role/system prompt fingerprint.
+Continuation requires it to match, in addition to the existing context, model,
+budget and module checks. Legacy missing or changed fingerprints are not migrated
+automatically; read-only inspection and independent result recovery remain
+available. All 364 tests and mandatory checks pass; this is version consistency,
+not provider or executable attestation.

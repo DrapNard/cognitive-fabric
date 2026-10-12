@@ -944,3 +944,11 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   executing tools or exposing expected outputs to the baseline.
 - Verify one-call, zero-tool unverified baseline execution with captured prompts.
 - Pass all 363 tests, mandatory quality checks and isolated CLI/service smoke.
+
+### Bind continuation to compiled role prompts
+
+- Record a canonical fingerprint of compiled default role/system instructions
+  before dispatch, including the shared untrusted-reference boundary.
+- Refuse continuation when its saved fingerprint is missing, null or changed;
+  preserve history and charges without granting permissions or automatic migration.
+- Pass all 364 tests, mandatory quality checks and isolated CLI/service smoke.

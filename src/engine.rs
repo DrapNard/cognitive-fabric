@@ -1526,6 +1526,10 @@ mod execution_settings_tests {
         assert_eq!(settings["payload"]["cycle_limit"], 1);
         assert_eq!(settings["payload"]["weights_attested"], false);
         assert_eq!(
+            settings["payload"]["runtime_role_prompts_sha256"],
+            crate::backend::runtime_role_prompts_sha256().unwrap()
+        );
+        assert_eq!(
             settings["payload"]["permissions_restorable_from_settings"],
             false
         );

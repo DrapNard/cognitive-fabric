@@ -172,6 +172,7 @@ impl Session {
                 "format_version":1,"resource_reservations_version":1,"configuration":cfg,"mode":mode,"execution_clock":start.clock,
                 "call_limit":calls.min(cfg.max_calls),"cycle_limit":cycles.min(cfg.max_cycles),
                 "backend_configuration_attested":false,"weights_attested":false,
+                "runtime_role_prompts_sha256":crate::backend::runtime_role_prompts_sha256()?,
                 "permissions_restorable_from_settings":false
             }),
         )?;

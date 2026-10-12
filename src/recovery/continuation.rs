@@ -138,6 +138,9 @@ fn prepare(db: &rusqlite::Connection, task: &str) -> Result<Checkpoint> {
     let settings = snapshots
         .get("execution_settings")
         .ok_or_else(|| anyhow::anyhow!("Missing original settings"))?;
+    if settings["runtime_role_prompts_sha256"] != crate::backend::runtime_role_prompts_sha256()? {
+        bail!("Compiled role prompts changed or their original fingerprint is unavailable")
+    }
     let cfg: Config = serde_json::from_value(settings["configuration"].clone())?;
     cfg.validate()?;
     if let Some(selection) = &cfg.model_registration {
@@ -763,6 +766,44 @@ mod tests {
             declared.state.resources.reserved_output_tokens,
             original.state.resources.reserved_output_tokens
         );
+    }
+
+    #[tokio::test]
+    async fn continuation_requires_matching_compiled_role_prompts() {
+        for variant in 0..3 {
+            let (store, task) = fixture().await;
+            assert!(prepare(&store.lock().unwrap(), &task).is_ok());
+            let before: u64 = store
+                .lock()
+                .unwrap()
+                .query_row(
+                    "SELECT count(*) FROM events WHERE task_id=?1",
+                    [&task],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            let sql=match variant {
+                0 => "UPDATE events SET payload=json_remove(payload,'$.runtime_role_prompts_sha256') WHERE task_id=?1 AND kind='execution_settings'",
+                1 => "UPDATE events SET payload=json_set(payload,'$.runtime_role_prompts_sha256',NULL) WHERE task_id=?1 AND kind='execution_settings'",
+                _ => "UPDATE events SET payload=json_set(payload,'$.runtime_role_prompts_sha256','0000000000000000000000000000000000000000000000000000000000000000') WHERE task_id=?1 AND kind='execution_settings'",
+            };
+            store.lock().unwrap().execute(sql, [&task]).unwrap();
+            let error = prepare(&store.lock().unwrap(), &task)
+                .err()
+                .unwrap()
+                .to_string();
+            assert!(error.contains("role prompts"), "{error}");
+            let after: u64 = store
+                .lock()
+                .unwrap()
+                .query_row(
+                    "SELECT count(*) FROM events WHERE task_id=?1",
+                    [&task],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(before, after);
+        }
     }
 
     #[tokio::test]

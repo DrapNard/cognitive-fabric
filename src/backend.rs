@@ -109,6 +109,21 @@ fn role_prompt(role: &str) -> Result<&'static str> {
     })
 }
 
+fn system_prompt(role: &str) -> Result<String> {
+    Ok(format!("{}\n\n{REFERENCE_BOUNDARY}", role_prompt(role)?))
+}
+
+/// Identifies compiled local-adapter instructions, not provider behavior or weights.
+pub(crate) fn runtime_role_prompts_sha256() -> Result<String> {
+    let prompts = crate::fabric::protocol::ROLES
+        .iter()
+        .map(|role| Ok((*role, system_prompt(role)?)))
+        .collect::<Result<Vec<_>>>()?;
+    Ok(crate::store::sha256(&serde_json::to_vec(&json!({
+        "format_version": 1, "roles": prompts,
+    }))?))
+}
+
 pub async fn generate(cfg: &Config, role: &str, prompt: &str, max_tokens: usize) -> Result<String> {
     Ok(generate_report(cfg, role, prompt, max_tokens).await?.text)
 }
@@ -120,7 +135,7 @@ pub async fn generate_report(
     max_tokens: usize,
 ) -> Result<Generation> {
     let start = Instant::now();
-    let system = format!("{}\n\n{REFERENCE_BOUNDARY}", role_prompt(role)?);
+    let system = system_prompt(role)?;
     if prompt.len() > 32_000 || max_tokens == 0 || max_tokens > 16_384 {
         bail!("Inference request exceeds limits")
     }

@@ -1281,3 +1281,24 @@ format-sensitive scores prevent causal reasoning-gain claims. The corrected
 `9fec58b` full rerun is active with frozen executable/fresh state; no results are
 asserted yet. Independent label/split review and model-quality/security evaluation
 remain incomplete. Both parity commits passed hosted CI.
+
+### Compiled role prompt fingerprints — 2026-10-13 (Implemented)
+
+`src/backend.rs` derives a versioned canonical SHA-256 from all compiled default
+role/system prompts and the shared reference-data boundary, using the same helper
+as actual local HTTP system messages. `Session` records it in original execution
+settings before dispatch. `src/recovery/continuation.rs` requires a matching
+fingerprint before continuation. Missing/null/mismatched values fail closed
+without adding events or restoring permissions. Older records remain inspectable;
+there is no automatic migration or charge refund. This is compiled-default
+identity, not arbitrary-backend/provider behavior, weight or same-owner attestation.
+See RECOVERY.md for the intentional legacy-continuation limitation.
+
+All 364 tests (343 library, 21 integration), formatting, all-target check and
+Clippy with warnings denied pass. Full tests and CLI/service smoke used an
+isolated build directory. Logs: `/tmp/cogfabric-prompt-fingerprint-all-tests.log`,
+`/tmp/cogfabric-prompt-fingerprint-smoke.log`; evidence
+`/tmp/cogfabric-installed-smoke.PEsR38`. The corrected study's frozen executable
+checksum remains unchanged. Host compilation overlapped part of that public
+workflow study, so its timing remains uncontrolled and supports no causal latency
+claim. No model call or permission was added by the fingerprint.

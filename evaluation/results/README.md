@@ -15,7 +15,8 @@ The raw report is retained to support independent inspection of all public answe
 | experts | 49 | 156 | 178.069 |
 
 The raw status counts are 118 completed, 438 unverified, 32 rejected and 12 needing
-clarification, with no failed tasks. A strict criterion match is separate from
+clarification, with no failed tasks. All 500 inference-worker launch records have
+matching stopped records; every stop reports exit zero, reaped true and forced false. A strict criterion match is separate from
 runtime evidence verification. For example, model-alone answered the fragile-item
 question correctly with “Yes” followed by an explanation; the yes/no exact-match
 criterion rejected the extra text. Do not label every strict mismatch wrong reasoning.
