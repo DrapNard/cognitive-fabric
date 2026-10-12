@@ -1012,3 +1012,10 @@ rank bounds, transport-identity forgery, replacement/rollback and closed-route
 fallback only for new tasks. Rank is declared operator policy, not learned utility
 or measured cost. General plugin provisioning, residency and adaptive cost-aware
 scheduling remain incomplete.
+
+Ranked routing transport regression now additionally registers two authenticated
+Unix adapters simultaneously, verifies lowest-rank task pinning, unregisters that
+candidate and checks new tasks use the remaining adapter while existing pins
+still send exact original module/version FlatBuffers headers. Forged version
+relabeling is refused. This is actual local transport evidence, not remote plugin
+attestation, process provisioning or model quality measurement.

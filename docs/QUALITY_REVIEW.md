@@ -1791,3 +1791,15 @@ selects the already approved alternative. Transport-identity forgery also fails
 through candidate registration. Existing 32-active/128-version/four-slot queue
 bounds and per-call permissions remain unchanged. Rank is human policy metadata,
 not measured performance. Optimized installed proof requires refresh.
+
+### Ranked authenticated Unix routes — 2026-10-12
+
+All 346 tests (325 library, 21 integration), formatting, offline all-target check
+and Clippy with warnings denied passed with FlatBuffers 25.12.19; log
+`/tmp/cogfabric-ranked-unix-tests.log`. Two actual authenticated Unix adapters
+compete by rank; pinned discovery identifies the preferred adapter, removal
+redirects new tasks, and old pins still deliver exact original typed destinations
+and versions. Forged version relabeling fails before dispatch. Existing peer
+credential and separate-process regressions also pass. This adds transport
+verification, not provider/weight attestation or unrestricted plugin execution.
+Runtime source remains `2a94b93`; installed proof still needs refreshing.

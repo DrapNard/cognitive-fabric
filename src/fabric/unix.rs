@@ -390,6 +390,81 @@ mod tests {
         assert!(adapter.stream.lock().await.is_none());
     }
     #[tokio::test]
+    async fn ranked_routes_preserve_authenticated_transport_destinations_and_pins() {
+        use std::sync::Arc;
+        let (client_a, mut server_a) = UnixStream::pair().unwrap();
+        let (client_b, mut server_b) = UnixStream::pair().unwrap();
+        let desc = |id: &str| ModuleDescriptor {
+            id: id.into(),
+            version: "2.0.0".into(),
+            roles: vec!["solver".into()],
+        };
+        let uid = client_a.peer_cred().unwrap().uid();
+        let adapter_a = Arc::new(
+            UnixInference::connected(client_a, desc("candidate.a"), uid, std::process::id())
+                .unwrap(),
+        );
+        let adapter_b = Arc::new(
+            UnixInference::connected(client_b, desc("candidate.b"), uid, std::process::id())
+                .unwrap(),
+        );
+        let broker = super::super::Broker::with_inference(Arc::new(crate::backend::LocalBackend(
+            crate::config::Config::default(),
+        )));
+        broker.unregister("inference.local").unwrap();
+        let mut ranked_a = desc("candidate.a");
+        // A transport cannot be relabelled to obtain a fresh immutable version.
+        ranked_a.version = "3.0.0".into();
+        assert!(broker
+            .register_candidate(ranked_a, adapter_a.clone(), 0)
+            .is_err());
+        broker
+            .register_candidate(desc("candidate.a"), adapter_a, 0)
+            .unwrap();
+        broker
+            .register_candidate(desc("candidate.b"), adapter_b, 10)
+            .unwrap();
+        let pinned_a = broker.pin().unwrap().unwrap();
+        assert_eq!(pinned_a.modules().unwrap(), vec![desc("candidate.a")]);
+        broker.unregister("candidate.a").unwrap();
+        let worker_a = tokio::spawn(async move {
+            let packet = read(&mut server_a).await.unwrap();
+            assert_eq!(packet.header.destination, "candidate.a");
+            assert_eq!(packet.header.module_version, "2.0.0");
+            write(&mut server_a, &response(packet.header))
+                .await
+                .unwrap();
+        });
+        let worker_b = tokio::spawn(async move {
+            let packet = read(&mut server_b).await.unwrap();
+            assert_eq!(packet.header.destination, "candidate.b");
+            assert_eq!(packet.header.module_version, "2.0.0");
+            write(&mut server_b, &response(packet.header))
+                .await
+                .unwrap();
+        });
+        assert_eq!(
+            broker
+                .generate("solver", "new task", 128)
+                .await
+                .unwrap()
+                .text,
+            "worker answer"
+        );
+        assert_eq!(
+            pinned_a
+                .generate("solver", "pinned task", 128)
+                .await
+                .unwrap()
+                .text,
+            "worker answer"
+        );
+        worker_a.await.unwrap();
+        worker_b.await.unwrap();
+        broker.shutdown().unwrap();
+    }
+
+    #[tokio::test]
     async fn cancellation_discards_stream_instead_of_reusing_stale_response() {
         let (client, mut server) = UnixStream::pair().unwrap();
         let adapter = std::sync::Arc::new(peer(client));
