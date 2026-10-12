@@ -1754,3 +1754,16 @@ down/reap children and confirm closed observations. Expired unlaunched tool
 wrappers remain uninitialized. No model probe, process spawn during observation,
 credential, permission or deadline renewal is added. Optimized installation proof
 must be refreshed after these runtime changes.
+
+### Terminal managed shutdown — 2026-10-12
+
+All 343 tests (322 library, 21 integration), formatting, offline all-target check
+and Clippy with warnings denied passed using FlatBuffers 25.12.19. Log:
+`/tmp/cogfabric-terminal-shutdown-tests.log`. New regressions exercise repeated
+shutdown before initialization and then valid inference/arithmetic/SQL requests:
+all refuse dispatch without launch audit, startup ownership or initialized worker.
+Existing interrupted-startup ownership and actual child shutdown tests still pass.
+The initialization gate adds bounded startup coordination; it does not imply
+immediate cancellation of external inference or completed reaping when shutdown
+is requested. Original deadlines, authority and cleanup audits remain required.
+Optimized installation evidence predates this runtime change and needs refresh.

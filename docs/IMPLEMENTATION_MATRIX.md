@@ -976,3 +976,15 @@ socket/same-binary-child regressions verify connected state and closed state
 after confirmed shutdown for all three paths; expired unlaunched tools remain
 without initialized workers. This closes the wrapper propagation gap, not general
 process health, startup-failure recovery or automatic grant renewal.
+
+### Terminal managed-worker shutdown — 2026-10-12
+
+Implemented: managed inference/arithmetic/SQL wrappers mark shutdown terminal
+before awaiting cleanup. Later initialization/dispatch refuses the stopped state;
+an initialization mutex coordinates successful handoff with shutdown inspection,
+so an initialized child cannot fall between startup and managed ownership checks.
+Observation reports stopped wrappers unavailable without claiming child completion.
+Repeated shutdown remains allowed for cleanup retries. Regressions prove shutdown
+before first use causes no worker initialization or launch audit for all three
+capabilities. Existing interrupted-startup and actual child-reaping tests remain.
+This does not stop external provider computation or provide hostile-code isolation.

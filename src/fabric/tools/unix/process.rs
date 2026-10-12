@@ -18,7 +18,10 @@ use std::{
     os::unix::fs::MetadataExt,
     path::Path,
     pin::Pin,
-    sync::Arc,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
     time::{Duration, Instant},
 };
 use tokio::{
@@ -224,9 +227,14 @@ pub(crate) struct ProcessTask {
     descriptor: Descriptor,
     worker: OnceCell<Managed>,
     starting: Mutex<Option<Starting>>,
+    stopped: AtomicBool,
+    initialization: Mutex<()>,
 }
 impl ProcessTask {
     fn observed_availability(&self) -> crate::fabric::Availability {
+        if self.stopped.load(Ordering::Acquire) {
+            return crate::fabric::Availability::Closed;
+        }
         if let Some(worker) = self.worker.get() {
             worker.adapter.availability()
         } else if Instant::now() >= self.deadline {
@@ -251,6 +259,8 @@ impl ProcessTask {
             descriptor: descriptor(),
             worker: OnceCell::new(),
             starting: Mutex::new(None),
+            stopped: AtomicBool::new(false),
+            initialization: Mutex::new(()),
         })
     }
     pub(crate) fn new_sql(
@@ -373,6 +383,8 @@ impl ProcessTask {
         })
     }
     pub(crate) async fn shutdown(&self) -> Result<()> {
+        self.stopped.store(true, Ordering::Release);
+        let _initialization = self.initialization.lock().await;
         if let Some(worker) = self.worker.get() {
             worker.adapter.close().await;
             let mut child = worker.child.lock().await;
@@ -431,7 +443,15 @@ impl ArithmeticBackend for ProcessTask {
             {
                 bail!("Tool process request exceeds task/input scope")
             }
+            let initialization = self.initialization.lock().await;
+            if self.stopped.load(Ordering::Acquire) {
+                bail!("Tool worker has been shut down")
+            }
             let worker = self.worker.get_or_try_init(|| self.launch()).await?;
+            drop(initialization);
+            if self.stopped.load(Ordering::Acquire) {
+                bail!("Tool worker has been shut down")
+            }
             match &worker.adapter {
                 Adapter::Arithmetic(adapter) => adapter.evaluate_for(task, expression).await,
                 Adapter::Sql(_) => bail!("SQL worker cannot execute arithmetic"),
@@ -457,7 +477,15 @@ impl SqlBackend for ProcessTask {
                 bail!("SQL process request exceeds task/capability scope")
             }
             crate::sql::parse_task(input)?;
+            let initialization = self.initialization.lock().await;
+            if self.stopped.load(Ordering::Acquire) {
+                bail!("Tool worker has been shut down")
+            }
             let worker = self.worker.get_or_try_init(|| self.launch()).await?;
+            drop(initialization);
+            if self.stopped.load(Ordering::Acquire) {
+                bail!("Tool worker has been shut down")
+            }
             match &worker.adapter {
                 Adapter::Sql(adapter) => adapter.query(task, input).await,
                 Adapter::Arithmetic(_) => bail!("Arithmetic worker cannot execute SQL"),
@@ -516,6 +544,42 @@ pub async fn run_worker(home: &Path, socket: &Path, host_pid: u32, sql: bool) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn shutdown_before_initialization_refuses_both_tool_launches() {
+        for sql in [false, true] {
+            let store = Arc::new(Store::in_memory().unwrap());
+            let task = store.create_task("Shutdown before launch", "fast").unwrap();
+            let deadline = Instant::now() + Duration::from_secs(30);
+            let process = if sql {
+                ProcessTask::new_sql(Config::default(), store.clone(), &task, deadline)
+            } else {
+                ProcessTask::new(Config::default(), store.clone(), &task, deadline)
+            }
+            .unwrap();
+            process.shutdown().await.unwrap();
+            process.shutdown().await.unwrap();
+            assert_eq!(
+                process.observed_availability(),
+                crate::fabric::Availability::Closed
+            );
+            let result = if sql {
+                process
+                    .query(&task, r#"{"tables":[],"query":"SELECT 42 AS answer"}"#)
+                    .await
+            } else {
+                process.evaluate_for(&task, "6*7").await
+            };
+            assert!(result.unwrap_err().to_string().contains("shut down"));
+            assert!(process.worker.get().is_none());
+            assert!(process.starting.lock().await.is_none());
+            assert!(!store.task(&task).unwrap()["events"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|event| event["kind"] == "tool_worker_process_launch"));
+        }
+    }
+
     #[tokio::test]
     async fn managed_tool_states_follow_adapters_and_unlaunched_deadlines() {
         for sql in [false, true] {

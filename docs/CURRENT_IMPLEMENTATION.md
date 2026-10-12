@@ -566,3 +566,8 @@ Optimized installation and installed smoke passed for source `aa95552`, refreshi
 proof after grant-aware routing and managed availability propagation. Exact build
 and evidence identities are recorded in `RELEASE_AUDIT.md`. Automatic residency
 and general plugin provisioning remain partial; no stable release is declared.
+
+Managed shutdown is now terminal even before first use, with initialization/handoff
+coordination before cleanup inspection. Later valid requests cannot launch stopped
+inference/arithmetic/SQL workers. All 343 tests and mandatory checks pass; the
+optimized installation evidence needs refreshing for this runtime change.

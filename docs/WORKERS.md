@@ -158,3 +158,11 @@ unknown; an uninitialized tool whose original host deadline elapsed reports
 expired. Inventory observation does not trigger worker launch or renew authority.
 Confirmed shutdown leaves initialized adapters closed. These observations do not
 prove external provider completion, model residency or executable health.
+
+Managed wrapper shutdown is terminal, including before first use. Shutdown marks
+the wrapper stopped before awaiting the initialization gate; later calls cannot
+launch it again. The gate serializes handoff publication with cleanup inspection.
+Existing bounded startup waits still apply, so shutdown may wait for an already
+running initialization before reaping its owned child. Repeated shutdown can retry
+cleanup. Stopped availability means dispatch is prohibited, not that process
+reaping or external provider completion is already proven; use the cleanup audit.

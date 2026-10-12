@@ -16,7 +16,10 @@ use std::{
     os::unix::fs::{DirBuilderExt, FileTypeExt, MetadataExt, PermissionsExt},
     path::{Path, PathBuf},
     pin::Pin,
-    sync::Arc,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
     time::Duration,
 };
 use tokio::{
@@ -107,9 +110,13 @@ pub struct ProcessTask {
     task: String,
     worker: OnceCell<Managed>,
     starting: Mutex<Option<Starting>>,
+    stopped: AtomicBool,
+    initialization: Mutex<()>,
 }
 impl ProcessTask {
     pub async fn shutdown(&self) -> Result<()> {
+        self.stopped.store(true, Ordering::Release);
+        let _initialization = self.initialization.lock().await;
         if let Some(worker) = self.worker.get() {
             worker.adapter.stream.lock().await.take();
             let mut child = worker.child.lock().await;
@@ -151,6 +158,8 @@ impl ProcessTask {
             task: task.into(),
             worker: OnceCell::new(),
             starting: Mutex::new(None),
+            stopped: AtomicBool::new(false),
+            initialization: Mutex::new(()),
         })
     }
     async fn spawn_owned(
@@ -281,6 +290,9 @@ impl ProcessTask {
 }
 impl InferenceBackend for ProcessTask {
     fn availability(&self) -> crate::fabric::Availability {
+        if self.stopped.load(Ordering::Acquire) {
+            return crate::fabric::Availability::Closed;
+        }
         self.worker
             .get()
             .map_or(crate::fabric::Availability::Unknown, |worker| {
@@ -310,7 +322,15 @@ impl InferenceBackend for ProcessTask {
             if prompt.len() > 32_000 || tokens == 0 || tokens > 16_384 {
                 bail!("Inference worker request exceeds bounds")
             }
+            let initialization = self.initialization.lock().await;
+            if self.stopped.load(Ordering::Acquire) {
+                bail!("Inference worker has been shut down")
+            }
             let worker = self.worker.get_or_try_init(|| self.launch()).await?;
+            drop(initialization);
+            if self.stopped.load(Ordering::Acquire) {
+                bail!("Inference worker has been shut down")
+            }
             worker
                 .adapter
                 .generate_for(task, role, prompt, tokens)
@@ -433,6 +453,28 @@ mod tests {
             );
         }
     }
+    #[tokio::test]
+    async fn shutdown_before_initialization_permanently_refuses_launch() {
+        let store = Arc::new(Store::in_memory().unwrap());
+        let task = store.create_task("Shutdown before launch", "fast").unwrap();
+        let process = ProcessTask::new(Config::default(), store.clone(), &task).unwrap();
+        process.shutdown().await.unwrap();
+        process.shutdown().await.unwrap();
+        assert_eq!(process.availability(), crate::fabric::Availability::Closed);
+        let error = process
+            .generate_for(&task, "solver", "goal", 128)
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("shut down"));
+        assert!(process.worker.get().is_none());
+        assert!(process.starting.lock().await.is_none());
+        assert!(!store.task(&task).unwrap()["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|event| event["kind"] == "worker_process_launch"));
+    }
+
     #[tokio::test]
     async fn managed_inference_reports_connected_and_shutdown_adapter_state() {
         let store = Arc::new(Store::in_memory().unwrap());

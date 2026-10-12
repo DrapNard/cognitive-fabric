@@ -810,3 +810,5 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   without resetting authority or cumulative charges.
 - Propagate managed inference/arithmetic/SQL adapter availability through worker
   wrappers; report expired tool deadlines before any child launch.
+- Make managed worker shutdown terminal before initialization and coordinate
+  handoff publication with cleanup to prevent post-shutdown launches.
