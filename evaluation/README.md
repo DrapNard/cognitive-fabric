@@ -59,4 +59,4 @@ The complete pre-contract-parity Qwen3 8B workflow (600 tasks) is retained under
 [results](results/README.md). It exposed output-format fairness limitations and
 strict-format false negatives; it does not supply the missing independent review
 or a validated comparative study. The manifest's formal evaluation/review flags
-remain false. A corrected full public rerun is underway.
+remain false. The corrected full public rerun also completed all 600 tasks; raw reports and limitations are retained in the same results directory.

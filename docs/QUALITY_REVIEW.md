@@ -2246,3 +2246,13 @@ isolated build directory. Logs: `/tmp/cogfabric-prompt-fingerprint-all-tests.log
 checksum remains unchanged. Host compilation overlapped part of that public
 workflow study, so its timing remains uncontrolled and supports no causal latency
 claim. No model call or permission was added by the fingerprint.
+
+
+Corrected public Qwen3 8B output-contract parity workflow completed on 2026-10-13:
+600/600 tasks at source `9fec58b`, 988.471 seconds, strict matches per 100 of
+7 alone, 21 tools, 21 recursive, 51 collective, 48 memory and 50 experts. All 500
+inference workers stopped normally. Full raw answers and category/resource summaries
+are retained in `evaluation/results/`; see its README for exact hashes, configuration,
+status interpretation and limitations. This supersedes earlier pending-run statements
+only; independent label review, held-out evaluation, 1–3B/larger baselines and causal
+quality/performance evidence remain incomplete. Host compilation overlapped the run.

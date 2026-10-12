@@ -44,5 +44,37 @@ Category/resource summary: [qwen3-8b-v1-pre-contract-parity-summary.json](qwen3-
 Raw SHA-256: `b4fa58005f2e0498047826404642a275335ef11fac2a5efd761006f6a9596299`.
 Dataset SHA-256: `6b2c7dd82bce6473f527daff8be56c5bcf3e54e7a93db088cb46def5fc06cd05`.
 
-The corrected full rerun uses source `9fec58b` with a frozen separate executable
-and fresh state. It must complete before any new scores are reported.
+## Completed output-contract parity rerun
+
+The corrected run at source `9fec58bc93fd97fb3096147360dc67681a7974b7`
+completed all 600 tasks in 988.471 seconds with fresh state and frozen executable
+SHA-256 `a2012ac53ec77dee168d4e2aadb1dca7067864b419a3ddd6e0db8f47e5c792d0`.
+The same model and operator ceilings apply. Sorting, ordering, arithmetic and SQL
+output contracts are now supplied to the model-only baseline as well.
+
+| Profile | Strict criterion matches / 100 | Model calls | Total task latency (seconds) |
+|---|---:|---:|---:|
+| alone | 7 | 100 | 120.301 |
+| tools | 21 | 80 | 116.878 |
+| recursive | 21 | 150 | 223.715 |
+| collective | 51 | 154 | 180.970 |
+| memory | 48 | 154 | 173.298 |
+| experts | 50 | 154 | 173.119 |
+
+Statuses were 118 completed, 432 unverified, 32 rejected and 18 needing
+clarification, with no failed status. The report's `failed_tasks` resource counter
+also includes rejected, cancelled and exhausted statuses; it is not a count of
+failed-status tasks alone. All 500 worker launches have matching stopped records
+with reaped true, forced false and exit zero, checked against the run's SQLite audit.
+
+Raw report: [qwen3-8b-v1-contract-parity.json](qwen3-8b-v1-contract-parity.json).
+Category/resource summary: [qwen3-8b-v1-contract-parity-summary.json](qwen3-8b-v1-contract-parity-summary.json).
+Raw SHA-256: `866b371d4bc44d5596c478f3e30245d65b6c4d983dd3c7a7e07e25c9011b7774`.
+
+The limitations above still apply, except the identified structured output-contract
+asymmetry. Host compilation and smoke validation overlapped this rerun too. The
+before/after numbers establish neither causal latency improvements nor robust
+reasoning gains. Model labels do not attest weights; expected outputs remain
+outside inference requests. Independent review and the broader release gate remain
+incomplete. Reports contain public authored inputs and model answers intentionally
+retained as evaluation evidence, not private data or model weights.

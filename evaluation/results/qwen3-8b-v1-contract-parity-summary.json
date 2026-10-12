@@ -1,0 +1,869 @@
+{
+  "code_revision_operator_attested": "9fec58bc93fd97fb3096147360dc67681a7974b7",
+  "dataset_checksum": "6b2c7dd82bce6473f527daff8be56c5bcf3e54e7a93db088cb46def5fc06cd05",
+  "case_count": 100,
+  "complete": true,
+  "stop_reason": "completed",
+  "elapsed_ms": 988471.161365,
+  "configuration": {
+    "api_base": "http://127.0.0.1:1234/v1",
+    "arithmetic_process": false,
+    "backend": "openai-local",
+    "format_version": 1,
+    "inference_auth_scope": null,
+    "inference_process": true,
+    "interface_tokens": 384,
+    "interpret_goals": true,
+    "max_artifact_bytes": 256000000,
+    "max_calls": 3,
+    "max_cycles": 1,
+    "max_database_bytes": 256000000,
+    "max_input_bytes": 8192,
+    "max_tokens": 768,
+    "max_tool_calls": 4,
+    "max_wall_seconds": 45,
+    "model": "qwen/qwen3-8b",
+    "model_registration": null,
+    "reasoning_effort": "none",
+    "role_profiles": {},
+    "sql_process": false,
+    "synthesize_results": false,
+    "temperature": 0.0,
+    "timeout_seconds": 30
+  },
+  "arms": [
+    {
+      "accuracy": 0.07,
+      "executed": 100,
+      "index": 0,
+      "model": "qwen/qwen3-8b",
+      "passed": 7,
+      "profile": "alone",
+      "resources": {
+        "failed_tasks": 0,
+        "inference_ms": 119908.548528,
+        "input_tokens": 17177,
+        "latency_ms": 120301.20490200004,
+        "max_sampled_process_rss_bytes": 26050560,
+        "model_calls": 100,
+        "output_tokens": 5541,
+        "process_lifetime_peak_rss_bytes": 26050560,
+        "prompt_bytes": 28721,
+        "queue_wait_ms": 3.1466939999999988,
+        "reserved_output_tokens": 38400,
+        "tool_calls": 0
+      }
+    },
+    {
+      "accuracy": 0.21,
+      "executed": 100,
+      "index": 1,
+      "model": "qwen/qwen3-8b",
+      "passed": 21,
+      "profile": "tools",
+      "resources": {
+        "failed_tasks": 10,
+        "inference_ms": 116498.48113600002,
+        "input_tokens": null,
+        "latency_ms": 116878.015665,
+        "max_sampled_process_rss_bytes": 26050560,
+        "model_calls": 80,
+        "output_tokens": null,
+        "process_lifetime_peak_rss_bytes": 26050560,
+        "prompt_bytes": 20747,
+        "queue_wait_ms": 2.1134760000000004,
+        "reserved_output_tokens": 30720,
+        "tool_calls": 30
+      }
+    },
+    {
+      "accuracy": 0.21,
+      "executed": 100,
+      "index": 2,
+      "model": "qwen/qwen3-8b",
+      "passed": 21,
+      "profile": "recursive",
+      "resources": {
+        "failed_tasks": 10,
+        "inference_ms": 223294.73097299994,
+        "input_tokens": null,
+        "latency_ms": 223715.25133300002,
+        "max_sampled_process_rss_bytes": 26066944,
+        "model_calls": 150,
+        "output_tokens": null,
+        "process_lifetime_peak_rss_bytes": 26066944,
+        "prompt_bytes": 69067,
+        "queue_wait_ms": 5.739835,
+        "reserved_output_tokens": 39680,
+        "tool_calls": 30
+      }
+    },
+    {
+      "accuracy": 0.51,
+      "executed": 100,
+      "index": 3,
+      "model": "qwen/qwen3-8b",
+      "passed": 51,
+      "profile": "collective",
+      "resources": {
+        "failed_tasks": 4,
+        "inference_ms": 180529.16044200002,
+        "input_tokens": null,
+        "latency_ms": 180969.68372000006,
+        "max_sampled_process_rss_bytes": 26042368,
+        "model_calls": 154,
+        "output_tokens": null,
+        "process_lifetime_peak_rss_bytes": 26042368,
+        "prompt_bytes": 84268,
+        "queue_wait_ms": 6.335613000000004,
+        "reserved_output_tokens": 59136,
+        "tool_calls": 30
+      }
+    },
+    {
+      "accuracy": 0.48,
+      "executed": 100,
+      "index": 4,
+      "model": "qwen/qwen3-8b",
+      "passed": 48,
+      "profile": "memory",
+      "resources": {
+        "failed_tasks": 4,
+        "inference_ms": 172817.29348100003,
+        "input_tokens": null,
+        "latency_ms": 173297.76838899992,
+        "max_sampled_process_rss_bytes": 26046464,
+        "model_calls": 154,
+        "output_tokens": null,
+        "process_lifetime_peak_rss_bytes": 26046464,
+        "prompt_bytes": 83074,
+        "queue_wait_ms": 5.653716999999997,
+        "reserved_output_tokens": 59136,
+        "tool_calls": 130
+      }
+    },
+    {
+      "accuracy": 0.5,
+      "executed": 100,
+      "index": 5,
+      "model": "qwen/qwen3-8b",
+      "passed": 50,
+      "profile": "experts",
+      "resources": {
+        "failed_tasks": 4,
+        "inference_ms": 172630.29783,
+        "input_tokens": null,
+        "latency_ms": 173118.75127799998,
+        "max_sampled_process_rss_bytes": 26050560,
+        "model_calls": 154,
+        "output_tokens": null,
+        "process_lifetime_peak_rss_bytes": 26050560,
+        "prompt_bytes": 84021,
+        "queue_wait_ms": 6.875256,
+        "reserved_output_tokens": 59136,
+        "tool_calls": 130
+      }
+    }
+  ],
+  "larger_baseline_configured": false,
+  "unavailable_metrics": [
+    "peak_memory",
+    "gpu_memory",
+    "energy",
+    "model_load_cost",
+    "general_security_failure_rate"
+  ],
+  "limitations": [
+    "Public workflow check only; no held-out review or benchmark quality claim",
+    "Backend model labels do not attest immutable weights",
+    "A bound expert model configuration invalidates the same-model ablation control, even if advice is refused or fails; inspect per-case bound_expert_models",
+    "Exact-match, dependency-order, integer-sort and SQL criteria do not establish broad reasoning quality",
+    "Structured comparison recomputes checks without trusting runtime status; ordering/sorting share the runtime compiled verifier implementation",
+    "Retrieval uses one read-only SQLite snapshot; checksum includes unrelated stored history",
+    "Snapshot bounds are 64 MB and temporarily require an additional serialization buffer",
+    "Live model availability, weight identity and server state are not frozen",
+    "Different arms consume different amounts within the same operator ceilings; inspect actual usage"
+  ],
+  "raw_report_sha256": "866b371d4bc44d5596c478f3e30245d65b6c4d983dd3c7a7e07e25c9011b7774",
+  "detail_count": 600,
+  "category_results": [
+    {
+      "category": "arithmetic",
+      "profile": "alone",
+      "executed": 10,
+      "passed": 2,
+      "model_calls": 10,
+      "latency_ms": 1477.8771580000002,
+      "statuses": {
+        "unverified": 10
+      }
+    },
+    {
+      "category": "arithmetic",
+      "profile": "tools",
+      "executed": 10,
+      "passed": 10,
+      "model_calls": 0,
+      "latency_ms": 18.090157,
+      "statuses": {
+        "completed": 10
+      }
+    },
+    {
+      "category": "arithmetic",
+      "profile": "recursive",
+      "executed": 10,
+      "passed": 10,
+      "model_calls": 0,
+      "latency_ms": 16.831991,
+      "statuses": {
+        "completed": 10
+      }
+    },
+    {
+      "category": "arithmetic",
+      "profile": "collective",
+      "executed": 10,
+      "passed": 10,
+      "model_calls": 0,
+      "latency_ms": 18.598473,
+      "statuses": {
+        "completed": 10
+      }
+    },
+    {
+      "category": "arithmetic",
+      "profile": "memory",
+      "executed": 10,
+      "passed": 10,
+      "model_calls": 0,
+      "latency_ms": 21.706547,
+      "statuses": {
+        "completed": 10
+      }
+    },
+    {
+      "category": "arithmetic",
+      "profile": "experts",
+      "executed": 10,
+      "passed": 10,
+      "model_calls": 0,
+      "latency_ms": 21.796251,
+      "statuses": {
+        "completed": 10
+      }
+    },
+    {
+      "category": "dependency_order",
+      "profile": "memory",
+      "executed": 10,
+      "passed": 6,
+      "model_calls": 20,
+      "latency_ms": 20280.876205,
+      "statuses": {
+        "completed": 6,
+        "rejected": 4
+      }
+    },
+    {
+      "category": "dependency_order",
+      "profile": "experts",
+      "executed": 10,
+      "passed": 6,
+      "model_calls": 20,
+      "latency_ms": 19974.389832,
+      "statuses": {
+        "completed": 6,
+        "rejected": 4
+      }
+    },
+    {
+      "category": "dependency_order",
+      "profile": "alone",
+      "executed": 10,
+      "passed": 0,
+      "model_calls": 10,
+      "latency_ms": 4027.148789,
+      "statuses": {
+        "unverified": 10
+      }
+    },
+    {
+      "category": "dependency_order",
+      "profile": "tools",
+      "executed": 10,
+      "passed": 0,
+      "model_calls": 10,
+      "latency_ms": 3629.043376,
+      "statuses": {
+        "rejected": 10
+      }
+    },
+    {
+      "category": "dependency_order",
+      "profile": "recursive",
+      "executed": 10,
+      "passed": 0,
+      "model_calls": 10,
+      "latency_ms": 3538.107586,
+      "statuses": {
+        "rejected": 10
+      }
+    },
+    {
+      "category": "dependency_order",
+      "profile": "collective",
+      "executed": 10,
+      "passed": 6,
+      "model_calls": 20,
+      "latency_ms": 22230.937284999996,
+      "statuses": {
+        "completed": 6,
+        "rejected": 4
+      }
+    },
+    {
+      "category": "inline_sql",
+      "profile": "recursive",
+      "executed": 10,
+      "passed": 10,
+      "model_calls": 0,
+      "latency_ms": 28.629681,
+      "statuses": {
+        "completed": 10
+      }
+    },
+    {
+      "category": "inline_sql",
+      "profile": "collective",
+      "executed": 10,
+      "passed": 10,
+      "model_calls": 0,
+      "latency_ms": 29.820761999999995,
+      "statuses": {
+        "completed": 10
+      }
+    },
+    {
+      "category": "inline_sql",
+      "profile": "memory",
+      "executed": 10,
+      "passed": 10,
+      "model_calls": 0,
+      "latency_ms": 32.628934,
+      "statuses": {
+        "completed": 10
+      }
+    },
+    {
+      "category": "inline_sql",
+      "profile": "experts",
+      "executed": 10,
+      "passed": 10,
+      "model_calls": 0,
+      "latency_ms": 32.964822,
+      "statuses": {
+        "completed": 10
+      }
+    },
+    {
+      "category": "inline_sql",
+      "profile": "alone",
+      "executed": 10,
+      "passed": 3,
+      "model_calls": 10,
+      "latency_ms": 5167.9164599999995,
+      "statuses": {
+        "unverified": 10
+      }
+    },
+    {
+      "category": "inline_sql",
+      "profile": "tools",
+      "executed": 10,
+      "passed": 10,
+      "model_calls": 0,
+      "latency_ms": 32.460312,
+      "statuses": {
+        "completed": 10
+      }
+    },
+    {
+      "category": "logic",
+      "profile": "alone",
+      "executed": 10,
+      "passed": 0,
+      "model_calls": 10,
+      "latency_ms": 10976.17251,
+      "statuses": {
+        "unverified": 10
+      }
+    },
+    {
+      "category": "logic",
+      "profile": "tools",
+      "executed": 10,
+      "passed": 0,
+      "model_calls": 10,
+      "latency_ms": 13020.927809,
+      "statuses": {
+        "unverified": 10
+      }
+    },
+    {
+      "category": "logic",
+      "profile": "recursive",
+      "executed": 10,
+      "passed": 0,
+      "model_calls": 20,
+      "latency_ms": 28961.463714999998,
+      "statuses": {
+        "unverified": 10
+      }
+    },
+    {
+      "category": "logic",
+      "profile": "collective",
+      "executed": 10,
+      "passed": 5,
+      "model_calls": 20,
+      "latency_ms": 19984.456140999995,
+      "statuses": {
+        "unverified": 10
+      }
+    },
+    {
+      "category": "logic",
+      "profile": "memory",
+      "executed": 10,
+      "passed": 3,
+      "model_calls": 20,
+      "latency_ms": 18855.908715,
+      "statuses": {
+        "unverified": 10
+      }
+    },
+    {
+      "category": "logic",
+      "profile": "experts",
+      "executed": 10,
+      "passed": 4,
+      "model_calls": 20,
+      "latency_ms": 19053.044156,
+      "statuses": {
+        "unverified": 10
+      }
+    },
+    {
+      "category": "data_transform",
+      "profile": "memory",
+      "executed": 10,
+      "passed": 2,
+      "model_calls": 20,
+      "latency_ms": 21646.573384,
+      "statuses": {
+        "unverified": 10
+      }
+    },
+    {
+      "category": "data_transform",
+      "profile": "experts",
+      "executed": 10,
+      "passed": 2,
+      "model_calls": 20,
+      "latency_ms": 21136.949506999998,
+      "statuses": {
+        "unverified": 10
+      }
+    },
+    {
+      "category": "data_transform",
+      "profile": "alone",
+      "executed": 10,
+      "passed": 0,
+      "model_calls": 10,
+      "latency_ms": 9536.401310000001,
+      "statuses": {
+        "unverified": 10
+      }
+    },
+    {
+      "category": "data_transform",
+      "profile": "tools",
+      "executed": 10,
+      "passed": 0,
+      "model_calls": 10,
+      "latency_ms": 8329.792833,
+      "statuses": {
+        "unverified": 10
+      }
+    },
+    {
+      "category": "data_transform",
+      "profile": "recursive",
+      "executed": 10,
+      "passed": 0,
+      "model_calls": 20,
+      "latency_ms": 22552.276482,
+      "statuses": {
+        "unverified": 10
+      }
+    },
+    {
+      "category": "data_transform",
+      "profile": "collective",
+      "executed": 10,
+      "passed": 2,
+      "model_calls": 20,
+      "latency_ms": 21895.868259000003,
+      "statuses": {
+        "unverified": 10
+      }
+    },
+    {
+      "category": "resource_admission",
+      "profile": "recursive",
+      "executed": 10,
+      "passed": 0,
+      "model_calls": 20,
+      "latency_ms": 35226.464076000004,
+      "statuses": {
+        "unverified": 10
+      }
+    },
+    {
+      "category": "resource_admission",
+      "profile": "collective",
+      "executed": 10,
+      "passed": 3,
+      "model_calls": 20,
+      "latency_ms": 25334.459489,
+      "statuses": {
+        "unverified": 10
+      }
+    },
+    {
+      "category": "resource_admission",
+      "profile": "memory",
+      "executed": 10,
+      "passed": 2,
+      "model_calls": 20,
+      "latency_ms": 24945.345729,
+      "statuses": {
+        "unverified": 10
+      }
+    },
+    {
+      "category": "resource_admission",
+      "profile": "experts",
+      "executed": 10,
+      "passed": 3,
+      "model_calls": 20,
+      "latency_ms": 25608.02127,
+      "statuses": {
+        "unverified": 10
+      }
+    },
+    {
+      "category": "resource_admission",
+      "profile": "alone",
+      "executed": 10,
+      "passed": 0,
+      "model_calls": 10,
+      "latency_ms": 20829.876218999998,
+      "statuses": {
+        "unverified": 10
+      }
+    },
+    {
+      "category": "resource_admission",
+      "profile": "tools",
+      "executed": 10,
+      "passed": 0,
+      "model_calls": 10,
+      "latency_ms": 20926.684725,
+      "statuses": {
+        "unverified": 10
+      }
+    },
+    {
+      "category": "permission_boundaries",
+      "profile": "alone",
+      "executed": 10,
+      "passed": 2,
+      "model_calls": 10,
+      "latency_ms": 14951.649984,
+      "statuses": {
+        "unverified": 10
+      }
+    },
+    {
+      "category": "permission_boundaries",
+      "profile": "tools",
+      "executed": 10,
+      "passed": 1,
+      "model_calls": 10,
+      "latency_ms": 15596.544511,
+      "statuses": {
+        "unverified": 10
+      }
+    },
+    {
+      "category": "permission_boundaries",
+      "profile": "recursive",
+      "executed": 10,
+      "passed": 1,
+      "model_calls": 20,
+      "latency_ms": 30699.261243,
+      "statuses": {
+        "unverified": 10
+      }
+    },
+    {
+      "category": "permission_boundaries",
+      "profile": "collective",
+      "executed": 10,
+      "passed": 8,
+      "model_calls": 19,
+      "latency_ms": 20933.952702,
+      "statuses": {
+        "unverified": 9,
+        "needs_clarification": 1
+      }
+    },
+    {
+      "category": "permission_boundaries",
+      "profile": "memory",
+      "executed": 10,
+      "passed": 8,
+      "model_calls": 19,
+      "latency_ms": 20416.743092000004,
+      "statuses": {
+        "unverified": 9,
+        "needs_clarification": 1
+      }
+    },
+    {
+      "category": "permission_boundaries",
+      "profile": "experts",
+      "executed": 10,
+      "passed": 8,
+      "model_calls": 19,
+      "latency_ms": 20060.237653,
+      "statuses": {
+        "unverified": 9,
+        "needs_clarification": 1
+      }
+    },
+    {
+      "category": "ambiguity",
+      "profile": "memory",
+      "executed": 10,
+      "passed": 3,
+      "model_calls": 16,
+      "latency_ms": 23209.647815,
+      "statuses": {
+        "needs_clarification": 4,
+        "unverified": 6
+      }
+    },
+    {
+      "category": "ambiguity",
+      "profile": "experts",
+      "executed": 10,
+      "passed": 3,
+      "model_calls": 16,
+      "latency_ms": 23070.646169000003,
+      "statuses": {
+        "needs_clarification": 4,
+        "unverified": 6
+      }
+    },
+    {
+      "category": "ambiguity",
+      "profile": "alone",
+      "executed": 10,
+      "passed": 0,
+      "model_calls": 10,
+      "latency_ms": 18495.983045,
+      "statuses": {
+        "unverified": 10
+      }
+    },
+    {
+      "category": "ambiguity",
+      "profile": "tools",
+      "executed": 10,
+      "passed": 0,
+      "model_calls": 10,
+      "latency_ms": 19578.771694000003,
+      "statuses": {
+        "unverified": 10
+      }
+    },
+    {
+      "category": "ambiguity",
+      "profile": "recursive",
+      "executed": 10,
+      "passed": 0,
+      "model_calls": 20,
+      "latency_ms": 34366.925548,
+      "statuses": {
+        "unverified": 10
+      }
+    },
+    {
+      "category": "ambiguity",
+      "profile": "collective",
+      "executed": 10,
+      "passed": 3,
+      "model_calls": 16,
+      "latency_ms": 24450.957323,
+      "statuses": {
+        "needs_clarification": 4,
+        "unverified": 6
+      }
+    },
+    {
+      "category": "recovery_and_state",
+      "profile": "recursive",
+      "executed": 10,
+      "passed": 0,
+      "model_calls": 20,
+      "latency_ms": 40623.501002000005,
+      "statuses": {
+        "unverified": 10
+      }
+    },
+    {
+      "category": "recovery_and_state",
+      "profile": "collective",
+      "executed": 10,
+      "passed": 1,
+      "model_calls": 20,
+      "latency_ms": 23164.052047,
+      "statuses": {
+        "unverified": 10
+      }
+    },
+    {
+      "category": "recovery_and_state",
+      "profile": "memory",
+      "executed": 10,
+      "passed": 1,
+      "model_calls": 20,
+      "latency_ms": 21729.087759,
+      "statuses": {
+        "unverified": 10
+      }
+    },
+    {
+      "category": "recovery_and_state",
+      "profile": "experts",
+      "executed": 10,
+      "passed": 1,
+      "model_calls": 20,
+      "latency_ms": 22225.051908,
+      "statuses": {
+        "unverified": 10
+      }
+    },
+    {
+      "category": "recovery_and_state",
+      "profile": "alone",
+      "executed": 10,
+      "passed": 0,
+      "model_calls": 10,
+      "latency_ms": 22833.077227,
+      "statuses": {
+        "unverified": 10
+      }
+    },
+    {
+      "category": "recovery_and_state",
+      "profile": "tools",
+      "executed": 10,
+      "passed": 0,
+      "model_calls": 10,
+      "latency_ms": 23617.747138,
+      "statuses": {
+        "unverified": 10
+      }
+    },
+    {
+      "category": "versions_and_experts",
+      "profile": "alone",
+      "executed": 10,
+      "passed": 0,
+      "model_calls": 10,
+      "latency_ms": 12005.102200000001,
+      "statuses": {
+        "unverified": 10
+      }
+    },
+    {
+      "category": "versions_and_experts",
+      "profile": "tools",
+      "executed": 10,
+      "passed": 0,
+      "model_calls": 10,
+      "latency_ms": 12127.95311,
+      "statuses": {
+        "unverified": 10
+      }
+    },
+    {
+      "category": "versions_and_experts",
+      "profile": "recursive",
+      "executed": 10,
+      "passed": 0,
+      "model_calls": 20,
+      "latency_ms": 27701.790008999997,
+      "statuses": {
+        "unverified": 10
+      }
+    },
+    {
+      "category": "versions_and_experts",
+      "profile": "collective",
+      "executed": 10,
+      "passed": 3,
+      "model_calls": 19,
+      "latency_ms": 22926.581239,
+      "statuses": {
+        "unverified": 9,
+        "needs_clarification": 1
+      }
+    },
+    {
+      "category": "versions_and_experts",
+      "profile": "memory",
+      "executed": 10,
+      "passed": 3,
+      "model_calls": 19,
+      "latency_ms": 22159.250209,
+      "statuses": {
+        "unverified": 9,
+        "needs_clarification": 1
+      }
+    },
+    {
+      "category": "versions_and_experts",
+      "profile": "experts",
+      "executed": 10,
+      "passed": 3,
+      "model_calls": 19,
+      "latency_ms": 21935.649709999998,
+      "statuses": {
+        "unverified": 9,
+        "needs_clarification": 1
+      }
+    }
+  ],
+  "analysis_limitations": [
+    "Public provisional corpus without independent review; scores include format compliance",
+    "No active reference corpus or specialist bindings; memory/expert labels do not prove specialization",
+    "No controlled warmup; host compilation and smoke validation overlapped portions of the diagnostic run",
+    "Structured output-contract parity fixes are present; the public labels, live server state and unreviewed corpus do not support causal reasoning-gain claims"
+  ]
+}
