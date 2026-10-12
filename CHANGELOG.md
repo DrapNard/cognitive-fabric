@@ -791,3 +791,10 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
 - Cover duplicates, integer limits/types and actual six-arm HTTP execution.
 - Supply public demonstration cases and disclose shared compiled verifier code;
   no held-out independence or live performance claim follows.
+
+### Parse bounded structured advisory roles consistently
+
+- Reuse exact raw/fenced JSON parsing for interface, planner and critic outputs.
+- Retain per-role byte bounds, graph/schema checks, budgets and unverified status.
+- Exercise fenced dependency execution and bounded critique revision; reject forged
+  permissions, surrounding instructions and multiple objects.

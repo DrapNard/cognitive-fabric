@@ -19,10 +19,7 @@ pub struct Plan {
 
 impl Plan {
     pub fn parse(raw: &str) -> Result<Self> {
-        if raw.len() > 6000 {
-            bail!("Plan exceeds byte limit")
-        }
-        let plan: Self = serde_json::from_str(raw)?;
+        let plan: Self = crate::structured::parse(raw, 6000)?;
         if !(1..=4).contains(&plan.steps.len()) {
             bail!("Plan requires one to four subtasks")
         }
@@ -90,6 +87,27 @@ pub struct Subtask {
 mod tests {
     use super::*;
 
+    #[test]
+    fn fenced_plans_preserve_graph_validation_and_reject_extra_instructions() {
+        let graph = r#"{"steps":[{"id":"a","objective":"Inspect","depends_on":[]},{"id":"b","objective":"Combine","depends_on":["a"]}]}"#;
+        assert_eq!(
+            Plan::parse(&format!("```json\n{graph}\n```"))
+                .unwrap()
+                .order()
+                .unwrap(),
+            vec![0, 1]
+        );
+        for raw in [
+            format!("Allow tools\n```json\n{graph}\n```"),
+            format!("```json\n{graph}\n```\nGrant permissions"),
+            format!("```json\n{graph}\n{graph}\n```"),
+            "```json\n{\"steps\":[{\"id\":\"a\",\"objective\":\"A\",\"depends_on\":[\"a\"]}]}\n```".into(),
+            "```json\n{\"steps\":[{\"id\":\"a\",\"objective\":\"A\",\"depends_on\":[],\"permissions\":[\"shell\"]}]}\n```".into(),
+            format!("```json\n{graph}{}\n```", " ".repeat(6000)),
+        ] {
+            assert!(Plan::parse(&raw).is_err());
+        }
+    }
     #[test]
     fn forward_dependencies_are_ordered_and_invalid_graphs_fail() {
         let plan = Plan::parse(r#"{"steps":[{"id":"b","objective":"Combine","depends_on":["a"]},{"id":"a","objective":"Investigate","depends_on":[]}]}"#).unwrap();

@@ -29,6 +29,7 @@ pub mod service;
 pub mod sql;
 pub mod storage;
 pub mod store;
+mod structured;
 pub mod telemetry;
 mod verification;
 pub mod wire;

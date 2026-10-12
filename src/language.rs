@@ -14,20 +14,7 @@ pub struct Interpretation {
 
 impl Interpretation {
     pub fn parse(text: &str) -> Result<Self> {
-        if text.len() > 16_000 {
-            bail!("Intent response exceeds bounds")
-        }
-        let trimmed = text.trim();
-        let json = if let Some(body) = trimmed
-            .strip_prefix("```json\n")
-            .or_else(|| trimmed.strip_prefix("```json\r\n"))
-        {
-            body.strip_suffix("```")
-                .ok_or_else(|| anyhow::anyhow!("Incomplete JSON intent fence"))?
-        } else {
-            trimmed
-        };
-        let value: Self = serde_json::from_str(json)?;
+        let value: Self = crate::structured::parse(text, 16_000)?;
         if value.objective.trim().is_empty()
             || value.objective.len() > 12_000
             || value.constraints.len() > 16

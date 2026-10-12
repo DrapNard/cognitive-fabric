@@ -1695,3 +1695,10 @@ still send the original provider control on normal completion and cancellation,
 reap children and leave the current operator configuration untouched. All mandatory
 checks pass again with 334 tests; log:
 `/tmp/cogfabric-resume-provider-pins-tests.log`. This final change affects tests only.
+
+Structured role JSON validation (2026-10-12): formatting, offline all-target
+check/tests (314 library + 21 integration = 335) and Clippy with denied warnings
+pass using FlatBuffers 25.12.19. Log: `/tmp/cogfabric-advisory-json-tests.log`.
+Fenced graph execution/durable validation and bounded fenced-critic revision are
+covered, with negative wrapper/schema/permission cases. Existing raw JSON,
+recovery, transport and budget tests continue to pass.

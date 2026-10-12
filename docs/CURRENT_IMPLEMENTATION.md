@@ -521,3 +521,8 @@ checking exact integer multiplicity/direction without trusting runtime verdicts
 or answer whitespace. All mandatory checks pass with 334 tests (313 library,
 21 integration). Public sorting examples are demonstration data; live reviewed
 comparison remains outstanding. See `BENCHMARKING.md` for shared-verifier limits.
+
+Interface/planner/critic JSON now shares one bounded exact-fence parser, preserving
+strict schemas, graph checks and advisory status. Planner graphs and critic revisions
+accept the same observed model wrapper as interpretation. All mandatory checks
+pass with 335 tests; live recursive quality and gain remain separate research evidence.

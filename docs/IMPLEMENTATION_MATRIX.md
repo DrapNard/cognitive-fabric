@@ -53,7 +53,7 @@ remains a pre-release. `QUALITY_REVIEW.md` preserves verification history.
 | 12, 14 | CLI/service | Partial | `src/main.rs`: initialization/configuration, ask, service controls, task-specific socket progress/cancellation, skill lifecycle, ingestion/search, task traces, candidates/rollback, benchmark, self-test; real socket fixtures | Live residency lifecycle |
 | 12, 13 | Hardware/performance claims | Partial | Optional whole-device GPU diagnostics sampled real host memory/utilization/power; no energy or large-model advantage claimed | Task-attributed telemetry, real model switching and equal-budget comparisons |
 
-All 334 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
+All 335 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
 all-target build checks and Clippy with denied warnings pass. Fixtures do not prove
 GPU integration, neural quality, immutable backend weights or live model switching.
 
@@ -909,3 +909,12 @@ configuration changes for both normal resumed worker completion and cancellation
 all 334 tests and mandatory checks pass. Current operator settings remain unchanged.
 This strengthens existing task pinning evidence, not general arbitrary-phase replay
 or provider hidden-compute attestation. See `RELEASE_AUDIT.md` / `QUALITY_REVIEW.md`.
+
+Bounded structured role JSON: **Implemented** via `src/structured.rs`, reused by
+language interpretation, planner graphs and critic advice. Existing strict schemas,
+graph validation and recursion limits remain enforced. Tests execute dependent
+subtasks from a fenced graph (including durable graph validation), perform a
+bounded fenced-critic revision, and reject forged permissions/surrounding prose/
+multiple objects. All mandatory checks pass with 335 tests (314 library, 21
+integration). This adds compatibility with observed model formatting; useful
+live recursive gains still require measurement.

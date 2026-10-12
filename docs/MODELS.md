@@ -216,3 +216,13 @@ prose, multiple objects, wrong fence languages, incomplete/nested fences and
 permission fields are rejected. This handles an observed local-model formatting
 wrapper without extracting JSON from arbitrary instructions or changing the
 original authoritative goal. Accepted interpretation remains untrusted advice.
+
+Planner and critic structured responses now use the same exact-fence JSON parser
+as the language interface (`src/structured.rs`). Planner input remains bounded to
+6,000 bytes and validated as an acyclic, bounded dependency graph; critic JSON is
+bounded to 8,192 bytes with the existing strict boolean/reason schema and 1,000-byte
+useful-reason limit. Interface input remains bounded to 16,000 bytes. Only raw JSON
+or one exact outer `json` fence is accepted; unknown fields, surrounding prose,
+multiple values and malformed wrappers fail. Plan/critic output stays advisory,
+never permissions or independent success evidence, and existing budgets/stopping
+rules remain authoritative. Recovery uses the same validated planner parser.
