@@ -464,3 +464,13 @@ exit and socket removal were observed. Exact binary hash, timing and evidence
 paths are in QUALITY_REVIEW.md and LIVE_INFERENCE.md. This supersedes earlier
 installed-runtime evidence for the SQL/reference changes, while clean-OS setup,
 held-out quality/security studies and general lifecycle requirements remain open.
+
+## Hosted compiler-bootstrap gate — 2026-10-12
+
+[Run 38295462158](https://github.com/DrapNard/cognitive-fabric/actions/runs/38295462158)
+passed for exact commit `fb7f9ec061dbb42b4ce2da6f81c9af6b3d397449` in 3m21s.
+The shared pinned compiler bootstrap, mandatory Rust checks, CLI workflows,
+security boundary evaluation and offline training preflight all passed on the
+hosted runner. This closes the unobserved remote-CI gate for that commit while
+retaining the broader functional, held-out evaluation and end-user installation
+gaps listed above. A passing pipeline is not a final v1.0 release approval.

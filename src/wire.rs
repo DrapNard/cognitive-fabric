@@ -12,6 +12,64 @@ use generated::cognitive as fb;
 
 const MAX_FRAME: usize = 256 * 1024;
 
+fn encode_availability(value: crate::fabric::Availability) -> fb::ToolAvailability {
+    use crate::fabric::Availability::*;
+    match value {
+        Unknown => fb::ToolAvailability::Unknown,
+        Connected => fb::ToolAvailability::Connected,
+        InUse => fb::ToolAvailability::InUse,
+        Closed => fb::ToolAvailability::Closed,
+        Expired => fb::ToolAvailability::Expired,
+        Exhausted => fb::ToolAvailability::Exhausted,
+    }
+}
+fn decode_availability(value: fb::ToolAvailability) -> Result<crate::fabric::Availability> {
+    use crate::fabric::Availability::*;
+    Ok(match value {
+        fb::ToolAvailability::Unknown => Unknown,
+        fb::ToolAvailability::Connected => Connected,
+        fb::ToolAvailability::InUse => InUse,
+        fb::ToolAvailability::Closed => Closed,
+        fb::ToolAvailability::Expired => Expired,
+        fb::ToolAvailability::Exhausted => Exhausted,
+        _ => bail!("Unknown tool availability"),
+    })
+}
+fn validate_tool_modules(modules: &[crate::fabric::tools::ModuleStatus]) -> Result<()> {
+    use std::collections::{BTreeMap, BTreeSet};
+    if modules.len() > 128 {
+        bail!("Too many discovered tool versions")
+    }
+    let mut versions = BTreeSet::new();
+    let mut active = BTreeSet::new();
+    let mut capabilities = BTreeMap::new();
+    let mut active_capabilities = BTreeMap::new();
+    for module in modules {
+        let descriptor = &module.descriptor;
+        descriptor.validate()?;
+        if module.active
+            && active_capabilities
+                .insert(&descriptor.capability, module.routing_rank.is_some())
+                .is_some_and(|ranked| !ranked || module.routing_rank.is_none())
+        {
+            bail!("Conflicting discovered active tool capabilities")
+        }
+        if module.routing_rank.is_some_and(|rank| rank > 1_000_000)
+            || !versions.insert((&descriptor.id, &descriptor.version))
+            || (module.active && !active.insert(&descriptor.id))
+            || capabilities
+                .insert(&descriptor.id, &descriptor.capability)
+                .is_some_and(|prior| prior != &descriptor.capability)
+        {
+            bail!("Invalid discovered tool version inventory")
+        }
+    }
+    if active.len() > 32 {
+        bail!("Too many active tool modules")
+    }
+    Ok(())
+}
+
 fn validate_stream(state: Option<&str>, has_progress: bool) -> Result<()> {
     if let Some(state) = state {
         if !has_progress || !matches!(state, "update" | "complete" | "timeout") {
@@ -27,6 +85,7 @@ pub enum ControlAction {
     CancelActive,
     Stop,
     Modules,
+    ToolModules,
     TaskProgress,
     CancelTask,
     SubscribeProgress,
@@ -45,6 +104,7 @@ pub enum Message {
         active: bool,
         accepted: bool,
         modules: Vec<crate::fabric::ModuleDescriptor>,
+        tool_modules: Vec<crate::fabric::tools::ModuleStatus>,
         active_task_id: Option<String>,
         progress: Option<(String, crate::events::ProgressPage)>,
         stream_state: Option<String>,
@@ -149,6 +209,7 @@ pub fn encode(message: &Message) -> Result<Vec<u8>> {
                         ControlAction::CancelActive => fb::ControlAction::CancelActive,
                         ControlAction::Stop => fb::ControlAction::Stop,
                         ControlAction::Modules => fb::ControlAction::Modules,
+                        ControlAction::ToolModules => fb::ControlAction::ToolModules,
                         ControlAction::TaskProgress => fb::ControlAction::TaskProgress,
                         ControlAction::CancelTask => fb::ControlAction::CancelTask,
                         ControlAction::SubscribeProgress => fb::ControlAction::SubscribeProgress,
@@ -162,6 +223,7 @@ pub fn encode(message: &Message) -> Result<Vec<u8>> {
             active,
             accepted,
             modules,
+            tool_modules,
             active_task_id,
             progress,
             stream_state,
@@ -199,6 +261,20 @@ pub fn encode(message: &Message) -> Result<Vec<u8>> {
                 ));
             }
             let modules = builder.create_vector(&encoded);
+            validate_tool_modules(tool_modules)?;
+            let mut encoded_tools = Vec::new();
+            for module in tool_modules {
+                let args = fb::ToolModuleInfoArgs {
+                    id: Some(builder.create_string(&module.descriptor.id)),
+                    version: Some(builder.create_string(&module.descriptor.version)),
+                    capability: Some(builder.create_string(&module.descriptor.capability)),
+                    active: module.active,
+                    availability: encode_availability(module.availability),
+                    routing_rank: module.routing_rank,
+                };
+                encoded_tools.push(fb::ToolModuleInfo::create(&mut builder, &args));
+            }
+            let tool_modules = builder.create_vector(&encoded_tools);
             let active_task_id = active_task_id
                 .as_ref()
                 .map(|id| -> Result<_> {
@@ -237,6 +313,7 @@ pub fn encode(message: &Message) -> Result<Vec<u8>> {
                     active: *active,
                     accepted: *accepted,
                     modules: Some(modules),
+                    tool_modules: Some(tool_modules),
                     active_task_id,
                     progress,
                     stream_state,
@@ -352,8 +429,14 @@ pub fn decode(body: &[u8]) -> Result<Message> {
     if !flatbuffers::buffer_has_identifier(body, "COGF", false) {
         bail!("Invalid FlatBuffers file identifier")
     }
+    let options = flatbuffers::VerifierOptions {
+        max_depth: 32,
+        max_tables: 4096,
+        max_apparent_size: 1_048_576,
+        ..Default::default()
+    };
     let envelope =
-        flatbuffers::root::<fb::Envelope>(body).context("Invalid FlatBuffers message")?;
+        fb::root_as_envelope_with_opts(&options, body).context("Invalid FlatBuffers message")?;
     if envelope.version() != 1 {
         bail!("Unsupported protocol version")
     }
@@ -379,6 +462,7 @@ pub fn decode(body: &[u8]) -> Result<Message> {
                 fb::ControlAction::CancelActive => ControlAction::CancelActive,
                 fb::ControlAction::Stop => ControlAction::Stop,
                 fb::ControlAction::Modules => ControlAction::Modules,
+                fb::ControlAction::ToolModules => ControlAction::ToolModules,
                 fb::ControlAction::TaskProgress => ControlAction::TaskProgress,
                 fb::ControlAction::CancelTask => ControlAction::CancelTask,
                 fb::ControlAction::SubscribeProgress => ControlAction::SubscribeProgress,
@@ -404,6 +488,19 @@ pub fn decode(body: &[u8]) -> Result<Message> {
                     bail!("Too many discovered modules")
                 }
                 for entry in entries.iter() {
+                    if entry.id().is_empty()
+                        || entry.id().len() > 64
+                        || entry.version().len() > 128
+                        || entry.roles().is_none_or(|roles| {
+                            roles.is_empty()
+                                || roles.len() > crate::fabric::protocol::ROLES.len()
+                                || roles
+                                    .iter()
+                                    .any(|role| !crate::fabric::protocol::ROLES.contains(&role))
+                        })
+                    {
+                        bail!("Invalid discovered inference field bounds")
+                    }
                     let descriptor = crate::fabric::ModuleDescriptor {
                         id: entry.id().into(),
                         version: entry.version().into(),
@@ -417,6 +514,35 @@ pub fn decode(body: &[u8]) -> Result<Message> {
                 }
             }
             let active_task_id = response.active_task_id().map(String::from);
+            let mut tool_modules = Vec::new();
+            if let Some(entries) = response.tool_modules() {
+                if entries.len() > 128 {
+                    bail!("Too many discovered tool versions")
+                }
+                for entry in entries {
+                    // Shared FlatBuffers strings can be referenced many times. Bound
+                    // borrowed fields before copying to prevent allocation amplification.
+                    if entry.id().is_empty()
+                        || entry.id().len() > 64
+                        || entry.version().len() > 64
+                        || !matches!(entry.capability(), "math.evaluate" | "sql.query")
+                    {
+                        bail!("Invalid discovered tool field bounds")
+                    }
+                    let availability = decode_availability(entry.availability())?;
+                    tool_modules.push(crate::fabric::tools::ModuleStatus {
+                        descriptor: crate::fabric::tools::Descriptor {
+                            id: entry.id().into(),
+                            version: entry.version().into(),
+                            capability: entry.capability().into(),
+                        },
+                        active: entry.active(),
+                        availability,
+                        routing_rank: entry.routing_rank(),
+                    });
+                }
+            }
+            validate_tool_modules(&tool_modules)?;
             if active_task_id.is_some() && !response.active() {
                 bail!("Inactive response cannot identify an active task")
             }
@@ -449,6 +575,7 @@ pub fn decode(body: &[u8]) -> Result<Message> {
                 active: response.active(),
                 accepted: response.accepted(),
                 modules,
+                tool_modules,
                 active_task_id,
                 progress,
                 stream_state: {
@@ -579,6 +706,172 @@ pub fn new_request(query: String, mode: String) -> Message {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn typed_tool_inventory_preserves_states_and_rejects_invalid_registries() {
+        use crate::fabric::{
+            tools::{Descriptor, ModuleStatus},
+            Availability,
+        };
+        let states = [
+            Availability::Unknown,
+            Availability::Connected,
+            Availability::InUse,
+            Availability::Closed,
+            Availability::Expired,
+            Availability::Exhausted,
+        ];
+        let inventory: Vec<_> = states
+            .into_iter()
+            .enumerate()
+            .map(|(n, availability)| ModuleStatus {
+                descriptor: Descriptor {
+                    id: format!("math.{n}"),
+                    version: "1.0.0".into(),
+                    capability: "math.evaluate".into(),
+                },
+                active: true,
+                availability,
+                routing_rank: Some(n as u32),
+            })
+            .collect();
+        let reply = |tool_modules| Message::ControlReply {
+            id: "tools".into(),
+            active: false,
+            accepted: true,
+            modules: Vec::new(),
+            tool_modules,
+            active_task_id: None,
+            progress: None,
+            stream_state: None,
+        };
+        let Message::ControlReply { tool_modules, .. } =
+            decode(&encode(&reply(inventory.clone())).unwrap()).unwrap()
+        else {
+            panic!("Expected inventory")
+        };
+        for (actual, expected) in tool_modules.iter().zip(&inventory) {
+            assert_eq!(actual.descriptor, expected.descriptor);
+            assert_eq!(actual.availability, expected.availability);
+            assert_eq!(actual.routing_rank, expected.routing_rank);
+            assert_eq!(actual.active, expected.active);
+        }
+        for variant in 0..7 {
+            let mut invalid = inventory.clone();
+            match variant {
+                0 => invalid.push(invalid[0].clone()),
+                1 => invalid[0].routing_rank = Some(1_000_001),
+                2 => invalid[0].descriptor.capability = "shell.execute".into(),
+                3 => {
+                    let mut next = invalid[0].clone();
+                    next.descriptor.version = "2.0.0".into();
+                    invalid.push(next);
+                }
+                4 | 5 => {
+                    invalid = (0..if variant == 4 { 33 } else { 129 })
+                        .map(|n| {
+                            let mut module = inventory[0].clone();
+                            module.descriptor.id = format!("math.{n}");
+                            module.active = variant == 4;
+                            module
+                        })
+                        .collect();
+                }
+                6 => invalid[0].routing_rank = None,
+                _ => unreachable!(),
+            }
+            assert!(
+                encode(&reply(invalid)).is_err(),
+                "Accepted variant {variant}"
+            );
+        }
+    }
+
+    #[test]
+    fn untrusted_tool_inventory_rejects_unknown_availability() {
+        let mut builder = flatbuffers::FlatBufferBuilder::new();
+        let args = fb::ToolModuleInfoArgs {
+            id: Some(builder.create_string("math.remote")),
+            version: Some(builder.create_string("1.0.0")),
+            capability: Some(builder.create_string("math.evaluate")),
+            availability: fb::ToolAvailability(99),
+            ..Default::default()
+        };
+        let module = fb::ToolModuleInfo::create(&mut builder, &args);
+        let modules = builder.create_vector(&[module]);
+        let response = fb::ControlResponse::create(
+            &mut builder,
+            &fb::ControlResponseArgs {
+                accepted: true,
+                tool_modules: Some(modules),
+                ..Default::default()
+            },
+        );
+        let id = builder.create_string("forged-tool-state");
+        let envelope = fb::Envelope::create(
+            &mut builder,
+            &fb::EnvelopeArgs {
+                version: 1,
+                request_id: Some(id),
+                kind: fb::MessageKind::ControlResponse,
+                control_response: Some(response),
+                ..Default::default()
+            },
+        );
+        builder.finish(envelope, Some("COGF"));
+        assert!(decode(builder.finished_data()).is_err());
+    }
+
+    #[test]
+    fn shared_tool_strings_are_bounded_before_inventory_copying() {
+        for variant in 0..3 {
+            let mut builder = flatbuffers::FlatBufferBuilder::new();
+            let oversized = "x".repeat(64_000);
+            let id = builder.create_string(if variant == 0 {
+                &oversized
+            } else {
+                "math.remote"
+            });
+            let version = builder.create_string(if variant == 1 { &oversized } else { "1.0.0" });
+            let capability = builder.create_string(if variant == 2 {
+                &oversized
+            } else {
+                "math.evaluate"
+            });
+            let module = fb::ToolModuleInfo::create(
+                &mut builder,
+                &fb::ToolModuleInfoArgs {
+                    id: Some(id),
+                    version: Some(version),
+                    capability: Some(capability),
+                    ..Default::default()
+                },
+            );
+            let modules = builder.create_vector(&[module; 8]);
+            let response = fb::ControlResponse::create(
+                &mut builder,
+                &fb::ControlResponseArgs {
+                    tool_modules: Some(modules),
+                    ..Default::default()
+                },
+            );
+            let correlation = builder.create_string("shared-string-attack");
+            let root = fb::Envelope::create(
+                &mut builder,
+                &fb::EnvelopeArgs {
+                    version: 1,
+                    request_id: Some(correlation),
+                    kind: fb::MessageKind::ControlResponse,
+                    control_response: Some(response),
+                    ..Default::default()
+                },
+            );
+            builder.finish(root, Some("COGF"));
+            assert!(builder.finished_data().len() < MAX_FRAME);
+            let error = decode(builder.finished_data()).unwrap_err().to_string();
+            assert!(error.contains("tool field bounds"), "{error}");
+        }
+    }
     #[test]
     fn targeted_controls_require_identity_and_preserve_progress_frames() {
         let task = Uuid::new_v4().to_string();
@@ -633,6 +926,7 @@ mod tests {
             active: true,
             accepted: true,
             modules: Vec::new(),
+            tool_modules: Vec::new(),
             active_task_id: Some(task.clone()),
             progress: Some((
                 task.clone(),
@@ -731,6 +1025,7 @@ mod tests {
             ControlAction::CancelActive,
             ControlAction::Stop,
             ControlAction::Modules,
+            ControlAction::ToolModules,
         ] {
             let message = Message::Control {
                 id: "control".into(),
@@ -905,6 +1200,7 @@ mod tests {
                 version: "1.0.0".into(),
                 roles: vec!["solver".into()],
             }],
+            tool_modules: Vec::new(),
         };
         let Message::ControlReply { modules, .. } = decode(&encode(&reply).unwrap()).unwrap()
         else {
@@ -932,7 +1228,7 @@ mod tests {
         );
         builder.finish(envelope, Some("COGF"));
         assert!(
-            matches!(decode(builder.finished_data()).unwrap(),Message::ControlReply { modules, active_task_id:None, progress:None, .. } if modules.is_empty())
+            matches!(decode(builder.finished_data()).unwrap(),Message::ControlReply { modules, tool_modules, active_task_id:None, progress:None, .. } if modules.is_empty() && tool_modules.is_empty())
         );
     }
     #[test]

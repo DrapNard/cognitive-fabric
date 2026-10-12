@@ -230,6 +230,10 @@ enum Command {
         #[arg(long)]
         socket: bool,
     },
+    ToolModules {
+        #[arg(long)]
+        socket: bool,
+    },
     CancelActive,
     Stop,
     SkillAdd {
@@ -750,6 +754,11 @@ async fn main() -> Result<()> {
             service::modules(&cfg).await?
         } else {
             engine.broker.discover()?
+        })?,
+        Command::ToolModules { socket } => serde_json::to_value(if socket {
+            service::tool_modules(&cfg).await?
+        } else {
+            engine.tools.statuses()?
         })?,
         Command::SkillRegister { manifest } => {
             cogfabric::registry::register(&store, &cogfabric::registry::read_manifest(&manifest)?)?

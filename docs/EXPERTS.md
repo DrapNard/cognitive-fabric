@@ -199,3 +199,13 @@ exclude adapters from new pinning, activation and pinned dispatch; they never
 reset grants or deadlines. If a discarded stream is visible, `closed` takes
 precedence. Observing an in-use lock cannot prove remaining calls, so dispatch
 remains authoritative. This is bounded local lifecycle state, not remote health.
+
+### Operator tool inventory
+
+Use `cogfabric --json tool-modules` for local host tool versions, selected state,
+local availability and immutable routing ranks. `tool-modules --socket` requests
+the running service's typed inventory. This reports the host broker, not temporary
+per-task worker sessions or remote health attestations. It starts no workers and
+expands no permissions. Local CLI, typed protocol, real-socket and expanded CLI/service smoke assertions
+pass. The current smoke used the debug executable; optimized installation for this
+revision remains unverified.

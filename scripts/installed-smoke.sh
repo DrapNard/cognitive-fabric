@@ -51,6 +51,8 @@ check_sql() {
 }
 run init init
 run self-test self-test
+run tool-modules tool-modules
+jq -e 'length == 2 and all(.[]; .active) and any(.[]; .descriptor.capability == "math.evaluate") and any(.[]; .descriptor.capability == "sql.query")' "$evidence/tool-modules.json" >/dev/null
 jq -e '.math_ok and .wire_ok' "$evidence/self-test.json" >/dev/null
 run arithmetic ask 'calc: (7 + 5) * 3'
 jq -e '.answer == "36" and .status == "completed" and .calls == 0' "$evidence/arithmetic.json" >/dev/null
@@ -133,6 +135,8 @@ for ((attempt=0; attempt<200; attempt++)); do
     sleep 0.05
 done
 [[ -S "$state/fabric.sock" ]]
+run socket-tool-modules tool-modules --socket
+jq -e 'length == 2 and all(.[]; .active) and any(.[]; .descriptor.capability == "math.evaluate") and any(.[]; .descriptor.capability == "sql.query")' "$evidence/socket-tool-modules.json" >/dev/null
 run socket ask 'calc: 10 * 12' --socket
 jq -e '.answer == "120" and .status == "completed"' "$evidence/socket.json" >/dev/null
 check_worker "$state" socket

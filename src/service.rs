@@ -272,11 +272,16 @@ fn control_response(
         .map_err(|_| anyhow::anyhow!("Active task mutex poisoned"))?;
     let active = active_task.is_some();
     let mut modules = Vec::new();
+    let mut tool_modules = Vec::new();
     let mut progress = None;
     let accepted = match action {
         wire::ControlAction::Status => true,
         wire::ControlAction::Modules => {
             modules = engine.broker.discover()?;
+            true
+        }
+        wire::ControlAction::ToolModules => {
+            tool_modules = engine.tools.statuses()?;
             true
         }
         wire::ControlAction::TaskProgress => {
@@ -307,6 +312,7 @@ fn control_response(
         active,
         accepted,
         modules,
+        tool_modules,
         active_task_id: active_task.clone(),
         progress,
         stream_state: None,
@@ -329,6 +335,7 @@ async fn send_progress(
                 active: false,
                 accepted: true,
                 modules: Vec::new(),
+                tool_modules: Vec::new(),
                 active_task_id: None,
                 progress: Some((task.into(), page)),
                 stream_state: Some(state.into()),
@@ -509,6 +516,17 @@ pub async fn modules(cfg: &Config) -> Result<Vec<crate::fabric::ModuleDescriptor
         bail!("Module discovery unavailable")
     }
     Ok(modules)
+}
+
+pub async fn tool_modules(cfg: &Config) -> Result<Vec<crate::fabric::tools::ModuleStatus>> {
+    match exchange_task_control(cfg, wire::ControlAction::ToolModules, None, 0).await? {
+        Message::ControlReply {
+            accepted: true,
+            tool_modules,
+            ..
+        } => Ok(tool_modules),
+        _ => bail!("Tool module discovery unavailable"),
+    }
 }
 
 async fn exchange_control(
@@ -834,6 +852,15 @@ mod tests {
         assert_eq!(discovered.len(), 1);
         assert_eq!(discovered[0].id, "inference.local");
         assert!(discovered[0].roles.iter().any(|role| role == "solver"));
+        let tool_inventory = tool_modules(&cfg).await.unwrap();
+        assert_eq!(tool_inventory.len(), 2);
+        assert!(tool_inventory.iter().all(|module| module.active));
+        assert!(tool_inventory
+            .iter()
+            .any(|module| module.descriptor.capability == "math.evaluate"));
+        assert!(tool_inventory
+            .iter()
+            .any(|module| module.descriptor.capability == "sql.query"));
         assert_eq!(
             control(&cfg, wire::ControlAction::Status).await.unwrap(),
             (false, true)

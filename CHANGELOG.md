@@ -895,3 +895,13 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
 - Use the same script in CI, document persistent FLATC setup and make missing
   compiler build errors point to an actionable command.
 - Exercise the actual upstream source build and negative argument/destination cases.
+
+### Add typed operator tool discovery
+
+- Expose bounded host tool inventories through local CLI and an append-only
+  FlatBuffers service control, preserving capability/version/rank/availability.
+- Validate inventory identities, conflicts, limits and enum values; cover wire
+  compatibility and malformed entries with local tests.
+- Bound borrowed fields before copying and cap envelope verifier resource use.
+- Verify socket inventory and expanded CLI/service smoke; all 358 tests, formatting,
+  all-target check, Clippy and pinned-generator schema conformity pass.

@@ -1138,3 +1138,26 @@ unverified-tag-only recipe. Actual public clone/build and negative argument/path
 checks passed locally. Existing Git/CMake/C++/Make prerequisites were already
 installed; this is not proof of fresh-OS prerequisite installation or authenticated
 upstream provenance beyond the reviewed commit pin and HTTPS transport.
+
+Hosted setup evidence: GitHub run 38295462158 passed for bootstrap commit
+`fb7f9ec` in 3m21s, including verified compiler bootstrap, mandatory Rust checks,
+CLI workflow smoke, security evaluation and training preflight. This verifies
+fresh hosted checkout/dependency setup on a runner with existing prerequisites,
+not a fresh end-user OS install or live GPU/security/quality evaluation. See
+QUALITY_REVIEW.md for the immutable commit and run link. CI Node/runner-image
+migration warnings remain maintenance work.
+
+### Typed operator tool discovery — 2026-10-12 (Implemented)
+
+`tool-modules` / `tool-modules --socket` expose append-only typed FlatBuffers host
+inventory with capability, immutable version/rank, active selection and local
+availability. Bounds: 128 versions/32 active IDs. Validation denies malformed or
+conflicting registries and unknown enums; legacy replies omit the vector safely.
+Borrowed fields are bounded before copying; envelope verification bounds shared
+reference amplification. Thirteen wire tests, real socket discovery and expanded
+CLI/service smoke pass. All 358 tests (337 library, 21 integration), formatting,
+all-target check and Clippy with warnings denied pass with flatc 25.12.19; schema
+conformity passes. Smoke used the debug binary, not a new optimized installation.
+No worker is launched and no capability is granted by discovery. See
+QUALITY_REVIEW.md for evidence. Automatic approval access recovered following the
+operator's instruction; verification and private Git synchronization resumed.

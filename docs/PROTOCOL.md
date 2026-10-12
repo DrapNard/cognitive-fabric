@@ -430,3 +430,24 @@ malformed version/field pairings and oversized/unknown controls are regression
 tested. This transports one request setting, not a permission or hidden-compute
 attestation. Internal protocol remains typed FlatBuffers; only external HTTP uses
 JSON `reasoning_effort`.
+
+### Tool-module inventory
+
+Control action 7 (`ToolModules`) requests a read-only inventory of the host tool
+broker. The append-only `ControlResponse.tool_modules` vector carries typed
+`ToolModuleInfo` entries: ID, version, capability, active selection, availability
+enum and optional routing rank. Inventory is bounded to 128 historical versions
+and 32 active IDs. Validation rejects duplicate versions, multiple active versions
+of one ID, changed capability identity, invalid capability/rank, exclusive overlap
+and unknown availability values. Older responses omit the vector and decode as
+empty; old servers reject the new action rather than gaining tool permissions.
+
+`tool-modules` inspects the current CLI host; `tool-modules --socket` queries the
+running service. The inventory does not create task workers, probe model servers,
+grant capabilities or attest backend health. Per-task managed workers are separate
+from host registration; `unknown` is an honest local availability result. Wire
+round trips, legacy defaults, malformed inventory, real socket integration and
+the expanded CLI/service smoke pass. Borrowed field bounds precede string copies;
+the envelope verifier limits depth to 32, tables to 4096 and apparent size to
+1 MiB, in addition to the existing 256 KiB physical frame limit. Shared oversized
+string fixtures verify early rejection. Compiler 25.12.19 schema conformity passes.

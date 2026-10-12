@@ -1962,3 +1962,51 @@ parallel tests passed 355 cases, log `/tmp/cogfabric-bootstrap-compiler-tests.lo
 CI now uses the same script; its remote run has not yet been observed for this
 change. This verifies source/compiler/runtime pairing on existing local build
 prerequisites, not a fresh OS install or reproducible binary hashes across toolchains.
+
+## Hosted bootstrap pipeline verification — 2026-10-12
+
+The confirmed CI watcher for source
+`fb7f9ec061dbb42b4ce2da6f81c9af6b3d397449` exited zero. GitHub's Rust job completed
+successfully in 3m21s: checkout, stable Rust setup, the new commit-pinned FlatBuffers
+bootstrap, formatting, all-target check, Clippy, tests, CLI self-test, complete
+local CLI workflow smoke, offline security evaluation and offline training
+preflight all passed. Run:
+https://github.com/DrapNard/cognitive-fabric/actions/runs/38295462158
+Watcher evidence: `/tmp/cogfabric-hosted-bootstrap-ci.log`.
+Earlier runs for `666b789e11388bff67a1693380b4c183be6880ca` and
+`cee0de5a558ad3c4d292d048d6cb70c184bb202c` were also observed completed/success.
+
+This supplies hosted checkout/dependency/compiler/workflow evidence beyond the
+existing local Cargo cache. The runner already provides build prerequisites;
+it does not prove fresh Arch/CachyOS package installation, GPU inference, model
+security, general plugin provisioning or held-out reasoning gains. The hosted log
+also warns about checkout@v4's Node 20 runtime and a future ubuntu-latest image
+migration; these are reproducibility maintenance items, not failed checks.
+
+A separate request to inspect job-step metadata was not executed because the
+automatic approval reviewer hit a usage limit. The watcher had already been
+approved and running; its terminal result supplied the evidence above. No rejected
+request was retried or routed around review.
+
+## Typed tool discovery verification — 2026-10-12
+
+The typed tool inventory covers all availability states, legacy empty-vector
+compatibility, registry limits/conflicts, invalid capability/rank, forged unknown
+availability and malicious shared oversized strings. Borrowed field bounds precede
+allocations; envelope verifier limits depth 32, tables 4096 and apparent bytes
+1 MiB with the existing 256 KiB physical cap. Discovery grants no capabilities.
+
+After operator confirmation that GitHub access was restored, permissioned commands
+succeeded. All 358 tests (337 library, 21 integration) passed, including actual
+socket inventory, migrations, malformed frames, denial, cancellation and rollback
+fixtures: `/tmp/cogfabric-sync-tests.log`. Formatting and all-target check passed.
+An initial Clippy invocation caught a redundant fixture vector; it was replaced
+with an equivalent fixed slice and Clippy then passed with warnings denied.
+Compiler 25.12.19 `--conform` against the prior committed schema passed.
+
+The expanded CLI/service smoke passed using the current debug binary:
+`/tmp/cogfabric-sync-smoke.log`, evidence
+`/tmp/cogfabric-installed-smoke.IAFaGs`. It verifies local and socket tool inventory
+alongside existing workflows. This is not an optimized install, live inference,
+GPU test or neural safety evaluation. Earlier hosted CI evidence applies to
+`fb7f9ec`; CI for the new commit is separate.
