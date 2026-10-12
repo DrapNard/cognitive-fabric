@@ -830,3 +830,12 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   reasoning-only responses without exposing internal reasoning or retrying.
 - Make HTTP response fixtures independent of saved operator model settings and
   cover null, blank and reasoning-only answers.
+
+### Record Qwen3 8B comparison workflow evidence
+
+- Measure all six public workflow profiles with the operator-selected local model,
+  retaining exact usage and audited normal worker cleanup.
+- Distinguish baseline formatting failure from numeric correctness and record
+  collective overhead, empty retrieval context and absent revision gains.
+- Record two successful default-parallel regression runs without erasing earlier
+  unexplained failures.

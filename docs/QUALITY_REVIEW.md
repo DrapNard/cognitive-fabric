@@ -1833,3 +1833,10 @@ the corrected fixture uses explicit defaults instead. No additional model call,
 automatic budget expansion or acceptance of reasoning-only output was introduced.
 The previously observed default-parallel failures remain unresolved; these results
 do not establish parallel-suite stability or final release readiness.
+
+Two subsequent complete default-parallel runs at runtime revision `2d2fb3b` passed
+350 tests each, logs `/tmp/cogfabric-parallel-investigation.log` and
+`/tmp/cogfabric-parallel-investigation-second.log`. These satisfy the ordinary
+command on these runs; neither success explains the earlier intermittent SQL
+execution / runtime-lease failures. Retain those failures as unresolved evidence
+rather than claiming a proven race fix from the independent HTTP-fixture change.

@@ -1042,3 +1042,13 @@ Internal reasoning is neither returned as an answer nor printed in diagnostics.
 Regression fixtures cover length termination, null answer with reasoning and blank
 answer; fixtures now construct explicit configuration instead of reading saved
 operator settings. Automatic retries and budget expansion remain absent.
+
+Live evaluation update: the user-selected LM Studio `qwen/qwen3-8b` completed all
+six public workflow arms on one sorting case, with normal cleanup of all six
+workers. Tools/recursive arms verified in approximately 0.40/0.34 seconds;
+collective/memory/experts took approximately 1.8–2.0 seconds. Baseline output
+contained correct numbers but failed the required format. This is not held-out
+quality evidence; empty-corpus memory/expert labels and first-cycle recursive
+success establish no retrieval, specialization or revision gain. See
+LIVE_INFERENCE.md for exact usage and limitations. Two fresh default-parallel
+350-test suites passed; prior intermittent failures remain unexplained.

@@ -323,3 +323,36 @@ reserved output 640; one tool call. Evidence: `ownership.json` and
 `ownership.stderr` under `/tmp/cogfabric-qwen3-8b-live`. This combined configuration
 and prompt workaround succeeded; it does not isolate the cause of the operator's
 original empty response or prove provider compliance with reasoning-effort advice.
+
+### Qwen3 8B six-arm public workflow — 2026-10-12
+
+Runtime revision `2d2fb3b3ca83fed85ade4ef496ce4d3d354cdef2`; LM Studio endpoint
+`http://127.0.0.1:1234/v1`, model `qwen/qwen3-8b`, temperature zero,
+`reasoning_effort=none`, managed inference. A fresh isolated workspace ran the first
+public sorting example with `--workflow-check`, Apache-2.0 source attribution and
+600-second run ceiling. Dataset SHA-256:
+`1434ca3af327f9e3b96ccc7dd9dfb04e81314fcb1928e53498321d8372a4049a`.
+Per-task ceilings: 3 calls, 1 cycle, 768 reserved output tokens, 8192 prompt bytes,
+4 tools, 240 seconds wall time, 90-second HTTP timeout. Interpretation/synthesis
+were disabled. Complete report: `/tmp/cogfabric-qwen3-8b-comparison/report.json`;
+configuration, public case, stderr and audit database are alongside it.
+
+| Arm | Strict criterion | Calls | Input/output tokens | Elapsed ms | Inference ms |
+| --- | --- | --- | --- | --- | --- |
+| Alone | Not met | 1 | 70 / 266 | 5089.784 | 5084.804 |
+| Tools | Verified | 1 | 97 / 14 | 396.614 | 390.593 |
+| Recursive | Verified | 1 | 97 / 14 | 335.946 | 329.388 |
+| Collective | Verified | 2 | 236 / 94 | 1960.375 | 1954.814 |
+| Memory | Verified | 2 | 236 / 94 | 1762.608 | 1756.747 |
+| Experts | Verified | 2 | 236 / 94 | 1816.598 | 1810.078 |
+
+Total elapsed 11370.047703 ms, CLI exit zero. All six worker cleanup audits report
+exit zero, reaped true and forced false. The baseline supplied the correct numeric
+sequence inside prose and an object, but failed the required bare-array contract;
+its failure must not be described as incorrect sorting mathematics. Recursive
+mode stopped at its first verified solution and demonstrated no revision gain.
+Memory/expert arms had a fresh empty corpus and no bound expert models, so their
+labels do not establish useful retrieval or expert assistance. Extra collective
+calls incurred overhead on this case. This is one public case with uncontrolled
+warmup/order effects, no larger model and an 8B model rather than the intended
+1–3B baseline. It is explicitly not held-out evaluation or superiority evidence.
