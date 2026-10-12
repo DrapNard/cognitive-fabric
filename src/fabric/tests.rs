@@ -5,6 +5,134 @@ use super::*;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 struct Fixed(&'static str, AtomicUsize);
+struct Switchable {
+    backend: Fixed,
+    closed: AtomicBool,
+}
+impl InferenceBackend for Switchable {
+    fn availability(&self) -> Availability {
+        if self.closed.load(Ordering::Acquire) {
+            Availability::Closed
+        } else {
+            Availability::Unknown
+        }
+    }
+    fn generate<'a>(
+        &'a self,
+        role: &'a str,
+        prompt: &'a str,
+        tokens: usize,
+    ) -> Pin<Box<dyn Future<Output = Result<Generation>> + Send + 'a>> {
+        self.backend.generate(role, prompt, tokens)
+    }
+}
+
+#[tokio::test]
+async fn ranked_candidates_select_stably_and_require_explicit_overlap_approval() {
+    for reverse in [false, true] {
+        let broker = Broker::with_inference(Arc::new(Fixed("initial", AtomicUsize::new(0))));
+        broker.unregister("inference.local").unwrap();
+        let descriptor = |id: &str| ModuleDescriptor {
+            id: id.into(),
+            version: "1.0.0".into(),
+            roles: vec!["solver".into()],
+        };
+        let names = if reverse {
+            ["candidate.b", "candidate.a"]
+        } else {
+            ["candidate.a", "candidate.b"]
+        };
+        for name in names {
+            broker
+                .register_candidate(
+                    descriptor(name),
+                    Arc::new(Fixed(name, AtomicUsize::new(0))),
+                    10,
+                )
+                .unwrap();
+        }
+        assert_eq!(
+            broker.generate("solver", "goal", 128).await.unwrap().text,
+            "candidate.a"
+        );
+        assert!(broker.generate("planner", "goal", 128).await.is_err());
+        assert!(broker
+            .register(
+                descriptor("exclusive"),
+                Arc::new(Fixed("never", AtomicUsize::new(0)))
+            )
+            .is_err());
+        assert!(broker
+            .register_candidate(
+                descriptor("too.high"),
+                Arc::new(Fixed("never", AtomicUsize::new(0))),
+                1_000_001
+            )
+            .is_err());
+        assert_eq!(broker.versions().unwrap().len(), 3);
+        broker.shutdown().unwrap();
+    }
+}
+
+#[tokio::test]
+async fn ranked_replacement_rollback_and_unavailability_preserve_task_pins() {
+    let broker = Broker::with_inference(Arc::new(Fixed("initial", AtomicUsize::new(0))));
+    broker.unregister("inference.local").unwrap();
+    let descriptor = |id: &str, version: &str| ModuleDescriptor {
+        id: id.into(),
+        version: version.into(),
+        roles: vec!["solver".into()],
+    };
+    let first = Arc::new(Switchable {
+        backend: Fixed("first", AtomicUsize::new(0)),
+        closed: AtomicBool::new(false),
+    });
+    let fallback = Arc::new(Fixed("fallback", AtomicUsize::new(0)));
+    broker
+        .register_candidate(descriptor("candidate.a", "1.0.0"), first.clone(), 10)
+        .unwrap();
+    broker
+        .register_candidate(descriptor("candidate.b", "1.0.0"), fallback.clone(), 20)
+        .unwrap();
+    let pinned = broker.pin().unwrap().unwrap();
+    broker
+        .register_candidate(
+            descriptor("candidate.a", "2.0.0"),
+            Arc::new(Fixed("replacement", AtomicUsize::new(0))),
+            30,
+        )
+        .unwrap();
+    assert_eq!(
+        broker.generate("solver", "goal", 128).await.unwrap().text,
+        "fallback"
+    );
+    assert_eq!(
+        pinned.generate("solver", "goal", 128).await.unwrap().text,
+        "first"
+    );
+    broker.activate("candidate.a", "1.0.0").unwrap();
+    assert_eq!(
+        broker.generate("solver", "goal", 128).await.unwrap().text,
+        "first"
+    );
+    first.closed.store(true, Ordering::Release);
+    assert!(pinned.generate("solver", "goal", 128).await.is_err());
+    assert_eq!(fallback.1.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        broker.generate("solver", "goal", 128).await.unwrap().text,
+        "fallback"
+    );
+    assert!(broker.activate("candidate.a", "1.0.0").is_err());
+    assert!(broker
+        .statuses()
+        .unwrap()
+        .iter()
+        .any(|status| status.descriptor.id == "candidate.a"
+            && status.descriptor.version == "1.0.0"
+            && status.routing_rank == Some(10)
+            && status.availability == Availability::Closed));
+    broker.shutdown().unwrap();
+}
 struct Bound {
     descriptor: ModuleDescriptor,
     backend: Fixed,
@@ -44,6 +172,11 @@ async fn transport_registration_preserves_identity_and_refuses_relabelling_befor
             _ => forged.roles.push("planner".into()),
         }
         assert!(broker.register(forged, bound.clone()).is_err());
+        let mut forged_candidate = bound.descriptor.clone();
+        forged_candidate.id = "forged.candidate".into();
+        assert!(broker
+            .register_candidate(forged_candidate, bound.clone(), 0)
+            .is_err());
     }
     assert_eq!(bound.backend.1.load(Ordering::SeqCst), 0);
     assert_eq!(broker.versions().unwrap().len(), 1);

@@ -812,3 +812,5 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   wrappers; report expired tool deadlines before any child launch.
 - Make managed worker shutdown terminal before initialization and coordinate
   handoff publication with cleanup to prevent post-shutdown launches.
+- Add explicitly approved ranked inference alternatives with deterministic task
+  selection, immutable version policy and no hidden retries of pinned calls.

@@ -998,3 +998,17 @@ reported digest after each call. See `LIVE_INFERENCE.md` for exact limits, model
 identities and timing. This strengthens configurable multi-model integration;
 automatic framework residency ownership, native LM Studio switching, adapter
 hot-swapping and small-model performance remain unverified/incomplete.
+
+### Explicit alternative inference candidates — 2026-10-12
+
+Implemented: trusted hosts can `register_candidate` with immutable bounded routing
+rank. Only explicitly ranked modules may overlap inference roles; ordinary exclusive
+registration retains conflict rejection. New snapshots choose the lowest rank,
+then module ID, skipping observed unavailable adapters. Registered replacement and
+rollback preserve each version's rank, backend and bounded queue; running task
+pins never migrate or silently retry an alternative. Status metadata includes rank.
+Regressions cover registration-order independence, role scope, exclusive conflicts,
+rank bounds, transport-identity forgery, replacement/rollback and closed-route
+fallback only for new tasks. Rank is declared operator policy, not learned utility
+or measured cost. General plugin provisioning, residency and adaptive cost-aware
+scheduling remain incomplete.

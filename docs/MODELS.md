@@ -236,3 +236,23 @@ metadata remains discoverable for diagnosis. These observations neither probe
 remote services nor attest loaded weights, grant renewal or future availability.
 A replacement connection requires a new immutable registration; there is no
 implicit reconnect, retry or budget refund.
+
+### Explicit alternative inference routes
+
+Trusted Rust hosts may use `Broker::register_candidate(descriptor, backend, rank)`
+to approve alternative inference modules for the same role. Lower ranks are
+preferred, with lexicographic module IDs breaking ties; rank is bounded to
+0..=1,000,000 and immutable per registered version. Overlap is permitted only
+between ranked registrations. Ordinary `register` and the initial local module
+remain exclusive: explicitly unregister that module before installing overlapping
+ranked alternatives. Metadata cannot grant roles outside the existing allowlist
+or relabel a transport-bound backend.
+
+New task pins choose a route per role, skipping observed unavailable adapters.
+Replacement, unregister and historical activation affect future pins. Existing
+pins keep their backend, even if a new alternative ranks higher; a failed pinned
+call is never secretly retried elsewhere. Future tasks may select another already
+approved available candidate. `statuses()` exposes ranks and observed state.
+Declared ranks do not establish estimated cost, calibrated escalation utility,
+provider health or GPU residency. All original session permissions and ceilings
+remain authoritative. No executable loader or automatic model load is added.

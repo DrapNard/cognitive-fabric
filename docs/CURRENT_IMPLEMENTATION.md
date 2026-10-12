@@ -576,3 +576,10 @@ Optimized installation and installed smoke passed for source `99c939f`, refreshi
 proof for terminal managed shutdown and its concurrency assertions. See
 `RELEASE_AUDIT.md` for exact binary/evidence identities. General lifecycle,
 residency ownership and independent held-out evaluation remain unfinished.
+
+Trusted hosts can now register explicitly ranked alternative inference modules for
+the same role. New pins choose deterministically among available candidates;
+existing pins never migrate or silently retry. Ordinary exclusive registrations
+retain overlap denial. All 345 tests and mandatory checks pass; ranks are declared
+policy, not learned cost estimates. General provisioning/residency remains partial,
+and installed verification must be refreshed after this runtime change.

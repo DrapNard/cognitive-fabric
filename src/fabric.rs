@@ -49,6 +49,7 @@ pub struct ModuleStatus {
     pub descriptor: ModuleDescriptor,
     pub active: bool,
     pub availability: Availability,
+    pub routing_rank: Option<u32>,
 }
 
 impl ModuleDescriptor {
@@ -90,6 +91,7 @@ struct Module {
     backend: Arc<dyn InferenceBackend>,
     queue: OnceCell<mpsc::Sender<Work>>,
     shutdown: Arc<watch::Sender<bool>>,
+    routing_rank: Option<u32>,
 }
 
 fn same_header(left: &Header, right: &Header) -> bool {
@@ -180,6 +182,7 @@ impl Broker {
             backend,
             queue: OnceCell::new(),
             shutdown: shutdown.clone(),
+            routing_rank: None,
         });
         let mut registry = Registry::default();
         registry
@@ -200,6 +203,29 @@ impl Broker {
         &self,
         descriptor: ModuleDescriptor,
         backend: Arc<dyn InferenceBackend>,
+    ) -> Result<()> {
+        self.register_with_rank(descriptor, backend, None)
+    }
+
+    /// Explicit trusted-host approval to compete with other ranked modules.
+    /// Lower rank wins; rank is policy metadata, not measured inference cost.
+    pub fn register_candidate(
+        &self,
+        descriptor: ModuleDescriptor,
+        backend: Arc<dyn InferenceBackend>,
+        routing_rank: u32,
+    ) -> Result<()> {
+        if routing_rank > 1_000_000 {
+            bail!("Inference routing rank exceeds bounds")
+        }
+        self.register_with_rank(descriptor, backend, Some(routing_rank))
+    }
+
+    fn register_with_rank(
+        &self,
+        descriptor: ModuleDescriptor,
+        backend: Arc<dyn InferenceBackend>,
+        routing_rank: Option<u32>,
     ) -> Result<()> {
         descriptor.validate()?;
         if backend
@@ -234,6 +260,7 @@ impl Broker {
                 .roles
                 .iter()
                 .any(|role| module.descriptor.roles.contains(role))
+                && (routing_rank.is_none() || module.routing_rank.is_none())
             {
                 bail!("Conflicting active inference role")
             }
@@ -246,6 +273,7 @@ impl Broker {
             backend,
             queue: OnceCell::new(),
             shutdown: self.shutdown.clone(),
+            routing_rank,
         });
         registry.versions.insert(
             (
@@ -285,6 +313,7 @@ impl Broker {
         }
         if registry.active.values().any(|active| {
             active.descriptor.id != id
+                && (module.routing_rank.is_none() || active.routing_rank.is_none())
                 && module
                     .descriptor
                     .roles
@@ -325,6 +354,7 @@ impl Broker {
                     .get(&module.descriptor.id)
                     .is_some_and(|active| Arc::ptr_eq(active, module)),
                 availability: module.backend.availability(),
+                routing_rank: module.routing_rank,
             })
             .collect())
     }
@@ -372,12 +402,14 @@ impl Broker {
             bail!("Module broker shut down")
         }
         let mut routes = BTreeMap::new();
-        for module in registry.active.values() {
+        let mut candidates = registry.active.values().collect::<Vec<_>>();
+        candidates.sort_by_key(|module| (module.routing_rank.unwrap_or(0), &module.descriptor.id));
+        for module in candidates {
             if module.backend.availability().unavailable() {
                 continue;
             }
             for role in &module.descriptor.roles {
-                routes.insert(role.clone(), module.clone());
+                routes.entry(role.clone()).or_insert_with(|| module.clone());
             }
         }
         Ok(Pinned { routes })

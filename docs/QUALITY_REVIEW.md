@@ -1778,3 +1778,16 @@ format/check/Clippy checks pass; log `/tmp/cogfabric-shutdown-coordination-tests
 This tests synchronization plus owned-child cleanup, not every OS scheduling
 interleaving or proof that an external provider stopped. Runtime source is
 unchanged from `a2f37c0`; these are additional regression assertions.
+
+### Ranked inference candidate routing — 2026-10-12
+
+All 345 tests (324 library, 21 integration), formatting, offline all-target check
+and Clippy with warnings denied passed using FlatBuffers 25.12.19. Log:
+`/tmp/cogfabric-ranked-routing-tests.log`. New tests verify rank/ID deterministic
+selection independent of registration order, unchanged exclusive conflicts,
+bounded ranks, actor-role scope, immutable replacement/rollback and task pinning.
+A closed pinned candidate fails without invoking its alternative; a new task
+selects the already approved alternative. Transport-identity forgery also fails
+through candidate registration. Existing 32-active/128-version/four-slot queue
+bounds and per-call permissions remain unchanged. Rank is human policy metadata,
+not measured performance. Optimized installed proof requires refresh.
