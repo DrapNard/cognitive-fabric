@@ -571,3 +571,8 @@ Managed shutdown is now terminal even before first use, with initialization/hand
 coordination before cleanup inspection. Later valid requests cannot launch stopped
 inference/arithmetic/SQL workers. All 343 tests and mandatory checks pass; the
 optimized installation evidence needs refreshing for this runtime change.
+
+Optimized installation and installed smoke passed for source `99c939f`, refreshing
+proof for terminal managed shutdown and its concurrency assertions. See
+`RELEASE_AUDIT.md` for exact binary/evidence identities. General lifecycle,
+residency ownership and independent held-out evaluation remain unfinished.

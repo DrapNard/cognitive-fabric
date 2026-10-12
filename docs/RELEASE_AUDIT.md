@@ -410,3 +410,18 @@ regressions establish those failure semantics; installed smoke covers normal
 CLI/service execution, worker cleanup, rollback and restore. Automatic residency
 scheduling, general independent plugin provisioning and held-out live evaluation
 remain incomplete. No release approval or remote publication follows.
+
+Optimized terminal shutdown verification (2026-10-12): source `99c939f`
+(runtime unchanged from `a2f37c0`) installed with locked offline dependencies and
+pinned FlatBuffers 25.12.19 under
+`/tmp/cogfabric-v1-terminal-shutdown-install-20261012`. Cargo reported 50.39 seconds.
+Binary SHA-256:
+`cfe929286de88abbb9b392326e763c75c41ae2718b17164be1d8f41b157515c9`.
+Installed smoke passed; evidence `/tmp/cogfabric-installed-smoke.ofDhda`; logs
+`/tmp/cogfabric-terminal-shutdown-install.log` and
+`/tmp/cogfabric-terminal-shutdown-installed-smoke.log`.
+This closes the installed-source gap for terminal managed shutdown. Actual Rust
+regressions separately verify no launch after shutdown and initialization-gate
+coordination before owned-child cleanup; installed smoke covers normal process,
+CLI/service, backup/restore and rollback behavior. No general plugin isolation,
+external provider cancellation or stable-release claim follows.
