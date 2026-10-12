@@ -544,3 +544,9 @@ closed Unix streams remain diagnosable but cannot be pinned, reactivated or
 queued. Actual malformed-response regressions cover both capabilities. All 337
 tests and mandatory checks pass; no remote-health, grant-renewal or reconnection
 claim is introduced.
+
+Optimized installation and the full installed smoke workflow passed for source
+`bb3c987`, closing the pending installed-source gap for inference/arithmetic/SQL
+availability handling. See `RELEASE_AUDIT.md` for binary hash and actual evidence.
+Grant expiry and call allowances remain independently enforced; present streams
+are not health or renewable-authority attestations.

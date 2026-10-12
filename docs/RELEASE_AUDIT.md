@@ -378,3 +378,20 @@ checked answers and one baseline timeout. It is explicitly public and non-held-o
 no benchmark gain or small-model readiness follows. All six workers were reaped.
 This supersedes the missing public workflow mode noted above, while preserving
 independent held-out evaluation and other unfinished release requirements.
+
+Optimized inference/tool availability verification (2026-10-12): source
+`bb3c987` installed with locked offline dependencies and pinned FlatBuffers
+25.12.19 under `/tmp/cogfabric-v1-availability-install-20261012`. Cargo reported
+50.22 seconds. Binary SHA-256:
+`e5fbecb21fa16596f10b314a9b9720647f1f98c3ad40f62001445fa4df009ddc`.
+The unchanged installed smoke script (SHA-256
+`a951e08f31ee0dcb733e6fd4ab21fb75aa74b2fa43c2044d86dbd9d29957e301`)
+passed; evidence `/tmp/cogfabric-installed-smoke.1rflCQ`; logs
+`/tmp/cogfabric-availability-install.log` and
+`/tmp/cogfabric-availability-installed-smoke.log`.
+This closes the installed-source gap after inference and tool availability changes.
+Malformed-response routing/rollback refusal is established by actual Unix Rust
+regressions; installed smoke verifies normal CLI/service/worker/restore paths.
+Availability remains a local stream observation: grant expiry/call exhaustion,
+provider health and external computation completion are separate concerns.
+No new live model quality, general lifecycle or clean-OS claim follows.
