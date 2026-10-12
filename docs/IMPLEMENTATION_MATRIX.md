@@ -53,7 +53,7 @@ remains a pre-release. `QUALITY_REVIEW.md` preserves verification history.
 | 12, 14 | CLI/service | Partial | `src/main.rs`: initialization/configuration, ask, service controls, task-specific socket progress/cancellation, skill lifecycle, ingestion/search, task traces, candidates/rollback, benchmark, self-test; real socket fixtures | Live residency lifecycle |
 | 12, 13 | Hardware/performance claims | Partial | Optional whole-device GPU diagnostics sampled real host memory/utilization/power; no energy or large-model advantage claimed | Task-attributed telemetry, real model switching and equal-budget comparisons |
 
-All 331 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
+All 333 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
 all-target build checks and Clippy with denied warnings pass. Fixtures do not prove
 GPU integration, neural quality, immutable backend weights or live model switching.
 
@@ -875,3 +875,13 @@ malformed interpretation, preserving the original goal and reaching a solver.
 All mandatory checks pass with 331 tests (310 library, 21 integration). This fixes
 the scheduler gap observed in the effort trial; live structured interpretation
 itself remains unverified.
+
+Fenced intent compatibility: **Implemented** in `src/language.rs`. Only one exact
+outer `json` fence is accepted in addition to raw JSON; byte/schema/permission
+checks are retained. Tests reject surrounding instructions, multiple JSON values,
+wrong/nested/incomplete fences and forged permission fields, and demonstrate a
+fenced advisory objective cannot replace the user's goal before solver dispatch.
+All mandatory checks pass with 333 tests (312 library, 21 integration). Earlier
+effort-trial trace inspection confirmed its interface output was a fenced valid
+object; the original strict parser correctly rejected that formerly unsupported
+wrapper. Real final-path success still requires separate observation.

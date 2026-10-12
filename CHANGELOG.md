@@ -775,3 +775,10 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
 - Audit skipped/admitted planning and retain decomposition/exploration reservations.
 - Regress independent call, token and prompt-byte limits after malformed intent;
   preserve the original objective and still dispatch an affordable solver.
+
+### Accept exact fenced structured intent
+
+- Accept one outer Markdown JSON fence around a bounded schema-valid intent.
+- Reject surrounding instructions, multiple objects and malformed wrappers while
+  preserving original-goal authority and deny-unknown-fields validation.
+- Regress real observed formatting through bounded interface/solver execution.

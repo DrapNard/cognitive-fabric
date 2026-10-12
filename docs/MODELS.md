@@ -208,3 +208,11 @@ without one, invalid names and oversized fields; older version-1 workers reject
 version 2 rather than silently ignoring the requested setting. Cumulative worker
 limits and authorization are unchanged. Task configuration snapshots and backups
 retain nondefault overrides; changing host settings cannot change pinned tasks.
+
+Structured interface parsing accepts either raw JSON or one exact outer
+Markdown `json` fence, including LF/CRLF line endings. The existing 16,000-byte
+limit and deny-unknown-fields schema still apply before routing. Prefix/suffix
+prose, multiple objects, wrong fence languages, incomplete/nested fences and
+permission fields are rejected. This handles an observed local-model formatting
+wrapper without extracting JSON from arbitrary instructions or changing the
+original authoritative goal. Accepted interpretation remains untrusted advice.

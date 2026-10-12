@@ -503,3 +503,9 @@ interface/expert charges, checking remaining calls, output reservations and prom
 bytes and auditing skipped planning. All mandatory checks pass with 331 tests.
 This corrects the two-call live trial's scheduler defect; valid real-model
 structured interpretation is still not established by that correction.
+
+The language interface accepts one exact Markdown `json` fence around the same
+strict bounded object, preserving unknown-field rejection and the user's original
+goal. Multiple objects, surrounding prose and malformed wrappers remain rejected.
+All mandatory checks pass with 333 tests. This handles an observed provider format,
+without making advisory intent a permission or proof of an answer.

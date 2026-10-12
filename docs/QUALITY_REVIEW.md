@@ -1665,3 +1665,9 @@ warnings pass with FlatBuffers 25.12.19. Log:
 `/tmp/cogfabric-planner-admission-tests.log`. The new regression independently
 constrains remaining calls/output/prompt bytes after interface dispatch and verifies
 planner refusal plus whole-goal solving; existing graphs/recovery regressions pass.
+
+Exact intent fence validation (2026-10-12): mandatory formatting, offline
+all-target check/tests (312 library + 21 integration = 333) and Clippy with denied
+warnings pass with FlatBuffers 25.12.19. Log:
+`/tmp/cogfabric-intent-fence-tests.log`. Negative wrapper/schema tests and bounded
+two-call original-goal preservation cover the newly observed real-model formatting.

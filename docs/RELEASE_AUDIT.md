@@ -4,14 +4,14 @@ This checklist preserves the 18 acceptance criteria in the goal objective. It is
 an evidence inventory, not a release approval. The canonical French architecture
 and the broader implementation matrix remain authoritative. Earlier test counts
 in the quality review are historical milestones. Current local verification is
-331 Rust tests (310 library, 21 integration), formatting, all-target checking and
+333 Rust tests (312 library, 21 integration), formatting, all-target checking and
 Clippy with warnings denied, using FlatBuffers compiler/crate 25.12.19.
 
 | Goal criterion | Evidence inspected | Assessment / remaining proof |
 |---|---|---|
 | 1. Workspace builds | `Cargo.toml`, all-target check | Passed locally; isolated optimized source installation also passed with cached dependencies. |
 | 2. Formatting and Clippy | Mandatory checks in `QUALITY_REVIEW.md` | Passed locally. |
-| 3. Mandatory tests | All-target test results, `tests/` | 331 passed; fixtures do not establish live model quality. |
+| 3. Mandatory tests | All-target test results, `tests/` | 333 passed; fixtures do not establish live model quality. |
 | 4. FlatBuffers IPC | `protocol/`, `src/wire.rs`, `src/fabric/`, malformed/compatibility/socket tests | Implemented for present transports; authenticated process event delivery/replay is now tested; broader module compatibility remains partial. |
 | 5. CLI/service communication | `src/service.rs`, socket tests, `tests/process_worker.rs` | Tested local transport, progress and cancellation; no general independent plugin service is claimed. |
 | 6. Compatible local LLM | `src/backend.rs`, `tests/inference_auth.rs`, `LIVE_INFERENCE.md` | Passed for existing Ollama OpenAI-compatible endpoint: direct generation and managed-worker sorting with independent verification. LM Studio-specific authenticated generation and real switching remain unverified. |
@@ -295,3 +295,12 @@ Installed smoke passed; evidence: `/tmp/cogfabric-installed-smoke.aN0baA`; logs:
 Real interpretation with explicit effort still failed strict JSON parsing and
 exhausted its two calls on interface/planner, exposing remaining-budget planner
 admission work. See `LIVE_INFERENCE.md`; no successful structured goal is claimed.
+
+Optimized planner-admission verification (2026-10-12): source `5c41ac2` installed
+successfully (Cargo 50.27 seconds) under
+`/tmp/cogfabric-v1-planner-admission-install-20261012` with the pinned FLATC and
+locked offline dependencies. Binary SHA-256:
+`d4067942b4cbce48c6d4889778fc1031dfa80d4f346732f3d23a4b958c0c7792`.
+Installed smoke passed; evidence `/tmp/cogfabric-installed-smoke.kA3vOZ`; logs
+`/tmp/cogfabric-planner-admission-install.log` and
+`/tmp/cogfabric-planner-admission-installed-smoke.log`.
