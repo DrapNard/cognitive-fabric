@@ -334,3 +334,16 @@ Actual six-arm sorting scoring is covered by the HTTP fixture regression; smoke
 covers installed CLI/service behavior. Subsequent test-only recovery assertions
 also pass all mandatory checks and do not change installed runtime source.
 No independent held-out or live comparative performance study was run.
+
+Optimized advisory JSON verification (2026-10-12): source `9b8385a`
+installed with locked offline dependencies and the pinned FlatBuffers compiler
+under `/tmp/cogfabric-v1-advisory-json-install-20261012`. Cargo reported 2m 02s.
+Binary SHA-256:
+`c8c72a990aa7246c6e4c0b5b58da8f7ea3a8d4a8a88076a79795ee725353a51a`.
+Installed smoke passed; evidence `/tmp/cogfabric-installed-smoke.32rG5a`; logs
+`/tmp/cogfabric-advisory-json-install.log` and
+`/tmp/cogfabric-advisory-json-installed-smoke.log`.
+The separately recorded debug live trial exercised planner, solver and critic
+within three calls; its prose remains unverified. All 335 tests and mandatory
+quality checks passed for this source. Held-out comparative quality, intended
+small-model measurements and other open release gates remain incomplete.

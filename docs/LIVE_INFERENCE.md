@@ -167,3 +167,26 @@ bounded budgets, pinned settings and cleanup. Robust interpretation/synthesis,
 recursive gains, small-model baseline comparisons and held-out evaluation remain
 unmeasured. Earlier failures remain valid observations for their recorded code
 and settings; they are not silently reclassified as successes.
+
+## Bounded live planner, solver and critic — 2026-10-12
+
+Source `9b8385a` ran the same borrowing request in DEEP mode against the existing
+Ollama model and endpoint above. Interpretation was disabled; reasoning effort
+was `none`. Limits were three calls, one cycle, 768 reserved output tokens,
+8192 prompt bytes, 240 task seconds and 90 seconds per HTTP request.
+The planner returned an exact outer JSON fence containing a valid two-step
+acyclic graph. The runtime accepted it as advisory data with
+`trusted_permissions: false`, skipped subtask execution for insufficient budget,
+and preserved the whole-goal solver and critic calls. The critic returned strict
+JSON with `revise: false`; execution stopped with `no_useful_revision`.
+The explanation remained `unverified` with no independent evidence. This proves
+one real bounded role sequence, not answer correctness or recursive improvement.
+
+Task `0d24802d-f46b-4016-8c9e-c47a47810757`: three calls, one cycle,
+768 reserved output tokens, 793 prompt bytes, provider totals 329 input / 189
+output tokens, 112598.241102 ms elapsed, 112589.381882 ms inference and
+0.132632 ms queue wait. Worker exit was zero, reaped without force.
+Evidence: `/tmp/cogfabric-live-roles.EZsIft/{outcome.json,trace.json,trace-after32.json,stderr.txt}`.
+The two event pages cover the planner graph, all role calls and worker cleanup.
+Reproduce the earlier isolated setup with the limits above and run the same
+request using `--mode deep`, with `interpret_goals: false` in its configuration.
