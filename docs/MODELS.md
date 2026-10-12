@@ -256,3 +256,20 @@ approved available candidate. `statuses()` exposes ranks and observed state.
 Declared ranks do not establish estimated cost, calibrated escalation utility,
 provider health or GPU residency. All original session permissions and ceilings
 remain authoritative. No executable loader or automatic model load is added.
+
+### Qwen3 empty-answer troubleshooting
+
+If an endpoint returns empty answer text, internal reasoning may have consumed its
+output allowance. This is a hypothesis until response metadata confirms it; do not
+turn internal reasoning into a verified final answer or automatically retry with a
+fresh task budget. For LM Studio's advertised `qwen/qwen3-8b`, an operator can try:
+
+```sh
+cogfabric configure-local --model qwen/qwen3-8b \
+  --api-base http://127.0.0.1:1234/v1 --reasoning-effort none
+cogfabric ask 'Explain Rust ownership briefly /no_think' --mode standard
+```
+
+This combination produced a real explanation locally on 2026-10-12. Prose remains
+unverified. The provider may ignore either hint; see LIVE_INFERENCE.md for measured
+scope and the successful task's trace identity.

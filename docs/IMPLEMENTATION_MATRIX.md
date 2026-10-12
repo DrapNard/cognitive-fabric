@@ -1019,3 +1019,17 @@ candidate and checks new tasks use the remaining adapter while existing pins
 still send exact original module/version FlatBuffers headers. Forged version
 relabeling is refused. This is actual local transport evidence, not remote plugin
 attestation, process provisioning or model quality measurement.
+
+### Explicit alternative tool candidates — 2026-10-12
+
+Implemented: trusted Rust hosts can register ranked arithmetic and SQL alternatives
+using `register_candidate` and `register_sql_candidate`. Lowest rank then module ID
+selects new pins; unavailable transports are excluded. Existing handles retain their
+original backend/version. Exclusive registrations still reject overlap, rollback
+retains immutable rank, and activation/registration enforce 32 active modules and
+128 historical versions. Rank cannot exceed 1,000,000. Capability and transport
+identity checks precede registration; task/actor authorization remains mandatory.
+Three new regressions cover arithmetic replacement/rollback and authorization,
+SQL typed dispatch and capability separation, and capacity rejection without
+consuming rejected versions. This is operator-declared routing, not an executable
+plugin loader, adaptive utility estimator or automatic permission grant.

@@ -1803,3 +1803,20 @@ and versions. Forged version relabeling fails before dispatch. Existing peer
 credential and separate-process regressions also pass. This adds transport
 verification, not provider/weight attestation or unrestricted plugin execution.
 Runtime source remains `2a94b93`; installed proof still needs refreshing.
+
+## Ranked tool routing verification — 2026-10-12
+
+Formatting, all-target offline compilation and Clippy with denied warnings passed
+using `FLATC=/tmp/cogfabric-flatbuffers-build/flatc`. The three new ranked-tool
+regressions passed. Complete sequential verification
+`cargo test --offline --all-targets -- --test-threads=1` passed 349 tests
+(328 library and 21 integration); log:
+`/tmp/cogfabric-ranked-tools-tests-serial.log`.
+Two default-parallel runs failed different existing tests: SQL authenticated RPC
+returned an execution failure in the first; mixed worker recovery encountered a
+held runtime lease in the second. Logs are `/tmp/cogfabric-ranked-tools-tests.log`
+and `/tmp/cogfabric-ranked-tools-tests-rerun.log`. Causes remain unresolved;
+sequential success does not establish parallel-suite stability or release readiness.
+New routing retains deterministic host policy, deny-by-default task authorization,
+immutable pins and bounded queues/registries; it grants no executable provisioning
+or additional model capabilities.

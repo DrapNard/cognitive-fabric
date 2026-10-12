@@ -814,3 +814,12 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   handoff publication with cleanup to prevent post-shutdown launches.
 - Add explicitly approved ranked inference alternatives with deterministic task
   selection, immutable version policy and no hidden retries of pinned calls.
+
+### Route explicitly approved tool alternatives
+
+- Add immutable bounded ranks for arithmetic and SQL candidates, deterministic new
+  task selection, and independent active-module capacity limits.
+- Preserve exclusive registration, pinned backends, rollback, typed dispatch and
+  task authorization; test selection, capability boundaries and registry capacity.
+- Record a successful operator-requested LM Studio Qwen3 8B sorting smoke and
+  clarify how to select an out-of-PATH matching FlatBuffers compiler.

@@ -30,6 +30,11 @@ It does **not** claim to outperform an 8B or Terra-class model.
 > different, install a matching compiler or update both compiler and Rust crate
 > in a reviewed dependency change.
 
+If a matching compiler is installed outside PATH, export its absolute path before
+running Cargo: `export FLATC=/absolute/path/to/flatc`. Verify
+`"$FLATC" --version` reports 25.12.19. A missing compiler is a build prerequisite
+failure; choosing a different inference model does not fix it.
+
 ## Install on Arch / CachyOS
 
 ```bash
@@ -77,6 +82,10 @@ export COGFABRIC_BACKEND=openai-local
 export COGFABRIC_MODEL=your-loaded-model-id
 export COGFABRIC_API_BASE=http://127.0.0.1:1234/v1
 cargo run -- ask 'Design a Tokio service' --mode deep
+
+# Tested LM Studio model; use the exact ID returned by /v1/models.
+export COGFABRIC_MODEL=qwen/qwen3-8b
+cargo run -- ask 'Explain Rust ownership briefly' --mode standard
 
 # Typed FlatBuffers Unix socket transport:
 cargo run -- serve

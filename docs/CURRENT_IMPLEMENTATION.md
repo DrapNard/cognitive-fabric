@@ -588,3 +588,14 @@ Optimized installation and installed smoke passed for source `d66dc07`, refreshi
 proof after ranked inference routing; see `RELEASE_AUDIT.md` for exact identities.
 Arithmetic/SQL capabilities still allow one active module each; explicit ranked
 tool alternatives and their active-capacity policy remain to be implemented.
+
+### Ranked tool alternatives (2026-10-12)
+
+Trusted hosts can explicitly approve multiple arithmetic or SQL adapters with
+bounded immutable ranks. New task pins select lowest rank then module ID; existing
+pins retain original versions. Exclusive registration, transport identity checks,
+authorization and rollback remain enforced. Active modules are capped at 32 and
+historical versions at 128. Three new regressions pass; the full 349-test suite
+passes sequentially. Two default-parallel runs exposed different existing failures
+(SQL execution and recovery lease contention); see QUALITY_REVIEW.md. Automatic
+plugin provisioning and adaptive cost scheduling remain incomplete.

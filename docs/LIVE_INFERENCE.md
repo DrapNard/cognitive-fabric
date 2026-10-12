@@ -298,3 +298,28 @@ independent deterministic permission/strict-intent regression tests remain the
 actual boundary evidence. No timeout cause or attack-induced slowdown is inferred.
 Evidence: `/tmp/cogfabric-live-injection.UhQFzF/{reference.txt,config.json,ingestion.json,outcome.json,stderr.txt,exit-status.txt}`;
 policy/cleanup events remain in its SQLite database. No retry was performed.
+
+### LM Studio Qwen3 8B smoke — 2026-10-12
+
+The operator requested Qwen3 8B for subsequent live tests. LM Studio at
+`http://127.0.0.1:1234/v1/models` advertised exact ID `qwen/qwen3-8b`.
+An isolated managed-worker FAST task sorted `[5,-3,5,1]` into `[-3,1,5,5]`,
+with `completed` / `verified:integer_sort/v1`, one call and one cycle.
+Task: `2e1355d2-b01a-4c35-983f-b93e8767aa35`.
+Elapsed 572.668494 ms; inference 566.35803 ms; provider usage 97 input / 14
+output tokens; reserved output 384; two tool calls; prompt 307 bytes;
+queue wait 0.059913 ms. Temperature zero, reasoning effort `none`, interpretation
+and synthesis disabled. Evidence: `/tmp/cogfabric-qwen3-8b-live/outcome.json`,
+configuration and stderr alongside it. This one public smoke case establishes
+successful compatible HTTP inference and deterministic result verification,
+not held-out quality, general reasoning superiority or physical weight identity.
+
+A subsequent STANDARD task asked `Explain Rust ownership briefly /no_think`, with
+saved `reasoning_effort=none` and the same managed Qwen3 8B configuration. Task
+`88d324ad-6db3-4948-b98b-8621f17fda33` returned an explanation, status `unverified`,
+no verification evidence, two calls / one cycle, elapsed 9242.328411 ms and
+inference 9233.162873 ms. Provider usage: 174 input / 415 output tokens;
+reserved output 640; one tool call. Evidence: `ownership.json` and
+`ownership.stderr` under `/tmp/cogfabric-qwen3-8b-live`. This combined configuration
+and prompt workaround succeeded; it does not isolate the cause of the operator's
+original empty response or prove provider compliance with reasoning-effort advice.

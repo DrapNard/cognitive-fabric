@@ -173,12 +173,14 @@ pub struct ModuleStatus {
     pub descriptor: Descriptor,
     pub active: bool,
     pub availability: super::Availability,
+    pub routing_rank: Option<u32>,
 }
 struct Module {
     descriptor: Descriptor,
     backend: Backend,
     queue: OnceCell<mpsc::Sender<Work>>,
     stop: Arc<watch::Sender<bool>>,
+    routing_rank: Option<u32>,
 }
 impl Module {
     async fn queue(&self) -> &mpsc::Sender<Work> {
@@ -329,6 +331,23 @@ impl Broker {
         descriptor: Descriptor,
         backend: Arc<dyn ArithmeticBackend>,
     ) -> Result<()> {
+        self.register_arithmetic_ranked(descriptor, backend, None)
+    }
+    /// Explicit host approval for alternative arithmetic modules; lower rank wins.
+    pub fn register_candidate(
+        &self,
+        descriptor: Descriptor,
+        backend: Arc<dyn ArithmeticBackend>,
+        rank: u32,
+    ) -> Result<()> {
+        self.register_arithmetic_ranked(descriptor, backend, Some(rank))
+    }
+    fn register_arithmetic_ranked(
+        &self,
+        descriptor: Descriptor,
+        backend: Arc<dyn ArithmeticBackend>,
+        rank: Option<u32>,
+    ) -> Result<()> {
         descriptor.validate()?;
         if backend
             .module_descriptor()
@@ -339,12 +358,29 @@ impl Broker {
         if descriptor.capability != "math.evaluate" {
             bail!("Arithmetic registration requires math.evaluate")
         }
-        self.register_backend(descriptor, Backend::Arithmetic(backend))
+        self.register_backend(descriptor, Backend::Arithmetic(backend), rank)
     }
     pub fn register_sql(
         &self,
         descriptor: Descriptor,
         backend: Arc<dyn sql::SqlBackend>,
+    ) -> Result<()> {
+        self.register_sql_ranked(descriptor, backend, None)
+    }
+    /// Explicit host approval for alternative SQL modules; lower rank wins.
+    pub fn register_sql_candidate(
+        &self,
+        descriptor: Descriptor,
+        backend: Arc<dyn sql::SqlBackend>,
+        rank: u32,
+    ) -> Result<()> {
+        self.register_sql_ranked(descriptor, backend, Some(rank))
+    }
+    fn register_sql_ranked(
+        &self,
+        descriptor: Descriptor,
+        backend: Arc<dyn sql::SqlBackend>,
+        rank: Option<u32>,
     ) -> Result<()> {
         descriptor.validate()?;
         if descriptor.capability != "sql.query" {
@@ -356,9 +392,17 @@ impl Broker {
         {
             bail!("SQL registration differs from backend transport identity")
         }
-        self.register_backend(descriptor, Backend::Sql(backend))
+        self.register_backend(descriptor, Backend::Sql(backend), rank)
     }
-    fn register_backend(&self, descriptor: Descriptor, backend: Backend) -> Result<()> {
+    fn register_backend(
+        &self,
+        descriptor: Descriptor,
+        backend: Backend,
+        routing_rank: Option<u32>,
+    ) -> Result<()> {
+        if routing_rank.is_some_and(|rank| rank > 1_000_000) {
+            bail!("Capability routing rank exceeds bounds")
+        }
         let mut registry = self
             .registry
             .write()
@@ -376,8 +420,13 @@ impl Broker {
         }) {
             bail!("A module cannot change its capability during replacement")
         }
+        if !registry.active.contains_key(&descriptor.id) && registry.active.len() >= 32 {
+            bail!("Active capability module capacity exhausted")
+        }
         if registry.active.values().any(|m| {
-            m.descriptor.id != descriptor.id && m.descriptor.capability == descriptor.capability
+            m.descriptor.id != descriptor.id
+                && m.descriptor.capability == descriptor.capability
+                && (routing_rank.is_none() || m.routing_rank.is_none())
         }) {
             bail!("Conflicting active capability module")
         }
@@ -389,6 +438,7 @@ impl Broker {
             backend,
             queue: OnceCell::new(),
             stop: self.stop.clone(),
+            routing_rank,
         });
         registry.versions.insert(
             (
@@ -421,15 +471,19 @@ impl Broker {
         if module.backend.availability().unavailable() {
             bail!("Registered capability transport is unavailable")
         }
+        if !registry.active.contains_key(id) && registry.active.len() >= 32 {
+            bail!("Active capability module capacity exhausted")
+        }
         let descriptor = &module.descriptor;
         if registry
             .active
             .get(id)
             .is_some_and(|m| m.descriptor.capability != descriptor.capability)
-            || registry
-                .active
-                .values()
-                .any(|m| m.descriptor.id != id && m.descriptor.capability == descriptor.capability)
+            || registry.active.values().any(|m| {
+                m.descriptor.id != id
+                    && m.descriptor.capability == descriptor.capability
+                    && (module.routing_rank.is_none() || m.routing_rank.is_none())
+            })
         {
             bail!("Conflicting active capability module")
         }
@@ -472,6 +526,7 @@ impl Broker {
                     .get(&module.descriptor.id)
                     .is_some_and(|active| Arc::ptr_eq(active, module)),
                 availability: module.backend.availability(),
+                routing_rank: module.routing_rank,
             })
             .collect())
     }
@@ -498,9 +553,10 @@ impl Broker {
             .map_err(|_| anyhow::anyhow!("Capability registry poisoned"))?
             .active
             .values()
-            .find(|m| {
+            .filter(|m| {
                 m.descriptor.capability == capability && !m.backend.availability().unavailable()
             })
+            .min_by_key(|m| (m.routing_rank.unwrap_or(0), &m.descriptor.id))
             .cloned()
             .map(|module| Handle { module }))
     }
@@ -617,6 +673,141 @@ mod tests {
             version: version.into(),
             capability: "math.evaluate".into(),
         }
+    }
+    #[tokio::test]
+    async fn ranked_arithmetic_routes_preserve_pins_rollback_and_authorization() {
+        let broker = Broker::default();
+        let mut a = descriptor("2.0.0");
+        a.id = "math.a".into();
+        assert!(broker
+            .register_candidate(a.clone(), Arc::new(Fixed("a")), 10)
+            .is_err());
+        broker.unregister("arithmetic.local").unwrap();
+        let mut b = a.clone();
+        b.id = "math.b".into();
+        broker
+            .register_candidate(b.clone(), Arc::new(Fixed("b")), 10)
+            .unwrap();
+        broker
+            .register_candidate(a.clone(), Arc::new(Fixed("a")), 10)
+            .unwrap();
+        let pinned = broker.pin().unwrap().unwrap();
+        assert_eq!(pinned.descriptor().id, "math.a");
+        a.version = "3.0.0".into();
+        broker
+            .register_candidate(a, Arc::new(Fixed("new")), 20)
+            .unwrap();
+        let task = uuid::Uuid::new_v4().to_string();
+        assert_eq!(
+            broker
+                .pin()
+                .unwrap()
+                .unwrap()
+                .evaluate(&task, "jev-plus", "1+1")
+                .await
+                .unwrap(),
+            "b"
+        );
+        assert_eq!(
+            pinned.evaluate(&task, "jev-plus", "1+1").await.unwrap(),
+            "a"
+        );
+        assert!(pinned.evaluate(&task, "jev-r", "1+1").await.is_err());
+        broker.activate("math.a", "2.0.0").unwrap();
+        assert_eq!(broker.pin().unwrap().unwrap().descriptor().id, "math.a");
+        broker.unregister("math.a").unwrap();
+        assert_eq!(broker.pin().unwrap().unwrap().descriptor().id, "math.b");
+        assert!(broker.activate("arithmetic.local", "1.0.0").is_err());
+        assert!(broker.register(b, Arc::new(Fixed("exclusive"))).is_err());
+    }
+    #[test]
+    fn ranked_tool_capacity_is_bounded_without_consuming_rejected_versions() {
+        let broker = Broker::default();
+        broker.unregister("arithmetic.local").unwrap();
+        for n in 0..31 {
+            let mut d = descriptor("2.0.0");
+            d.id = format!("math.{n}");
+            broker
+                .register_candidate(d, Arc::new(LocalMath), n)
+                .unwrap();
+        }
+        let mut extra = descriptor("2.0.0");
+        extra.id = "math.extra".into();
+        assert!(broker
+            .register_candidate(extra.clone(), Arc::new(LocalMath), 1_000_001)
+            .is_err());
+        assert!(broker
+            .register_candidate(extra.clone(), Arc::new(LocalMath), 0)
+            .is_err());
+        assert_eq!(broker.versions().unwrap().len(), 33);
+        broker.unregister("math.0").unwrap();
+        broker
+            .register_candidate(extra, Arc::new(LocalMath), 0)
+            .unwrap();
+        assert!(broker.activate("math.0", "2.0.0").is_err());
+        broker.unregister("math.extra").unwrap();
+        broker.activate("math.0", "2.0.0").unwrap();
+    }
+    #[tokio::test]
+    async fn ranked_sql_routes_keep_typed_queries_and_capability_boundaries() {
+        let broker = Broker::default();
+        broker.unregister("sql.local").unwrap();
+        for (id, rank) in [("sql.b", 20), ("sql.a", 10)] {
+            broker
+                .register_sql_candidate(
+                    Descriptor {
+                        id: id.into(),
+                        version: "2.0.0".into(),
+                        capability: "sql.query".into(),
+                    },
+                    Arc::new(sql::LocalSql),
+                    rank,
+                )
+                .unwrap();
+        }
+        let handle = broker.pin_capability("sql.query").unwrap().unwrap();
+        assert_eq!(handle.descriptor().id, "sql.a");
+        broker.unregister("sql.a").unwrap();
+        assert_eq!(
+            broker
+                .pin_capability("sql.query")
+                .unwrap()
+                .unwrap()
+                .descriptor()
+                .id,
+            "sql.b"
+        );
+        let task = uuid::Uuid::new_v4().to_string();
+        let answer = handle
+            .query_sql(
+                &task,
+                "jev-plus",
+                r#"{"tables":[],"query":"SELECT 42 AS answer"}"#,
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&answer).unwrap()["rows"][0][0],
+            42
+        );
+        assert!(handle
+            .query_sql(&task, "jev-r", r#"{"tables":[],"query":"SELECT 42"}"#)
+            .await
+            .is_err());
+        assert!(broker
+            .register_sql_candidate(descriptor("9.0.0"), Arc::new(sql::LocalSql), 0)
+            .is_err());
+        assert!(broker
+            .register_candidate(
+                Descriptor {
+                    id: "wrong.math".into(),
+                    version: "1.0.0".into(),
+                    capability: "sql.query".into()
+                },
+                Arc::new(LocalMath),
+                0
+            )
+            .is_err());
     }
     #[tokio::test]
     async fn rollback_reuses_immutable_backend_and_preserves_inflight_pins() {
