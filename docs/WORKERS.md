@@ -1,5 +1,11 @@
 # Managed local inference workers
 
+On Linux, managed inference, arithmetic and SQL workers execute `/proc/self/exe`
+to retain the parent's running image when an upgrade replaces the original
+pathname. Procfs must be available; launch errors remain visible. Other Unix
+platforms use `current_exe()` and do not have this replacement guarantee. This
+provides version consistency, not executable attestation or a hostile-host sandbox.
+
 Managed inference is opt-in. Enable it with
 `cogfabric configure-worker --enabled true`, then submit tasks normally. Disable
 it with `cogfabric configure-worker --enabled false`. `config-show` reports the

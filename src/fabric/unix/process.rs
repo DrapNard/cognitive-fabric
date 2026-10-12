@@ -27,6 +27,19 @@ use tokio::{
     sync::{watch, Mutex, OnceCell},
 };
 
+/// Linux resolves this in the spawning child to its inherited running image,
+/// even after an upgrade unlinks/replaces the original executable pathname.
+pub(crate) fn managed_executable() -> Result<PathBuf> {
+    #[cfg(target_os = "linux")]
+    {
+        Ok(PathBuf::from("/proc/self/exe"))
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        std::env::current_exe().context("Cannot locate the managed worker executable")
+    }
+}
+
 pub(crate) struct SocketDirectory {
     path: PathBuf,
     dev: u64,
@@ -230,7 +243,7 @@ impl ProcessTask {
         } else {
             None
         };
-        let mut command = tokio::process::Command::new(std::env::current_exe()?);
+        let mut command = tokio::process::Command::new(managed_executable()?);
         command
             .arg("--home")
             .arg(&home)

@@ -1,5 +1,13 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+Implemented on Linux: managed inference, arithmetic and SQL workers launch from
+the running service image through `/proc/self/exe`, retaining version consistency
+after an upgrade replaces its original executable pathname. See
+`src/fabric/unix/process.rs`, `src/fabric/tools/unix/process.rs` and the real-service
+replacement regression in `tests/worker_executable.rs`. Other Unix systems retain
+pathname-based launching; executable attestation and hostile-host isolation remain
+not implemented.
+
 Direct and task-pinned inference broker dispatch both preserve caller task UUIDs.
 Concurrent distinct-task and malformed-task regressions cover this boundary in
 `src/fabric/tests.rs`; general independent actor provisioning remains incomplete.

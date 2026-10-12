@@ -8,7 +8,7 @@ use crate::{
     config::Config,
     fabric::{
         tools::{ArithmeticBackend, Descriptor, LocalMath},
-        unix::process::SocketDirectory,
+        unix::process::{managed_executable, SocketDirectory},
     },
     store::Store,
 };
@@ -305,7 +305,7 @@ impl ProcessTask {
         }
         let (guard, listener, socket) = SocketDirectory::bind_tool()?;
         guard.record(&self.store, &self.task)?;
-        let mut command = tokio::process::Command::new(std::env::current_exe()?);
+        let mut command = tokio::process::Command::new(managed_executable()?);
         command
             .arg("--home")
             .arg(&home)

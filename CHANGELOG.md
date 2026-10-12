@@ -2,6 +2,14 @@
 
 All notable changes are documented here in English.
 
+### Preserve the running Linux worker image across upgrades
+
+- Launch managed inference, arithmetic and SQL workers through `/proc/self/exe`.
+- Verify a live service still launches and reaps all three worker types after its
+  original executable pathname is atomically replaced.
+- Retain the existing pathname fallback on other Unix platforms; no attestation
+  or sandbox guarantee is added.
+
 ### Recover abandoned tool-worker audit sessions
 
 - Extend exclusive-lease worker recovery to arithmetic and SQL sessions alongside

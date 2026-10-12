@@ -1,5 +1,15 @@
 # Rust baseline quality review
 
+Worker image consistency verified on 2026-10-13: formatting, all-target check,
+Clippy with warnings denied and all-target tests passed (343 library plus 22
+integration tests). The Linux real-service regression replaces the service's
+executable pathname, then verifies arithmetic, SQL and inference workers launch,
+return results and are reaped normally. Installed-binary service smoke checks
+passed with evidence at `/tmp/cogfabric-installed-smoke.3JRE9S`; these are local
+temporary artifacts, not committed evidence. Compiler: flatc 25.12.19; isolated
+Cargo target: `/tmp/cogfabric-baseline-contract-target-20261013`. No new live-model
+quality, GPU performance or cross-platform pinning claim follows from these tests.
+
 Verified locally on 2026-10-10 using rustc/cargo 1.97.1 and flatc 25.12.19,
 compiled from upstream tag v25.12.19 (commit
 7e163021e59cca4f8e1e35a7c828b5c6b7915953). The Rust crate is pinned to the same
