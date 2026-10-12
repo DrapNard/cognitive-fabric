@@ -942,3 +942,14 @@ Metadata discovery/history retains registered versions for diagnosis. Regression
 forged Unix response to prove closure, route refusal, inventory and shutdown.
 Remote health, weight identity, automatic reconnection and residency scheduling
 remain incomplete. In-use is not failed; connected is not provider health.
+
+### Tool transport availability — 2026-10-12
+
+Implemented: arithmetic and SQL backend availability defaults to unknown; Unix
+adapters distinguish connected/in-use/closed local stream state. The shared tool
+broker exposes retained-version status and refuses closed adapters during new
+pinning, rollback activation and pinned dispatch. Existing malformed-frame and
+forged-response regressions now verify both capabilities' inventory and refusal.
+Grant validity, remaining calls and remote health remain separate checks; a
+present stream is not proof of any of these. No implicit reconnection or permission
+renewal is added. General lifecycle and residency scheduling remain partial.

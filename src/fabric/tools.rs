@@ -39,6 +39,9 @@ impl Descriptor {
     }
 }
 pub trait ArithmeticBackend: Send + Sync {
+    fn availability(&self) -> super::Availability {
+        super::Availability::Unknown
+    }
     /// Fixed transport identity, when the backend is bound to a remote grant.
     fn module_descriptor(&self) -> Option<&Descriptor> {
         None
@@ -155,6 +158,21 @@ struct Work {
 enum Backend {
     Arithmetic(Arc<dyn ArithmeticBackend>),
     Sql(Arc<dyn sql::SqlBackend>),
+}
+impl Backend {
+    fn availability(&self) -> super::Availability {
+        match self {
+            Self::Arithmetic(backend) => backend.availability(),
+            Self::Sql(backend) => backend.availability(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct ModuleStatus {
+    pub descriptor: Descriptor,
+    pub active: bool,
+    pub availability: super::Availability,
 }
 struct Module {
     descriptor: Descriptor,
@@ -400,6 +418,9 @@ impl Broker {
             .get(&(id.into(), version.into()))
             .cloned()
             .context("Unknown registered capability version")?;
+        if module.backend.availability() == super::Availability::Closed {
+            bail!("Registered capability transport is permanently closed")
+        }
         let descriptor = &module.descriptor;
         if registry
             .active
@@ -435,6 +456,25 @@ impl Broker {
             .context("Unknown capability module")?;
         Ok(())
     }
+    /// Retained version observations without provider probes or renewed grants.
+    pub fn statuses(&self) -> Result<Vec<ModuleStatus>> {
+        let registry = self
+            .registry
+            .read()
+            .map_err(|_| anyhow::anyhow!("Capability registry poisoned"))?;
+        Ok(registry
+            .versions
+            .values()
+            .map(|module| ModuleStatus {
+                descriptor: module.descriptor.clone(),
+                active: registry
+                    .active
+                    .get(&module.descriptor.id)
+                    .is_some_and(|active| Arc::ptr_eq(active, module)),
+                availability: module.backend.availability(),
+            })
+            .collect())
+    }
     pub fn discover(&self) -> Result<Vec<Descriptor>> {
         Ok(self
             .registry
@@ -458,7 +498,10 @@ impl Broker {
             .map_err(|_| anyhow::anyhow!("Capability registry poisoned"))?
             .active
             .values()
-            .find(|m| m.descriptor.capability == capability)
+            .find(|m| {
+                m.descriptor.capability == capability
+                    && m.backend.availability() != super::Availability::Closed
+            })
             .cloned()
             .map(|module| Handle { module }))
     }
@@ -535,6 +578,9 @@ impl Handle {
         sql::response(&response, &identity)
     }
     async fn dispatch(&self, bytes: Vec<u8>, identity: Identity) -> Result<Vec<u8>> {
+        if self.module.backend.availability() == super::Availability::Closed {
+            bail!("Pinned capability transport is permanently closed")
+        }
         tokio::time::timeout(Duration::from_secs(30), async {
             let (reply, receive) = oneshot::channel();
             self.module

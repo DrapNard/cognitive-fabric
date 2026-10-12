@@ -114,6 +114,13 @@ impl UnixArithmetic {
     }
 }
 impl ArithmeticBackend for UnixArithmetic {
+    fn availability(&self) -> crate::fabric::Availability {
+        match self.connection.try_lock() {
+            Ok(slot) if slot.stream.is_some() => crate::fabric::Availability::Connected,
+            Ok(_) => crate::fabric::Availability::Closed,
+            Err(_) => crate::fabric::Availability::InUse,
+        }
+    }
     fn module_descriptor(&self) -> Option<&Descriptor> {
         Some(&self.grant.descriptor)
     }
@@ -527,9 +534,15 @@ mod tests {
         for malformed in [true, false] {
             let (_, grant) = setup(2, 10);
             let (client, mut server) = UnixStream::pair().unwrap();
-            let adapter =
+            let adapter = Arc::new(
                 UnixArithmetic::connected(client, grant.clone(), uid(&server), std::process::id())
-                    .unwrap();
+                    .unwrap(),
+            );
+            let broker = super::super::Broker::default();
+            broker
+                .register(grant.descriptor.clone(), adapter.clone())
+                .unwrap();
+            let pinned = broker.pin().unwrap().unwrap();
             let peer = tokio::spawn(async move {
                 let mut packet = read(&mut server).await.unwrap().unwrap();
                 if malformed {
@@ -544,6 +557,24 @@ mod tests {
             assert!(adapter.evaluate_for(&grant.task, "6*7").await.is_err());
             peer.await.unwrap();
             assert!(adapter.connection.lock().await.stream.is_none());
+            assert_eq!(adapter.availability(), crate::fabric::Availability::Closed);
+            assert!(broker.pin().unwrap().is_none());
+            assert!(broker
+                .activate(&grant.descriptor.id, &grant.descriptor.version)
+                .is_err());
+            assert!(pinned
+                .evaluate(&grant.task, "jev-plus", "6*7")
+                .await
+                .unwrap_err()
+                .to_string()
+                .contains("permanently closed"));
+            assert!(broker
+                .statuses()
+                .unwrap()
+                .iter()
+                .any(|status| status.descriptor == grant.descriptor
+                    && status.active
+                    && status.availability == crate::fabric::Availability::Closed));
             assert!(adapter.evaluate_for(&grant.task, "6*7").await.is_err());
         }
     }

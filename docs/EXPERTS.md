@@ -184,3 +184,11 @@ Inactive backends/idle queues remain retained until shutdown; the count ceiling
 is not a byte or external-process residency quota. Process-granted backends may
 already be expired or disconnected; activation does not renew grants or prove
 health. No CLI/model permission or arbitrary executable loader is introduced.
+
+The tool broker's trusted `statuses()` API reports local adapter availability for
+retained arithmetic and SQL versions. Permanently discarded Unix streams remain
+visible in registered metadata but cannot be newly pinned, reactivated or
+queued through existing handles. An in-use connection is not classified as closed.
+Connected/unknown status does not renew task grants, expiry or call allowances,
+and does not attest remote service health or executable integrity. These remain
+subject to the original deterministic authorization at dispatch.

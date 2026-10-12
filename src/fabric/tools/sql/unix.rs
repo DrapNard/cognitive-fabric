@@ -111,6 +111,13 @@ impl UnixSql {
     }
 }
 impl SqlBackend for UnixSql {
+    fn availability(&self) -> crate::fabric::Availability {
+        match self.connection.try_lock() {
+            Ok(slot) if slot.stream.is_some() => crate::fabric::Availability::Connected,
+            Ok(_) => crate::fabric::Availability::Closed,
+            Err(_) => crate::fabric::Availability::InUse,
+        }
+    }
     fn module_descriptor(&self) -> Option<&Descriptor> {
         Some(&self.grant.descriptor)
     }
@@ -404,8 +411,14 @@ mod tests {
         for forged in [true, false] {
             let (_, grant) = setup(2, 10);
             let (client, mut server) = UnixStream::pair().unwrap();
-            let adapter =
-                UnixSql::connected(client, grant.clone(), uid(), std::process::id()).unwrap();
+            let adapter = Arc::new(
+                UnixSql::connected(client, grant.clone(), uid(), std::process::id()).unwrap(),
+            );
+            let broker = crate::fabric::tools::Broker::default();
+            broker
+                .register_sql(grant.descriptor.clone(), adapter.clone())
+                .unwrap();
+            let pinned = broker.pin_capability("sql.query").unwrap().unwrap();
             let peer = tokio::spawn(async move {
                 let (_, mut decoded) = read(&mut server).await.unwrap().unwrap();
                 if forged {
@@ -425,6 +438,24 @@ mod tests {
             assert!(adapter.query(&grant.task, INPUT).await.is_err());
             peer.await.unwrap();
             assert!(adapter.connection.lock().await.stream.is_none());
+            assert_eq!(adapter.availability(), crate::fabric::Availability::Closed);
+            assert!(broker.pin_capability("sql.query").unwrap().is_none());
+            assert!(broker
+                .activate(&grant.descriptor.id, &grant.descriptor.version)
+                .is_err());
+            assert!(pinned
+                .query_sql(&grant.task, "jev-plus", INPUT)
+                .await
+                .unwrap_err()
+                .to_string()
+                .contains("permanently closed"));
+            assert!(broker
+                .statuses()
+                .unwrap()
+                .iter()
+                .any(|status| status.descriptor == grant.descriptor
+                    && status.active
+                    && status.availability == crate::fabric::Availability::Closed));
             assert!(adapter.query(&grant.task, INPUT).await.is_err());
         }
     }

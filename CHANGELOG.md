@@ -804,3 +804,5 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   run purposes.
 - Expose observed local inference adapter availability and refuse routing or
   rollback activation of permanently discarded Unix connections.
+- Apply observed local transport state and closed-connection routing refusal to
+  arithmetic and SQL capability modules without renewing task grants.

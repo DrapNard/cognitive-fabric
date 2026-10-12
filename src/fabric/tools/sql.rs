@@ -10,6 +10,9 @@ mod generated {
 use generated::sql_tool as fb;
 pub mod unix;
 pub trait SqlBackend: Send + Sync {
+    fn availability(&self) -> crate::fabric::Availability {
+        crate::fabric::Availability::Unknown
+    }
     fn module_descriptor(&self) -> Option<&Descriptor> {
         None
     }

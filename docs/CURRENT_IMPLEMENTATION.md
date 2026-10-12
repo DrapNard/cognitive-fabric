@@ -538,3 +538,9 @@ probes. Permanently closed Unix connections cannot be reactivated or routed;
 pinned requests fail before dispatch. Unknown/connected/in-use observations are
 not remote health guarantees. All 337 tests and mandatory quality checks pass;
 optimized installation must be refreshed after this runtime change.
+
+Arithmetic and SQL brokers now mirror inference local availability handling:
+closed Unix streams remain diagnosable but cannot be pinned, reactivated or
+queued. Actual malformed-response regressions cover both capabilities. All 337
+tests and mandatory checks pass; no remote-health, grant-renewal or reconnection
+claim is introduced.

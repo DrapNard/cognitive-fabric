@@ -1722,3 +1722,13 @@ Connected/in-use observations do not prove remote health. No network probes,
 credentials, grants or automatic retries are added. The inventory is bounded by
 the existing 128-version registry and performs no inference. Prior optimized
 installation evidence predates this runtime change and needs refreshing.
+
+### Capability transport availability — 2026-10-12
+
+All mandatory checks and 337 tests passed with pinned FlatBuffers 25.12.19; log
+`/tmp/cogfabric-tool-availability-tests.log`. Existing actual arithmetic and SQL
+malformed/forged-response tests now verify closed-state inventory, new-pin refusal,
+rollback refusal and already-pinned rejection before queueing. No test was removed.
+The bounded status inventory makes no network call; closed transports are not
+silently retried. Original grants, expiry and call ceilings remain authoritative.
+Optimized installation proof must be refreshed for these runtime changes.
