@@ -870,3 +870,12 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   8B generation through the installed Unix socket service and managed worker.
 - Preserve binary hashes, exact resource metrics and normal worker/service cleanup
   evidence without extending the claim to general model quality or release readiness.
+
+### Declare durable reasoning prompt formats
+
+- Record the quoted-reference format in new reasoning-context snapshots and reject
+  unsupported declarations before recovery dispatch.
+- Retain compatible undeclared checkpoints under exact hash validation and provide
+  an explicit error for incompatible saved prompts.
+- Verify compatible metadata preserves original context and cumulative charges;
+  reject unknown/null formats and altered hashes without automatic prompt migration.

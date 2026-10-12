@@ -53,7 +53,7 @@ remains a pre-release. `QUALITY_REVIEW.md` preserves verification history.
 | 12, 14 | CLI/service | Partial | `src/main.rs`: initialization/configuration, ask, service controls, task-specific socket progress/cancellation, skill lifecycle, ingestion/search, task traces, candidates/rollback, benchmark, self-test; real socket fixtures | Live residency lifecycle |
 | 12, 13 | Hardware/performance claims | Partial | Optional whole-device GPU diagnostics sampled real host memory/utilization/power; no energy or large-model advantage claimed | Task-attributed telemetry, real model switching and equal-budget comparisons |
 
-All 354 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
+All 355 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
 all-target build checks and Clippy with denied warnings pass. Fixtures do not prove
 GPU integration, neural quality, immutable backend weights or live model switching.
 
@@ -1105,3 +1105,15 @@ managed worker reaped normally, service exited zero and removed its socket.
 See QUALITY_REVIEW.md and LIVE_INFERENCE.md for hashes, paths and exact metrics.
 This closes latest installed CLI/service/local-model smoke coverage; it does not
 close clean-OS installation, general inference quality or broader release gaps.
+
+### Explicit checkpoint prompt format — 2026-10-12
+
+Implemented: new reasoning contexts declare `quoted-references-v1`; recovery
+rejects unknown/null declarations and reports incompatible prompt hashes explicitly
+before dispatch. Compatible undeclared snapshots remain accepted only with exact
+current hashes. A positive regression verifies declaration preserves original
+query/context and cumulative calls/tokens; negative cases cover unknown/null
+format and changed prompt hash. Existing repeated recovery still validates source
+bytes and chronological reservations. Automatic migration of old nonempty unquoted
+reference prompts remains deliberately unsupported rather than silently weakening
+the new reference separation or substituting task context.

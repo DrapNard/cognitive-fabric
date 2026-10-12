@@ -527,3 +527,16 @@ settings after interruption, then assert original `none` is sent rather than the
 new `high`, on success and cancellation. The latest operator configuration is
 not overwritten. This extends immutable settings evidence; it does not attest
 provider compliance or enable replay of unknown inference outcomes.
+
+### Reasoning prompt format compatibility
+
+New reasoning-context audit snapshots declare `prompt_format=quoted-references-v1`.
+Recovery rejects unknown or null declared formats before dispatch and still checks
+the exact saved prompt hash against reconstructed immutable objective/context.
+Older snapshots without a format declaration remain eligible only when their hash
+matches the current representation; metadata absence never bypasses validation.
+Repeated compatible snapshots may add this declaration without changing source
+bytes, budgets or permissions. Older nonempty unquoted-reference hashes are refused
+with an explicit unsupported/altered-prompt error. There is no automatic conversion
+to a different prompt or fallback to the earlier injection-vulnerable representation.
+An operator must start a separately reviewed new task when formats are incompatible.

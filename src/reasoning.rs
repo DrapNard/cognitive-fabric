@@ -14,6 +14,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+pub(crate) const PROMPT_FORMAT: &str = "quoted-references-v1";
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Resources {
     pub calls: u32,
@@ -794,7 +796,7 @@ impl Session {
             "reasoning_context",
             "jev-r",
             json!({
-                "format_version":1,"objective":query,"context":context,
+                "format_version":1,"prompt_format":PROMPT_FORMAT,"objective":query,"context":context,
                 "objective_hash":crate::store::sha256(query.as_bytes()),
                 "context_hash":crate::store::sha256(context.as_bytes()),
                 "prompt_base_hash":crate::store::sha256(base.as_bytes()),

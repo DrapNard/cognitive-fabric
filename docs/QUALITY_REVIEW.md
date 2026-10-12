@@ -1923,3 +1923,15 @@ CLI → authenticated typed local socket → service → managed worker → LM S
 inference → compiled verifier. It does not establish general model quality or
 security, controlled native residency mutations, arbitrary plugin isolation or
 held-out benchmark results.
+
+## Checkpoint prompt-format verification — 2026-10-12
+
+Formatting, all-target offline compilation and Clippy with denied warnings passed.
+Full default-parallel tests passed 355 cases (334 library and 21 integration), log
+`/tmp/cogfabric-prompt-format-tests.log`. A positive compatibility fixture preserves
+original query/context and cumulative model-call/output reservations; additional
+negative variants refuse unknown/null declared formats and incompatible hashes.
+Existing repeated recovery, registered-model and real local HTTP integrations pass.
+An initial restricted-sandbox focused run could not bind its HTTP fixtures;
+the full run used the required local transport permissions. No saved prompt,
+permission or budget is automatically migrated to make an incompatible task resume.

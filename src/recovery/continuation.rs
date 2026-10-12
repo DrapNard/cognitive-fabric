@@ -97,6 +97,12 @@ fn prepare(db: &rusqlite::Connection, task: &str) -> Result<Checkpoint> {
                 _ => "runtime",
             };
             if kind == "reasoning_context" {
+                if payload
+                    .get("prompt_format")
+                    .is_some_and(|format| format != crate::reasoning::PROMPT_FORMAT)
+                {
+                    bail!("Unsupported saved reasoning prompt format")
+                }
                 contexts += 1;
                 if contexts > 17 || source != expected {
                     bail!("Invalid or excessive context history")
@@ -182,13 +188,14 @@ fn prepare(db: &rusqlite::Connection, task: &str) -> Result<Checkpoint> {
     let text = context["context"]
         .as_str()
         .ok_or_else(|| anyhow::anyhow!("Missing context bytes"))?;
+    if context["prompt_base_hash"] != sha256(Session::prompt_base(&query, text, true)?.as_bytes()) {
+        bail!("Unsupported or altered saved reasoning prompt; recovery cannot substitute a different prompt format")
+    }
     if context["format_version"] != 1
         || context["objective"] != query
         || text.len() > 96000
         || context["objective_hash"] != sha256(query.as_bytes())
         || context["context_hash"] != sha256(text.as_bytes())
-        || context["prompt_base_hash"]
-            != sha256(Session::prompt_base(&query, text, true)?.as_bytes())
         || context["untrusted_data"] != true
         || context["permissions_restorable"] != false
         || context["cycles_before"] != 0
@@ -738,8 +745,29 @@ mod tests {
         );
     }
     #[tokio::test]
+    async fn compatible_prompt_metadata_preserves_original_context_and_charges() {
+        let (store, task) = fixture().await;
+        let original = prepare(&store.lock().unwrap(), &task).unwrap();
+        store.lock().unwrap().execute(
+            "UPDATE events SET payload=json_set(payload,'$.prompt_format',?2) WHERE task_id=?1 AND kind='reasoning_context'",
+            rusqlite::params![task,crate::reasoning::PROMPT_FORMAT],
+        ).unwrap();
+        let declared = prepare(&store.lock().unwrap(), &task).unwrap();
+        assert_eq!(declared.query, original.query);
+        assert_eq!(declared.context, original.context);
+        assert_eq!(
+            declared.state.resources.calls,
+            original.state.resources.calls
+        );
+        assert_eq!(
+            declared.state.resources.reserved_output_tokens,
+            original.state.resources.reserved_output_tokens
+        );
+    }
+
+    #[tokio::test]
     async fn rejects_changed_graph_context_and_unresolved_dispatch() {
-        for variant in 0..4 {
+        for variant in 0..7 {
             let (store, task) = fixture().await;
             match variant {
                 0 => {
@@ -758,8 +786,17 @@ mod tests {
                         )
                         .unwrap();
                 }
-                _ => {
+                3 => {
                     store.lock().unwrap().execute("UPDATE events SET payload=json_set(payload,'$.context','Changed context') WHERE task_id=?1 AND kind='reasoning_context'",[&task]).unwrap();
+                }
+                4 => {
+                    store.lock().unwrap().execute("UPDATE events SET payload=json_set(payload,'$.prompt_format','unknown-future-format') WHERE task_id=?1 AND kind='reasoning_context'",[&task]).unwrap();
+                }
+                5 => {
+                    store.lock().unwrap().execute("UPDATE events SET payload=json_set(payload,'$.prompt_format',NULL) WHERE task_id=?1 AND kind='reasoning_context'",[&task]).unwrap();
+                }
+                _ => {
+                    store.lock().unwrap().execute("UPDATE events SET payload=json_set(payload,'$.prompt_base_hash',?2) WHERE task_id=?1 AND kind='reasoning_context'",rusqlite::params![task,crate::store::sha256(b"unsupported old prompt")]).unwrap();
                 }
             }
             assert!(
