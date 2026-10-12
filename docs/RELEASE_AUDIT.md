@@ -273,3 +273,14 @@ The unchanged installed smoke workflow passed; evidence:
 This closes the installed-source gap for event rollback. Event rollback semantics
 are established by Rust live/replay/capacity regressions; installed smoke exercises
 the existing CLI/service integration and deterministic inference.
+
+Optimized interface reservation verification (2026-10-12): source `a918e18`
+installed with `FLATC=/tmp/cogfabric-flatbuffers-build/flatc cargo install --offline --locked --path . --root /tmp/cogfabric-v1-interface-budget-install-20261012`.
+Binary SHA-256:
+`11924942eba5fc3dc8418aa81beed3d04cf680f75880c378b68d58a35dcd51d7`.
+Installed smoke passed; evidence: `/tmp/cogfabric-installed-smoke.IddNUQ`; logs:
+`/tmp/cogfabric-interface-budget-install.log`,
+`/tmp/cogfabric-interface-budget-installed-smoke.log`.
+An installed CLI check also persisted 384 interface tokens and rejected 4097
+without changing the stored setting. This closes the installed-source gap; live
+interpretation still timed out in the separate debug trial (`LIVE_INFERENCE.md`).

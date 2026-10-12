@@ -848,3 +848,9 @@ ceilings. `src/config.rs` and `src/language.rs` regressions cover legacy setting
 invalid limits, exact backend allocation/charges and no dispatch when it cannot
 fit. All mandatory checks pass with 329 tests (308 library, 21 integration).
 Larger allocations do not guarantee valid provider output or permission changes.
+
+A real follow-up using 384 interface tokens reached the unchanged 90-second
+inference timeout before producing a structured goal. The reservation/timeout
+were enforced and one call stayed charged, but live interpretation remains
+unverified. `LIVE_INFERENCE.md` records both attempts; neither is a benchmark or
+successful language-interface result.

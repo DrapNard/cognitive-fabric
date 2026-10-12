@@ -1643,3 +1643,9 @@ warnings denied pass, using FlatBuffers 25.12.19. Log:
 `/tmp/cogfabric-interface-reservation-tests.log`. Legacy/default serialization,
 nondefault roundtrip, invalid range, exact admitted allocation and insufficient
 task-budget no-dispatch behavior are covered. Existing recovery/worker tests pass.
+
+Fresh optimized installation and installed CLI/service smoke passed for `a918e18`.
+Installed CLI configuration saved 384 interface tokens and rejected 4097 without
+altering the valid file. `RELEASE_AUDIT.md` records binary hashes and workflow
+logs. The separate live interpretation trial timed out at the original limit;
+this does not undermine the deterministic admission tests or prove model quality.

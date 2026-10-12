@@ -99,3 +99,14 @@ Task: `d362daa4-b139-440a-a727-8c1989c9038c`. Evidence:
 `/tmp/cogfabric-live-language.W9nCKs/{outcome.json,trace.json,stderr.txt}`.
 Real structured interpretation remains unverified for this model/configuration;
 provider output control and bounded interface allocation need further investigation.
+
+The same natural-language request was repeated against debug source `a918e18`
+using the new operator-selected `interface_tokens: 384`, with all earlier
+cumulative limits unchanged. It timed out at 90006.747877 ms (inference
+90004.322645 ms), retaining one charged call, 384 reserved output tokens and 250
+prompt bytes, with no solver cycle or verified answer. Provider token totals were
+unavailable. CLI exit: 1. Task: `5db99aa2-3aa9-4625-ab1b-3a9dbccab8cd`; evidence:
+`/tmp/cogfabric-live-interface-budget.448IsG/{configured.json,outcome.json,trace.json,stderr.txt}`.
+The configurable reservation worked but did not establish successful structured
+interpretation. A larger budget is not evidence that the earlier empty response
+was caused solely by the allocation. No retry or timeout increase followed.
