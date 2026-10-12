@@ -2307,3 +2307,28 @@ tests (345 library, 22 integration) passed on 2026-10-13 with flatc 25.12.19.
 Local test log: `/tmp/cogfabric-tool-retirement-tests.log`. No new permissions,
 provider unloading, owned-child cleanup guarantee or performance gain is claimed.
 Optimized installation verification must be refreshed for these retirement APIs.
+
+
+## Optimized retirement lifecycle verification — 2026-10-13
+
+Source `a665df998699000e0f64839b06582d4411729cc1` installed with locked offline
+cached dependencies, Rust/Cargo 1.97.1 and flatc 25.12.19 under
+`/tmp/cogfabric-retirement-install-20261013`. Cargo reported 52.15 seconds.
+Binary SHA-256:
+`294c31c71b2539a7ec3e1a8dda575b8e4b24c851ff67724d45578e9bd02a7958`.
+Full installed CLI/service smoke passed; evidence `/tmp/cogfabric-installed-smoke.DgbpqN`;
+logs `/tmp/cogfabric-retirement-install.log` and
+`/tmp/cogfabric-retirement-installed-smoke.log`.
+
+Separately, `cargo test --release --offline --lib retirement` passed both actual
+inference and arithmetic/SQL retirement regressions at the same source. These
+verify existing pinned execution and actual backend release under optimization;
+ordinary installed smoke does not invoke trusted-host retirement APIs. Release
+test build took 1m29s; log `/tmp/cogfabric-retirement-release-tests.log`.
+This refreshes the optimized installation gap for both retirement APIs. Model
+weight unloading, broad plugin provisioning and independent evaluation remain open.
+
+Hosted CI [38319713203](https://github.com/DrapNard/cognitive-fabric/actions/runs/38319713203)
+completed successfully for inference retirement source
+`e362746ad335f8b4bb63e3b993629345e229c7b5`. Hosted tool-retirement verification
+remains separately tracked; no result is inferred from this earlier successful run.
