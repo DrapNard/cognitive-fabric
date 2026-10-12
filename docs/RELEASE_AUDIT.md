@@ -395,3 +395,18 @@ regressions; installed smoke verifies normal CLI/service/worker/restore paths.
 Availability remains a local stream observation: grant expiry/call exhaustion,
 provider health and external computation completion are separate concerns.
 No new live model quality, general lifecycle or clean-OS claim follows.
+
+Optimized grant-aware managed availability verification (2026-10-12): runtime
+source `aa95552` installed with locked offline dependencies and pinned FlatBuffers
+25.12.19 under `/tmp/cogfabric-v1-managed-availability-install-20261012`.
+Cargo reported 49.11 seconds. Binary SHA-256:
+`a80d7b96e56d0c54ffdcd5868ad53d8f006598084beb0b079c7eef2c18ff9a0c`.
+Installed smoke passed; evidence `/tmp/cogfabric-installed-smoke.x5a40p`; logs
+`/tmp/cogfabric-managed-availability-install.log` and
+`/tmp/cogfabric-managed-availability-installed-smoke.log`.
+This closes pending installed-source gaps for expired/exhausted grant routing
+and managed wrapper propagation. The actual socket/child and paused-clock Rust
+regressions establish those failure semantics; installed smoke covers normal
+CLI/service execution, worker cleanup, rollback and restore. Automatic residency
+scheduling, general independent plugin provisioning and held-out live evaluation
+remain incomplete. No release approval or remote publication follows.

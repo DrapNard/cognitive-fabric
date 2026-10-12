@@ -561,3 +561,8 @@ Managed worker wrappers now propagate initialized adapter availability; expired
 unlaunched tool deadlines are visible without starting children. Actual socket and
 same-binary cleanup regressions cover inference, arithmetic and SQL. All 341 tests
 and mandatory quality checks pass; optimized installation refresh remains pending.
+
+Optimized installation and installed smoke passed for source `aa95552`, refreshing
+proof after grant-aware routing and managed availability propagation. Exact build
+and evidence identities are recorded in `RELEASE_AUDIT.md`. Automatic residency
+and general plugin provisioning remain partial; no stable release is declared.
