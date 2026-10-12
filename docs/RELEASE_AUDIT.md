@@ -284,3 +284,14 @@ Installed smoke passed; evidence: `/tmp/cogfabric-installed-smoke.IddNUQ`; logs:
 An installed CLI check also persisted 384 interface tokens and rejected 4097
 without changing the stored setting. This closes the installed-source gap; live
 interpretation still timed out in the separate debug trial (`LIVE_INFERENCE.md`).
+
+Optimized provider-control verification (2026-10-12): source `418b722` installed
+with `FLATC=/tmp/cogfabric-flatbuffers-build/flatc cargo install --offline --locked --path . --root /tmp/cogfabric-v1-provider-effort-install-20261012`.
+Binary SHA-256:
+`5a60d4911f37aeedeb5e180fb73a2067d0ed69e0838cd681634168696fc9b69a`.
+Installed smoke passed; evidence: `/tmp/cogfabric-installed-smoke.aN0baA`; logs:
+`/tmp/cogfabric-provider-effort-install.log`,
+`/tmp/cogfabric-provider-effort-installed-smoke.log`.
+Real interpretation with explicit effort still failed strict JSON parsing and
+exhausted its two calls on interface/planner, exposing remaining-budget planner
+admission work. See `LIVE_INFERENCE.md`; no successful structured goal is claimed.

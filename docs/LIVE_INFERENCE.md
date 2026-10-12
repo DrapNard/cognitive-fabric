@@ -110,3 +110,22 @@ unavailable. CLI exit: 1. Task: `5db99aa2-3aa9-4625-ab1b-3a9dbccab8cd`; evidence
 The configurable reservation worked but did not establish successful structured
 interpretation. A larger budget is not evidence that the earlier empty response
 was caused solely by the allocation. No retry or timeout increase followed.
+
+## Explicit provider effort trial — 2026-10-12
+
+Debug source `418b722` repeated the same STANDARD natural-language request and
+384-token interface allocation with `reasoning_effort: none`; all earlier task
+ceilings were retained. Unlike the prior empty/timeout cases, both interface and
+planner produced provider text. The interface text failed strict JSON parsing,
+so the original request was preserved. The planner then consumed the second/last
+call; no solver could run and the CLI exited 1 with `exhausted`.
+
+Task `7110a991-6a53-4a8f-a0f9-7d89f5f2e79c`: two calls, one cycle, 640 reserved
+output tokens, 383 prompt bytes, provider totals 264 input / 188 output tokens,
+103113.508214 ms elapsed and 103107.179455 ms inference. The worker exited zero
+and was reaped without force. Evidence:
+`/tmp/cogfabric-live-effort.jpDI6A/{configured.json,outcome.json,trace.json,stderr.txt}`.
+The request setting is transported correctly but this trial proves neither valid
+structured interpretation nor controlled hidden reasoning. It exposed a scheduler
+gap: initial planner admission used total rather than remaining call/token limits
+after interface work. That gap must be fixed and regression tested.
