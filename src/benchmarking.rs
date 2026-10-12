@@ -135,6 +135,7 @@ pub struct Review {
     pub license: String,
     pub code_revision: String,
     pub held_out: bool,
+    pub workflow_check: bool,
     pub expected_dataset_sha256: Option<String>,
     pub max_run_seconds: u64,
 }
@@ -272,7 +273,7 @@ where
     F: std::future::Future<Output = ()>,
 {
     security::validate_provenance(&review.source, &review.license)?;
-    if !review.held_out
+    if review.held_out == review.workflow_check
         || review.code_revision.len() != 40
         || !review
             .code_revision
@@ -281,7 +282,7 @@ where
         || !(1..=86400).contains(&review.max_run_seconds)
     {
         bail!(
-            "Comparison requires held-out review, a full code revision and a bounded run duration"
+            "Comparison requires exactly one of held-out review or workflow check, a full code revision and a bounded run duration"
         )
     }
     if !matches!(mode, "deep" | "research") {
@@ -434,19 +435,65 @@ where
         }
     }
     Ok(
-        json!({"format_version":1,"dataset_checksum":dataset_checksum,"reviewed_dataset_checksum_operator_attested":review.expected_dataset_sha256,"dataset_checksum_operator_pinned":review.expected_dataset_sha256.is_some(),"dataset_source":review.source,"dataset_license":review.license,"held_out_operator_attested":true,
+        json!({"format_version":1,"dataset_checksum":dataset_checksum,"reviewed_dataset_checksum_operator_attested":if review.held_out {review.expected_dataset_sha256.as_ref()} else {None},"dataset_checksum_operator_pinned":review.expected_dataset_sha256.is_some(),"dataset_source":review.source,"dataset_license":review.license,"held_out_operator_attested":review.held_out,
+        "run_purpose":if review.workflow_check {"workflow_check"} else {"held_out_comparison"},"held_out_run":review.held_out,
         "code_revision_operator_attested":review.code_revision,"package_version":env!("CARGO_PKG_VERSION"),"configuration":common,"mode":mode,"corpus_snapshot":corpus.metadata,"snapshot_elapsed_ms":snapshot_ms,
         "small_model_ablation_configuration_controlled":!details.iter().any(|detail| detail["bound_expert_models"].as_array().is_some_and(|models| !models.is_empty())),
         "case_count":cases.len(),"complete":!stopped,"stop_reason":if cancelled {"cancelled"} else if stopped {"run_deadline"} else {"completed"},"elapsed_ms":started.elapsed().as_secs_f64()*1000.0,"larger_baseline_configured":larger.is_some(),
         "arms":arms.iter().enumerate().map(|(index,(profile,model,_))| json!({"index":index,"profile":profile,"model":model,"executed":counts[index],"passed":scores[index],"resources":totals[index],"accuracy":if counts[index]>0 {Some(scores[index] as f64/counts[index] as f64)} else {None}})).collect::<Vec<_>>(),
         "paired_changes_against_small_model_alone":paired_changes(&paired_results,arms.len()),
         "details":details,"unavailable_metrics":["peak_memory","gpu_memory","energy","model_load_cost","general_security_failure_rate"],
-        "limitations":["Held-out independence and code revision are operator-attested","Backend model labels do not attest immutable weights","A bound expert model configuration invalidates the same-model ablation control, even if advice is refused or fails; inspect per-case bound_expert_models","Exact-match, dependency-order, integer-sort and SQL criteria do not establish broad reasoning quality","Structured comparison recomputes checks without trusting runtime status; ordering/sorting share the runtime compiled verifier implementation","Retrieval uses one read-only SQLite snapshot; checksum includes unrelated stored history","Snapshot bounds are 64 MB and temporarily require an additional serialization buffer","Live model availability, weight identity and server state are not frozen","Different arms consume different amounts within the same operator ceilings; inspect actual usage"]}),
+        "limitations":[if review.workflow_check {"Public workflow check only; no held-out review or benchmark quality claim"} else {"Held-out independence and code revision are operator-attested"},"Backend model labels do not attest immutable weights","A bound expert model configuration invalidates the same-model ablation control, even if advice is refused or fails; inspect per-case bound_expert_models","Exact-match, dependency-order, integer-sort and SQL criteria do not establish broad reasoning quality","Structured comparison recomputes checks without trusting runtime status; ordering/sorting share the runtime compiled verifier implementation","Retrieval uses one read-only SQLite snapshot; checksum includes unrelated stored history","Snapshot bounds are 64 MB and temporarily require an additional serialization buffer","Live model availability, weight identity and server state are not frozen","Different arms consume different amounts within the same operator ceilings; inspect actual usage"]}),
     )
 }
 
 #[cfg(test)]
 mod tests {
+    #[tokio::test]
+    async fn workflow_checks_are_explicit_and_never_attest_held_out_review() {
+        let root = std::env::temp_dir().join(format!("fabric-workflow-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        let dataset = root.join("cases.jsonl");
+        std::fs::write(
+            &dataset,
+            r#"{"input":"sort:{\"values\":[2,1]}","verification":"integer_sort_v1"}"#,
+        )
+        .unwrap();
+        let cfg = Config {
+            backend: "demo".into(),
+            ..Config::default()
+        };
+        let store = Arc::new(Store::in_memory().unwrap());
+        let mut review = Review {
+            source: "public workflow fixture".into(),
+            license: "Apache-2.0".into(),
+            code_revision: "a".repeat(40),
+            held_out: false,
+            workflow_check: false,
+            expected_dataset_sha256: None,
+            max_run_seconds: 10,
+        };
+        assert!(
+            compare(&cfg, store.clone(), &dataset, "deep", None, &review)
+                .await
+                .is_err()
+        );
+        review.workflow_check = true;
+        let report = compare(&cfg, store.clone(), &dataset, "deep", None, &review)
+            .await
+            .unwrap();
+        assert_eq!(report["run_purpose"], "workflow_check");
+        assert_eq!(report["held_out_operator_attested"], false);
+        assert_eq!(report["held_out_run"], false);
+        assert!(report["reviewed_dataset_checksum_operator_attested"].is_null());
+        assert_eq!(report["details"].as_array().unwrap().len(), 6);
+        review.held_out = true;
+        assert!(compare(&cfg, store, &dataset, "deep", None, &review)
+            .await
+            .is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn paired_regressions_exclude_missing_results_and_preserve_denominators() {
         use super::*;
@@ -503,6 +550,7 @@ mod tests {
             license: "CC0".into(),
             code_revision: "a".repeat(40),
             held_out: true,
+            workflow_check: false,
             expected_dataset_sha256: None,
             max_run_seconds: 10,
         };
@@ -572,6 +620,7 @@ mod tests {
             license: "CC0".into(),
             code_revision: "a".repeat(40),
             held_out: true,
+            workflow_check: false,
             expected_dataset_sha256: None,
             max_run_seconds: 10,
         };
@@ -695,6 +744,7 @@ mod tests {
             license: "CC0".into(),
             code_revision: "a".repeat(40),
             held_out: true,
+            workflow_check: false,
             expected_dataset_sha256: Some(checksum.clone()),
             max_run_seconds: 10,
         };
@@ -830,6 +880,7 @@ mod tests {
             license: "CC0-1.0".into(),
             code_revision: "a".repeat(40),
             held_out: true,
+            workflow_check: false,
             expected_dataset_sha256: None,
             max_run_seconds: 10,
         };
@@ -942,6 +993,7 @@ mod tests {
             license: "CC0-1.0".into(),
             code_revision: "a".repeat(40),
             held_out: true,
+            workflow_check: false,
             expected_dataset_sha256: None,
             max_run_seconds: 10,
         };
@@ -991,6 +1043,7 @@ mod tests {
             license: "CC0-1.0".into(),
             code_revision: "b".repeat(40),
             held_out: true,
+            workflow_check: false,
             expected_dataset_sha256: None,
             max_run_seconds: 1,
         };
@@ -1022,6 +1075,7 @@ mod tests {
             license: "CC0-1.0".into(),
             code_revision: "a".repeat(40),
             held_out: true,
+            workflow_check: false,
             expected_dataset_sha256: None,
             max_run_seconds: 10,
         };

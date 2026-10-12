@@ -299,8 +299,10 @@ enum Command {
         code_revision: String,
         #[arg(long)]
         dataset_sha256: Option<String>,
-        #[arg(long)]
+        #[arg(long, conflicts_with = "workflow_check")]
         held_out: bool,
+        #[arg(long, conflicts_with = "held_out")]
+        workflow_check: bool,
         #[arg(long, default_value = "1800")]
         max_run_seconds: u64,
     },
@@ -838,6 +840,7 @@ async fn main() -> Result<()> {
             code_revision,
             dataset_sha256,
             held_out,
+            workflow_check,
             max_run_seconds,
         } => {
             let report = cogfabric::benchmarking::compare_until(
@@ -852,6 +855,7 @@ async fn main() -> Result<()> {
                     code_revision,
                     expected_dataset_sha256: dataset_sha256,
                     held_out,
+                    workflow_check,
                     max_run_seconds,
                 },
                 async {

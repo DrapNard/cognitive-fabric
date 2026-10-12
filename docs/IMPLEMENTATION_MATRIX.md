@@ -918,3 +918,14 @@ bounded fenced-critic revision, and reject forged permissions/surrounding prose/
 multiple objects. All mandatory checks pass with 335 tests (314 library, 21
 integration). This adds compatibility with observed model formatting; useful
 live recursive gains still require measurement.
+
+### Explicit public comparison workflow checks — 2026-10-12
+
+Implemented: `compare --workflow-check` runs the existing six profiles without
+falsely declaring public examples held out. `src/main.rs` and
+`src/benchmarking.rs` require exactly one purpose; report fields distinguish
+workflow checks from operator-attested held-out runs. Dataset integrity pins,
+resource bounds and cancellation remain enforced. Regression:
+`workflow_checks_are_explicit_and_never_attest_held_out_review` verifies all six
+results and rejects missing/conflicting purposes. Independent held-out datasets
+and live small-model comparative measurements remain incomplete.

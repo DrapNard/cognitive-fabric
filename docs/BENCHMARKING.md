@@ -258,3 +258,16 @@ covering negative/duplicate values, descending order and integer limits. It is n
 an independently reviewed or unseen held-out benchmark. Do not use the example's
 availability as grounds to attest independence. No live comparative performance
 or model-superiority result is inferred from the fixture tests.
+
+### Public workflow checks
+
+Use `compare ... --workflow-check` instead of `--held-out` to exercise all profiles
+on public examples without declaring independent held-out review. Exactly one
+flag is required; combining them is rejected by both CLI and Rust preflight.
+Provenance, revision, dataset pins, ceilings, cancellation and scoring remain
+mandatory and unchanged. Reports identify `run_purpose: workflow_check`,
+`held_out_run: false` and `held_out_operator_attested: false`; a dataset pin in
+this mode does not become a reviewed-dataset attestation. Scores describe only
+these public cases and cannot support general quality or superiority claims.
+Repository examples use Apache-2.0 licensing. Held-out comparisons still require
+`--held-out`; operator attestation does not prove independence.

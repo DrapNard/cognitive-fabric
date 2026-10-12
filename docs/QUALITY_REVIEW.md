@@ -1702,3 +1702,12 @@ pass using FlatBuffers 25.12.19. Log: `/tmp/cogfabric-advisory-json-tests.log`.
 Fenced graph execution/durable validation and bounded fenced-critic revision are
 covered, with negative wrapper/schema/permission cases. Existing raw JSON,
 recovery, transport and budget tests continue to pass.
+
+### Public comparison workflow verification — 2026-10-12
+
+`compare --workflow-check` preserves execution/scoring controls while withholding
+held-out attestations. All 336 Rust tests (315 library, 21 integration), formatting,
+all-target check and Clippy with warnings denied passed with pinned FlatBuffers
+25.12.19. Log: `/tmp/cogfabric-workflow-check-tests.log`. The initial restricted
+sandbox run denied socket operations; the complete rerun with local socket/child
+permissions passed. No security permission or inference capability is added.

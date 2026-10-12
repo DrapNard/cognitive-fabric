@@ -798,3 +798,7 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
 - Retain per-role byte bounds, graph/schema checks, budgets and unverified status.
 - Exercise fenced dependency execution and bounded critique revision; reject forged
   permissions, surrounding instructions and multiple objects.
+
+- Add explicit public comparison workflow checks with distinct report provenance;
+  retain held-out review requirements for benchmark runs and reject conflicting
+  run purposes.
