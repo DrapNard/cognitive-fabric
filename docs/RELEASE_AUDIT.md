@@ -204,3 +204,19 @@ filesystem/plan/lease/audit boundaries. Expanded debug CLI/service checks pass.
 Earlier installed source predates the verified cleanup changes; optimized installed
 validation must follow. This closes the tested journaled cleanup slice, not older
 unjournaled resource cleanup, hostile-owner race isolation or automatic recovery.
+
+Optimized worker-file cleanup verification (2026-10-12): source
+`054505c6b314c1de0820314a203b4dcc83108167` was installed with
+`FLATC=/tmp/cogfabric-flatbuffers-build/flatc cargo install --offline --locked --path . --root /tmp/cogfabric-v1-worker-files-install-20261012`.
+Rust/Cargo 1.97.1 and FlatBuffers 25.12.19 were used; Cargo reported 44.24 seconds
+for the optimized build. Binary SHA-256:
+`1abadf9a4b2188ef53e5a50dc124fb6d4012437c9e1b15b578c2f095517c3560`.
+Smoke script SHA-256:
+`a951e08f31ee0dcb733e6fd4ab21fb75aa74b2fa43c2044d86dbd9d29957e301`.
+The installed workflow passed, including reviewed empty cleanup preview/apply,
+CLI/service workers, recovery, rollback and restore. Evidence:
+`/tmp/cogfabric-installed-smoke.N40kRN`; log:
+`/tmp/cogfabric-worker-files-installed-smoke.log`. This closes the installed-source
+gap above. Actual stale-file deletion after host death is covered by the Rust child
+regression, not the empty-plan smoke case. Live inference, automatic resource
+scheduling and broader module lifecycle remain incomplete.

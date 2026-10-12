@@ -768,3 +768,10 @@ journals and pagination. All 318 Rust tests and mandatory quality checks pass.
 Installed validation is pending. Older unjournaled resources, creation-to-journal
 crash windows, hostile same-user races and automatic crash cleanup remain outside
 the guarantee; filesystem deletion cannot roll back with SQLite audits.
+
+The cleanup source `054505c` subsequently passed fresh optimized installation and
+the expanded CLI/service smoke workflow, closing the pending installation gap.
+`RELEASE_AUDIT.md` records source/binary/script hashes and retained evidence.
+Actual host-death deletion is verified by the Rust child regression; the installed
+workflow exercises empty reviewed plans. Broader module lifecycle and live model
+gates remain incomplete.

@@ -1584,3 +1584,10 @@ pagination and actual child-process death. Full log:
 preview/apply of an empty plan after clean worker completion. Optimized installed
 validation is pending for this source. No automatic cleanup, unjournaled sweep or
 hostile same-user race isolation is claimed.
+
+Optimized installation of `054505c` passed the expanded installed workflow,
+including empty cleanup preview/apply commands. Exact build identity and hashes
+are recorded in `RELEASE_AUDIT.md`; actual stale-file deletion after child-process
+death is covered separately by the Rust regression. The pending installed-source
+gap above is closed for this source. Unjournaled resources, automatic cleanup,
+hostile-owner race isolation and live model behavior remain outside the proof.
