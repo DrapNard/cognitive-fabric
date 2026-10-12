@@ -241,3 +241,15 @@ registrations, provider unloading or general plugin isolation.
 Retirement and shutdown commit registry changes before releasing backend handles
 outside the registry lock. A trusted backend destructor can inspect the committed
 registry; arbitrary destructor blocking/panic behavior is not isolated or bounded.
+
+
+### Local queue occupancy in tool route selection
+
+New arithmetic and SQL task pins compare approved available candidates by immutable
+operator rank, occupied local queue slots, then module ID. Equal ranks can route
+around a buffered queue; rank priority remains authoritative. Uninitialized queues
+count as empty. This samples buffered/reserved channel slots, not running work or
+remote capacity, and it reserves no slot. Concurrent changes can invalidate the
+observation. Existing pins never migrate or retry on another adapter. Original
+permission, call, deadline and capability checks remain unchanged. No new tool or
+provider lifecycle operation is exposed.

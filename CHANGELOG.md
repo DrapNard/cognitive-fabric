@@ -2,6 +2,13 @@
 
 All notable changes are documented here in English.
 
+### Prefer less queued alternatives at equal operator rank
+
+- Use observed local channel occupancy when pinning inference, arithmetic and SQL
+  routes with equal approved ranks, retaining module ID as the final tie-breaker.
+- Preserve rank priority, existing task pins, permissions and bounded dispatch.
+- Verify actual buffered contention and stable routing after queues drain.
+
 ### Release backend handles outside registry locks
 
 - Commit retirement and shutdown metadata before dropping inference/tool backends.

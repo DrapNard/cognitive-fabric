@@ -1395,3 +1395,12 @@ by `integer_sort/v1` (one call). Both workers were reaped normally. Exact hashes
 budgets, traces and limitations are in `QUALITY_REVIEW.md` and `LIVE_INFERENCE.md`.
 This refreshes installed-source verification; broader lifecycle and evaluation
 requirements remain incomplete.
+
+
+Implemented local queue occupancy tie-breaking for approved equal-rank inference,
+arithmetic and SQL alternatives (`src/fabric.rs`, `src/fabric/tools.rs`). New pins
+prefer fewer occupied local channel slots after operator rank; IDs settle remaining
+ties. Gated regressions verify actual buffered work, rank precedence, replacement,
+old-pin execution and return to ID order after draining. Adaptive calibrated cost,
+remote load, residency scheduling and reservation-based balancing remain Partial /
+Not implemented. All 372 tests and mandatory checks passed; see QUALITY_REVIEW.md.

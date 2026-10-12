@@ -437,7 +437,18 @@ impl Broker {
         }
         let mut routes = BTreeMap::new();
         let mut candidates = registry.active.values().collect::<Vec<_>>();
-        candidates.sort_by_key(|module| (module.routing_rank.unwrap_or(0), &module.descriptor.id));
+        // Sample pressure once per candidate; concurrent queues may change while
+        // sorting. Operator rank takes precedence over this local observation.
+        candidates.sort_by_cached_key(|module| {
+            (
+                module.routing_rank.unwrap_or(0),
+                module
+                    .queue
+                    .get()
+                    .map_or(0, |queue| queue.max_capacity() - queue.capacity()),
+                module.descriptor.id.clone(),
+            )
+        });
         for module in candidates {
             if module.backend.availability().unavailable() {
                 continue;

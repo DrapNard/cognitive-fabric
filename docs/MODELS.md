@@ -241,7 +241,8 @@ implicit reconnect, retry or budget refund.
 
 Trusted Rust hosts may use `Broker::register_candidate(descriptor, backend, rank)`
 to approve alternative inference modules for the same role. Lower ranks are
-preferred, with lexicographic module IDs breaking ties; rank is bounded to
+preferred; equally ranked candidates prefer fewer occupied local queue slots,
+then lexicographic module IDs break ties. Rank is bounded to
 0..=1,000,000 and immutable per registered version. Overlap is permitted only
 between ranked registrations. Ordinary `register` and the initial local module
 remain exclusive: explicitly unregister that module before installing overlapping
@@ -302,3 +303,12 @@ successful execution through a retired pin.
 Retirement and shutdown commit registry changes before releasing backend handles
 outside the registry lock. A trusted backend destructor can inspect the committed
 registry; arbitrary destructor blocking/panic behavior is not isolated or bounded.
+
+
+Queue occupancy is sampled once per inference candidate when forming new pins.
+Uninitialized queues count as empty. It measures buffered/reserved channel slots,
+not an executing request, remote server load, GPU residency or expected latency.
+Concurrent submissions can change occupancy immediately after selection; routing
+does not reserve a slot or guarantee load balancing. Existing pins and failure
+handling are unchanged. A lower-priority rank cannot win through lower queue load.
+No probe, extra model call, grant, retry or provider load/unload is introduced.

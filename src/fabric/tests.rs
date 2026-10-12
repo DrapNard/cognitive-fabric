@@ -980,3 +980,92 @@ fn retirement_and_shutdown_backend_cleanup_can_inspect_the_committed_registry() 
         assert!(completed.load(Ordering::Acquire));
     }
 }
+
+#[tokio::test]
+async fn equal_rank_routing_uses_queue_pressure_without_migrating_existing_pins() {
+    let backend = Arc::new(Gated {
+        calls: AtomicUsize::new(0),
+        entered: tokio::sync::Notify::new(),
+        release: tokio::sync::Notify::new(),
+    });
+    let broker = Broker::with_inference(Arc::new(Fixed("initial", AtomicUsize::new(0))));
+    broker.unregister("inference.local").unwrap();
+    let descriptor = |id: &str, version: &str| ModuleDescriptor {
+        id: id.into(),
+        version: version.into(),
+        roles: vec!["solver".into()],
+    };
+    broker
+        .register_candidate(descriptor("candidate.a", "1.0.0"), backend.clone(), 10)
+        .unwrap();
+    broker
+        .register_candidate(
+            descriptor("candidate.b", "1.0.0"),
+            Arc::new(Fixed("fallback", AtomicUsize::new(0))),
+            20,
+        )
+        .unwrap();
+    let original = Arc::new(broker.snapshot().unwrap());
+    assert_eq!(original.routes["solver"].descriptor.id, "candidate.a");
+    let first_pin = original.clone();
+    let first = tokio::spawn(async move { first_pin.generate("solver", "first", 128).await });
+    tokio::time::timeout(Duration::from_secs(1), backend.entered.notified())
+        .await
+        .unwrap();
+    let second_pin = original.clone();
+    let second = tokio::spawn(async move { second_pin.generate("solver", "second", 128).await });
+    let queue = original.routes["solver"].queue().await;
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while queue.capacity() != 3 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    // Lower-priority operator ranks never win merely through lower local load.
+    assert_eq!(
+        broker.snapshot().unwrap().routes["solver"].descriptor.id,
+        "candidate.a"
+    );
+    broker
+        .register_candidate(
+            descriptor("candidate.b", "2.0.0"),
+            Arc::new(Fixed("idle", AtomicUsize::new(0))),
+            10,
+        )
+        .unwrap();
+    let less_queued = broker.snapshot().unwrap();
+    assert_eq!(less_queued.routes["solver"].descriptor.id, "candidate.b");
+    assert_eq!(
+        less_queued
+            .generate("solver", "third", 128)
+            .await
+            .unwrap()
+            .text,
+        "idle"
+    );
+    backend.release.notify_one();
+    for call in [first, second] {
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(1), call)
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap()
+                .text,
+            "answer"
+        );
+    }
+    assert_eq!(
+        original
+            .generate("solver", "pinned", 128)
+            .await
+            .unwrap()
+            .text,
+        "answer"
+    );
+    assert_eq!(
+        broker.snapshot().unwrap().routes["solver"].descriptor.id,
+        "candidate.a"
+    );
+}

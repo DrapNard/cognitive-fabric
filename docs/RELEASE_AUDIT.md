@@ -4,14 +4,14 @@ This checklist preserves the 18 acceptance criteria in the goal objective. It is
 an evidence inventory, not a release approval. The canonical French architecture
 and the broader implementation matrix remain authoritative. Earlier test counts
 in the quality review are historical milestones. Current local verification is
-370 Rust tests (348 library, 22 integration), formatting, all-target checking and
+372 Rust tests (350 library, 22 integration), formatting, all-target checking and
 Clippy with warnings denied, using FlatBuffers compiler/crate 25.12.19.
 
 | Goal criterion | Evidence inspected | Assessment / remaining proof |
 |---|---|---|
 | 1. Workspace builds | `Cargo.toml`, all-target check | Passed locally; isolated optimized source installation also passed with cached dependencies. |
 | 2. Formatting and Clippy | Mandatory checks in `QUALITY_REVIEW.md` | Passed locally. |
-| 3. Mandatory tests | All-target test results, `tests/` | 370 passed; fixtures do not establish live model quality. |
+| 3. Mandatory tests | All-target test results, `tests/` | 372 passed; fixtures do not establish live model quality. |
 | 4. FlatBuffers IPC | `protocol/`, `src/wire.rs`, `src/fabric/`, malformed/compatibility/socket tests | Implemented for present transports; authenticated process event delivery/replay is now tested; broader module compatibility remains partial. |
 | 5. CLI/service communication | `src/service.rs`, socket tests, `tests/process_worker.rs` | Tested local transport, progress and cancellation; no general independent plugin service is claimed. |
 | 6. Compatible local LLM | `src/backend.rs`, `tests/inference_auth.rs`, `LIVE_INFERENCE.md` | Passed for Ollama and LM Studio Qwen3 8B compatible endpoints, including managed verified sorting. Native LM Studio read-only inventory passed; authenticated native access and controlled load/unload remain unverified. |
@@ -725,3 +725,10 @@ and an independently checked FAST sorting result; both workers were reaped norma
 records exact live task IDs, settings, resources and limitations. This closes the
 installed-source gap for cleanup lock ordering, not general module provisioning,
 provider unloading, held-out evaluation or broader V1 release requirements.
+
+
+Equal-rank alternatives now use sampled local queue occupancy before the ID
+tie-breaker, without changing rank priority or existing task pins. Mandatory checks
+and 372 tests pass; exact gated coverage and limitations are in QUALITY_REVIEW.md.
+This adds a bounded routing heuristic, not calibrated inference cost or automatic
+residency scheduling. Optimized installation proof needs refreshing after this change.

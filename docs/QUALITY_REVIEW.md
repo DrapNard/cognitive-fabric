@@ -2398,3 +2398,22 @@ passed for exact source `b81fe34cec0e2eec183ca06ebaf194966f5162d8`, including
 compiler bootstrap, mandatory Rust checks, CLI/service smoke, security probes
 and offline training preflight. Watcher exit zero; retained local log:
 `/tmp/cogfabric-registry-cleanup-hosted-ci.log`.
+
+
+## Equal-rank queue routing verification — 2026-10-13
+
+Formatting, all-target check, Clippy with warnings denied and all 372 tests
+(350 library, 22 integration) passed with pinned flatc 25.12.19. Test log:
+`/tmp/cogfabric-queue-routing-tests.log`. The gated inference, arithmetic and SQL
+fixtures block one request and observe a second buffered request before selecting
+a new pin. They verify that operator rank outranks queue load, an equal-rank idle
+replacement is selected, existing pins retain original execution, and drained
+queues return to deterministic ID ordering. Original permissions and bounds remain
+enforced; selection adds no remote probes or inference calls.
+
+The heuristic samples occupied local channel slots and does not account for
+executing work, server load, weights or GPU memory. Selection races remain bounded
+by existing dispatch queues/timeouts; no load-balancing or latency-gain guarantee
+is made. Installed binary verification predates this runtime change and must be
+refreshed before release. Broader provisioning and independent evaluation remain
+incomplete.

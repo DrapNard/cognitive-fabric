@@ -592,7 +592,15 @@ impl Broker {
             .filter(|m| {
                 m.descriptor.capability == capability && !m.backend.availability().unavailable()
             })
-            .min_by_key(|m| (m.routing_rank.unwrap_or(0), &m.descriptor.id))
+            .min_by_key(|m| {
+                (
+                    m.routing_rank.unwrap_or(0),
+                    m.queue
+                        .get()
+                        .map_or(0, |queue| queue.max_capacity() - queue.capacity()),
+                    &m.descriptor.id,
+                )
+            })
             .cloned()
             .map(|module| Handle { module }))
     }
@@ -852,6 +860,160 @@ mod tests {
                 broker.retire("cleanup", "1.0.0").unwrap();
             }
             assert!(completed.load(std::sync::atomic::Ordering::Acquire));
+        }
+    }
+
+    struct QueueGate {
+        calls: std::sync::atomic::AtomicUsize,
+        entered: tokio::sync::Notify,
+        release: tokio::sync::Notify,
+    }
+    impl QueueGate {
+        async fn wait(&self) {
+            if self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
+                self.entered.notify_one();
+                self.release.notified().await;
+            }
+        }
+    }
+    impl ArithmeticBackend for QueueGate {
+        fn evaluate<'a>(
+            &'a self,
+            _: &'a str,
+        ) -> Pin<Box<dyn Future<Output = Result<String>> + Send + 'a>> {
+            Box::pin(async move {
+                self.wait().await;
+                Ok("42".into())
+            })
+        }
+    }
+    impl sql::SqlBackend for QueueGate {
+        fn query<'a>(
+            &'a self,
+            _: &'a str,
+            _: &'a str,
+        ) -> Pin<Box<dyn Future<Output = Result<String>> + Send + 'a>> {
+            Box::pin(async move {
+                self.wait().await;
+                Ok(r#"{"columns":["answer"],"rows":[[42]]}"#.into())
+            })
+        }
+    }
+    async fn queued_tool_call(handle: Handle, task: String, sql: bool) -> Result<String> {
+        if sql {
+            handle
+                .query_sql(
+                    &task,
+                    "jev-plus",
+                    r#"{"tables":[],"query":"SELECT 42 AS answer"}"#,
+                )
+                .await
+        } else {
+            handle.evaluate(&task, "jev-plus", "6*7").await
+        }
+    }
+    #[tokio::test]
+    async fn equal_rank_tools_use_queue_pressure_without_changing_pins_or_rank_priority() {
+        for sql in [false, true] {
+            let broker = Broker::default();
+            let capability = if sql { "sql.query" } else { "math.evaluate" };
+            broker
+                .unregister(if sql { "sql.local" } else { "arithmetic.local" })
+                .unwrap();
+            let backend = Arc::new(QueueGate {
+                calls: std::sync::atomic::AtomicUsize::new(0),
+                entered: tokio::sync::Notify::new(),
+                release: tokio::sync::Notify::new(),
+            });
+            let descriptor = |id: &str, version: &str| Descriptor {
+                id: id.into(),
+                version: version.into(),
+                capability: capability.into(),
+            };
+            if sql {
+                broker
+                    .register_sql_candidate(descriptor("candidate.a", "1.0.0"), backend.clone(), 10)
+                    .unwrap();
+                broker
+                    .register_sql_candidate(
+                        descriptor("candidate.b", "1.0.0"),
+                        Arc::new(sql::LocalSql),
+                        20,
+                    )
+                    .unwrap();
+            } else {
+                broker
+                    .register_candidate(descriptor("candidate.a", "1.0.0"), backend.clone(), 10)
+                    .unwrap();
+                broker
+                    .register_candidate(descriptor("candidate.b", "1.0.0"), Arc::new(LocalMath), 20)
+                    .unwrap();
+            }
+            let original = broker.pin_capability(capability).unwrap().unwrap();
+            assert_eq!(original.descriptor().id, "candidate.a");
+            let task = uuid::Uuid::new_v4().to_string();
+            let first = tokio::spawn(queued_tool_call(original.clone(), task.clone(), sql));
+            tokio::time::timeout(Duration::from_secs(1), backend.entered.notified())
+                .await
+                .unwrap();
+            let second = tokio::spawn(queued_tool_call(original.clone(), task.clone(), sql));
+            let queue = original.module.queue().await;
+            tokio::time::timeout(Duration::from_secs(1), async {
+                while queue.capacity() != 3 {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .unwrap();
+            assert_eq!(
+                broker
+                    .pin_capability(capability)
+                    .unwrap()
+                    .unwrap()
+                    .descriptor()
+                    .id,
+                "candidate.a"
+            );
+            if sql {
+                broker
+                    .register_sql_candidate(
+                        descriptor("candidate.b", "2.0.0"),
+                        Arc::new(sql::LocalSql),
+                        10,
+                    )
+                    .unwrap();
+            } else {
+                broker
+                    .register_candidate(descriptor("candidate.b", "2.0.0"), Arc::new(LocalMath), 10)
+                    .unwrap();
+            }
+            let idle = broker.pin_capability(capability).unwrap().unwrap();
+            assert_eq!(idle.descriptor().id, "candidate.b");
+            let expected = queued_tool_call(idle, task.clone(), sql).await.unwrap();
+            backend.release.notify_one();
+            for call in [first, second] {
+                let answer = tokio::time::timeout(Duration::from_secs(1), call)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(
+                    serde_json::from_str::<serde_json::Value>(&answer).unwrap(),
+                    serde_json::from_str::<serde_json::Value>(&expected).unwrap()
+                );
+            }
+            assert_eq!(original.descriptor().id, "candidate.a");
+            queued_tool_call(original, task, sql).await.unwrap();
+            assert_eq!(backend.calls.load(std::sync::atomic::Ordering::SeqCst), 3);
+            assert_eq!(
+                broker
+                    .pin_capability(capability)
+                    .unwrap()
+                    .unwrap()
+                    .descriptor()
+                    .id,
+                "candidate.a"
+            );
         }
     }
 
