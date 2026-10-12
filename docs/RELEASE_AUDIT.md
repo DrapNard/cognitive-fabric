@@ -347,3 +347,20 @@ The separately recorded debug live trial exercised planner, solver and critic
 within three calls; its prose remains unverified. All 335 tests and mandatory
 quality checks passed for this source. Held-out comparative quality, intended
 small-model measurements and other open release gates remain incomplete.
+
+### Live comparison preflight observation — 2026-10-12
+
+The optimized `9b8385a` executable rejected a proposed one-case public sorting
+workflow check before task execution because `compare` requires `--held-out`.
+The flag was deliberately omitted: the repository example has no independent
+held-out review. Exit status was 1 with the explicit held-out/code-revision/run
+bounds preflight error. No comparative result was produced. Evidence:
+`/tmp/cogfabric-live-comparison.YafT5R/{cases.jsonl,stderr.txt,exit-status.txt}`.
+The attempted provenance license argument was mistakenly MIT; the repository
+license is Apache-2.0 and must be used for a future repository-example check.
+The preflight refusal does not validate that incorrect provenance declaration.
+
+A separate explicit non-held-out workflow-check mode would permit honest live
+runner verification while retaining mandatory held-out attestations for benchmark
+claims. That mode is not currently implemented. Do not bypass the gate by falsely
+attesting the public example or presenting fixture results as live measurements.
