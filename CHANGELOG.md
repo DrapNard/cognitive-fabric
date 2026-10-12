@@ -856,3 +856,10 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   reject oversized requests before admission.
 - Verify queue exhaustion, deadline, cancellation, permit restoration and successful
   queued execution with independent capacity fixtures.
+
+### Verify retained recovery lease ownership
+
+- Test duplicate-descriptor lock retention, close-on-exec flags and fail-closed
+  recovery without audit mutation until the last descriptor closes.
+- Refresh release-status evidence for 354 tests, successful LM Studio smoke and
+  restored private GitHub synchronization; preserve unresolved contention limits.

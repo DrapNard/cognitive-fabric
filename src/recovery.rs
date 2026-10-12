@@ -244,6 +244,37 @@ mod tool_tests;
 #[cfg(test)]
 mod tests {
     #[test]
+    fn duplicated_lease_descriptor_blocks_recovery_until_its_last_owner_closes() {
+        use std::os::fd::AsRawFd;
+        let root =
+            std::env::temp_dir().join(format!("fabric-duplicated-lease-{}", uuid::Uuid::new_v4()));
+        let store = super::Store::open(&root.join("state.db")).unwrap();
+        let task = store
+            .create_task("Retained descriptor recovery", "fast")
+            .unwrap();
+        worker_start(&store, &task, &uuid::Uuid::new_v4().to_string());
+        let lease = store.execution_lease().unwrap().unwrap();
+        let duplicate = lease.0.try_clone().unwrap();
+        for descriptor in [lease.0.as_raw_fd(), duplicate.as_raw_fd()] {
+            let flags = unsafe { libc::fcntl(descriptor, libc::F_GETFD) };
+            assert!(flags >= 0);
+            assert_ne!(flags & libc::FD_CLOEXEC, 0);
+        }
+        drop(lease);
+        assert!(store.recover_workers().is_err());
+        let interrupted: u32 = store.lock().unwrap().query_row(
+            "SELECT count(*) FROM events WHERE kind='worker.audit' AND json_extract(payload,'$.state')='session_interrupted'",
+            [], |row| row.get(0),
+        ).unwrap();
+        assert_eq!(interrupted, 0);
+        drop(duplicate);
+        assert_eq!(store.recover_workers().unwrap().len(), 1);
+        assert!(store.recover_workers().unwrap().is_empty());
+        drop(store);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn admission_lease_conversion_allows_workers_but_blocks_recovery() {
         let path =
             std::env::temp_dir().join(format!("fabric-lease-conversion-{}", uuid::Uuid::new_v4()));

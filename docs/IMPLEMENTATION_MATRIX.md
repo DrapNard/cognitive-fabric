@@ -53,7 +53,7 @@ remains a pre-release. `QUALITY_REVIEW.md` preserves verification history.
 | 12, 14 | CLI/service | Partial | `src/main.rs`: initialization/configuration, ask, service controls, task-specific socket progress/cancellation, skill lifecycle, ingestion/search, task traces, candidates/rollback, benchmark, self-test; real socket fixtures | Live residency lifecycle |
 | 12, 13 | Hardware/performance claims | Partial | Optional whole-device GPU diagnostics sampled real host memory/utilization/power; no energy or large-model advantage claimed | Task-attributed telemetry, real model switching and equal-budget comparisons |
 
-All 335 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
+All 354 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
 all-target build checks and Clippy with denied warnings pass. Fixtures do not prove
 GPU integration, neural quality, immutable backend weights or live model switching.
 
@@ -61,7 +61,9 @@ Earlier LM Studio validation returned HTTP 401. Later direct and managed-worker
 generation succeeded through the existing Ollama OpenAI-compatible endpoint;
 the managed sorting answer passed independent Rust verification. See
 `LIVE_INFERENCE.md` for actual measurements and limits. LM Studio authentication,
-real switching and reviewed equal-budget studies remain unverified. Private
+controlled native load/unload and reviewed equal-budget studies remain unverified.
+LM Studio Qwen3 8B generation and native read-only inventory now pass real smoke
+tests; see the later entries for actual scope and observed injection failures. Private
 GitHub publication is authorized; no final stable release tag is authorized.
 
 Independent verification now additionally supports explicit `order:` dependency
@@ -1088,3 +1090,10 @@ restoration and successful queued execution. SQLite restrictions and task tool
 charges remain unchanged. This addresses a demonstrated contention path; prior
 intermittent SQL transport failures were not instrumented, so do not claim every
 historical failure's cause is proven. Runtime-lease test contention is separate.
+
+Recovery lease evidence: duplicated open-file descriptions keep recovery blocked
+until the last descriptor closes, even after the original owner drops its handle.
+A kernel regression verifies close-on-exec flags, zero interruption mutations
+while blocked, and idempotent recovery after final closure. Historical transient
+contention remains unexplained; the runtime deliberately retains fail-closed
+ownership checks. Current mandatory tests pass 354 cases.

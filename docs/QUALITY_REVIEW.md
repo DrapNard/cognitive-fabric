@@ -1887,3 +1887,17 @@ contention while directly testing its bounds. The runtime still has two executin
 slots and six total admitted requests; queue latency is capped at one second and
 oversized input is rejected before admission. Historical SQL failure attribution
 remains inferential; the separate runtime-lease contention remains unresolved.
+
+## Retained lease descriptor verification — 2026-10-12
+
+A new real-kernel regression duplicates a shared execution lease descriptor,
+confirms both descriptors have FD_CLOEXEC, drops the original and verifies worker
+recovery still refuses without writing interruption records. After the duplicate
+closes, recovery succeeds once and is idempotent. This proves last-descriptor
+ownership semantics; it does not establish that pre-exec inheritance caused the
+historical parallel failure. No force-unlock, automatic retry or authority bypass
+was added. Full default-parallel tests passed 354 tests (333 library / 21
+integration), log `/tmp/cogfabric-retained-lease-tests.log`; formatting,
+all-target compilation and Clippy with denied warnings passed. Leading release
+status now reflects current counts, real LM Studio evidence and renewed private
+GitHub synchronization rather than stale authentication blockers.
