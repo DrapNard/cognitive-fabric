@@ -465,3 +465,9 @@ until shutdown. Real direct and managed-worker Ollama generation succeeded, with
 independent Rust sorting verification and confirmed child reaping. See
 `LIVE_INFERENCE.md` for measured limits; broader live studies and module lifecycle
 remain incomplete. Earlier unavailable-inference statements are historical.
+
+Inference brokers now also support host-only rollback to retained immutable
+backend versions. Original queues and in-flight role snapshots are preserved;
+active role conflicts fail before mutation. All mandatory checks pass with 324
+Rust tests (303 library, 21 integration). See `MODELS.md` for retained-resource,
+expired-transport and external weight identity limitations.

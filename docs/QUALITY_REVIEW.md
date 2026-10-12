@@ -1600,3 +1600,11 @@ Log: `/tmp/cogfabric-tool-rollback-full-tests.log`. Coverage includes retained
 math/SQL pins, capability identity after unregistration, conflict refusal,
 shutdown and full-history rollback. Real inference observations are recorded
 separately in `LIVE_INFERENCE.md`; these do not constitute benchmark results.
+
+Inference rollback validation (2026-10-12): formatting, offline all-target check,
+all-target tests (303 library + 21 integration = 324) and Clippy with warnings
+denied pass using `FLATC=/tmp/cogfabric-flatbuffers-build/flatc` (25.12.19).
+Log: `/tmp/cogfabric-inference-rollback-full-tests.log`. Three regressions verify
+original backend/queue reuse at the history ceiling, preserved role pins,
+conflicts, absent versions and shutdown. This does not prove remote health or
+external model weight switching. Optimized installation needs refreshing.

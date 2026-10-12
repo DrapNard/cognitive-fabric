@@ -727,3 +727,11 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
 - Test conflict/shutdown/redefinition/full-history rollback and SQL results.
 - Record successful direct Ollama generation and managed sorting with independent
   verification and confirmed reaping; retain outstanding live study limitations.
+
+### Immutable inference backend rollback
+
+- Retain original backend versions and queues for trusted host reactivation.
+- Preserve in-flight role snapshots; refuse active role conflicts and unknown
+  versions without granting permissions or renewing remote sessions.
+- Verify rollback at the history ceiling, original backend/queue identity,
+  role isolation and shutdown. Retained history is count-bounded, not a GPU quota.

@@ -788,3 +788,11 @@ shutdown; health checks, general executable lifecycle and residency quotas remai
 partial. Real direct/managed Ollama generation now passes, including independent
 sorting proof and confirmed child reaping; see `LIVE_INFERENCE.md`. This supersedes
 older statements that all compatible real inference remains unavailable.
+
+Inference backend rollback: **Implemented** in `src/fabric.rs`, with trusted host
+activation/discovery of immutable retained versions. `src/fabric/tests.rs` covers
+original backend/queue reuse, version-pinned role routes, conflict refusal,
+shutdown/unknown versions and the 128-version bound. All mandatory quality checks
+pass with 324 tests (303 library, 21 integration). Retention keeps inactive backend
+references until shutdown; remote health/grant renewal, automatic executable
+lifecycle and real weight residency/switching remain partial. See `MODELS.md`.

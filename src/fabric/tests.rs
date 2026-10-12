@@ -302,6 +302,130 @@ fn malformed_module_frames_and_invalid_bounds_fail_closed() {
 }
 
 #[tokio::test]
+async fn rollback_reuses_original_backend_and_preserves_pinned_role_routes() {
+    let original = Arc::new(Fixed("original", AtomicUsize::new(0)));
+    let replacement = Arc::new(Fixed("replacement", AtomicUsize::new(0)));
+    let broker = Broker::with_inference(original.clone());
+    broker
+        .register(
+            ModuleDescriptor {
+                id: "inference.local".into(),
+                version: "2.0.0".into(),
+                roles: vec!["solver".into()],
+            },
+            replacement.clone(),
+        )
+        .unwrap();
+    let pinned_replacement = broker.pin().unwrap().unwrap();
+    broker.activate("inference.local", "1.0.0").unwrap();
+    assert_eq!(
+        broker.generate("planner", "goal", 128).await.unwrap().text,
+        "original"
+    );
+    assert_eq!(
+        pinned_replacement
+            .generate("solver", "goal", 128)
+            .await
+            .unwrap()
+            .text,
+        "replacement"
+    );
+    assert!(pinned_replacement
+        .generate("planner", "goal", 128)
+        .await
+        .is_err());
+    assert_eq!(original.1.load(Ordering::SeqCst), 1);
+    assert_eq!(replacement.1.load(Ordering::SeqCst), 1);
+    assert_eq!(broker.versions().unwrap().len(), 2);
+    broker.unregister("inference.local").unwrap();
+    broker.activate("inference.local", "2.0.0").unwrap();
+    assert!(broker.generate("planner", "goal", 128).await.is_err());
+    assert!(broker.activate("inference.local", "9.0.0").is_err());
+    assert!(broker.activate(&"x".repeat(65), "1.0.0").is_err());
+    broker.shutdown().unwrap();
+    assert!(broker.versions().unwrap().is_empty());
+    assert!(broker.activate("inference.local", "1.0.0").is_err());
+    assert!(pinned_replacement
+        .generate("solver", "goal", 128)
+        .await
+        .is_err());
+}
+
+#[test]
+fn rollback_refuses_role_conflicts_without_changing_active_routes() {
+    let broker = Broker::with_inference(Arc::new(Fixed("original", AtomicUsize::new(0))));
+    broker
+        .register(
+            ModuleDescriptor {
+                id: "inference.local".into(),
+                version: "2.0.0".into(),
+                roles: vec!["solver".into()],
+            },
+            Arc::new(Fixed("replacement", AtomicUsize::new(0))),
+        )
+        .unwrap();
+    broker
+        .register(
+            ModuleDescriptor {
+                id: "planner.other".into(),
+                version: "1.0.0".into(),
+                roles: vec!["planner".into()],
+            },
+            Arc::new(Fixed("planner", AtomicUsize::new(0))),
+        )
+        .unwrap();
+    assert!(broker.activate("inference.local", "1.0.0").is_err());
+    let routes = broker.snapshot().unwrap();
+    assert_eq!(routes.routes["solver"].descriptor.version, "2.0.0");
+    assert_eq!(routes.routes["planner"].descriptor.id, "planner.other");
+    broker.unregister("planner.other").unwrap();
+    broker.activate("inference.local", "1.0.0").unwrap();
+    assert_eq!(
+        broker.snapshot().unwrap().routes["planner"].descriptor.id,
+        "inference.local"
+    );
+}
+
+#[tokio::test]
+async fn rollback_at_history_capacity_reuses_the_original_bounded_queue() {
+    let broker = Broker::with_inference(Arc::new(Fixed("original", AtomicUsize::new(0))));
+    let original = broker.snapshot().unwrap().routes["solver"].clone();
+    let queue = original.queue().await.clone();
+    for version in 2..=128 {
+        broker
+            .register(
+                ModuleDescriptor {
+                    id: "inference.local".into(),
+                    version: format!("{version}.0.0"),
+                    roles: vec!["solver".into()],
+                },
+                Arc::new(Fixed("replacement", AtomicUsize::new(0))),
+            )
+            .unwrap();
+    }
+    assert_eq!(broker.versions().unwrap().len(), 128);
+    assert!(broker
+        .register(
+            ModuleDescriptor {
+                id: "inference.local".into(),
+                version: "129.0.0".into(),
+                roles: vec!["solver".into()],
+            },
+            Arc::new(Fixed("overflow", AtomicUsize::new(0)))
+        )
+        .is_err());
+    broker.activate("inference.local", "1.0.0").unwrap();
+    let restored = broker.snapshot().unwrap().routes["solver"].clone();
+    assert!(Arc::ptr_eq(&original, &restored));
+    assert!(queue.same_channel(restored.queue().await));
+    assert_eq!(
+        broker.generate("solver", "goal", 128).await.unwrap().text,
+        "original"
+    );
+    broker.shutdown().unwrap();
+}
+
+#[tokio::test]
 async fn forged_identity_and_expired_work_never_reach_the_backend() {
     let backend = Arc::new(Fixed("never", AtomicUsize::new(0)));
     let broker = Broker::with_inference(backend.clone());

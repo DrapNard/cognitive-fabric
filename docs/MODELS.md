@@ -138,3 +138,21 @@ pre-effect requested record remains and does not establish success or failure of
 the external operation. Missing or already-terminal anchors refuse finalization.
 This prevents a partially committed confirmation from appearing as a completed
 operation. It cannot undo a load/unload already performed by the model server.
+
+### Trusted inference backend rollback
+
+`fabric::Broker` retains up to 128 immutable backend versions. Host
+`activate(id, version)` restores the original backend and its existing bounded
+queue; `versions()` lists retained metadata without inference. Future task
+snapshots use restored role routes, while in-flight tasks retain their exact
+original routes. Activation rejects roles already served by another active module,
+unknown versions and stopped brokers. Registration cannot redefine a version;
+rollback remains available at the history ceiling. Shutdown clears retained
+versions and revokes all task pins, including inactive versions.
+
+This is a trusted embedding API, not a model/socket lifecycle command. Inactive
+backend references and initialized queues remain retained until shutdown; 128 is
+a count ceiling, not a byte, GPU or process quota. A restored remote adapter can
+still be disconnected or have expired grants; rollback does not renew grants,
+probe health or load/unload weights. It changes neither task permissions nor
+external model residency. Real model switching remains separately unverified.

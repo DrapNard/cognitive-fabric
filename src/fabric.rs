@@ -125,6 +125,7 @@ impl Module {
 struct Registry {
     active: BTreeMap<String, Arc<Module>>,
     seen: BTreeSet<(String, String)>,
+    versions: BTreeMap<(String, String), Arc<Module>>,
 }
 
 pub struct Broker {
@@ -148,7 +149,10 @@ impl Broker {
         let mut registry = Registry::default();
         registry
             .seen
-            .insert((descriptor.id.clone(), descriptor.version));
+            .insert((descriptor.id.clone(), descriptor.version.clone()));
+        registry
+            .versions
+            .insert((descriptor.id.clone(), descriptor.version), module.clone());
         registry.active.insert(descriptor.id, module);
         Self {
             registry: RwLock::new(registry),
@@ -196,16 +200,69 @@ impl Broker {
         registry
             .seen
             .insert((descriptor.id.clone(), descriptor.version.clone()));
-        registry.active.insert(
-            descriptor.id.clone(),
-            Arc::new(Module {
-                descriptor,
-                backend,
-                queue: OnceCell::new(),
-                shutdown: self.shutdown.clone(),
-            }),
+        let module = Arc::new(Module {
+            descriptor,
+            backend,
+            queue: OnceCell::new(),
+            shutdown: self.shutdown.clone(),
+        });
+        registry.versions.insert(
+            (
+                module.descriptor.id.clone(),
+                module.descriptor.version.clone(),
+            ),
+            module.clone(),
         );
+        registry.active.insert(module.descriptor.id.clone(), module);
         Ok(())
+    }
+
+    /// Trusted host rollback/reactivation of an immutable registered backend.
+    /// Existing task routes remain pinned. This neither probes health nor renews
+    /// transport grants or changes external model residency.
+    pub fn activate(&self, id: &str, version: &str) -> Result<()> {
+        if id.len() > 64 || version.len() > 128 {
+            bail!("Invalid inference module version selection")
+        }
+        let mut registry = self
+            .registry
+            .write()
+            .map_err(|_| anyhow!("Module registry poisoned"))?;
+        if *self.shutdown.borrow() {
+            bail!("Module broker shut down")
+        }
+        let module = registry
+            .versions
+            .get(&(id.into(), version.into()))
+            .cloned()
+            .context("Unknown registered inference module version")?;
+        if !registry.active.contains_key(id) && registry.active.len() >= 32 {
+            bail!("Active module capacity exhausted")
+        }
+        if registry.active.values().any(|active| {
+            active.descriptor.id != id
+                && module
+                    .descriptor
+                    .roles
+                    .iter()
+                    .any(|role| active.descriptor.roles.contains(role))
+        }) {
+            bail!("Conflicting active inference role")
+        }
+        registry.active.insert(id.into(), module);
+        Ok(())
+    }
+
+    /// All retained version metadata, including inactive modules; no inference.
+    pub fn versions(&self) -> Result<Vec<ModuleDescriptor>> {
+        Ok(self
+            .registry
+            .read()
+            .map_err(|_| anyhow!("Module registry poisoned"))?
+            .versions
+            .values()
+            .map(|module| module.descriptor.clone())
+            .collect())
     }
 
     /// Stop all versions, including modules retained by already pinned tasks.
@@ -217,6 +274,7 @@ impl Broker {
             .map_err(|_| anyhow!("Module registry poisoned"))?;
         self.shutdown.send_replace(true);
         registry.active.clear();
+        registry.versions.clear();
         Ok(())
     }
 
