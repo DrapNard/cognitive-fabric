@@ -2007,13 +2007,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn zero_token_input_cycle_and_tool_budgets_prevent_inference() {
-        for change in [0, 1, 2, 3] {
+    async fn zero_token_input_and_cycle_budgets_prevent_inference() {
+        for change in [0, 1, 2] {
             let (outcome, _) = execute_configured(vec![], 6, |cfg| match change {
                 0 => cfg.max_tokens = 0,
                 1 => cfg.max_input_bytes = 0,
-                2 => cfg.max_cycles = 0,
-                _ => cfg.max_tool_calls = 0,
+                _ => cfg.max_cycles = 0,
             })
             .await;
             assert_eq!(outcome.calls, 0);

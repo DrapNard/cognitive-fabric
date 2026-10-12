@@ -1404,3 +1404,14 @@ ties. Gated regressions verify actual buffered work, rank precedence, replacemen
 old-pin execution and return to ID order after draining. Adaptive calibrated cost,
 remote load, residency scheduling and reservation-based balancing remain Partial /
 Not implemented. All 372 tests and mandatory checks passed; see QUALITY_REVIEW.md.
+
+
+Implemented affordable optional retrieval under zero tool ceilings. In
+`src/engine.rs`, `max_tool_calls=0` audits skipped retrieval and permits plain
+inference with no document/memory retrieval. Arithmetic, SQL and independent
+structured checks still fail authorization/budget admission before tool dispatch.
+The regression covers plain generation, excluded retrieved content and negative
+dispatch; zero call/token/input/cycle coverage remains in `src/reasoning.rs`.
+All 373 tests and mandatory checks pass; a real managed Qwen explanation used one
+model call and zero tools. See CONFIGURATION.md, QUALITY_REVIEW.md and
+LIVE_INFERENCE.md. Free-form language restrictions are still advisory.

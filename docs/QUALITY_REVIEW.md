@@ -2417,3 +2417,22 @@ by existing dispatch queues/timeouts; no load-balancing or latency-gain guarante
 is made. Installed binary verification predates this runtime change and must be
 refreshed before release. Broader provisioning and independent evaluation remain
 incomplete.
+
+
+## Zero-tool plain inference — 2026-10-13
+
+All 373 tests (351 library, 22 integration), formatting, all-target check and
+Clippy with warnings denied passed using flatc 25.12.19. Local test log:
+`/tmp/cogfabric-zero-tool-inference-tests.log`. Clippy initially flagged a fixture
+lock guard before an await; the test now snapshots owned prompt data. The former
+combined zero-budget test retains call/token/input/cycle failure coverage; a new
+Engine regression separately verifies that a zero tool budget permits unverified
+plain generation, excludes document/memory payloads and denies arithmetic, SQL and
+structured verifier dispatch with audited negative decisions and zero tool charges.
+No tests or permission checks were removed to conceal a failure.
+
+A managed debug-binary Qwen3 8B explanation completed with one model call and zero
+tools; detailed evidence is in LIVE_INFERENCE.md. Optional retrieval is skipped
+with a durable scheduling decision; verification is not disabled or promoted into
+success. These changes add no grants and do not interpret arbitrary natural-language
+constraints as policy. Optimized installation proof predates this source change.

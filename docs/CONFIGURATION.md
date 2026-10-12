@@ -29,7 +29,14 @@ then defaults. Environment names remain COGFABRIC_BACKEND, COGFABRIC_MODEL and
 COGFABRIC_API_BASE. Resource ceilings may be edited in the reviewed config file:
 max_calls, max_cycles, max_tokens (reserved output tokens), max_input_bytes,
 max_tool_calls, timeout_seconds and max_wall_seconds. Zero call/cycle/token/byte/tool
-budgets intentionally prevent the corresponding work. Timeouts must be positive.
+budgets intentionally prevent the corresponding work. A zero `max_tool_calls`
+skips optional reference/episodic retrieval instead of rejecting plain inference.
+An explanation can still return unverified output within its model-call, token,
+input and wall-time ceilings. Explicit arithmetic/SQL dispatch and structured
+verification remain denied; no check is silently treated as passed. The skip is
+audited. This tool ceiling does not disable runtime persistence, registry metadata
+or explicitly requested conversation references, and natural-language prohibitions
+remain advisory rather than a replacement for configured limits. Timeouts must be positive.
 Mode limits still clamp larger configuration values. See REASONING.md.
 
 Restart the service after changing settings. Existing tasks retain a cloned

@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Allow plain inference under a zero tool ceiling
+
+- Skip and audit optional retrieval when no tool calls are available.
+- Keep arithmetic, SQL and independent verifier dispatch denied at zero budget.
+- Verify unverified plain generation without retrieved document/memory content.
+
 ### Prefer less queued alternatives at equal operator rank
 
 - Use observed local channel occupancy when pinning inference, arithmetic and SQL

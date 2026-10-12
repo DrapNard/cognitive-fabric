@@ -525,3 +525,23 @@ public live smokes, not held-out evaluation, causal speed comparisons, weight
 attestation, GPU accounting or broad neural security evidence. The explicit
 thinking/output settings remain relevant; default thinking-model output limits
 are not proven sufficient.
+
+
+## Zero-tool explanation smoke — 2026-10-13
+
+The debug executable containing zero-tool retrieval admission changes
+(SHA-256 `96785b7fa748da5fc328f92e692cc9ce1da9501b7d925ca10030f4fb87da48d3`)
+submitted FAST `Explain Rust ownership briefly` to LM Studio `qwen/qwen3-8b`
+at `http://127.0.0.1:1234/v1` from fresh state. Settings: temperature zero,
+reasoning effort none, interpretation disabled, one call/cycle, 384 reserved output
+tokens, 8192 prompt bytes, zero tools, 45-second wall and 30-second HTTP limits.
+Task `56da0528-bbcc-4d56-8125-edba300be501` returned an explanation marked
+**unverified**, command exit zero: 4337.196146ms elapsed, 4332.889954ms inference,
+141 input/209 output tokens, 384 reserved tokens, one model call and zero tools.
+The audit records `skip_retrieval`, empty retrieved documents/memories and one worker
+stopped with reaped true, forced false and exit zero. Local evidence:
+`/tmp/cogfabric-zero-tools-qwen-answer.json` and
+`/tmp/cogfabric-zero-tools-qwen-trace.json`. This is one live smoke of budget
+independence, not independently verified prose, a latency comparison or held-out
+quality/security evidence. Explicit tool/check denials are separately covered by
+the Engine regression; no live tool or provider lifecycle mutation was attempted.

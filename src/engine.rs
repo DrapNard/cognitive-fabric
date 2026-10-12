@@ -318,10 +318,19 @@ impl Engine {
         let mut skills = Vec::new();
         let mut evidence = Vec::new();
         let execution = async {
-            let retrieve = matches!(
+            let retrieval_requested = matches!(
                 profile,
                 ExecutionProfile::Full | ExecutionProfile::Memory | ExecutionProfile::Experts
             );
+            let retrieve = retrieval_requested && self.cfg.max_tool_calls > 0;
+            if retrieval_requested && !retrieve {
+                self.store.event(
+                    &id,
+                    "schedule",
+                    "jev-plus",
+                    json!({"decision":"skip_retrieval","reason":"No tool budget available"}),
+                )?;
+            }
             let experts = matches!(profile, ExecutionProfile::Full | ExecutionProfile::Experts);
             if retrieve {
                 session.authorize_tool("knowledge.search")?;
@@ -785,6 +794,77 @@ mod expert_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn zero_tool_budget_allows_plain_inference_without_retrieval_or_tool_dispatch() {
+        let store = Arc::new(Store::in_memory().unwrap());
+        store::bootstrap(&store).unwrap();
+        store
+            .add_document(&store::Document {
+                id: uuid::Uuid::new_v4().to_string(),
+                skill_id: "rust.s1".into(),
+                title: "Ownership reference".into(),
+                body: "ownership document sentinel".into(),
+                source: "fixture".into(),
+                license: "CC0".into(),
+            })
+            .unwrap();
+        let original = store.create_task("Explain Rust ownership", "fast").unwrap();
+        store
+            .finish_task(&original, "unverified", "ownership memory sentinel")
+            .unwrap();
+        store
+            .publish_memory(&original, "episode", "Reviewed historical output")
+            .unwrap();
+        let backend = Arc::new(RecordingBackend(std::sync::Mutex::new(Vec::new())));
+        let engine = Engine::with_backend(
+            Config {
+                backend: "openai-local".into(),
+                interpret_goals: false,
+                max_calls: 1,
+                max_cycles: 1,
+                max_tool_calls: 0,
+                ..Config::default()
+            },
+            store.clone(),
+            backend.clone(),
+        );
+        let result = engine.run("Explain Rust ownership", "fast").await.unwrap();
+        assert_eq!(result.status, "unverified");
+        assert_eq!(result.calls, 1);
+        assert_eq!(result.resources.tool_calls, 0);
+        assert!(result.evidence.is_empty());
+        let prompts = backend.0.lock().unwrap().clone();
+        assert_eq!(prompts.len(), 1);
+        assert!(!prompts[0].1.contains("document sentinel"));
+        assert!(!prompts[0].1.contains("memory sentinel"));
+        let trace = store.task(&result.task_id).unwrap();
+        assert!(trace["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["kind"] == "schedule" && e["payload"]["decision"] == "skip_retrieval"));
+        for (query, calls, capability) in [
+            ("calc: 6*7", 0, "math.evaluate"),
+            (r#"sql:{"tables":[],"query":"SELECT 42"}"#, 0, "sql.query"),
+            (r#"sort:{"values":[3,1,3]}"#, 1, "sorting.verify"),
+        ] {
+            let denied = engine.run(query, "fast").await.unwrap();
+            assert_eq!(denied.status, "failed");
+            assert_eq!(denied.calls, calls);
+            assert_eq!(denied.resources.tool_calls, 0);
+            assert!(denied.evidence.is_empty());
+            let trace = store.task(&denied.task_id).unwrap();
+            let events = trace["events"].as_array().unwrap();
+            assert!(events.iter().any(|e| e["kind"] == "policy"
+                && e["payload"]["capability"] == capability
+                && e["payload"]["allowed"] == false));
+            assert!(!events.iter().any(|e| matches!(
+                e["kind"].as_str(),
+                Some("tool_dispatch" | "tool_worker_process_launch")
+            )));
+        }
+    }
+
     #[tokio::test]
     async fn registered_checker_identity_is_pinned_to_actual_verification() {
         let store = Arc::new(Store::in_memory().unwrap());
