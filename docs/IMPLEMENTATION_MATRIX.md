@@ -1425,3 +1425,11 @@ memory/document evidence; real CLI/service worker fixtures verify one-call
 execution, reaping and zero-budget launch refusal. Progress and comparison
 resource expectations match actual charges. All 374 tests and mandatory checks
 pass; debug CLI/service smoke passes. See QUALITY_REVIEW.md for evidence.
+
+
+Installed verification refreshed for `8b30fd1`: expanded smoke exercises actual
+one-tool arithmetic/SQL CLI/service workers, preserved restored tool ceilings and
+zero-tool managed demo inference over direct and socket paths. Zero-budget socket
+arithmetic is denied before worker launch. Runtime source remains the 374-test
+implementation. See QUALITY_REVIEW.md for exact artifacts and pending hosted scope;
+this does not complete general module provisioning or independent evaluation.

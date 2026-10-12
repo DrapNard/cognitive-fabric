@@ -2464,3 +2464,44 @@ is inferred. Existing raw evaluation reports describe their original source and
 are not rewritten. Plain inference, structured sort/order retrieval and verification,
 model-alone ablations, permission boundaries and broad release blockers remain
 unchanged by this inline-tool optimization.
+
+
+## Installed routing and tool budget verification — 2026-10-13
+
+Runtime source `8b30fd17442b33700fdba5774da5c31f4c1973ce` installed successfully
+with locked offline cached dependencies, Rust/Cargo 1.97.1 and flatc 25.12.19.
+Cargo reported 51.67s; installation root:
+`/tmp/cogfabric-inline-budget-install-20261013`. Binary SHA-256:
+`e0cbff2a88e8906e1510b378b3ca9a9e4d96ba8e6f72a164b6f558c84cbaf8fc`.
+The original smoke passed, followed by the expanded current smoke workflow. The
+expanded script passed `bash -n` and complete installed execution. Script SHA-256:
+`afa1fba2e74971edf335ae7f485d10e0d2fe09566039d5d7dcccd679242073cd`.
+Final local evidence: `/tmp/cogfabric-installed-smoke.ZAGQXq`; logs:
+`/tmp/cogfabric-inline-budget-install.log`,
+`/tmp/cogfabric-inline-budget-expanded-smoke.log`.
+
+The expanded script sets a one-tool ceiling for actual arithmetic/SQL workers,
+checks that backup/restore preserves it, and completes the socket tool workflow.
+It then sets zero tools and disables advisory interpretation, verifies direct
+managed demo inference, restarts the service and verifies socket inference with
+one model call and zero tools. Zero-budget socket arithmetic fails with zero
+calls/charges and a negative policy audit, without tool dispatch, tool launch
+intent or inference launch. Normal inference worker reaping, clean service joins
+and socket removal are checked. The smoke's temporary state is operator-created;
+user configuration is not modified. Earlier intermediate smoke evidence remains
+historical; the hash/path above identifies the final expanded script run.
+
+Rust runtime source is unchanged from the mandatory 374-test verification at
+`8b30fd1`; this run changes only the reproducible shell smoke and documentation.
+Queue routing's actual contention is covered by Rust regressions, not ordinary
+installed smoke. This refreshes optimized installation proof after queue routing,
+zero-tool inference and retrieval-free inline tools; no live model or neural safety
+evaluation occurred in this demo smoke.
+
+Hosted CI completed successfully for queue routing `8523a43`
+([38321195758](https://github.com/DrapNard/cognitive-fabric/actions/runs/38321195758))
+and zero-tool inference `80a009f`
+([38321669719](https://github.com/DrapNard/cognitive-fabric/actions/runs/38321669719)).
+Inline-tool source run 38322010060 was still active when this entry was recorded;
+its watcher is retained at `/tmp/cogfabric-inline-budget-hosted-ci.log`. No pending
+result or expanded-script hosted result is inferred from the earlier successes.

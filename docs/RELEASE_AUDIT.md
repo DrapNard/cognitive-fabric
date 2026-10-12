@@ -747,3 +747,14 @@ one tool allowance, with zero model calls and original host-side result checks.
 Mandatory checks, 374 tests and debug CLI/service smoke pass; QUALITY_REVIEW.md
 records exact coverage and the pending optimized installation refresh. General
 provisioning, residency scheduling and independent evaluation remain incomplete.
+
+
+Optimized installation and expanded CLI/service smoke passed for runtime source
+`8b30fd1`, closing the installed-source gap for queue routing, zero-tool inference
+and retrieval-free inline tools. The expanded script verifies one-tool socket
+execution, restored budget persistence, zero-tool direct/socket demo inference and
+zero-budget socket dispatch denial before worker launch. QUALITY_REVIEW.md records
+exact binary/script hashes, logs and scope. Queue-routing and zero-tool source CI
+passed; the inline-tool source run remains separately tracked. The Rust runtime
+retains its verified 374-test count; the expanded smoke changes no runtime code.
+General provisioning, residency scheduling and independent evaluation remain open.

@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Verify installed tool ceilings through the socket service
+
+- Exercise one-tool arithmetic/SQL execution and budget-preserving restore.
+- Verify zero-tool direct/socket inference and arithmetic denial before launch.
+- Retain worker reaping, service shutdown and socket cleanup checks.
+
 ### Reserve inline tool budgets for execution
 
 - Skip unrelated retrieval for explicit arithmetic and inline SQL objectives.

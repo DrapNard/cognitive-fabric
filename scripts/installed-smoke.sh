@@ -28,6 +28,17 @@ run_at() {
     timeout 20s "$binary" --home "$task_home" --backend demo --json "$@" >"$evidence/$label.json"
 }
 run() { run_at "$state" "$@"; }
+start_service() {
+    local label=$1
+    "$binary" --home "$state" --backend demo serve >"$evidence/$label.log" 2>&1 &
+    service_pid=$!
+    for ((attempt=0; attempt<200; attempt++)); do
+        [[ -S "$state/fabric.sock" ]] && break
+        kill -0 "$service_pid"
+        sleep 0.05
+    done
+    [[ -S "$state/fabric.sock" ]]
+}
 check_worker() {
     local task_home=$1 label=$2 task
     task=$(jq -er '.task_id' "$evidence/$label.json")
@@ -87,6 +98,9 @@ run rollback candidate rollback "$previous" --human-approve
 jq -e '.rolled_back' "$evidence/rollback.json" >/dev/null
 run tool-worker-configure configure-tool-worker --enabled true
 jq -e '.arithmetic_process and (.sandboxed | not)' "$evidence/tool-worker-configure.json" >/dev/null
+jq '.max_tool_calls = 1' "$state/config.json" >"$state/config.next"
+chmod 600 "$state/config.next"
+mv "$state/config.next" "$state/config.json"
 run managed-arithmetic ask 'calc: 6 * 7' --mode fast
 jq -e '.answer == "42" and .status == "completed" and .calls == 0 and .resources.tool_calls == 1' "$evidence/managed-arithmetic.json" >/dev/null
 check_worker "$state" managed-arithmetic
@@ -122,21 +136,14 @@ jq -e --arg checksum "$checksum" '.source_checksum == $checksum and .configurati
 timeout 20s "$binary" --home "$evidence/restored" --backend demo --json self-test >"$evidence/restored-self-test.json"
 jq -e '.math_ok and .wire_ok' "$evidence/restored-self-test.json" >/dev/null
 run_at "$evidence/restored" restored-config config-show
-jq -e '.arithmetic_process and .sql_process' "$evidence/restored-config.json" >/dev/null
+jq -e '.arithmetic_process and .sql_process and .max_tool_calls == 1' "$evidence/restored-config.json" >/dev/null
 run_at "$evidence/restored" restored-arithmetic ask 'calc: 9 * 9' --mode fast
 jq -e '.answer == "81" and .status == "completed" and .calls == 0' "$evidence/restored-arithmetic.json" >/dev/null
 check_worker "$evidence/restored" restored-arithmetic
 run_at "$evidence/restored" restored-sql ask 'sql:{"tables":[],"query":"SELECT 81 AS total"}' --mode fast
 jq -e '.status == "completed" and .calls == 0 and (.answer | fromjson | .rows == [[81]])' "$evidence/restored-sql.json" >/dev/null
 check_worker "$evidence/restored" restored-sql
-"$binary" --home "$state" --backend demo serve >"$evidence/service.log" 2>&1 &
-service_pid=$!
-for ((attempt=0; attempt<200; attempt++)); do
-    [[ -S "$state/fabric.sock" ]] && break
-    kill -0 "$service_pid"
-    sleep 0.05
-done
-[[ -S "$state/fabric.sock" ]]
+start_service service
 run socket-inference-modules inference-modules --socket
 jq -e 'length == 1 and .[0].active and .[0].descriptor.id == "inference.local"' "$evidence/socket-inference-modules.json" >/dev/null
 run socket-tool-modules tool-modules --socket
@@ -153,8 +160,11 @@ service_pid=''
 [[ ! -e "$state/fabric.sock" ]]
 run inference-worker-configure configure-worker --enabled true
 jq -e '.inference_process' "$evidence/inference-worker-configure.json" >/dev/null
+jq '.max_tool_calls = 0 | .interpret_goals = false' "$state/config.json" >"$state/config.next"
+chmod 600 "$state/config.next"
+mv "$state/config.next" "$state/config.json"
 run inference-process ask 'Explain Rust ownership' --mode fast
-jq -e '.status == "demo" and .calls > 0' "$evidence/inference-process.json" >/dev/null
+jq -e '.status == "demo" and .calls == 1 and .resources.tool_calls == 0' "$evidence/inference-process.json" >/dev/null
 inference_task=$(jq -er '.task_id' "$evidence/inference-process.json")
 run inference-process-trace task "$inference_task"
 jq -e '
@@ -164,6 +174,33 @@ jq -e '
     ([.events[] | select(.kind == "worker_process_stopped" and .payload.reaped)] | length) == 1 and
     ([.events[] | select(.kind == "worker_process_owned")][0].payload.pid == [.events[] | select(.kind == "worker_process_stopped")][0].payload.pid)
 ' "$evidence/inference-process-trace.json" >/dev/null
+start_service zero-tool-service
+run zero-tool-socket ask 'Explain Rust ownership' --mode fast --socket
+jq -e '.status == "demo" and .calls == 1 and .resources.tool_calls == 0' "$evidence/zero-tool-socket.json" >/dev/null
+zero_task=$(jq -er '.task_id' "$evidence/zero-tool-socket.json")
+run zero-tool-socket-trace task "$zero_task"
+jq -e '
+    any(.events[]; .kind == "schedule" and .payload.decision == "skip_retrieval") and
+    ([.events[] | select(.kind == "worker_process_stopped" and .payload.reaped and (.payload.forced | not) and .payload.exit_code == 0)] | length) == 1 and
+    ([.events[] | select(.kind == "tool_dispatch" or .kind == "tool_worker_process")] | length) == 0
+' "$evidence/zero-tool-socket-trace.json" >/dev/null
+if run zero-tool-socket-denial ask 'calc: 6 * 7' --mode fast --socket 2>"$evidence/zero-tool-socket-denial.stderr"; then
+    echo 'Zero tool budget unexpectedly permitted arithmetic' >&2
+    exit 1
+else
+    [[ $? == 1 ]]
+fi
+jq -e '.status == "failed" and .calls == 0 and .resources.tool_calls == 0' "$evidence/zero-tool-socket-denial.json" >/dev/null
+denied_task=$(jq -er '.task_id' "$evidence/zero-tool-socket-denial.json")
+run zero-tool-socket-denial-trace task "$denied_task"
+jq -e '
+    any(.events[]; .kind == "policy" and .payload.capability == "math.evaluate" and (.payload.allowed | not)) and
+    ([.events[] | select(.kind == "tool_dispatch" or .kind == "tool_worker_launch" or .kind == "tool_worker_process" or .kind == "worker_process_launch")] | length) == 0
+' "$evidence/zero-tool-socket-denial-trace.json" >/dev/null
+run zero-tool-service-stop stop
+wait "$service_pid"
+service_pid=''
+[[ ! -e "$state/fabric.sock" ]]
 run recovered-workers recover-workers
 jq -e '.interrupted_worker_sessions == [] and (.automatic_replay | not)' "$evidence/recovered-workers.json" >/dev/null
 run worker-files worker-files-preview
