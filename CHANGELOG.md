@@ -735,3 +735,11 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   versions without granting permissions or renewing remote sessions.
 - Verify rollback at the history ceiling, original backend/queue identity,
   role isolation and shutdown. Retained history is count-bounded, not a GPU quota.
+
+### Preserve connected inference identity
+
+- Expose fixed inference transport descriptors and reject mismatched registration
+  metadata before dispatch.
+- Preserve connected IDs/versions/roles in initial broker discovery and task pins.
+- Provide fallible initial construction and test no-dispatch rejection plus actual
+  child-process role isolation. No loaded-weight attestation is implied.

@@ -5,6 +5,63 @@ use super::*;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 struct Fixed(&'static str, AtomicUsize);
+struct Bound {
+    descriptor: ModuleDescriptor,
+    backend: Fixed,
+}
+impl InferenceBackend for Bound {
+    fn module_descriptor(&self) -> Option<&ModuleDescriptor> {
+        Some(&self.descriptor)
+    }
+    fn generate<'a>(
+        &'a self,
+        role: &'a str,
+        prompt: &'a str,
+        tokens: usize,
+    ) -> Pin<Box<dyn Future<Output = Result<Generation>> + Send + 'a>> {
+        self.backend.generate(role, prompt, tokens)
+    }
+}
+
+#[tokio::test]
+async fn transport_registration_preserves_identity_and_refuses_relabelling_before_dispatch() {
+    let bound = Arc::new(Bound {
+        descriptor: ModuleDescriptor {
+            id: "inference.remote".into(),
+            version: "3.0.0".into(),
+            roles: vec!["solver".into()],
+        },
+        backend: Fixed("bound", AtomicUsize::new(0)),
+    });
+    let broker = Broker::try_with_inference(bound.clone()).unwrap();
+    assert_eq!(broker.discover().unwrap(), vec![bound.descriptor.clone()]);
+    assert!(broker.generate("planner", "goal", 128).await.is_err());
+    for field in 0..3 {
+        let mut forged = bound.descriptor.clone();
+        match field {
+            0 => forged.id = "renamed".into(),
+            1 => forged.version = "4.0.0".into(),
+            _ => forged.roles.push("planner".into()),
+        }
+        assert!(broker.register(forged, bound.clone()).is_err());
+    }
+    assert_eq!(bound.backend.1.load(Ordering::SeqCst), 0);
+    assert_eq!(broker.versions().unwrap().len(), 1);
+    assert_eq!(
+        broker.generate("solver", "goal", 128).await.unwrap().text,
+        "bound"
+    );
+    let invalid = Arc::new(Bound {
+        descriptor: ModuleDescriptor {
+            id: "invalid".into(),
+            version: "1.0.0".into(),
+            roles: vec!["shell".into()],
+        },
+        backend: Fixed("never", AtomicUsize::new(0)),
+    });
+    assert!(Broker::try_with_inference(invalid).is_err());
+    broker.shutdown().unwrap();
+}
 impl InferenceBackend for Fixed {
     fn generate<'a>(
         &'a self,

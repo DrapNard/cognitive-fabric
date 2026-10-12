@@ -23,6 +23,10 @@ pub struct Generation {
 }
 
 pub trait InferenceBackend: Send + Sync {
+    /// Fixed transport identity, when this adapter is bound to one module.
+    fn module_descriptor(&self) -> Option<&crate::fabric::ModuleDescriptor> {
+        None
+    }
     fn modules(&self) -> Result<Vec<crate::fabric::ModuleDescriptor>> {
         Ok(Vec::new())
     }

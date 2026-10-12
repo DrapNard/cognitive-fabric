@@ -803,3 +803,14 @@ with negative/duplicate values, independent Rust proof, confirmed worker reaping
 and service/socket cleanup. See `RELEASE_AUDIT.md` / `LIVE_INFERENCE.md` for hashes,
 times and scope. Live model switching and controlled performance studies remain
 unverified; model advertisement is not loaded-weight attestation.
+
+Transport-bound inference identity: **Implemented** in `src/backend.rs`,
+`src/fabric.rs` and `src/fabric/unix.rs`. Initial brokers preserve actual connected
+module metadata; registration rejects changed identity/version/roles before
+inference. Regression tests cover no-dispatch rejection, invalid initial metadata
+and actual child-process discovery/role restriction. This closes metadata
+relabeling, not trusted-code compromise, executable attestation or weight identity.
+
+The identity slice passes all mandatory checks with 325 tests (304 library and
+21 integration). Optimized installed verification is pending for this source;
+prior installation evidence remains tied to its recorded earlier source.

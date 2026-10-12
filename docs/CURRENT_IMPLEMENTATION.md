@@ -471,3 +471,9 @@ backend versions. Original queues and in-flight role snapshots are preserved;
 active role conflicts fail before mutation. All mandatory checks pass with 324
 Rust tests (303 library, 21 integration). See `MODELS.md` for retained-resource,
 expired-transport and external weight identity limitations.
+
+Transport-bound inference descriptors are now preserved by initial broker
+construction and validated during registration. Changed module IDs, versions or
+roles fail before inference; actual child-process discovery now reports its fixed
+connected scope. All mandatory checks pass with 325 tests (304 library, 21
+integration). This is trusted metadata consistency, not loaded-weight attestation.

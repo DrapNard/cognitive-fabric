@@ -78,6 +78,9 @@ async fn write(stream: &mut UnixStream, packet: &Packet) -> Result<()> {
 }
 
 impl InferenceBackend for UnixInference {
+    fn module_descriptor(&self) -> Option<&ModuleDescriptor> {
+        Some(&self.descriptor)
+    }
     fn generate<'a>(
         &'a self,
         role: &'a str,
@@ -208,6 +211,8 @@ mod tests {
         let uid = stream.peer_cred().unwrap().uid();
         let adapter = UnixInference::connected(stream, descriptor(), uid, child.id()).unwrap();
         let broker = super::super::Broker::with_inference(std::sync::Arc::new(adapter));
+        assert_eq!(broker.discover().unwrap(), vec![descriptor()]);
+        assert!(broker.generate("planner", "goal", 128).await.is_err());
         assert_eq!(
             broker.generate("solver", "goal", 128).await.unwrap().text,
             "worker answer"

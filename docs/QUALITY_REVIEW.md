@@ -1614,3 +1614,10 @@ Optimized installation and installed smoke subsequently passed for `dec46fa`;
 socket-service test passed real Ollama sorting with independent verification and
 confirmed child/service cleanup. This closes the installation gap above, without
 establishing clean-OS prerequisites or general live-model reasoning quality.
+
+Inference identity validation (2026-10-12): all mandatory formatting, offline
+all-target check/tests and Clippy checks pass with FlatBuffers 25.12.19.
+Tests: 304 library + 21 integration = 325. Log:
+`/tmp/cogfabric-inference-identity-tests.log`. Registration mismatch tests verify
+no backend calls or retained forged version; the actual connected child test
+verifies discovery and role restriction. Optimized installation must be refreshed.

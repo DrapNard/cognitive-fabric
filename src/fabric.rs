@@ -20,7 +20,7 @@ use protocol::{actor, decode, encode, now_ms, Header, Packet, Payload, ROLES};
 #[cfg(test)]
 mod tests;
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct ModuleDescriptor {
     pub id: String,
     pub version: String,
@@ -134,11 +134,22 @@ pub struct Broker {
 }
 impl Broker {
     pub fn with_inference(backend: Arc<dyn InferenceBackend>) -> Self {
-        let descriptor = ModuleDescriptor {
-            id: "inference.local".into(),
-            version: "1.0.0".into(),
-            roles: ROLES.iter().map(|role| role.to_string()).collect(),
-        };
+        Self::try_with_inference(backend)
+            .expect("Trusted initial inference descriptor must be valid")
+    }
+
+    /// Fallible host construction for transport-bound adapters. Fixed identities
+    /// are preserved instead of being relabelled with the default local module.
+    pub fn try_with_inference(backend: Arc<dyn InferenceBackend>) -> Result<Self> {
+        let descriptor = backend
+            .module_descriptor()
+            .cloned()
+            .unwrap_or_else(|| ModuleDescriptor {
+                id: "inference.local".into(),
+                version: "1.0.0".into(),
+                roles: ROLES.iter().map(|role| role.to_string()).collect(),
+            });
+        descriptor.validate()?;
         let shutdown = Arc::new(watch::channel(false).0);
         let module = Arc::new(Module {
             descriptor: descriptor.clone(),
@@ -154,10 +165,10 @@ impl Broker {
             .versions
             .insert((descriptor.id.clone(), descriptor.version), module.clone());
         registry.active.insert(descriptor.id, module);
-        Self {
+        Ok(Self {
             registry: RwLock::new(registry),
             shutdown,
-        }
+        })
     }
 
     /// Trusted host registration, never interpreted from a model or socket actor field.
@@ -167,6 +178,12 @@ impl Broker {
         backend: Arc<dyn InferenceBackend>,
     ) -> Result<()> {
         descriptor.validate()?;
+        if backend
+            .module_descriptor()
+            .is_some_and(|bound| bound != &descriptor)
+        {
+            bail!("Inference registration differs from backend transport identity")
+        }
         let mut registry = self
             .registry
             .write()

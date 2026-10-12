@@ -222,3 +222,10 @@ post-removal audit failure cannot undo filesystem effects. Linux procfs and a
 root-owned sticky `/tmp` are required. This is cooperative cleanup, not isolation
 from malicious same-owner races, a general filesystem tool or proof that external
 GPU computation stopped. Unjournaled resources are never guessed or swept.
+
+Inference transport registration now validates the adapter's fixed module
+ID/version/role descriptor before accepting it, and initial discovery preserves
+that descriptor. A connected peer cannot be accidentally advertised under another
+module's roles/version by the standard broker API. This is a consistency check
+inside trusted host code; implementations can lie and same-user/executable or
+loaded-weight attestation remains outside the guarantee.

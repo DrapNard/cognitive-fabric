@@ -156,3 +156,14 @@ a count ceiling, not a byte, GPU or process quota. A restored remote adapter can
 still be disconnected or have expired grants; rollback does not renew grants,
 probe health or load/unload weights. It changes neither task permissions nor
 external model residency. Real model switching remains separately unverified.
+
+Transport-bound inference adapters now expose a fixed `module_descriptor()`.
+`Broker::try_with_inference` preserves and validates it; `register` rejects any
+changed ID, version or role list before queue creation or inference. Ordinary
+local backends still receive the default local descriptor. `with_inference`
+remains a convenience for trusted valid initial adapters and panics on an invalid
+fixed descriptor; embedding hosts handling fallible input should use the `try_`
+constructor. Unix adapters expose their actual connected descriptor, so discovery
+and task pins no longer advertise unrelated local roles. This checks trusted
+metadata consistency, not executable identity or loaded weights; a malicious
+in-process implementation can lie about its descriptor.
