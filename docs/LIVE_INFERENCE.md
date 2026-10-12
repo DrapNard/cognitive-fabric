@@ -31,12 +31,26 @@ Task IDs: direct `70e0c0bc-9322-4c40-a2ba-b1ec9352771f`, managed
 `/tmp/cogfabric-ollama-live.48ZWhh` as `outcome-model.json`,
 `outcome-worker.json` and `trace-worker.json`. Temporary files may disappear.
 
-To reproduce on a host with that installed model, create an isolated workspace
-with `configure-local --help` options, select the above endpoint/model, apply the
-bounded settings above, then use `ask` for the direct prompt. Enable managed
-inference with `configure-worker --enabled true` and submit the sorting goal.
-Inspect `task TASK_ID` for independent proof and child cleanup. Actual answers,
-latency and token reports may differ across runs and server versions.
+To reproduce on a host with that installed model and `jq`:
+
+```sh
+live_home=$(mktemp -d /tmp/cogfabric-live.XXXXXX)
+cogfabric --home "$live_home" configure-local \
+  --model 'orcarouter/Qwen3.8-27B-Uncensored:latest' \
+  --api-base http://127.0.0.1:11434/v1 --temperature 0
+jq '.interpret_goals=false | .max_calls=1 | .max_cycles=1 |
+    .max_tokens=384 | .timeout_seconds=90 | .max_wall_seconds=120 |
+    .max_input_bytes=8192' "$live_home/config.json" > "$live_home/bounded.json"
+chmod 600 "$live_home/bounded.json"
+mv "$live_home/bounded.json" "$live_home/config.json"
+cogfabric --home "$live_home" --json ask 'Reply with just READY. /no_think' --mode fast
+cogfabric --home "$live_home" configure-worker --enabled true
+cogfabric --home "$live_home" --json ask 'sort:{"values":[3,1,2]}' --mode fast
+```
+
+Inspect `cogfabric --home "$live_home" --json task TASK_ID` for independent proof
+and child cleanup. Actual answers, latency and token reports may differ across
+runs and server versions. Use separate state from an existing running service.
 
 Ollama later reported 9,758,929,057 bytes of VRAM residency and context length
 4096; no independent task-attributed GPU measurement or energy measurement was

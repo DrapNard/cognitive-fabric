@@ -222,3 +222,17 @@ CLI/service workers, recovery, rollback and restore. Evidence:
 gap above. Actual stale-file deletion after host death is covered by the Rust child
 regression, not the empty-plan smoke case. Live inference, automatic resource
 scheduling and broader module lifecycle remain incomplete.
+
+Optimized tool-rollback verification (2026-10-12): source `c8b4a7e` was installed
+with `FLATC=/tmp/cogfabric-flatbuffers-build/flatc cargo install --offline --locked --path . --root /tmp/cogfabric-v1-tool-rollback-install-20261012`.
+Binary SHA-256:
+`896b4679573a78636cbc21183a010cd372d10165a8755557a0320ca5d6636344`.
+Smoke script SHA-256:
+`a951e08f31ee0dcb733e6fd4ab21fb75aa74b2fa43c2044d86dbd9d29957e301`.
+The installed CLI/service, worker cleanup/recovery, skill rollback and restore
+workflow passed. Evidence: `/tmp/cogfabric-installed-smoke.7BRTBp`; logs:
+`/tmp/cogfabric-tool-rollback-install.log` and
+`/tmp/cogfabric-tool-rollback-installed-smoke.log`. This refreshes installation
+proof after the runtime change. Live observations in `LIVE_INFERENCE.md` used the
+debug executable separately; installed smoke still uses deterministic demo models.
+No clean-OS setup, independent benchmark or neural safety claim follows.
