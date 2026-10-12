@@ -425,3 +425,10 @@ regressions separately verify no launch after shutdown and initialization-gate
 coordination before owned-child cleanup; installed smoke covers normal process,
 CLI/service, backup/restore and rollback behavior. No general plugin isolation,
 external provider cancellation or stable-release claim follows.
+
+Real model-selection evidence now includes two successful managed tasks on existing
+Ollama quantizations, with respective provider-reported residency digests before
+and after the transition. Both independent sorting checks and worker reaping
+passed; see `LIVE_INFERENCE.md`. This proves provider-managed configurable model
+selection, not framework-controlled load/unload, exclusive ownership, native
+LM Studio lifecycle or neural adapter hot-swapping. Those gates remain open.

@@ -988,3 +988,13 @@ Repeated shutdown remains allowed for cleanup retries. Regressions prove shutdow
 before first use causes no worker initialization or launch audit for all three
 capabilities. Existing interrupted-startup and actual child-reaping tests remain.
 This does not stop external provider computation or provide hostile-code isolation.
+
+### Real provider-managed model selection transition — 2026-10-12
+
+Verified against the existing Ollama server: one managed FAST sorting task using
+Q6 followed by one using the existing `latest` quantization, both independently
+checked and reaped. Provider residency inventory changed to the respective
+reported digest after each call. See `LIVE_INFERENCE.md` for exact limits, model
+identities and timing. This strengthens configurable multi-model integration;
+automatic framework residency ownership, native LM Studio switching, adapter
+hot-swapping and small-model performance remain unverified/incomplete.

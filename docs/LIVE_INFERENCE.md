@@ -226,3 +226,43 @@ answer; no recursive improvement occurred. The fresh corpus contained no ingeste
 references or candidate expertise. Framework RSS excludes model-server memory.
 Evidence: `/tmp/cogfabric-live-workflow.X9Phae/{cases.jsonl,config.json,report.json,stderr.txt,exit-status.txt}`;
 worker cleanup is recorded in that workspace's SQLite events.
+
+## Existing-model selection and reported residency transition — 2026-10-12
+
+Runtime source `a2f37c0` (additional regression assertions in `99c939f`) ran two
+sequential FAST tasks in fresh private workspaces against the existing Ollama
+endpoint. Each requested `sort:{"values":[5,-3,5,1]}` with one call, one cycle,
+384 output tokens, 8192 prompt bytes, four tool calls, 120 task seconds and a
+90-second HTTP timeout. Managed inference was enabled, interpretation/synthesis
+were disabled, temperature was zero and reasoning effort was `none`. No weights
+were downloaded, native unload command issued or server settings changed.
+The provider's `/api/ps` initially reported no resident models.
+
+| Requested model suffix | Task | Elapsed ms | Inference ms | Result |
+|---|---|---:|---:|---|
+| `q6_K` | `18ecaec0-b3cb-47a2-ac01-b735e1c531db` | 47040.387813 | 47035.134834 | Checked `[-3,1,5,5]` |
+| `latest` | `5e92040c-7eea-4561-afd4-9ac371493327` | 20727.028544 | 20722.533405 | Checked `[-3,1,5,5]` |
+
+Both model names have prefix `orcarouter/Qwen3.8-27B-Uncensored:`. Each task
+reported one call/cycle, 384 reserved output tokens, 307 prompt bytes, 99 input /
+10 output provider tokens and two tool calls. Both CLI exits and child exits were
+zero; both workers were reaped without force. The reasoning traces record the
+respective requested model labels.
+
+After the first call, the provider reported only Q6 digest
+`041445b59882125a4753eee6de30d2a15a4539693ad048e3cf971a3b723ff2ca`
+resident, 6623152044 VRAM bytes and context 4096. After the second, it reported
+only `latest` digest
+`6fac2f98fdf716f292de04c8554681b1e1f3a0d71445e374afebb3433911f705`,
+6756121966 VRAM bytes and context 4096. These are provider-reported observations,
+not independently attested weights or attributable GPU/energy measurements.
+
+This establishes configurable selection between two existing quantizations with
+an observed provider-managed residency transition and independent task checking.
+It does not establish framework-controlled/exclusively owned load/unload,
+concurrent in-flight model migration, LoRA hot-swapping, LM Studio-native lifecycle
+or small-model comparative quality. Loading cost is not separated from inference;
+latencies cannot be interpreted as a quantization benchmark.
+Evidence: `/tmp/cogfabric-live-switch.c3OlXP/before.json`, and each of
+`{q6_K,latest}/{config.json,outcome.json,residency-after.json,stderr.txt,exit-status.txt}`;
+reasoning and cleanup events remain in each workspace's SQLite database.
