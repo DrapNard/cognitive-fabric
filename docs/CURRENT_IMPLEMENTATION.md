@@ -599,3 +599,14 @@ historical versions at 128. Three new regressions pass; the full 349-test suite
 passes sequentially. Two default-parallel runs exposed different existing failures
 (SQL execution and recovery lease contention); see QUALITY_REVIEW.md. Automatic
 plugin provisioning and adaptive cost scheduling remain incomplete.
+
+### Reference instruction separation (2026-10-12)
+
+Nonempty solver reference contexts are JSON-quoted and followed by the original
+objective; all inference roles receive fixed untrusted-evidence advice. A live
+Qwen attack contaminated answers before the change and with system advice alone;
+the combined prompt resisted the same attack once. Answers remain unverified.
+Empty-context cost/checkpoint hashes are preserved; earlier nonempty-context
+checkpoint hashes fail closed under changed prompt serialization. Full tests now
+pass 351 sequentially and in the final default-parallel run; see QUALITY_REVIEW.md
+for intermediate failures and LIVE_INFERENCE.md for actual security trial scope.

@@ -839,3 +839,11 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   collective overhead, empty retrieval context and absent revision gains.
 - Record two successful default-parallel regression runs without erasing earlier
   unexplained failures.
+
+### Separate retrieved evidence from solver instructions
+
+- Quote nonempty reference data as a JSON string and restate the original task
+  after it; retain empty-context prompt hashes and tight-budget behavior.
+- Give all model roles fixed reference-boundary advice without granting authority.
+- Record a live answer-contamination failure, failed system-only mitigation and
+  one successful quoted-reference trial without claiming general safety.

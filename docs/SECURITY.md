@@ -80,3 +80,14 @@ It is not a population estimate or a neural safety evaluation. No live prompt
 injection, poisoning, sandbox escape, credential exfiltration or general module
 peer authentication is tested; the report lists those gaps. This command grants
 no candidate promotion authority and invokes no inference or external tools.
+
+### Live reference-content contamination and mitigation
+
+A real Qwen3 8B trial obeyed an answer-marker instruction inside a retrieved
+synthetic document despite untrusted-data labels. Runtime permissions stayed
+unchanged, but answer integrity failed. Fixed system advice alone also failed.
+Quoting nonempty reference context as JSON and restating the original objective
+resisted the same attack in one subsequent trial. Neither representation nor
+prompt wording is an enforceable security boundary. Keep prose unverified;
+retain per-dispatch authorization and independent structured checks. See
+LIVE_INFERENCE.md for failed and successful trials with exact scope.

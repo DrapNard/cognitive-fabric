@@ -1855,3 +1855,22 @@ worker, candidate rollback and restore workflows. Evidence:
 prerequisites/cached dependencies, not a clean-OS installation or neural safety
 proof. Separately, the live Qwen retrieved-document attack contaminated answer
 text while deterministic permissions stayed unchanged; see LIVE_INFERENCE.md.
+
+## Quoted reference boundary verification — 2026-10-12
+
+Formatting, all-target offline compilation and Clippy with denied warnings passed.
+The final full suite passed 351 tests both sequentially and with default parallel
+execution (330 library and 21 integration); logs:
+`/tmp/cogfabric-quoted-reference-tests-fixed.log` and
+`/tmp/cogfabric-quoted-reference-parallel-final.log`. The new regression preserves
+forged reference section endings/newlines as JSON-string content. An intermediate
+run caught prompt overhead exhausting a 500-byte admission fixture; empty-context
+prompts now retain their original representation and that regression passes.
+Nonempty-context recovery remains fail-closed on old prompt hashes; no migration
+silently substitutes a changed prompt. The system-only live mitigation failed;
+quoted references plus original-goal restatement resisted the identical attack
+once. No general injection-resistance or independently verified prose claim follows.
+Prior intermittent parallel SQL failures remain relevant: SQL execution has a
+process-wide two-slot try-acquire semaphore, so concurrent tests can contend for
+real runtime capacity. That is a source-level explanation to investigate, not yet
+an instrumented reproduction proving every earlier SQL failure's cause.

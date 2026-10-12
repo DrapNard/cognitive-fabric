@@ -1065,3 +1065,13 @@ or permission change occurred. Answer integrity therefore failed despite runtime
 authority containment; stronger source/instruction separation and broader
 behavioral evaluation remain release work. Installed runtime `2d2fb3b` passed
 the full existing optimized installed-binary smoke; clean-OS setup is unverified.
+
+Reference boundary mitigation: all inference roles receive fixed instructions to
+ignore commands in external evidence. System wording alone failed the observed
+live attack. Quoted nonempty reference serialization plus a final original-goal
+reminder resisted that same attack once in fresh state; answer stayed unverified.
+A regression checks that forged reference newlines/section endings remain inside
+one JSON string. Empty-context prompts preserve their hashes/cost. Old nonempty
+reference checkpoints may fail prompt-hash validation rather than silently resume
+with changed prompts. This improves separation; it is not a general injection
+safety proof, and broader adversarial evaluation remains incomplete.
