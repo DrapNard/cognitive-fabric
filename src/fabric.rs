@@ -35,6 +35,13 @@ pub enum Availability {
     Connected,
     InUse,
     Closed,
+    Expired,
+    Exhausted,
+}
+impl Availability {
+    pub(crate) fn unavailable(self) -> bool {
+        matches!(self, Self::Closed | Self::Expired | Self::Exhausted)
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -270,7 +277,7 @@ impl Broker {
             .get(&(id.into(), version.into()))
             .cloned()
             .context("Unknown registered inference module version")?;
-        if module.backend.availability() == Availability::Closed {
+        if module.backend.availability().unavailable() {
             bail!("Registered inference transport is permanently closed")
         }
         if !registry.active.contains_key(id) && registry.active.len() >= 32 {
@@ -366,7 +373,7 @@ impl Broker {
         }
         let mut routes = BTreeMap::new();
         for module in registry.active.values() {
-            if module.backend.availability() == Availability::Closed {
+            if module.backend.availability().unavailable() {
                 continue;
             }
             for role in &module.descriptor.roles {
@@ -444,7 +451,7 @@ impl InferenceBackend for Pinned {
             if *module.shutdown.borrow() {
                 bail!("Module broker shut down")
             }
-            if module.backend.availability() == Availability::Closed {
+            if module.backend.availability().unavailable() {
                 bail!("Pinned inference transport is permanently closed")
             }
             let sender = actor(role)?;

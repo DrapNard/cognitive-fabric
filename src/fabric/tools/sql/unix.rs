@@ -113,8 +113,16 @@ impl UnixSql {
 impl SqlBackend for UnixSql {
     fn availability(&self) -> crate::fabric::Availability {
         match self.connection.try_lock() {
+            Ok(slot) if slot.stream.is_none() => crate::fabric::Availability::Closed,
+            Ok(_) if tokio::time::Instant::now() >= self.deadline => {
+                crate::fabric::Availability::Expired
+            }
+            Ok(slot) if slot.calls >= self.grant.calls => crate::fabric::Availability::Exhausted,
             Ok(slot) if slot.stream.is_some() => crate::fabric::Availability::Connected,
             Ok(_) => crate::fabric::Availability::Closed,
+            Err(_) if tokio::time::Instant::now() >= self.deadline => {
+                crate::fabric::Availability::Expired
+            }
             Err(_) => crate::fabric::Availability::InUse,
         }
     }
@@ -321,6 +329,14 @@ mod tests {
             .await
             .is_err());
         assert_eq!(adapter.connection.lock().await.calls, 2);
+        assert_eq!(
+            adapter.availability(),
+            crate::fabric::Availability::Exhausted
+        );
+        assert!(broker.pin_capability("sql.query").unwrap().is_none());
+        assert!(broker
+            .activate(&grant.descriptor.id, &grant.descriptor.version)
+            .is_err());
         stop.send_replace(true);
         worker.await.unwrap().unwrap();
         let trace = store.task(&grant.task).unwrap();
@@ -448,7 +464,7 @@ mod tests {
                 .await
                 .unwrap_err()
                 .to_string()
-                .contains("permanently closed"));
+                .contains("unavailable"));
             assert!(broker
                 .statuses()
                 .unwrap()
@@ -527,6 +543,30 @@ mod tests {
                 .is_err()
         );
     }
+    #[tokio::test(start_paused = true)]
+    async fn expired_adapter_is_not_routable_even_with_an_unused_stream() {
+        let (_, grant) = setup(1, 1);
+        let (client, _server) = UnixStream::pair().unwrap();
+        let adapter =
+            Arc::new(UnixSql::connected(client, grant.clone(), uid(), std::process::id()).unwrap());
+        let broker = crate::fabric::tools::Broker::default();
+        broker
+            .register_sql(grant.descriptor.clone(), adapter.clone())
+            .unwrap();
+        let pinned = broker.pin_capability("sql.query").unwrap().unwrap();
+        tokio::time::advance(Duration::from_secs(1)).await;
+        assert_eq!(adapter.availability(), crate::fabric::Availability::Expired);
+        assert!(broker.pin_capability("sql.query").unwrap().is_none());
+        assert!(broker
+            .activate(&grant.descriptor.id, &grant.descriptor.version)
+            .is_err());
+        assert!(pinned
+            .query_sql(&grant.task, "jev-plus", INPUT)
+            .await
+            .is_err());
+        assert_eq!(adapter.connection.lock().await.calls, 0);
+    }
+
     #[tokio::test(start_paused = true)]
     async fn incomplete_frames_and_idle_sessions_have_absolute_limits() {
         let (mut client, mut server) = UnixStream::pair().unwrap();

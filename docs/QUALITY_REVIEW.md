@@ -1732,3 +1732,14 @@ rollback refusal and already-pinned rejection before queueing. No test was remov
 The bounded status inventory makes no network call; closed transports are not
 silently retried. Original grants, expiry and call ceilings remain authoritative.
 Optimized installation proof must be refreshed for these runtime changes.
+
+### Grant-aware availability — 2026-10-12
+
+All 339 tests (318 library, 21 integration), formatting, offline all-target check
+and Clippy with warnings denied passed with FlatBuffers 25.12.19. Log:
+`/tmp/cogfabric-grant-availability-tests.log`. Actual two-call exchanges prove
+exhausted-grant refusal; paused-clock tests prove expiry before any call despite
+retaining a connected socket. No grant renewal, retry or additional tool authority
+is introduced. Inventory stays bounded; state checks make no provider call.
+Prior optimized installation proof predates this runtime change and must be
+refreshed before readiness is claimed.

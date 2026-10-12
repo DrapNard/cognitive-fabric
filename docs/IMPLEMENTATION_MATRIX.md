@@ -953,3 +953,15 @@ forged-response regressions now verify both capabilities' inventory and refusal.
 Grant validity, remaining calls and remote health remain separate checks; a
 present stream is not proof of any of these. No implicit reconnection or permission
 renewal is added. General lifecycle and residency scheduling remain partial.
+
+### Expired/exhausted task-scoped capability routing — 2026-10-12
+
+Implemented: local availability additionally distinguishes expired session deadlines
+and exhausted call grants for Unix arithmetic/SQL adapters. New pins, historical
+activation and already-pinned dispatch refuse these terminal observations without
+queueing or renewing authority. Closed-stream state retains precedence when both
+closure and expiry are observed. In-use adapters remain routable until their
+absolute deadline; dispatch still validates the original grant. Paused-clock
+expiry regressions prove refusal with unused connected streams and zero charges;
+existing two-call tests now prove exhausted-state pin/activation refusal. Remote
+health and automatic provisioning/reconnection remain separate incomplete work.

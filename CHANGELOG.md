@@ -806,3 +806,5 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   rollback activation of permanently discarded Unix connections.
 - Apply observed local transport state and closed-connection routing refusal to
   arithmetic and SQL capability modules without renewing task grants.
+- Exclude expired and call-exhausted Unix tool grants from routing and rollback
+  without resetting authority or cumulative charges.

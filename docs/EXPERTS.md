@@ -192,3 +192,10 @@ queued through existing handles. An in-use connection is not classified as close
 Connected/unknown status does not renew task grants, expiry or call allowances,
 and does not attest remote service health or executable integrity. These remain
 subject to the original deterministic authorization at dispatch.
+
+Unix capability availability also reports `expired` and `exhausted` from the
+original fixed session deadline and cumulative call grant. These observations
+exclude adapters from new pinning, activation and pinned dispatch; they never
+reset grants or deadlines. If a discarded stream is visible, `closed` takes
+precedence. Observing an in-use lock cannot prove remaining calls, so dispatch
+remains authoritative. This is bounded local lifecycle state, not remote health.

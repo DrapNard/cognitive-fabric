@@ -550,3 +550,9 @@ Optimized installation and the full installed smoke workflow passed for source
 availability handling. See `RELEASE_AUDIT.md` for binary hash and actual evidence.
 Grant expiry and call allowances remain independently enforced; present streams
 are not health or renewable-authority attestations.
+
+Unix arithmetic/SQL availability now includes expired/exhausted grants, excluding
+these adapters from pinning, activation and pinned dispatch without refund or
+renewal. Both actual two-call and paused-clock zero-call regressions pass. All
+339 tests and mandatory quality checks pass; optimized installation proof awaits
+refresh after this runtime change.

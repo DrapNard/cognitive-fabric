@@ -418,8 +418,8 @@ impl Broker {
             .get(&(id.into(), version.into()))
             .cloned()
             .context("Unknown registered capability version")?;
-        if module.backend.availability() == super::Availability::Closed {
-            bail!("Registered capability transport is permanently closed")
+        if module.backend.availability().unavailable() {
+            bail!("Registered capability transport is unavailable")
         }
         let descriptor = &module.descriptor;
         if registry
@@ -499,8 +499,7 @@ impl Broker {
             .active
             .values()
             .find(|m| {
-                m.descriptor.capability == capability
-                    && m.backend.availability() != super::Availability::Closed
+                m.descriptor.capability == capability && !m.backend.availability().unavailable()
             })
             .cloned()
             .map(|module| Handle { module }))
@@ -578,8 +577,8 @@ impl Handle {
         sql::response(&response, &identity)
     }
     async fn dispatch(&self, bytes: Vec<u8>, identity: Identity) -> Result<Vec<u8>> {
-        if self.module.backend.availability() == super::Availability::Closed {
-            bail!("Pinned capability transport is permanently closed")
+        if self.module.backend.availability().unavailable() {
+            bail!("Pinned capability transport is unavailable")
         }
         tokio::time::timeout(Duration::from_secs(30), async {
             let (reply, receive) = oneshot::channel();

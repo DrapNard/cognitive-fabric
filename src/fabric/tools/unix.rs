@@ -116,8 +116,16 @@ impl UnixArithmetic {
 impl ArithmeticBackend for UnixArithmetic {
     fn availability(&self) -> crate::fabric::Availability {
         match self.connection.try_lock() {
+            Ok(slot) if slot.stream.is_none() => crate::fabric::Availability::Closed,
+            Ok(_) if tokio::time::Instant::now() >= self.deadline => {
+                crate::fabric::Availability::Expired
+            }
+            Ok(slot) if slot.calls >= self.grant.calls => crate::fabric::Availability::Exhausted,
             Ok(slot) if slot.stream.is_some() => crate::fabric::Availability::Connected,
             Ok(_) => crate::fabric::Availability::Closed,
+            Err(_) if tokio::time::Instant::now() >= self.deadline => {
+                crate::fabric::Availability::Expired
+            }
             Err(_) => crate::fabric::Availability::InUse,
         }
     }
@@ -446,6 +454,14 @@ mod tests {
             .await
             .is_err());
         assert_eq!(adapter.connection.lock().await.calls, 2);
+        assert_eq!(
+            adapter.availability(),
+            crate::fabric::Availability::Exhausted
+        );
+        assert!(broker.pin().unwrap().is_none());
+        assert!(broker
+            .activate(&grant.descriptor.id, &grant.descriptor.version)
+            .is_err());
         stop.send_replace(true);
         worker.await.unwrap().unwrap();
         let trace = store.task(&grant.task).unwrap();
@@ -567,7 +583,7 @@ mod tests {
                 .await
                 .unwrap_err()
                 .to_string()
-                .contains("permanently closed"));
+                .contains("unavailable"));
             assert!(broker
                 .statuses()
                 .unwrap()
@@ -687,6 +703,32 @@ mod tests {
         assert!(worker.await.unwrap().is_err());
         assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 0);
     }
+    #[tokio::test(start_paused = true)]
+    async fn expired_adapter_is_not_routable_even_with_an_unused_stream() {
+        let (_, grant) = setup(1, 1);
+        let (client, server) = UnixStream::pair().unwrap();
+        let adapter = Arc::new(
+            UnixArithmetic::connected(client, grant.clone(), uid(&server), std::process::id())
+                .unwrap(),
+        );
+        let broker = super::super::Broker::default();
+        broker
+            .register(grant.descriptor.clone(), adapter.clone())
+            .unwrap();
+        let pinned = broker.pin().unwrap().unwrap();
+        tokio::time::advance(Duration::from_secs(1)).await;
+        assert_eq!(adapter.availability(), crate::fabric::Availability::Expired);
+        assert!(broker.pin().unwrap().is_none());
+        assert!(broker
+            .activate(&grant.descriptor.id, &grant.descriptor.version)
+            .is_err());
+        assert!(pinned
+            .evaluate(&grant.task, "jev-plus", "6*7")
+            .await
+            .is_err());
+        assert_eq!(adapter.connection.lock().await.calls, 0);
+    }
+
     #[tokio::test(start_paused = true)]
     async fn incomplete_frames_and_idle_sessions_expire() {
         let (mut client, mut server) = UnixStream::pair().unwrap();
