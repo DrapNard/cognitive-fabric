@@ -583,3 +583,8 @@ existing pins never migrate or silently retry. Ordinary exclusive registrations
 retain overlap denial. All 345 tests and mandatory checks pass; ranks are declared
 policy, not learned cost estimates. General provisioning/residency remains partial,
 and installed verification must be refreshed after this runtime change.
+
+Optimized installation and installed smoke passed for source `d66dc07`, refreshing
+proof after ranked inference routing; see `RELEASE_AUDIT.md` for exact identities.
+Arithmetic/SQL capabilities still allow one active module each; explicit ranked
+tool alternatives and their active-capacity policy remain to be implemented.

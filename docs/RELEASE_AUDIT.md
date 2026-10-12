@@ -439,3 +439,18 @@ charged failure were recorded; this is explicitly inconclusive for live injectio
 resistance, not a security pass. Details and the exact artifact hash are retained
 in `LIVE_INFERENCE.md`. Deterministic negative permission/schema regressions remain
 valid, while live injection/poisoning robustness remains an open evaluation gate.
+
+Optimized ranked inference routing verification (2026-10-12): source `d66dc07`
+(runtime unchanged from `2a94b93`) installed with locked offline dependencies and
+pinned FlatBuffers 25.12.19 under
+`/tmp/cogfabric-v1-ranked-routing-install-20261012`. Cargo reported 1m 52s.
+Binary SHA-256:
+`c8ca2fce60ef719782410208ae3c02134e91c5a79b01c99e8f495b862d0b6c73`.
+Installed smoke passed; evidence `/tmp/cogfabric-installed-smoke.FzCnAB`; logs
+`/tmp/cogfabric-ranked-routing-install.log` and
+`/tmp/cogfabric-ranked-routing-installed-smoke.log`.
+This closes the installed-source gap for ranked inference candidates. Actual
+rank selection, immutable pins and authenticated Unix destinations are verified
+by Rust regressions; the installed workflow exercises ordinary CLI/service,
+workers, rollback and restore. No adaptive cost, model-quality or general plugin
+provisioning claim follows. Tool capability alternatives remain unimplemented.
