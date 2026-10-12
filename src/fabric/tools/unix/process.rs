@@ -598,7 +598,7 @@ mod tests {
                 crate::fabric::Availability::Expired
             );
             assert!(expired.worker.get().is_none());
-            let process = make(Instant::now() + Duration::from_secs(30)).unwrap();
+            let process = Arc::new(make(Instant::now() + Duration::from_secs(30)).unwrap());
             assert_eq!(
                 process.observed_availability(),
                 crate::fabric::Availability::Unknown
@@ -642,14 +642,26 @@ mod tests {
                 })
                 .is_ok());
             assert_eq!(
-                ArithmeticBackend::availability(&process),
+                ArithmeticBackend::availability(process.as_ref()),
                 crate::fabric::Availability::Connected
             );
             assert_eq!(
-                SqlBackend::availability(&process),
+                SqlBackend::availability(process.as_ref()),
                 crate::fabric::Availability::Connected
             );
-            process.shutdown().await.unwrap();
+            let initialization = process.initialization.lock().await;
+            let cleanup_process = process.clone();
+            let cleanup = tokio::spawn(async move { cleanup_process.shutdown().await });
+            tokio::time::timeout(Duration::from_secs(1), async {
+                while !process.stopped.load(Ordering::Acquire) {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .unwrap();
+            assert!(!cleanup.is_finished());
+            drop(initialization);
+            cleanup.await.unwrap().unwrap();
             assert_eq!(
                 process.observed_availability(),
                 crate::fabric::Availability::Closed

@@ -1767,3 +1767,14 @@ The initialization gate adds bounded startup coordination; it does not imply
 immediate cancellation of external inference or completed reaping when shutdown
 is requested. Original deadlines, authority and cleanup audits remain required.
 Optimized installation evidence predates this runtime change and needs refresh.
+
+### Concurrent initialization/shutdown coordination — 2026-10-12
+
+The managed availability regressions now hold the actual initialization gate while
+a separate shutdown task marks inference/arithmetic/SQL wrappers stopped. Cleanup
+must remain pending until the gate is released, then finish real child reaping.
+Bounded scheduling waits avoid arbitrary sleeps. All 343 tests and mandatory
+format/check/Clippy checks pass; log `/tmp/cogfabric-shutdown-coordination-tests.log`.
+This tests synchronization plus owned-child cleanup, not every OS scheduling
+interleaving or proof that an external provider stopped. Runtime source is
+unchanged from `a2f37c0`; these are additional regression assertions.

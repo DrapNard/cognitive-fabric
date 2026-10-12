@@ -479,7 +479,7 @@ mod tests {
     async fn managed_inference_reports_connected_and_shutdown_adapter_state() {
         let store = Arc::new(Store::in_memory().unwrap());
         let task = store.create_task("Managed availability", "fast").unwrap();
-        let process = ProcessTask::new(Config::default(), store, &task).unwrap();
+        let process = Arc::new(ProcessTask::new(Config::default(), store, &task).unwrap());
         assert_eq!(process.availability(), crate::fabric::Availability::Unknown);
         let (client, _server) = UnixStream::pair().unwrap();
         let adapter = UnixInference::connected(
@@ -512,7 +512,19 @@ mod tests {
             process.availability(),
             crate::fabric::Availability::Connected
         );
-        process.shutdown().await.unwrap();
+        let initialization = process.initialization.lock().await;
+        let cleanup_process = process.clone();
+        let cleanup = tokio::spawn(async move { cleanup_process.shutdown().await });
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while !process.stopped.load(Ordering::Acquire) {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        assert!(!cleanup.is_finished());
+        drop(initialization);
+        cleanup.await.unwrap().unwrap();
         assert_eq!(process.availability(), crate::fabric::Availability::Closed);
     }
 
