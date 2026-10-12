@@ -190,3 +190,39 @@ Evidence: `/tmp/cogfabric-live-roles.EZsIft/{outcome.json,trace.json,trace-after
 The two event pages cover the planner graph, all role calls and worker cleanup.
 Reproduce the earlier isolated setup with the limits above and run the same
 request using `--mode deep`, with `interpret_goals: false` in its configuration.
+
+## Public six-profile workflow check — 2026-10-12
+
+Source `55cd52d` ran `compare --workflow-check` on the first public case from
+`examples/sorting_comparison.jsonl`: sorting `[3,-1,3,0]`. Dataset SHA-256:
+`1434ca3af327f9e3b96ccc7dd9dfb04e81314fcb1928e53498321d8372a4049a`.
+Source declaration identified the repository public example, licensed Apache-2.0.
+The existing 27B Ollama model, temperature zero and explicit effort `none` were
+used throughout. Per-task ceilings were three calls, one cycle, 768 output tokens,
+8192 prompt bytes, four tool calls and 240 seconds; HTTP timeout was 90 seconds.
+Interpretation and synthesis were disabled. The run limit was 600 seconds.
+
+| Profile | Result | Calls | Reserved output tokens | Elapsed ms |
+|---|---|---:|---:|---:|
+| alone | HTTP inference timeout; failed | 1 | 384 | 90016.171987 |
+| tools | Checked `[-1,0,3,3]` | 1 | 384 | 8493.257807 |
+| recursive | Checked `[-1,0,3,3]` | 1 | 384 | 5362.535589 |
+| collective | Checked `[-1,0,3,3]` | 2 | 640 | 43346.400414 |
+| memory | Checked `[-1,0,3,3]` | 2 | 640 | 48956.604196 |
+| experts | Checked `[-1,0,3,3]` | 2 | 640 | 41637.854245 |
+
+CLI exit was zero and `complete: true`: every planned profile executed, including
+the failed baseline. Total elapsed was 237821.87943 ms. The report explicitly
+records `run_purpose: workflow_check`, `held_out_run: false` and
+`held_out_operator_attested: false`. The baseline's provider usage is unavailable;
+its timeout remains charged and was not retried. All six managed workers were
+reaped without force; baseline worker exit was 1, the other five exits were 0.
+
+This public single-case observation establishes live comparison plumbing, failure
+reporting and structured scoring. It establishes neither small-model performance,
+held-out accuracy nor collective advantage. Order/warmup/provider state are not
+controlled by a single case. The recursive profile stopped after its first verified
+answer; no recursive improvement occurred. The fresh corpus contained no ingested
+references or candidate expertise. Framework RSS excludes model-server memory.
+Evidence: `/tmp/cogfabric-live-workflow.X9Phae/{cases.jsonl,config.json,report.json,stderr.txt,exit-status.txt}`;
+worker cleanup is recorded in that workspace's SQLite events.

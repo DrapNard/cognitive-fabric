@@ -364,3 +364,17 @@ A separate explicit non-held-out workflow-check mode would permit honest live
 runner verification while retaining mandatory held-out attestations for benchmark
 claims. That mode is not currently implemented. Do not bypass the gate by falsely
 attesting the public example or presenting fixture results as live measurements.
+
+Optimized workflow-check verification (2026-10-12): runtime source `55cd52d`
+installed using locked offline dependencies and pinned FlatBuffers 25.12.19 under
+`/tmp/cogfabric-v1-workflow-check-install-20261012`; Cargo reported 3m 20s.
+Binary SHA-256:
+`ea10a25942287a42b4a1b424fcf8aa98606e2473684e447190ef465f26309fdc`.
+Installed smoke passed; evidence `/tmp/cogfabric-installed-smoke.yHGC9O`; logs
+`/tmp/cogfabric-workflow-check-install.log` and
+`/tmp/cogfabric-workflow-check-installed-smoke.log`.
+The separately recorded debug six-profile live workflow completed with five
+checked answers and one baseline timeout. It is explicitly public and non-held-out;
+no benchmark gain or small-model readiness follows. All six workers were reaped.
+This supersedes the missing public workflow mode noted above, while preserving
+independent held-out evaluation and other unfinished release requirements.
