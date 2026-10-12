@@ -1,0 +1,3 @@
+{"input":"sort:{\"values\":[3,-1,3,0]}","verification":"integer_sort_v1"}
+{"input":"sort:{\"values\":[8,-2,0,-2],\"descending\":true}","verification":"integer_sort_v1"}
+{"input":"sort:{\"values\":[9223372036854775807,0,-9223372036854775808]}","verification":"integer_sort_v1"}

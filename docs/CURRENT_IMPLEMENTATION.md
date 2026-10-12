@@ -515,3 +515,9 @@ STANDARD-mode trial: two calls, accepted advisory structured intent, planner ski
 whole-goal explanation and confirmed managed-child reaping. The explanation stays
 unverified. Optimized installation/smoke also pass for this source. See
 `LIVE_INFERENCE.md` and `RELEASE_AUDIT.md`; robustness and benchmark gates remain open.
+
+The six-arm comparison runner now supports structural `integer_sort_v1` scoring,
+checking exact integer multiplicity/direction without trusting runtime verdicts
+or answer whitespace. All mandatory checks pass with 334 tests (313 library,
+21 integration). Public sorting examples are demonstration data; live reviewed
+comparison remains outstanding. See `BENCHMARKING.md` for shared-verifier limits.

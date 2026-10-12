@@ -782,3 +782,12 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
 - Reject surrounding instructions, multiple objects and malformed wrappers while
   preserving original-goal authority and deny-unknown-fields validation.
 - Regress real observed formatting through bounded interface/solver execution.
+
+### Structural integer sorting comparisons
+
+- Score sorting answers against supplied integer multisets and direction across
+  all comparison arms, independently of answer whitespace and runtime verdicts.
+- Reject mixed criteria/expected labels and preserve ordinary task/resource reports.
+- Cover duplicates, integer limits/types and actual six-arm HTTP execution.
+- Supply public demonstration cases and disclose shared compiled verifier code;
+  no held-out independence or live performance claim follows.

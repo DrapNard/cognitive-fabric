@@ -1678,3 +1678,11 @@ STANDARD language path accepted fenced structured intent, skipped planning and
 returned an unverified solver explanation within two calls, with confirmed child
 reaping. `LIVE_INFERENCE.md` records actual totals and reproduction. This closes
 single-case integration, not independent quality or benchmark evaluation.
+
+Sorting comparison validation (2026-10-12): mandatory formatting, offline
+all-target check/tests (313 library + 21 integration = 334) and Clippy with denied
+warnings pass using FlatBuffers 25.12.19. Log:
+`/tmp/cogfabric-sort-comparison-full-tests.log`; focused comparison tests also
+passed (`/tmp/cogfabric-sort-comparison-tests.log`). Actual HTTP fixtures exercise
+both structured criteria through all six arms. These are fixture correctness
+results, not independent held-out scores or live-model comparative gains.

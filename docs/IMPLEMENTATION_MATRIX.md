@@ -53,7 +53,7 @@ remains a pre-release. `QUALITY_REVIEW.md` preserves verification history.
 | 12, 14 | CLI/service | Partial | `src/main.rs`: initialization/configuration, ask, service controls, task-specific socket progress/cancellation, skill lifecycle, ingestion/search, task traces, candidates/rollback, benchmark, self-test; real socket fixtures | Live residency lifecycle |
 | 12, 13 | Hardware/performance claims | Partial | Optional whole-device GPU diagnostics sampled real host memory/utilization/power; no energy or large-model advantage claimed | Task-attributed telemetry, real model switching and equal-budget comparisons |
 
-All 333 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
+All 334 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
 all-target build checks and Clippy with denied warnings pass. Fixtures do not prove
 GPU integration, neural quality, immutable backend weights or live model switching.
 
@@ -893,3 +893,12 @@ and 768 output reservations. CLI exit is zero; prose remains unverified. The
 managed child is confirmed reaped. `LIVE_INFERENCE.md` records timing and limits.
 This closes the single-case live integration failure, not robust interpretation
 quality, synthesis or equal-budget reasoning evaluation.
+
+Structural sorting comparisons: **Implemented** in `src/benchmarking.rs` as
+`integer_sort_v1`, reusing fresh compiled checks over explicit `sort:` objectives
+and omitting expected strings. Unit regressions cover duplicates, direction,
+integer extremes/types, wrong answers and cross-criterion rejection. The actual
+HTTP comparison regression covers sorting and ordering through all six arms.
+`examples/sorting_comparison.jsonl` is demonstration data, not a reviewed held-out
+study. Reports disclose shared verifier implementation; live comparative quality
+and independent corpus review remain incomplete.

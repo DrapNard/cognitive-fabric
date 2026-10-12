@@ -230,3 +230,31 @@ These are descriptive changes on the supplied corpus, not statistical significan
 held-out robustness, causal proof or general security failure rates. Partial runs
 can have a biased paired subset; inspect coverage before drawing conclusions.
 No extra inference, permissions or task executions are added by aggregation.
+
+### Integer sorting criteria
+
+Use `verification: integer_sort_v1` with an explicit bounded `sort:` objective:
+
+```json
+{"input":"sort:{\"values\":[3,-1,3,0]}","verification":"integer_sort_v1"}
+```
+
+Omit `expected`. The comparison recomputes the sorted multiset from the supplied
+signed 64-bit integers, including duplicates and optional `descending: true`.
+Whitespace in the JSON array does not matter; wrong values, missing duplicates,
+floats, wrong order, oversized answers and extra prose fail. A runtime
+`completed` claim alone never makes an incorrect answer pass. A correctly formatted
+unverified generative answer may pass the explicit comparison criterion; failed
+or exhausted tasks do not pass. Reports retain criterion identity and null expected
+output, and the ordinary six-arm resource/paired comparison accounting applies.
+
+Ordering and sorting reuse the runtime's compiled Rust checker but execute fresh
+checks against the supplied objective rather than trusting runtime proof/status.
+This is independent of the model and status assertion, not a second independently
+implemented verifier. It establishes only bounded domain correctness.
+
+`examples/sorting_comparison.jsonl` supplies three public demonstration cases
+covering negative/duplicate values, descending order and integer limits. It is not
+an independently reviewed or unseen held-out benchmark. Do not use the example's
+availability as grounds to attest independence. No live comparative performance
+or model-superiority result is inferred from the fixture tests.

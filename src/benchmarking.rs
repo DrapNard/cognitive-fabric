@@ -25,6 +25,7 @@ enum Criterion {
     #[default]
     ExpectedOutputExactMatch,
     DependencyOrderV1,
+    IntegerSortV1,
     SqlResultJsonV1,
 }
 
@@ -58,7 +59,7 @@ impl SqlResult {
 }
 
 impl Case {
-    fn prepare(&self) -> Result<Option<crate::verification::Ordering>> {
+    fn prepare(&self) -> Result<Option<crate::verification::Criterion>> {
         match self.verification {
             Criterion::ExpectedOutputExactMatch => {
                 if self
@@ -79,13 +80,23 @@ impl Case {
                 })?)?;
                 Ok(None)
             }
-            Criterion::DependencyOrderV1 => {
+            Criterion::DependencyOrderV1 | Criterion::IntegerSortV1 => {
                 if self.expected.is_some() {
-                    bail!("Dependency-order case must omit expected output")
+                    bail!("Structured criterion must omit expected output")
                 }
-                let criterion = crate::verification::Ordering::from_query(&self.input)?;
-                if criterion.is_none() {
-                    bail!("Dependency-order case requires an explicit order: objective")
+                let criterion = crate::verification::Criterion::from_query(&self.input)?;
+                let matching = matches!(
+                    (&self.verification, &criterion),
+                    (
+                        Criterion::DependencyOrderV1,
+                        Some(crate::verification::Criterion::Ordering(_))
+                    ) | (
+                        Criterion::IntegerSortV1,
+                        Some(crate::verification::Criterion::Sorting(_))
+                    )
+                );
+                if !matching {
+                    bail!("Structured criterion requires a matching explicit objective")
                 }
                 Ok(criterion)
             }
@@ -94,7 +105,7 @@ impl Case {
 
     fn score(
         &self,
-        criterion: Option<&crate::verification::Ordering>,
+        criterion: Option<&crate::verification::Criterion>,
         status: &str,
         answer: &str,
     ) -> bool {
@@ -430,7 +441,7 @@ where
         "arms":arms.iter().enumerate().map(|(index,(profile,model,_))| json!({"index":index,"profile":profile,"model":model,"executed":counts[index],"passed":scores[index],"resources":totals[index],"accuracy":if counts[index]>0 {Some(scores[index] as f64/counts[index] as f64)} else {None}})).collect::<Vec<_>>(),
         "paired_changes_against_small_model_alone":paired_changes(&paired_results,arms.len()),
         "details":details,"unavailable_metrics":["peak_memory","gpu_memory","energy","model_load_cost","general_security_failure_rate"],
-        "limitations":["Held-out independence and code revision are operator-attested","Backend model labels do not attest immutable weights","A bound expert model configuration invalidates the same-model ablation control, even if advice is refused or fails; inspect per-case bound_expert_models","Exact-match and dependency-order criteria do not establish broad reasoning quality","Retrieval uses one read-only SQLite snapshot; checksum includes unrelated stored history","Snapshot bounds are 64 MB and temporarily require an additional serialization buffer","Live model availability, weight identity and server state are not frozen","Different arms consume different amounts within the same operator ceilings; inspect actual usage"]}),
+        "limitations":["Held-out independence and code revision are operator-attested","Backend model labels do not attest immutable weights","A bound expert model configuration invalidates the same-model ablation control, even if advice is refused or fails; inspect per-case bound_expert_models","Exact-match, dependency-order, integer-sort and SQL criteria do not establish broad reasoning quality","Structured comparison recomputes checks without trusting runtime status; ordering/sorting share the runtime compiled verifier implementation","Retrieval uses one read-only SQLite snapshot; checksum includes unrelated stored history","Snapshot bounds are 64 MB and temporarily require an additional serialization buffer","Live model availability, weight identity and server state are not frozen","Different arms consume different amounts within the same operator ceilings; inspect actual usage"]}),
     )
 }
 
@@ -758,7 +769,7 @@ mod tests {
         assert!(totals.process_lifetime_peak_rss_bytes.is_none());
     }
     #[tokio::test]
-    async fn ordering_comparison_scores_every_arm_through_http() {
+    async fn structured_comparison_scores_ordering_and_sorting_in_every_arm_through_http() {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let cfg = Config {
@@ -792,7 +803,13 @@ mod tests {
                         }
                     }
                 }
-                let body = json!({"model":"fixture/v1","choices":[{"message":{"content":r#"["b","a","c"]"#}}]}).to_string();
+                let answer = if String::from_utf8_lossy(&request).contains("sort:") {
+                    "[-1,0,3,3]"
+                } else {
+                    r#"["b","a","c"]"#
+                };
+                let body = json!({"model":"fixture/v1","choices":[{"message":{"content":answer}}]})
+                    .to_string();
                 let response = format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{body}", body.len());
                 stream.write_all(response.as_bytes()).await.unwrap();
                 stream.shutdown().await.unwrap();
@@ -802,7 +819,11 @@ mod tests {
             "fabric-order-compare-{}.jsonl",
             uuid::Uuid::new_v4()
         ));
-        std::fs::write(&dataset, serde_json::to_string(&json!({"input":r#"order:{"nodes":["a","b","c"],"before":[["a","c"]]}"#,"verification":"dependency_order_v1"})).unwrap()).unwrap();
+        let data = [
+            json!({"input":r#"order:{"nodes":["a","b","c"],"before":[["a","c"]]}"#,"verification":"dependency_order_v1"}),
+            json!({"input":r#"sort:{"values":[3,-1,3,0]}"#,"verification":"integer_sort_v1"}),
+        ].iter().map(|case| serde_json::to_string(case).unwrap()).collect::<Vec<_>>().join("\n");
+        std::fs::write(&dataset, data).unwrap();
         let store = Arc::new(Store::in_memory().unwrap());
         let review = Review {
             source: "test".into(),
@@ -817,10 +838,17 @@ mod tests {
             .unwrap();
         assert_eq!(report["complete"], true);
         for arm in report["arms"].as_array().unwrap() {
-            assert_eq!(arm["passed"], 1);
+            assert_eq!(arm["passed"], 2);
         }
         for detail in report["details"].as_array().unwrap() {
-            assert_eq!(detail["verification"], "dependency_order_v1");
+            assert_eq!(
+                detail["verification"],
+                if detail["case_index"] == 0 {
+                    "dependency_order_v1"
+                } else {
+                    "integer_sort_v1"
+                }
+            );
             assert!(detail["expected"].is_null());
         }
         assert_eq!(report["details"][0]["outcome"]["status"], "unverified");
@@ -829,6 +857,47 @@ mod tests {
         std::fs::remove_file(dataset).unwrap();
     }
 
+    #[test]
+    fn sorting_comparison_checks_multisets_direction_and_integer_types_without_status_trust() {
+        let case: Case = serde_json::from_value(
+            json!({"input":r#"sort:{"values":[3,-1,3,0]}"#,"verification":"integer_sort_v1"}),
+        )
+        .unwrap();
+        let criterion = case.prepare().unwrap().unwrap();
+        for answer in ["[-1,0,3,3]", "[ -1, 0, 3, 3 ]"] {
+            assert!(case.score(Some(&criterion), "unverified", answer));
+        }
+        for answer in [
+            "[-1,0,3]",
+            "[3,3,0,-1]",
+            "[-1,0,3,4]",
+            "[-1,0,3,3.0]",
+            "```json\n[-1,0,3,3]\n```",
+        ] {
+            assert!(!case.score(Some(&criterion), "completed", answer));
+        }
+        assert!(!case.score(Some(&criterion), "failed", "[-1,0,3,3]"));
+        let descending: Case = serde_json::from_value(json!({"input":r#"sort:{"values":[-9223372036854775808,0,9223372036854775807],"descending":true}"#,"verification":"integer_sort_v1"})).unwrap();
+        let descending_criterion = descending.prepare().unwrap().unwrap();
+        assert!(descending.score(
+            Some(&descending_criterion),
+            "unverified",
+            "[9223372036854775807,0,-9223372036854775808]"
+        ));
+        for invalid in [
+            json!({"input":"plain goal","verification":"integer_sort_v1"}),
+            json!({"input":r#"sort:{"values":[]}"#,"verification":"integer_sort_v1"}),
+            json!({"input":r#"sort:{"values":[1.0]}"#,"verification":"integer_sort_v1"}),
+            json!({"input":r#"sort:{"values":[1]}"#,"verification":"integer_sort_v1","expected":"[1]"}),
+            json!({"input":r#"order:{"nodes":["a"],"before":[]}"#,"verification":"integer_sort_v1"}),
+            json!({"input":r#"sort:{"values":[1]}"#,"verification":"dependency_order_v1"}),
+        ] {
+            assert!(serde_json::from_value::<Case>(invalid)
+                .unwrap()
+                .prepare()
+                .is_err());
+        }
+    }
     #[test]
     fn ordering_scoring_accepts_alternatives_without_trusting_runtime_verdicts() {
         let case: Case = serde_json::from_value(json!({"input":r#"order:{"nodes":["a","b","c"],"before":[["a","c"]]}"#,"verification":"dependency_order_v1"})).unwrap();
