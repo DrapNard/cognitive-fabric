@@ -1632,3 +1632,7 @@ Tests: 306 library + 21 integration = 327. Log:
 `/tmp/cogfabric-event-rollback-tests.log`. Live/replay filtering, immutable metadata,
 rollback at full history and active-capacity refusal are covered. Optimized
 installation verification is pending for this source.
+
+Optimized installation and installed smoke subsequently passed for `2ac215b`;
+`RELEASE_AUDIT.md` records hashes and evidence. This closes the installation gap
+above; no new model quality or executable sandbox result is inferred.

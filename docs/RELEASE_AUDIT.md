@@ -261,3 +261,15 @@ The unchanged installed smoke script passed; evidence:
 This closes the pending installation gap for transport identity enforcement.
 Actual transport discovery/role matching is exercised by the child regression;
 installed smoke uses deterministic demo inference, not a new live quality study.
+
+Optimized event rollback verification (2026-10-12): source `2ac215b` installed
+with `FLATC=/tmp/cogfabric-flatbuffers-build/flatc cargo install --offline --locked --path . --root /tmp/cogfabric-v1-event-rollback-install-20261012`.
+Binary SHA-256:
+`6c745c0e497c183833e0f54093267eb92d858f1766774fd466e05862239d4bd9`.
+The unchanged installed smoke workflow passed; evidence:
+`/tmp/cogfabric-installed-smoke.Zz06rw`; logs:
+`/tmp/cogfabric-event-rollback-install.log`,
+`/tmp/cogfabric-event-rollback-installed-smoke.log`.
+This closes the installed-source gap for event rollback. Event rollback semantics
+are established by Rust live/replay/capacity regressions; installed smoke exercises
+the existing CLI/service integration and deterministic inference.

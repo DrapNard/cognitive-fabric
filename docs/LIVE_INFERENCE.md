@@ -80,3 +80,22 @@ To repeat, start `cogfabric --home "$live_home" serve` with the bounded settings
 submit the above goal via `ask --socket --mode fast`, inspect `task`, and stop with
 `stop`. This proves one installed service integration case, not general model
 quality, weight identity, isolation, switching or an equal-budget comparison.
+
+## Structured language interpretation failure — 2026-10-12
+
+Installed source `2ac215b` was also tried with interpretation enabled, STANDARD
+mode, a two-call/one-cycle ceiling, 768 total reserved output tokens and a
+180-second task limit. The natural request was `Explain Rust borrowing in one
+sentence. /no_think`. The interface's fixed 128-token reservation produced empty
+provider text. The CLI exited 1 with a visible `Model returned empty text` error;
+no structured goal or solver answer was produced. One call remained charged,
+zero cycles ran, 250 prompt bytes were reserved, and token usage stayed unavailable.
+Elapsed time: 76925.494189 ms; inference time: 76924.511327 ms. The empty response
+alone does not prove why the provider failed or that internal reasoning consumed
+its allocation. Do not infer a successful language-interface test from earlier
+solver-only sorting results.
+
+Task: `d362daa4-b139-440a-a727-8c1989c9038c`. Evidence:
+`/tmp/cogfabric-live-language.W9nCKs/{outcome.json,trace.json,stderr.txt}`.
+Real structured interpretation remains unverified for this model/configuration;
+provider output control and bounded interface allocation need further investigation.

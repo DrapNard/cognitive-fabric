@@ -828,3 +828,15 @@ cover rollback after unregistration, live/replay filtering, version forgery,
 unknown selectors, 128-version history and 32-active-module reactivation bounds.
 The registry remains process-local; executable health/provisioning and persistent
 general module lifecycle remain partial. See `EVENTS.md`.
+
+The event rollback source `2ac215b` also passed fresh optimized installation and
+the installed CLI/service smoke workflow. See `RELEASE_AUDIT.md`; process-local
+metadata rollback is verified, while automatic general executable lifecycle and
+controlled benchmark studies remain incomplete.
+
+A separate installed STANDARD-mode live interpretation attempt failed before
+solver execution: the provider returned empty text under the interface's fixed
+128-token reservation. The runtime returned visible failure and retained one
+charged call; no structured-goal success is claimed. `LIVE_INFERENCE.md` records
+actual settings and timing. This is a newly observed language integration gap,
+not evidence against the independently verified direct/socket sorting cases.
