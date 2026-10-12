@@ -1820,3 +1820,16 @@ sequential success does not establish parallel-suite stability or release readin
 New routing retains deterministic host policy, deny-by-default task authorization,
 immutable pins and bounded queues/registries; it grants no executable provisioning
 or additional model capabilities.
+
+## Empty-answer diagnostics verification — 2026-10-12
+
+After removing operator-configuration dependence from HTTP fixtures, formatting,
+all-target offline compilation and Clippy with denied warnings passed. Full
+sequential tests passed 350 tests (329 library and 21 integration), recorded in
+`/tmp/cogfabric-empty-answer-tests-fixed.log`. Fixtures verify fixed diagnostic
+classification without exposing supplied reasoning text. An earlier run correctly
+failed because the fixture inherited a newly saved reasoning-effort setting;
+the corrected fixture uses explicit defaults instead. No additional model call,
+automatic budget expansion or acceptance of reasoning-only output was introduced.
+The previously observed default-parallel failures remain unresolved; these results
+do not establish parallel-suite stability or final release readiness.

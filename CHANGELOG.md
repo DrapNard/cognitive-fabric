@@ -823,3 +823,10 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   task authorization; test selection, capability boundaries and registry capacity.
 - Record a successful operator-requested LM Studio Qwen3 8B sorting smoke and
   clarify how to select an out-of-PATH matching FlatBuffers compiler.
+
+### Explain empty local-model answers
+
+- Give actionable fixed errors for reported output-limit termination and
+  reasoning-only responses without exposing internal reasoning or retrying.
+- Make HTTP response fixtures independent of saved operator model settings and
+  cover null, blank and reasoning-only answers.

@@ -202,8 +202,22 @@ pub async fn generate_report(
     let text = response
         .pointer("/choices/0/message/content")
         .and_then(|v| v.as_str())
-        .context("Model returned no text")?;
+        .unwrap_or("");
     if text.trim().is_empty() {
+        if response
+            .pointer("/choices/0/finish_reason")
+            .and_then(|v| v.as_str())
+            == Some("length")
+        {
+            bail!("Model returned no answer before its output limit; try disabling model thinking or explicitly review the task token budget")
+        }
+        if response
+            .pointer("/choices/0/message/reasoning_content")
+            .and_then(|v| v.as_str())
+            .is_some_and(|v| !v.trim().is_empty())
+        {
+            bail!("Model returned internal reasoning without an answer; try configure-local --reasoning-effort none and a model-supported no-thinking prompt")
+        }
         bail!("Model returned empty text")
     }
     Ok(Generation {
@@ -257,8 +271,12 @@ mod tests {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
             .expect("HTTP fixture requires permission to bind loopback");
-        let mut cfg = Config::load(None, Some("openai-local".into()))?;
-        cfg.api_base = format!("http://{}/v1", listener.local_addr()?);
+        // Keep HTTP fixtures independent of operator configuration and environment.
+        let mut cfg = Config {
+            backend: "openai-local".into(),
+            api_base: format!("http://{}/v1", listener.local_addr()?),
+            ..Config::default()
+        };
         cfg.role_profiles.insert(
             "solver".into(),
             crate::config::RoleProfile {
@@ -319,6 +337,32 @@ mod tests {
         let body = "x".repeat(MAX_RESPONSE_BYTES + 1);
         let response = format!("HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n{body}");
         assert!(fixture_response(response.into_bytes()).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn empty_answers_explain_limits_without_exposing_reasoning() {
+        for (body, expected) in [
+            (
+                r#"{"choices":[{"finish_reason":"length","message":{"content":"","reasoning_content":"private reasoning"}}]}"#,
+                "output limit",
+            ),
+            (
+                r#"{"choices":[{"message":{"content":null,"reasoning_content":"private reasoning"}}]}"#,
+                "internal reasoning without an answer",
+            ),
+            (r#"{"choices":[{"message":{"content":" "}}]}"#, "empty text"),
+        ] {
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{body}",
+                body.len()
+            );
+            let error = fixture_response(response.into_bytes())
+                .await
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains(expected), "{error}");
+            assert!(!error.contains("private reasoning"));
+        }
     }
 
     #[tokio::test]

@@ -1033,3 +1033,12 @@ Three new regressions cover arithmetic replacement/rollback and authorization,
 SQL typed dispatch and capability separation, and capacity rejection without
 consuming rejected versions. This is operator-declared routing, not an executable
 plugin loader, adaptive utility estimator or automatic permission grant.
+
+### Empty local-model answer diagnostics — 2026-10-12
+
+Implemented: bounded HTTP parsing distinguishes empty responses with a reported
+output limit from reasoning-only responses, with operator troubleshooting advice.
+Internal reasoning is neither returned as an answer nor printed in diagnostics.
+Regression fixtures cover length termination, null answer with reasoning and blank
+answer; fixtures now construct explicit configuration instead of reading saved
+operator settings. Automatic retries and budget expansion remain absent.

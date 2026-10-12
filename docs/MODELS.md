@@ -273,3 +273,9 @@ cogfabric ask 'Explain Rust ownership briefly /no_think' --mode standard
 This combination produced a real explanation locally on 2026-10-12. Prose remains
 unverified. The provider may ignore either hint; see LIVE_INFERENCE.md for measured
 scope and the successful task's trace identity.
+
+The HTTP adapter now gives distinct, fixed diagnostics when an empty answer is
+accompanied by provider `finish_reason=length` or nonempty `reasoning_content`.
+It does not print or accept internal reasoning as answer text, increase budgets,
+or retry automatically. Provider metadata remains untrusted; these diagnostics
+report the response shape, not a verified explanation of model internals.
