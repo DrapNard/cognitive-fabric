@@ -86,12 +86,40 @@ pub(crate) fn parse_task(raw: &str) -> Result<Task> {
     Ok(task)
 }
 
+struct Capacity {
+    admitted: Arc<tokio::sync::Semaphore>,
+    workers: Arc<tokio::sync::Semaphore>,
+}
+impl Capacity {
+    fn new() -> Self {
+        Self {
+            admitted: Arc::new(tokio::sync::Semaphore::new(6)),
+            workers: Arc::new(tokio::sync::Semaphore::new(2)),
+        }
+    }
+}
+
 pub async fn execute(raw: String) -> Result<String> {
-    // Bounded SQLite work never occupies a Tokio executor thread.
-    static SLOTS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(2);
-    let permit = SLOTS
-        .try_acquire()
-        .context("SQL worker capacity exhausted")?;
+    static CAPACITY: std::sync::LazyLock<Capacity> = std::sync::LazyLock::new(Capacity::new);
+    execute_with_capacity(raw, &CAPACITY).await
+}
+
+async fn execute_with_capacity(raw: String, capacity: &Capacity) -> Result<String> {
+    if raw.len() > 32_000 {
+        bail!("SQL task exceeds input limit")
+    }
+    let admission = capacity
+        .admitted
+        .clone()
+        .try_acquire_owned()
+        .context("SQL admission capacity exhausted")?;
+    let permit = tokio::time::timeout(
+        Duration::from_secs(1),
+        capacity.workers.clone().acquire_owned(),
+    )
+    .await
+    .context("SQL worker queue deadline exhausted")?
+    .context("SQL worker capacity closed")?;
     struct CancelOnDrop(Arc<AtomicBool>);
     impl Drop for CancelOnDrop {
         fn drop(&mut self) {
@@ -101,6 +129,8 @@ pub async fn execute(raw: String) -> Result<String> {
     let cancelled = Arc::new(AtomicBool::new(false));
     let _guard = CancelOnDrop(cancelled.clone());
     tokio::task::spawn_blocking(move || {
+        // Keep both permits until actual blocking work ends, even if its caller cancels.
+        let _admission = admission;
         let _permit = permit;
         evaluate_inner(&raw, cancelled)
     })
@@ -258,6 +288,89 @@ fn evaluate_inner(raw: &str, cancelled: Arc<AtomicBool>) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test(start_paused = true)]
+    async fn bounded_queue_times_out_and_releases_admission() {
+        let capacity = Capacity::new();
+        let occupied = capacity
+            .workers
+            .clone()
+            .acquire_many_owned(2)
+            .await
+            .unwrap();
+        let error = execute_with_capacity(r#"{"tables":[],"query":"SELECT 42"}"#.into(), &capacity)
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("queue deadline"));
+        assert_eq!(capacity.admitted.available_permits(), 6);
+        assert_eq!(capacity.workers.available_permits(), 0);
+        drop(occupied);
+    }
+    #[tokio::test]
+    async fn queue_admission_is_bounded_and_cancellation_releases_waiters() {
+        let capacity = Arc::new(Capacity::new());
+        let full = capacity
+            .admitted
+            .clone()
+            .acquire_many_owned(6)
+            .await
+            .unwrap();
+        assert!(execute_with_capacity("{}".into(), &capacity)
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("admission capacity"));
+        drop(full);
+        let occupied = capacity
+            .workers
+            .clone()
+            .acquire_many_owned(2)
+            .await
+            .unwrap();
+        let queued_capacity = capacity.clone();
+        let queued = tokio::spawn(async move {
+            execute_with_capacity(
+                r#"{"tables":[],"query":"SELECT 42"}"#.into(),
+                &queued_capacity,
+            )
+            .await
+        });
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while capacity.admitted.available_permits() == 6 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        assert!(!queued.is_finished());
+        queued.abort();
+        assert!(queued.await.unwrap_err().is_cancelled());
+        assert_eq!(capacity.admitted.available_permits(), 6);
+        assert_eq!(capacity.workers.available_permits(), 0);
+        let waiting_capacity = capacity.clone();
+        let waiting = tokio::spawn(async move {
+            execute_with_capacity(
+                r#"{"tables":[],"query":"SELECT 42 AS answer"}"#.into(),
+                &waiting_capacity,
+            )
+            .await
+        });
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while capacity.admitted.available_permits() == 6 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        assert!(!waiting.is_finished());
+        drop(occupied);
+        let answer = waiting.await.unwrap().unwrap();
+        assert_eq!(
+            serde_json::from_str::<Value>(&answer).unwrap()["rows"][0][0],
+            42
+        );
+        assert_eq!(capacity.admitted.available_permits(), 6);
+        assert_eq!(capacity.workers.available_permits(), 2);
+    }
     fn task(query: &str) -> String {
         json!({"tables":[{"name":"items","columns":["name","amount"],"rows":[["a",2],["b",3]]}],"query":query}).to_string()
     }

@@ -1874,3 +1874,16 @@ Prior intermittent parallel SQL failures remain relevant: SQL execution has a
 process-wide two-slot try-acquire semaphore, so concurrent tests can contend for
 real runtime capacity. That is a source-level explanation to investigate, not yet
 an instrumented reproduction proving every earlier SQL failure's cause.
+
+## Bounded SQL worker admission verification — 2026-10-12
+
+Formatting, all-target offline check and Clippy with denied warnings passed with
+the pinned compiler. Default-parallel all-target tests passed 353 tests (332 library
+and 21 integration), log `/tmp/cogfabric-sql-backpressure-tests.log`. Two new
+capacity regressions verify overload rejection, queue deadline, cancellation,
+permit restoration and queued SQL execution. Fixtures use independent instances
+of the same limiter/dispatch function used by production, avoiding global capacity
+contention while directly testing its bounds. The runtime still has two executing
+slots and six total admitted requests; queue latency is capped at one second and
+oversized input is rejected before admission. Historical SQL failure attribution
+remains inferential; the separate runtime-lease contention remains unresolved.

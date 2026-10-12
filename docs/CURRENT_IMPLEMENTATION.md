@@ -610,3 +610,13 @@ Empty-context cost/checkpoint hashes are preserved; earlier nonempty-context
 checkpoint hashes fail closed under changed prompt serialization. Full tests now
 pass 351 sequentially and in the final default-parallel run; see QUALITY_REVIEW.md
 for intermediate failures and LIVE_INFERENCE.md for actual security trial scope.
+
+### SQL concurrency admission (2026-10-12)
+
+Inline SQL now provides bounded backpressure: six admitted requests per process,
+two execution slots, one-second queue timeout and cancellation-safe waiting.
+Blocking work retains permits after caller cancellation until actual completion.
+Input bounds precede admission; read-only inline-data restrictions and existing
+SQLite execution limits are unchanged. Managed workers have separate process-local
+limits. Dedicated fixtures verify exhaustion, deadline, cancellation and queued
+completion without relying on global parallel-test scheduling.

@@ -91,3 +91,14 @@ resisted the same attack in one subsequent trial. Neither representation nor
 prompt wording is an enforceable security boundary. Keep prose unverified;
 retain per-dispatch authorization and independent structured checks. See
 LIVE_INFERENCE.md for failed and successful trials with exact scope.
+
+### Bounded inline SQL backpressure
+
+Inline SQL admits at most six requests per process: two execution permits and at
+most four additional admitted waiters. Further admission fails immediately. Worker
+queue waits have a one-second deadline, are cancellation-safe, and reject inputs
+above 32,000 bytes before queue admission. Both admission and execution permits
+remain owned by blocking work until it actually ends, even if its caller cancels.
+The existing SQLite operation/row/byte limits and 100 ms evaluation deadline stay
+in force; queue waiting adds bounded latency rather than expanding SQL authority.
+Managed processes each have their own capacity; this is not a host-wide quota.

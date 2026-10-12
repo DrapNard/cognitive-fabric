@@ -1075,3 +1075,16 @@ one JSON string. Empty-context prompts preserve their hashes/cost. Old nonempty
 reference checkpoints may fail prompt-hash validation rather than silently resume
 with changed prompts. This improves separation; it is not a general injection
 safety proof, and broader adversarial evaluation remains incomplete.
+
+### SQL worker backpressure — 2026-10-12
+
+Implemented: replace immediate rejection on the third executing request with a
+bounded six-request admission ceiling, two execution slots and a one-second worker
+queue deadline. Excess admission still fails closed, queued cancellation releases
+its admission permit, and executing blocking work retains both permits until
+completion. Oversized raw input is rejected before admission. New independent
+capacity fixtures cover admission exhaustion, queue timeout, cancellation, permit
+restoration and successful queued execution. SQLite restrictions and task tool
+charges remain unchanged. This addresses a demonstrated contention path; prior
+intermittent SQL transport failures were not instrumented, so do not claim every
+historical failure's cause is proven. Runtime-lease test contention is separate.

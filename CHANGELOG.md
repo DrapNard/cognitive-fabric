@@ -847,3 +847,12 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
 - Give all model roles fixed reference-boundary advice without granting authority.
 - Record a live answer-contamination failure, failed system-only mitigation and
   one successful quoted-reference trial without claiming general safety.
+
+### Bound SQL admission and worker waiting
+
+- Admit two executing and at most four additional queued inline SQL requests per
+  process, with immediate overload rejection and a one-second queue timeout.
+- Preserve cancellation safety and hold permits through actual blocking completion;
+  reject oversized requests before admission.
+- Verify queue exhaustion, deadline, cancellation, permit restoration and successful
+  queued execution with independent capacity fixtures.
