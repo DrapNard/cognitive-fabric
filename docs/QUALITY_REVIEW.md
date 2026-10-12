@@ -1935,3 +1935,14 @@ Existing repeated recovery, registered-model and real local HTTP integrations pa
 An initial restricted-sandbox focused run could not bind its HTTP fixtures;
 the full run used the required local transport permissions. No saved prompt,
 permission or budget is automatically migrated to make an incompatible task resume.
+
+## Natural-language constraint instruction verification — 2026-10-12
+
+Formatting, all-target offline check and Clippy with denied warnings passed.
+Default-parallel all-target tests passed 355 cases, log
+`/tmp/cogfabric-language-constraints-tests.log`. A public-CLI live Qwen trial
+initially omitted a command prohibition; after refining the fixed interpreter
+instruction, a fresh repeat retained it. Original-goal preservation and immutable
+permission enforcement remained in force on both runs. See LIVE_INFERENCE.md for
+actual configurations, tasks and usage; one improved extraction does not establish
+complete constraint fidelity, independently verified prose or release readiness.

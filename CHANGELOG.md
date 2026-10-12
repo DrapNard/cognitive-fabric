@@ -879,3 +879,11 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   an explicit error for incompatible saved prompts.
 - Verify compatible metadata preserves original context and cumulative charges;
   reject unknown/null formats and altered hashes without automatic prompt migration.
+
+### Preserve explicit restrictions in language interpretation
+
+- Instruct the advisory interpreter to retain explicit prohibitions and limits
+  when simplifying objectives, without changing runtime authority.
+- Record a real omitted constraint and one successful repeat after the change.
+- Document the exercised Qwen3 8B public CLI setup with a 384-token interface
+  reservation and explicit no-thinking advice; keep prose results unverified.

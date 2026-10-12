@@ -1117,3 +1117,11 @@ format and changed prompt hash. Existing repeated recovery still validates sourc
 bytes and chronological reservations. Automatic migration of old nonempty unquoted
 reference prompts remains deliberately unsupported rather than silently weakening
 the new reference separation or substituting task context.
+
+Language-interface update: fresh public CLI settings with Qwen3 8B exercised real
+interpretation, planning admission and whole-goal solving. Initial interpretation
+omitted an explicit command prohibition; original-goal retention and runtime
+authority remained intact. A stronger fixed interface instruction preserved that
+constraint on one repeat trial. This is measured partial extraction quality,
+not a guarantee of arbitrary constraint retention. README now includes the tested
+384-token interface/no-thinking setup; detailed evidence is in LIVE_INFERENCE.md.

@@ -85,7 +85,9 @@ cargo run -- ask 'Design a Tokio service' --mode deep
 
 # Tested LM Studio model; use the exact ID returned by /v1/models.
 export COGFABRIC_MODEL=qwen/qwen3-8b
-cargo run -- ask 'Explain Rust ownership briefly' --mode standard
+cargo run -- configure-local --model qwen/qwen3-8b \
+  --api-base http://127.0.0.1:1234/v1 --interface-tokens 384 --reasoning-effort none
+cargo run -- ask 'Explain Rust ownership briefly. /no_think' --mode standard
 
 # Typed FlatBuffers Unix socket transport:
 cargo run -- serve

@@ -429,3 +429,31 @@ two tool calls, queue wait 0.011382 ms. Worker exit zero, reaped true,
 forced false. Service status and stop responses were saved; owned service exited
 zero and its socket disappeared. No provider load/unload or larger-model study
 was performed; correctness evidence applies only to this structured sorting case.
+
+### Fresh natural-language Qwen configuration — 2026-10-12
+
+A fresh workspace configured through the public CLI selected `qwen/qwen3-8b`,
+LM Studio port 1234, temperature zero, `interface_tokens=384`,
+`reasoning_effort=none` and managed workers. Other settings were normal defaults
+(8 calls, 4 cycles, 1600 reserved output tokens, 120-second task wall budget).
+STANDARD request: `Explain Rust ownership briefly. Do not run commands. /no_think`.
+
+Initial task `4da00433-5b91-4777-b7ce-eef36da44f42`, evidence
+`/tmp/cogfabric-qwen-default-language.ma1VoV`, completed as `unverified` in
+6235.392615 ms, three calls / one cycle, provider 756 input / 317 output tokens,
+1024 reserved output tokens, one tool call. Interface returned structured objective
+and `rust.s1`, but omitted the explicit command prohibition from its constraints.
+The original request, including the prohibition, remained authoritative in the
+saved context. Planner returned four dependent steps; execution skipped that
+decomposition to preserve the whole-goal budget, then solver returned prose.
+
+The fixed interface instruction now explicitly requires preserving prohibitions
+and limits. Repeat task `2042a147-4694-44bf-853d-68b6d6619515`, evidence
+`/tmp/cogfabric-qwen-language-constraints.U6pgnV`, retained constraint
+`Do not run commands`, returned an explanation as `unverified`, three calls / one
+cycle, elapsed 8640.566273 ms, inference 8628.267666 ms, provider 804 input /
+341 output tokens, 1024 reserved output tokens, 1378 prompt bytes, one tool call.
+Both workers exited zero, reaped true, forced false. No shell action was exposed
+or performed. This demonstrates one improved extraction, not reliable retention
+of every natural-language restriction, independently correct prose or a quality
+benchmark. The original objective and deterministic permissions remain necessary.
