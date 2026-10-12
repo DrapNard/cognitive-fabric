@@ -1291,7 +1291,7 @@ mod tests {
                 .unwrap();
             let outcome = engine.run("calc: 6*7", "fast").await.unwrap();
             assert_eq!(outcome.calls, 0);
-            assert_eq!(outcome.resources.tool_calls, 2);
+            assert_eq!(outcome.resources.tool_calls, 1);
             if answer == "42" {
                 assert_eq!(outcome.status, "completed");
                 assert_eq!(outcome.answer, "42");

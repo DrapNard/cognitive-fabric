@@ -568,7 +568,7 @@ mod tests {
             let correct = answer.contains("[5]");
             assert_eq!(out.status, if correct { "completed" } else { "failed" });
             assert_eq!(out.calls, 0);
-            assert_eq!(out.resources.tool_calls, 2);
+            assert_eq!(out.resources.tool_calls, 1);
             assert_eq!(
                 out.evidence
                     .iter()
@@ -644,7 +644,7 @@ mod tests {
         let store = Arc::new(crate::store::Store::in_memory().unwrap());
         let engine = crate::engine::Engine::new(
             crate::config::Config {
-                max_tool_calls: 1,
+                max_tool_calls: 0,
                 ..Default::default()
             },
             store.clone(),

@@ -88,7 +88,7 @@ jq -e '.rolled_back' "$evidence/rollback.json" >/dev/null
 run tool-worker-configure configure-tool-worker --enabled true
 jq -e '.arithmetic_process and (.sandboxed | not)' "$evidence/tool-worker-configure.json" >/dev/null
 run managed-arithmetic ask 'calc: 6 * 7' --mode fast
-jq -e '.answer == "42" and .status == "completed" and .calls == 0 and .resources.tool_calls == 2' "$evidence/managed-arithmetic.json" >/dev/null
+jq -e '.answer == "42" and .status == "completed" and .calls == 0 and .resources.tool_calls == 1' "$evidence/managed-arithmetic.json" >/dev/null
 check_worker "$state" managed-arithmetic
 run managed-sql ask 'sql:{"tables":[],"query":"SELECT 42 AS total"}' --mode fast
 jq -e '.status == "completed" and .calls == 0 and (.answer | fromjson | .rows == [[42]])' "$evidence/managed-sql.json" >/dev/null

@@ -322,13 +322,19 @@ impl Engine {
                 profile,
                 ExecutionProfile::Full | ExecutionProfile::Memory | ExecutionProfile::Experts
             );
-            let retrieve = retrieval_requested && self.cfg.max_tool_calls > 0;
+            let inline_tool = profile != ExecutionProfile::Alone
+                && (math::extract(query).is_some() || query.starts_with("sql:"));
+            let retrieve = retrieval_requested && self.cfg.max_tool_calls > 0 && !inline_tool;
             if retrieval_requested && !retrieve {
                 self.store.event(
                     &id,
                     "schedule",
                     "jev-plus",
-                    json!({"decision":"skip_retrieval","reason":"No tool budget available"}),
+                    json!({"decision":"skip_retrieval","reason":if self.cfg.max_tool_calls == 0 {
+                        "No tool budget available"
+                    } else {
+                        "Inline tool execution does not require retrieval"
+                    }}),
                 )?;
             }
             let experts = matches!(profile, ExecutionProfile::Full | ExecutionProfile::Experts);
@@ -794,6 +800,85 @@ mod expert_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn explicit_inline_tools_use_one_call_without_retrieved_evidence() {
+        for profile in [
+            ExecutionProfile::Full,
+            ExecutionProfile::Memory,
+            ExecutionProfile::Experts,
+        ] {
+            let store = Arc::new(Store::in_memory().unwrap());
+            store::bootstrap(&store).unwrap();
+            store
+                .add_document(&store::Document {
+                    id: uuid::Uuid::new_v4().to_string(),
+                    skill_id: "rust.s1".into(),
+                    title: "Inline data reference".into(),
+                    body: "calc SQL retrieval sentinel".into(),
+                    source: "fixture".into(),
+                    license: "CC0".into(),
+                })
+                .unwrap();
+            let engine = Engine::new(
+                Config {
+                    max_tool_calls: 1,
+                    max_calls: 0,
+                    ..Config::default()
+                },
+                store.clone(),
+            );
+            for query in [
+                "calc: 6*7",
+                r#"sql:{"tables":[],"query":"SELECT 42 AS total"}"#,
+            ] {
+                let previous = store.create_task(query, "fast").unwrap();
+                store
+                    .finish_task(&previous, "unverified", "untrusted previous answer")
+                    .unwrap();
+                store
+                    .publish_memory(&previous, "episode", "Historical data, not proof")
+                    .unwrap();
+                let outcome = engine.run_profile(query, "fast", profile).await.unwrap();
+                assert_eq!(outcome.status, "completed");
+                assert_eq!(outcome.calls, 0);
+                assert_eq!(outcome.resources.tool_calls, 1);
+                if query.starts_with("calc:") {
+                    assert_eq!(outcome.answer, "42");
+                } else {
+                    assert_eq!(
+                        serde_json::from_str::<serde_json::Value>(&outcome.answer).unwrap()["rows"],
+                        json!([[42]])
+                    );
+                }
+                assert!(outcome.evidence.iter().all(|e| e.starts_with("verified:")));
+                let trace = store.task(&outcome.task_id).unwrap();
+                let events = trace["events"].as_array().unwrap();
+                assert!(events.iter().any(
+                    |e| e["kind"] == "schedule" && e["payload"]["decision"] == "skip_retrieval"
+                ));
+                assert!(!events
+                    .iter()
+                    .any(|e| e["kind"] == "policy"
+                        && e["payload"]["capability"] == "knowledge.search"));
+                assert_eq!(
+                    events
+                        .iter()
+                        .filter(|e| e["kind"] == "tool_dispatch")
+                        .count(),
+                    1
+                );
+                assert!(events
+                    .iter()
+                    .filter(|e| e["kind"] == "knowledge")
+                    .all(|e| e["payload"]["documents"] == json!([])));
+                assert!(events
+                    .iter()
+                    .filter(|e| e["kind"] == "memory_retrieval")
+                    .all(|e| e["payload"]["entries"] == json!([])));
+            }
+        }
+    }
+
     #[tokio::test]
     async fn zero_tool_budget_allows_plain_inference_without_retrieval_or_tool_dispatch() {
         let store = Arc::new(Store::in_memory().unwrap());

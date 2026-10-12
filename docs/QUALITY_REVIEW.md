@@ -2436,3 +2436,31 @@ tools; detailed evidence is in LIVE_INFERENCE.md. Optional retrieval is skipped
 with a durable scheduling decision; verification is not disabled or promoted into
 success. These changes add no grants and do not interpret arbitrary natural-language
 constraints as policy. Optimized installation proof predates this source change.
+
+
+## Explicit inline tool admission — 2026-10-13
+
+Formatting, all-target check, Clippy with warnings denied and all 374 tests
+(352 library, 22 integration) passed with flatc 25.12.19. Log:
+`/tmp/cogfabric-inline-tool-admission-tests.log`. Full CLI/service smoke against
+the current debug binary also passed: log
+`/tmp/cogfabric-inline-tool-admission-smoke.log`, temporary evidence
+`/tmp/cogfabric-installed-smoke.gRvZRP`. Managed arithmetic confirms completed,
+zero model calls and one tool charge. This is debug executable verification;
+optimized installation must be refreshed before release.
+
+The first full run exposed four expectations tied to the former unnecessary
+retrieval charge. SQL comparison totals, typed progress, wrong-output accounting
+and SQL budget fixtures now reflect one dispatched tool call. Denial fixtures use
+zero tool allowance and retain no-dispatch/no-worker assertions. New Engine tests
+verify Full/Memory/Experts execution with one tool allowance, zero permitted model
+calls and no retrieved documents or episodes. Actual CLI/service worker fixtures
+also run with one tool allowance and verify reaping, unsafe-query rejection and
+zero-budget launch refusal. Host independent arithmetic/SQL checks remain intact.
+
+This reduces charged tool invocations for these explicit branches from two to
+one where retrieval was previously enabled; no latency, GPU or model-quality gain
+is inferred. Existing raw evaluation reports describe their original source and
+are not rewritten. Plain inference, structured sort/order retrieval and verification,
+model-alone ablations, permission boundaries and broad release blockers remain
+unchanged by this inline-tool optimization.

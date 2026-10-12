@@ -2,6 +2,13 @@
 
 All notable changes are documented here in English.
 
+### Reserve inline tool budgets for execution
+
+- Skip unrelated retrieval for explicit arithmetic and inline SQL objectives.
+- Complete these tasks under one tool allowance while preserving independent
+  result checks, zero-budget dispatch denial and worker cleanup.
+- Align typed progress, comparison totals and smoke checks with actual charges.
+
 ### Allow plain inference under a zero tool ceiling
 
 - Skip and audit optional retrieval when no tool calls are available.

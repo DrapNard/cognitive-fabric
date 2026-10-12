@@ -520,7 +520,7 @@ mod tests {
         assert_eq!(last.stage, Stage::Finished);
         assert_eq!(last.state, "completed");
         assert_eq!(last.model_calls, Some(0));
-        assert_eq!(last.tool_calls, Some(2));
+        assert_eq!(last.tool_calls, Some(1));
         for event in page.events {
             assert!(Progress::decode(&event.encode().unwrap()).is_ok());
         }

@@ -650,12 +650,7 @@ mod tests {
         for arm in &report["arms"].as_array().unwrap()[1..] {
             assert_eq!(arm["passed"], 1);
             assert_eq!(arm["resources"]["model_calls"], 0);
-            let expected_tools = if matches!(arm["profile"].as_str(), Some("memory" | "experts")) {
-                2
-            } else {
-                1
-            };
-            assert_eq!(arm["resources"]["tool_calls"], expected_tools);
+            assert_eq!(arm["resources"]["tool_calls"], 1);
         }
         for invalid in [
             json!({"input":"plain goal","expected":expected,"verification":"sql_result_json_v1"}),

@@ -1415,3 +1415,13 @@ dispatch; zero call/token/input/cycle coverage remains in `src/reasoning.rs`.
 All 373 tests and mandatory checks pass; a real managed Qwen explanation used one
 model call and zero tools. See CONFIGURATION.md, QUALITY_REVIEW.md and
 LIVE_INFERENCE.md. Free-form language restrictions are still advisory.
+
+
+Implemented retrieval-free explicit arithmetic/inline SQL admission in
+`src/engine.rs`: tool-enabled Full/Memory/Experts profiles skip unrelated retrieval
+and execute under one tool allowance, with original policy and host result checks.
+Zero-tool denials remain enforced. New Engine coverage verifies no retrieved
+memory/document evidence; real CLI/service worker fixtures verify one-call
+execution, reaping and zero-budget launch refusal. Progress and comparison
+resource expectations match actual charges. All 374 tests and mandatory checks
+pass; debug CLI/service smoke passes. See QUALITY_REVIEW.md for evidence.

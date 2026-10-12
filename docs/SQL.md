@@ -74,3 +74,11 @@ performs fresh SQLite verification. Unsafe queries fail and the child is reaped;
 exhausted task tool budgets prevent launch. No model call, host SQL access or new
 permission is introduced. See `WORKERS.md` for setup, shutdown limits and the
 remaining absence of an executable sandbox and automatic crash cleanup.
+
+
+Explicit inline SQL execution skips optional knowledge/episodic retrieval because
+its tables and query are fully supplied by the objective. It uses one `sql.query`
+tool allowance, including the existing independent host-side result check, and
+zero model calls. Zero tool budget still denies dispatch before worker launch.
+The model-alone comparison profile retains its ordinary inference behavior.
+Historical reports retain their original retrieval charges and source revisions.

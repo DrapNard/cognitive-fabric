@@ -37,7 +37,12 @@ verification remain denied; no check is silently treated as passed. The skip is
 audited. This tool ceiling does not disable runtime persistence, registry metadata
 or explicitly requested conversation references, and natural-language prohibitions
 remain advisory rather than a replacement for configured limits. Timeouts must be positive.
-Mode limits still clamp larger configuration values. See REASONING.md.
+Explicit arithmetic and inline `sql:` tasks skip unrelated reference/episodic
+retrieval in tool-enabled profiles. They require one tool allowance for dispatch
+and its existing host-side result check, and need no inference call. A zero tool
+allowance still denies execution. Structured sort/order memory reuse retains its
+separate retrieval and verifier charges. Mode limits still clamp larger
+configuration values. See REASONING.md.
 
 Restart the service after changing settings. Existing tasks retain a cloned
 configuration and backend handle. Runtime model labels are not cryptographic

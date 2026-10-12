@@ -24,7 +24,7 @@ fn verify(home: &Path, output: Output, expected: &str) {
     assert_eq!(outcome["answer"], expected);
     assert_eq!(outcome["status"], "completed");
     assert_eq!(outcome["calls"], 0);
-    assert_eq!(outcome["resources"]["tool_calls"], 2);
+    assert_eq!(outcome["resources"]["tool_calls"], 1);
     let store = Store::open(&home.join("fabric.sqlite3")).unwrap();
     let trace = store.task(outcome["task_id"].as_str().unwrap()).unwrap();
     let events = trace["events"].as_array().unwrap();
@@ -55,6 +55,7 @@ fn cli_launches_one_scoped_arithmetic_worker_and_reaps_it() {
     let home = std::env::temp_dir().join(format!("cogfabric-tool-cli-{}", uuid::Uuid::new_v4()));
     let cfg = Config {
         home: home.clone(),
+        max_tool_calls: 1,
         inference_process: true,
         ..Config::default()
     };
@@ -82,7 +83,7 @@ fn cli_launches_one_scoped_arithmetic_worker_and_reaps_it() {
         .any(|e| e["kind"] == "tool_worker_process_stopped" && e["payload"]["reaped"] == true));
     drop(store);
     let mut denied = Config::load(Some(home.clone()), None).unwrap();
-    denied.max_tool_calls = 1;
+    denied.max_tool_calls = 0;
     denied.save().unwrap();
     let denied = command(&home, &["ask", "calc: 6*7", "--mode", "fast"]);
     assert!(!denied.status.success());
@@ -110,6 +111,7 @@ fn socket_service_launches_and_reaps_arithmetic_workers() {
         std::env::temp_dir().join(format!("cogfabric-tool-service-{}", uuid::Uuid::new_v4()));
     let cfg = Config {
         home: home.clone(),
+        max_tool_calls: 1,
         arithmetic_process: true,
         sql_process: true,
         ..Config::default()
@@ -193,6 +195,7 @@ fn cli_launches_sql_worker_and_reaps_it_on_success_and_rejection() {
     let home = std::env::temp_dir().join(format!("cogfabric-sql-worker-{}", uuid::Uuid::new_v4()));
     let mut cfg = Config {
         home: home.clone(),
+        max_tool_calls: 1,
         arithmetic_process: true,
         inference_process: true,
         ..Config::default()
@@ -237,7 +240,7 @@ fn cli_launches_sql_worker_and_reaps_it_on_success_and_rejection() {
         .any(|e| e["kind"] == "tool_worker_process_stopped" && e["payload"]["reaped"] == true));
     drop(store);
     cfg.sql_process = true;
-    cfg.max_tool_calls = 1;
+    cfg.max_tool_calls = 0;
     cfg.save().unwrap();
     let denied = command(
         &home,
@@ -266,6 +269,7 @@ fn sql_routes_by_capability_without_launching_arithmetic_or_inference_workers() 
     let home = std::env::temp_dir().join(format!("cogfabric-sql-routing-{}", uuid::Uuid::new_v4()));
     let cfg = Config {
         home: home.clone(),
+        max_tool_calls: 1,
         arithmetic_process: true,
         inference_process: true,
         ..Config::default()
