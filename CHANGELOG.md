@@ -2,6 +2,13 @@
 
 All notable changes are documented here in English.
 
+### Retire inactive inference backend handles
+
+- Add trusted-host retirement that removes inactive versions from future rollback.
+- Preserve existing task pins and release backend handles after their final use.
+- Keep immutable identity tombstones and lifetime capacity limits; model residency
+  and managed-child shutdown remain separate responsibilities.
+
 ### Preserve the running Linux worker image across upgrades
 
 - Launch managed inference, arithmetic and SQL workers through `/proc/self/exe`.

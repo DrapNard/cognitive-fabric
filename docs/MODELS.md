@@ -151,8 +151,8 @@ rollback remains available at the history ceiling. Shutdown clears retained
 versions and revokes all task pins, including inactive versions.
 
 This is a trusted embedding API, not a model/socket lifecycle command. Inactive
-backend references and initialized queues remain retained until shutdown; 128 is
-a count ceiling, not a byte, GPU or process quota. A restored remote adapter can
+backend references and initialized queues remain retained until shutdown or explicit
+retirement; 128 is a lifetime identity count ceiling, not a byte, GPU or process quota. A restored remote adapter can
 still be disconnected or have expired grants; rollback does not renew grants,
 probe health or load/unload weights. It changes neither task permissions nor
 external model residency. Real model switching remains separately unverified.
@@ -279,3 +279,21 @@ accompanied by provider `finish_reason=length` or nonempty `reasoning_content`.
 It does not print or accept internal reasoning as answer text, increase budgets,
 or retry automatically. Provider metadata remains untrusted; these diagnostics
 report the response shape, not a verified explanation of model internals.
+
+
+### Inactive inference backend retirement
+
+Trusted Rust hosts may call `Broker::retire(id, version)` after deactivation or
+replacement. Active versions, unknown versions and stopped brokers are rejected.
+Retirement removes that version from inventory and future rollback. Existing task
+pins keep their original backend and bounded queue; once the last pin and pending
+work release it, the queue closes and its backend handle drops. The identity stays
+reserved in immutable history, so retirement cannot redefine a version or bypass
+the 128-identity ceiling. A new implementation requires a new version.
+
+This API grants no model/socket capability, sends no provider lifecycle request
+and does not attest GPU unloading or external process cleanup. Explicit backend
+shutdown and owned-child cleanup remain separate responsibilities. No automatic
+residency scheduling, durable tombstone storage or general plugin loader is implied.
+The regression observes actual backend release through a weak reference after
+successful execution through a retired pin.

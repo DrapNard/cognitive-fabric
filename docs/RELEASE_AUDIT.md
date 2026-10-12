@@ -4,14 +4,14 @@ This checklist preserves the 18 acceptance criteria in the goal objective. It is
 an evidence inventory, not a release approval. The canonical French architecture
 and the broader implementation matrix remain authoritative. Earlier test counts
 in the quality review are historical milestones. Current local verification is
-365 Rust tests (343 library, 22 integration), formatting, all-target checking and
+366 Rust tests (344 library, 22 integration), formatting, all-target checking and
 Clippy with warnings denied, using FlatBuffers compiler/crate 25.12.19.
 
 | Goal criterion | Evidence inspected | Assessment / remaining proof |
 |---|---|---|
 | 1. Workspace builds | `Cargo.toml`, all-target check | Passed locally; isolated optimized source installation also passed with cached dependencies. |
 | 2. Formatting and Clippy | Mandatory checks in `QUALITY_REVIEW.md` | Passed locally. |
-| 3. Mandatory tests | All-target test results, `tests/` | 365 passed; fixtures do not establish live model quality. |
+| 3. Mandatory tests | All-target test results, `tests/` | 366 passed; fixtures do not establish live model quality. |
 | 4. FlatBuffers IPC | `protocol/`, `src/wire.rs`, `src/fabric/`, malformed/compatibility/socket tests | Implemented for present transports; authenticated process event delivery/replay is now tested; broader module compatibility remains partial. |
 | 5. CLI/service communication | `src/service.rs`, socket tests, `tests/process_worker.rs` | Tested local transport, progress and cancellation; no general independent plugin service is claimed. |
 | 6. Compatible local LLM | `src/backend.rs`, `tests/inference_auth.rs`, `LIVE_INFERENCE.md` | Passed for Ollama and LM Studio Qwen3 8B compatible endpoints, including managed verified sorting. Native LM Studio read-only inventory passed; authenticated native access and controlled load/unload remain unverified. |
@@ -621,3 +621,15 @@ completed successfully for exact source `30a4c63c3e463a48c549d21258e714d8ccdf34f
 Compiler bootstrap, formatting, check, Clippy, tests, CLI/service smoke, security
 probes and offline training preflight passed. Watcher exited zero; local log:
 `/tmp/cogfabric-worker-image-hosted-ci.log`. The broader release blockers remain.
+
+
+Inactive inference backend retirement is implemented through trusted-host
+`Broker::retire` in `src/fabric.rs`. Active retirement and identity reuse fail;
+existing task pins remain usable, while future rollback/routes cannot select the
+retired version. `src/fabric/tests.rs` verifies backend release after the last pin
+and queue close. This improves runtime handle lifecycle without provider unload,
+new grants or general executable provisioning. Mandatory formatting, all-target
+check, Clippy with warnings denied and all 366 tests (344 library, 22 integration)
+passed on 2026-10-13 with flatc 25.12.19. Test log:
+`/tmp/cogfabric-inference-retirement-tests.log`. Optimized installation evidence
+predates this new API and must be refreshed before final release.

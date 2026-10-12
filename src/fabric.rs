@@ -326,6 +326,34 @@ impl Broker {
         Ok(())
     }
 
+    /// Release an inactive version from future rollback without disrupting pins.
+    /// The immutable identity remains reserved; external model residency is not
+    /// changed. Existing tasks retain their backend until their last pin drops.
+    pub fn retire(&self, id: &str, version: &str) -> Result<()> {
+        if id.len() > 64 || version.len() > 128 {
+            bail!("Invalid inference module version selection")
+        }
+        let mut registry = self
+            .registry
+            .write()
+            .map_err(|_| anyhow!("Module registry poisoned"))?;
+        if *self.shutdown.borrow() {
+            bail!("Module broker shut down")
+        }
+        if registry
+            .active
+            .get(id)
+            .is_some_and(|module| module.descriptor.version == version)
+        {
+            bail!("Cannot retire an active inference module version")
+        }
+        registry
+            .versions
+            .remove(&(id.into(), version.into()))
+            .context("Unknown retained inference module version")?;
+        Ok(())
+    }
+
     /// All retained version metadata, including inactive modules; no inference.
     pub fn versions(&self) -> Result<Vec<ModuleDescriptor>> {
         Ok(self

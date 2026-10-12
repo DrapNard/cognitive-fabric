@@ -1320,3 +1320,15 @@ are retained in `evaluation/results/`; see its README for exact hashes, configur
 status interpretation and limitations. This supersedes earlier pending-run statements
 only; independent label review, held-out evaluation, 1–3B/larger baselines and causal
 quality/performance evidence remain incomplete. Host compilation overlapped the run.
+
+
+Inactive inference backend retirement is implemented through trusted-host
+`Broker::retire` in `src/fabric.rs`. Active retirement and identity reuse fail;
+existing task pins remain usable, while future rollback/routes cannot select the
+retired version. `src/fabric/tests.rs` verifies backend release after the last pin
+and queue close. This improves runtime handle lifecycle without provider unload,
+new grants or general executable provisioning. Mandatory formatting, all-target
+check, Clippy with warnings denied and all 366 tests (344 library, 22 integration)
+passed on 2026-10-13 with flatc 25.12.19. Test log:
+`/tmp/cogfabric-inference-retirement-tests.log`. Optimized installation evidence
+predates this new API and must be refreshed before final release.

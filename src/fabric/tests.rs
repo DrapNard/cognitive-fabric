@@ -804,3 +804,42 @@ async fn shutdown_before_queue_initialization_prevents_backend_dispatch() {
     assert!(broker.generate("solver", "goal", 128).await.is_err());
     assert_eq!(backend.1.load(Ordering::SeqCst), 0);
 }
+
+#[tokio::test]
+async fn inactive_retirement_preserves_pins_and_releases_backend_after_last_pin() {
+    let backend = Arc::new(Fixed("retired", AtomicUsize::new(0)));
+    let weak = Arc::downgrade(&backend);
+    let broker = Broker::with_inference(backend.clone());
+    drop(backend);
+    let pinned = broker.pin().unwrap().unwrap();
+    assert!(broker.retire("inference.local", "1.0.0").is_err());
+    broker.unregister("inference.local").unwrap();
+    broker.retire("inference.local", "1.0.0").unwrap();
+    assert!(broker.versions().unwrap().is_empty());
+    assert!(broker.activate("inference.local", "1.0.0").is_err());
+    assert!(broker.retire("inference.local", "1.0.0").is_err());
+    assert!(broker
+        .register(
+            ModuleDescriptor {
+                id: "inference.local".into(),
+                version: "1.0.0".into(),
+                roles: vec!["solver".into()],
+            },
+            Arc::new(Fixed("replacement", AtomicUsize::new(0))),
+        )
+        .is_err());
+    assert!(broker.generate("solver", "goal", 128).await.is_err());
+    assert_eq!(
+        pinned.generate("solver", "goal", 128).await.unwrap().text,
+        "retired"
+    );
+    assert!(weak.upgrade().is_some());
+    drop(pinned);
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while weak.upgrade().is_some() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("Retired backend must be released after its queue and last pin close");
+}

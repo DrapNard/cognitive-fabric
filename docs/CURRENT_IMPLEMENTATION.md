@@ -647,3 +647,15 @@ budget and module checks. Legacy missing or changed fingerprints are not migrate
 automatically; read-only inspection and independent result recovery remain
 available. All 364 tests and mandatory checks pass; this is version consistency,
 not provider or executable attestation.
+
+
+Inactive inference backend retirement is implemented through trusted-host
+`Broker::retire` in `src/fabric.rs`. Active retirement and identity reuse fail;
+existing task pins remain usable, while future rollback/routes cannot select the
+retired version. `src/fabric/tests.rs` verifies backend release after the last pin
+and queue close. This improves runtime handle lifecycle without provider unload,
+new grants or general executable provisioning. Mandatory formatting, all-target
+check, Clippy with warnings denied and all 366 tests (344 library, 22 integration)
+passed on 2026-10-13 with flatc 25.12.19. Test log:
+`/tmp/cogfabric-inference-retirement-tests.log`. Optimized installation evidence
+predates this new API and must be refreshed before final release.
