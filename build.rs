@@ -15,7 +15,7 @@ fn main() {
     let version = Command::new(&compiler)
         .arg("--version")
         .output()
-        .expect("flatc not found; install FlatBuffers compiler v25.12.19");
+        .expect("flatc not found; build v25.12.19 with bash scripts/build-flatc.sh /tmp/cogfabric-flatc, then export FLATC=/tmp/cogfabric-flatc/build/flatc");
     assert!(version.status.success(), "flatc --version failed");
     let version = String::from_utf8_lossy(&version.stdout);
     assert!(

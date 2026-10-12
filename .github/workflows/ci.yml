@@ -16,10 +16,8 @@ jobs:
           components: rustfmt, clippy
       - name: Compile pinned FlatBuffers compiler
         run: |
-          git clone --depth 1 --branch v25.12.19 https://github.com/google/flatbuffers.git /tmp/flatbuffers
-          cmake -S /tmp/flatbuffers -B /tmp/flatbuffers/build -DFLATBUFFERS_BUILD_TESTS=OFF
-          cmake --build /tmp/flatbuffers/build --target flatc --parallel 2
-          echo "/tmp/flatbuffers/build" >> "$GITHUB_PATH"
+          bash scripts/build-flatc.sh /tmp/cogfabric-flatc
+          echo "FLATC=/tmp/cogfabric-flatc/build/flatc" >> "$GITHUB_ENV"
       - name: Format
         run: cargo fmt --all -- --check
       - name: Check

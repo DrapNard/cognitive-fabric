@@ -887,3 +887,11 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
 - Record a real omitted constraint and one successful repeat after the change.
 - Document the exercised Qwen3 8B public CLI setup with a 384-token interface
   reservation and explicit no-thinking advice; keep prose results unverified.
+
+### Bootstrap the exact FlatBuffers compiler
+
+- Add an unprivileged compiler bootstrap pinned to the reviewed upstream commit,
+  with bounded build concurrency, exact version checks and overwrite refusal.
+- Use the same script in CI, document persistent FLATC setup and make missing
+  compiler build errors point to an actionable command.
+- Exercise the actual upstream source build and negative argument/destination cases.

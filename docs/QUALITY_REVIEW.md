@@ -1946,3 +1946,19 @@ instruction, a fresh repeat retained it. Original-goal preservation and immutabl
 permission enforcement remained in force on both runs. See LIVE_INFERENCE.md for
 actual configurations, tasks and usage; one improved extraction does not establish
 complete constraint fidelity, independently verified prose or release readiness.
+
+## Pinned compiler bootstrap verification — 2026-10-12
+
+`bash scripts/build-flatc.sh /tmp/cogfabric-flatc-bootstrap-20261012` successfully
+cloned the public annotated v25.12.19 tag, verified source commit
+`7e163021e59cca4f8e1e35a7c828b5c6b7915953`, built flatc with two jobs and checked
+`flatc version 25.12.19`. Compiler SHA-256:
+`6689abb8a0124cc94320b4ad7e48402221c98cb001e1d07fd80cb25d170a0ed1`.
+Log: `/tmp/cogfabric-flatc-bootstrap.log`. Missing arguments, relative destination
+and existing destination each returned exit 2 without cloning or overwriting.
+`bash -n`, diff whitespace and Rust formatting checks passed. With FLATC pointing
+to this newly built compiler, all-target offline check and Clippy passed; ordinary
+parallel tests passed 355 cases, log `/tmp/cogfabric-bootstrap-compiler-tests.log`.
+CI now uses the same script; its remote run has not yet been observed for this
+change. This verifies source/compiler/runtime pairing on existing local build
+prerequisites, not a fresh OS install or reproducible binary hashes across toolchains.

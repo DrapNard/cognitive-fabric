@@ -35,6 +35,21 @@ running Cargo: `export FLATC=/absolute/path/to/flatc`. Verify
 `"$FLATC" --version` reports 25.12.19. A missing compiler is a build prerequisite
 failure; choosing a different inference model does not fix it.
 
+To build the pinned compiler without a privileged install, install Git, CMake,
+a C++ compiler and Make, then run:
+
+```bash
+mkdir -p "$HOME/.cache/cogfabric"
+bash scripts/build-flatc.sh "$HOME/.cache/cogfabric/flatc-25.12.19"
+export FLATC="$HOME/.cache/cogfabric/flatc-25.12.19/build/flatc"
+cargo build --locked
+```
+
+The destination must be new and its parent must exist. The script verifies the
+reviewed upstream commit before running CMake and limits compilation to two jobs.
+It retains source/build evidence on failure and refuses to overwrite an existing
+destination. Keep the `FLATC` export in each shell where you build the project.
+
 ## Install on Arch / CachyOS
 
 ```bash

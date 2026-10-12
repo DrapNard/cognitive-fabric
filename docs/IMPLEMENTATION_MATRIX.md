@@ -1125,3 +1125,16 @@ authority remained intact. A stronger fixed interface instruction preserved that
 constraint on one repeat trial. This is measured partial extraction quality,
 not a guarantee of arbitrary constraint retention. README now includes the tested
 384-token interface/no-thinking setup; detailed evidence is in LIVE_INFERENCE.md.
+
+### Reproducible FlatBuffers compiler bootstrap — 2026-10-12
+
+Implemented: `scripts/build-flatc.sh` clones public upstream v25.12.19, verifies
+commit `7e163021e59cca4f8e1e35a7c828b5c6b7915953` before executing CMake, builds
+with two jobs and checks the exact compiler version. It requires a new absolute
+destination, refuses existing paths and retains source/build evidence on failure.
+README documents durable user-cache installation and the FLATC export; build errors
+point to the script. CI now invokes this same bootstrap rather than a separate
+unverified-tag-only recipe. Actual public clone/build and negative argument/path
+checks passed locally. Existing Git/CMake/C++/Make prerequisites were already
+installed; this is not proof of fresh-OS prerequisite installation or authenticated
+upstream provenance beyond the reviewed commit pin and HTTPS transport.
