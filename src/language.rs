@@ -166,6 +166,42 @@ mod integration_tests {
         }
     }
     #[tokio::test]
+    async fn prior_interface_work_cannot_let_planning_consume_the_last_solver_budget() {
+        for (calls, tokens, bytes) in [(2, 1024, 8192), (3, 768, 8192), (3, 1024, 500)] {
+            let (path, mut engine, script) = setup(vec![
+                ("interface", "Malformed interpretation"),
+                ("solver", "Whole goal answer"),
+            ]);
+            engine.cfg.interface_tokens = 384;
+            engine.cfg.max_calls = calls;
+            engine.cfg.max_tokens = tokens;
+            engine.cfg.max_input_bytes = bytes;
+            let outcome = engine
+                .run(
+                    "Explain Rust borrowing in one sentence. /no_think",
+                    "standard",
+                )
+                .await
+                .unwrap();
+            assert_eq!(outcome.answer, "Whole goal answer");
+            assert_eq!(outcome.status, "unverified");
+            assert_eq!(outcome.calls, 2);
+            assert_eq!(outcome.resources.reserved_output_tokens, 768);
+            assert!(outcome.resources.prompt_bytes <= bytes);
+            assert!(script.queue.lock().unwrap().is_empty());
+            let trace = engine.store.task(&outcome.task_id).unwrap();
+            let events = trace["events"].as_array().unwrap();
+            assert!(events
+                .iter()
+                .any(|e| e["kind"] == "schedule" && e["payload"]["decision"] == "skip_planning"));
+            assert!(!events
+                .iter()
+                .any(|e| e["kind"] == "model_dispatch" && e["payload"]["role"] == "planner"));
+            drop(engine);
+            std::fs::remove_file(path).unwrap();
+        }
+    }
+    #[tokio::test]
     async fn interpretation_cannot_replace_the_goal_or_grant_a_capability() {
         let (path, engine, script) = setup(vec![
             (

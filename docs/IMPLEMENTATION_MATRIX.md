@@ -53,7 +53,7 @@ remains a pre-release. `QUALITY_REVIEW.md` preserves verification history.
 | 12, 14 | CLI/service | Partial | `src/main.rs`: initialization/configuration, ask, service controls, task-specific socket progress/cancellation, skill lifecycle, ingestion/search, task traces, candidates/rollback, benchmark, self-test; real socket fixtures | Live residency lifecycle |
 | 12, 13 | Hardware/performance claims | Partial | Optional whole-device GPU diagnostics sampled real host memory/utilization/power; no energy or large-model advantage claimed | Task-attributed telemetry, real model switching and equal-budget comparisons |
 
-All 330 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
+All 331 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
 all-target build checks and Clippy with denied warnings pass. Fixtures do not prove
 GPU integration, neural quality, immutable backend weights or live model switching.
 
@@ -864,3 +864,14 @@ silently ignoring them. Direct/managed HTTP and codec regressions plus schema
 conformance pass. All mandatory checks pass with 330 tests (309 library, 21
 integration). Provider compliance and useful real interpretation remain separate
 live evidence; no compute ceiling or model-quality claim follows from this option.
+
+Initial planner admission now reserves a whole-goal solver using remaining
+calls/tokens/prompt bytes after interface/expert work, rather than original totals.
+`src/reasoning.rs` records `admit_planning` / `skip_planning`; its minimum prompt
+reservation includes both planner and empty-strategy solver framing. Decomposition
+and exploration retain their separate stricter reservations. A new language
+regression covers independently constrained calls, tokens and prompt bytes after
+malformed interpretation, preserving the original goal and reaching a solver.
+All mandatory checks pass with 331 tests (310 library, 21 integration). This fixes
+the scheduler gap observed in the effort trial; live structured interpretation
+itself remains unverified.

@@ -1658,3 +1658,10 @@ fixtures assert the opt-in field; default fixture requests assert absence. COGB
 roundtrip/malformed tests cover v2 controls and legacy v1. Compiler `--conform`
 against the previous bootstrap schema succeeds. No arbitrary request extensions
 or budget increases are accepted.
+
+Remaining-budget planning validation (2026-10-12): mandatory formatting, offline
+all-target check/tests (310 library + 21 integration = 331) and Clippy with denied
+warnings pass with FlatBuffers 25.12.19. Log:
+`/tmp/cogfabric-planner-admission-tests.log`. The new regression independently
+constrains remaining calls/output/prompt bytes after interface dispatch and verifies
+planner refusal plus whole-goal solving; existing graphs/recovery regressions pass.

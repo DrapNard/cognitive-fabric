@@ -497,3 +497,9 @@ are unchanged. Managed workers preserve it through explicitly versioned COGB v2,
 with legacy v1 and malformed pairing tests. All mandatory checks pass with 330
 tests. This requests provider behavior; it does not attest hidden reasoning or
 prove successful structured interpretation.
+
+Planner admission now preserves the first whole-goal solver against prior
+interface/expert charges, checking remaining calls, output reservations and prompt
+bytes and auditing skipped planning. All mandatory checks pass with 331 tests.
+This corrects the two-call live trial's scheduler defect; valid real-model
+structured interpretation is still not established by that correction.

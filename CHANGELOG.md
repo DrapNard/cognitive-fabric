@@ -767,3 +767,11 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   versions/fields and invalid controls.
 - Verify direct/managed HTTP field propagation, absence by default and schema
   compatibility. Provider compliance and quality remain separately measured.
+
+### Preserve solver budget after interface work
+
+- Admit initial planning from remaining call/output/input allowances, preserving
+  capacity for the first whole-goal solver after already charged advisory work.
+- Audit skipped/admitted planning and retain decomposition/exploration reservations.
+- Regress independent call, token and prompt-byte limits after malformed intent;
+  preserve the original objective and still dispatch an affordable solver.

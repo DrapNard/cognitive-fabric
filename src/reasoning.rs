@@ -799,30 +799,44 @@ impl Session {
         )?;
         let resuming = saved_strategy.is_some();
         let mut strategy = saved_strategy.unwrap_or_default();
-        if collective
-            && !resuming
-            && mode != "fast"
-            && self.call_limit >= 2
-            && self.cfg.max_tokens >= 640
-        {
-            if let Some(plan) = self.call("planner", &base, 256).await? {
-                match Plan::parse(&plan) {
-                    Ok(graph) => {
-                        self.store.event(
-                            &self.task,
-                            "plan",
-                            "planner-r",
-                            json!({"graph":graph,"trusted_permissions":false}),
-                        )?;
-                        strategy = self.execute_plan(graph, &base).await?;
-                    }
-                    Err(err) => {
-                        self.store.event(
+        if collective && !resuming && mode != "fast" {
+            let prompt_reserve = base.len().saturating_mul(2).saturating_add(64);
+            let admitted = self
+                .call_limit
+                .saturating_sub(self.resources.calls as usize)
+                >= 2
+                && self
+                    .cfg
+                    .max_tokens
+                    .saturating_sub(self.resources.reserved_output_tokens)
+                    >= 640
+                && self
+                    .cfg
+                    .max_input_bytes
+                    .saturating_sub(self.resources.prompt_bytes)
+                    >= prompt_reserve
+                && base.len().saturating_add(64) <= 32000;
+            self.store.event(&self.task,"schedule","jev-plus",json!({"decision":if admitted {"admit_planning"} else {"skip_planning"},"reason":"Preserve first whole-goal solver call, output and prompt budget","reserved_prompt_bytes":prompt_reserve}))?;
+            if admitted {
+                if let Some(plan) = self.call("planner", &base, 256).await? {
+                    match Plan::parse(&plan) {
+                        Ok(graph) => {
+                            self.store.event(
+                                &self.task,
+                                "plan",
+                                "planner-r",
+                                json!({"graph":graph,"trusted_permissions":false}),
+                            )?;
+                            strategy = self.execute_plan(graph, &base).await?;
+                        }
+                        Err(err) => {
+                            self.store.event(
                             &self.task,
                             "plan_fallback",
                             "jev-plus",
                             json!({"reason":err.to_string(),"action":"Solve original objective"}),
                         )?;
+                        }
                     }
                 }
             }
