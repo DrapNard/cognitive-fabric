@@ -70,6 +70,40 @@ fn validate_tool_modules(modules: &[crate::fabric::tools::ModuleStatus]) -> Resu
     Ok(())
 }
 
+fn validate_inference_modules(modules: &[crate::fabric::ModuleStatus]) -> Result<()> {
+    use std::collections::{BTreeMap, BTreeSet};
+    if modules.len() > 128 {
+        bail!("Too many discovered inference versions")
+    }
+    let mut versions = BTreeSet::new();
+    let mut active = BTreeSet::new();
+    let mut roles = BTreeMap::new();
+    for module in modules {
+        let d = &module.descriptor;
+        d.validate()?;
+        if module.routing_rank.is_some_and(|rank| rank > 1_000_000)
+            || !versions.insert((&d.id, &d.version))
+            || (module.active && !active.insert(&d.id))
+        {
+            bail!("Invalid discovered inference version inventory")
+        }
+        if module.active {
+            for role in &d.roles {
+                if roles
+                    .insert(role, module.routing_rank.is_some())
+                    .is_some_and(|ranked| !ranked || module.routing_rank.is_none())
+                {
+                    bail!("Conflicting discovered inference roles")
+                }
+            }
+        }
+    }
+    if active.len() > 32 {
+        bail!("Too many active inference modules")
+    }
+    Ok(())
+}
+
 fn validate_stream(state: Option<&str>, has_progress: bool) -> Result<()> {
     if let Some(state) = state {
         if !has_progress || !matches!(state, "update" | "complete" | "timeout") {
@@ -86,6 +120,7 @@ pub enum ControlAction {
     Stop,
     Modules,
     ToolModules,
+    InferenceModules,
     TaskProgress,
     CancelTask,
     SubscribeProgress,
@@ -105,6 +140,7 @@ pub enum Message {
         accepted: bool,
         modules: Vec<crate::fabric::ModuleDescriptor>,
         tool_modules: Vec<crate::fabric::tools::ModuleStatus>,
+        inference_modules: Vec<crate::fabric::ModuleStatus>,
         active_task_id: Option<String>,
         progress: Option<(String, crate::events::ProgressPage)>,
         stream_state: Option<String>,
@@ -210,6 +246,7 @@ pub fn encode(message: &Message) -> Result<Vec<u8>> {
                         ControlAction::Stop => fb::ControlAction::Stop,
                         ControlAction::Modules => fb::ControlAction::Modules,
                         ControlAction::ToolModules => fb::ControlAction::ToolModules,
+                        ControlAction::InferenceModules => fb::ControlAction::InferenceModules,
                         ControlAction::TaskProgress => fb::ControlAction::TaskProgress,
                         ControlAction::CancelTask => fb::ControlAction::CancelTask,
                         ControlAction::SubscribeProgress => fb::ControlAction::SubscribeProgress,
@@ -224,6 +261,7 @@ pub fn encode(message: &Message) -> Result<Vec<u8>> {
             accepted,
             modules,
             tool_modules,
+            inference_modules,
             active_task_id,
             progress,
             stream_state,
@@ -261,6 +299,37 @@ pub fn encode(message: &Message) -> Result<Vec<u8>> {
                 ));
             }
             let modules = builder.create_vector(&encoded);
+            validate_inference_modules(inference_modules)?;
+            let mut encoded_inference = Vec::new();
+            for module in inference_modules {
+                let d = &module.descriptor;
+                let id = builder.create_string(&d.id);
+                let version = builder.create_string(&d.version);
+                let roles = d
+                    .roles
+                    .iter()
+                    .map(|role| builder.create_string(role))
+                    .collect::<Vec<_>>();
+                let roles = builder.create_vector(&roles);
+                let descriptor = fb::ModuleInfo::create(
+                    &mut builder,
+                    &fb::ModuleInfoArgs {
+                        id: Some(id),
+                        version: Some(version),
+                        roles: Some(roles),
+                    },
+                );
+                encoded_inference.push(fb::InferenceModuleInfo::create(
+                    &mut builder,
+                    &fb::InferenceModuleInfoArgs {
+                        descriptor: Some(descriptor),
+                        active: module.active,
+                        availability: encode_availability(module.availability),
+                        routing_rank: module.routing_rank,
+                    },
+                ));
+            }
+            let inference_modules = builder.create_vector(&encoded_inference);
             validate_tool_modules(tool_modules)?;
             let mut encoded_tools = Vec::new();
             for module in tool_modules {
@@ -314,6 +383,7 @@ pub fn encode(message: &Message) -> Result<Vec<u8>> {
                     accepted: *accepted,
                     modules: Some(modules),
                     tool_modules: Some(tool_modules),
+                    inference_modules: Some(inference_modules),
                     active_task_id,
                     progress,
                     stream_state,
@@ -463,6 +533,7 @@ pub fn decode(body: &[u8]) -> Result<Message> {
                 fb::ControlAction::Stop => ControlAction::Stop,
                 fb::ControlAction::Modules => ControlAction::Modules,
                 fb::ControlAction::ToolModules => ControlAction::ToolModules,
+                fb::ControlAction::InferenceModules => ControlAction::InferenceModules,
                 fb::ControlAction::TaskProgress => ControlAction::TaskProgress,
                 fb::ControlAction::CancelTask => ControlAction::CancelTask,
                 fb::ControlAction::SubscribeProgress => ControlAction::SubscribeProgress,
@@ -543,6 +614,40 @@ pub fn decode(body: &[u8]) -> Result<Message> {
                 }
             }
             validate_tool_modules(&tool_modules)?;
+            let mut inference_modules = Vec::new();
+            if let Some(entries) = response.inference_modules() {
+                if entries.len() > 128 {
+                    bail!("Too many discovered inference versions")
+                }
+                for entry in entries {
+                    let d = entry.descriptor();
+                    if d.id().is_empty()
+                        || d.id().len() > 64
+                        || d.version().len() > 128
+                        || d.roles().is_none_or(|roles| {
+                            roles.is_empty()
+                                || roles.len() > crate::fabric::protocol::ROLES.len()
+                                || roles
+                                    .iter()
+                                    .any(|role| !crate::fabric::protocol::ROLES.contains(&role))
+                        })
+                    {
+                        bail!("Invalid discovered inference field bounds")
+                    }
+                    inference_modules.push(crate::fabric::ModuleStatus {
+                        descriptor: crate::fabric::ModuleDescriptor {
+                            id: d.id().into(),
+                            version: d.version().into(),
+                            roles: d.roles().unwrap().iter().map(String::from).collect(),
+                        },
+                        active: entry.active(),
+                        availability: decode_availability(entry.availability())?,
+                        routing_rank: entry.routing_rank(),
+                    });
+                }
+            }
+            validate_inference_modules(&inference_modules)?;
+
             if active_task_id.is_some() && !response.active() {
                 bail!("Inactive response cannot identify an active task")
             }
@@ -576,6 +681,7 @@ pub fn decode(body: &[u8]) -> Result<Message> {
                 accepted: response.accepted(),
                 modules,
                 tool_modules,
+                inference_modules,
                 active_task_id,
                 progress,
                 stream_state: {
@@ -708,6 +814,143 @@ mod tests {
     use super::*;
 
     #[test]
+    fn inference_inventory_preserves_inactive_versions_and_ranked_states() {
+        use crate::fabric::{Availability, ModuleDescriptor, ModuleStatus};
+        let inventory = [
+            Availability::Unknown,
+            Availability::Connected,
+            Availability::InUse,
+            Availability::Closed,
+            Availability::Expired,
+            Availability::Exhausted,
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(n, availability)| ModuleStatus {
+            descriptor: ModuleDescriptor {
+                id: format!("inference.{n}"),
+                version: "1.0.0".into(),
+                roles: vec!["solver".into()],
+            },
+            active: n < 3,
+            availability,
+            routing_rank: Some(n as u32),
+        })
+        .collect::<Vec<_>>();
+        let reply = |inference_modules| Message::ControlReply {
+            id: "inventory".into(),
+            active: false,
+            accepted: true,
+            modules: Vec::new(),
+            tool_modules: Vec::new(),
+            inference_modules,
+            active_task_id: None,
+            progress: None,
+            stream_state: None,
+        };
+        let Message::ControlReply {
+            inference_modules, ..
+        } = decode(&encode(&reply(inventory.clone())).unwrap()).unwrap()
+        else {
+            panic!("Expected inventory")
+        };
+        assert_eq!(inference_modules.len(), inventory.len());
+        for (actual, expected) in inference_modules.iter().zip(&inventory) {
+            assert_eq!(actual.descriptor, expected.descriptor);
+            assert_eq!(actual.active, expected.active);
+            assert_eq!(actual.availability, expected.availability);
+            assert_eq!(actual.routing_rank, expected.routing_rank);
+        }
+        for variant in 0..5 {
+            let mut invalid = inventory.clone();
+            match variant {
+                0 => invalid.push(invalid[0].clone()),
+                1 => invalid[0].routing_rank = Some(1_000_001),
+                2 => invalid[0].routing_rank = None,
+                3 => {
+                    let mut next = invalid[0].clone();
+                    next.descriptor.version = "2.0.0".into();
+                    invalid.push(next);
+                }
+                4 => invalid[0].descriptor.roles = vec!["shell".into()],
+                _ => unreachable!(),
+            }
+            assert!(
+                encode(&reply(invalid)).is_err(),
+                "Accepted variant {variant}"
+            );
+        }
+    }
+
+    #[test]
+    fn forged_inference_inventory_rejects_states_conflicts_and_capacity() {
+        for variant in 0..5 {
+            let mut builder = flatbuffers::FlatBufferBuilder::new();
+            let count = match variant {
+                3 => 33,
+                4 => 129,
+                _ => 2,
+            };
+            let mut entries = Vec::new();
+            for n in 0..count {
+                let id = builder.create_string(&if variant == 1 {
+                    "inference.same".into()
+                } else {
+                    format!("inference.{n}")
+                });
+                let version = builder.create_string("1.0.0");
+                let role = builder.create_string("solver");
+                let roles = builder.create_vector(&[role]);
+                let descriptor = fb::ModuleInfo::create(
+                    &mut builder,
+                    &fb::ModuleInfoArgs {
+                        id: Some(id),
+                        version: Some(version),
+                        roles: Some(roles),
+                    },
+                );
+                entries.push(fb::InferenceModuleInfo::create(
+                    &mut builder,
+                    &fb::InferenceModuleInfoArgs {
+                        descriptor: Some(descriptor),
+                        active: variant != 4,
+                        availability: if variant == 0 {
+                            fb::ToolAvailability(99)
+                        } else {
+                            fb::ToolAvailability::Unknown
+                        },
+                        routing_rank: if variant == 2 { None } else { Some(0) },
+                    },
+                ));
+            }
+            let entries = builder.create_vector(&entries);
+            let response = fb::ControlResponse::create(
+                &mut builder,
+                &fb::ControlResponseArgs {
+                    inference_modules: Some(entries),
+                    ..Default::default()
+                },
+            );
+            let id = builder.create_string("forged-inference-inventory");
+            let root = fb::Envelope::create(
+                &mut builder,
+                &fb::EnvelopeArgs {
+                    version: 1,
+                    request_id: Some(id),
+                    kind: fb::MessageKind::ControlResponse,
+                    control_response: Some(response),
+                    ..Default::default()
+                },
+            );
+            builder.finish(root, Some("COGF"));
+            assert!(
+                decode(builder.finished_data()).is_err(),
+                "Accepted forged variant {variant}"
+            );
+        }
+    }
+
+    #[test]
     fn typed_tool_inventory_preserves_states_and_rejects_invalid_registries() {
         use crate::fabric::{
             tools::{Descriptor, ModuleStatus},
@@ -741,6 +984,7 @@ mod tests {
             accepted: true,
             modules: Vec::new(),
             tool_modules,
+            inference_modules: Vec::new(),
             active_task_id: None,
             progress: None,
             stream_state: None,
@@ -1000,6 +1244,7 @@ mod tests {
             accepted: true,
             modules: Vec::new(),
             tool_modules: Vec::new(),
+            inference_modules: Vec::new(),
             active_task_id: Some(task.clone()),
             progress: Some((
                 task.clone(),
@@ -1099,6 +1344,7 @@ mod tests {
             ControlAction::Stop,
             ControlAction::Modules,
             ControlAction::ToolModules,
+            ControlAction::InferenceModules,
         ] {
             let message = Message::Control {
                 id: "control".into(),
@@ -1274,6 +1520,7 @@ mod tests {
                 roles: vec!["solver".into()],
             }],
             tool_modules: Vec::new(),
+            inference_modules: Vec::new(),
         };
         let Message::ControlReply { modules, .. } = decode(&encode(&reply).unwrap()).unwrap()
         else {
@@ -1301,7 +1548,7 @@ mod tests {
         );
         builder.finish(envelope, Some("COGF"));
         assert!(
-            matches!(decode(builder.finished_data()).unwrap(),Message::ControlReply { modules, tool_modules, active_task_id:None, progress:None, .. } if modules.is_empty() && tool_modules.is_empty())
+            matches!(decode(builder.finished_data()).unwrap(),Message::ControlReply { modules, tool_modules, inference_modules, active_task_id:None, progress:None, .. } if modules.is_empty() && tool_modules.is_empty() && inference_modules.is_empty())
         );
     }
     #[test]

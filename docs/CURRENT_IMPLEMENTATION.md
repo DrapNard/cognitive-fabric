@@ -630,3 +630,11 @@ registries and excessive inventories fail closed. Borrowed string bounds precede
 copying and envelope verification bounds shared-reference traversal. Discovery
 starts no workers and grants no permissions. All 358 tests pass, including real
 socket discovery; expanded CLI/service smoke passes on the debug binary.
+
+### Inference lifecycle observation (2026-10-13)
+
+`inference-modules` and its socket variant now expose retained immutable adapter
+versions, active selection, local availability and ranks through typed, bounded
+FlatBuffers. Existing active-only `modules` remains compatible. All 361 tests and
+quality checks pass, including real socket and debug CLI/service smoke. Discovery
+does not launch inference, grant permissions or attest physical model residency.

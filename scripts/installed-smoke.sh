@@ -51,6 +51,8 @@ check_sql() {
 }
 run init init
 run self-test self-test
+run inference-modules inference-modules
+jq -e 'length == 1 and .[0].active and .[0].descriptor.id == "inference.local"' "$evidence/inference-modules.json" >/dev/null
 run tool-modules tool-modules
 jq -e 'length == 2 and all(.[]; .active) and any(.[]; .descriptor.capability == "math.evaluate") and any(.[]; .descriptor.capability == "sql.query")' "$evidence/tool-modules.json" >/dev/null
 jq -e '.math_ok and .wire_ok' "$evidence/self-test.json" >/dev/null
@@ -135,6 +137,8 @@ for ((attempt=0; attempt<200; attempt++)); do
     sleep 0.05
 done
 [[ -S "$state/fabric.sock" ]]
+run socket-inference-modules inference-modules --socket
+jq -e 'length == 1 and .[0].active and .[0].descriptor.id == "inference.local"' "$evidence/socket-inference-modules.json" >/dev/null
 run socket-tool-modules tool-modules --socket
 jq -e 'length == 2 and all(.[]; .active) and any(.[]; .descriptor.capability == "math.evaluate") and any(.[]; .descriptor.capability == "sql.query")' "$evidence/socket-tool-modules.json" >/dev/null
 run socket ask 'calc: 10 * 12' --socket

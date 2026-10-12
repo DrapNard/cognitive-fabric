@@ -2086,3 +2086,27 @@ This closes the clean Arch container prerequisite/build/install gap, not a fresh
 CachyOS desktop, live GPU setup, plugin sandbox or model quality evaluation. Arch
 package repositories remain rolling despite the pinned base image; versions are
 recorded above. Broader module lifecycle and independent evaluations remain open.
+
+### Typed inference lifecycle discovery — 2026-10-13 (Implemented)
+
+`inference-modules` / `inference-modules --socket` expose all retained adapter
+versions, roles, active selection, local availability and immutable routing ranks.
+Append-only FlatBuffers control 8 preserves old empty-vector defaults. Inventory
+limits, borrowed field bounds, duplicate versions, active version conflicts, role
+conflicts, ranks and availability enums are validated. Ranked alternatives retain
+the existing broker policy; observation grants no capabilities or model residency
+ownership. General independent executable provisioning and adaptive scheduling
+remain partial. Files: `protocol/cognitive.fbs`, `src/wire.rs`, `src/service.rs`,
+`src/main.rs`, `scripts/installed-smoke.sh`.
+
+All 361 tests (340 library, 21 integration), formatting, all-target check and
+Clippy with warnings denied pass using flatc/crate 25.12.19. Sixteen wire tests
+cover state/history round trips, malformed inbound inventories and old defaults.
+Actual socket discovery and expanded CLI/service smoke pass on the debug binary.
+Compiler `--conform` against the previous committed schema passes. Logs:
+`/tmp/cogfabric-inference-inventory-all-tests.log`,
+`/tmp/cogfabric-inference-inventory-wire.log`,
+`/tmp/cogfabric-inference-inventory-smoke.log`; smoke evidence
+`/tmp/cogfabric-installed-smoke.vEAe2u`. Optimized installed validation for this
+new revision remains pending; the clean Arch result applies to source `35c4bdc`.
+No live inference or neural safety evaluation was performed for this change.

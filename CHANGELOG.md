@@ -919,3 +919,12 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
 - Document the image-pinned disposable clean-install workflow.
 - Verify fresh dependencies, all 359 tests, quality checks and optimized installed
   CLI/service smoke on Arch Rust 1.99.0 without the host Cargo cache.
+
+### Expose typed inference lifecycle inventory
+
+- Add local and socket `inference-modules` discovery for retained versions, roles,
+  active selection, local availability and immutable routing ranks.
+- Validate inventory conflicts, bounds and unknown states with backward-compatible
+  typed FlatBuffers fields and forged-frame regressions.
+- Pass all 361 tests, mandatory checks, schema conformity and expanded CLI/service
+  smoke; model residency and general executable provisioning remain separate.

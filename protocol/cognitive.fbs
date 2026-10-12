@@ -3,7 +3,7 @@
 namespace Cognitive;
 
 enum MessageKind:ubyte { Request = 0, Response = 1, Error = 2, Control = 3, ControlResponse = 4 }
-enum ControlAction:ubyte { Status = 0, CancelActive = 1, Stop = 2, Modules = 3, TaskProgress = 4, CancelTask = 5, SubscribeProgress = 6, ToolModules = 7 }
+enum ControlAction:ubyte { Status = 0, CancelActive = 1, Stop = 2, Modules = 3, TaskProgress = 4, CancelTask = 5, SubscribeProgress = 6, ToolModules = 7, InferenceModules = 8 }
 enum ToolAvailability:ubyte { Unknown = 0, Connected = 1, InUse = 2, Closed = 3, Expired = 4, Exhausted = 5 }
 enum ReasoningMode:ubyte { Fast = 0, Standard = 1, Deep = 2, Research = 3 }
 
@@ -57,6 +57,7 @@ table ControlResponse {
   progress:ProgressPage;
   stream_state:string;
   tool_modules:[ToolModuleInfo];
+  inference_modules:[InferenceModuleInfo];
 }
 
 table ToolModuleInfo {
@@ -90,3 +91,10 @@ table Envelope {
 
 root_type Envelope;
 file_identifier "COGF";
+
+table InferenceModuleInfo {
+  descriptor:ModuleInfo (required);
+  active:bool;
+  availability:ToolAvailability;
+  routing_rank:uint = null;
+}

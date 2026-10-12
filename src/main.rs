@@ -230,6 +230,10 @@ enum Command {
         #[arg(long)]
         socket: bool,
     },
+    InferenceModules {
+        #[arg(long)]
+        socket: bool,
+    },
     ToolModules {
         #[arg(long)]
         socket: bool,
@@ -754,6 +758,11 @@ async fn main() -> Result<()> {
             service::modules(&cfg).await?
         } else {
             engine.broker.discover()?
+        })?,
+        Command::InferenceModules { socket } => serde_json::to_value(if socket {
+            service::inference_modules(&cfg).await?
+        } else {
+            engine.broker.statuses()?
         })?,
         Command::ToolModules { socket } => serde_json::to_value(if socket {
             service::tool_modules(&cfg).await?

@@ -451,3 +451,21 @@ the expanded CLI/service smoke pass. Borrowed field bounds precede string copies
 the envelope verifier limits depth to 32, tables to 4096 and apparent size to
 1 MiB, in addition to the existing 256 KiB physical frame limit. Shared oversized
 string fixtures verify early rejection. Compiler 25.12.19 schema conformity passes.
+
+### Inference-module lifecycle inventory
+
+Append-only control action 8 (`InferenceModules`) returns
+`ControlResponse.inference_modules`, with typed descriptors, active selection,
+availability enum and optional immutable routing rank. All retained versions are
+visible, bounded to 128 versions and 32 active IDs. Descriptor roles and borrowed
+string bounds are checked before copying. Duplicate versions, multiple active
+versions per ID, invalid ranks, unknown states and exclusive active role overlap
+are rejected. Ranked alternatives may share roles. Roles can change between
+immutable versions, as allowed by the host broker. Old replies omit the vector
+and decode as empty; old servers reject the unknown control.
+
+`inference-modules` queries the current CLI host; `--socket` queries the running
+service under existing owner-UID authentication. This starts no inference and
+grants no permissions. Local availability is not remote health, executable
+attestation, loaded-weight identity or ownership. Physical model residency remains
+a separate native-server operation.

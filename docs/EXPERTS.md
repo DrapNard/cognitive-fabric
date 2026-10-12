@@ -209,3 +209,12 @@ per-task worker sessions or remote health attestations. It starts no workers and
 expands no permissions. Local CLI, typed protocol, real-socket and expanded CLI/service smoke assertions
 pass. The current smoke used the debug executable; optimized installation for this
 revision remains unverified.
+
+### Operator inference inventory
+
+`cogfabric --json inference-modules` and `inference-modules --socket` expose
+retained inference adapter versions, roles, active selection, local availability
+and immutable routing ranks. This complements active-only `modules` and the tool
+inventory. Retained inactive versions may still serve previously pinned tasks;
+observations do not renew task grants or move in-flight routes. No physical model
+load/unload, executable discovery or remote health guarantee is implied.

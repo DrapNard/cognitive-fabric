@@ -273,11 +273,16 @@ fn control_response(
     let active = active_task.is_some();
     let mut modules = Vec::new();
     let mut tool_modules = Vec::new();
+    let mut inference_modules = Vec::new();
     let mut progress = None;
     let accepted = match action {
         wire::ControlAction::Status => true,
         wire::ControlAction::Modules => {
             modules = engine.broker.discover()?;
+            true
+        }
+        wire::ControlAction::InferenceModules => {
+            inference_modules = engine.broker.statuses()?;
             true
         }
         wire::ControlAction::ToolModules => {
@@ -313,6 +318,7 @@ fn control_response(
         accepted,
         modules,
         tool_modules,
+        inference_modules,
         active_task_id: active_task.clone(),
         progress,
         stream_state: None,
@@ -336,6 +342,7 @@ async fn send_progress(
                 accepted: true,
                 modules: Vec::new(),
                 tool_modules: Vec::new(),
+                inference_modules: Vec::new(),
                 active_task_id: None,
                 progress: Some((task.into(), page)),
                 stream_state: Some(state.into()),
@@ -516,6 +523,17 @@ pub async fn modules(cfg: &Config) -> Result<Vec<crate::fabric::ModuleDescriptor
         bail!("Module discovery unavailable")
     }
     Ok(modules)
+}
+
+pub async fn inference_modules(cfg: &Config) -> Result<Vec<crate::fabric::ModuleStatus>> {
+    match exchange_task_control(cfg, wire::ControlAction::InferenceModules, None, 0).await? {
+        Message::ControlReply {
+            accepted: true,
+            inference_modules,
+            ..
+        } => Ok(inference_modules),
+        _ => bail!("Inference module inventory unavailable"),
+    }
 }
 
 pub async fn tool_modules(cfg: &Config) -> Result<Vec<crate::fabric::tools::ModuleStatus>> {
@@ -852,6 +870,11 @@ mod tests {
         assert_eq!(discovered.len(), 1);
         assert_eq!(discovered[0].id, "inference.local");
         assert!(discovered[0].roles.iter().any(|role| role == "solver"));
+        let inference_inventory = inference_modules(&cfg).await.unwrap();
+        assert_eq!(inference_inventory.len(), 1);
+        assert!(inference_inventory[0].active);
+        assert_eq!(inference_inventory[0].descriptor.id, "inference.local");
+        assert_eq!(inference_inventory[0].routing_rank, None);
         let tool_inventory = tool_modules(&cfg).await.unwrap();
         assert_eq!(tool_inventory.len(), 2);
         assert!(tool_inventory.iter().all(|module| module.active));
