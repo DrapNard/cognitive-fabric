@@ -526,3 +526,9 @@ Interface/planner/critic JSON now shares one bounded exact-fence parser, preserv
 strict schemas, graph checks and advisory status. Planner graphs and critic revisions
 accept the same observed model wrapper as interpretation. All mandatory checks
 pass with 335 tests; live recursive quality and gain remain separate research evidence.
+
+Public comparison workflow checks now use the explicit `--workflow-check` flag.
+The runner rejects missing/conflicting purposes and reports public results without
+held-out review claims. All 336 tests and mandatory quality checks pass. The
+existing held-out benchmark gate is preserved; independent datasets and intended
+small-model quality measurements remain missing.
