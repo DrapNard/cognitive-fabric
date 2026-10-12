@@ -4,14 +4,14 @@ This checklist preserves the 18 acceptance criteria in the goal objective. It is
 an evidence inventory, not a release approval. The canonical French architecture
 and the broader implementation matrix remain authoritative. Earlier test counts
 in the quality review are historical milestones. Current local verification is
-364 Rust tests (343 library, 21 integration), formatting, all-target checking and
+365 Rust tests (343 library, 22 integration), formatting, all-target checking and
 Clippy with warnings denied, using FlatBuffers compiler/crate 25.12.19.
 
 | Goal criterion | Evidence inspected | Assessment / remaining proof |
 |---|---|---|
 | 1. Workspace builds | `Cargo.toml`, all-target check | Passed locally; isolated optimized source installation also passed with cached dependencies. |
 | 2. Formatting and Clippy | Mandatory checks in `QUALITY_REVIEW.md` | Passed locally. |
-| 3. Mandatory tests | All-target test results, `tests/` | 364 passed; fixtures do not establish live model quality. |
+| 3. Mandatory tests | All-target test results, `tests/` | 365 passed; fixtures do not establish live model quality. |
 | 4. FlatBuffers IPC | `protocol/`, `src/wire.rs`, `src/fabric/`, malformed/compatibility/socket tests | Implemented for present transports; authenticated process event delivery/replay is now tested; broader module compatibility remains partial. |
 | 5. CLI/service communication | `src/service.rs`, socket tests, `tests/process_worker.rs` | Tested local transport, progress and cancellation; no general independent plugin service is claimed. |
 | 6. Compatible local LLM | `src/backend.rs`, `tests/inference_auth.rs`, `LIVE_INFERENCE.md` | Passed for Ollama and LM Studio Qwen3 8B compatible endpoints, including managed verified sorting. Native LM Studio read-only inventory passed; authenticated native access and controlled load/unload remain unverified. |
@@ -596,3 +596,28 @@ are retained in `evaluation/results/`; see its README for exact hashes, configur
 status interpretation and limitations. This supersedes earlier pending-run statements
 only; independent label review, held-out evaluation, 1–3B/larger baselines and causal
 quality/performance evidence remain incomplete. Host compilation overlapped the run.
+
+
+## Optimized Linux worker image installation — 2026-10-13
+
+Source `ef572c822063dac98f80950fab7042e69dd3d112` (runtime worker fix
+`30a4c63`) installed successfully with `cargo install --offline --locked --path .
+--root /tmp/cogfabric-worker-image-install-20261013`, FlatBuffers compiler 25.12.19
+and cached dependencies. Cargo reported an optimized build time of 1m40s.
+Binary SHA-256:
+`d2a59d5a2dabb699ddba3d1163387bed8577af9b8640125ad2a3abb55011f91a`.
+The complete installed smoke passed, including CLI/service, inventory, worker
+cleanup, permissions, rollback and restore. Script SHA-256:
+`e670653a0601fae59d96ce2c41f4d2871054bcc85e1de2eb6c7886b284e333dc`.
+Local temporary evidence: `/tmp/cogfabric-installed-smoke.4Iot1W`; logs:
+`/tmp/cogfabric-worker-image-install.log` and
+`/tmp/cogfabric-worker-image-installed-smoke.log`. The executable-replacement
+condition is separately covered by the Linux Rust service integration regression;
+ordinary installed smoke alone does not exercise replacement. No live inference,
+fresh OS installation or neural safety claim follows.
+
+Hosted CI [38319222910](https://github.com/DrapNard/cognitive-fabric/actions/runs/38319222910)
+completed successfully for exact source `30a4c63c3e463a48c549d21258e714d8ccdf34fa`.
+Compiler bootstrap, formatting, check, Clippy, tests, CLI/service smoke, security
+probes and offline training preflight passed. Watcher exited zero; local log:
+`/tmp/cogfabric-worker-image-hosted-ci.log`. The broader release blockers remain.

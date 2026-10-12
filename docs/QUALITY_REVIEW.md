@@ -2256,3 +2256,28 @@ are retained in `evaluation/results/`; see its README for exact hashes, configur
 status interpretation and limitations. This supersedes earlier pending-run statements
 only; independent label review, held-out evaluation, 1–3B/larger baselines and causal
 quality/performance evidence remain incomplete. Host compilation overlapped the run.
+
+
+## Optimized Linux worker image installation — 2026-10-13
+
+Source `ef572c822063dac98f80950fab7042e69dd3d112` (runtime worker fix
+`30a4c63`) installed successfully with `cargo install --offline --locked --path .
+--root /tmp/cogfabric-worker-image-install-20261013`, FlatBuffers compiler 25.12.19
+and cached dependencies. Cargo reported an optimized build time of 1m40s.
+Binary SHA-256:
+`d2a59d5a2dabb699ddba3d1163387bed8577af9b8640125ad2a3abb55011f91a`.
+The complete installed smoke passed, including CLI/service, inventory, worker
+cleanup, permissions, rollback and restore. Script SHA-256:
+`e670653a0601fae59d96ce2c41f4d2871054bcc85e1de2eb6c7886b284e333dc`.
+Local temporary evidence: `/tmp/cogfabric-installed-smoke.4Iot1W`; logs:
+`/tmp/cogfabric-worker-image-install.log` and
+`/tmp/cogfabric-worker-image-installed-smoke.log`. The executable-replacement
+condition is separately covered by the Linux Rust service integration regression;
+ordinary installed smoke alone does not exercise replacement. No live inference,
+fresh OS installation or neural safety claim follows.
+
+Hosted CI [38319222910](https://github.com/DrapNard/cognitive-fabric/actions/runs/38319222910)
+completed successfully for exact source `30a4c63c3e463a48c549d21258e714d8ccdf34fa`.
+Compiler bootstrap, formatting, check, Clippy, tests, CLI/service smoke, security
+probes and offline training preflight passed. Watcher exited zero; local log:
+`/tmp/cogfabric-worker-image-hosted-ci.log`. The broader release blockers remain.
