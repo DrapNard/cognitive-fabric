@@ -1008,3 +1008,5 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
 - Pass all 364 tests, mandatory quality checks and isolated CLI/service smoke.
 
 - Add read-only `resume-preview` with shared admission validation and remaining budget reporting; approved resume still revalidates.
+
+- Bypass initialization and migrations for recovery preview; preserve workspace permissions and reject missing or legacy state.

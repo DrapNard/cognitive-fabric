@@ -2527,3 +2527,26 @@ Validation: formatting, all-target check, Clippy with warnings denied, and
 Socket/HTTP tests required execution outside sandbox network restrictions; the
 initial restricted run failed on those operations. Full results are recorded in
 `/tmp/cogfabric-resume-preview-tests.log`.
+
+## Read-only preview CLI startup correction (2026-10-13)
+
+Status: **Implemented**. Actual CLI integration exposed that common startup
+ran `Config::prepare` and database bootstrap before preview, repairing directory
+permissions and permitting initialization writes. Preview now branches before
+that startup and uses `Store::open_existing_read_only` with SQLite read-only and
+query-only flags, the current schema requirement and a five-second busy timeout.
+No migrations or bootstrap run. Existing checkpoint validation remains shared.
+
+`tests/resume_worker.rs` now exercises preview through the actual executable
+before both successful and cancelled managed continuation. It checks that an
+unsafe workspace is rejected without repairing permissions, safe preview leaves
+task status/events unchanged, and no HTTP request reaches the provider. Another
+negative test proves missing state is not created and old schemas are not
+migrated. This corrects the previous CLI claim; its direct library tests alone
+did not cover startup behavior. SQLite may use normal read-side WAL shared-memory
+coordination; the cooperative lease file may still be created.
+
+Validation: formatting, all-target check, Clippy with warnings denied and all
+376 Rust tests (353 library, 23 integration) passed with flatc 25.12.19.
+Actual socket/HTTP integration ran outside network-restricted sandboxing.
+Full test log: `/tmp/cogfabric-preview-readonly-tests.log`.

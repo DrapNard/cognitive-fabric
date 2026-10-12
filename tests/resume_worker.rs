@@ -93,6 +93,59 @@ fn run(cancel: bool) {
         store.event(&task,"subtask","jev-plus",json!({"node":{"step":plan["steps"][0],"state":state,"result":if state=="unverified" {Some("original advice")} else {None}}})).unwrap();
     }
     store.finish_task(&task, "interrupted", "").unwrap();
+    // Preview must use the actual CLI, validate managed workspace permissions,
+    // and leave the recorded checkpoint untouched before the approved resume.
+    let snapshot = || {
+        let db = rusqlite::Connection::open_with_flags(
+            cfg.db(),
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .unwrap();
+        let count: u64 = db
+            .query_row("SELECT count(*) FROM events", [], |r| r.get(0))
+            .unwrap();
+        let status: String = db
+            .query_row("SELECT status FROM tasks WHERE id=?1", [&task], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        (count, status)
+    };
+    let before = snapshot();
+    let preview = || {
+        Command::new(env!("CARGO_BIN_EXE_cogfabric"))
+            .arg("--home")
+            .arg(&home)
+            .args(["--json", "resume-preview", &task])
+            .output()
+            .unwrap()
+    };
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&home, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(!preview().status.success());
+    assert_eq!(
+        std::fs::metadata(&home).unwrap().permissions().mode() & 0o777,
+        0o755
+    );
+    std::fs::set_permissions(&home, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let inspected = preview();
+    assert!(
+        inspected.status.success(),
+        "{}",
+        String::from_utf8_lossy(&inspected.stderr)
+    );
+    let inspected: serde_json::Value = serde_json::from_slice(&inspected.stdout).unwrap();
+    assert_eq!(inspected["checkpoint_eligible"], true);
+    assert_eq!(inspected["resume_authorized"], false);
+    assert_eq!(inspected["managed_worker"], true);
+    assert_eq!(inspected["consumed"]["calls"], 2);
+    assert_eq!(snapshot(), before);
+    listener.set_nonblocking(true).unwrap();
+    assert_eq!(
+        listener.accept().unwrap_err().kind(),
+        std::io::ErrorKind::WouldBlock
+    );
+    listener.set_nonblocking(false).unwrap();
     let (entered, received) = std::sync::mpsc::channel();
     let server = std::thread::spawn(move || {
         for answer in ["remaining advice", "[1,2,3]"] {
@@ -219,5 +272,35 @@ fn run(cancel: bool) {
     assert!(store.recover_workers().unwrap().is_empty());
     drop(_session);
     drop(store);
+    std::fs::remove_dir_all(home).unwrap();
+}
+
+#[test]
+fn preview_does_not_initialize_missing_state_or_migrate_legacy_databases() {
+    let home =
+        std::env::temp_dir().join(format!("fabric-preview-missing-{}", uuid::Uuid::new_v4()));
+    let task = uuid::Uuid::new_v4().to_string();
+    let preview = || {
+        Command::new(env!("CARGO_BIN_EXE_cogfabric"))
+            .arg("--home")
+            .arg(&home)
+            .args(["--json", "resume-preview", &task])
+            .output()
+            .unwrap()
+    };
+    assert!(!preview().status.success());
+    assert!(!home.exists());
+    std::fs::create_dir(&home).unwrap();
+    let path = home.join("fabric.sqlite3");
+    let db = rusqlite::Connection::open(&path).unwrap();
+    db.pragma_update(None, "user_version", 1).unwrap();
+    assert!(!preview().status.success());
+    assert_eq!(
+        db.pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0))
+            .unwrap(),
+        1
+    );
+    assert!(!home.join("fabric.sqlite3.runtime.lock").exists());
+    drop(db);
     std::fs::remove_dir_all(home).unwrap();
 }

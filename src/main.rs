@@ -451,6 +451,14 @@ async fn main() -> Result<()> {
         )?;
         return Ok(());
     }
+    if let Command::ResumePreview { id } = &cli.command {
+        let store = Store::open_existing_read_only(&cfg.db())?;
+        output(
+            &cogfabric::recovery::continuation::preview(&store, id)?,
+            cli.json,
+        )?;
+        return Ok(());
+    }
     cfg.prepare()?;
     let store = Arc::new(Store::open_with_limit(&cfg.db(), cfg.max_database_bytes)?);
     store::bootstrap(&store)?;

@@ -117,6 +117,23 @@ impl Store {
             .lock()
             .map_err(|_| anyhow!("Database mutex poisoned"))
     }
+    /// Open an existing current-schema database without migrations or bootstrap writes.
+    pub fn open_existing_read_only(path: &Path) -> Result<Self> {
+        if path.is_symlink() {
+            bail!("Database path cannot be a symlink")
+        }
+        let db = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        db.busy_timeout(std::time::Duration::from_secs(5))?;
+        let version: i64 = db.pragma_query_value(None, "user_version", |r| r.get(0))?;
+        if version != 6 {
+            bail!("Read-only inspection requires the current database schema")
+        }
+        let mut store = Self::from_frozen_connection(db)?;
+        let mut lease = path.as_os_str().to_os_string();
+        lease.push(".runtime.lock");
+        store.runtime_lock = Some(lease.into());
+        Ok(store)
+    }
     pub fn open(path: &Path) -> Result<Self> {
         Self::open_with_limit(path, crate::storage::DEFAULT_DATABASE_BYTES)
     }

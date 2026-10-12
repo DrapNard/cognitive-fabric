@@ -5,7 +5,10 @@ to inspect current continuation eligibility, checkpoint phase, subtask states,
 and consumed/remaining inference budgets. It uses the same admission checks as
 `resume-task`, including prompt fingerprints, original deadlines and managed
 workspace validation, under an exclusive runtime lease and a bounded read
-transaction. It does not change tasks or events, launch workers, or grant
+transaction. CLI startup opens only an existing current-schema database in
+read-only/query-only mode, bypassing directory creation, permission repair,
+migrations and registry bootstrap. Missing or older databases are rejected.
+It does not change tasks or events, launch workers, or grant
 approval. Query, context and prior answers are omitted. The cooperative lease
 file may be created. Wall-time availability is sampled and immediately ages;
 actual resume revalidates everything and still requires `--human-approve`.
