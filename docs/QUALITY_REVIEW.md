@@ -1625,3 +1625,10 @@ verifies discovery and role restriction. Optimized installation must be refreshe
 Fresh optimized source installation and installed smoke passed for `8506352`.
 Evidence/hashes are in `RELEASE_AUDIT.md`; this closes the installation gap for
 transport identity validation. No additional live-model study was run.
+
+Event rollback validation (2026-10-12): mandatory formatting, offline all-target
+check/tests and Clippy with warnings denied pass with FlatBuffers 25.12.19.
+Tests: 306 library + 21 integration = 327. Log:
+`/tmp/cogfabric-event-rollback-tests.log`. Live/replay filtering, immutable metadata,
+rollback at full history and active-capacity refusal are covered. Optimized
+installation verification is pending for this source.

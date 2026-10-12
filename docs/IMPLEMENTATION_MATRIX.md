@@ -53,7 +53,7 @@ remains a pre-release. `QUALITY_REVIEW.md` preserves verification history.
 | 12, 14 | CLI/service | Partial | `src/main.rs`: initialization/configuration, ask, service controls, task-specific socket progress/cancellation, skill lifecycle, ingestion/search, task traces, candidates/rollback, benchmark, self-test; real socket fixtures | Live residency lifecycle |
 | 12, 13 | Hardware/performance claims | Partial | Optional whole-device GPU diagnostics sampled real host memory/utilization/power; no energy or large-model advantage claimed | Task-attributed telemetry, real model switching and equal-budget comparisons |
 
-All 325 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
+All 327 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
 all-target build checks and Clippy with denied warnings pass. Fixtures do not prove
 GPU integration, neural quality, immutable backend weights or live model switching.
 
@@ -820,3 +820,11 @@ Optimized installation and installed CLI/service smoke passed for `8506352`;
 above is closed. The leading summary table now reflects implemented authenticated
 process transports and live generation without implying general actor provisioning,
 loaded-weight attestation or model quality. Broader lifecycle work remains partial.
+
+Event-module rollback: **Implemented** in `src/events/modules.rs`. Trusted hosts
+can restore immutable registered metadata for future subscriptions; existing
+observer/process grants and durable replay retain pinned filters. Regressions
+cover rollback after unregistration, live/replay filtering, version forgery,
+unknown selectors, 128-version history and 32-active-module reactivation bounds.
+The registry remains process-local; executable health/provisioning and persistent
+general module lifecycle remain partial. See `EVENTS.md`.

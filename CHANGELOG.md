@@ -743,3 +743,10 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
 - Preserve connected IDs/versions/roles in initial broker discovery and task pins.
 - Provide fallible initial construction and test no-dispatch rejection plus actual
   child-process role isolation. No loaded-weight attestation is implied.
+
+### Event module version rollback
+
+- Retain bounded immutable event descriptors for trusted host reactivation.
+- Preserve in-flight subscription and durable replay filters across rollback.
+- Enforce active/history capacity and reject unknown/redefined versions without
+  adding observer permissions or executable loading.

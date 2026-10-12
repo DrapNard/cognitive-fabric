@@ -201,3 +201,20 @@ Tests cover filtered empty-page advancement, saved-position reconnect after
 unregistration, replay/live overlap, pinned filters, protocol compatibility and
 cursor-only frame/time exhaustion. This supersedes the IPC-replay limitation
 above; automatic provisioning and general module commands remain incomplete.
+
+### Host event-module rollback
+
+`Store::activate_event_module(id, version)` restores a previously registered
+immutable descriptor, including after unregistration. Future subscriptions use its
+stage filter; existing subscriptions and authenticated process grants retain their
+original task/version/filter. Durable replay uses each subscription's pinned
+filter, regardless of the currently active version. `event_module_versions()`
+lists retained metadata, including inactive entries, without creating observers.
+
+History is capped at 128 versions and 32 active module IDs. Activation at full
+history is allowed, but cannot exceed the active-module ceiling; unknown selectors
+and forged version replacement fail without changing active routes. Metadata is
+process-local and is lost when the Store/runtime closes. Retention contains bounded
+descriptors, not executable backends or subscribed queues. This trusted host API
+adds no model/IPC command or task-observation permission, and provides no backend
+health, automatic process provisioning or persistent executable lifecycle.

@@ -35,6 +35,7 @@ impl EventModule {
 pub(super) struct Registry {
     active: BTreeMap<String, EventModule>,
     seen: BTreeSet<(String, String)>,
+    versions: BTreeMap<(String, String), EventModule>,
 }
 
 pub struct ModuleSubscription {
@@ -120,8 +121,42 @@ impl crate::store::Store {
         registry
             .seen
             .insert((descriptor.id.clone(), descriptor.version.clone()));
+        registry.versions.insert(
+            (descriptor.id.clone(), descriptor.version.clone()),
+            descriptor.clone(),
+        );
         registry.active.insert(descriptor.id.clone(), descriptor);
         Ok(())
+    }
+    /// Trusted host rollback. Existing subscription grants remain unchanged.
+    pub fn activate_event_module(&self, id: &str, version: &str) -> Result<()> {
+        if id.len() > 64 || version.len() > 128 {
+            bail!("Invalid event module version selection")
+        }
+        let mut registry = self
+            .events
+            .modules
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Event registry poisoned"))?;
+        let descriptor = registry
+            .versions
+            .get(&(id.into(), version.into()))
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("Unknown registered event module version"))?;
+        if !registry.active.contains_key(id) && registry.active.len() >= 32 {
+            bail!("Active event module capacity exhausted")
+        }
+        registry.active.insert(id.into(), descriptor);
+        Ok(())
+    }
+    /// Retained immutable metadata, including inactive versions. Process-local.
+    pub fn event_module_versions(&self) -> Result<Vec<EventModule>> {
+        let registry = self
+            .events
+            .modules
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Event registry poisoned"))?;
+        Ok(registry.versions.values().cloned().collect())
     }
     pub fn unregister_event_module(&self, id: &str) -> Result<()> {
         let mut registry = self
@@ -306,11 +341,99 @@ mod tests {
             .subscribe_module_progress(&task, "scheduler.local")
             .is_ok());
     }
+    #[tokio::test]
+    async fn rollback_preserves_existing_observer_filters_and_durable_replay() {
+        let store = crate::store::Store::in_memory().unwrap();
+        let task = store.create_task("rollback", "fast").unwrap();
+        store
+            .register_event_module(descriptor("1.0.0", Stage::Finished))
+            .unwrap();
+        store
+            .register_event_module(descriptor("2.0.0", Stage::Routing))
+            .unwrap();
+        let mut newer = store
+            .subscribe_module_progress(&task, "scheduler.local")
+            .unwrap();
+        store.unregister_event_module("scheduler.local").unwrap();
+        store
+            .activate_event_module("scheduler.local", "1.0.0")
+            .unwrap();
+        let mut restored = store
+            .subscribe_module_progress(&task, "scheduler.local")
+            .unwrap();
+        assert_eq!(restored.descriptor().version, "1.0.0");
+        assert_eq!(newer.descriptor().version, "2.0.0");
+        store
+            .event(&task, "route", "jev-plus", serde_json::json!({}))
+            .unwrap();
+        store
+            .event(
+                &task,
+                "outcome",
+                "runtime",
+                serde_json::json!({"status":"unverified"}),
+            )
+            .unwrap();
+        assert_eq!(
+            newer.receive().await.unwrap().unwrap().stage,
+            Stage::Routing
+        );
+        assert_eq!(
+            restored.receive().await.unwrap().unwrap().stage,
+            Stage::Finished
+        );
+        assert_eq!(
+            newer.progress_since(&store, 0).unwrap().events[0].stage,
+            Stage::Routing
+        );
+        assert_eq!(
+            restored.progress_since(&store, 0).unwrap().events[0].stage,
+            Stage::Finished
+        );
+        assert_eq!(store.event_module_versions().unwrap().len(), 2);
+        assert!(store
+            .activate_event_module("scheduler.local", "9.0.0")
+            .is_err());
+        assert!(store
+            .activate_event_module(&"x".repeat(65), "1.0.0")
+            .is_err());
+        assert!(store
+            .register_event_module(descriptor("1.0.0", Stage::Routing))
+            .is_err());
+        assert_eq!(store.discover_event_modules().unwrap()[0].version, "1.0.0");
+    }
 }
 
 #[cfg(test)]
 mod capacity_tests {
     use super::*;
+    #[test]
+    fn reactivation_cannot_exceed_active_module_capacity() {
+        let store = crate::store::Store::in_memory().unwrap();
+        store
+            .register_event_module(EventModule {
+                id: "retired".into(),
+                version: "1.0.0".into(),
+                stages: vec![Stage::Finished],
+            })
+            .unwrap();
+        store.unregister_event_module("retired").unwrap();
+        for index in 0..32 {
+            store
+                .register_event_module(EventModule {
+                    id: format!("module.{index}"),
+                    version: "1.0.0".into(),
+                    stages: vec![Stage::Started],
+                })
+                .unwrap();
+        }
+        assert!(store.activate_event_module("retired", "1.0.0").is_err());
+        assert_eq!(store.discover_event_modules().unwrap().len(), 32);
+        assert_eq!(store.event_module_versions().unwrap().len(), 33);
+        store.unregister_event_module("module.0").unwrap();
+        store.activate_event_module("retired", "1.0.0").unwrap();
+        assert_eq!(store.discover_event_modules().unwrap().len(), 32);
+    }
     #[test]
     fn limits_active_modules_and_retains_immutable_version_history() {
         let store = crate::store::Store::in_memory().unwrap();
@@ -340,7 +463,11 @@ mod capacity_tests {
                 .unwrap();
         }
         assert_eq!(store.discover_event_modules().unwrap().len(), 32);
+        assert_eq!(store.event_module_versions().unwrap().len(), 128);
+        store.activate_event_module("module.0", "1.0.0").unwrap();
         store.unregister_event_module("module.0").unwrap();
+        store.activate_event_module("module.0", "97.0.0").unwrap();
+        assert_eq!(store.event_module_versions().unwrap().len(), 128);
         assert!(store
             .register_event_module(EventModule {
                 id: "replacement".into(),

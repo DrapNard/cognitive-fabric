@@ -477,3 +477,9 @@ construction and validated during registration. Changed module IDs, versions or
 roles fail before inference; actual child-process discovery now reports its fixed
 connected scope. All mandatory checks pass with 325 tests (304 library, 21
 integration). This is trusted metadata consistency, not loaded-weight attestation.
+
+Event module registrations now retain immutable metadata for host rollback and
+reactivation. Future observers use the selected filter; existing live/replay and
+process grants retain pinned versions. Active/history ceilings remain enforced.
+All mandatory quality checks pass with 327 tests (306 library, 21 integration).
+This adds process-local metadata lifecycle, not executable loading or persistence.
