@@ -1166,3 +1166,19 @@ Optimized installed validation for source `75e7e8a` now passes the expanded smok
 and direct Qwen3 8B independently checked sorting with thinking disabled. The
 initial default-thinking request exhausted its output reservation, correctly
 reported as failure. See RELEASE_AUDIT.md for actual results and remaining gates.
+
+### Inbound inventory security regressions — 2026-10-13
+
+Implemented in `src/wire.rs`: raw FlatBuffers fixtures bypass the trusted encoder
+and confirm rejection of duplicate versions, multiple active versions, capability
+identity changes, invalid ranks, excessive active/history counts and exclusive
+capability overlap. Shared-string cases now separately exercise early field-bound
+rejection and the 1 MiB apparent-size verifier limit using a physically small
+frame with 128 repeated references. No runtime permission or behavior changes.
+
+All 359 tests (338 library, 21 integration), formatting, all-target check and
+Clippy with warnings denied pass; 14 wire tests pass. Logs:
+`/tmp/cogfabric-inbound-all-tests.log`, `/tmp/cogfabric-inbound-inventory-tests.log`.
+An initial Clippy pattern-style warning was corrected before the final pass.
+These deterministic tests strengthen malformed-frame/resource-exhaustion evidence;
+they do not establish general plugin isolation or neural safety.

@@ -905,3 +905,10 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
 - Bound borrowed fields before copying and cap envelope verifier resource use.
 - Verify socket inventory and expanded CLI/service smoke; all 358 tests, formatting,
   all-target check, Clippy and pinned-generator schema conformity pass.
+
+### Verify hostile inbound tool inventories
+
+- Exercise registry conflicts and capacity limits with forged FlatBuffers,
+  bypassing the trusted encoder.
+- Verify early borrowed-field rejection and shared-reference verifier exhaustion.
+- Pass all 359 tests and mandatory quality checks.

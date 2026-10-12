@@ -4,14 +4,14 @@ This checklist preserves the 18 acceptance criteria in the goal objective. It is
 an evidence inventory, not a release approval. The canonical French architecture
 and the broader implementation matrix remain authoritative. Earlier test counts
 in the quality review are historical milestones. Current local verification is
-358 Rust tests (337 library, 21 integration), formatting, all-target checking and
+359 Rust tests (338 library, 21 integration), formatting, all-target checking and
 Clippy with warnings denied, using FlatBuffers compiler/crate 25.12.19.
 
 | Goal criterion | Evidence inspected | Assessment / remaining proof |
 |---|---|---|
 | 1. Workspace builds | `Cargo.toml`, all-target check | Passed locally; isolated optimized source installation also passed with cached dependencies. |
 | 2. Formatting and Clippy | Mandatory checks in `QUALITY_REVIEW.md` | Passed locally. |
-| 3. Mandatory tests | All-target test results, `tests/` | 358 passed; fixtures do not establish live model quality. |
+| 3. Mandatory tests | All-target test results, `tests/` | 359 passed; fixtures do not establish live model quality. |
 | 4. FlatBuffers IPC | `protocol/`, `src/wire.rs`, `src/fabric/`, malformed/compatibility/socket tests | Implemented for present transports; authenticated process event delivery/replay is now tested; broader module compatibility remains partial. |
 | 5. CLI/service communication | `src/service.rs`, socket tests, `tests/process_worker.rs` | Tested local transport, progress and cancellation; no general independent plugin service is claimed. |
 | 6. Compatible local LLM | `src/backend.rs`, `tests/inference_auth.rs`, `LIVE_INFERENCE.md` | Passed for Ollama and LM Studio Qwen3 8B compatible endpoints, including managed verified sorting. Native LM Studio read-only inventory passed; authenticated native access and controlled load/unload remain unverified. |
@@ -499,3 +499,13 @@ tool charges. Files: `/tmp/cogfabric-inventory-installed-qwen.json` and
 `/tmp/cogfabric-inventory-installed-qwen-sort.json`. This is one public direct
 inference smoke, not evidence of general reasoning gains, held-out quality or
 neural safety. Defaults do not guarantee useful answers from thinking models.
+
+## Hosted typed-inventory verification — 2026-10-13
+
+GitHub Actions run [38313961901](https://github.com/DrapNard/cognitive-fabric/actions/runs/38313961901)
+passed for source `75e7e8ab83bffb2641754bdde605bb687b2f1102`, including verified
+compiler bootstrap, formatting, check, Clippy, all tests, CLI/service smoke,
+security probes and offline training preflight. Watcher exit status was zero;
+log `/tmp/cogfabric-inventory-hosted-ci.log`. This supplies hosted fresh-checkout
+evidence for typed inventory, not model quality or neural safety. Checkout Node
+runtime and upcoming ubuntu-latest image warnings remain maintenance items.

@@ -823,17 +823,85 @@ mod tests {
     }
 
     #[test]
+    fn forged_tool_inventories_fail_decoder_registry_validation() {
+        for variant in 0..7 {
+            let mut builder = flatbuffers::FlatBufferBuilder::new();
+            let count = match variant {
+                4 => 33,
+                5 => 129,
+                _ => 2,
+            };
+            let mut entries = Vec::new();
+            for n in 0..count {
+                let same_id = matches!(variant, 0..=2);
+                let id = if same_id {
+                    "tool.same".into()
+                } else {
+                    format!("tool.{n}")
+                };
+                let args = fb::ToolModuleInfoArgs {
+                    id: Some(builder.create_string(&id)),
+                    version: Some(builder.create_string(if same_id && variant != 0 && n == 1 {
+                        "2.0.0"
+                    } else {
+                        "1.0.0"
+                    })),
+                    capability: Some(builder.create_string(if variant == 2 && n == 1 {
+                        "sql.query"
+                    } else {
+                        "math.evaluate"
+                    })),
+                    active: variant != 2 && variant != 5,
+                    routing_rank: if variant == 6 && n == 0 {
+                        None
+                    } else {
+                        Some(if variant == 3 { 1_000_001 } else { 0 })
+                    },
+                    ..Default::default()
+                };
+                entries.push(fb::ToolModuleInfo::create(&mut builder, &args));
+            }
+            let entries = builder.create_vector(&entries);
+            let response = fb::ControlResponse::create(
+                &mut builder,
+                &fb::ControlResponseArgs {
+                    tool_modules: Some(entries),
+                    ..Default::default()
+                },
+            );
+            let id = builder.create_string("forged-registry");
+            let root = fb::Envelope::create(
+                &mut builder,
+                &fb::EnvelopeArgs {
+                    version: 1,
+                    request_id: Some(id),
+                    kind: fb::MessageKind::ControlResponse,
+                    control_response: Some(response),
+                    ..Default::default()
+                },
+            );
+            builder.finish(root, Some("COGF"));
+            assert!(
+                decode(builder.finished_data()).is_err(),
+                "Accepted forged variant {variant}"
+            );
+        }
+    }
+
+    #[test]
     fn shared_tool_strings_are_bounded_before_inventory_copying() {
-        for variant in 0..3 {
+        for variant in 0..6 {
+            let copies = if variant < 3 { 8 } else { 128 };
+            let field = variant % 3;
             let mut builder = flatbuffers::FlatBufferBuilder::new();
             let oversized = "x".repeat(64_000);
-            let id = builder.create_string(if variant == 0 {
+            let id = builder.create_string(if field == 0 {
                 &oversized
             } else {
                 "math.remote"
             });
-            let version = builder.create_string(if variant == 1 { &oversized } else { "1.0.0" });
-            let capability = builder.create_string(if variant == 2 {
+            let version = builder.create_string(if field == 1 { &oversized } else { "1.0.0" });
+            let capability = builder.create_string(if field == 2 {
                 &oversized
             } else {
                 "math.evaluate"
@@ -847,7 +915,7 @@ mod tests {
                     ..Default::default()
                 },
             );
-            let modules = builder.create_vector(&[module; 8]);
+            let modules = builder.create_vector(&vec![module; copies]);
             let response = fb::ControlResponse::create(
                 &mut builder,
                 &fb::ControlResponseArgs {
@@ -869,7 +937,12 @@ mod tests {
             builder.finish(root, Some("COGF"));
             assert!(builder.finished_data().len() < MAX_FRAME);
             let error = decode(builder.finished_data()).unwrap_err().to_string();
-            assert!(error.contains("tool field bounds"), "{error}");
+            let expected = if copies == 8 {
+                "tool field bounds"
+            } else {
+                "Invalid FlatBuffers message"
+            };
+            assert!(error.contains(expected), "{error}");
         }
     }
     #[test]

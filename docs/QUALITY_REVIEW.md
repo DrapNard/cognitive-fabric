@@ -2035,3 +2035,29 @@ tool charges. Files: `/tmp/cogfabric-inventory-installed-qwen.json` and
 `/tmp/cogfabric-inventory-installed-qwen-sort.json`. This is one public direct
 inference smoke, not evidence of general reasoning gains, held-out quality or
 neural safety. Defaults do not guarantee useful answers from thinking models.
+
+## Hosted typed-inventory verification — 2026-10-13
+
+GitHub Actions run [38313961901](https://github.com/DrapNard/cognitive-fabric/actions/runs/38313961901)
+passed for source `75e7e8ab83bffb2641754bdde605bb687b2f1102`, including verified
+compiler bootstrap, formatting, check, Clippy, all tests, CLI/service smoke,
+security probes and offline training preflight. Watcher exit status was zero;
+log `/tmp/cogfabric-inventory-hosted-ci.log`. This supplies hosted fresh-checkout
+evidence for typed inventory, not model quality or neural safety. Checkout Node
+runtime and upcoming ubuntu-latest image warnings remain maintenance items.
+
+### Inbound inventory security regressions — 2026-10-13
+
+Implemented in `src/wire.rs`: raw FlatBuffers fixtures bypass the trusted encoder
+and confirm rejection of duplicate versions, multiple active versions, capability
+identity changes, invalid ranks, excessive active/history counts and exclusive
+capability overlap. Shared-string cases now separately exercise early field-bound
+rejection and the 1 MiB apparent-size verifier limit using a physically small
+frame with 128 repeated references. No runtime permission or behavior changes.
+
+All 359 tests (338 library, 21 integration), formatting, all-target check and
+Clippy with warnings denied pass; 14 wire tests pass. Logs:
+`/tmp/cogfabric-inbound-all-tests.log`, `/tmp/cogfabric-inbound-inventory-tests.log`.
+An initial Clippy pattern-style warning was corrected before the final pass.
+These deterministic tests strengthen malformed-frame/resource-exhaustion evidence;
+they do not establish general plugin isolation or neural safety.
