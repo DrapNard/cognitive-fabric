@@ -1215,3 +1215,7 @@ Compiler `--conform` against the previous committed schema passes. Logs:
 `/tmp/cogfabric-installed-smoke.vEAe2u`. Optimized installed validation for this
 new revision remains pending; the clean Arch result applies to source `35c4bdc`.
 No live inference or neural safety evaluation was performed for this change.
+
+The inference-inventory optimized installation gap above is now closed for
+`da2a8b9`: expanded installed CLI/service smoke passes. RELEASE_AUDIT.md records
+the binary hash, log and evidence; broad executable provisioning remains partial.

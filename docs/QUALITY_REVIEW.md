@@ -2110,3 +2110,23 @@ Compiler `--conform` against the previous committed schema passes. Logs:
 `/tmp/cogfabric-installed-smoke.vEAe2u`. Optimized installed validation for this
 new revision remains pending; the clean Arch result applies to source `35c4bdc`.
 No live inference or neural safety evaluation was performed for this change.
+
+## Optimized inference inventory installation — 2026-10-13
+
+Source `da2a8b9910afc9e782aa270531991d0c94430050` installed with locked offline
+dependencies and flatc 25.12.19 in 51.44s at
+`/tmp/cogfabric-inference-inventory-install-20261013`. Binary SHA-256:
+`e4056d00b8804680e75b91279dcd8b391941d7ad124160b4d0323d1b2358853e`.
+Expanded installed CLI/service smoke passed, including inference inventory on
+local and socket paths. Log `/tmp/cogfabric-inference-inventory-installed-smoke.log`,
+evidence `/tmp/cogfabric-installed-smoke.dTE5ul`. This closes the optimized install
+gap for typed inference inventory; the clean Arch result remains source `35c4bdc`.
+No live inference or neural safety evaluation is implied by this smoke.
+
+Hosted CI run [38315452946](https://github.com/DrapNard/cognitive-fabric/actions/runs/38315452946)
+passed for `da2a8b9910afc9e782aa270531991d0c94430050`, including compiler bootstrap,
+mandatory checks, all tests, expanded CLI/service smoke, security probes and
+offline training preflight. Watcher exit zero; retained log
+`/tmp/cogfabric-inference-inventory-hosted-ci.log`. Node-runtime and runner-image
+migration warnings remain maintenance items. This is hosted workflow evidence,
+not an independent model-quality evaluation.
