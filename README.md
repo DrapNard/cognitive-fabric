@@ -53,12 +53,16 @@ destination. Keep the `FLATC` export in each shell where you build the project.
 ## Install on Arch / CachyOS
 
 ```bash
-sudo pacman -S --needed rust flatbuffers
-cargo build --release
-cargo test
+sudo pacman -Syu --needed rust flatbuffers base-devel cmake git jq
+flatc --version # must report 25.12.19; otherwise use the pinned bootstrap above
+cargo build --locked --release
+cargo test --locked
 ./target/release/cogfabric --home ./.local init
 ./target/release/cogfabric --home ./.local self-test
 ```
+
+For the reproducible disposable Arch workflow, see
+[clean installation validation](docs/INSTALLATION_VALIDATION.md).
 
 ## Install a standalone binary
 

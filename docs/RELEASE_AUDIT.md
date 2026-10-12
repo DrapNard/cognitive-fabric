@@ -25,7 +25,7 @@ Clippy with warnings denied, using FlatBuffers compiler/crate 25.12.19.
 | 14. Lifecycle documented | `MODELS.md`, `EXPERTS.md`, `WORKERS.md` | Metadata lifecycle documented; explicit native load/unload is fixture-tested; real native read-only inventory passed; lifecycle mutations and ownership-aware automatic scheduling remain incomplete. |
 | 15. Reproducible benchmarks | `src/benchmarking.rs`, `evaluation/`, `BENCHMARKING.md` | Six-arm runner and public live workflows exist for Ollama and Qwen3 8B; reviewed unseen dataset and held-out equal-budget model study missing. |
 | 16. Accurate matrix | `IMPLEMENTATION_MATRIX.md` | Partial statuses retained; historical paragraphs must be read with later explicit superseding entries. |
-| 17. Verified docs/installation | `README.md`, CI workflow | Isolated source install and offline CLI walkthrough passed; live Qwen setup was exercised; clean-OS prerequisite setup remains unverified. |
+| 17. Verified docs/installation | `README.md`, CI workflow | Isolated source install and offline CLI walkthrough passed; live Qwen setup was exercised; clean Arch container setup now passes; CachyOS desktop/GPU setup remains unverified. |
 | 18. Honest experimental claims | `EVOLUTION.md`, `MODELS.md`, `THREAT_MODEL.md` | Neural adaptation remains experimental and neural promotion denied; no trained Jev or superiority claim. |
 
 ## Next verifiable milestones
@@ -509,3 +509,28 @@ security probes and offline training preflight. Watcher exit status was zero;
 log `/tmp/cogfabric-inventory-hosted-ci.log`. This supplies hosted fresh-checkout
 evidence for typed inventory, not model quality or neural safety. Checkout Node
 runtime and upcoming ubuntu-latest image warnings remain maintenance items.
+
+## Clean Arch container validation — 2026-10-13
+
+Source `35c4bdc6c4d4dcab5bc5c819fe94bd983f0eeef4` passed a fresh rootless Podman
+run using official Arch image digest
+`sha256:363129b67b2bc6c5a634f8fb4961a7e2eba213a2ec075d159127b1260290a722`.
+No host Cargo cache, credentials or Git metadata were mounted; tracked source was
+archived into a read-only temporary mount. Container package setup installed Rust
+1.99.0, Cargo 1.99.0 and system FlatBuffers 25.12.19. The reviewed pinned compiler
+bootstrap also passed. Fresh locked dependency downloads, formatting, all-target
+check, all 359 tests (338 library, 21 integration) and Clippy with warnings denied
+passed. Optimized install completed in 2m12s and the full installed smoke passed,
+including socket tool inventory, security probes and managed worker cleanup.
+The driver exited zero. Retained host log: `/tmp/cogfabric-arch-clean-install.log`.
+Installed binary SHA-256:
+`a8924a69ec8bf9bf9469b8f22f4f0795e5db26b676e4addfe7b21cdf6ada7fbd`.
+
+The disposable container was removed normally; its smoke path
+`/tmp/cogfabric-installed-smoke.irCFWl` is historical container-local output, not
+a retained host artifact. `INSTALLATION_VALIDATION.md` supplies the reproducible
+workflow; README now includes build/smoke prerequisites and locked commands.
+This closes the clean Arch container prerequisite/build/install gap, not a fresh
+CachyOS desktop, live GPU setup, plugin sandbox or model quality evaluation. Arch
+package repositories remain rolling despite the pinned base image; versions are
+recorded above. Broader module lifecycle and independent evaluations remain open.

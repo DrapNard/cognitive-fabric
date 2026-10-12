@@ -2061,3 +2061,28 @@ Clippy with warnings denied pass; 14 wire tests pass. Logs:
 An initial Clippy pattern-style warning was corrected before the final pass.
 These deterministic tests strengthen malformed-frame/resource-exhaustion evidence;
 they do not establish general plugin isolation or neural safety.
+
+## Clean Arch container validation — 2026-10-13
+
+Source `35c4bdc6c4d4dcab5bc5c819fe94bd983f0eeef4` passed a fresh rootless Podman
+run using official Arch image digest
+`sha256:363129b67b2bc6c5a634f8fb4961a7e2eba213a2ec075d159127b1260290a722`.
+No host Cargo cache, credentials or Git metadata were mounted; tracked source was
+archived into a read-only temporary mount. Container package setup installed Rust
+1.99.0, Cargo 1.99.0 and system FlatBuffers 25.12.19. The reviewed pinned compiler
+bootstrap also passed. Fresh locked dependency downloads, formatting, all-target
+check, all 359 tests (338 library, 21 integration) and Clippy with warnings denied
+passed. Optimized install completed in 2m12s and the full installed smoke passed,
+including socket tool inventory, security probes and managed worker cleanup.
+The driver exited zero. Retained host log: `/tmp/cogfabric-arch-clean-install.log`.
+Installed binary SHA-256:
+`a8924a69ec8bf9bf9469b8f22f4f0795e5db26b676e4addfe7b21cdf6ada7fbd`.
+
+The disposable container was removed normally; its smoke path
+`/tmp/cogfabric-installed-smoke.irCFWl` is historical container-local output, not
+a retained host artifact. `INSTALLATION_VALIDATION.md` supplies the reproducible
+workflow; README now includes build/smoke prerequisites and locked commands.
+This closes the clean Arch container prerequisite/build/install gap, not a fresh
+CachyOS desktop, live GPU setup, plugin sandbox or model quality evaluation. Arch
+package repositories remain rolling despite the pinned base image; versions are
+recorded above. Broader module lifecycle and independent evaluations remain open.

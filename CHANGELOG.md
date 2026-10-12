@@ -912,3 +912,10 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   bypassing the trusted encoder.
 - Verify early borrowed-field rejection and shared-reference verifier exhaustion.
 - Pass all 359 tests and mandatory quality checks.
+
+### Verify clean Arch installation
+
+- Include build and smoke-test prerequisites and locked builds in Arch setup.
+- Document the image-pinned disposable clean-install workflow.
+- Verify fresh dependencies, all 359 tests, quality checks and optimized installed
+  CLI/service smoke on Arch Rust 1.99.0 without the host Cargo cache.

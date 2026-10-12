@@ -1182,3 +1182,12 @@ Clippy with warnings denied pass; 14 wire tests pass. Logs:
 An initial Clippy pattern-style warning was corrected before the final pass.
 These deterministic tests strengthen malformed-frame/resource-exhaustion evidence;
 they do not establish general plugin isolation or neural safety.
+
+### Clean installation prerequisites — 2026-10-13 (Implemented for Arch container)
+
+A fresh rootless official Arch container passed package installation, pinned
+compiler bootstrap, locked builds, all 359 tests, formatting, Clippy and optimized
+CLI/service smoke without the host Cargo cache. README now includes build/smoke
+prerequisites; `INSTALLATION_VALIDATION.md` records a reproducible image-pinned
+workflow. QUALITY_REVIEW.md retains actual versions, hash and terminal log.
+CachyOS-specific desktop/GPU setup and broader release requirements remain open.
