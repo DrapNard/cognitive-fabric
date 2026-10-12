@@ -250,6 +250,7 @@ impl Module {
 struct Registry {
     active: BTreeMap<String, Arc<Module>>,
     seen: BTreeSet<(String, String)>,
+    versions: BTreeMap<(String, String), Arc<Module>>,
 }
 pub struct Broker {
     registry: RwLock<Registry>,
@@ -367,16 +368,65 @@ impl Broker {
         registry
             .seen
             .insert((descriptor.id.clone(), descriptor.version.clone()));
-        registry.active.insert(
-            descriptor.id.clone(),
-            Arc::new(Module {
-                descriptor,
-                backend,
-                queue: OnceCell::new(),
-                stop: self.stop.clone(),
-            }),
+        let module = Arc::new(Module {
+            descriptor,
+            backend,
+            queue: OnceCell::new(),
+            stop: self.stop.clone(),
+        });
+        registry.versions.insert(
+            (
+                module.descriptor.id.clone(),
+                module.descriptor.version.clone(),
+            ),
+            module.clone(),
         );
+        registry.active.insert(module.descriptor.id.clone(), module);
         Ok(())
+    }
+    /// Trusted host lifecycle API; reuses an immutable registered backend.
+    /// Activation changes future pins only and grants no task permission.
+    pub fn activate(&self, id: &str, version: &str) -> Result<()> {
+        if id.len() > 64 || version.len() > 64 {
+            bail!("Invalid capability version selection")
+        }
+        let mut registry = self
+            .registry
+            .write()
+            .map_err(|_| anyhow::anyhow!("Capability registry poisoned"))?;
+        if *self.stop.borrow() {
+            bail!("Capability registry stopped")
+        }
+        let module = registry
+            .versions
+            .get(&(id.into(), version.into()))
+            .cloned()
+            .context("Unknown registered capability version")?;
+        let descriptor = &module.descriptor;
+        if registry
+            .active
+            .get(id)
+            .is_some_and(|m| m.descriptor.capability != descriptor.capability)
+            || registry
+                .active
+                .values()
+                .any(|m| m.descriptor.id != id && m.descriptor.capability == descriptor.capability)
+        {
+            bail!("Conflicting active capability module")
+        }
+        registry.active.insert(id.into(), module);
+        Ok(())
+    }
+    /// Registered metadata, including inactive versions; not a backend health probe.
+    pub fn versions(&self) -> Result<Vec<Descriptor>> {
+        Ok(self
+            .registry
+            .read()
+            .map_err(|_| anyhow::anyhow!("Capability registry poisoned"))?
+            .versions
+            .values()
+            .map(|m| m.descriptor.clone())
+            .collect())
     }
     pub fn unregister(&self, id: &str) -> Result<()> {
         self.registry
@@ -421,6 +471,7 @@ impl Broker {
             .map_err(|_| anyhow::anyhow!("Capability registry poisoned"))?;
         self.stop.send_replace(true);
         registry.active.clear();
+        registry.versions.clear();
         Ok(())
     }
 }
@@ -523,6 +574,69 @@ mod tests {
             version: version.into(),
             capability: "math.evaluate".into(),
         }
+    }
+    #[tokio::test]
+    async fn rollback_reuses_immutable_backend_and_preserves_inflight_pins() {
+        let broker = Broker::default();
+        let task = uuid::Uuid::new_v4().to_string();
+        broker
+            .register(descriptor("2.0.0"), Arc::new(Fixed("replacement")))
+            .unwrap();
+        let replacement = broker.pin().unwrap().unwrap();
+        broker.activate("arithmetic.local", "1.0.0").unwrap();
+        let rolled_back = broker.pin().unwrap().unwrap();
+        assert_eq!(
+            rolled_back
+                .evaluate(&task, "jev-plus", "6*7")
+                .await
+                .unwrap(),
+            "42"
+        );
+        assert_eq!(
+            replacement
+                .evaluate(&task, "jev-plus", "6*7")
+                .await
+                .unwrap(),
+            "replacement"
+        );
+        assert_eq!(broker.versions().unwrap().len(), 3);
+        broker.unregister("arithmetic.local").unwrap();
+        broker.activate("arithmetic.local", "2.0.0").unwrap();
+        assert_eq!(broker.pin().unwrap().unwrap().descriptor().version, "2.0.0");
+        assert!(broker.activate("arithmetic.local", "9.0.0").is_err());
+        assert!(broker
+            .register(descriptor("1.0.0"), Arc::new(Fixed("forged")))
+            .is_err());
+        broker.shutdown().unwrap();
+        assert!(broker.versions().unwrap().is_empty());
+        assert!(broker.activate("arithmetic.local", "1.0.0").is_err());
+        assert!(rolled_back
+            .evaluate(&task, "jev-plus", "6*7")
+            .await
+            .is_err());
+        assert!(replacement
+            .evaluate(&task, "jev-plus", "6*7")
+            .await
+            .is_err());
+    }
+    #[tokio::test]
+    async fn rollback_refuses_cross_module_capability_conflicts() {
+        let broker = Broker::default();
+        broker.unregister("arithmetic.local").unwrap();
+        let mut alternate = descriptor("1.0.0");
+        alternate.id = "alternate.math".into();
+        broker.register(alternate, Arc::new(LocalMath)).unwrap();
+        assert!(broker.activate("arithmetic.local", "1.0.0").is_err());
+        assert_eq!(
+            broker.pin().unwrap().unwrap().descriptor().id,
+            "alternate.math"
+        );
+        broker.unregister("alternate.math").unwrap();
+        broker.activate("arithmetic.local", "1.0.0").unwrap();
+        assert_eq!(
+            broker.pin().unwrap().unwrap().descriptor().id,
+            "arithmetic.local"
+        );
     }
     #[tokio::test]
     async fn routing_preserves_versions_and_shutdown_revokes_old_handles() {
