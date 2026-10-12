@@ -758,3 +758,12 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
 - Pass the admitted reservation through existing typed inference commands.
 - Test legacy settings, invalid limits, exact charging and refusal before dispatch
   when the reservation cannot fit. Empty provider output remains a visible failure.
+
+### Preserve opt-in provider reasoning controls
+
+- Add a strict optional local provider effort setting without changing default
+  requests, permissions or task budgets.
+- Carry explicit settings in COGB v2; retain legacy v1 and reject mismatched
+  versions/fields and invalid controls.
+- Verify direct/managed HTTP field propagation, absence by default and schema
+  compatibility. Provider compliance and quality remain separately measured.

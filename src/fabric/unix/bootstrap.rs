@@ -93,7 +93,11 @@ impl Bootstrap {
             ));
         }
         let args = fb::BootstrapArgs {
-            version: 1,
+            version: if self.config.reasoning_effort.is_some() {
+                2
+            } else {
+                1
+            },
             task_id: Some(builder.create_string(&self.task)),
             backend: Some(builder.create_string(&self.config.backend)),
             model: Some(builder.create_string(&self.config.model)),
@@ -111,6 +115,11 @@ impl Bootstrap {
                 .inference_auth_scope
                 .as_ref()
                 .map(|scope| builder.create_string(scope)),
+            reasoning_effort: self
+                .config
+                .reasoning_effort
+                .as_ref()
+                .map(|value| builder.create_string(value)),
         };
         let root = fb::Bootstrap::create(&mut builder, &args);
         builder.finish(root, Some("COGB"));
@@ -127,7 +136,11 @@ impl Bootstrap {
             bail!("Invalid worker bootstrap frame")
         }
         let packet = flatbuffers::root::<fb::Bootstrap>(bytes)?;
-        if packet.version() != 1
+        if !matches!(packet.version(), 1 | 2)
+            || (packet.version() == 2) != packet.reasoning_effort().is_some()
+            || packet
+                .reasoning_effort()
+                .is_some_and(|value| value.len() > 6)
             || packet.task_id().len() > 64
             || packet.backend().len() > 32
             || packet.model().len() > 256
@@ -151,6 +164,7 @@ impl Bootstrap {
             max_database_bytes: packet.max_database_bytes(),
             max_wall_seconds: packet.max_wall_seconds(),
             inference_auth_scope: packet.inference_auth_scope().map(str::to_string),
+            reasoning_effort: packet.reasoning_effort().map(str::to_string),
             interpret_goals: false,
             synthesize_results: false,
             ..Config::default()
@@ -209,7 +223,7 @@ mod tests {
     }
     #[test]
     fn forged_versions_duplicate_roles_and_nonlocal_settings_fail_decode() {
-        for invalid in 0..4 {
+        for invalid in 0..7 {
             let mut builder = flatbuffers::FlatBufferBuilder::new();
             let role = builder.create_string("solver");
             let model = builder.create_string("fixture");
@@ -227,7 +241,7 @@ mod tests {
                 builder.create_vector(&[profile])
             };
             let args = fb::BootstrapArgs {
-                version: if invalid == 0 { 2 } else { 1 },
+                version: if matches!(invalid, 0 | 5 | 6) { 2 } else { 1 },
                 task_id: Some(builder.create_string(&uuid::Uuid::new_v4().to_string())),
                 backend: Some(builder.create_string("openai-local")),
                 model: Some(model),
@@ -245,6 +259,12 @@ mod tests {
                 max_database_bytes: 256_000_000,
                 max_wall_seconds: if invalid == 3 { 3601 } else { 300 },
                 inference_auth_scope: None,
+                reasoning_effort: match invalid {
+                    4 => Some(builder.create_string("none")),
+                    5 => Some(builder.create_string("bogus")),
+                    6 => Some(builder.create_string("oversized")),
+                    _ => None,
+                },
             };
             let root = fb::Bootstrap::create(&mut builder, &args);
             builder.finish(root, Some("COGB"));
@@ -259,6 +279,7 @@ mod tests {
             max_database_bytes: 64_000_000,
             max_wall_seconds: 3600,
             model: "pinned-model".into(),
+            reasoning_effort: Some("none".into()),
             inference_auth_scope: Some("http://127.0.0.1:1234/v1".into()),
             max_calls: 4,
             max_tokens: 512,
@@ -280,6 +301,7 @@ mod tests {
         let decoded = Bootstrap::decode(&bytes).unwrap();
         assert_eq!(decoded.task, original.task);
         assert_eq!(decoded.config.model, "pinned-model");
+        assert_eq!(decoded.config.reasoning_effort.as_deref(), Some("none"));
         assert_eq!(
             decoded.config.inference_auth_scope,
             original.config.inference_auth_scope

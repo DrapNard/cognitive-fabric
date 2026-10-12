@@ -20,6 +20,7 @@ table Bootstrap {
   max_database_bytes:ulong = 256000000;
   max_wall_seconds:ulong = 300;
   inference_auth_scope:string;
+  reasoning_effort:string;
 }
 root_type Bootstrap;
 file_identifier "COGB";

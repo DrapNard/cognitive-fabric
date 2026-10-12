@@ -53,7 +53,7 @@ remains a pre-release. `QUALITY_REVIEW.md` preserves verification history.
 | 12, 14 | CLI/service | Partial | `src/main.rs`: initialization/configuration, ask, service controls, task-specific socket progress/cancellation, skill lifecycle, ingestion/search, task traces, candidates/rollback, benchmark, self-test; real socket fixtures | Live residency lifecycle |
 | 12, 13 | Hardware/performance claims | Partial | Optional whole-device GPU diagnostics sampled real host memory/utilization/power; no energy or large-model advantage claimed | Task-attributed telemetry, real model switching and equal-budget comparisons |
 
-All 329 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
+All 330 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
 all-target build checks and Clippy with denied warnings pass. Fixtures do not prove
 GPU integration, neural quality, immutable backend weights or live model switching.
 
@@ -854,3 +854,13 @@ inference timeout before producing a structured goal. The reservation/timeout
 were enforced and one call stayed charged, but live interpretation remains
 unverified. `LIVE_INFERENCE.md` records both attempts; neither is a benchmark or
 successful language-interface result.
+
+Provider reasoning control: **Implemented** in `src/config.rs`, `src/backend.rs`,
+`src/main.rs`, `protocol/bootstrap.fbs` and `src/fabric/unix/bootstrap.rs`.
+Operator-only configuration accepts a fixed optional effort value; default HTTP
+requests/configuration identities remain unchanged. Versioned COGB v2 preserves
+explicit settings through workers and rejects incompatible shapes instead of
+silently ignoring them. Direct/managed HTTP and codec regressions plus schema
+conformance pass. All mandatory checks pass with 330 tests (309 library, 21
+integration). Provider compliance and useful real interpretation remain separate
+live evidence; no compute ceiling or model-quality claim follows from this option.

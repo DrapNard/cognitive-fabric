@@ -420,3 +420,13 @@ or new IPC frames. Reviewed `worker-files-preview` / `worker-files-apply` bind
 workspace/task/event and filesystem identities under the exclusive runtime lease.
 Intent and result audits remain distinct because filesystem removal cannot share
 a SQLite rollback. See `RECOVERY.md` for supported limits and negative evidence.
+
+COGB bootstrap v2 appends optional `reasoning_effort` for operator-selected local
+provider controls. The host emits v2 exactly when the field is present; v1 must
+omit it. New workers accept v1/v2 and validate exact shape plus the fixed
+`none`/`low`/`medium`/`high` allowlist before HTTP inference. Old v1 workers reject
+v2. `flatc --conform` against the prior schema passes with compiler 25.12.19;
+malformed version/field pairings and oversized/unknown controls are regression
+tested. This transports one request setting, not a permission or hidden-compute
+attestation. Internal protocol remains typed FlatBuffers; only external HTTP uses
+JSON `reasoning_effort`.

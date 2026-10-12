@@ -1649,3 +1649,12 @@ Installed CLI configuration saved 384 interface tokens and rejected 4097 without
 altering the valid file. `RELEASE_AUDIT.md` records binary hashes and workflow
 logs. The separate live interpretation trial timed out at the original limit;
 this does not undermine the deterministic admission tests or prove model quality.
+
+Provider effort validation (2026-10-12): formatting, offline all-target check,
+all-target tests (309 library + 21 integration = 330) and Clippy with denied
+warnings pass using FlatBuffers 25.12.19. Log:
+`/tmp/cogfabric-reasoning-effort-tests.log`. Actual direct/managed authenticated HTTP
+fixtures assert the opt-in field; default fixture requests assert absence. COGB
+roundtrip/malformed tests cover v2 controls and legacy v1. Compiler `--conform`
+against the previous bootstrap schema succeeds. No arbitrary request extensions
+or budget increases are accepted.

@@ -152,14 +152,21 @@ pub async fn generate_report(
         .timeout(Duration::from_secs(cfg.timeout_seconds))
         .build()?;
     let credential = crate::credentials::resolve(cfg)?;
-    let mut request = client.post(endpoint).json(&json!({
+    let mut payload = json!({
         "model": model, "stream": false, "temperature": temperature,
         "max_tokens": max_tokens,
         "messages": [
             {"role":"system", "content":system},
             {"role":"user", "content": prompt}
         ]
-    }));
+    });
+    if let Some(effort) = &cfg.reasoning_effort {
+        if !matches!(effort.as_str(), "none" | "low" | "medium" | "high") {
+            bail!("Unsupported provider reasoning effort")
+        }
+        payload["reasoning_effort"] = json!(effort);
+    }
+    let mut request = client.post(endpoint).json(&payload);
     if let Some(credential) = &credential {
         request = credential.apply(request)?;
     }
@@ -280,6 +287,7 @@ mod tests {
                         .unwrap();
                         assert_eq!(payload["model"], "fixture-role-model");
                         assert_eq!(payload["temperature"], 0.0);
+                        assert!(payload.get("reasoning_effort").is_none());
                         break;
                     }
                 }

@@ -184,3 +184,27 @@ change. Saved nondefault settings are included in task configuration snapshots,
 backups and restoration; default serialization omits the new field to preserve
 legacy configuration identity. Old configurations deserialize to 128. Empty
 provider text remains a visible failure, never an inferred answer or free retry.
+
+### Opt-in provider reasoning control
+
+`configure-local --model MODEL --reasoning-effort none` sends the optional
+`reasoning_effort` field to the configured local compatible endpoint. Accepted
+values are `none`, `low`, `medium`, `high`; CLI `default` removes the override.
+Default configurations omit the field entirely and preserve legacy serialization.
+The override applies to all roles and configured role models for that task.
+Provider/model support varies: unsupported requests can fail or be interpreted by
+the server, so the framework does not promise control over hidden reasoning.
+No arbitrary extra HTTP options, new model privileges or enlarged budgets are added.
+
+[Ollama's compatibility documentation](https://docs.ollama.com/api/openai-compatibility)
+describes this field, with model-dependent behavior and `none` requesting disabled
+thinking for supported boolean controls. This is a provider request, not proof of
+actual internal compute or output quality. Empty text/timeouts remain failures.
+
+Managed workers carry an explicit override through COGB bootstrap version 2; the
+optional FlatBuffers field is appended compatibly. Version 1 remains emitted when
+no override exists. Receivers reject version 1 with an override or version 2
+without one, invalid names and oversized fields; older version-1 workers reject
+version 2 rather than silently ignoring the requested setting. Cumulative worker
+limits and authorization are unchanged. Task configuration snapshots and backups
+retain nondefault overrides; changing host settings cannot change pinned tasks.

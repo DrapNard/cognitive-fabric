@@ -48,6 +48,9 @@ fn scoped_authentication_works_in_direct_and_managed_inference_and_rejects_echoe
                             })
                             .unwrap();
                         if raw.len() >= end + 4 + length {
+                            let payload: serde_json::Value =
+                                serde_json::from_slice(&raw[end + 4..end + 4 + length]).unwrap();
+                            assert_eq!(payload["reasoning_effort"], "none");
                             break;
                         }
                     }
@@ -74,6 +77,7 @@ fn scoped_authentication_works_in_direct_and_managed_inference_and_rejects_echoe
                 api_base: endpoint.clone(),
                 inference_auth_scope: Some(endpoint),
                 inference_process: managed,
+                reasoning_effort: Some("none".into()),
                 interpret_goals: false,
                 ..Config::default()
             };

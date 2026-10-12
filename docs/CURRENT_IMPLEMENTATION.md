@@ -490,3 +490,10 @@ reservation (`interface_tokens`, default 128, 1–4096), configurable through
 limits still govern admission. All mandatory checks pass with 329 tests. Live
 interpretation quality remains separately evaluated; this option does not turn
 empty/invalid model responses into success or grant permissions.
+
+Local inference now supports an optional strict provider `reasoning_effort`
+override, configurable with `configure-local --reasoning-effort`; default requests
+are unchanged. Managed workers preserve it through explicitly versioned COGB v2,
+with legacy v1 and malformed pairing tests. All mandatory checks pass with 330
+tests. This requests provider behavior; it does not attest hidden reasoning or
+prove successful structured interpretation.

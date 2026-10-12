@@ -40,6 +40,8 @@ pub struct Config {
     pub interpret_goals: bool,
     #[serde(skip_serializing_if = "default_interface_tokens")]
     pub interface_tokens: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort: Option<String>,
     pub synthesize_results: bool,
     pub max_artifact_bytes: u64,
     pub max_database_bytes: u64,
@@ -69,6 +71,7 @@ impl Default for Config {
             role_profiles: BTreeMap::new(),
             interpret_goals: true,
             interface_tokens: 128,
+            reasoning_effort: None,
             synthesize_results: false,
             max_artifact_bytes: 256_000_000,
             max_database_bytes: crate::storage::DEFAULT_DATABASE_BYTES,
@@ -116,6 +119,13 @@ impl Config {
     }
 
     pub fn validate(&self) -> Result<()> {
+        if self
+            .reasoning_effort
+            .as_deref()
+            .is_some_and(|value| !matches!(value, "none" | "low" | "medium" | "high"))
+        {
+            bail!("Unsupported provider reasoning effort")
+        }
         if let Some(scope) = &self.inference_auth_scope {
             if scope.len() > 2048 {
                 bail!("Inference credential scope exceeds bounds")
@@ -213,6 +223,27 @@ fn default_interface_tokens(value: &usize) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn provider_effort_is_opt_in_bounded_and_legacy_compatible() {
+        let mut cfg = Config::default();
+        let legacy = serde_json::to_value(&cfg).unwrap();
+        assert!(legacy.get("reasoning_effort").is_none());
+        assert!(serde_json::from_value::<Config>(legacy)
+            .unwrap()
+            .reasoning_effort
+            .is_none());
+        for effort in ["none", "low", "medium", "high"] {
+            cfg.reasoning_effort = Some(effort.into());
+            cfg.validate().unwrap();
+            let restored: Config =
+                serde_json::from_value(serde_json::to_value(&cfg).unwrap()).unwrap();
+            assert_eq!(restored.reasoning_effort, cfg.reasoning_effort);
+        }
+        for effort in ["", "default", "arbitrary", "HIGH"] {
+            cfg.reasoning_effort = Some(effort.into());
+            assert!(cfg.validate().is_err());
+        }
+    }
     #[test]
     fn interface_reservation_defaults_preserve_legacy_settings_and_remain_bounded() {
         let mut cfg = Config::default();
