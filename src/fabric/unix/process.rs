@@ -280,6 +280,13 @@ impl ProcessTask {
     }
 }
 impl InferenceBackend for ProcessTask {
+    fn availability(&self) -> crate::fabric::Availability {
+        self.worker
+            .get()
+            .map_or(crate::fabric::Availability::Unknown, |worker| {
+                worker.adapter.availability()
+            })
+    }
     fn generate<'a>(
         &'a self,
         role: &'a str,
@@ -426,6 +433,47 @@ mod tests {
             );
         }
     }
+    #[tokio::test]
+    async fn managed_inference_reports_connected_and_shutdown_adapter_state() {
+        let store = Arc::new(Store::in_memory().unwrap());
+        let task = store.create_task("Managed availability", "fast").unwrap();
+        let process = ProcessTask::new(Config::default(), store, &task).unwrap();
+        assert_eq!(process.availability(), crate::fabric::Availability::Unknown);
+        let (client, _server) = UnixStream::pair().unwrap();
+        let adapter = UnixInference::connected(
+            client,
+            ModuleDescriptor {
+                id: "inference.local".into(),
+                version: "1.0.0".into(),
+                roles: vec!["solver".into()],
+            },
+            unsafe { libc::geteuid() },
+            std::process::id(),
+        )
+        .unwrap();
+        let (socket, _listener, _path) = SocketDirectory::bind_tool().unwrap();
+        let child = tokio::process::Command::new(std::env::current_exe().unwrap())
+            .arg("--help")
+            .stdout(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        assert!(process
+            .worker
+            .set(Managed {
+                adapter,
+                child: Mutex::new(child),
+                _socket: socket,
+                _lease: None
+            })
+            .is_ok());
+        assert_eq!(
+            process.availability(),
+            crate::fabric::Availability::Connected
+        );
+        process.shutdown().await.unwrap();
+        assert_eq!(process.availability(), crate::fabric::Availability::Closed);
+    }
+
     #[tokio::test]
     async fn wrong_task_never_initializes_a_process() {
         let store = Arc::new(Store::in_memory().unwrap());

@@ -1743,3 +1743,14 @@ retaining a connected socket. No grant renewal, retry or additional tool authori
 is introduced. Inventory stays bounded; state checks make no provider call.
 Prior optimized installation proof predates this runtime change and must be
 refreshed before readiness is claimed.
+
+### Managed availability propagation — 2026-10-12
+
+All 341 tests (320 library, 21 integration), formatting, offline all-target check
+and Clippy with warnings denied passed using FlatBuffers 25.12.19. Log:
+`/tmp/cogfabric-managed-availability-tests.log`. New tests insert actual connected
+adapters with same-binary child ownership, inspect managed wrapper state, shut
+down/reap children and confirm closed observations. Expired unlaunched tool
+wrappers remain uninitialized. No model probe, process spawn during observation,
+credential, permission or deadline renewal is added. Optimized installation proof
+must be refreshed after these runtime changes.

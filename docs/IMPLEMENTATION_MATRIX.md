@@ -965,3 +965,14 @@ absolute deadline; dispatch still validates the original grant. Paused-clock
 expiry regressions prove refusal with unused connected streams and zero charges;
 existing two-call tests now prove exhausted-state pin/activation refusal. Remote
 health and automatic provisioning/reconnection remain separate incomplete work.
+
+### Managed worker availability propagation — 2026-10-12
+
+Implemented: inference `ProcessTask` delegates initialized availability to its
+Unix adapter. Managed arithmetic/SQL wrappers share adapter observations and
+report expired original host deadlines before worker initialization. Uninitialized
+workers otherwise report unknown; observation never launches a child. Actual
+socket/same-binary-child regressions verify connected state and closed state
+after confirmed shutdown for all three paths; expired unlaunched tools remain
+without initialized workers. This closes the wrapper propagation gap, not general
+process health, startup-failure recovery or automatic grant renewal.

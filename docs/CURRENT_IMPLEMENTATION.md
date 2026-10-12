@@ -556,3 +556,8 @@ these adapters from pinning, activation and pinned dispatch without refund or
 renewal. Both actual two-call and paused-clock zero-call regressions pass. All
 339 tests and mandatory quality checks pass; optimized installation proof awaits
 refresh after this runtime change.
+
+Managed worker wrappers now propagate initialized adapter availability; expired
+unlaunched tool deadlines are visible without starting children. Actual socket and
+same-binary cleanup regressions cover inference, arithmetic and SQL. All 341 tests
+and mandatory quality checks pass; optimized installation refresh remains pending.

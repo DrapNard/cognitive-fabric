@@ -151,3 +151,10 @@ socket identities before spawning; cleanup requires an exclusive lease and exact
 identity checks. See `RECOVERY.md` for pagination, partial failures and Linux
 requirements. This supersedes the blanket stale-directory limitation above;
 older unjournaled resources and automatic crash cleanup remain unsupported.
+
+Managed inference and tool wrappers propagate their initialized Unix adapter's
+availability rather than always reporting unknown. Uninitialized inference stays
+unknown; an uninitialized tool whose original host deadline elapsed reports
+expired. Inventory observation does not trigger worker launch or renew authority.
+Confirmed shutdown leaves initialized adapters closed. These observations do not
+prove external provider completion, model residency or executable health.

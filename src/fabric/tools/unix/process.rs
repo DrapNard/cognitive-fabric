@@ -180,6 +180,12 @@ enum Adapter {
     Sql(UnixSql),
 }
 impl Adapter {
+    fn availability(&self) -> crate::fabric::Availability {
+        match self {
+            Self::Arithmetic(adapter) => adapter.availability(),
+            Self::Sql(adapter) => adapter.availability(),
+        }
+    }
     async fn close(&self) {
         match self {
             Self::Arithmetic(adapter) => {
@@ -220,6 +226,15 @@ pub(crate) struct ProcessTask {
     starting: Mutex<Option<Starting>>,
 }
 impl ProcessTask {
+    fn observed_availability(&self) -> crate::fabric::Availability {
+        if let Some(worker) = self.worker.get() {
+            worker.adapter.availability()
+        } else if Instant::now() >= self.deadline {
+            crate::fabric::Availability::Expired
+        } else {
+            crate::fabric::Availability::Unknown
+        }
+    }
     pub(crate) fn new(
         config: Config,
         store: Arc<Store>,
@@ -391,6 +406,9 @@ impl ProcessTask {
     }
 }
 impl ArithmeticBackend for ProcessTask {
+    fn availability(&self) -> crate::fabric::Availability {
+        self.observed_availability()
+    }
     fn module_descriptor(&self) -> Option<&Descriptor> {
         Some(&self.descriptor)
     }
@@ -423,6 +441,9 @@ impl ArithmeticBackend for ProcessTask {
 }
 
 impl SqlBackend for ProcessTask {
+    fn availability(&self) -> crate::fabric::Availability {
+        self.observed_availability()
+    }
     fn module_descriptor(&self) -> Option<&Descriptor> {
         Some(&self.descriptor)
     }
@@ -495,6 +516,83 @@ pub async fn run_worker(home: &Path, socket: &Path, host_pid: u32, sql: bool) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn managed_tool_states_follow_adapters_and_unlaunched_deadlines() {
+        for sql in [false, true] {
+            let store = Arc::new(Store::in_memory().unwrap());
+            let task = store.create_task("Managed availability", "fast").unwrap();
+            let make = |deadline| {
+                if sql {
+                    ProcessTask::new_sql(Config::default(), store.clone(), &task, deadline)
+                } else {
+                    ProcessTask::new(Config::default(), store.clone(), &task, deadline)
+                }
+            };
+            let expired = make(Instant::now() - Duration::from_secs(1)).unwrap();
+            assert_eq!(
+                expired.observed_availability(),
+                crate::fabric::Availability::Expired
+            );
+            assert!(expired.worker.get().is_none());
+            let process = make(Instant::now() + Duration::from_secs(30)).unwrap();
+            assert_eq!(
+                process.observed_availability(),
+                crate::fabric::Availability::Unknown
+            );
+            let (client, _server) = UnixStream::pair().unwrap();
+            let uid = unsafe { libc::geteuid() };
+            let adapter = if sql {
+                Adapter::Sql(
+                    UnixSql::connected(
+                        client,
+                        SqlGrant::new(&task, sql_descriptor(), 1, 30).unwrap(),
+                        uid,
+                        std::process::id(),
+                    )
+                    .unwrap(),
+                )
+            } else {
+                Adapter::Arithmetic(
+                    UnixArithmetic::connected(
+                        client,
+                        Grant::new(&task, descriptor(), 1, 30).unwrap(),
+                        uid,
+                        std::process::id(),
+                    )
+                    .unwrap(),
+                )
+            };
+            let (directory, _listener, _path) = SocketDirectory::bind_tool().unwrap();
+            let child = tokio::process::Command::new(std::env::current_exe().unwrap())
+                .arg("--help")
+                .stdout(std::process::Stdio::null())
+                .spawn()
+                .unwrap();
+            assert!(process
+                .worker
+                .set(Managed {
+                    adapter,
+                    child: Mutex::new(child),
+                    _directory: directory,
+                    _lease: None
+                })
+                .is_ok());
+            assert_eq!(
+                ArithmeticBackend::availability(&process),
+                crate::fabric::Availability::Connected
+            );
+            assert_eq!(
+                SqlBackend::availability(&process),
+                crate::fabric::Availability::Connected
+            );
+            process.shutdown().await.unwrap();
+            assert_eq!(
+                process.observed_availability(),
+                crate::fabric::Availability::Closed
+            );
+        }
+    }
+
     #[test]
     fn startup_child_fixture() {
         if std::env::var_os("COGFABRIC_TEST_TOOL_STARTUP_HOLD").is_some() {

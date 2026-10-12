@@ -808,3 +808,5 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   arithmetic and SQL capability modules without renewing task grants.
 - Exclude expired and call-exhausted Unix tool grants from routing and rollback
   without resetting authority or cumulative charges.
+- Propagate managed inference/arithmetic/SQL adapter availability through worker
+  wrappers; report expired tool deadlines before any child launch.
