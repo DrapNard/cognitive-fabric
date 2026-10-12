@@ -61,6 +61,9 @@ enum Command {
         #[arg(long)]
         probe_registered_models: bool,
     },
+    ResumePreview {
+        id: String,
+    },
     ResumeTask {
         id: String,
         #[arg(long)]
@@ -635,6 +638,7 @@ async fn main() -> Result<()> {
             changed.save()?;
             json!({"inference_process":enabled,"sandboxed":false})
         }
+        Command::ResumePreview { id } => cogfabric::recovery::continuation::preview(&store, &id)?,
         Command::ResumeTask { id, human_approve } => {
             cogfabric::recovery::continuation::resume(store.clone(), &id, human_approve, async {
                 let _ = tokio::signal::ctrl_c().await;

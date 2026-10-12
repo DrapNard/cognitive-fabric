@@ -1,5 +1,17 @@
 # Interrupted task recovery
 
+Run `cogfabric resume-preview TASK_UUID` against the original persistent store
+to inspect current continuation eligibility, checkpoint phase, subtask states,
+and consumed/remaining inference budgets. It uses the same admission checks as
+`resume-task`, including prompt fingerprints, original deadlines and managed
+workspace validation, under an exclusive runtime lease and a bounded read
+transaction. It does not change tasks or events, launch workers, or grant
+approval. Query, context and prior answers are omitted. The cooperative lease
+file may be created. Wall-time availability is sampled and immediately ages;
+actual resume revalidates everything and still requires `--human-approve`.
+Unsupported or invalid checkpoints fail with an error rather than an eligible
+report. Eligibility does not attest provider weights or guarantee inference.
+
 Run `cogfabric recover-tasks` against the original state directory after an
 interrupted runtime. It marks abandoned `running` tasks as `interrupted`, records
 a per-task recovery audit, and leaves completed results unchanged. Repeating it

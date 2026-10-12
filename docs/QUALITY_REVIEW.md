@@ -2505,3 +2505,25 @@ and zero-tool inference `80a009f`
 Inline-tool source run 38322010060 was still active when this entry was recorded;
 its watcher is retained at `/tmp/cogfabric-inline-budget-hosted-ci.log`. No pending
 result or expanded-script hosted result is inferred from the earlier successes.
+
+## Read-only continuation admission preview (2026-10-13)
+
+Implemented `resume-preview TASK_UUID` in `src/main.rs` and
+`src/recovery/continuation.rs`, sharing existing admission and managed workspace
+checks with approved resume. Reports bounded counters and subtask states without
+raw task/context/answer text. Does not write task/audit state or launch inference.
+Uses a cooperative exclusive lease (which may create its lease file), not a new
+permission grant. Resume always revalidates; existing continuation phase and
+original-clock restrictions remain. Regression coverage verifies unchanged
+status/event count, charged budgets, live-lease refusal and missing prompt
+fingerprint refusal. No broader continuation or provider attestation is claimed.
+
+Private GitHub CI runs 38322336100 (`5345f67`) and 38322010060 (`8b30fd1`)
+both completed successfully before this change.
+
+Status: **Implemented** for existing supported continuation checkpoints.
+Validation: formatting, all-target check, Clippy with warnings denied, and
+375 Rust tests (353 library, 22 integration) passed with flatc 25.12.19.
+Socket/HTTP tests required execution outside sandbox network restrictions; the
+initial restricted run failed on those operations. Full results are recorded in
+`/tmp/cogfabric-resume-preview-tests.log`.

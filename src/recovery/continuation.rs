@@ -24,6 +24,7 @@ struct Checkpoint {
     subtasks: Vec<Subtask>,
     boundary: Option<Value>,
     state: RestoredState,
+    admission: Value,
 }
 
 fn prepare(db: &rusqlite::Connection, task: &str) -> Result<Checkpoint> {
@@ -348,6 +349,7 @@ fn prepare(db: &rusqlite::Connection, task: &str) -> Result<Checkpoint> {
         ..Default::default()
     };
     Ok(Checkpoint {
+        admission: admission.clone(),
         cfg,
         query,
         context: text.into(),
@@ -428,6 +430,69 @@ pub(super) fn record_failed_revision(
     Ok(true)
 }
 
+fn validate_worker_workspace(cfg: &mut Config, path: &std::path::Path) -> Result<()> {
+    if cfg.inference_process {
+        cfg.home = path
+            .parent()
+            .ok_or_else(|| anyhow::anyhow!("Missing worker workspace"))?
+            .into();
+        use std::os::unix::fs::PermissionsExt;
+        let metadata = std::fs::symlink_metadata(&cfg.home)?;
+        if !metadata.is_dir() || metadata.permissions().mode() & 0o777 != 0o700 {
+            bail!("Managed continuation requires a private existing workspace")
+        }
+        let mut expected = cfg.db().into_os_string();
+        expected.push(".runtime.lock");
+        if path.as_os_str() != expected {
+            bail!("Managed continuation requires the canonical workspace database")
+        }
+    }
+    Ok(())
+}
+
+/// Inspect current continuation admission without changing task state or launching workers.
+/// Eligibility is sampled; an approved resume always validates again.
+pub fn preview(store: &Store, task: &str) -> Result<Value> {
+    security::authorize("human-cli", "task.resume")?;
+    uuid::Uuid::parse_str(task)?;
+    let path = store
+        .runtime_lock
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("Continuation requires a persistent store"))?;
+    let _lease = ExecutionLease::acquire(path, true)
+        .map_err(|_| anyhow::anyhow!("Cannot preview while runtime leases are held"))?;
+    let mut db = store.lock()?;
+    let started = Instant::now();
+    db.progress_handler(
+        1000,
+        Some(move || started.elapsed() > Duration::from_secs(5)),
+    );
+    let result = (|| -> Result<Value> {
+        let tx = db.transaction()?;
+        let mut checkpoint = prepare(&tx, task)?;
+        validate_worker_workspace(&mut checkpoint.cfg, path)?;
+        if started.elapsed() > Duration::from_secs(5) {
+            bail!("Continuation admission deadline exhausted")
+        }
+        Ok(json!({"format_version":1,"task_id":task,
+            "checkpoint_eligible":true,"resume_authorized":false,
+            "human_approval_required":true,"resume_revalidates":true,
+            "phase":checkpoint.boundary.as_ref().map(|b| b["phase"].clone()).unwrap_or(json!("pre_solver_graph")),
+            "mode":checkpoint.mode,"model":checkpoint.cfg.model,
+            "managed_worker":checkpoint.cfg.inference_process,
+            "remaining_admission":checkpoint.admission,
+            "consumed":{"calls":checkpoint.state.resources.calls,
+                "cycles":checkpoint.state.resources.cycles,
+                "tool_calls":checkpoint.state.resources.tool_calls,
+                "reserved_output_tokens":checkpoint.state.resources.reserved_output_tokens,
+                "prompt_bytes":checkpoint.state.resources.prompt_bytes},
+            "subtasks":checkpoint.subtasks.iter().map(|n|json!({"id":n.step.id,"state":n.state})).collect::<Vec<_>>(),
+            "weights_attested":false}))
+    })();
+    db.progress_handler(0, None::<fn() -> bool>);
+    result
+}
+
 pub async fn resume(
     store: Arc<Store>,
     task: &str,
@@ -458,20 +523,7 @@ pub async fn resume(
             let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
             let mut checkpoint = prepare(&tx, task)?;
             if checkpoint.cfg.inference_process {
-                checkpoint.cfg.home = path
-                    .parent()
-                    .ok_or_else(|| anyhow::anyhow!("Missing worker workspace"))?
-                    .into();
-                use std::os::unix::fs::PermissionsExt;
-                let metadata = std::fs::symlink_metadata(&checkpoint.cfg.home)?;
-                if !metadata.is_dir() || metadata.permissions().mode() & 0o777 != 0o700 {
-                    bail!("Managed continuation requires a private existing workspace")
-                }
-                let mut expected = checkpoint.cfg.db().into_os_string();
-                expected.push(".runtime.lock");
-                if path.as_os_str() != expected {
-                    bail!("Managed continuation requires the canonical workspace database")
-                }
+                validate_worker_workspace(&mut checkpoint.cfg, path)?;
                 // No inference has begun. A competing exclusive owner during conversion
                 // cannot commit recovery while this write transaction remains open.
                 lease = Some(
@@ -716,6 +768,47 @@ mod tests {
         store.finish_task(&task, "interrupted", "").unwrap();
         (store, task)
     }
+    #[tokio::test]
+    async fn preview_preserves_task_and_events_and_rejects_live_or_invalid_checkpoints() {
+        let root = std::env::temp_dir().join(format!("fabric-preview-{}", uuid::Uuid::new_v4()));
+        let (store, task) =
+            fixture_in(Arc::new(Store::open(&root.join("state.db")).unwrap())).await;
+        let snapshot = || {
+            let db = store.lock().unwrap();
+            let count: u64 = db
+                .query_row("SELECT count(*) FROM events", [], |r| r.get(0))
+                .unwrap();
+            let status: String = db
+                .query_row("SELECT status FROM tasks WHERE id=?1", [&task], |r| {
+                    r.get(0)
+                })
+                .unwrap();
+            (count, status)
+        };
+        let before = snapshot();
+        let result = preview(&store, &task).unwrap();
+        assert_eq!(result["phase"], "pre_solver_graph");
+        assert_eq!(result["resume_authorized"], false);
+        assert_eq!(result["consumed"]["calls"], 2);
+        assert_eq!(result["consumed"]["reserved_output_tokens"], 448);
+        assert_eq!(
+            result["remaining_admission"]["reserved_output_tokens"],
+            2552
+        );
+        assert!(!result.to_string().contains("original advice"));
+        assert!(!result.to_string().contains(QUERY));
+        assert_eq!(snapshot(), before);
+        let lease = ExecutionLease::acquire(store.runtime_lock.as_deref().unwrap(), false).unwrap();
+        assert!(preview(&store, &task).is_err());
+        drop(lease);
+        assert!(preview(&store, &task).is_ok());
+        store.lock().unwrap().execute("UPDATE events SET payload=json_remove(payload,'$.runtime_role_prompts_sha256') WHERE kind='execution_settings'", []).unwrap();
+        assert!(preview(&store, &task).is_err());
+        assert_eq!(snapshot(), before);
+        drop(store);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[tokio::test]
     async fn continues_only_pending_nodes_and_preserves_original_charges() {
         let (store, task) = fixture().await;

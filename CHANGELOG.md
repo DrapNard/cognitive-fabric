@@ -1006,3 +1006,5 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
 - Refuse continuation when its saved fingerprint is missing, null or changed;
   preserve history and charges without granting permissions or automatic migration.
 - Pass all 364 tests, mandatory quality checks and isolated CLI/service smoke.
+
+- Add read-only `resume-preview` with shared admission validation and remaining budget reporting; approved resume still revalidates.
