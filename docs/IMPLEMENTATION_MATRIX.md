@@ -1386,3 +1386,12 @@ cleanup code is still trusted and may block or panic for unrelated reasons; this
 is not a cleanup timeout, process sandbox or provider-unload guarantee. Optimized
 installation evidence predates this source change and requires refresh before
 release. General module provisioning and independent evaluations remain open.
+
+
+Optimized installation and full installed CLI/service smoke passed for cleanup
+source `b81fe34`. Fresh-state managed Qwen3 8B produced a STANDARD ownership
+explanation (unverified, two calls) and a FAST sort result independently checked
+by `integer_sort/v1` (one call). Both workers were reaped normally. Exact hashes,
+budgets, traces and limitations are in `QUALITY_REVIEW.md` and `LIVE_INFERENCE.md`.
+This refreshes installed-source verification; broader lifecycle and evaluation
+requirements remain incomplete.

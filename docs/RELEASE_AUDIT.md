@@ -712,3 +712,16 @@ cleanup code is still trusted and may block or panic for unrelated reasons; this
 is not a cleanup timeout, process sandbox or provider-unload guarantee. Optimized
 installation evidence predates this source change and requires refresh before
 release. General module provisioning and independent evaluations remain open.
+
+
+## Optimized registry cleanup and live Qwen verification — 2026-10-13
+
+Source `b81fe34cec0e2eec183ca06ebaf194966f5162d8` passed optimized installation,
+full installed CLI/service smoke and hosted CI
+[38320574430](https://github.com/DrapNard/cognitive-fabric/actions/runs/38320574430).
+Installed managed Qwen3 8B returned an unverified STANDARD ownership explanation
+and an independently checked FAST sorting result; both workers were reaped normally.
+`QUALITY_REVIEW.md` records installation hashes and CI evidence; `LIVE_INFERENCE.md`
+records exact live task IDs, settings, resources and limitations. This closes the
+installed-source gap for cleanup lock ordering, not general module provisioning,
+provider unloading, held-out evaluation or broader V1 release requirements.

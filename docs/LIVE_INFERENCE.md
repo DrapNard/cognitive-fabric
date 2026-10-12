@@ -482,3 +482,46 @@ tool charges. Files: `/tmp/cogfabric-inventory-installed-qwen.json` and
 `/tmp/cogfabric-inventory-installed-qwen-sort.json`. This is one public direct
 inference smoke, not evidence of general reasoning gains, held-out quality or
 neural safety. Defaults do not guarantee useful answers from thinking models.
+
+
+## Optimized registry cleanup and live Qwen verification — 2026-10-13
+
+Exact source `b81fe34cec0e2eec183ca06ebaf194966f5162d8` installed successfully
+with locked offline cached dependencies, Rust/Cargo 1.97.1 and flatc 25.12.19 under
+`/tmp/cogfabric-registry-cleanup-install-20261013`. Cargo reported 51.42s.
+Binary SHA-256:
+`6c0011133c9610668a6c09232baf42588daf6283b60a3c55252bfc34f297877a`.
+The full installed CLI/service smoke passed, with local temporary evidence at
+`/tmp/cogfabric-installed-smoke.MQ2Hwd`; logs:
+`/tmp/cogfabric-registry-cleanup-install.log` and
+`/tmp/cogfabric-registry-cleanup-installed-smoke.log`. This refreshes optimized
+installation proof after cleanup lock ordering; direct Rust regressions separately
+exercise cleanup callbacks, which ordinary installed smoke does not trigger.
+
+Fresh-state managed LM Studio `qwen/qwen3-8b` requests also exited zero using the
+installed binary and endpoint `http://127.0.0.1:1234/v1`. Configuration requested
+temperature zero, reasoning effort none, 384 interface tokens, two model calls,
+one cycle, 768 total reserved output tokens, 8192 prompt bytes, four tool calls,
+45 seconds task wall time and 30 seconds HTTP timeout.
+
+- STANDARD `Explain Rust ownership briefly`, task
+  `e820f915-707c-494b-9489-cc834ed99d70`: accepted advisory structured intent,
+  skipped planner to preserve the solver budget, returned an explanation marked
+  **unverified**. Two calls, one cycle, 4431.099537ms elapsed, 4428.555983ms
+  inference, 477 input/199 output tokens, 768 reserved tokens and one tool charge.
+- FAST `sort:{"values":[8,-2,8,0]}`, task
+  `a53a4dfe-f3d3-4c41-8aa3-9d104a59d592`: returned `[-2,0,8,8]`, independently
+  checked by `integer_sort/v1`. One call, one cycle, 600.893745ms elapsed,
+  598.639710ms inference, 176 input/14 output tokens, 384 reserved tokens and two
+  tool charges.
+
+Both managed worker stop records report reaped true, forced false and exit zero.
+Local answers/traces are retained as
+`/tmp/cogfabric-registry-cleanup-qwen-answer.json`,
+`/tmp/cogfabric-registry-cleanup-qwen-trace.json`,
+`/tmp/cogfabric-registry-cleanup-qwen-sort.json` and
+`/tmp/cogfabric-registry-cleanup-qwen-sort-trace.json`. These are individual
+public live smokes, not held-out evaluation, causal speed comparisons, weight
+attestation, GPU accounting or broad neural security evidence. The explicit
+thinking/output settings remain relevant; default thinking-model output limits
+are not proven sufficient.

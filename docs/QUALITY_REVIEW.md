@@ -2372,3 +2372,29 @@ cleanup code is still trusted and may block or panic for unrelated reasons; this
 is not a cleanup timeout, process sandbox or provider-unload guarantee. Optimized
 installation evidence predates this source change and requires refresh before
 release. General module provisioning and independent evaluations remain open.
+
+
+## Optimized registry cleanup and live Qwen verification — 2026-10-13
+
+Exact source `b81fe34cec0e2eec183ca06ebaf194966f5162d8` installed successfully
+with locked offline cached dependencies, Rust/Cargo 1.97.1 and flatc 25.12.19 under
+`/tmp/cogfabric-registry-cleanup-install-20261013`. Cargo reported 51.42s.
+Binary SHA-256:
+`6c0011133c9610668a6c09232baf42588daf6283b60a3c55252bfc34f297877a`.
+The full installed CLI/service smoke passed, with local temporary evidence at
+`/tmp/cogfabric-installed-smoke.MQ2Hwd`; logs:
+`/tmp/cogfabric-registry-cleanup-install.log` and
+`/tmp/cogfabric-registry-cleanup-installed-smoke.log`. This refreshes optimized
+installation proof after cleanup lock ordering; direct Rust regressions separately
+exercise cleanup callbacks, which ordinary installed smoke does not trigger.
+
+Live installed Qwen ownership and independently checked sort requests both passed
+their respective smoke conditions with confirmed worker reaping. Exact settings,
+task IDs, resources and unverified-answer caveats are in
+[LIVE_INFERENCE.md](LIVE_INFERENCE.md#optimized-registry-cleanup-and-live-qwen-verification--2026-10-13).
+
+Hosted CI [38320574430](https://github.com/DrapNard/cognitive-fabric/actions/runs/38320574430)
+passed for exact source `b81fe34cec0e2eec183ca06ebaf194966f5162d8`, including
+compiler bootstrap, mandatory Rust checks, CLI/service smoke, security probes
+and offline training preflight. Watcher exit zero; retained local log:
+`/tmp/cogfabric-registry-cleanup-hosted-ci.log`.
