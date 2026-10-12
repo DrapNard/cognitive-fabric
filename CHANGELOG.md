@@ -937,3 +937,10 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   expected answers into prompts.
 - Verify identical solver prompts and unchanged enabled verification; all 362
   tests and mandatory checks pass with isolated-build CLI/service smoke.
+
+### State arithmetic and SQL baseline output contracts
+
+- Supply numeric-only arithmetic and columns/rows SQL JSON instructions without
+  executing tools or exposing expected outputs to the baseline.
+- Verify one-call, zero-tool unverified baseline execution with captured prompts.
+- Pass all 363 tests, mandatory quality checks and isolated CLI/service smoke.

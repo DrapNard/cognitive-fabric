@@ -2,7 +2,7 @@
 
 **Author:** DrapNard  
 **Language:** Rust (runtime), Python (optional offline model training)
-**Status:** **Verified Rust alpha baseline** — builds and 362 regression tests pass; Ollama and LM Studio Qwen3 8B generation and independently checked sorting have succeeded. v1.0 integration requirements remain incomplete.
+**Status:** **Verified Rust alpha baseline** — builds and 363 regression tests pass; Ollama and LM Studio Qwen3 8B generation and independently checked sorting have succeeded. v1.0 integration requirements remain incomplete.
 
 Optional managed inference workers: use `configure-worker --enabled true` to run
 each task's inference adapter in a host-authenticated child process. See

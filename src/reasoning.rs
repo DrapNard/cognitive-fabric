@@ -747,6 +747,12 @@ impl Session {
         // verify it. The model-alone baseline must receive the same contract.
         Ok(match crate::verification::Criterion::from_query(query)? {
             Some(criterion) => format!("{base}\n{}", criterion.instruction()),
+            None if crate::math::extract(query).is_some() => format!(
+                "{base}\nReturn only the numeric result of the supplied arithmetic expression. No prose, Markdown or extra fields."
+            ),
+            None if query.starts_with("sql:") => format!(
+                "{base}\nReturn only a JSON object with columns (an array of column names in query order) and rows (an array of row arrays in query order). Preserve scalar types and null values. No prose, Markdown or extra fields."
+            ),
             None => base,
         })
     }
@@ -1082,6 +1088,84 @@ mod tests {
                 Session::prompt_base(query, context, false).unwrap(),
                 Session::prompt_base(query, context, true).unwrap()
             );
+        }
+    }
+
+    #[tokio::test]
+    async fn arithmetic_and_sql_baselines_receive_contracts_without_tool_execution() {
+        struct Capture {
+            prompt: Mutex<Option<String>>,
+            answer: &'static str,
+        }
+        impl InferenceBackend for Capture {
+            fn generate<'a>(
+                &'a self,
+                role: &'a str,
+                prompt: &'a str,
+                _tokens: usize,
+            ) -> Pin<Box<dyn Future<Output = Result<Generation>> + Send + 'a>> {
+                Box::pin(async move {
+                    assert_eq!(role, "solver");
+                    *self.prompt.lock().unwrap() = Some(prompt.into());
+                    Ok(Generation {
+                        text: self.answer.into(),
+                        model: "fixture".into(),
+                        input_tokens: None,
+                        output_tokens: None,
+                        elapsed_ms: 0.0,
+                        queue_wait_ms: None,
+                    })
+                })
+            }
+        }
+        for (query, answer, contract) in [
+            ("calc: 17*4-9", "59", "Return only the numeric result"),
+            (
+                r#"sql:{"tables":[],"query":"SELECT 1 + 2 AS total"}"#,
+                r#"{"columns":["total"],"rows":[[3]]}"#,
+                "Return only a JSON object with columns",
+            ),
+        ] {
+            let store = Arc::new(Store::in_memory().unwrap());
+            let backend = Arc::new(Capture {
+                prompt: Mutex::new(None),
+                answer,
+            });
+            let cfg = Config {
+                backend: "openai-local".into(),
+                interpret_goals: false,
+                ..Config::default()
+            };
+            let engine = Engine::with_backend(cfg, store.clone(), backend.clone());
+            let outcome = engine
+                .run_profile_until(
+                    query,
+                    "fast",
+                    crate::engine::ExecutionProfile::Alone,
+                    std::future::pending(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(outcome.answer, answer);
+            assert_eq!(outcome.status, "unverified");
+            assert_eq!(outcome.calls, 1);
+            assert_eq!(outcome.resources.tool_calls, 0);
+            assert!(outcome.evidence.is_empty());
+            let prompt = backend.prompt.lock().unwrap().clone().unwrap();
+            assert!(prompt.contains(contract));
+            assert!(!prompt.contains(answer));
+            assert_eq!(
+                Session::prompt_base(query, "", false).unwrap(),
+                Session::prompt_base(query, "", true).unwrap()
+            );
+            assert!(!store.task(&outcome.task_id).unwrap()["events"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|e| matches!(
+                    e["kind"].as_str(),
+                    Some("tool_dispatch" | "tool_worker_process")
+                )));
         }
     }
 

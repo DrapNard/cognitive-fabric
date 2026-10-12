@@ -281,3 +281,9 @@ baseline still executes no checker and remains unverified at runtime. Independen
 comparison scoring remains separate. Earlier runs at `da2a8b9` and before omitted
 these instructions from the baseline and cannot establish comparative reasoning
 gains from strict-format scores; inspect raw answers and rerun with the fix.
+
+Explicit arithmetic and inline SQL objectives also receive answer-format
+instructions in every reasoning profile: numeric-only output and the SQL
+columns/rows JSON contract, respectively. No expected result or executed tool
+output is supplied to the alone baseline. Pre-fix arithmetic/SQL scores have the
+same format-fairness limitation; the correction does not relax any scorer.

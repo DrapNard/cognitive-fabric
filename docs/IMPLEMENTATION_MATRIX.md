@@ -1246,3 +1246,29 @@ running comparison executable. Logs: `/tmp/cogfabric-baseline-contract-all-tests
 `77f79a6254e47d6cd82a342aec5b8cc8c9f9f8344c3db701f04218bed8402ae4`.
 The running comparison binary SHA-256 remains `c5dfdb5bce170ec6697228c70c355c197913ff9f185ee706fb8658bdc83f0890`.
 A corrected live rerun is required before reporting comparative gains.
+
+### Arithmetic and SQL output contracts — 2026-10-13 (Implemented)
+
+`src/reasoning.rs::Session::prompt_base` now states numeric-only arithmetic output
+and the SQL columns/rows JSON shape for explicit tool-shaped objectives, without
+computing answers or executing a tool. Format instructions apply independently of
+verification permission. A real Engine model-alone regression captures both
+prompts, confirms expected answers are absent, checks exactly one inference call,
+zero tool calls, no dispatch/worker events, empty evidence and unverified status.
+This extends sorting/ordering prompt parity; pre-fix arithmetic/SQL exact-match
+scores also require the format caveat before any comparative-gain claim.
+
+All 363 tests (342 library, 21 integration), formatting, all-target check and
+Clippy with warnings denied pass. Full tests and CLI/service smoke used the
+isolated target to preserve the ongoing original comparison executable. Logs:
+`/tmp/cogfabric-tool-format-parity-unit.log`,
+`/tmp/cogfabric-tool-format-parity-all-tests.log`,
+`/tmp/cogfabric-tool-format-parity-smoke.log`; evidence
+`/tmp/cogfabric-installed-smoke.7G8s1C`. Fixed isolated debug binary SHA-256:
+`a2012ac53ec77dee168d4e2aadb1dca7067864b419a3ddd6e0db8f47e5c792d0`.
+Original running-study executable remains checksum
+`c5dfdb5bce170ec6697228c70c355c197913ff9f185ee706fb8658bdc83f0890`.
+Additional instruction bytes count toward existing prompt bounds. No token budget,
+permission or runtime proof is expanded. Older saved contexts with different
+prompt hashes fail closed; there is no automatic migration of changed prompts.
+A fresh corrected live study remains required.
