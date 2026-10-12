@@ -57,10 +57,12 @@ All 227 current tests pass, including actual socket/loopback HTTP fixtures; form
 all-target build checks and Clippy with denied warnings pass. Fixtures do not prove
 GPU integration, neural quality, immutable backend weights or live model switching.
 
-The latest host validation loaded an installed LM Studio model, but inference
-returned HTTP 401. Scoped authentication is implemented and fixture-tested;
-successful live generation remains unverified without an operator credential. It is not a blocker for implementing independent infrastructure,
-but it is a release gate. No stable release tag or remote publication is authorized.
+Earlier LM Studio validation returned HTTP 401. Later direct and managed-worker
+generation succeeded through the existing Ollama OpenAI-compatible endpoint;
+the managed sorting answer passed independent Rust verification. See
+`LIVE_INFERENCE.md` for actual measurements and limits. LM Studio authentication,
+real switching and reviewed equal-budget studies remain unverified. Private
+GitHub publication is authorized; no final stable release tag is authorized.
 
 Independent verification now additionally supports explicit `order:` dependency
 criteria through `src/verification.rs` and `src/reasoning.rs`; see
@@ -775,3 +777,14 @@ the expanded CLI/service smoke workflow, closing the pending installation gap.
 Actual host-death deletion is verified by the Rust child regression; the installed
 workflow exercises empty reviewed plans. Broader module lifecycle and live model
 gates remain incomplete.
+
+Tool version rollback: **Implemented** for trusted host registrations in
+`src/fabric/tools.rs`, covering arithmetic and SQL. Activation preserves original
+backend identity and existing task pins; historical IDs cannot change capability.
+Tests cover SQL/math rollback, active conflicts, shutdown, immutable redefinition
+and rollback at the 128-version ceiling. All mandatory checks pass with 321 tests
+(300 library, 21 integration). History retains inactive backends/queues until
+shutdown; health checks, general executable lifecycle and residency quotas remain
+partial. Real direct/managed Ollama generation now passes, including independent
+sorting proof and confirmed child reaping; see `LIVE_INFERENCE.md`. This supersedes
+older statements that all compatible real inference remains unavailable.

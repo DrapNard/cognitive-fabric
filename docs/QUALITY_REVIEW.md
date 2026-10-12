@@ -1591,3 +1591,12 @@ are recorded in `RELEASE_AUDIT.md`; actual stale-file deletion after child-proce
 death is covered separately by the Rust regression. The pending installed-source
 gap above is closed for this source. Unjournaled resources, automatic cleanup,
 hostile-owner race isolation and live model behavior remain outside the proof.
+
+Tool rollback validation (2026-10-12): `cargo fmt --all -- --check`,
+`FLATC=/tmp/cogfabric-flatbuffers-build/flatc cargo check --offline --all-targets`,
+`cargo test --offline --all-targets` and `cargo clippy --offline --all-targets -- -D warnings`
+(with the same FLATC setting) pass. Tests: 300 library + 21 integration = 321.
+Log: `/tmp/cogfabric-tool-rollback-full-tests.log`. Coverage includes retained
+math/SQL pins, capability identity after unregistration, conflict refusal,
+shutdown and full-history rollback. Real inference observations are recorded
+separately in `LIVE_INFERENCE.md`; these do not constitute benchmark results.

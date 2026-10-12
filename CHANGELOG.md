@@ -719,3 +719,11 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
 - Revalidate identities after intent persistence and document partial failures,
   pagination, Linux requirements and unjournaled/same-owner limitations.
 - Pass all mandatory checks with 318 Rust tests; installation verification follows.
+
+### Immutable tool rollback and real local integration
+
+- Retain count-bounded immutable arithmetic/SQL backend versions for trusted host
+  rollback, preserving in-flight pins and rejecting historical capability changes.
+- Test conflict/shutdown/redefinition/full-history rollback and SQL results.
+- Record successful direct Ollama generation and managed sorting with independent
+  verification and confirmed reaping; retain outstanding live study limitations.

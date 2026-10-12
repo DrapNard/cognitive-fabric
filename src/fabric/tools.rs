@@ -353,11 +353,9 @@ impl Broker {
         {
             bail!("Capability version is immutable or registry stopped/full")
         }
-        if registry
-            .active
-            .get(&descriptor.id)
-            .is_some_and(|m| m.descriptor.capability != descriptor.capability)
-        {
+        if registry.versions.values().any(|m| {
+            m.descriptor.id == descriptor.id && m.descriptor.capability != descriptor.capability
+        }) {
             bail!("A module cannot change its capability during replacement")
         }
         if registry.active.values().any(|m| {
@@ -665,6 +663,26 @@ mod tests {
         broker.shutdown().unwrap();
         assert!(old.evaluate(&task, "jev-plus", "1+1").await.is_err());
         assert!(new.evaluate(&task, "jev-plus", "1+1").await.is_err());
+    }
+    #[test]
+    fn full_version_history_still_allows_rollback_but_never_redefinition() {
+        let broker = Broker::default();
+        for version in 2..=127 {
+            broker
+                .register(descriptor(&format!("{version}.0.0")), Arc::new(LocalMath))
+                .unwrap();
+        }
+        assert_eq!(broker.versions().unwrap().len(), 128);
+        assert!(broker
+            .register(descriptor("128.0.0"), Arc::new(LocalMath))
+            .is_err());
+        broker.unregister("arithmetic.local").unwrap();
+        broker.activate("arithmetic.local", "1.0.0").unwrap();
+        assert_eq!(broker.pin().unwrap().unwrap().descriptor().version, "1.0.0");
+        assert_eq!(broker.versions().unwrap().len(), 128);
+        assert!(broker
+            .register(descriptor("1.0.0"), Arc::new(Fixed("forged")))
+            .is_err());
     }
     #[tokio::test]
     async fn engine_independently_checks_replaceable_tool_results_and_charges_once() {

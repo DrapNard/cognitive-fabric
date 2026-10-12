@@ -173,3 +173,14 @@ a checker expert removes its binding from later ordinary task discovery; it does
 not disable the independent core checker or allow an invalid answer to pass.
 Existing manifests omit `checker` and preserve their canonical serialization/hash.
 This is reuse of compiled Rust tools, not arbitrary executable plugin loading.
+
+Tool backend lifecycle now retains up to 128 immutable registered versions in
+`fabric::tools::Broker`. Trusted host `activate(id, version)` reuses the original
+backend and queue, including after unregistration; only future task pins change.
+`versions()` includes inactive metadata and is not a health check. IDs cannot
+change capability even after unregistration, and activation rejects conflicting
+active modules. Shutdown revokes all retained pins and clears backend history.
+Inactive backends/idle queues remain retained until shutdown; the count ceiling
+is not a byte or external-process residency quota. Process-granted backends may
+already be expired or disconnected; activation does not renew grants or prove
+health. No CLI/model permission or arbitrary executable loader is introduced.

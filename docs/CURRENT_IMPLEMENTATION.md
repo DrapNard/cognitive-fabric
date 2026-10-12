@@ -456,3 +456,12 @@ symlinks, stale/tampered plans and malformed metadata fail closed. All 318 tests
 and mandatory checks pass. See `RECOVERY.md` for pagination, partial audit/filesystem
 failures, Linux requirements and unjournaled/hostile-owner limitations. Automatic
 crash recovery and broader module lifecycle remain incomplete.
+
+Current verification: 321 Rust tests (300 library, 21 integration), formatting,
+all-target checking and Clippy pass. Trusted tool registries now support immutable
+version rollback, including SQL, without changing existing task pins. Capability
+identity survives unregistration; inactive backend references remain count-bounded
+until shutdown. Real direct and managed-worker Ollama generation succeeded, with
+independent Rust sorting verification and confirmed child reaping. See
+`LIVE_INFERENCE.md` for measured limits; broader live studies and module lifecycle
+remain incomplete. Earlier unavailable-inference statements are historical.

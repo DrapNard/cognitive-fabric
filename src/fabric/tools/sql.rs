@@ -511,10 +511,35 @@ mod tests {
         let mut conflict = descriptor("3.0.0");
         conflict.id = "arithmetic.local".into();
         assert!(broker.register_sql(conflict, Arc::new(LocalSql)).is_err());
+        broker.unregister("arithmetic.local").unwrap();
+        let mut retired_conflict = descriptor("3.0.0");
+        retired_conflict.id = "arithmetic.local".into();
+        assert!(broker
+            .register_sql(retired_conflict, Arc::new(LocalSql))
+            .is_err());
+        broker.activate("arithmetic.local", "1.0.0").unwrap();
         assert!(broker.pin_capability("shell.run").is_err());
         broker.unregister("sql.local").unwrap();
         assert!(broker.pin_capability("sql.query").unwrap().is_none());
         assert!(broker.pin().unwrap().is_some());
+        broker.activate("sql.local", "1.0.0").unwrap();
+        let restored = broker.pin_capability("sql.query").unwrap().unwrap();
+        assert_eq!(restored.descriptor().version, "1.0.0");
+        assert_eq!(
+            serde_json::from_str::<Value>(
+                &restored
+                    .query_sql(&task, "jev-plus", &input())
+                    .await
+                    .unwrap()
+            )
+            .unwrap()["rows"][0][0],
+            5
+        );
+        assert!(new
+            .query_sql(&task, "jev-plus", &input())
+            .await
+            .unwrap()
+            .contains("99"));
         broker.shutdown().unwrap();
         assert!(old.query_sql(&task, "jev-plus", &input()).await.is_err());
         assert!(new.query_sql(&task, "jev-plus", &input()).await.is_err());

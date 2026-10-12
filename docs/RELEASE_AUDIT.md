@@ -4,17 +4,17 @@ This checklist preserves the 18 acceptance criteria in the goal objective. It is
 an evidence inventory, not a release approval. The canonical French architecture
 and the broader implementation matrix remain authoritative. Earlier test counts
 in the quality review are historical milestones. Current local verification is
-318 Rust tests (297 library, 21 integration), formatting, all-target checking and
+321 Rust tests (300 library, 21 integration), formatting, all-target checking and
 Clippy with warnings denied, using FlatBuffers compiler/crate 25.12.19.
 
 | Goal criterion | Evidence inspected | Assessment / remaining proof |
 |---|---|---|
 | 1. Workspace builds | `Cargo.toml`, all-target check | Passed locally; isolated optimized source installation also passed with cached dependencies. |
 | 2. Formatting and Clippy | Mandatory checks in `QUALITY_REVIEW.md` | Passed locally. |
-| 3. Mandatory tests | All-target test results, `tests/` | 318 passed; fixtures do not establish live model quality. |
+| 3. Mandatory tests | All-target test results, `tests/` | 321 passed; fixtures do not establish live model quality. |
 | 4. FlatBuffers IPC | `protocol/`, `src/wire.rs`, `src/fabric/`, malformed/compatibility/socket tests | Implemented for present transports; authenticated process event delivery/replay is now tested; broader module compatibility remains partial. |
 | 5. CLI/service communication | `src/service.rs`, socket tests, `tests/process_worker.rs` | Tested local transport, progress and cancellation; no general independent plugin service is claimed. |
-| 6. Compatible local LLM | `src/backend.rs`, `tests/inference_auth.rs`, `AUTHENTICATION.md` | Synthetic authenticated HTTP works; real LM Studio generation last returned 401. Not passed. |
+| 6. Compatible local LLM | `src/backend.rs`, `tests/inference_auth.rs`, `LIVE_INFERENCE.md` | Passed for existing Ollama OpenAI-compatible endpoint: direct generation and managed-worker sorting with independent verification. LM Studio-specific authenticated generation and real switching remain unverified. |
 | 7. Jev+ routes real tasks | `src/engine.rs`, registry/routing tests, built-in SQL execution | Deterministic tools and registered advice routing work; live expert usefulness and general module scheduling remain incomplete. |
 | 8. Bounded Jev-R revision | `src/reasoning.rs`, scripted revision and budget tests | Enforced calls/cycles/tools/time; real-model effectiveness unverified. |
 | 9. Skill registration/discovery | `src/registry.rs`, `EXPERTS.md` | Versioned RAG/workflow/compiled-checker registrations work; arbitrary executable loading is absent. |
@@ -47,8 +47,8 @@ Clippy with warnings denied, using FlatBuffers compiler/crate 25.12.19.
    with enforceable ownership and recoverable uncertain outcomes. Current native
    instance IDs do not prove exclusive cross-client ownership; no automatic
    cleanup is inferred from a successful load. Validate real model switching.
-4. Validate authenticated real generation after the operator configures a scoped
-   credential locally. Establish an available small generative baseline, review
+4. Extend the successful direct/managed Ollama integration to reproducible live
+   studies; validate LM Studio-specific authentication separately if used. Establish an available small generative baseline, review
    the held-out technical corpus, then execute comparable model studies. Never
    search token files, weaken server authentication or substitute mock scores.
 5. Repeat the verified source-install/offline workflow against the final implementation,
@@ -57,7 +57,9 @@ Clippy with warnings denied, using FlatBuffers compiler/crate 25.12.19.
 
 Novel neural architectures and automatic neural promotion are not substitutes
 for these infrastructure requirements. The goal explicitly permits optional
-offline LoRA to remain experimental. No release tag or publication is authorized.
+offline LoRA to remain experimental. Private GitHub publication was explicitly
+authorized and performed; a subsequent synchronization is currently blocked by
+invalid GitHub authentication. No new final release tag is authorized.
 
 ## Installed release binary evidence
 
