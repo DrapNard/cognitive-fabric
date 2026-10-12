@@ -4,14 +4,14 @@ This checklist preserves the 18 acceptance criteria in the goal objective. It is
 an evidence inventory, not a release approval. The canonical French architecture
 and the broader implementation matrix remain authoritative. Earlier test counts
 in the quality review are historical milestones. Current local verification is
-368 Rust tests (346 library, 22 integration), formatting, all-target checking and
+370 Rust tests (348 library, 22 integration), formatting, all-target checking and
 Clippy with warnings denied, using FlatBuffers compiler/crate 25.12.19.
 
 | Goal criterion | Evidence inspected | Assessment / remaining proof |
 |---|---|---|
 | 1. Workspace builds | `Cargo.toml`, all-target check | Passed locally; isolated optimized source installation also passed with cached dependencies. |
 | 2. Formatting and Clippy | Mandatory checks in `QUALITY_REVIEW.md` | Passed locally. |
-| 3. Mandatory tests | All-target test results, `tests/` | 368 passed; fixtures do not establish live model quality. |
+| 3. Mandatory tests | All-target test results, `tests/` | 370 passed; fixtures do not establish live model quality. |
 | 4. FlatBuffers IPC | `protocol/`, `src/wire.rs`, `src/fabric/`, malformed/compatibility/socket tests | Implemented for present transports; authenticated process event delivery/replay is now tested; broader module compatibility remains partial. |
 | 5. CLI/service communication | `src/service.rs`, socket tests, `tests/process_worker.rs` | Tested local transport, progress and cancellation; no general independent plugin service is claimed. |
 | 6. Compatible local LLM | `src/backend.rs`, `tests/inference_auth.rs`, `LIVE_INFERENCE.md` | Passed for Ollama and LM Studio Qwen3 8B compatible endpoints, including managed verified sorting. Native LM Studio read-only inventory passed; authenticated native access and controlled load/unload remain unverified. |
@@ -692,3 +692,23 @@ exited zero. Compiler bootstrap, mandatory checks, tests, CLI/service smoke,
 security probes and offline training preflight passed. Local watcher log:
 `/tmp/cogfabric-tool-retirement-hosted-ci.log`. This supersedes its earlier pending
 status, without changing broader provisioning, residency or evaluation blockers.
+
+
+Registry cleanup lock ordering (2026-10-13): inference and tool brokers now detach
+retired versions and commit shutdown state under their write lock, then release
+the lock before dropping backend handles. Trusted backend destructors may inspect
+committed registry metadata without deadlocking on that same lock. Regression
+fixtures cover retirement and shutdown for inference, arithmetic and SQL. The
+initial inference regression reproduced cleanup under the held lock (failed test,
+no hang); a SQL fixture signature compilation error was corrected before final
+validation. All 370 tests (348 library, 22 integration), formatting, all-target
+check and Clippy with warnings denied then passed. Log:
+`/tmp/cogfabric-registry-cleanup-tests.log`; initial reproduction:
+`/tmp/cogfabric-retirement-cleanup-before.log`.
+
+Files: `src/fabric.rs`, `src/fabric/tests.rs`, `src/fabric/tools.rs`. Task pins,
+shutdown flags, identity tombstones and permissions are preserved. Custom host
+cleanup code is still trusted and may block or panic for unrelated reasons; this
+is not a cleanup timeout, process sandbox or provider-unload guarantee. Optimized
+installation evidence predates this source change and requires refresh before
+release. General module provisioning and independent evaluations remain open.

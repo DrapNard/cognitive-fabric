@@ -347,10 +347,13 @@ impl Broker {
         {
             bail!("Cannot retire an active inference module version")
         }
-        registry
+        let retired = registry
             .versions
             .remove(&(id.into(), version.into()))
             .context("Unknown retained inference module version")?;
+        // Host backend destructors may inspect committed registry metadata.
+        drop(registry);
+        drop(retired);
         Ok(())
     }
 
@@ -395,8 +398,11 @@ impl Broker {
             .write()
             .map_err(|_| anyhow!("Module registry poisoned"))?;
         self.shutdown.send_replace(true);
+        let retired = std::mem::take(&mut registry.versions);
         registry.active.clear();
-        registry.versions.clear();
+        // Host backend destructors may inspect committed registry metadata.
+        drop(registry);
+        drop(retired);
         Ok(())
     }
 

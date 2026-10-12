@@ -919,3 +919,64 @@ async fn retirement_preserves_active_and_queued_calls_but_not_shutdown_immunity(
         .expect("Retired running backend must be released");
     }
 }
+
+struct RegistryCleanup {
+    broker: std::sync::Weak<Broker>,
+    completed: Arc<AtomicBool>,
+}
+impl Drop for RegistryCleanup {
+    fn drop(&mut self) {
+        let broker = self.broker.upgrade().unwrap();
+        assert!(
+            broker.registry.try_read().is_ok(),
+            "Backend cleanup must run outside the registry lock"
+        );
+        assert!(!broker
+            .versions()
+            .unwrap()
+            .iter()
+            .any(|version| version.id == "cleanup"));
+        self.completed.store(true, Ordering::Release);
+    }
+}
+impl InferenceBackend for RegistryCleanup {
+    fn generate<'a>(
+        &'a self,
+        _: &'a str,
+        _: &'a str,
+        _: usize,
+    ) -> Pin<Box<dyn Future<Output = Result<Generation>> + Send + 'a>> {
+        Box::pin(async { bail!("Cleanup fixture does not perform inference") })
+    }
+}
+#[test]
+fn retirement_and_shutdown_backend_cleanup_can_inspect_the_committed_registry() {
+    for shutdown in [false, true] {
+        let broker = Arc::new(Broker::with_inference(Arc::new(Fixed(
+            "initial",
+            AtomicUsize::new(0),
+        ))));
+        broker.unregister("inference.local").unwrap();
+        let completed = Arc::new(AtomicBool::new(false));
+        broker
+            .register(
+                ModuleDescriptor {
+                    id: "cleanup".into(),
+                    version: "1.0.0".into(),
+                    roles: vec!["solver".into()],
+                },
+                Arc::new(RegistryCleanup {
+                    broker: Arc::downgrade(&broker),
+                    completed: completed.clone(),
+                }),
+            )
+            .unwrap();
+        if shutdown {
+            broker.shutdown().unwrap();
+        } else {
+            broker.unregister("cleanup").unwrap();
+            broker.retire("cleanup", "1.0.0").unwrap();
+        }
+        assert!(completed.load(Ordering::Acquire));
+    }
+}

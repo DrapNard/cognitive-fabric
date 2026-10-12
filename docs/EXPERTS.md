@@ -236,3 +236,8 @@ identity slots. The bounded capability tombstone map stores metadata only, witho
 backend references. A new version with the same capability may be registered.
 These are process-local trusted-host APIs, not model/socket commands, durable
 registrations, provider unloading or general plugin isolation.
+
+
+Retirement and shutdown commit registry changes before releasing backend handles
+outside the registry lock. A trusted backend destructor can inspect the committed
+registry; arbitrary destructor blocking/panic behavior is not isolated or bounded.

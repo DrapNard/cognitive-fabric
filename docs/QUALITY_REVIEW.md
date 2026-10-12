@@ -2352,3 +2352,23 @@ exited zero. Compiler bootstrap, mandatory checks, tests, CLI/service smoke,
 security probes and offline training preflight passed. Local watcher log:
 `/tmp/cogfabric-tool-retirement-hosted-ci.log`. This supersedes its earlier pending
 status, without changing broader provisioning, residency or evaluation blockers.
+
+
+Registry cleanup lock ordering (2026-10-13): inference and tool brokers now detach
+retired versions and commit shutdown state under their write lock, then release
+the lock before dropping backend handles. Trusted backend destructors may inspect
+committed registry metadata without deadlocking on that same lock. Regression
+fixtures cover retirement and shutdown for inference, arithmetic and SQL. The
+initial inference regression reproduced cleanup under the held lock (failed test,
+no hang); a SQL fixture signature compilation error was corrected before final
+validation. All 370 tests (348 library, 22 integration), formatting, all-target
+check and Clippy with warnings denied then passed. Log:
+`/tmp/cogfabric-registry-cleanup-tests.log`; initial reproduction:
+`/tmp/cogfabric-retirement-cleanup-before.log`.
+
+Files: `src/fabric.rs`, `src/fabric/tests.rs`, `src/fabric/tools.rs`. Task pins,
+shutdown flags, identity tombstones and permissions are preserved. Custom host
+cleanup code is still trusted and may block or panic for unrelated reasons; this
+is not a cleanup timeout, process sandbox or provider-unload guarantee. Optimized
+installation evidence predates this source change and requires refresh before
+release. General module provisioning and independent evaluations remain open.

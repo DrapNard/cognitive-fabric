@@ -516,10 +516,13 @@ impl Broker {
         {
             bail!("Cannot retire an active capability version")
         }
-        registry
+        let retired = registry
             .versions
             .remove(&(id.into(), version.into()))
             .context("Unknown retained capability version")?;
+        // Host backend destructors may inspect committed registry metadata.
+        drop(registry);
+        drop(retired);
         Ok(())
     }
 
@@ -599,8 +602,11 @@ impl Broker {
             .write()
             .map_err(|_| anyhow::anyhow!("Capability registry poisoned"))?;
         self.stop.send_replace(true);
+        let retired = std::mem::take(&mut registry.versions);
         registry.active.clear();
-        registry.versions.clear();
+        // Host backend destructors may inspect committed registry metadata.
+        drop(registry);
+        drop(retired);
         Ok(())
     }
 }
@@ -778,6 +784,75 @@ mod tests {
             .register(descriptor("2.0.0"), Arc::new(Fixed("new version")))
             .unwrap();
         assert_eq!(broker.pin().unwrap().unwrap().descriptor().version, "2.0.0");
+    }
+
+    struct RegistryCleanup {
+        broker: std::sync::Weak<Broker>,
+        completed: Arc<std::sync::atomic::AtomicBool>,
+    }
+    impl Drop for RegistryCleanup {
+        fn drop(&mut self) {
+            let broker = self.broker.upgrade().unwrap();
+            assert!(
+                broker.registry.try_read().is_ok(),
+                "Tool cleanup must run outside the registry lock"
+            );
+            assert!(!broker
+                .versions()
+                .unwrap()
+                .iter()
+                .any(|version| version.id == "cleanup"));
+            self.completed
+                .store(true, std::sync::atomic::Ordering::Release);
+        }
+    }
+    impl ArithmeticBackend for RegistryCleanup {
+        fn evaluate<'a>(
+            &'a self,
+            _: &'a str,
+        ) -> Pin<Box<dyn Future<Output = Result<String>> + Send + 'a>> {
+            Box::pin(async { bail!("Cleanup fixture does not execute tools") })
+        }
+    }
+    impl sql::SqlBackend for RegistryCleanup {
+        fn query<'a>(
+            &'a self,
+            _: &'a str,
+            _: &'a str,
+        ) -> Pin<Box<dyn Future<Output = Result<String>> + Send + 'a>> {
+            Box::pin(async { bail!("Cleanup fixture does not execute SQL") })
+        }
+    }
+    #[test]
+    fn retirement_and_shutdown_tool_cleanup_can_inspect_the_committed_registry() {
+        for (sql, shutdown) in [(false, false), (true, false), (false, true), (true, true)] {
+            let broker = Arc::new(Broker::default());
+            broker
+                .unregister(if sql { "sql.local" } else { "arithmetic.local" })
+                .unwrap();
+            let completed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let backend = Arc::new(RegistryCleanup {
+                broker: Arc::downgrade(&broker),
+                completed: completed.clone(),
+            });
+            let descriptor = Descriptor {
+                id: "cleanup".into(),
+                version: "1.0.0".into(),
+                capability: if sql { "sql.query" } else { "math.evaluate" }.into(),
+            };
+            if sql {
+                broker.register_sql(descriptor, backend).unwrap();
+            } else {
+                broker.register(descriptor, backend).unwrap();
+            }
+            if shutdown {
+                broker.shutdown().unwrap();
+            } else {
+                broker.unregister("cleanup").unwrap();
+                broker.retire("cleanup", "1.0.0").unwrap();
+            }
+            assert!(completed.load(std::sync::atomic::Ordering::Acquire));
+        }
     }
 
     struct Fixed(&'static str);

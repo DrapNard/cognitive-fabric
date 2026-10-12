@@ -297,3 +297,8 @@ shutdown and owned-child cleanup remain separate responsibilities. No automatic
 residency scheduling, durable tombstone storage or general plugin loader is implied.
 The regression observes actual backend release through a weak reference after
 successful execution through a retired pin.
+
+
+Retirement and shutdown commit registry changes before releasing backend handles
+outside the registry lock. A trusted backend destructor can inspect the committed
+registry; arbitrary destructor blocking/panic behavior is not isolated or bounded.

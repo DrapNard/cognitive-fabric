@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Release backend handles outside registry locks
+
+- Commit retirement and shutdown metadata before dropping inference/tool backends.
+- Prevent cleanup callbacks that inspect the registry from deadlocking on its lock.
+- Cover inference, arithmetic and SQL retirement/shutdown cleanup with regressions.
+
 ### Retire inactive arithmetic and SQL backend handles
 
 - Release inactive backend versions after their last task pins finish.
