@@ -4,14 +4,14 @@ This checklist preserves the 18 acceptance criteria in the goal objective. It is
 an evidence inventory, not a release approval. The canonical French architecture
 and the broader implementation matrix remain authoritative. Earlier test counts
 in the quality review are historical milestones. Current local verification is
-355 Rust tests (334 library, 21 integration), formatting, all-target checking and
+358 Rust tests (337 library, 21 integration), formatting, all-target checking and
 Clippy with warnings denied, using FlatBuffers compiler/crate 25.12.19.
 
 | Goal criterion | Evidence inspected | Assessment / remaining proof |
 |---|---|---|
 | 1. Workspace builds | `Cargo.toml`, all-target check | Passed locally; isolated optimized source installation also passed with cached dependencies. |
 | 2. Formatting and Clippy | Mandatory checks in `QUALITY_REVIEW.md` | Passed locally. |
-| 3. Mandatory tests | All-target test results, `tests/` | 355 passed; fixtures do not establish live model quality. |
+| 3. Mandatory tests | All-target test results, `tests/` | 358 passed; fixtures do not establish live model quality. |
 | 4. FlatBuffers IPC | `protocol/`, `src/wire.rs`, `src/fabric/`, malformed/compatibility/socket tests | Implemented for present transports; authenticated process event delivery/replay is now tested; broader module compatibility remains partial. |
 | 5. CLI/service communication | `src/service.rs`, socket tests, `tests/process_worker.rs` | Tested local transport, progress and cancellation; no general independent plugin service is claimed. |
 | 6. Compatible local LLM | `src/backend.rs`, `tests/inference_auth.rs`, `LIVE_INFERENCE.md` | Passed for Ollama and LM Studio Qwen3 8B compatible endpoints, including managed verified sorting. Native LM Studio read-only inventory passed; authenticated native access and controlled load/unload remain unverified. |
@@ -59,7 +59,7 @@ Novel neural architectures and automatic neural promotion are not substitutes
 for these infrastructure requirements. The goal explicitly permits optional
 offline LoRA to remain experimental. Private GitHub publication was explicitly
 authorized and performed. GitHub authentication was renewed and the private
-repository synchronized through runtime commit `161dea5` on 2026-10-12. No new final release tag is authorized.
+repository synchronized through runtime commit `75e7e8a` on 2026-10-12. No new final release tag is authorized.
 
 ## Installed release binary evidence
 
@@ -474,3 +474,28 @@ security boundary evaluation and offline training preflight all passed on the
 hosted runner. This closes the unobserved remote-CI gate for that commit while
 retaining the broader functional, held-out evaluation and end-user installation
 gaps listed above. A passing pipeline is not a final v1.0 release approval.
+
+## Optimized tool-inventory runtime verification — 2026-10-13
+
+Source `75e7e8ab83bffb2641754bdde605bb687b2f1102` installed with locked offline
+dependencies and flatc 25.12.19 in 51.81 seconds at
+`/tmp/cogfabric-v1-inventory-install-20261012`. Binary SHA-256:
+`efed5f21d521dddeedb2915e95a3877b12024264d2571a505a576af4db86ff35`.
+Expanded installed smoke passed, including local/socket tool inventory:
+`/tmp/cogfabric-inventory-installed-smoke.log`, evidence
+`/tmp/cogfabric-installed-smoke.IFjruK`. This closes the optimized installation gap
+for typed inventory and the prior prompt-format/constraint changes.
+
+An initial natural-language sorting request with default thinking failed at its
+384-token reservation after 7875.163655 ms (task
+`b70fef4e-ee99-49ef-95a9-31e075439df1`). The runtime reported the output-limit failure
+without exposing hidden reasoning or retrying. With documented `configure-local
+--reasoning-effort none --interface-tokens 384 --temperature 0`, the installed
+executable submitted `sort:{"values":[5,-3,5,1]}` to LM Studio Qwen3 8B and returned
+`[-3,1,5,5]`, independently verified by `integer_sort/v1`, task
+`841b8d13-22cb-4063-b859-a9796771e72b`: one call, one cycle, 574.764228 ms elapsed,
+573.428862 ms inference, 176 input/14 output tokens, 384 reserved tokens and two
+tool charges. Files: `/tmp/cogfabric-inventory-installed-qwen.json` and
+`/tmp/cogfabric-inventory-installed-qwen-sort.json`. This is one public direct
+inference smoke, not evidence of general reasoning gains, held-out quality or
+neural safety. Defaults do not guarantee useful answers from thinking models.

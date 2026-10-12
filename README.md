@@ -2,7 +2,7 @@
 
 **Author:** DrapNard  
 **Language:** Rust (runtime), Python (optional offline model training)
-**Status:** **Verified Rust alpha baseline** — builds and 355 regression tests pass; Ollama and LM Studio Qwen3 8B generation and independently checked sorting have succeeded. v1.0 integration requirements remain incomplete.
+**Status:** **Verified Rust alpha baseline** — builds and 358 regression tests pass; Ollama and LM Studio Qwen3 8B generation and independently checked sorting have succeeded. v1.0 integration requirements remain incomplete.
 
 Optional managed inference workers: use `configure-worker --enabled true` to run
 each task's inference adapter in a host-authenticated child process. See
@@ -163,6 +163,9 @@ a runner smoke test, and a live-model advantage remains unmeasured.
 Use `modules` or `modules --socket` to inspect registered inference adapter
 versions and roles. The bounded internal FlatBuffers broker pins adapters per task;
 this does not attest immutable neural weights or load external executable plugins.
+Use `tool-modules` or `tool-modules --socket` to inspect host arithmetic/SQL
+versions, active selection, routing ranks and local availability. Inventory is
+read-only and starts no task workers; `unknown` does not attest backend health.
 
 Reusable task snapshots: see [memory publication and revocation](docs/MEMORY.md).
 

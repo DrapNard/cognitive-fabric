@@ -457,3 +457,28 @@ Both workers exited zero, reaped true, forced false. No shell action was exposed
 or performed. This demonstrates one improved extraction, not reliable retention
 of every natural-language restriction, independently correct prose or a quality
 benchmark. The original objective and deterministic permissions remain necessary.
+
+## Optimized tool-inventory runtime verification — 2026-10-13
+
+Source `75e7e8ab83bffb2641754bdde605bb687b2f1102` installed with locked offline
+dependencies and flatc 25.12.19 in 51.81 seconds at
+`/tmp/cogfabric-v1-inventory-install-20261012`. Binary SHA-256:
+`efed5f21d521dddeedb2915e95a3877b12024264d2571a505a576af4db86ff35`.
+Expanded installed smoke passed, including local/socket tool inventory:
+`/tmp/cogfabric-inventory-installed-smoke.log`, evidence
+`/tmp/cogfabric-installed-smoke.IFjruK`. This closes the optimized installation gap
+for typed inventory and the prior prompt-format/constraint changes.
+
+An initial natural-language sorting request with default thinking failed at its
+384-token reservation after 7875.163655 ms (task
+`b70fef4e-ee99-49ef-95a9-31e075439df1`). The runtime reported the output-limit failure
+without exposing hidden reasoning or retrying. With documented `configure-local
+--reasoning-effort none --interface-tokens 384 --temperature 0`, the installed
+executable submitted `sort:{"values":[5,-3,5,1]}` to LM Studio Qwen3 8B and returned
+`[-3,1,5,5]`, independently verified by `integer_sort/v1`, task
+`841b8d13-22cb-4063-b859-a9796771e72b`: one call, one cycle, 574.764228 ms elapsed,
+573.428862 ms inference, 176 input/14 output tokens, 384 reserved tokens and two
+tool charges. Files: `/tmp/cogfabric-inventory-installed-qwen.json` and
+`/tmp/cogfabric-inventory-installed-qwen-sort.json`. This is one public direct
+inference smoke, not evidence of general reasoning gains, held-out quality or
+neural safety. Defaults do not guarantee useful answers from thinking models.

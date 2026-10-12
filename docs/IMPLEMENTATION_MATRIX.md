@@ -1161,3 +1161,8 @@ conformity passes. Smoke used the debug binary, not a new optimized installation
 No worker is launched and no capability is granted by discovery. See
 QUALITY_REVIEW.md for evidence. Automatic approval access recovered following the
 operator's instruction; verification and private Git synchronization resumed.
+
+Optimized installed validation for source `75e7e8a` now passes the expanded smoke
+and direct Qwen3 8B independently checked sorting with thinking disabled. The
+initial default-thinking request exhausted its output reservation, correctly
+reported as failure. See RELEASE_AUDIT.md for actual results and remaining gates.

@@ -620,3 +620,13 @@ Input bounds precede admission; read-only inline-data restrictions and existing
 SQLite execution limits are unchanged. Managed workers have separate process-local
 limits. Dedicated fixtures verify exhaustion, deadline, cancellation and queued
 completion without relying on global parallel-test scheduling.
+
+### Typed host tool discovery (2026-10-12)
+
+Local and socket `tool-modules` expose immutable arithmetic/SQL versions, active
+selection, routing ranks and availability through append-only typed FlatBuffers.
+Legacy replies default to an empty tool inventory. Unknown states, conflicting
+registries and excessive inventories fail closed. Borrowed string bounds precede
+copying and envelope verification bounds shared-reference traversal. Discovery
+starts no workers and grants no permissions. All 358 tests pass, including real
+socket discovery; expanded CLI/service smoke passes on the debug binary.
