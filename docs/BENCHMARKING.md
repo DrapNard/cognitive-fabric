@@ -271,3 +271,13 @@ this mode does not become a reviewed-dataset attestation. Scores describe only
 these public cases and cannot support general quality or superiority claims.
 Repository examples use Apache-2.0 licensing. Held-out comparisons still require
 `--held-out`; operator attestation does not prove independence.
+
+### Structured output contract parity
+
+Model-alone execution receives the same deterministic JSON output instructions
+for explicit sorting/ordering objectives as verification-enabled profiles. These
+instructions disclose neither expected answers nor verification results. The
+baseline still executes no checker and remains unverified at runtime. Independent
+comparison scoring remains separate. Earlier runs at `da2a8b9` and before omitted
+these instructions from the baseline and cannot establish comparative reasoning
+gains from strict-format scores; inspect raw answers and rerun with the fix.

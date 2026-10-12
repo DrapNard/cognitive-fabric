@@ -1219,3 +1219,30 @@ No live inference or neural safety evaluation was performed for this change.
 The inference-inventory optimized installation gap above is now closed for
 `da2a8b9`: expanded installed CLI/service smoke passes. RELEASE_AUDIT.md records
 the binary hash, log and evidence; broad executable provisioning remains partial.
+
+## Comparison output-contract parity — 2026-10-13 (Implemented)
+
+The running 100-case public Qwen workflow at source `da2a8b9` exposed an ablation
+fairness limitation: `Session::prompt_base` omitted the structured output contract
+when executable verification was disabled for the model-alone profile. Tool-enabled
+profiles received explicit array-format instructions. Some ordering answers were
+semantically valid arrays wrapped in Markdown fences and were rejected by the
+strict checker. Consequently this run must not support a causal reasoning-gain
+claim, even after it completes. Its fixed executable remains unchanged.
+
+Source now derives output contracts from the objective independently of
+verification permission. A capturing-backend regression confirms identical solver
+prompts and one call for both settings, with successful verification evidence only
+in the enabled case. It also checks ordering contract parity with empty/reference
+contexts and excludes the expected sorted answer from prompts. The first fixture
+incorrectly expected no verification audit at all in the baseline; it was corrected
+to count successful proof events, preserving the existing unverified audit. The
+regression passes: `/tmp/cogfabric-baseline-contract-unit.log`. All 362 tests (341 library, 21 integration), formatting, all-target check and
+Clippy with warnings denied pass. Full tests and expanded CLI/service smoke used
+`CARGO_TARGET_DIR=/tmp/cogfabric-baseline-contract-target-20261013` to preserve the
+running comparison executable. Logs: `/tmp/cogfabric-baseline-contract-all-tests.log`,
+`/tmp/cogfabric-baseline-contract-smoke.log`; evidence
+`/tmp/cogfabric-installed-smoke.jWuzXU`. The fixed isolated debug executable hash is
+`77f79a6254e47d6cd82a342aec5b8cc8c9f9f8344c3db701f04218bed8402ae4`.
+The running comparison binary SHA-256 remains `c5dfdb5bce170ec6697228c70c355c197913ff9f185ee706fb8658bdc83f0890`.
+A corrected live rerun is required before reporting comparative gains.

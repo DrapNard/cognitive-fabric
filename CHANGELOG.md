@@ -928,3 +928,12 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   typed FlatBuffers fields and forged-frame regressions.
 - Pass all 361 tests, mandatory checks, schema conformity and expanded CLI/service
   smoke; model residency and general executable provisioning remain separate.
+
+### Equalize structured output instructions across comparison profiles
+
+- Provide sorting/ordering output contracts independently of executable checking,
+  so the model-alone baseline receives the same format instruction.
+- Preserve baseline permission limits and unverified runtime status; leak no
+  expected answers into prompts.
+- Verify identical solver prompts and unchanged enabled verification; all 362
+  tests and mandatory checks pass with isolated-build CLI/service smoke.
