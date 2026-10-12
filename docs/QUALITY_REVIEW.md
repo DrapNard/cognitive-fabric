@@ -1840,3 +1840,18 @@ Two subsequent complete default-parallel runs at runtime revision `2d2fb3b` pass
 command on these runs; neither success explains the earlier intermittent SQL
 execution / runtime-lease failures. Retain those failures as unresolved evidence
 rather than claiming a proven race fix from the independent HTTP-fixture change.
+
+## Installed ranked-tool runtime — 2026-10-12
+
+Cached offline locked optimized installation of source `6954a74` (runtime
+`2d2fb3b`) succeeded in 1m04s into
+`/tmp/cogfabric-v1-ranked-tools-install-20261012`. Binary SHA-256:
+`0f96745c8a4cf6a490079b22f780d68c7c1b576ced1f53353b32940df496ab23`.
+The unchanged installed smoke script passed CLI/service, typed socket, managed
+worker, candidate rollback and restore workflows. Evidence:
+`/tmp/cogfabric-installed-smoke.B6mzcD`, install/smoke logs
+`/tmp/cogfabric-ranked-tools-install.log` and
+`/tmp/cogfabric-ranked-tools-installed-smoke.log`. This uses installed existing
+prerequisites/cached dependencies, not a clean-OS installation or neural safety
+proof. Separately, the live Qwen retrieved-document attack contaminated answer
+text while deterministic permissions stayed unchanged; see LIVE_INFERENCE.md.

@@ -1052,3 +1052,16 @@ quality evidence; empty-corpus memory/expert labels and first-cycle recursive
 success establish no retrieval, specialization or revision gain. See
 LIVE_INFERENCE.md for exact usage and limitations. Two fresh default-parallel
 350-test suites passed; prior intermittent failures remain unexplained.
+
+Native residency update: real read-only LM Studio v1 inventory now succeeds and
+reports Qwen3 8B loaded at context capacity 4096, with three other installed keys
+unloaded. This closes the real unauthenticated inventory smoke gap only. Native
+load/unload mutations, authenticated native access, physical weight attestation
+and automatic ownership-aware residency scheduling remain unverified/incomplete.
+
+Security update: a live Qwen3 8B retrieved-document trial produced the attacker's
+requested marker in an unverified answer. No requested shell execution, promotion
+or permission change occurred. Answer integrity therefore failed despite runtime
+authority containment; stronger source/instruction separation and broader
+behavioral evaluation remain release work. Installed runtime `2d2fb3b` passed
+the full existing optimized installed-binary smoke; clean-OS setup is unverified.
