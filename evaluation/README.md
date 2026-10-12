@@ -52,3 +52,11 @@ ordering uses constraint scoring and SQL uses structural result scoring.
 
 The Rust test executes deterministic tools only, without a model/GPU. No suite
 accuracy, collective advantage or larger-model equivalence is claimed here.
+
+## Public diagnostic evidence
+
+The complete pre-contract-parity Qwen3 8B workflow (600 tasks) is retained under
+[results](results/README.md). It exposed output-format fairness limitations and
+strict-format false negatives; it does not supply the missing independent review
+or a validated comparative study. The manifest's formal evaluation/review flags
+remain false. A corrected full public rerun is underway.

@@ -2183,3 +2183,35 @@ Additional instruction bytes count toward existing prompt bounds. No token budge
 permission or runtime proof is expanded. Older saved contexts with different
 prompt hashes fail closed; there is no automatic migration of changed prompts.
 A fresh corrected live study remains required.
+
+## Full provisional Qwen workflow diagnostic — 2026-10-13
+
+The fixed `da2a8b9` executable completed all 100 cases × six profiles, 600 tasks,
+in 1138.772610 seconds; command exit zero and report `complete:true`. Strict
+criterion matches were alone 2, tools 22, recursive 22, collective 50, memory 50
+and experts 49 out of 100 each. These are not causal reasoning-gain measurements:
+output-contract asymmetry, format-sensitive scoring, unreviewed authored labels,
+empty reference/specialist corpus, uncontrolled warmup and overlapping host build
+activity limit interpretation. There were 118 completed, 438 unverified, 32
+rejected and 12 clarification outcomes, with no failed tasks. Raw public answers,
+per-category results, resources and detailed caveats are retained under
+`evaluation/results/`; this generated report is committed specifically for
+reproducible evidence inspection, without weights, credentials or private data.
+The raw checksum is
+`b4fa58005f2e0498047826404642a275335ef11fac2a5efd761006f6a9596299`.
+
+The original process ended before the corrected full rerun started. The rerun
+uses fresh state, identical budgets and frozen binary SHA-256
+`a2012ac53ec77dee168d4e2aadb1dca7067864b419a3ddd6e0db8f47e5c792d0`
+at source `9fec58bc93fd97fb3096147360dc67681a7974b7`. Its initial temporary config
+contained an unsupported home field; validation rejected it before task creation
+or inference, and it was removed before the actual run. No corrected scores are
+claimed before terminal completion. Independent review, a 1–3B baseline, larger
+baseline, actual specialized corpus and wider security/quality studies remain open.
+
+Hosted CI passed for `ba5dac1` (run 38316401789) and `9fec58b` (run
+[38316751254](https://github.com/DrapNard/cognitive-fabric/actions/runs/38316751254)),
+including compiler bootstrap, mandatory checks, tests, CLI/service smoke, security
+probes and offline training preflight. The second watcher exited zero; log
+`/tmp/cogfabric-tool-format-parity-hosted-ci.log`. These checks establish source
+workflow verification, not benchmark quality or neural safety.

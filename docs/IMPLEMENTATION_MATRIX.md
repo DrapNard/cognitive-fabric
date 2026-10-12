@@ -1272,3 +1272,12 @@ Additional instruction bytes count toward existing prompt bounds. No token budge
 permission or runtime proof is expanded. Older saved contexts with different
 prompt hashes fail closed; there is no automatic migration of changed prompts.
 A fresh corrected live study remains required.
+
+### Full public corpus diagnostic — 2026-10-13 (Experimental)
+
+All 600 profile tasks completed at source `da2a8b9`; raw answers and category/resource
+summary are retained in `evaluation/results/`. Output-contract asymmetry and
+format-sensitive scores prevent causal reasoning-gain claims. The corrected
+`9fec58b` full rerun is active with frozen executable/fresh state; no results are
+asserted yet. Independent label/split review and model-quality/security evaluation
+remain incomplete. Both parity commits passed hosted CI.
