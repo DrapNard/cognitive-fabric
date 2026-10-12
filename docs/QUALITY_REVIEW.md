@@ -1621,3 +1621,7 @@ Tests: 304 library + 21 integration = 325. Log:
 `/tmp/cogfabric-inference-identity-tests.log`. Registration mismatch tests verify
 no backend calls or retained forged version; the actual connected child test
 verifies discovery and role restriction. Optimized installation must be refreshed.
+
+Fresh optimized source installation and installed smoke passed for `8506352`.
+Evidence/hashes are in `RELEASE_AUDIT.md`; this closes the installation gap for
+transport identity validation. No additional live-model study was run.

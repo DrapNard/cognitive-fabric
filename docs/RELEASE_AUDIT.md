@@ -249,3 +249,15 @@ A separate fresh installed socket service also passed real Ollama sorting with
 independent proof, confirmed worker reaping and service socket removal; see
 `LIVE_INFERENCE.md`. This closes the installed-source gap for inference rollback
 and adds a real installed service case. No clean-OS setup or benchmark gain is claimed.
+
+Optimized inference identity verification (2026-10-12): source `8506352` installed
+with `FLATC=/tmp/cogfabric-flatbuffers-build/flatc cargo install --offline --locked --path . --root /tmp/cogfabric-v1-inference-identity-install-20261012`.
+Binary SHA-256:
+`a18761118b0042f0ae1df720a740333ca89e7fc615d921fb14dae7c8a6bef98e`.
+The unchanged installed smoke script passed; evidence:
+`/tmp/cogfabric-installed-smoke.k32MVh`; logs:
+`/tmp/cogfabric-inference-identity-install.log`,
+`/tmp/cogfabric-inference-identity-installed-smoke.log`.
+This closes the pending installation gap for transport identity enforcement.
+Actual transport discovery/role matching is exercised by the child regression;
+installed smoke uses deterministic demo inference, not a new live quality study.
