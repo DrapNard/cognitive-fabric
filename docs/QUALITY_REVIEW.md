@@ -1711,3 +1711,14 @@ all-target check and Clippy with warnings denied passed with pinned FlatBuffers
 25.12.19. Log: `/tmp/cogfabric-workflow-check-tests.log`. The initial restricted
 sandbox run denied socket operations; the complete rerun with local socket/child
 permissions passed. No security permission or inference capability is added.
+
+### Local inference availability — 2026-10-12
+
+All 337 tests (316 library, 21 integration), formatting, offline all-target check
+and Clippy with warnings denied passed using pinned FlatBuffers 25.12.19. Log:
+`/tmp/cogfabric-module-availability-tests.log`. Actual malformed peer response
+closes the adapter; new routing, pinned dispatch and reactivation refuse it.
+Connected/in-use observations do not prove remote health. No network probes,
+credentials, grants or automatic retries are added. The inventory is bounded by
+the existing 128-version registry and performs no inference. Prior optimized
+installation evidence predates this runtime change and needs refreshing.

@@ -78,6 +78,13 @@ async fn write(stream: &mut UnixStream, packet: &Packet) -> Result<()> {
 }
 
 impl InferenceBackend for UnixInference {
+    fn availability(&self) -> super::Availability {
+        match self.stream.try_lock() {
+            Ok(slot) if slot.is_some() => super::Availability::Connected,
+            Ok(_) => super::Availability::Closed,
+            Err(_) => super::Availability::InUse,
+        }
+    }
     fn module_descriptor(&self) -> Option<&ModuleDescriptor> {
         Some(&self.descriptor)
     }
@@ -288,6 +295,51 @@ mod tests {
             std::io::ErrorKind::UnexpectedEof
         );
     }
+    #[tokio::test]
+    async fn closed_transport_is_visible_but_cannot_be_reactivated_or_routed() {
+        let (client, mut server) = UnixStream::pair().unwrap();
+        let adapter = std::sync::Arc::new(peer(client));
+        assert_eq!(
+            adapter.availability(),
+            super::super::Availability::Connected
+        );
+        {
+            let _guard = adapter.stream.lock().await;
+            assert_eq!(adapter.availability(), super::super::Availability::InUse);
+        }
+        let broker = super::super::Broker::try_with_inference(adapter.clone()).unwrap();
+        let pinned = broker.pin().unwrap().unwrap();
+        let worker = tokio::spawn(async move {
+            let mut request = read(&mut server).await.unwrap();
+            request.header.task = uuid::Uuid::new_v4().to_string();
+            write(&mut server, &response(request.header)).await.unwrap();
+        });
+        assert!(broker.generate("solver", "goal", 128).await.is_err());
+        worker.await.unwrap();
+        let statuses = broker.statuses().unwrap();
+        assert_eq!(statuses.len(), 1);
+        assert!(statuses[0].active);
+        assert_eq!(statuses[0].availability, super::super::Availability::Closed);
+        assert_eq!(broker.versions().unwrap(), vec![descriptor()]);
+        assert!(broker
+            .activate(&descriptor().id, &descriptor().version)
+            .is_err());
+        assert!(broker
+            .generate("solver", "goal", 128)
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("No registered module"));
+        assert!(pinned
+            .generate("solver", "goal", 128)
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("permanently closed"));
+        broker.shutdown().unwrap();
+        assert!(broker.statuses().unwrap().is_empty());
+    }
+
     #[tokio::test]
     async fn forged_response_closes_connection_permanently() {
         let (client, mut server) = UnixStream::pair().unwrap();

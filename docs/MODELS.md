@@ -226,3 +226,13 @@ or one exact outer `json` fence is accepted; unknown fields, surrounding prose,
 multiple values and malformed wrappers fail. Plan/critic output stays advisory,
 never permissions or independent success evidence, and existing budgets/stopping
 rules remain authoritative. Recovery uses the same validated planner parser.
+
+Trusted inference hosts can inspect `Broker::statuses()` for retained versions,
+active selection and local adapter availability. Default backends report unknown;
+Unix adapters distinguish a present stream, an exchange holding its lock and a
+permanently discarded stream. Closed adapters are excluded from new routing and
+cannot be reactivated; existing pinned dispatch fails before queueing. Registration
+metadata remains discoverable for diagnosis. These observations neither probe
+remote services nor attest loaded weights, grant renewal or future availability.
+A replacement connection requires a new immutable registration; there is no
+implicit reconnect, retry or budget refund.

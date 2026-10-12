@@ -27,6 +27,23 @@ pub struct ModuleDescriptor {
     pub roles: Vec<String>,
 }
 
+/// Observed local adapter state, not a remote health or inference guarantee.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Availability {
+    Unknown,
+    Connected,
+    InUse,
+    Closed,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct ModuleStatus {
+    pub descriptor: ModuleDescriptor,
+    pub active: bool,
+    pub availability: Availability,
+}
+
 impl ModuleDescriptor {
     pub(crate) fn validate(&self) -> Result<()> {
         if self.id.is_empty()
@@ -253,6 +270,9 @@ impl Broker {
             .get(&(id.into(), version.into()))
             .cloned()
             .context("Unknown registered inference module version")?;
+        if module.backend.availability() == Availability::Closed {
+            bail!("Registered inference transport is permanently closed")
+        }
         if !registry.active.contains_key(id) && registry.active.len() >= 32 {
             bail!("Active module capacity exhausted")
         }
@@ -279,6 +299,26 @@ impl Broker {
             .versions
             .values()
             .map(|module| module.descriptor.clone())
+            .collect())
+    }
+
+    /// Bounded retained-version inventory without network calls or new grants.
+    pub fn statuses(&self) -> Result<Vec<ModuleStatus>> {
+        let registry = self
+            .registry
+            .read()
+            .map_err(|_| anyhow!("Module registry poisoned"))?;
+        Ok(registry
+            .versions
+            .values()
+            .map(|module| ModuleStatus {
+                descriptor: module.descriptor.clone(),
+                active: registry
+                    .active
+                    .get(&module.descriptor.id)
+                    .is_some_and(|active| Arc::ptr_eq(active, module)),
+                availability: module.backend.availability(),
+            })
             .collect())
     }
 
@@ -326,6 +366,9 @@ impl Broker {
         }
         let mut routes = BTreeMap::new();
         for module in registry.active.values() {
+            if module.backend.availability() == Availability::Closed {
+                continue;
+            }
             for role in &module.descriptor.roles {
                 routes.insert(role.clone(), module.clone());
             }
@@ -400,6 +443,9 @@ impl InferenceBackend for Pinned {
                 .context("No registered module for inference role")?;
             if *module.shutdown.borrow() {
                 bail!("Module broker shut down")
+            }
+            if module.backend.availability() == Availability::Closed {
+                bail!("Pinned inference transport is permanently closed")
             }
             let sender = actor(role)?;
             TaskPolicy::reasoning(task)?.authorize(task, sender, "llm.generate")?;

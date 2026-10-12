@@ -802,3 +802,5 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
 - Add explicit public comparison workflow checks with distinct report provenance;
   retain held-out review requirements for benchmark runs and reject conflicting
   run purposes.
+- Expose observed local inference adapter availability and refuse routing or
+  rollback activation of permanently discarded Unix connections.

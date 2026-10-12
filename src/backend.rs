@@ -23,6 +23,10 @@ pub struct Generation {
 }
 
 pub trait InferenceBackend: Send + Sync {
+    /// Local adapter state only; this never probes a provider or attests weights.
+    fn availability(&self) -> crate::fabric::Availability {
+        crate::fabric::Availability::Unknown
+    }
     /// Fixed transport identity, when this adapter is bound to one module.
     fn module_descriptor(&self) -> Option<&crate::fabric::ModuleDescriptor> {
         None

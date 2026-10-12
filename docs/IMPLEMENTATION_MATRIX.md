@@ -929,3 +929,16 @@ resource bounds and cancellation remain enforced. Regression:
 `workflow_checks_are_explicit_and_never_attest_held_out_review` verifies all six
 results and rejects missing/conflicting purposes. Independent held-out datasets
 and live small-model comparative measurements remain incomplete.
+
+### Observed inference adapter availability — 2026-10-12
+
+Implemented: `InferenceBackend::availability` defaults to unknown; Unix adapters
+report connected, in-use or permanently closed from their local stream slot.
+`Broker::statuses` exposes bounded immutable-version metadata, active selection
+and observed state without provider probes. Closed transports cannot be
+reactivated, enter new task routes or dispatch from already pinned routes.
+Metadata discovery/history retains registered versions for diagnosis. Regression
+`closed_transport_is_visible_but_cannot_be_reactivated_or_routed` uses an actual
+forged Unix response to prove closure, route refusal, inventory and shutdown.
+Remote health, weight identity, automatic reconnection and residency scheduling
+remain incomplete. In-use is not failed; connected is not provider health.

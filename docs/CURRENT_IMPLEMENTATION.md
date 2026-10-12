@@ -532,3 +532,9 @@ The runner rejects missing/conflicting purposes and reports public results witho
 held-out review claims. All 336 tests and mandatory quality checks pass. The
 existing held-out benchmark gate is preserved; independent datasets and intended
 small-model quality measurements remain missing.
+
+Inference version inventories now expose local adapter availability without remote
+probes. Permanently closed Unix connections cannot be reactivated or routed;
+pinned requests fail before dispatch. Unknown/connected/in-use observations are
+not remote health guarantees. All 337 tests and mandatory quality checks pass;
+optimized installation must be refreshed after this runtime change.
