@@ -270,6 +270,7 @@ impl Module {
 struct Registry {
     active: BTreeMap<String, Arc<Module>>,
     seen: BTreeSet<(String, String)>,
+    capabilities: BTreeMap<String, String>,
     versions: BTreeMap<(String, String), Arc<Module>>,
 }
 pub struct Broker {
@@ -415,9 +416,11 @@ impl Broker {
         {
             bail!("Capability version is immutable or registry stopped/full")
         }
-        if registry.versions.values().any(|m| {
-            m.descriptor.id == descriptor.id && m.descriptor.capability != descriptor.capability
-        }) {
+        if registry
+            .capabilities
+            .get(&descriptor.id)
+            .is_some_and(|capability| capability != &descriptor.capability)
+        {
             bail!("A module cannot change its capability during replacement")
         }
         if !registry.active.contains_key(&descriptor.id) && registry.active.len() >= 32 {
@@ -433,6 +436,9 @@ impl Broker {
         registry
             .seen
             .insert((descriptor.id.clone(), descriptor.version.clone()));
+        registry
+            .capabilities
+            .insert(descriptor.id.clone(), descriptor.capability.clone());
         let module = Arc::new(Module {
             descriptor,
             backend,
@@ -490,6 +496,33 @@ impl Broker {
         registry.active.insert(id.into(), module);
         Ok(())
     }
+    /// Release an inactive backend from future rollback, preserving task pins.
+    /// Version and capability identities stay reserved for this broker's lifetime.
+    pub fn retire(&self, id: &str, version: &str) -> Result<()> {
+        if id.len() > 64 || version.len() > 64 {
+            bail!("Invalid capability version selection")
+        }
+        let mut registry = self
+            .registry
+            .write()
+            .map_err(|_| anyhow::anyhow!("Capability registry poisoned"))?;
+        if *self.stop.borrow() {
+            bail!("Capability registry stopped")
+        }
+        if registry
+            .active
+            .get(id)
+            .is_some_and(|module| module.descriptor.version == version)
+        {
+            bail!("Cannot retire an active capability version")
+        }
+        registry
+            .versions
+            .remove(&(id.into(), version.into()))
+            .context("Unknown retained capability version")?;
+        Ok(())
+    }
+
     /// Registered metadata, including inactive versions; not a backend health probe.
     pub fn versions(&self) -> Result<Vec<Descriptor>> {
         Ok(self
@@ -658,6 +691,95 @@ impl Handle {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn retirement_releases_tools_without_losing_pins_or_capability_identity() {
+        let arithmetic = Arc::new(Fixed("42"));
+        let math_weak = Arc::downgrade(&arithmetic);
+        let broker = Broker::with_arithmetic(arithmetic).unwrap();
+        let sql_backend = Arc::new(sql::LocalSql);
+        let sql_weak = Arc::downgrade(&sql_backend);
+        let sql_descriptor = Descriptor {
+            id: "sql.local".into(),
+            version: "1.0.0".into(),
+            capability: "sql.query".into(),
+        };
+        broker
+            .register_sql(sql_descriptor.clone(), sql_backend)
+            .unwrap();
+        let math_pin = broker.pin().unwrap().unwrap();
+        let sql_pin = broker.pin_capability("sql.query").unwrap().unwrap();
+        for id in ["arithmetic.local", "sql.local"] {
+            assert!(broker.retire(id, "1.0.0").is_err());
+            broker.unregister(id).unwrap();
+            broker.retire(id, "1.0.0").unwrap();
+            assert!(broker.activate(id, "1.0.0").is_err());
+            assert!(broker.retire(id, "1.0.0").is_err());
+        }
+        assert!(broker.versions().unwrap().is_empty());
+        assert!(broker.pin().unwrap().is_none());
+        assert!(broker.pin_capability("sql.query").unwrap().is_none());
+        assert!(broker
+            .register(descriptor("1.0.0"), Arc::new(Fixed("forged")))
+            .is_err());
+        assert!(broker
+            .register_sql(sql_descriptor, Arc::new(sql::LocalSql))
+            .is_err());
+        assert!(broker
+            .register_sql(
+                Descriptor {
+                    id: "arithmetic.local".into(),
+                    version: "2.0.0".into(),
+                    capability: "sql.query".into(),
+                },
+                Arc::new(sql::LocalSql)
+            )
+            .is_err());
+        assert!(broker
+            .register(
+                Descriptor {
+                    id: "sql.local".into(),
+                    version: "2.0.0".into(),
+                    capability: "math.evaluate".into(),
+                },
+                Arc::new(Fixed("forged"))
+            )
+            .is_err());
+        let task = uuid::Uuid::new_v4().to_string();
+        assert_eq!(
+            math_pin.evaluate(&task, "jev-plus", "6*7").await.unwrap(),
+            "42"
+        );
+        assert!(sql_pin
+            .query_sql(&task, "interface", r#"{"tables":[],"query":"SELECT 1"}"#)
+            .await
+            .is_err());
+        let answer = sql_pin
+            .query_sql(
+                &task,
+                "jev-plus",
+                r#"{"tables":[],"query":"SELECT 2 + 3 AS total"}"#,
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&answer).unwrap()["rows"],
+            serde_json::json!([[5]])
+        );
+        drop(math_pin);
+        drop(sql_pin);
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while math_weak.upgrade().is_some() || sql_weak.upgrade().is_some() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("Retired tool backends must release after their last pin closes");
+        broker
+            .register(descriptor("2.0.0"), Arc::new(Fixed("new version")))
+            .unwrap();
+        assert_eq!(broker.pin().unwrap().unwrap().descriptor().version, "2.0.0");
+    }
+
     struct Fixed(&'static str);
     impl ArithmeticBackend for Fixed {
         fn evaluate<'a>(

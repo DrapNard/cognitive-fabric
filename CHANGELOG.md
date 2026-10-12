@@ -2,6 +2,13 @@
 
 All notable changes are documented here in English.
 
+### Retire inactive arithmetic and SQL backend handles
+
+- Release inactive backend versions after their last task pins finish.
+- Preserve immutable version and capability metadata after retirement, preventing
+  identity reuse or cross-capability replacement.
+- Verify retained execution, permission denial and actual backend release.
+
 ### Retire inactive inference backend handles
 
 - Add trusted-host retirement that removes inactive versions from future rollback.

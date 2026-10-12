@@ -2293,3 +2293,17 @@ check, Clippy with warnings denied and all 366 tests (344 library, 22 integratio
 passed on 2026-10-13 with flatc 25.12.19. Test log:
 `/tmp/cogfabric-inference-retirement-tests.log`. Optimized installation evidence
 predates this new API and must be refreshed before final release.
+
+
+Tool backend retirement is implemented through trusted-host
+`fabric::tools::Broker::retire` in `src/fabric/tools.rs`. Existing arithmetic/SQL
+pins continue after retirement, while future selection/rollback and identity reuse
+are denied. Metadata tombstones preserve module capability identity even after
+all retained backend versions disappear. A regression verifies both actual weak
+reference releases, authorized execution, denied actor access, cross-capability
+reuse rejection and registration of a fresh same-capability version.
+Mandatory formatting, all-target check, Clippy with warnings denied and all 367
+tests (345 library, 22 integration) passed on 2026-10-13 with flatc 25.12.19.
+Local test log: `/tmp/cogfabric-tool-retirement-tests.log`. No new permissions,
+provider unloading, owned-child cleanup guarantee or performance gain is claimed.
+Optimized installation verification must be refreshed for these retirement APIs.

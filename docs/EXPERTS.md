@@ -180,7 +180,7 @@ backend and queue, including after unregistration; only future task pins change.
 `versions()` includes inactive metadata and is not a health check. IDs cannot
 change capability even after unregistration, and activation rejects conflicting
 active modules. Shutdown revokes all retained pins and clears backend history.
-Inactive backends/idle queues remain retained until shutdown; the count ceiling
+Inactive backends/idle queues remain retained until shutdown or explicit retirement; the count ceiling
 is not a byte or external-process residency quota. Process-granted backends may
 already be expired or disconnected; activation does not renew grants or prove
 health. No CLI/model permission or arbitrary executable loader is introduced.
@@ -218,3 +218,21 @@ and immutable routing ranks. This complements active-only `modules` and the tool
 inventory. Retained inactive versions may still serve previously pinned tasks;
 observations do not renew task grants or move in-flight routes. No physical model
 load/unload, executable discovery or remote health guarantee is implied.
+
+
+### Retiring inactive tool backend versions
+
+Trusted Rust hosts can call `fabric::tools::Broker::retire(id, version)` after
+unregistering or replacing an arithmetic/SQL module. Active, unknown and stopped
+registry selections fail. Retirement removes the version from inventory and
+future rollback, but existing pins continue using their original backend and
+permissions. Once the last pin and pending work release it, its queue closes and
+backend handle drops. Explicit owned-process cleanup remains separate.
+
+Immutable version identities and module-to-capability bindings remain reserved:
+neither registering the same version again nor changing an arithmetic ID into SQL
+(or vice versa) is permitted. Retirement does not replenish the 128 lifetime
+identity slots. The bounded capability tombstone map stores metadata only, without
+backend references. A new version with the same capability may be registered.
+These are process-local trusted-host APIs, not model/socket commands, durable
+registrations, provider unloading or general plugin isolation.
