@@ -1097,3 +1097,11 @@ A kernel regression verifies close-on-exec flags, zero interruption mutations
 while blocked, and idempotent recovery after final closure. Historical transient
 contention remains unexplained; the runtime deliberately retains fail-closed
 ownership checks. Current mandatory tests pass 354 cases.
+
+Installed-path update: current runtime `161dea5`, built from source `9b0cf59`,
+passes the complete offline installed smoke and a real Qwen3 8B request submitted
+through the installed authenticated socket service. Sorting independently verified,
+managed worker reaped normally, service exited zero and removed its socket.
+See QUALITY_REVIEW.md and LIVE_INFERENCE.md for hashes, paths and exact metrics.
+This closes latest installed CLI/service/local-model smoke coverage; it does not
+close clean-OS installation, general inference quality or broader release gaps.

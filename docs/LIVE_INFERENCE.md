@@ -414,3 +414,18 @@ model a trusted parser. It increases prompt cost and does not replace independen
 verification, deterministic permissions, candidate gates or isolation. Empty
 reference prompts retain their earlier representation; old nonempty-reference
 checkpoint hashes fail closed if reconstructed with this changed prompt format.
+
+### Installed service Qwen3 8B request — 2026-10-12
+
+Installed source `9b0cf59`, runtime `161dea5`, binary SHA-256
+`8164bbe9f89166c914e3bf50309ff047e9f158caac48e72f2e09010fde8c7ae1`.
+Fresh workspace `/tmp/cogfabric-installed-live-service.CfKtiB` used the preceding
+bounded Qwen configuration with managed inference. An installed service accepted
+`ask 'sort:{"values":[5,-3,5,1]}' --mode fast --socket` and returned verified
+`[-3,1,5,5]`, task `0878c21a-d7fb-4529-9624-73ab7e227ac1`.
+Elapsed 559.937656 ms, inference 555.617066 ms, one call / one cycle,
+provider 176 input / 14 output tokens, reserved output 384, prompt 307 bytes,
+two tool calls, queue wait 0.011382 ms. Worker exit zero, reaped true,
+forced false. Service status and stop responses were saved; owned service exited
+zero and its socket disappeared. No provider load/unload or larger-model study
+was performed; correctness evidence applies only to this structured sorting case.

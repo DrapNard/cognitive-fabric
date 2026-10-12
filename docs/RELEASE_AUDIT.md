@@ -454,3 +454,13 @@ rank selection, immutable pins and authenticated Unix destinations are verified
 by Rust regressions; the installed workflow exercises ordinary CLI/service,
 workers, rollback and restore. No adaptive cost, model-quality or general plugin
 provisioning claim follows. Tool capability alternatives remain unimplemented.
+
+## Latest installed service verification — 2026-10-12
+
+The latest runtime `161dea5` installed from `9b0cf59` passes the existing full
+installed smoke and actual LM Studio Qwen3 8B inference submitted with `ask --socket`.
+Independent sorting verification, normal managed-worker reaping, clean service
+exit and socket removal were observed. Exact binary hash, timing and evidence
+paths are in QUALITY_REVIEW.md and LIVE_INFERENCE.md. This supersedes earlier
+installed-runtime evidence for the SQL/reference changes, while clean-OS setup,
+held-out quality/security studies and general lifecycle requirements remain open.

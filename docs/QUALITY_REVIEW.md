@@ -1901,3 +1901,25 @@ integration), log `/tmp/cogfabric-retained-lease-tests.log`; formatting,
 all-target compilation and Clippy with denied warnings passed. Leading release
 status now reflects current counts, real LM Studio evidence and renewed private
 GitHub synchronization rather than stale authentication blockers.
+
+## Current installed service and live model verification — 2026-10-12
+
+Source `9b0cf59` / latest runtime `161dea5` installed offline and locked into
+`/tmp/cogfabric-v1-current-install-20261012` in 1m29s. Binary SHA-256:
+`8164bbe9f89166c914e3bf50309ff047e9f158caac48e72f2e09010fde8c7ae1`.
+The existing installed smoke passed, evidence
+`/tmp/cogfabric-installed-smoke.jDsXEf`, logs
+`/tmp/cogfabric-current-install.log` and
+`/tmp/cogfabric-current-installed-smoke.log`. This includes latest SQL admission
+and quoted-reference runtime changes; no fresh-OS prerequisites are implied.
+
+Separately, a fresh installed service with managed Qwen3 8B inference processed
+an actual `ask --socket` sorting request and returned independently verified
+`[-3,1,5,5]`. The owned service stopped with exit zero and removed its socket;
+worker audit reports exit zero, reaped true, forced false. Evidence:
+`/tmp/cogfabric-installed-live-service.CfKtiB` (configuration, outcome, service log,
+status/stop responses, SQLite audit and binary hash). This verifies installed
+CLI → authenticated typed local socket → service → managed worker → LM Studio
+inference → compiled verifier. It does not establish general model quality or
+security, controlled native residency mutations, arbitrary plugin isolation or
+held-out benchmark results.

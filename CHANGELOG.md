@@ -863,3 +863,10 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
   recovery without audit mutation until the last descriptor closes.
 - Refresh release-status evidence for 354 tests, successful LM Studio smoke and
   restored private GitHub synchronization; preserve unresolved contention limits.
+
+### Verify current installed runtime with live socket inference
+
+- Record current optimized installation, complete installed smoke and real Qwen3
+  8B generation through the installed Unix socket service and managed worker.
+- Preserve binary hashes, exact resource metrics and normal worker/service cleanup
+  evidence without extending the claim to general model quality or release readiness.
