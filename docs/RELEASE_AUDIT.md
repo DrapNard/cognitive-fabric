@@ -432,3 +432,10 @@ and after the transition. Both independent sorting checks and worker reaping
 passed; see `LIVE_INFERENCE.md`. This proves provider-managed configurable model
 selection, not framework-controlled load/unload, exclusive ownership, native
 LM Studio lifecycle or neural adapter hot-swapping. Those gates remain open.
+
+A bounded live adversarial-reference trial retrieved a forged permission/goal
+instruction but timed out before the interface produced a response. Cleanup and
+charged failure were recorded; this is explicitly inconclusive for live injection
+resistance, not a security pass. Details and the exact artifact hash are retained
+in `LIVE_INFERENCE.md`. Deterministic negative permission/schema regressions remain
+valid, while live injection/poisoning robustness remains an open evaluation gate.
