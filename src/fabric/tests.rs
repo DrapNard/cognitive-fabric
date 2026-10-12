@@ -843,3 +843,79 @@ async fn inactive_retirement_preserves_pins_and_releases_backend_after_last_pin(
     .await
     .expect("Retired backend must be released after its queue and last pin close");
 }
+
+#[tokio::test]
+async fn retirement_preserves_active_and_queued_calls_but_not_shutdown_immunity() {
+    for shutdown in [false, true] {
+        let backend = Arc::new(Gated {
+            calls: AtomicUsize::new(0),
+            entered: tokio::sync::Notify::new(),
+            release: tokio::sync::Notify::new(),
+        });
+        let weak = Arc::downgrade(&backend);
+        let broker = Broker::with_inference(backend.clone());
+        let pinned = broker.snapshot().unwrap();
+        let active = Arc::new(pinned);
+        let first_pin = active.clone();
+        let first = tokio::spawn(async move { first_pin.generate("solver", "first", 128).await });
+        tokio::time::timeout(Duration::from_secs(1), backend.entered.notified())
+            .await
+            .unwrap();
+        let second_pin = active.clone();
+        let second =
+            tokio::spawn(async move { second_pin.generate("solver", "second", 128).await });
+        let queue = active.routes["solver"].queue().await;
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while queue.capacity() != 3 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        broker
+            .register(
+                ModuleDescriptor {
+                    id: "inference.local".into(),
+                    version: "2.0.0".into(),
+                    roles: vec!["solver".into()],
+                },
+                Arc::new(Fixed("replacement", AtomicUsize::new(0))),
+            )
+            .unwrap();
+        broker.retire("inference.local", "1.0.0").unwrap();
+        assert_eq!(
+            broker.generate("solver", "new", 128).await.unwrap().text,
+            "replacement"
+        );
+        assert_eq!(backend.calls.load(Ordering::SeqCst), 1);
+        if shutdown {
+            broker.shutdown().unwrap();
+        } else {
+            backend.release.notify_one();
+        }
+        for call in [first, second] {
+            let result = tokio::time::timeout(Duration::from_secs(1), call)
+                .await
+                .unwrap()
+                .unwrap();
+            if shutdown {
+                assert!(result.is_err());
+            } else {
+                assert_eq!(result.unwrap().text, "answer");
+            }
+        }
+        assert_eq!(
+            backend.calls.load(Ordering::SeqCst),
+            if shutdown { 1 } else { 2 }
+        );
+        drop(active);
+        drop(backend);
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while weak.upgrade().is_some() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("Retired running backend must be released");
+    }
+}

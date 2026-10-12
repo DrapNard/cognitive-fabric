@@ -4,14 +4,14 @@ This checklist preserves the 18 acceptance criteria in the goal objective. It is
 an evidence inventory, not a release approval. The canonical French architecture
 and the broader implementation matrix remain authoritative. Earlier test counts
 in the quality review are historical milestones. Current local verification is
-367 Rust tests (345 library, 22 integration), formatting, all-target checking and
+368 Rust tests (346 library, 22 integration), formatting, all-target checking and
 Clippy with warnings denied, using FlatBuffers compiler/crate 25.12.19.
 
 | Goal criterion | Evidence inspected | Assessment / remaining proof |
 |---|---|---|
 | 1. Workspace builds | `Cargo.toml`, all-target check | Passed locally; isolated optimized source installation also passed with cached dependencies. |
 | 2. Formatting and Clippy | Mandatory checks in `QUALITY_REVIEW.md` | Passed locally. |
-| 3. Mandatory tests | All-target test results, `tests/` | 367 passed; fixtures do not establish live model quality. |
+| 3. Mandatory tests | All-target test results, `tests/` | 368 passed; fixtures do not establish live model quality. |
 | 4. FlatBuffers IPC | `protocol/`, `src/wire.rs`, `src/fabric/`, malformed/compatibility/socket tests | Implemented for present transports; authenticated process event delivery/replay is now tested; broader module compatibility remains partial. |
 | 5. CLI/service communication | `src/service.rs`, socket tests, `tests/process_worker.rs` | Tested local transport, progress and cancellation; no general independent plugin service is claimed. |
 | 6. Compatible local LLM | `src/backend.rs`, `tests/inference_auth.rs`, `LIVE_INFERENCE.md` | Passed for Ollama and LM Studio Qwen3 8B compatible endpoints, including managed verified sorting. Native LM Studio read-only inventory passed; authenticated native access and controlled load/unload remain unverified. |
@@ -672,3 +672,23 @@ Hosted CI [38319713203](https://github.com/DrapNard/cognitive-fabric/actions/run
 completed successfully for inference retirement source
 `e362746ad335f8b4bb63e3b993629345e229c7b5`. Hosted tool-retirement verification
 remains separately tracked; no result is inferred from this earlier successful run.
+
+
+Retirement concurrency verification (2026-10-13): the gated regression
+`retirement_preserves_active_and_queued_calls_but_not_shutdown_immunity` in
+`src/fabric/tests.rs` retires an original backend while one request is executing
+and another is queued. New calls select the replacement; original calls complete
+on their original backend. A separate shutdown branch cancels both original calls
+without dispatching the queued request, then verifies the retired backend releases.
+All 368 tests (346 library, 22 integration), formatting, all-target check and
+Clippy with warnings denied passed. Log:
+`/tmp/cogfabric-retirement-concurrency-tests.log`. This is deterministic lifecycle
+concurrency evidence; runtime source and optimized installation are unchanged.
+
+Hosted tool-retirement CI
+[38319883518](https://github.com/DrapNard/cognitive-fabric/actions/runs/38319883518)
+completed successfully for `a665df998699000e0f64839b06582d4411729cc1`; watcher
+exited zero. Compiler bootstrap, mandatory checks, tests, CLI/service smoke,
+security probes and offline training preflight passed. Local watcher log:
+`/tmp/cogfabric-tool-retirement-hosted-ci.log`. This supersedes its earlier pending
+status, without changing broader provisioning, residency or evaluation blockers.

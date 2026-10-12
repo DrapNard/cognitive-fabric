@@ -2332,3 +2332,23 @@ Hosted CI [38319713203](https://github.com/DrapNard/cognitive-fabric/actions/run
 completed successfully for inference retirement source
 `e362746ad335f8b4bb63e3b993629345e229c7b5`. Hosted tool-retirement verification
 remains separately tracked; no result is inferred from this earlier successful run.
+
+
+Retirement concurrency verification (2026-10-13): the gated regression
+`retirement_preserves_active_and_queued_calls_but_not_shutdown_immunity` in
+`src/fabric/tests.rs` retires an original backend while one request is executing
+and another is queued. New calls select the replacement; original calls complete
+on their original backend. A separate shutdown branch cancels both original calls
+without dispatching the queued request, then verifies the retired backend releases.
+All 368 tests (346 library, 22 integration), formatting, all-target check and
+Clippy with warnings denied passed. Log:
+`/tmp/cogfabric-retirement-concurrency-tests.log`. This is deterministic lifecycle
+concurrency evidence; runtime source and optimized installation are unchanged.
+
+Hosted tool-retirement CI
+[38319883518](https://github.com/DrapNard/cognitive-fabric/actions/runs/38319883518)
+completed successfully for `a665df998699000e0f64839b06582d4411729cc1`; watcher
+exited zero. Compiler bootstrap, mandatory checks, tests, CLI/service smoke,
+security probes and offline training preflight passed. Local watcher log:
+`/tmp/cogfabric-tool-retirement-hosted-ci.log`. This supersedes its earlier pending
+status, without changing broader provisioning, residency or evaluation blockers.
