@@ -321,3 +321,16 @@ Installed smoke passed; evidence `/tmp/cogfabric-installed-smoke.W7hlXf`; logs
 This closes the installed-source gap for exact intent fences and remaining-budget
 planner admission. Real natural-language evidence used the debug binary separately;
 installed smoke remains deterministic. No new stable release is declared.
+
+Optimized sorting-comparison verification (2026-10-12): runtime source `3eb870c`
+installed with the pinned compiler and locked offline dependencies under
+`/tmp/cogfabric-v1-sort-comparison-install-20261012` (Cargo 49.36 seconds).
+Binary SHA-256:
+`6200bccea222ec588ea2344be85a9bd21b3451cf6c52d19b3e61aa5c781bfb58`.
+Installed smoke passed; evidence `/tmp/cogfabric-installed-smoke.lAMiLy`; logs
+`/tmp/cogfabric-sort-comparison-install.log` and
+`/tmp/cogfabric-sort-comparison-installed-smoke.log`.
+Actual six-arm sorting scoring is covered by the HTTP fixture regression; smoke
+covers installed CLI/service behavior. Subsequent test-only recovery assertions
+also pass all mandatory checks and do not change installed runtime source.
+No independent held-out or live comparative performance study was run.

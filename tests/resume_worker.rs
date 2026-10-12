@@ -28,6 +28,7 @@ fn run(cancel: bool) {
         backend: "openai-local".into(),
         inference_process: true,
         interpret_goals: false,
+        reasoning_effort: Some("none".into()),
         max_tokens: 3000,
         api_base: format!("http://{}/v1", listener.local_addr().unwrap()),
         ..Config::default()
@@ -120,6 +121,7 @@ fn run(cancel: bool) {
                         let body: serde_json::Value =
                             serde_json::from_slice(&raw[end + 4..end + 4 + len]).unwrap();
                         assert_eq!(body["model"], "local-model");
+                        assert_eq!(body["reasoning_effort"], "none");
                         break;
                     }
                 }
@@ -140,6 +142,10 @@ fn run(cancel: bool) {
             write!(stream,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",body.len(),body).unwrap();
         }
     });
+    let mut current = cfg.clone();
+    current.reasoning_effort = Some("high".into());
+    current.interface_tokens = 1024;
+    current.save().unwrap();
     let mut child = Command::new(env!("CARGO_BIN_EXE_cogfabric"))
         .arg("--home")
         .arg(&home)
@@ -183,6 +189,13 @@ fn run(cancel: bool) {
     );
     server.join().unwrap();
     let trace = store.task(&task).unwrap();
+    assert_eq!(
+        Config::load(Some(home.clone()), None)
+            .unwrap()
+            .reasoning_effort
+            .as_deref(),
+        Some("high")
+    );
     let events = trace["events"].as_array().unwrap();
     assert_eq!(
         events

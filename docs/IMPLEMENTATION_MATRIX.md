@@ -902,3 +902,10 @@ HTTP comparison regression covers sorting and ordering through all six arms.
 `examples/sorting_comparison.jsonl` is demonstration data, not a reviewed held-out
 study. Reports disclose shared verifier implementation; live comparative quality
 and independent corpus review remain incomplete.
+
+Runtime `3eb870c` passes optimized installation and installed smoke. Expanded
+`tests/resume_worker.rs` now verifies saved provider controls survive mutable host
+configuration changes for both normal resumed worker completion and cancellation;
+all 334 tests and mandatory checks pass. Current operator settings remain unchanged.
+This strengthens existing task pinning evidence, not general arbitrary-phase replay
+or provider hidden-compute attestation. See `RELEASE_AUDIT.md` / `QUALITY_REVIEW.md`.

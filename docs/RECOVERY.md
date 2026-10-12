@@ -520,3 +520,10 @@ is unfinished. Older unjournaled resources and crashes between directory creatio
 and journal persistence remain manual work. This cooperative same-owner boundary
 does not defeat a malicious same-user process racing filesystem operations, and
 cleanup does not prove an external inference server stopped.
+
+Managed continuation also retains the original optional provider reasoning effort
+from saved task configuration. Actual CLI/worker regressions change current host
+settings after interruption, then assert original `none` is sent rather than the
+new `high`, on success and cancellation. The latest operator configuration is
+not overwritten. This extends immutable settings evidence; it does not attest
+provider compliance or enable replay of unknown inference outcomes.

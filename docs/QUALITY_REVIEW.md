@@ -1686,3 +1686,12 @@ warnings pass using FlatBuffers 25.12.19. Log:
 passed (`/tmp/cogfabric-sort-comparison-tests.log`). Actual HTTP fixtures exercise
 both structured criteria through all six arms. These are fixture correctness
 results, not independent held-out scores or live-model comparative gains.
+
+Optimized installation and installed smoke passed for runtime source `3eb870c`;
+`RELEASE_AUDIT.md` records hashes and logs. Recovery tests were then strengthened
+to pin `reasoning_effort: none` in saved task settings while current configuration
+changes to `high` and a different interface allocation. Actual resumed CLI workers
+still send the original provider control on normal completion and cancellation,
+reap children and leave the current operator configuration untouched. All mandatory
+checks pass again with 334 tests; log:
+`/tmp/cogfabric-resume-provider-pins-tests.log`. This final change affects tests only.
