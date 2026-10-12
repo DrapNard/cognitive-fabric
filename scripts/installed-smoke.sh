@@ -158,4 +158,8 @@ jq -e '
 ' "$evidence/inference-process-trace.json" >/dev/null
 run recovered-workers recover-workers
 jq -e '.interrupted_worker_sessions == [] and (.automatic_replay | not)' "$evidence/recovered-workers.json" >/dev/null
+run worker-files worker-files-preview
+jq -e '.entries == [] and (.more | not)' "$evidence/worker-files.json" >/dev/null
+run worker-files-apply worker-files-apply "$evidence/worker-files.json" --human-approve
+jq -e '.removed_directories == 0 and (.processes_killed | not)' "$evidence/worker-files-apply.json" >/dev/null
 echo 'Installed binary smoke checks passed; live inference and neural safety were not evaluated.'

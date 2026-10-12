@@ -213,3 +213,12 @@ format/capability/version and initial charges are validated, with bounded legacy
 format compatibility. Results and charged events are preserved. Interruption
 records explicitly leave resource completion and external-effect stopping unknown;
 recovery neither replays commands nor kills PIDs or removes files.
+
+Human-only `worker.cleanup` permits reviewed removal of journaled same-binary
+socket identities under exclusive runtime ownership. Plans bind workspace and
+exact directory/socket identities; symlink/type/mode/extra-file checks precede
+nonrecursive descriptor-relative deletion. Intent audit failure prevents removal;
+post-removal audit failure cannot undo filesystem effects. Linux procfs and a
+root-owned sticky `/tmp` are required. This is cooperative cleanup, not isolation
+from malicious same-owner races, a general filesystem tool or proof that external
+GPU computation stopped. Unjournaled resources are never guessed or swept.

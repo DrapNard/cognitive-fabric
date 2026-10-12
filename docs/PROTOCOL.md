@@ -414,3 +414,9 @@ missing-format records but rejects unknown explicit versions. `recover-workers`
 reconciles tool `started` sessions to `interrupted` only under exclusive runtime
 ownership, preserving existing charges and answers. No COGT/COGQ wire schema or
 permission changes are required; see `RECOVERY.md` for mixed-transaction limits.
+
+Managed-worker socket journals are owner-local audit metadata, not model commands
+or new IPC frames. Reviewed `worker-files-preview` / `worker-files-apply` bind
+workspace/task/event and filesystem identities under the exclusive runtime lease.
+Intent and result audits remain distinct because filesystem removal cannot share
+a SQLite rollback. See `RECOVERY.md` for supported limits and negative evidence.

@@ -1571,3 +1571,16 @@ Exact source/binary/script identity and retained evidence are recorded in
 `RELEASE_AUDIT.md`. The installed-source gap above is closed for this commit;
 abandoned/malformed/live-session proof comes from the recovery regressions, not
 a simulated host crash in the smoke script.
+
+### Journaled worker-file cleanup validation (2026-10-12)
+
+Rust/Cargo 1.97.1 and freshly rebuilt FlatBuffers compiler 25.12.19 pass formatting,
+offline all-target check/tests and Clippy with warnings denied. Tests total 318
+(297 library, 21 integration). Nine cleanup tests cover approved/idempotent removal,
+workspace/plan/lease binding, symlink/type/mode/extra-file refusal, changed inodes,
+missing-socket re-review, audit failures, invalid/oversized/duplicate journals,
+pagination and actual child-process death. Full log:
+`/tmp/cogfabric-worker-files-gate.log`. The expanded debug smoke script also passes
+preview/apply of an empty plan after clean worker completion. Optimized installed
+validation is pending for this source. No automatic cleanup, unjournaled sweep or
+hostile same-user race isolation is claimed.

@@ -480,3 +480,43 @@ into Rust. Malformed metadata or any audit failure rolls back the entire mixed
 batch, including inference changes. Closed sessions stay untouched and repeated
 recovery is empty. These are audit repairs under cooperative ownership, not proof
 that arbitrary external effects stopped after a host crash.
+
+## Reviewed worker socket cleanup
+
+`worker-files-preview --after 0 --limit 128` returns a checksum-bound JSON plan.
+Save the JSON with `--json`, inspect its entries, and use
+`worker-files-apply PLAN.json --human-approve` to apply it. Both commands require
+exclusive persistent runtime ownership and the human-only `worker.cleanup`
+capability. The plan binds the workspace lease inode, journal page, task/event
+anchors, directory/socket device/inode identities and observed socket presence.
+Apply reconstructs the preview and rejects changed plans before deletion.
+
+Managed inference/arithmetic/SQL launch now journals socket identities before
+spawn. Cleanup accepts only those recorded UUID directory names under root-owned
+sticky `/tmp`, owned 0700 directories and matching owner-only 0600 sockets. It
+opens directories without following symlinks, inspects their stable descriptors,
+rejects extra files, and uses descriptor-relative removal. It does not recursively
+remove files, kill a PID or replay a task. An already-missing socket requires a
+fresh preview and permits removal of only the matching empty directory.
+
+Pages cover at most 128 journal records, including normally removed resources.
+Continue with returned `cursor` while `more` is true. Metadata copying is bounded
+to 4 KiB per journal; plan-file reading to 256 KiB. SQLite progress and per-entry
+checks use a five-second ceiling, with filesystem/I/O and busy waits remaining
+soft limits. Linux procfs is required for stable-descriptor directory inspection.
+
+Intent must persist before deletion and identities are checked again after that
+audit. Removal and its result audit are separate operations: filesystem changes
+cannot roll back with SQLite. Failure may leave some entries removed, an empty
+directory, or an intent without a result audit. Inspect task history and create a
+fresh preview; never infer deletion success from an intent. A repeated stale plan
+fails, while a fresh preview after successful cleanup is empty.
+
+A real child-process crash regression proves kernel lease release and subsequent
+reviewed cleanup; negative tests cover leases, checksum/workspace mismatches,
+symlinks, regular/extra files, modes, inode replacement, malformed journals and
+audit failures. This supersedes earlier statements that all stale-directory cleanup
+is unfinished. Older unjournaled resources and crashes between directory creation
+and journal persistence remain manual work. This cooperative same-owner boundary
+does not defeat a malicious same-user process racing filesystem operations, and
+cleanup does not prove an external inference server stopped.

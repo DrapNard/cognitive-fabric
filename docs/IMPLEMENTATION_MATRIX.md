@@ -759,9 +759,12 @@ and evidence. The installed-source gap is closed for this commit; the mixed/live
 recovery regressions establish abandoned-session behavior. Stale filesystem
 resources and broader module lifecycle remain incomplete.
 
-Worker-file cleanup: **Experimental / unfinished**. The current working slice
-journals managed socket identities and adds bounded preview/apply commands under
-an exclusive runtime lease. Formatting and all-target checking pass, but focused
-cleanup tests, negative filesystem/race tests, full regression checks and installed
-validation have not been completed. Do not treat this slice as release-ready.
-The last fully validated baseline is `169daa4` (309 tests and installed checks).
+Worker-file cleanup: **Implemented** for journaled same-binary socket directories,
+with operator-reviewed checksum-bound preview/apply under an exclusive runtime
+lease. `src/recovery/worker_files.rs`, `src/recovery/worker_files_tests.rs` verify
+actual host death, lease exclusion, approval, workspace/checksum binding,
+symlink/type/mode/identity/extra-file refusal, audit failures, malformed/oversized
+journals and pagination. All 318 Rust tests and mandatory quality checks pass.
+Installed validation is pending. Older unjournaled resources, creation-to-journal
+crash windows, hostile same-user races and automatic crash cleanup remain outside
+the guarantee; filesystem deletion cannot roll back with SQLite audits.

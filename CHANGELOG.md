@@ -711,3 +711,11 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
 - Preserve the unfinished socket-journaling and operator preview/apply slice for
   private repository publication. It formats and compiles; cleanup-specific tests
   and full validation are pending. This is experimental and not a release gate pass.
+
+### Verified journaled worker-file cleanup
+
+- Complete the previously unfinished cleanup slice with real host-death and
+  negative filesystem/lease/plan/journal/audit tests.
+- Revalidate identities after intent persistence and document partial failures,
+  pagination, Linux requirements and unjournaled/same-owner limitations.
+- Pass all mandatory checks with 318 Rust tests; installation verification follows.

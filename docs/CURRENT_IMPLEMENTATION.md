@@ -448,3 +448,11 @@ charges, validate bounded metadata and record interruption without replay/PID
 killing. Live tool sessions block recovery; malformed metadata and audit failures
 roll back the batch. Legacy unversioned tool audit starts remain supported.
 Filesystem cleanup and broader module lifecycle remain incomplete.
+
+Journaled managed-worker socket cleanup now has verified operator preview/apply
+commands and actual host-death coverage. It removes only identity-matched sockets
+and empty private directories under exclusive runtime ownership; extra files,
+symlinks, stale/tampered plans and malformed metadata fail closed. All 318 tests
+and mandatory checks pass. See `RECOVERY.md` for pagination, partial audit/filesystem
+failures, Linux requirements and unjournaled/hostile-owner limitations. Automatic
+crash recovery and broader module lifecycle remain incomplete.

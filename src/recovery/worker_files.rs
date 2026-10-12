@@ -274,9 +274,11 @@ impl Store {
             if started.elapsed() > std::time::Duration::from_secs(5) {
                 bail!("Worker cleanup deadline exhausted")
             }
-            let checked = inspect(&root, &entry.resource)?
-                .context("Worker files disappeared after preview")?;
+            inspect(&root, &entry.resource)?.context("Worker files disappeared after preview")?;
             self.event(&entry.task_id, "worker_socket_cleanup", "human-cli", serde_json::json!({"state":"intent","event_id":entry.event_id,"plan_checksum":plan.checksum,"resource":entry.resource}))?;
+            // Persistence may block; validate again before destructive operations.
+            let checked = inspect(&root, &entry.resource)?
+                .context("Worker files disappeared during cleanup audit")?;
             if checked.socket_present {
                 unlink(&checked.directory, c"worker.sock", 0)?;
             }
@@ -295,3 +297,7 @@ impl Store {
         Ok(removed)
     }
 }
+
+#[cfg(test)]
+#[path = "worker_files_tests.rs"]
+mod tests;

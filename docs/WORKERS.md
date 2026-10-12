@@ -144,3 +144,10 @@ idempotent, preserving task results and existing call charges. It records unknow
 completion rather than replaying tools or killing PIDs. See `RECOVERY.md` for
 metadata validation and legacy audit compatibility. Temporary-file cleanup and
 broader host-crash recovery remain separate work.
+
+Journaled managed-worker socket cleanup is now available through reviewed
+`worker-files-preview` / `worker-files-apply` commands. Launchers journal private
+socket identities before spawning; cleanup requires an exclusive lease and exact
+identity checks. See `RECOVERY.md` for pagination, partial failures and Linux
+requirements. This supersedes the blanket stale-directory limitation above;
+older unjournaled resources and automatic crash cleanup remain unsupported.

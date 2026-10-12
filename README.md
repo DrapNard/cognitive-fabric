@@ -2,7 +2,7 @@
 
 **Author:** DrapNard  
 **Language:** Rust (runtime), Python (optional offline model training)
-**Status:** **Verified Rust alpha baseline** — builds and 164 regression tests pass; v1.0 integration requirements remain incomplete.
+**Status:** **Verified Rust alpha baseline** — builds and 318 regression tests pass; v1.0 integration requirements remain incomplete.
 
 Optional managed inference workers: use `configure-worker --enabled true` to run
 each task's inference adapter in a host-authenticated child process. See
@@ -188,3 +188,10 @@ task-local SQL in a separate built-in Rust process. For example,
 returns independently checked results without model calls. Disable with
 `configure-sql-worker --enabled false`; restart an existing service after changing
 the setting. This preserves the inline-only SQL restrictions and task tool budgets.
+
+To review abandoned managed-worker sockets on Linux, run
+`cogfabric --json worker-files-preview > cleanup-plan.json`, inspect its entries,
+then run `cogfabric worker-files-apply cleanup-plan.json --human-approve`.
+Only journaled socket identities are eligible; active runtime leases block cleanup.
+For paginated previews, pass the returned `cursor` as `--after` while `more` is
+true. See [recovery](docs/RECOVERY.md) for partial-failure and filesystem limits.
