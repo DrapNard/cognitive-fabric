@@ -509,3 +509,9 @@ strict bounded object, preserving unknown-field rejection and the user's origina
 goal. Multiple objects, surrounding prose and malformed wrappers remain rejected.
 All mandatory checks pass with 333 tests. This handles an observed provider format,
 without making advisory intent a permission or proof of an answer.
+
+The corrected bounded real language/solver path now also succeeds in a recorded
+STANDARD-mode trial: two calls, accepted advisory structured intent, planner skip,
+whole-goal explanation and confirmed managed-child reaping. The explanation stays
+unverified. Optimized installation/smoke also pass for this source. See
+`LIVE_INFERENCE.md` and `RELEASE_AUDIT.md`; robustness and benchmark gates remain open.

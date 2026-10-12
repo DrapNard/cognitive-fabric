@@ -885,3 +885,11 @@ All mandatory checks pass with 333 tests (312 library, 21 integration). Earlier
 effort-trial trace inspection confirmed its interface output was a fenced valid
 object; the original strict parser correctly rejected that formerly unsupported
 wrapper. Real final-path success still requires separate observation.
+
+The corrected real structured-language path now succeeds on the same request:
+`3b186cd` accepts the exact fenced intent, records advisory structured metadata,
+skips unaffordable planning and dispatches the whole-goal solver within two calls
+and 768 output reservations. CLI exit is zero; prose remains unverified. The
+managed child is confirmed reaped. `LIVE_INFERENCE.md` records timing and limits.
+This closes the single-case live integration failure, not robust interpretation
+quality, synthesis or equal-budget reasoning evaluation.

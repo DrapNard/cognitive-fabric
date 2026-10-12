@@ -1671,3 +1671,10 @@ all-target check/tests (312 library + 21 integration = 333) and Clippy with deni
 warnings pass with FlatBuffers 25.12.19. Log:
 `/tmp/cogfabric-intent-fence-tests.log`. Negative wrapper/schema tests and bounded
 two-call original-goal preservation cover the newly observed real-model formatting.
+
+Fresh optimized installation and installed smoke passed for final source
+`3b186cd`; `RELEASE_AUDIT.md` records hashes/logs. Separately, the real debug
+STANDARD language path accepted fenced structured intent, skipped planning and
+returned an unverified solver explanation within two calls, with confirmed child
+reaping. `LIVE_INFERENCE.md` records actual totals and reproduction. This closes
+single-case integration, not independent quality or benchmark evaluation.

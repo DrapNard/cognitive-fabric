@@ -304,3 +304,20 @@ locked offline dependencies. Binary SHA-256:
 Installed smoke passed; evidence `/tmp/cogfabric-installed-smoke.kA3vOZ`; logs
 `/tmp/cogfabric-planner-admission-install.log` and
 `/tmp/cogfabric-planner-admission-installed-smoke.log`.
+
+Real language integration now succeeds for one bounded STANDARD case on debug
+source `3b186cd`, with accepted structured goal, original-goal solver, audited
+planner skip and confirmed child reaping. Output remains unverified. See
+`LIVE_INFERENCE.md`; controlled quality and synthesis measurements remain open.
+
+Optimized final language-path verification (2026-10-12): source `3b186cd`
+installed with the pinned compiler and locked offline dependencies under
+`/tmp/cogfabric-v1-fenced-intent-install-20261012`. Cargo reported 1m 08s.
+Binary SHA-256:
+`42f3d1160fce9ce5402a1927b1490c384ac02ea3a9264da9633968b53c72ab63`.
+Installed smoke passed; evidence `/tmp/cogfabric-installed-smoke.W7hlXf`; logs
+`/tmp/cogfabric-fenced-intent-install.log` and
+`/tmp/cogfabric-fenced-intent-installed-smoke.log`.
+This closes the installed-source gap for exact intent fences and remaining-budget
+planner admission. Real natural-language evidence used the debug binary separately;
+installed smoke remains deterministic. No new stable release is declared.

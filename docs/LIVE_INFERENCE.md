@@ -129,3 +129,41 @@ The request setting is transported correctly but this trial proves neither valid
 structured interpretation nor controlled hidden reasoning. It exposed a scheduler
 gap: initial planner admission used total rather than remaining call/token limits
 after interface work. That gap must be fixed and regression tested.
+
+## Successful bounded structured interface and solver — 2026-10-12
+
+Debug source `3b186cd` repeated the same natural request with unchanged two-call,
+768-output-token, 90-second-per-call and 180-second task ceilings; explicit
+`reasoning_effort: none` and 384 interface tokens were retained. The interface
+returned the observed fenced schema-valid object. The trace records
+`structured_goal` with the original request, one-sentence constraints, `rust.s1`
+and `trusted_permissions: false`. Planning was skipped to preserve the last solver
+call; the whole-goal solver returned an explanation. CLI exit: 0; status:
+`unverified`, with no independent answer evidence. No claim of correctness follows
+from model prose or successful interpretation.
+
+Task `aa74a0c7-a197-476a-8d86-268e24030864`: two calls, one cycle, 768 reserved
+output tokens, 783 prompt bytes, provider totals 315 input / 113 output tokens,
+63102.431378 ms elapsed, 63095.939683 ms inference and 0.104088 ms queue wait.
+The actual trace dispatches 384 tokens to interface then 384 to solver. The worker
+exited zero and was reaped without force. Evidence:
+`/tmp/cogfabric-live-fenced-intent.5usCUv/{outcome.json,trace.json,stderr.txt}`.
+
+To reproduce, use the earlier isolated setup, enable interpretation, set
+`max_calls: 2`, `max_cycles: 1`, `max_tokens: 768`, `max_wall_seconds: 180`, and run:
+
+```sh
+cogfabric --home "$live_home" configure-local \
+  --model 'orcarouter/Qwen3.8-27B-Uncensored:latest' \
+  --api-base http://127.0.0.1:11434/v1 --temperature 0 \
+  --interface-tokens 384 --reasoning-effort none
+cogfabric --home "$live_home" configure-worker --enabled true
+cogfabric --home "$live_home" --json ask \
+  'Explain Rust borrowing in one sentence. /no_think' --mode standard
+```
+
+This establishes one working real structured language/solver integration with
+bounded budgets, pinned settings and cleanup. Robust interpretation/synthesis,
+recursive gains, small-model baseline comparisons and held-out evaluation remain
+unmeasured. Earlier failures remain valid observations for their recorded code
+and settings; they are not silently reclassified as successes.
