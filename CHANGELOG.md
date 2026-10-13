@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Freeze reproducible public graph diagnostics
+
+- Add 16 hashed shortest-path cases with separately stored oracle metadata.
+- Verify labels by exhaustive path enumeration independently of runtime search.
+- Keep public-data provenance and unavailable live-model evaluation explicit.
+
 ### Verify bounded shortest-path reasoning independently
 
 - Check original directed unweighted graph criteria with deterministic Rust search.

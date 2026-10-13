@@ -1997,3 +1997,34 @@ criteria without claiming general semantic verification or measured model gains.
 
 Shortest-path gate: all 459 workspace tests and mandatory checks pass; actual
 CLI/HTTP fixture passes. See QUALITY_REVIEW.md for evidence scope and limitations.
+
+
+### Public shortest-path diagnostic corpus
+
+`evaluation/shortest_path_cases.jsonl` contains 16 original CC0-1.0 directed,
+unweighted graph objectives: direct/chain paths, alternative optima, directed
+reverse traps, disconnected graphs, cycles, unreachable goals, identical endpoints,
+dead ends, nonlexical labels and branch merging. Inputs contain only criteria and
+`verification: shortest_path_v1`, with no expected path fed to inference. The
+separate `evaluation/shortest_path_manifest.json` pins dataset/objective hashes,
+minimum distances and one accepted optimum per case. Dataset SHA-256:
+`0fedaaf6bef27f45ae0a13debcd5c6e391a32637c84891b0f38a19d9cba93edc`.
+
+`tests/shortest_path_corpus.rs` independently enumerates all simple paths in these
+small fixed graphs to check labels, alternative optima and provenance metadata.
+The runtime checker uses breadth-first distance computation instead. Comparison
+regressions prepare every frozen row and recheck reference outputs while rejecting
+forged verification objects and rejected runtime states. This is public diagnostic
+data, not a held-out or independently human-reviewed study. Contamination has not
+been assessed; no live model result is recorded. On 2026-10-13 the configured
+LM Studio endpoint `127.0.0.1:1234` refused the read-only model-list connection
+(curl exit 7). No provider was started, no weights loaded/unloaded and no model
+quality score is inferred from that failure.
+
+When the authorized Qwen endpoint is available, use a fresh workspace configured
+for `qwen/qwen3-8b` and run a bounded `compare` with this dataset, its pinned hash,
+`--source "Public synthetic shortest-path diagnostics" --license CC0-1.0`,
+`--code-revision` set to the tested revision, and `--workflow-check`. Use the
+same configuration and budgets across the six profiles, retain raw reports and
+usage, and report incomplete/failed runs. Do not label this public corpus held out.
+Independent unseen tasks and equal-budget model studies remain release work.

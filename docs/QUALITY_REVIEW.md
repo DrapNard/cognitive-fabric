@@ -3189,3 +3189,27 @@ reasoning gains, external graph truth, weighted routing or neural safety. No
 optimized install/clean-OS refresh or real-model inference is claimed here.
 General independent executable verification, expert provisioning/isolation,
 model residency and broader release evaluation remain incomplete.
+
+
+### Frozen graph diagnostic corpus validation
+
+Added 16 original public shortest-path criteria, separately hashed manifest/oracle
+labels and independent exhaustive simple-path enumeration in
+`tests/shortest_path_corpus.rs`. Comparison regressions prepare all rows, accept
+independently checked optima, and reject forged verification objects and rejected
+runtime outcomes. Corpus includes four unreachable cases, two identity paths and
+multiple alternative optima. Public examples are not independent human-reviewed,
+held-out or contamination-assessed data. No model result is claimed.
+
+All 461 tests (415 library, 46 integration) pass with formatting, workspace
+all-target check and Clippy. Commands: `cargo fmt --all -- --check`,
+`cargo check --offline --workspace --all-targets`,
+`cargo test --offline --workspace --all-targets`, and
+`cargo clippy --offline --workspace --all-targets -- -D warnings`.
+Pinned flatc/Rust FlatBuffers 25.12.19 pairing is unchanged. Log:
+`/tmp/cogfabric-path-corpus-tests.log`. Read-only query of the configured local
+LM Studio model list failed with connection refusal (curl exit 7); Qwen graph
+comparison remains unrun. No server launch, weight download/load/unload, new tool
+permission, runtime schema/protocol change or optimized-install validation.
+Independent unseen quality/security evaluation and broader lifecycle gates stay
+open. BENCHMARKING.md records provenance and the bounded follow-up procedure.

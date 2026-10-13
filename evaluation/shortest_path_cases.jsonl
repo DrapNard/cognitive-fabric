@@ -1,0 +1,16 @@
+{"input":"path:{\"nodes\":[\"a\",\"b\",\"c\"],\"edges\":[[\"a\",\"b\"],[\"b\",\"c\"],[\"a\",\"c\"]],\"start\":\"a\",\"goal\":\"c\"}","verification":"shortest_path_v1"}
+{"input":"path:{\"nodes\":[\"a\",\"b\",\"c\",\"d\"],\"edges\":[[\"a\",\"b\"],[\"b\",\"c\"],[\"c\",\"d\"]],\"start\":\"a\",\"goal\":\"d\"}","verification":"shortest_path_v1"}
+{"input":"path:{\"nodes\":[\"a\",\"b\",\"c\",\"d\"],\"edges\":[[\"a\",\"b\"],[\"b\",\"d\"],[\"a\",\"c\"],[\"c\",\"d\"]],\"start\":\"a\",\"goal\":\"d\"}","verification":"shortest_path_v1"}
+{"input":"path:{\"nodes\":[\"a\",\"b\"],\"edges\":[[\"a\",\"b\"]],\"start\":\"b\",\"goal\":\"a\"}","verification":"shortest_path_v1"}
+{"input":"path:{\"nodes\":[\"a\",\"b\",\"c\",\"d\"],\"edges\":[[\"a\",\"b\"],[\"c\",\"d\"]],\"start\":\"a\",\"goal\":\"d\"}","verification":"shortest_path_v1"}
+{"input":"path:{\"nodes\":[\"a\",\"b\",\"c\",\"d\"],\"edges\":[[\"a\",\"b\"],[\"b\",\"c\"],[\"c\",\"a\"],[\"c\",\"d\"]],\"start\":\"a\",\"goal\":\"d\"}","verification":"shortest_path_v1"}
+{"input":"path:{\"nodes\":[\"a\",\"b\",\"c\",\"d\"],\"edges\":[[\"a\",\"b\"],[\"b\",\"c\"],[\"c\",\"a\"]],\"start\":\"a\",\"goal\":\"d\"}","verification":"shortest_path_v1"}
+{"input":"path:{\"nodes\":[\"a\"],\"edges\":[],\"start\":\"a\",\"goal\":\"a\"}","verification":"shortest_path_v1"}
+{"input":"path:{\"nodes\":[\"a\",\"b\"],\"edges\":[[\"a\",\"b\"],[\"b\",\"a\"]],\"start\":\"b\",\"goal\":\"b\"}","verification":"shortest_path_v1"}
+{"input":"path:{\"nodes\":[\"a\",\"b\",\"c\"],\"edges\":[],\"start\":\"a\",\"goal\":\"c\"}","verification":"shortest_path_v1"}
+{"input":"path:{\"nodes\":[\"s\",\"dead\",\"mid\",\"g\"],\"edges\":[[\"s\",\"dead\"],[\"s\",\"mid\"],[\"mid\",\"g\"]],\"start\":\"s\",\"goal\":\"g\"}","verification":"shortest_path_v1"}
+{"input":"path:{\"nodes\":[\"s\",\"a\",\"b\",\"c\",\"g\"],\"edges\":[[\"s\",\"a\"],[\"a\",\"b\"],[\"b\",\"c\"],[\"c\",\"g\"],[\"s\",\"c\"]],\"start\":\"s\",\"goal\":\"g\"}","verification":"shortest_path_v1"}
+{"input":"path:{\"nodes\":[\"s\",\"a\",\"b\",\"g\"],\"edges\":[[\"s\",\"a\"],[\"b\",\"a\"],[\"b\",\"g\"],[\"a\",\"g\"]],\"start\":\"s\",\"goal\":\"g\"}","verification":"shortest_path_v1"}
+{"input":"path:{\"nodes\":[\"s\",\"g\",\"x\",\"y\"],\"edges\":[[\"s\",\"g\"],[\"x\",\"y\"],[\"y\",\"x\"]],\"start\":\"s\",\"goal\":\"g\"}","verification":"shortest_path_v1"}
+{"input":"path:{\"nodes\":[\"z\",\"a\",\"m\",\"q\"],\"edges\":[[\"z\",\"m\"],[\"m\",\"q\"],[\"z\",\"a\"],[\"a\",\"m\"]],\"start\":\"z\",\"goal\":\"q\"}","verification":"shortest_path_v1"}
+{"input":"path:{\"nodes\":[\"s\",\"a\",\"b\",\"c\",\"d\",\"g\"],\"edges\":[[\"s\",\"a\"],[\"s\",\"b\"],[\"a\",\"c\"],[\"b\",\"c\"],[\"c\",\"d\"],[\"d\",\"g\"]],\"start\":\"s\",\"goal\":\"g\"}","verification":"shortest_path_v1"}

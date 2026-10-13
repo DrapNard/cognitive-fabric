@@ -1,0 +1,174 @@
+{
+  "format_version": 1,
+  "dataset": "shortest_path_cases.jsonl",
+  "dataset_sha256": "0fedaaf6bef27f45ae0a13debcd5c6e391a32637c84891b0f38a19d9cba93edc",
+  "case_count": 16,
+  "license": "CC0-1.0",
+  "source": "Original public synthetic directed unweighted graph diagnostics authored alongside Cognitive Fabric",
+  "oracle": "Independent exhaustive simple-path enumeration; no model confidence",
+  "independent_human_review": false,
+  "held_out": false,
+  "training_contamination_checked": false,
+  "live_model_evaluated": false,
+  "independent_live_study_completed": false,
+  "cases": [
+    {
+      "id": "graph.path.direct_edge",
+      "line": 1,
+      "objective_sha256": "e45b589ece26f3f0e8bedc9fea48cd3a5e85a81af35042ba1b0a9a5c1d31eab0",
+      "minimum_edges": 1,
+      "one_optimal_path": [
+        "a",
+        "c"
+      ]
+    },
+    {
+      "id": "graph.path.chain",
+      "line": 2,
+      "objective_sha256": "6a2f35b544e2541fc20f3b05664b7569f5f993c14f21687871da7de79a1cb5b1",
+      "minimum_edges": 3,
+      "one_optimal_path": [
+        "a",
+        "b",
+        "c",
+        "d"
+      ]
+    },
+    {
+      "id": "graph.path.alternative_optima",
+      "line": 3,
+      "objective_sha256": "6d29c8f9d6521b8c1815c91d99ab83de92bb3a351ca5d21b6a33f44b0841ba0a",
+      "minimum_edges": 2,
+      "one_optimal_path": [
+        "a",
+        "b",
+        "d"
+      ]
+    },
+    {
+      "id": "graph.path.reverse_unreachable",
+      "line": 4,
+      "objective_sha256": "be1588422265bc486b42f450c65c7e27d96287183280ae3f152078d7fe55f9b7",
+      "minimum_edges": null,
+      "one_optimal_path": []
+    },
+    {
+      "id": "graph.path.disconnected",
+      "line": 5,
+      "objective_sha256": "3240f1cd429b48389078d6740a78f2b390d580ed9d58d1955f4919fa486c029f",
+      "minimum_edges": null,
+      "one_optimal_path": []
+    },
+    {
+      "id": "graph.path.cycle_exit",
+      "line": 6,
+      "objective_sha256": "387f3090850143f0e08cec5ed33798bf805b6b5caa834fc92d635a3c9d99115d",
+      "minimum_edges": 3,
+      "one_optimal_path": [
+        "a",
+        "b",
+        "c",
+        "d"
+      ]
+    },
+    {
+      "id": "graph.path.cycle_unreachable",
+      "line": 7,
+      "objective_sha256": "2850395ba8724e57b10c68f759da4f0162f7046f35590134c2f157af83798486",
+      "minimum_edges": null,
+      "one_optimal_path": []
+    },
+    {
+      "id": "graph.path.identity_isolated",
+      "line": 8,
+      "objective_sha256": "b2273da88c8844f503092250980292407d4d1b7b95ca88179b6f5443c564eaa6",
+      "minimum_edges": 0,
+      "one_optimal_path": [
+        "a"
+      ]
+    },
+    {
+      "id": "graph.path.identity_in_cycle",
+      "line": 9,
+      "objective_sha256": "83a828ee8486c0a3021c28af5100823a23bf49217e75d1826d3fca68a3af99c6",
+      "minimum_edges": 0,
+      "one_optimal_path": [
+        "b"
+      ]
+    },
+    {
+      "id": "graph.path.empty_edges",
+      "line": 10,
+      "objective_sha256": "cf4ad3d2d2a9b9ad75c3df523bfb2daab1acdd5967f9109c8a22fea6e32d370e",
+      "minimum_edges": null,
+      "one_optimal_path": []
+    },
+    {
+      "id": "graph.path.dead_end_first",
+      "line": 11,
+      "objective_sha256": "53e10f9ceef651e398aec9a46b228d1bd8d2d1c4058e7d60b02ed10bb3c7400d",
+      "minimum_edges": 2,
+      "one_optimal_path": [
+        "s",
+        "mid",
+        "g"
+      ]
+    },
+    {
+      "id": "graph.path.long_route_first",
+      "line": 12,
+      "objective_sha256": "8ece9642351d44c43a2668f6bbfb2f4f93388f4aecc7a092bad9428bedd876b5",
+      "minimum_edges": 2,
+      "one_optimal_path": [
+        "s",
+        "c",
+        "g"
+      ]
+    },
+    {
+      "id": "graph.path.reverse_edge_trap",
+      "line": 13,
+      "objective_sha256": "44cd7b24f702fb369c147f48536ec3ce26d941c2de85da62363b08848cecf507",
+      "minimum_edges": 2,
+      "one_optimal_path": [
+        "s",
+        "a",
+        "g"
+      ]
+    },
+    {
+      "id": "graph.path.unrelated_cycle",
+      "line": 14,
+      "objective_sha256": "b761beaf4d3165a7b6c8377bf178613b8042b4f7288460b22f4e4c1bc2ad2d2d",
+      "minimum_edges": 1,
+      "one_optimal_path": [
+        "s",
+        "g"
+      ]
+    },
+    {
+      "id": "graph.path.labels_not_lexical",
+      "line": 15,
+      "objective_sha256": "3f115f155c73776e8f5b3c4432f97afba6c2ceb8c25daa6d223ce438aff4fcaf",
+      "minimum_edges": 2,
+      "one_optimal_path": [
+        "z",
+        "m",
+        "q"
+      ]
+    },
+    {
+      "id": "graph.path.branch_merge",
+      "line": 16,
+      "objective_sha256": "109367eb82d466f77680d82d4a7f8065ae332bfd1362805ceeb9b95c5ac9af95",
+      "minimum_edges": 4,
+      "one_optimal_path": [
+        "s",
+        "a",
+        "c",
+        "d",
+        "g"
+      ]
+    }
+  ]
+}

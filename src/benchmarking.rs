@@ -478,6 +478,24 @@ mod tests {
     }
 
     #[test]
+    fn frozen_graph_diagnostics_prepare_and_score_independently_checked_labels() {
+        let raw = include_str!("../evaluation/shortest_path_cases.jsonl");
+        let manifest: Value =
+            serde_json::from_str(include_str!("../evaluation/shortest_path_manifest.json"))
+                .unwrap();
+        for (line, meta) in raw.lines().zip(manifest["cases"].as_array().unwrap()) {
+            let case: Case = serde_json::from_str(line).unwrap();
+            assert!(case.expected.is_none());
+            let criterion = case.prepare().unwrap();
+            let answer = serde_json::to_string(&meta["one_optimal_path"]).unwrap();
+            assert!(case.score(criterion.as_ref(), "unverified", &answer));
+            assert!(case.score(criterion.as_ref(), "completed", &answer));
+            assert!(!case.score(criterion.as_ref(), "rejected", &answer));
+            assert!(!case.score(criterion.as_ref(), "completed", r#"{"verified":true}"#));
+        }
+    }
+
+    #[test]
     fn shortest_path_scoring_accepts_alternate_optima_without_expected_answers() {
         let input = r#"path:{"nodes":["a","b","c","d"],"edges":[["a","b"],["b","d"],["a","c"],["c","d"]],"start":"a","goal":"d"}"#;
         let case: Case =
