@@ -2,7 +2,9 @@
 
 Run `cogfabric --home STATE --json bench DATASET --mode MODE`. DATASET is UTF-8
 JSONL with `input` and `expected` strings, at most 1,000 cases / 2 MB. Each case is
-bounded before execution. The evaluator compares whitespace-normalized,
+bounded before execution. Every case is validated before the first task starts;
+empty fields and unknown JSON fields (including unsupported `verification` fields)
+are rejected. Use `compare` for versioned non-text criteria. The evaluator compares whitespace-normalized,
 case-insensitive exact output with the supplied expected result; model confidence
 is never the acceptance criterion. Keep test data separate from training data.
 
@@ -331,3 +333,20 @@ study, held-out robustness result, proof of reasoning improvement or Rust expert
 readiness. Output-contract adherence remains imperfect; no labels or scorer were
 relaxed to raise scores. Timings include host dispatch and are not GPU compute or
 energy measurements. No compiler capability was granted to the model.
+
+### Basic benchmark execution disclosure
+
+`bench` reports the SHA-256 of its read-once dataset bytes, mode, format version,
+runtime status counts, `tasks_with_model_calls` and `tasks_with_tool_calls`,
+retaining all prior totals/details. Model-call counts reflect charged task calls,
+not proof of successful provider computation. Tool counts reflect charged tool
+invocations, not arbitrary external actions. Missing token metrics remain unchanged.
+
+The runner preflights all cases and the 1,000-case ceiling before task admission.
+A later invalid case cannot consume earlier-case inference/tools or create task
+records. Labels remain outside model prompts. A fully processed file can still
+contain exhausted/failed outcomes and no inference; inspect status/call counts.
+Conversely, deterministic arithmetic can pass with zero model calls and a real
+tool invocation. Dataset hashes prove content identity, not independent review,
+correct labels or held-out status. Existing historical reports are not rewritten
+to add fields they did not originally contain.

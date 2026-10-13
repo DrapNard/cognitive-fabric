@@ -1843,3 +1843,18 @@ improvements and one regression, unchanged labels/scorer/configuration and zero
 tools. Both raw reports and metadata are committed. Extra prose and incorrect
 judgments remain; this does not establish reliable expert behavior or causal
 reasoning gains. BENCHMARKING.md records actual latency and reported usage.
+
+### Complete basic-benchmark preflight and execution disclosure
+
+**Implemented:** `evaluation::benchmark` strictly parses and validates the whole
+bounded dataset before creating tasks; empty/oversized/unknown-field late cases
+and excessive count fail before inference or tool dispatch. Reports add dataset
+checksum, mode, charged model/tool task counts and runtime status counts without
+changing scoring or missing-usage semantics. Five regressions in
+`src/evaluation/benchmark_tests.rs` cover no-side-effect rejection, label isolation,
+exhausted zero-call runs and legitimate deterministic-tool success. No new model
+or tool capability. General independent benchmark review remains incomplete.
+
+Final preflight gate: 426 tests, formatting, workspace all-target check and
+Clippy pass. CLI arithmetic report smoke verifies ten tool successes, no model
+calls and status/hash disclosure. QUALITY_REVIEW.md records logs and scope.

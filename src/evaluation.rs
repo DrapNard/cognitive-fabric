@@ -7,37 +7,58 @@ use crate::{
 use anyhow::{bail, Result};
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::{path::Path, time::Instant};
+use std::{collections::BTreeMap, path::Path, time::Instant};
+#[cfg(test)]
+mod benchmark_tests;
 
 fn read_capped(path: &Path, max: usize) -> Result<String> {
     Ok(String::from_utf8(security::read_regular_bytes(path, max)?)?)
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Case {
     input: String,
     expected: String,
 }
 
-pub async fn benchmark(engine: &Engine, file: &Path, mode: &str) -> Result<Value> {
-    let raw = read_capped(file, 2_000_000)?;
-    let cases = raw
-        .lines()
-        .filter(|s| !s.trim().is_empty())
-        .map(serde_json::from_str::<Case>)
-        .collect::<std::result::Result<Vec<_>, _>>()?;
-    if cases.is_empty() || cases.len() > 1000 {
+fn benchmark_cases(raw: &str) -> Result<Vec<Case>> {
+    let mut cases = Vec::new();
+    for line in raw.lines().filter(|line| !line.trim().is_empty()) {
+        if cases.len() == 1000 {
+            bail!("Benchmark must contain 1-1000 cases")
+        }
+        let case: Case = serde_json::from_str(line)?;
+        if case.input.trim().is_empty()
+            || case.expected.trim().is_empty()
+            || case.input.len() > 12000
+            || case.expected.len() > 16000
+        {
+            bail!("Benchmark case is empty or exceeds limits")
+        }
+        cases.push(case);
+    }
+    if cases.is_empty() {
         bail!("Benchmark must contain 1-1000 cases")
     }
+    Ok(cases)
+}
+
+pub async fn benchmark(engine: &Engine, file: &Path, mode: &str) -> Result<Value> {
+    let raw = read_capped(file, 2_000_000)?;
+    let cases = benchmark_cases(&raw)?;
     let began = Instant::now();
     let mut passed = 0;
     let mut calls = 0;
     let mut details = Vec::new();
+    let mut statuses = BTreeMap::<String, usize>::new();
+    let mut model_tasks = 0usize;
+    let mut tool_tasks = 0usize;
     for case in &cases {
-        if case.input.len() > 12000 || case.expected.len() > 16000 {
-            bail!("Benchmark case exceeds limits")
-        }
         let out = engine.run(&case.input, mode).await?;
+        *statuses.entry(out.status.clone()).or_default() += 1;
+        model_tasks += usize::from(out.calls > 0);
+        tool_tasks += usize::from(out.resources.tool_calls > 0);
         let ok = matches!(out.status.as_str(), "completed" | "unverified")
             && out
                 .answer
@@ -60,7 +81,9 @@ pub async fn benchmark(engine: &Engine, file: &Path, mode: &str) -> Result<Value
             "verification":"expected_output_exact_match","runtime_status":out.status,"resources":out.resources,"stop_reason":out.stop_reason}));
     }
     Ok(
-        json!({"total":cases.len(),"passed":passed,"accuracy":passed as f64/cases.len() as f64,
+        json!({"format_version":1,"dataset_sha256":store::sha256(raw.as_bytes()),"mode":mode,
+         "total":cases.len(),"passed":passed,"accuracy":passed as f64/cases.len() as f64,
+         "runtime_status_counts":statuses,"tasks_with_model_calls":model_tasks,"tasks_with_tool_calls":tool_tasks,
          "elapsed_ms":began.elapsed().as_secs_f64()*1000.0,"model_calls":calls,"details":details}),
     )
 }

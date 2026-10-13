@@ -719,3 +719,11 @@ reports matching instance IDs and observed desired state without resolving the
 unknown outcome, changing task state or authorizing cleanup. Malformed/ambiguous
 intent and endpoint mismatches fail before HTTP. Ownership-aware automatic
 residency scheduling remains incomplete; MODELS.md specifies the limits.
+
+### Basic benchmark preflight
+
+`bench` now validates every dataset row before any task executes, rejects unknown
+fields and empty/oversized cases, and records dataset identity plus runtime status
+and charged model/tool task counts. Zero-call exhaustion remains distinguishable
+from legitimate zero-model deterministic tool execution. Expected labels stay
+outside inference prompts; scoring and comparison behavior are unchanged.

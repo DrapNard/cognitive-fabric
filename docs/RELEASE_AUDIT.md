@@ -4,14 +4,14 @@ This checklist preserves the 18 acceptance criteria in the goal objective. It is
 an evidence inventory, not a release approval. The canonical French architecture
 and the broader implementation matrix remain authoritative. Earlier test counts
 in the quality review are historical milestones. Current local verification is
-421 Rust tests (378 library, 43 integration), formatting, all-target checking and
+426 Rust tests (383 library, 43 integration), formatting, all-target checking and
 Clippy with warnings denied, using FlatBuffers compiler/crate 25.12.19.
 
 | Goal criterion | Evidence inspected | Assessment / remaining proof |
 |---|---|---|
 | 1. Workspace builds | `Cargo.toml`, all-target check | Passed locally; isolated optimized source installation also passed with cached dependencies. |
 | 2. Formatting and Clippy | Mandatory checks in `QUALITY_REVIEW.md` | Passed locally. |
-| 3. Mandatory tests | Workspace all-target test results, `tests/`, server integration tests | 421 passed; fixtures do not establish live model quality. |
+| 3. Mandatory tests | Workspace all-target test results, `tests/`, server integration tests | 426 passed; fixtures do not establish live model quality. |
 | 4. FlatBuffers IPC | `protocol/`, `src/wire.rs`, `src/fabric/`, malformed/compatibility/socket tests | Implemented for present transports; authenticated process event delivery/replay is now tested; broader module compatibility remains partial. |
 | 5. CLI/service communication | `src/service.rs`, socket tests, `tests/process_worker.rs`, `crates/cogfabric-server/tests/` | Tested typed local transport, progress, cancellation and optional HTTP client interoperability; native and collective ownership drains cover dropped request futures. No general independent plugin service is claimed. |
 | 6. Compatible local LLM | `src/backend.rs`, `tests/inference_auth.rs`, `LIVE_INFERENCE.md` | Passed for Ollama and LM Studio Qwen3 8B compatible endpoints, including managed verified sorting. Native LM Studio read-only inventory passed; authenticated native access and controlled load/unload remain unverified. |
@@ -936,3 +936,20 @@ study, held-out robustness result, proof of reasoning improvement or Rust expert
 readiness. Output-contract adherence remains imperfect; no labels or scorer were
 relaxed to raise scores. Timings include host dispatch and are not GPU compute or
 energy measurements. No compiler capability was granted to the model.
+
+### Full basic-benchmark preflight verification
+
+All benchmark rows, empty/size/field rules and the count ceiling are validated
+before Engine admission. Regressions prove invalid later rows create no tasks
+and dispatch no inference, expected labels stay out of model prompts, and no-call
+exhaustion remains distinguishable from deterministic tool success. Reports add
+read-once dataset SHA-256, mode, runtime status counts and charged model/tool task
+counts; existing scores/details and missing token semantics are unchanged.
+
+All 426 tests (383 library, 43 integration), formatting, workspace all-target
+check and Clippy pass. Log: `/tmp/cogfabric-benchmark-preflight-tests.log`.
+Actual CLI arithmetic smoke passed with ten verified tool results and zero model
+calls: `/tmp/cogfabric-bench-report-smoke.TbaewW`. No new live model study or
+optimized installation is claimed for this runner revision; historical diagnostic
+reports retain the fields originally emitted. This improves evaluation admission
+and disclosure, not held-out independence or reasoning/expert readiness.

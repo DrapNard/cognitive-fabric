@@ -1,6 +1,6 @@
 # Rust baseline quality review
 
-Current local runtime passes 421 Rust tests (378 library, 43 integration),
+Current local runtime passes 426 Rust tests (383 library, 43 integration),
 formatting, workspace all-target compilation and Clippy with warnings denied.
 Before the residency-inspection addition, both core and HTTP server packages passed optimized host source installation,
 offline installed workflows and managed OpenCode/Qwen read/edit/read. Hosted CI
@@ -2972,3 +2972,20 @@ regression verifies retained report hashes, source-question/label identity, exac
 match counts, unverified runtime status and zero tools. The manifest now records
 public live diagnostic completion while independent review/live-study and
 held-out flags remain false.
+
+### Full basic-benchmark preflight verification
+
+All benchmark rows, empty/size/field rules and the count ceiling are validated
+before Engine admission. Regressions prove invalid later rows create no tasks
+and dispatch no inference, expected labels stay out of model prompts, and no-call
+exhaustion remains distinguishable from deterministic tool success. Reports add
+read-once dataset SHA-256, mode, runtime status counts and charged model/tool task
+counts; existing scores/details and missing token semantics are unchanged.
+
+All 426 tests (383 library, 43 integration), formatting, workspace all-target
+check and Clippy pass. Log: `/tmp/cogfabric-benchmark-preflight-tests.log`.
+Actual CLI arithmetic smoke passed with ten verified tool results and zero model
+calls: `/tmp/cogfabric-bench-report-smoke.TbaewW`. No new live model study or
+optimized installation is claimed for this runner revision; historical diagnostic
+reports retain the fields originally emitted. This improves evaluation admission
+and disclosure, not held-out independence or reasoning/expert readiness.

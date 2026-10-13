@@ -2,6 +2,13 @@
 
 All notable changes are documented here in English.
 
+### Preflight complete benchmark datasets before execution
+
+- Reject invalid later cases and unsupported fields before any task or model call.
+- Report dataset identity, runtime statuses and charged model/tool task counts.
+- Distinguish exhausted no-call runs from successful deterministic tool benchmarks.
+- Preserve exact scoring, label isolation and historical report contents.
+
 ### Record frozen public Rust diagnostic rerun
 
 - Retain unchanged-label before/after reports and exact source/binary metadata.
