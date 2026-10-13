@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Align inference charges with durable reservation outcomes
+
+- Preserve prior charges and usage when a database reservation is rejected.
+- Retain committed reservations when observer publication fails, without invoking inference.
+- Distinguish post-commit notification failure by type; preserve fail-closed behavior.
+
 ### Keep bound expert audit failures fatal
 
 - Restrict bound advice fallback to typed runtime timeouts.

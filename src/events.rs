@@ -231,6 +231,14 @@ pub struct Subscription {
     lost: Arc<AtomicBool>,
 }
 impl Hub {
+    #[cfg(test)]
+    pub(crate) fn poison_for_test(&self) {
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = self.subscribers.lock().unwrap();
+            panic!("Injected observer poison");
+        }));
+    }
+
     pub(crate) fn subscribe(&self, task: &str) -> Result<Subscription> {
         self.subscribe_filtered(task, None)
     }

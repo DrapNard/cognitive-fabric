@@ -149,6 +149,16 @@ pub struct Candidate {
     pub license: String,
 }
 
+/// The event is durable, but its observer notification failed.
+#[derive(Debug)]
+pub(crate) struct PersistedEventError(anyhow::Error);
+impl std::fmt::Display for PersistedEventError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "Persisted event notification failed: {}", self.0)
+    }
+}
+impl std::error::Error for PersistedEventError {}
+
 pub struct Store {
     pub(crate) events: crate::events::Hub,
     pub(crate) runtime_lock: Option<std::path::PathBuf>,
@@ -352,7 +362,7 @@ impl Store {
         )?;
         if let Some(event) = &mut progress {
             event.sequence = db.last_insert_rowid() as u64;
-            self.events.publish(event)?;
+            self.events.publish(event).map_err(PersistedEventError)?;
         }
         Ok(())
     }

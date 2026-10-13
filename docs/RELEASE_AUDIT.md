@@ -4,14 +4,14 @@ This checklist preserves the 18 acceptance criteria in the goal objective. It is
 an evidence inventory, not a release approval. The canonical French architecture
 and the broader implementation matrix remain authoritative. Earlier test counts
 in the quality review are historical milestones. Current local verification is
-472 Rust tests (425 library, 47 integration), formatting, all-target checking and
+474 Rust tests (427 library, 47 integration), formatting, all-target checking and
 Clippy with warnings denied, using FlatBuffers compiler/crate 25.12.19.
 
 | Goal criterion | Evidence inspected | Assessment / remaining proof |
 |---|---|---|
 | 1. Workspace builds | `Cargo.toml`, all-target check | Passed locally; isolated optimized source installation also passed with cached dependencies. |
 | 2. Formatting and Clippy | Mandatory checks in `QUALITY_REVIEW.md` | Passed locally. |
-| 3. Mandatory tests | Workspace all-target test results, `tests/`, server integration tests | 472 passed; fixtures do not establish live model quality. |
+| 3. Mandatory tests | Workspace all-target test results, `tests/`, server integration tests | 474 passed; fixtures do not establish live model quality. |
 | 4. FlatBuffers IPC | `protocol/`, `src/wire.rs`, `src/fabric/`, malformed/compatibility/socket tests | Implemented for present transports; authenticated process event delivery/replay is now tested; broader module compatibility remains partial. |
 | 5. CLI/service communication | `src/service.rs`, socket tests, `tests/process_worker.rs`, `crates/cogfabric-server/tests/` | Tested typed local transport, progress, cancellation and optional HTTP client interoperability; native and collective ownership drains cover dropped request futures. No general independent plugin service is claimed. |
 | 6. Compatible local LLM | `src/backend.rs`, `tests/inference_auth.rs`, `LIVE_INFERENCE.md` | Passed for Ollama and LM Studio Qwen3 8B compatible endpoints, including managed verified sorting. Native LM Studio read-only inventory passed; authenticated native access and controlled load/unload remain unverified. |
@@ -1464,3 +1464,28 @@ before writing; the corrected scoped regression and all gates were rerun. No new
 model study, optimized install, protocol schema or release claim. General module
 scheduling, isolated expert provisioning, physical residency and independent
 unseen evaluations remain incomplete.
+
+
+### Durable reservation and notification failure gate
+
+All 474 tests (427 library, 47 integration), formatting, workspace all-target
+check and Clippy pass with existing flatc/Rust FlatBuffers 25.12.19. Commands:
+`cargo fmt --all -- --check`, `cargo check --offline --workspace --all-targets`,
+`cargo test --offline --workspace --all-targets`, and
+`cargo clippy --offline --workspace --all-targets -- -D warnings`.
+Log: `/tmp/cogfabric-reservation-order-tests.log`. Two new regressions first record
+a successful model call, then verify: failed DB reservation preserves every prior
+session metric/charge; post-commit observer poison retains the second reservation,
+no second backend execution and unknown durable audit completion. Bound-advice
+model-dispatch insertion denial now correctly reports zero uncommitted charges.
+
+CLI/HTTP reservation-denial fixture
+`/tmp/cogfabric-reservation-order-smoke.pha4yuev` passed with zero calls, output
+reservations and prompt bytes, no model-dispatch event and no HTTP request. Its
+initial smoke expectation of known zero usage was corrected to the existing
+conservative terminal-failure null policy. The later committed-notification
+classification is covered by the full passing unit gate; no claim of live CLI
+observer poisoning or provider GPU completion is made. No new model study,
+optimized installation, permissions, acceptance thresholds or protocol schemas.
+General scheduling, independent expert provisioning/isolation, physical residency
+and independent unseen quality evaluation remain release work.

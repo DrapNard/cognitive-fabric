@@ -894,3 +894,22 @@ This intentionally narrows availability fallback until a trustworthy typed error
 contract can distinguish provider faults from kernel/transport integrity failures.
 There is no retry, permission expansion, new process or model-loading authority.
 Operator-trusted Rust remains outside an untrusted-code sandbox guarantee.
+
+
+### Durable inference reservation accounting
+
+`Session::call_with_backend` now records `model_dispatch` before mutating call,
+output-reservation or prompt-byte counters and before taking prior usage metrics.
+A rejected database insert therefore leaves existing session charges and reported
+usage intact and cannot invoke the backend. A committed reservation still counts
+if progress publication fails: `Store::event` marks that post-insert failure with
+a private `PersistedEventError`, allowing the session to retain the durable charge
+while returning the error before inference. Error text is not the classifier.
+
+No committed reservation is refunded or replayed. Terminal task failure and
+recovery audits retain their conservative unknown-usage semantics; preserving
+prior in-session metrics does not fabricate a complete failed-task usage report.
+The event schema, ceilings, authorization and backend execution order are otherwise
+unchanged. A test-only observer poison hook exercises the post-commit boundary;
+it is absent from production builds. Observer failure is not provider availability
+and cannot enter the typed-timeout advice fallback.

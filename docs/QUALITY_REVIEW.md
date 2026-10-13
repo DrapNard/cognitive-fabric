@@ -1,6 +1,6 @@
 # Rust baseline quality review
 
-Current local runtime passes 472 Rust tests (425 library, 47 integration),
+Current local runtime passes 474 Rust tests (427 library, 47 integration),
 formatting, workspace all-target compilation and Clippy with warnings denied.
 Before the residency-inspection addition, both core and HTTP server packages passed optimized host source installation,
 offline installed workflows and managed OpenCode/Qwen read/edit/read. Hosted CI
@@ -3451,3 +3451,28 @@ before writing; the corrected scoped regression and all gates were rerun. No new
 model study, optimized install, protocol schema or release claim. General module
 scheduling, isolated expert provisioning, physical residency and independent
 unseen evaluations remain incomplete.
+
+
+### Durable reservation and notification failure gate
+
+All 474 tests (427 library, 47 integration), formatting, workspace all-target
+check and Clippy pass with existing flatc/Rust FlatBuffers 25.12.19. Commands:
+`cargo fmt --all -- --check`, `cargo check --offline --workspace --all-targets`,
+`cargo test --offline --workspace --all-targets`, and
+`cargo clippy --offline --workspace --all-targets -- -D warnings`.
+Log: `/tmp/cogfabric-reservation-order-tests.log`. Two new regressions first record
+a successful model call, then verify: failed DB reservation preserves every prior
+session metric/charge; post-commit observer poison retains the second reservation,
+no second backend execution and unknown durable audit completion. Bound-advice
+model-dispatch insertion denial now correctly reports zero uncommitted charges.
+
+CLI/HTTP reservation-denial fixture
+`/tmp/cogfabric-reservation-order-smoke.pha4yuev` passed with zero calls, output
+reservations and prompt bytes, no model-dispatch event and no HTTP request. Its
+initial smoke expectation of known zero usage was corrected to the existing
+conservative terminal-failure null policy. The later committed-notification
+classification is covered by the full passing unit gate; no claim of live CLI
+observer poisoning or provider GPU completion is made. No new model study,
+optimized installation, permissions, acceptance thresholds or protocol schemas.
+General scheduling, independent expert provisioning/isolation, physical residency
+and independent unseen quality evaluation remain release work.

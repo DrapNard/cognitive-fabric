@@ -503,13 +503,23 @@ impl Session {
         let decision = self.policy.authorize(&self.task, actor, "llm.generate");
         self.store.event(&self.task, "policy", "security-kernel", json!({"task_id":self.task,"actor":actor,"role":role,"capability":"llm.generate","allowed":decision.is_ok(),"reason":decision.as_ref().err().map(ToString::to_string)}))?;
         decision?;
-        self.resources.calls += 1;
+        let next_call = self.resources.calls + 1;
+        let publication_error = match self.store.event(&self.task,"model_dispatch","jev-r",json!({"role":role,"call":next_call,"allocation":allocation,"prompt_bytes":prompt.len()})) {
+            Ok(()) => None,
+            Err(error) if error.is::<crate::store::PersistedEventError>() => Some(error),
+            Err(error) => return Err(error),
+        };
+        // A failed durable reservation cannot consume an in-memory allowance or
+        // erase previously reported usage. No backend runs before this commit.
+        self.resources.calls = next_call;
         self.resources.reserved_output_tokens += allocation;
         self.resources.prompt_bytes += prompt.len();
+        if let Some(error) = publication_error {
+            return Err(error);
+        }
         let previous_input = self.resources.input_tokens.take();
         let previous_output = self.resources.output_tokens.take();
         let previous_queue = self.resources.queue_wait_ms.take();
-        self.store.event(&self.task,"model_dispatch","jev-r",json!({"role":role,"call":self.resources.calls,"allocation":allocation,"prompt_bytes":prompt.len()}))?;
         if Instant::now() >= self.deadline {
             self.stop_reason = "budget_exhausted".into();
             return Ok(None);
@@ -1608,11 +1618,7 @@ mod tests {
                     .any(|e| e["kind"] == "expert_model_snapshot"),
                 "Failure must occur inside bound advice, not earlier task setup"
             );
-            assert_eq!(
-                outcome.calls,
-                if kind == "model_dispatch" { 1 } else { 0 },
-                "{kind}"
-            );
+            assert_eq!(outcome.calls, 0, "{kind}");
             assert!(
                 !store.task(&outcome.task_id).unwrap()["events"]
                     .as_array()
@@ -1622,6 +1628,71 @@ mod tests {
                 "Audit errors must not become availability fallback"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn failed_model_reservation_preserves_prior_charges_and_reported_usage() {
+        let store = Arc::new(Store::in_memory().unwrap());
+        let task = store.create_task("reservation fixture", "deep").unwrap();
+        let backend = Arc::new(Script(Mutex::new(vec![("solver", "first answer")].into())));
+        let mut session = Session::new(
+            Config {
+                backend: "openai-local".into(),
+                ..Config::default()
+            },
+            store.clone(),
+            backend.clone(),
+            task.clone(),
+            "deep",
+        )
+        .unwrap();
+        session.call("solver", "first", 192).await.unwrap().unwrap();
+        let before = serde_json::to_value(&session.resources).unwrap();
+        store.lock().unwrap().execute_batch("CREATE TRIGGER refuse_next_model_reservation BEFORE INSERT ON events WHEN NEW.kind='model_dispatch' BEGIN SELECT RAISE(ABORT,'reservation unavailable'); END;").unwrap();
+        assert!(session.call("solver", "second", 192).await.is_err());
+        assert_eq!(serde_json::to_value(&session.resources).unwrap(), before);
+        assert!(backend.0.lock().unwrap().is_empty());
+        let audit = store.inference_audit(&task).unwrap();
+        assert_eq!(audit["reserved_calls"], 1);
+        assert_eq!(audit["reserved_output_tokens"], 192);
+        assert_eq!(session.resources.calls, 1);
+        assert_eq!(session.resources.prompt_bytes, 5);
+        assert!(session.resources.input_tokens.is_some());
+        assert!(session.resources.output_tokens.is_some());
+    }
+
+    #[tokio::test]
+    async fn committed_model_reservation_remains_charged_when_notification_fails() {
+        let store = Arc::new(Store::in_memory().unwrap());
+        let task = store.create_task("observer fixture", "deep").unwrap();
+        let backend = Arc::new(Script(Mutex::new(vec![("solver", "first answer")].into())));
+        let mut session = Session::new(
+            Config {
+                backend: "openai-local".into(),
+                ..Config::default()
+            },
+            store.clone(),
+            backend.clone(),
+            task.clone(),
+            "deep",
+        )
+        .unwrap();
+        session.call("solver", "first", 192).await.unwrap().unwrap();
+        let input = session.resources.input_tokens;
+        let output = session.resources.output_tokens;
+        store.events.poison_for_test();
+        let error = session.call("solver", "second", 192).await.unwrap_err();
+        assert!(error.is::<crate::store::PersistedEventError>());
+        assert_eq!(session.resources.calls, 2);
+        assert_eq!(session.resources.reserved_output_tokens, 384);
+        assert_eq!(session.resources.prompt_bytes, 11);
+        assert_eq!(session.resources.input_tokens, input);
+        assert_eq!(session.resources.output_tokens, output);
+        assert!(backend.0.lock().unwrap().is_empty());
+        let audit = store.inference_audit(&task).unwrap();
+        assert_eq!(audit["reserved_calls"], 2);
+        assert_eq!(audit["reserved_output_tokens"], 384);
+        assert_eq!(audit["reported_usage_complete"], false);
     }
 
     struct Script(Mutex<VecDeque<(&'static str, &'static str)>>);
