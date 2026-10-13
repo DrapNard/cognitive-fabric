@@ -3284,3 +3284,44 @@ and Clippy before these installs; documentation-only evidence recording does not
 require repeating those checks. Full V1 remains incomplete: general scheduling,
 independently provisioned executable experts/isolation, physical model residency
 and independent unseen reasoning/robustness evaluation are still open.
+
+
+### Trusted recovery-pinned subtask scheduler validation
+
+`Engine::with_subtask_scheduler` installs a cached versioned trusted Rust policy.
+Validated full dependency orders cannot change graph definitions or allowances.
+Intent audit precedes callback, and a graph-hash-bound decision precedes subtask
+state changes. Recovery validates bounded, unique, correctly ordered records and
+sequential execution; supported continuation reads the selected order without
+reinvoking policy. Legacy unmarked graphs retain stable order. Benchmark reports
+disclose the scheduler and no implementation attestation. See SCHEDULING.md.
+
+All 466 tests (420 library, 46 integration) pass; formatting, workspace check and
+Clippy pass with flatc/Rust FlatBuffers 25.12.19. Commands:
+`cargo fmt --all -- --check`, `cargo check --offline --workspace --all-targets`,
+`cargo test --offline --workspace --all-targets`, and
+`cargo clippy --offline --workspace --all-targets -- -D warnings`.
+Log: `/tmp/cogfabric-scheduler-tests.log`. Four new tests cover custom reverse
+independent-step execution, engine clone preservation, persisted order reads,
+eight tampering/missing/duplicate variants, invalid selections/descriptors,
+invalid-order dispatch denial and audit failure before callback. Existing actual
+HTTP recovery regressions pass for default/legacy ordering. Custom reversed-order
+execution/reconstruction is tested; a separate live HTTP resume of that custom
+order is not claimed. CLI default-order HTTP/graph audit passed in
+`/tmp/cogfabric-scheduler-smoke.ot9nq_t_` with four expected calls.
+
+Initial compilation found a temporary mutex-guard type mismatch, corrected before
+verification. The first unrestricted-in-scope library command ran under restricted
+socket permissions and failed IPC fixtures; the permission-enabled run identified
+one legacy test-copy filter omitting the new required records. The fixture now
+copies the full graph scheduling history. Clippy required moving the recovery
+helper before its test module; that source-order-only fix passed formatting,
+check and Clippy after the passing complete test run.
+
+Native policies remain trusted/nonpreemptible metadata callbacks, not untrusted
+plugins or executable attestation. Graph hashes do not protect against an owner
+rewriting all data. No new tool permission, budget, remote policy loader, physical
+GPU residency or parallel/general module scheduling is supplied. The prior
+optimized-install evidence is scoped to `840e63d`; no current optimized refresh
+or independent model-quality improvement is claimed. Full release gates remain
+open for broader scheduling, provisioning/isolation, residency and evaluation.

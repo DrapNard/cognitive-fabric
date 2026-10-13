@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Make dependency scheduling replaceable and recovery-pinned
+
+- Add a trusted versioned subtask scheduler interface with strict dependency-order validation.
+- Audit and persist selected order before execution; retain it through supported recovery.
+- Reject missing or inconsistent new schedule records without silent policy fallback.
+
 ### Refresh current optimized installation evidence
 
 - Install both current packages and pass complete CLI/socket and offline HTTP workflows.

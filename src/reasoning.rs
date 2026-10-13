@@ -63,6 +63,7 @@ pub struct Session {
     pub subtasks: Vec<Subtask>,
     subtask_started: Option<(usize, Instant, Resources)>,
     resume_answer: Option<(String, Option<String>)>,
+    pub(crate) scheduler: crate::scheduling::Handle,
     pub(crate) checker_binding: Option<serde_json::Value>,
     cfg: Config,
     store: Arc<Store>,
@@ -206,6 +207,7 @@ impl Session {
             subtask_started: None,
             resume_answer: None,
             checker_binding: None,
+            scheduler: Default::default(),
             complete_usage: true,
             complete_queue_metrics: true,
             inference_started: None,
@@ -306,7 +308,9 @@ impl Session {
     }
 
     async fn execute_plan(&mut self, plan: Plan, base: &str) -> Result<String> {
-        let order = plan.order()?;
+        self.store.event(&self.task,"subtask_schedule_intent","jev-plus",json!({"scheduler":self.scheduler.descriptor(),"permissions_granted":false,"implementation_attested":false}))?;
+        let order = self.scheduler.order(&plan)?;
+        self.store.event(&self.task,"subtask_schedule","jev-plus",json!({"format_version":1,"scheduler":self.scheduler.descriptor(),"graph_sha256":crate::store::sha256(&serde_json::to_vec(&plan)?),"order":order,"permissions_granted":false}))?;
         self.subtasks = plan
             .steps
             .into_iter()
@@ -350,10 +354,13 @@ impl Session {
         context: &str,
         mode: &str,
     ) -> Result<String> {
-        let order = Plan {
+        let plan = Plan {
             steps: nodes.iter().map(|n| n.step.clone()).collect(),
-        }
-        .order()?;
+        };
+        let order = {
+            let db = self.store.lock()?;
+            crate::recovery::graph::order_from(&db, &self.task, &plan)?
+        };
         self.subtasks = nodes;
         let base = Self::prompt_base(query, context, self.verification_enabled)?;
         let strategy = self.execute_remaining_plan(order, &base).await?;
@@ -835,7 +842,7 @@ impl Session {
                                 &self.task,
                                 "plan",
                                 "planner-r",
-                                json!({"graph":graph,"trusted_permissions":false}),
+                                json!({"graph":graph,"trusted_permissions":false,"scheduler_required":true}),
                             )?;
                             strategy = self.execute_plan(graph, &base).await?;
                         }
@@ -1864,12 +1871,12 @@ mod tests {
         // Exercise recovery validation against the actual scheduler's durable events.
         let store = Store::in_memory().unwrap();
         let task = store.create_task("graph fixture", "standard").unwrap();
-        for event in trace["events"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .filter(|e| matches!(e["kind"].as_str(), Some("plan" | "subtask")))
-        {
+        for event in trace["events"].as_array().unwrap().iter().filter(|e| {
+            matches!(
+                e["kind"].as_str(),
+                Some("plan" | "subtask" | "subtask_schedule_intent" | "subtask_schedule")
+            )
+        }) {
             store
                 .event(
                     &task,

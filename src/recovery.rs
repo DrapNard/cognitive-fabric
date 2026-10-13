@@ -1,6 +1,6 @@
 //! Kernel-released execution leases distinguish live engines from abandoned tasks.
 pub mod continuation;
-mod graph;
+pub(crate) mod graph;
 mod inference;
 mod result;
 pub mod worker_files;

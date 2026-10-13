@@ -339,3 +339,18 @@ roll back every enable change and audit in the immediate transaction. Bodies,
 hashes and retained inventory capacity are preserved. Normal activation stays
 strict; this is not executable isolation or automatic recovery. Invalid retained
 inventory metadata can still require reviewed repair/restoration.
+
+
+### Replaceable, recovery-pinned dependency scheduling
+
+**Implemented (trusted Rust host scope):** `src/scheduling.rs` provides a versioned
+`SubtaskScheduler` and default stable topological order. Engine installation
+captures policy metadata; sessions validate full dependency-respecting selections,
+audit intent before callback and persist order/hash before any subtask events.
+`src/recovery/graph.rs` validates the committed schedule and sequential execution;
+continuation prefix checks and actual graph continuation use that order without
+reinvoking a policy. Legacy unmarked graphs retain default behavior; marked graphs
+cannot silently fall back. Benchmark metadata discloses policy and no attestation.
+See SCHEDULING.md. General parallel/module/GPU scheduling, untrusted policy
+provisioning and measured expected utility remain incomplete. No grants, budgets,
+protocol schemas or model-loading authority expand.

@@ -52,6 +52,7 @@ pub struct Engine {
     corpus: Option<Arc<crate::corpus::FrozenCorpus>>,
     process_inference: bool,
     router: crate::routing::Handle,
+    scheduler: crate::scheduling::Handle,
 }
 impl Engine {
     pub fn new(cfg: Config, store: Arc<Store>) -> Self {
@@ -76,6 +77,7 @@ impl Engine {
             corpus: None,
             process_inference: false,
             router: Default::default(),
+            scheduler: Default::default(),
         }
     }
     /// Install an operator-trusted policy for future tasks on this Engine value.
@@ -89,6 +91,17 @@ impl Engine {
     }
     pub fn expert_router_descriptor(&self) -> &crate::routing::Descriptor {
         self.router.descriptor()
+    }
+    /// Install a trusted scheduler for future tasks; cloned engines retain theirs.
+    pub fn with_subtask_scheduler(
+        mut self,
+        scheduler: Arc<dyn crate::scheduling::SubtaskScheduler>,
+    ) -> Result<Self> {
+        self.scheduler = crate::scheduling::Handle::new(scheduler)?;
+        Ok(self)
+    }
+    pub fn subtask_scheduler_descriptor(&self) -> &crate::scheduling::Descriptor {
+        self.scheduler.descriptor()
     }
     pub(crate) fn with_frozen_corpus(mut self, corpus: Arc<crate::corpus::FrozenCorpus>) -> Self {
         self.corpus = Some(corpus);
@@ -313,6 +326,7 @@ impl Engine {
             mode,
             execution_start,
         )?;
+        session.scheduler = self.scheduler.clone();
         session.restrict_deadline(deadline);
         self.store.event(&id,"execution_options","runtime",json!({"format_version":1,
             "profile":profile,"explain":options.explain,"conversation_ref":options.conversation_ref}))?;

@@ -33,6 +33,8 @@ pub(super) fn graph_from(
     let mut graph: Option<Plan> = None;
     let mut states: Vec<Subtask> = Vec::new();
     let mut events = 0;
+    let mut scheduled_order = Vec::new();
+    let mut running_count = 0;
     {
         let mut stmt = db.prepare("SELECT kind,CASE WHEN length(CAST(source AS BLOB))<=64 THEN source END,CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN payload END FROM events WHERE task_id=?1 AND kind IN ('plan','subtask') ORDER BY id LIMIT 18")?;
         let mut rows = stmt.query([task])?;
@@ -53,6 +55,7 @@ pub(super) fn graph_from(
                     bail!("Invalid recorded graph identity")
                 }
                 let plan = Plan::parse(&serde_json::to_string(&payload["graph"])?)?;
+                scheduled_order = order_from(db, task, &plan)?;
                 states = plan
                     .steps
                     .iter()
@@ -107,11 +110,81 @@ pub(super) fn graph_from(
                 {
                     bail!("Subtask ran before dependency results were recorded")
                 }
+                if node.state == "running" {
+                    if scheduled_order.get(running_count) != Some(&index)
+                        || states.iter().any(|s| s.state == "running")
+                    {
+                        bail!("Subtask execution differs from committed sequential schedule")
+                    }
+                    running_count += 1;
+                }
                 states[index] = node;
             }
         }
     }
     Ok((status, graph, states))
+}
+
+/// Recover a committed scheduling decision, never reinvoke a policy callback.
+pub(crate) fn order_from(db: &rusqlite::Connection, task: &str, plan: &Plan) -> Result<Vec<usize>> {
+    let mut stmt = db.prepare("SELECT id,kind,CASE WHEN length(CAST(source AS BLOB))<=64 THEN source END,CASE WHEN length(CAST(payload AS BLOB))<=16384 THEN payload END FROM events WHERE task_id=?1 AND kind IN ('plan','subtask_schedule_intent','subtask_schedule') ORDER BY id LIMIT 4")?;
+    let mut rows = stmt.query([task])?;
+    let mut records = Vec::new();
+    while let Some(row) = rows.next()? {
+        records.push((
+            row.get::<_, i64>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            serde_json::from_str::<Value>(&row.get::<_, String>(3)?)?,
+        ));
+    }
+    if records.is_empty() {
+        return plan.order();
+    }
+    if records[0].1 != "plan" || records[0].2 != "planner-r" || records.len() > 3 {
+        bail!("Invalid scheduler history")
+    }
+    let required = match records[0].3.get("scheduler_required") {
+        None | Some(Value::Bool(false)) => false,
+        Some(Value::Bool(true)) => true,
+        _ => bail!("Invalid scheduler requirement"),
+    };
+    if records.len() == 1 && !required {
+        return plan.order();
+    }
+    if records.len() != 3
+        || records[1].1 != "subtask_schedule_intent"
+        || records[2].1 != "subtask_schedule"
+        || records[1].2 != "jev-plus"
+        || records[2].2 != "jev-plus"
+    {
+        bail!("Missing or inconsistent committed scheduler decision")
+    }
+    let intent = &records[1].3;
+    let decision = &records[2].3;
+    let descriptor: crate::scheduling::Descriptor =
+        serde_json::from_value(decision["scheduler"].clone())?;
+    descriptor.validate()?;
+    if decision["format_version"] != 1
+        || decision["scheduler"] != intent["scheduler"]
+        || decision["permissions_granted"] != false
+        || intent["permissions_granted"] != false
+        || intent["implementation_attested"] != false
+        || decision["graph_sha256"] != sha256(&serde_json::to_vec(plan)?)
+    {
+        bail!("Invalid scheduler decision identity or graph binding")
+    }
+    let first_node: Option<i64> = db.query_row(
+        "SELECT min(id) FROM events WHERE task_id=?1 AND kind='subtask'",
+        [task],
+        |r| r.get(0),
+    )?;
+    if first_node.is_some_and(|id| id <= records[2].0) {
+        bail!("Scheduler decision followed subtask execution")
+    }
+    let order: Vec<usize> = serde_json::from_value(decision["order"].clone())?;
+    crate::scheduling::validate_order(plan, &order)?;
+    Ok(order)
 }
 
 #[cfg(test)]

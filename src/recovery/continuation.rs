@@ -268,9 +268,10 @@ fn prepare(db: &rusqlite::Connection, task: &str) -> Result<Checkpoint> {
         {
             bail!("Saved graph differs from charged planner result")
         }
-        let completed = graph
-            .order()?
-            .into_iter()
+        let order = super::graph::order_from(db, task, graph)?;
+        let completed = order
+            .iter()
+            .copied()
             .filter(|i| subtasks[*i].state == "unverified")
             .collect::<Vec<_>>();
         if (boundary.is_none() && tail.len() != completed.len() + 1)
@@ -278,8 +279,7 @@ fn prepare(db: &rusqlite::Connection, task: &str) -> Result<Checkpoint> {
         {
             bail!("Saved graph and inference outcomes do not match")
         }
-        if graph
-            .order()?
+        if order
             .iter()
             .take(completed.len())
             .copied()

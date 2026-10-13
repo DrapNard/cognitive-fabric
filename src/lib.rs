@@ -25,6 +25,7 @@ pub mod registry;
 pub mod residency;
 pub mod restore;
 pub mod routing;
+pub mod scheduling;
 pub mod security;
 pub mod security_evaluation;
 pub mod service;

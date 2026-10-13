@@ -836,3 +836,18 @@ reflection that cannot support another answer. Independent executable-criterion
 revision retains its direct checker-to-solver path. This is feasibility-based
 resource control, not calibrated expected utility, general scheduling, semantic
 verification or evidence of improved model accuracy.
+
+
+### Replaceable, recovery-pinned dependency scheduling
+
+**Implemented (trusted Rust host scope):** `src/scheduling.rs` provides a versioned
+`SubtaskScheduler` and default stable topological order. Engine installation
+captures policy metadata; sessions validate full dependency-respecting selections,
+audit intent before callback and persist order/hash before any subtask events.
+`src/recovery/graph.rs` validates the committed schedule and sequential execution;
+continuation prefix checks and actual graph continuation use that order without
+reinvoking a policy. Legacy unmarked graphs retain default behavior; marked graphs
+cannot silently fall back. Benchmark metadata discloses policy and no attestation.
+See SCHEDULING.md. General parallel/module/GPU scheduling, untrusted policy
+provisioning and measured expected utility remain incomplete. No grants, budgets,
+protocol schemas or model-loading authority expand.
