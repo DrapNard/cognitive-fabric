@@ -1936,3 +1936,19 @@ CLI valid registration, duplicate-tag denial and consistent health count pass.
 QUALITY_REVIEW.md records evidence and the initial corrected CLI syntax attempt.
 Hosted router CI `38407375428` passed for `b3e85c3`; storage-hardening CI follows
 private sync. Independent evaluation and general lifecycle requirements stay open.
+
+### Bounded manifest reads and unambiguous active identities
+
+**Implemented:** `registry::active_graph`, activation and existing-version
+registration use SQL byte guards before owned manifest/hash/identity copies.
+Rows are verified while streaming, with active count and duplicate-ID rejection.
+Idempotent registration verifies the stored body, preventing a matching old
+checksum from hiding body corruption. Activation input identity/version is
+validated before database lookup. Three regressions cover body corruption, field
+limits across read paths and ambiguous/excessive active sets without implicit
+repair or promotion. No data migration, deletion, model load or new permissions.
+
+Final manifest-bound gate: 445 tests, formatting, workspace check and Clippy pass.
+Valid CLI registration/idempotency/activation/health also pass. QUALITY_REVIEW.md
+records actual evidence and unchanged corruption/audit state on denial. Broader
+independent evaluation, module lifecycle and code authenticity remain incomplete.

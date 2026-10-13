@@ -289,3 +289,16 @@ explicit operator repair or restoration from reviewed valid data.
 graph in one read transaction, reporting `retained_skill_ids`. Invalid legacy
 metadata therefore fails health even without an active versioned manifest. This
 count is not a retrieval-quality, model-health or authenticity measurement.
+
+### Manifest body and active-registry reads
+
+Snapshot, activation and idempotent-registration reads now apply SQL byte guards
+before owned copies: 64,000-byte bodies, exact 64-byte checksums, 101-byte IDs and
+64-byte versions. The active graph verifies each bounded row while streaming,
+rejects a 257th active record and rejects duplicate active identities instead of
+silently keeping one version. Hash and embedded-versus-row identity checks still
+apply. Re-registering an existing immutable version verifies its stored body as
+well as comparing its checksum with the submitted content. Corruption does not
+become an idempotent success or trigger implicit repair/promotion. Activation
+validates its explicit logical ID and canonical semantic version before querying.
+These remain local consistency checks rather than owner-resistant signatures.

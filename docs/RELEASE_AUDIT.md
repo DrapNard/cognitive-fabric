@@ -4,14 +4,14 @@ This checklist preserves the 18 acceptance criteria in the goal objective. It is
 an evidence inventory, not a release approval. The canonical French architecture
 and the broader implementation matrix remain authoritative. Earlier test counts
 in the quality review are historical milestones. Current local verification is
-442 Rust tests (397 library, 45 integration), formatting, all-target checking and
+445 Rust tests (400 library, 45 integration), formatting, all-target checking and
 Clippy with warnings denied, using FlatBuffers compiler/crate 25.12.19.
 
 | Goal criterion | Evidence inspected | Assessment / remaining proof |
 |---|---|---|
 | 1. Workspace builds | `Cargo.toml`, all-target check | Passed locally; isolated optimized source installation also passed with cached dependencies. |
 | 2. Formatting and Clippy | Mandatory checks in `QUALITY_REVIEW.md` | Passed locally. |
-| 3. Mandatory tests | Workspace all-target test results, `tests/`, server integration tests | 442 passed; fixtures do not establish live model quality. |
+| 3. Mandatory tests | Workspace all-target test results, `tests/`, server integration tests | 445 passed; fixtures do not establish live model quality. |
 | 4. FlatBuffers IPC | `protocol/`, `src/wire.rs`, `src/fabric/`, malformed/compatibility/socket tests | Implemented for present transports; authenticated process event delivery/replay is now tested; broader module compatibility remains partial. |
 | 5. CLI/service communication | `src/service.rs`, socket tests, `tests/process_worker.rs`, `crates/cogfabric-server/tests/` | Tested typed local transport, progress, cancellation and optional HTTP client interoperability; native and collective ownership drains cover dropped request futures. No general independent plugin service is claimed. |
 | 6. Compatible local LLM | `src/backend.rs`, `tests/inference_auth.rs`, `LIVE_INFERENCE.md` | Passed for Ollama and LM Studio Qwen3 8B compatible endpoints, including managed verified sorting. Native LM Studio read-only inventory passed; authenticated native access and controlled load/unload remain unverified. |
@@ -1044,3 +1044,23 @@ Clap parsing and was not counted as validation. CLI health/count smoke passed at
 `/tmp/cogfabric-skill-health-smoke.9Nzbzh`. No model load/inference or optimized
 installation was tested for this storage revision. These checks bound metadata,
 not authenticity against an owner who can rewrite storage or neural quality.
+
+### Manifest read bounds and active identity verification
+
+Active graph, activation and idempotent-registration queries now apply SQL byte
+guards before Rust copies of bodies, checksums and identity fields. Bounded rows
+are verified incrementally, with active-capacity and duplicate-identity denial.
+Existing-version registration verifies its stored body before returning known
+registration success; a retained checksum alone no longer hides corruption.
+Activation rejects invalid explicit IDs/versions before querying. Errors preserve
+the corrupted records and deny implicit promotion or repair. Hashes still provide
+local consistency rather than owner-resistant authenticity or code signatures.
+
+All 445 tests (400 library, 45 integration), formatting, workspace all-target
+check and Clippy pass. Log: `/tmp/cogfabric-manifest-bounds-verification.log`.
+Three regressions cover stored-body corruption, field bounds across read paths
+and duplicate/excessive active sets, including a deliberately missing uniqueness
+index. Audit counts and active flags remain unchanged on failure. Valid actual
+CLI register/idempotent/activate/health smoke passed:
+`/tmp/cogfabric-manifest-bounds-smoke.AWGFjP`. No model inference/load, new tool
+permissions or optimized installation is claimed for this storage revision.

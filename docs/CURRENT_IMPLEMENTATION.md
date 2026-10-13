@@ -764,3 +764,11 @@ bytes before Rust copies, strictly parse tags and reject invalid state/versions.
 Valid legacy empty tags remain readable; malformed metadata is not silently
 converted or repaired. The router uses the same inventory ceiling. EXPERTS.md
 documents compatibility and the independent active/version limits.
+
+### Manifest read integrity
+
+Manifest snapshot/activation/idempotent reads now guard SQL field sizes before
+Rust copies and verify bounded rows incrementally. Duplicate active identities
+fail instead of silently overwriting a graph entry. Existing-version registration
+checks stored body integrity before returning idempotent success. Corrupt data
+remains unchanged and cannot be implicitly repaired or promoted by these reads.

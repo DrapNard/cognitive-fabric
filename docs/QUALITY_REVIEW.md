@@ -1,6 +1,6 @@
 # Rust baseline quality review
 
-Current local runtime passes 442 Rust tests (397 library, 45 integration),
+Current local runtime passes 445 Rust tests (400 library, 45 integration),
 formatting, workspace all-target compilation and Clippy with warnings denied.
 Before the residency-inspection addition, both core and HTTP server packages passed optimized host source installation,
 offline installed workflows and managed OpenCode/Qwen read/edit/read. Hosted CI
@@ -3080,3 +3080,23 @@ Clap parsing and was not counted as validation. CLI health/count smoke passed at
 `/tmp/cogfabric-skill-health-smoke.9Nzbzh`. No model load/inference or optimized
 installation was tested for this storage revision. These checks bound metadata,
 not authenticity against an owner who can rewrite storage or neural quality.
+
+### Manifest read bounds and active identity verification
+
+Active graph, activation and idempotent-registration queries now apply SQL byte
+guards before Rust copies of bodies, checksums and identity fields. Bounded rows
+are verified incrementally, with active-capacity and duplicate-identity denial.
+Existing-version registration verifies its stored body before returning known
+registration success; a retained checksum alone no longer hides corruption.
+Activation rejects invalid explicit IDs/versions before querying. Errors preserve
+the corrupted records and deny implicit promotion or repair. Hashes still provide
+local consistency rather than owner-resistant authenticity or code signatures.
+
+All 445 tests (400 library, 45 integration), formatting, workspace all-target
+check and Clippy pass. Log: `/tmp/cogfabric-manifest-bounds-verification.log`.
+Three regressions cover stored-body corruption, field bounds across read paths
+and duplicate/excessive active sets, including a deliberately missing uniqueness
+index. Audit counts and active flags remain unchanged on failure. Valid actual
+CLI register/idempotent/activate/health smoke passed:
+`/tmp/cogfabric-manifest-bounds-smoke.AWGFjP`. No model inference/load, new tool
+permissions or optimized installation is claimed for this storage revision.

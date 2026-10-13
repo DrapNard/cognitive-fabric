@@ -13,6 +13,8 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     path::Path,
 };
+#[cfg(test)]
+mod bounds_tests;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -190,29 +192,26 @@ fn verified_manifest(raw: String, checksum: String) -> Result<Manifest> {
 }
 
 fn active_graph(db: &Connection) -> Result<BTreeMap<String, Manifest>> {
-    let mut statement=db.prepare("SELECT m.manifest,m.checksum,m.skill_id,m.version FROM expert_manifests m JOIN skills s ON s.id=m.skill_id WHERE m.active=1 AND s.enabled=1 ORDER BY m.skill_id LIMIT 257")?;
-    let rows = statement
-        .query_map([], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-                row.get::<_, String>(3)?,
-            ))
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-    if rows.len() > 256 {
-        bail!("Active expert registry exceeds capacity")
+    let mut statement=db.prepare("SELECT CASE WHEN length(CAST(m.manifest AS BLOB))<=64000 THEN m.manifest END, CASE WHEN length(CAST(m.checksum AS BLOB))=64 THEN m.checksum END, CASE WHEN length(CAST(m.skill_id AS BLOB))<=101 THEN m.skill_id END, CASE WHEN length(CAST(m.version AS BLOB))<=64 THEN m.version END FROM expert_manifests m JOIN skills s ON s.id=m.skill_id WHERE m.active=1 AND s.enabled=1 ORDER BY m.skill_id LIMIT 257")?;
+    let mut rows = statement.query([])?;
+    let mut graph = BTreeMap::new();
+    while let Some(row) = rows.next()? {
+        if graph.len() == 256 {
+            bail!("Active expert registry exceeds capacity")
+        }
+        let raw: String = row.get(0)?;
+        let checksum: String = row.get(1)?;
+        let id: String = row.get(2)?;
+        let version: String = row.get(3)?;
+        let manifest = verified_manifest(raw, checksum)?;
+        if manifest.id != id || manifest.version != version {
+            bail!("Manifest identity mismatch")
+        }
+        if graph.insert(id, manifest).is_some() {
+            bail!("Duplicate active expert identity")
+        }
     }
-    rows.into_iter()
-        .map(|(raw, hash, id, version)| {
-            let manifest = verified_manifest(raw, hash)?;
-            if manifest.id != id || manifest.version != version {
-                bail!("Manifest identity mismatch")
-            }
-            Ok((manifest.id.clone(), manifest))
-        })
-        .collect()
+    Ok(graph)
 }
 
 fn validate_graph(graph: &BTreeMap<String, Manifest>) -> Result<()> {
@@ -262,14 +261,18 @@ pub fn register(store: &Store, manifest: &Manifest) -> Result<Value> {
     let hash = sha256(raw.as_bytes());
     let mut db = store.lock()?;
     let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-    let existing: Option<String> = tx
+    let existing: Option<(String,String)> = tx
         .query_row(
-            "SELECT checksum FROM expert_manifests WHERE skill_id=?1 AND version=?2",
+            "SELECT CASE WHEN length(CAST(manifest AS BLOB))<=64000 THEN manifest END, CASE WHEN length(CAST(checksum AS BLOB))=64 THEN checksum END FROM expert_manifests WHERE skill_id=?1 AND version=?2",
             params![manifest.id, manifest.version],
-            |row| row.get(0),
+            |row| Ok((row.get(0)?,row.get(1)?)),
         )
         .optional()?;
-    if let Some(existing) = existing {
+    if let Some((raw, existing)) = existing {
+        let stored = verified_manifest(raw, existing.clone())?;
+        if stored.id != manifest.id || stored.version != manifest.version {
+            bail!("Manifest identity mismatch")
+        }
         if existing != hash {
             bail!("An immutable manifest version already exists with different content")
         }
@@ -303,10 +306,13 @@ pub fn register(store: &Store, manifest: &Manifest) -> Result<Value> {
 
 pub fn activate(store: &Store, id: &str, version: &str) -> Result<Value> {
     security::authorize("human-cli", "skill.activate")?;
+    if !identifier(id) || version.len() > 64 || Version::parse(version)?.to_string() != version {
+        bail!("Invalid expert activation identity/version")
+    }
     let mut db = store.lock()?;
     let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
     let (raw, checksum): (String, String) = tx.query_row(
-        "SELECT manifest,checksum FROM expert_manifests WHERE skill_id=?1 AND version=?2",
+        "SELECT CASE WHEN length(CAST(manifest AS BLOB))<=64000 THEN manifest END, CASE WHEN length(CAST(checksum AS BLOB))=64 THEN checksum END FROM expert_manifests WHERE skill_id=?1 AND version=?2",
         params![id, version],
         |r| Ok((r.get(0)?, r.get(1)?)),
     )?;

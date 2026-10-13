@@ -2,6 +2,13 @@
 
 All notable changes are documented here in English.
 
+### Bound manifest reads and reject ambiguous active versions
+
+- Guard stored manifest/hash/identity fields in SQL before Rust copies.
+- Verify active rows incrementally and reject duplicate active identities.
+- Verify stored bodies before accepting idempotent registration.
+- Preserve corrupt records while denying implicit repair, activation or audit success.
+
 ### Bound skill inventory reads and shared identity admission
 
 - Cap skill rows and SQL field bytes before copying metadata into Rust.

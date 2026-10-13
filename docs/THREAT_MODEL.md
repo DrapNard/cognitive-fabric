@@ -308,3 +308,14 @@ registration from bypassing the manifest inventory's retained-ID bound, includin
 competing connections. Invalid stored records remain unchanged and fail closed.
 These are resource/consistency checks, not authenticity against an owner able to
 rewrite the database; no executable or model permission is derived from metadata.
+
+### Manifest allocation and active-version ambiguity
+
+Registry reads now cap stored bodies, checksums and identity fields before Rust
+copies, then validate hashes and embedded identity. Streaming active-graph reads
+reject excessive or duplicate identities even if a corrupted/restored schema
+lacks its expected uniqueness index. Idempotent registration verifies the stored
+body instead of trusting a retained checksum alone. Errors leave corruption
+unchanged and deny activation; no automatic repair or neural promotion follows.
+An owner who can rewrite content and hashes still defeats local consistency
+checks, so these bounds are not signatures or executable attestation.
