@@ -1,6 +1,6 @@
 # Rust baseline quality review
 
-Current local runtime passes 470 Rust tests (423 library, 47 integration),
+Current local runtime passes 471 Rust tests (424 library, 47 integration),
 formatting, workspace all-target compilation and Clippy with warnings denied.
 Before the residency-inspection addition, both core and HTTP server packages passed optimized host source installation,
 offline installed workflows and managed OpenCode/Qwen read/edit/read. Hosted CI
@@ -3404,3 +3404,22 @@ calibrated expected utility or general provider recovery guarantee is claimed.
 This addresses a measured failure mode while preserving the adverse historical
 Qwen study. General scheduling, untrusted expert isolation/provisioning, physical
 model residency and independent unseen model evaluation remain V1 blockers.
+
+
+### Structured partial-advice deadline regression gate
+
+All 471 tests (424 library, 47 integration), formatting, workspace all-target
+check and Clippy pass with existing flatc/Rust FlatBuffers 25.12.19. Commands:
+`cargo fmt --all -- --check`, `cargo check --offline --workspace --all-targets`,
+`cargo test --offline --workspace --all-targets`, and
+`cargo clippy --offline --workspace --all-targets -- -D warnings`.
+Log: `/tmp/cogfabric-partial-advice-tests.log`. The new paused-clock regression
+proves one shared structured-workflow deadline, discarded partial advice, no
+replay or refund, preserved 1,024 output reservations and independently checked
+main solving. Actual CLI/HTTP fixture
+`/tmp/cogfabric-partial-advice-smoke._4rwx3oj` confirms dependency advice is not
+forwarded into main reasoning after the second step stalls. No production logic,
+permissions, acceptance thresholds, original Qwen results or schema changes in
+this test/documentation commit. Provider GPU stopping, general backend recovery,
+independent reasoning quality, untrusted expert provisioning/isolation and
+ownership-aware residency remain unproven release requirements.

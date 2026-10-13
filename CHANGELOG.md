@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Verify partial structured advice containment
+
+- Prove dependent workflow steps share one phase deadline without reset.
+- Verify timed-out partial advice never enters main reasoning, with all calls still charged.
+- Confirm behavior through actual CLI/HTTP and independent final-answer checking.
+
 ### Contain optional expert timeouts before whole-goal reasoning
 
 - Bound the whole advice phase within original remaining task time.

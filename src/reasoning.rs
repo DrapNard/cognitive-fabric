@@ -1452,6 +1452,105 @@ mod tests {
         }
     }
 
+    #[tokio::test(start_paused = true)]
+    async fn structured_advice_uses_one_deadline_and_discards_partial_output() {
+        struct PartialAdvice(std::sync::atomic::AtomicUsize);
+        impl InferenceBackend for PartialAdvice {
+            fn generate<'a>(
+                &'a self,
+                role: &'a str,
+                prompt: &'a str,
+                _: usize,
+            ) -> Pin<Box<dyn Future<Output = Result<Generation>> + Send + 'a>> {
+                let call = self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Box::pin(async move {
+                    let text = match call {
+                        0 => {
+                            assert_eq!(role, "solver");
+                            tokio::time::sleep(Duration::from_millis(600)).await;
+                            "partial-advice-sentinel"
+                        }
+                        1 => {
+                            assert_eq!(role, "solver");
+                            assert!(prompt.contains("partial-advice-sentinel"));
+                            std::future::pending::<()>().await;
+                            unreachable!()
+                        }
+                        2 => {
+                            assert_eq!(role, "planner");
+                            assert!(!prompt.contains("partial-advice-sentinel"));
+                            "Plan"
+                        }
+                        3 => {
+                            assert_eq!(role, "solver");
+                            assert!(!prompt.contains("partial-advice-sentinel"));
+                            "[1,2,3]"
+                        }
+                        _ => panic!("Unexpected repeated advice or solver"),
+                    };
+                    Ok(Generation {
+                        text: text.into(),
+                        model: "fixture/v1".into(),
+                        input_tokens: Some(10),
+                        output_tokens: Some(5),
+                        elapsed_ms: 1.0,
+                        queue_wait_ms: None,
+                    })
+                })
+            }
+        }
+        let store = Arc::new(Store::in_memory().unwrap());
+        let manifest:crate::registry::Manifest=serde_json::from_value(json!({"id":"data.sort.s1","version":"1.0.0","kind":"workflow","description":"Two optional dependent sorting steps","tags":["sort"],"source":"fixture","license":"CC0","workflow_steps":[{"id":"first","advice":"Inspect values","depends_on":[]},{"id":"second","advice":"Review partial advice","depends_on":["first"]}]})).unwrap();
+        crate::registry::register(&store, &manifest).unwrap();
+        crate::registry::activate(&store, &manifest.id, &manifest.version).unwrap();
+        let backend = Arc::new(PartialAdvice(std::sync::atomic::AtomicUsize::new(0)));
+        let started = tokio::time::Instant::now();
+        let outcome = Engine::with_backend(
+            Config {
+                backend: "openai-local".into(),
+                interpret_goals: false,
+                max_wall_seconds: 3,
+                timeout_seconds: 60,
+                ..Config::default()
+            },
+            store.clone(),
+            backend.clone(),
+        )
+        .run(r#"sort:{"values":[3,1,2]}"#, "deep")
+        .await
+        .unwrap();
+        assert!(
+            started.elapsed() < Duration::from_millis(1100),
+            "Advice deadline must not reset after the first step"
+        );
+        assert_eq!(outcome.status, "completed");
+        assert_eq!(outcome.answer, "[1,2,3]");
+        assert_eq!(outcome.calls, 4);
+        assert_eq!(outcome.resources.reserved_output_tokens, 1024);
+        assert!(outcome.resources.input_tokens.is_none());
+        assert!(outcome.resources.output_tokens.is_none());
+        assert_eq!(backend.0.load(std::sync::atomic::Ordering::SeqCst), 4);
+        let trace = store.task(&outcome.task_id).unwrap();
+        let events = trace["events"].as_array().unwrap();
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| e["kind"] == "expert_phase_budget")
+                .count(),
+            1
+        );
+        assert!(events.iter().any(|e| e["kind"] == "expert_step"
+            && e["payload"]["step"] == "first"
+            && e["payload"]["state"] == "unverified"));
+        assert!(!events.iter().any(|e| e["kind"] == "expert_step"
+            && e["payload"]["step"] == "second"
+            && e["payload"]["state"] == "unverified"));
+        assert!(events
+            .iter()
+            .any(|e| e["kind"] == "expert_failure"
+                && e["payload"]["partial_advice_discarded"] == true));
+    }
+
     struct Script(Mutex<VecDeque<(&'static str, &'static str)>>);
     #[tokio::test]
     async fn shortest_path_revises_nonoptimal_candidates_and_preserves_checked_output() {

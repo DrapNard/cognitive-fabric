@@ -2125,3 +2125,21 @@ rewritten. Its six expert timeouts motivated containment; this change has not
 established improved Qwen accuracy or resolved its transport failure. Shared
 backend recovery after a dropped managed exchange still depends on that adapter's
 fail-closed session lifecycle; no automatic worker restart is introduced.
+
+
+### Structured partial-advice containment proof
+
+`structured_advice_uses_one_deadline_and_discards_partial_output` completes one
+advisory step, stalls its dependent step and verifies that both share the original
+phase deadline. The dependent receives its predecessor as unverified advice, but
+after timeout neither main planner nor solver receives that partial output.
+The final independently checked answer completes with four charged calls and
+1,024 reserved output tokens; usage remains unavailable. Audit history retains
+the completed advisory step, no fake completion for the stalled step, one phase
+budget and `partial_advice_discarded: true`. Upstream stopping is not inferred.
+
+The same behavior passed through actual CLI/HTTP in
+`/tmp/cogfabric-partial-advice-smoke._4rwx3oj`: the first step returned after a
+controlled delay, the second stalled, and main reasoning completed within original
+limits without the partial sentinel. This adds regression/integration evidence,
+not a new live Qwen accuracy result or an arbitrary managed-provider recovery claim.
