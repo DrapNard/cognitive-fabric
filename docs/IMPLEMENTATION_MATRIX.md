@@ -2143,3 +2143,19 @@ The same behavior passed through actual CLI/HTTP in
 controlled delay, the second stalled, and main reasoning completed within original
 limits without the partial sentinel. This adds regression/integration evidence,
 not a new live Qwen accuracy result or an arbitrary managed-provider recovery claim.
+
+
+### Bound-advice failures remain fail-closed
+
+Fallback now accepts only the private typed runtime timeout for shared and bound
+advice. Previously the bound-model path caught every error, allowing policy/audit
+or result-integrity failures to be treated as optional provider unavailability.
+Unknown bound-provider errors now visibly fail the task; no primary inference
+follows. Error text is never used as a classifier. Missing/disabled bindings still
+skip before dispatch, and typed timeout fallback retains original spent charges,
+unknown usage, mandatory failure auditing and remaining task limits.
+
+This intentionally narrows availability fallback until a trustworthy typed error
+contract can distinguish provider faults from kernel/transport integrity failures.
+There is no retry, permission expansion, new process or model-loading authority.
+Operator-trusted Rust remains outside an untrusted-code sandbox guarantee.

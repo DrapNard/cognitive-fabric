@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Keep bound expert audit failures fatal
+
+- Restrict bound advice fallback to typed runtime timeouts.
+- Prevent policy, audit and unclassified backend errors from invoking primary inference.
+- Preserve timeout fallback and charges; keep pre-dispatch unavailable-binding skips.
+
 ### Verify partial structured advice containment
 
 - Prove dependent workflow steps share one phase deadline without reset.

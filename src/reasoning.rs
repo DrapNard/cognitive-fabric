@@ -640,7 +640,7 @@ impl Session {
             Err(_) => Err(InferenceTimeout.into()),
         };
         match result {
-            Err(error) if manifest.model.is_some() || error.is::<InferenceTimeout>() => {
+            Err(error) if error.is::<InferenceTimeout>() => {
                 self.finish_metrics();
                 self.complete_usage = false;
                 self.resources.input_tokens = None;
@@ -1549,6 +1549,79 @@ mod tests {
             .iter()
             .any(|e| e["kind"] == "expert_failure"
                 && e["payload"]["partial_advice_discarded"] == true));
+    }
+
+    #[tokio::test]
+    async fn bound_advice_audit_failures_never_fall_through_to_primary_inference() {
+        struct NeverPrimary;
+        impl InferenceBackend for NeverPrimary {
+            fn generate<'a>(
+                &'a self,
+                _: &'a str,
+                _: &'a str,
+                _: usize,
+            ) -> Pin<Box<dyn Future<Output = Result<Generation>> + Send + 'a>> {
+                Box::pin(async { panic!("Audit failure must not invoke the primary model") })
+            }
+        }
+        for kind in ["expert_dispatch", "policy", "model_dispatch", "expert_step"] {
+            let store = Arc::new(Store::in_memory().unwrap());
+            let path = std::env::temp_dir()
+                .join(format!("fabric-bound-audit-{}.json", uuid::Uuid::new_v4()));
+            std::fs::write(&path,json!({"id":"domain.local","version":"1.0.0","model":"fixture-model","api_base":"http://127.0.0.1:1/v1","source":"fixture","license":"CC0","context_tokens":4096,"max_output_tokens":512,"weights_sha256":null}).to_string()).unwrap();
+            store.register_model(&path).unwrap();
+            std::fs::remove_file(path).unwrap();
+            let mut raw = json!({"id":"data.sort.s1","version":"1.0.0","kind":"workflow","description":"Bound optional sorting advice","tags":["sort"],"source":"fixture","license":"CC0","workflow":"Optional sorting advice","model":{"id":"domain.local","version":"1.0.0"}});
+            if kind == "expert_step" {
+                raw.as_object_mut().unwrap().remove("workflow");
+                raw["workflow_steps"] =
+                    json!([{"id":"first","advice":"Inspect values","depends_on":[]}]);
+            }
+            let manifest: crate::registry::Manifest = serde_json::from_value(raw).unwrap();
+            crate::registry::register(&store, &manifest).unwrap();
+            crate::registry::activate(&store, &manifest.id, &manifest.version).unwrap();
+            // Fixed test enum only; no untrusted text is interpolated into SQL.
+            let qualifier = if kind == "policy" {
+                " AND json_extract(NEW.payload,'$.role')='solver'"
+            } else {
+                ""
+            };
+            store.lock().unwrap().execute_batch(&format!("CREATE TRIGGER refuse_bound_audit BEFORE INSERT ON events WHEN NEW.kind='{kind}'{qualifier} BEGIN SELECT RAISE(ABORT,'audit unavailable'); END;")).unwrap();
+            let outcome = Engine::with_backend(
+                Config {
+                    backend: "openai-local".into(),
+                    interpret_goals: false,
+                    ..Config::default()
+                },
+                store.clone(),
+                Arc::new(NeverPrimary),
+            )
+            .run(r#"sort:{"values":[3,1,2]}"#, "deep")
+            .await
+            .unwrap();
+            assert_eq!(outcome.status, "failed", "{kind}");
+            assert!(
+                store.task(&outcome.task_id).unwrap()["events"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|e| e["kind"] == "expert_model_snapshot"),
+                "Failure must occur inside bound advice, not earlier task setup"
+            );
+            assert_eq!(
+                outcome.calls,
+                if kind == "model_dispatch" { 1 } else { 0 },
+                "{kind}"
+            );
+            assert!(
+                !store.task(&outcome.task_id).unwrap()["events"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|e| e["kind"] == "expert_failure"),
+                "Audit errors must not become availability fallback"
+            );
+        }
     }
 
     struct Script(Mutex<VecDeque<(&'static str, &'static str)>>);

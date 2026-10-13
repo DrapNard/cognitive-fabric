@@ -1,6 +1,6 @@
 # Rust baseline quality review
 
-Current local runtime passes 471 Rust tests (424 library, 47 integration),
+Current local runtime passes 472 Rust tests (425 library, 47 integration),
 formatting, workspace all-target compilation and Clippy with warnings denied.
 Before the residency-inspection addition, both core and HTTP server packages passed optimized host source installation,
 offline installed workflows and managed OpenCode/Qwen read/edit/read. Hosted CI
@@ -3423,3 +3423,31 @@ permissions, acceptance thresholds, original Qwen results or schema changes in
 this test/documentation commit. Provider GPU stopping, general backend recovery,
 independent reasoning quality, untrusted expert provisioning/isolation and
 ownership-aware residency remain unproven release requirements.
+
+
+### Bound-advice audit and integrity failure gate
+
+All 472 tests (425 library, 47 integration), formatting, workspace all-target
+check and Clippy pass with existing flatc/Rust FlatBuffers 25.12.19. Commands:
+`cargo fmt --all -- --check`, `cargo check --offline --workspace --all-targets`,
+`cargo test --offline --workspace --all-targets`, and
+`cargo clippy --offline --workspace --all-targets -- -D warnings`.
+Log: `/tmp/cogfabric-bound-advice-tests.log`. New negative coverage injects bound
+advice audit failures at expert dispatch, solver authorization, model reservation
+and structured step logging; the test confirms model snapshot admission occurred
+and primary inference never runs. Its policy trigger is scoped to the advice role
+to avoid passing via an unrelated earlier retrieval failure. One prior regression
+expected broad provider-error fallback; it now asserts fatal unclassified failure,
+no primary calls, retained 192-token reservation and unavailable usage.
+
+Actual CLI/HTTP `/tmp/cogfabric-bound-audit-smoke.qwjf3syq` returns bound advice,
+then rejects its result audit: one charged domain call, no primary HTTP call and
+no fake availability-fallback event. Positive fixture
+`/tmp/cogfabric-bound-timeout-smoke.q9l2f6gx` proves typed timeout still gives
+exactly domain/primary/primary requests, a checked final path, three calls and
+832 output reservations with unknown usage. This is a deliberate fail-closed
+compatibility tightening, not improved Qwen quality. An initial edit helper stopped
+before writing; the corrected scoped regression and all gates were rerun. No new
+model study, optimized install, protocol schema or release claim. General module
+scheduling, isolated expert provisioning, physical residency and independent
+unseen evaluations remain incomplete.

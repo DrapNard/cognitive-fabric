@@ -129,9 +129,10 @@ disabled bindings skip that candidate without inference and allow the next
 already routed workflow to be considered. Selection preserves router relevance
 order (tag match count, then ID), rather than registry iteration order. At most
 one available workflow is attempted; budget refusal or provider failure does
-not initiate another expert attempt. Provider failure leaves consumed call charges in
-place and continues main reasoning within remaining budgets; incomplete token and
-queue measurements remain unavailable. Advice never becomes verification evidence.
+not initiate another expert attempt. Only a typed runtime timeout permits audited
+fallback to main reasoning, preserving consumed call charges and unavailable usage.
+Other bound-provider errors fail the task because their serialized error cannot
+safely distinguish availability problems from policy, audit or integrity failures. Advice never becomes verification evidence.
 Health reports registration availability, not endpoint readiness or model quality.
 
 With managed inference enabled, a bound expert owns a separate authenticated
@@ -377,7 +378,7 @@ The spent call/output reservation remains charged; partial advice is discarded,
 reported usage/queue totals become unavailable, and `expert_failure` must persist
 before any main-solver work. Failure-audit errors stop execution. Other shared
 backend errors, malformed results and kernel/audit denials remain fatal. Existing
-bound-model failure fallback semantics are unchanged. Provider computation may
+bound-model errors now follow the timeout-only rule described below. Provider computation may
 continue after client cancellation; `provider_stop_proven` remains false. This
 adds no retries, new model loads, tool grants or fresh task allowances.
 
@@ -404,3 +405,19 @@ The same behavior passed through actual CLI/HTTP in
 controlled delay, the second stalled, and main reasoning completed within original
 limits without the partial sentinel. This adds regression/integration evidence,
 not a new live Qwen accuracy result or an arbitrary managed-provider recovery claim.
+
+
+### Bound-advice failures remain fail-closed
+
+Fallback now accepts only the private typed runtime timeout for shared and bound
+advice. Previously the bound-model path caught every error, allowing policy/audit
+or result-integrity failures to be treated as optional provider unavailability.
+Unknown bound-provider errors now visibly fail the task; no primary inference
+follows. Error text is never used as a classifier. Missing/disabled bindings still
+skip before dispatch, and typed timeout fallback retains original spent charges,
+unknown usage, mandatory failure auditing and remaining task limits.
+
+This intentionally narrows availability fallback until a trustworthy typed error
+contract can distinguish provider faults from kernel/transport integrity failures.
+There is no retry, permission expansion, new process or model-loading authority.
+Operator-trusted Rust remains outside an untrusted-code sandbox guarantee.

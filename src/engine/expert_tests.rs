@@ -230,7 +230,7 @@ async fn frozen_corpus_cannot_restore_a_disabled_expert_model() {
         .any(|e| e["kind"] == "expert_dispatch" && e["payload"]["admitted"] == false));
 }
 #[tokio::test]
-async fn expert_failure_preserves_charges_and_leaves_unknown_usage_unavailable() {
+async fn unclassified_bound_expert_failure_stops_without_primary_dispatch() {
     let (endpoint, provider) = server(true, None).await;
     let store = Arc::new(Store::in_memory().unwrap());
     let selection = register_model(&store, &endpoint);
@@ -243,10 +243,12 @@ async fn expert_failure_preserves_charges_and_leaves_unknown_usage_unavailable()
         .await
         .unwrap();
     provider.await.unwrap();
-    assert_eq!(outcome.status, "unverified");
-    assert_eq!(outcome.calls as usize, main.0.lock().unwrap().len() + 1);
+    assert_eq!(outcome.status, "failed");
+    assert_eq!(outcome.calls, 1);
+    assert_eq!(outcome.resources.reserved_output_tokens, 192);
+    assert!(main.0.lock().unwrap().is_empty());
     assert!(outcome.resources.input_tokens.is_none() && outcome.resources.output_tokens.is_none());
-    assert!(store.task(&outcome.task_id).unwrap()["events"]
+    assert!(!store.task(&outcome.task_id).unwrap()["events"]
         .as_array()
         .unwrap()
         .iter()
