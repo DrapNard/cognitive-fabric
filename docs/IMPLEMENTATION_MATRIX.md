@@ -46,7 +46,7 @@ remains a pre-release. `QUALITY_REVIEW.md` preserves verification history.
 
 | Architecture sections | Requirement | Status | Current implementation and tests | Remaining release work |
 |---|---|---|---|---|
-| 3, 7, 9, 10, 12 | External agent HTTP interoperability | Implemented / Partial | `src/agent/`, `crates/cogfabric-server/`: generation-only native solver turns, authenticated loopback Chat Completions/SSE, client-owned tool proposals/results, collective aliases and bounded admission; real OpenCode v2 + Qwen read/edit/read, HTTP and worker regression tests | Responses/multimodal API, native conversation worker RPC and registered-model/role selection, broader client compatibility and independent agentic-quality/security evaluation |
+| 3, 7, 9, 10, 12 | External agent HTTP interoperability | Implemented / Partial | `src/agent/`, `crates/cogfabric-server/`: generation-only native solver turns, authenticated loopback Chat Completions/SSE, client-owned tool proposals/results, collective aliases and bounded admission; real OpenCode v2 + Qwen read/edit/read, HTTP and worker regression tests | Responses/multimodal API, native conversation worker RPC and role selection, broader client compatibility and independent agentic-quality/security evaluation |
 | 7, 12 | Typed local IPC | Partial | `protocol/*.fbs`, `src/fabric.rs`, `src/events.rs`, `src/wire.rs`, `src/service.rs`: bounded verified IPC and module RPC, content-minimized typed progress subscriptions/catch-up, version-pinned inference registration/discovery, correlation/actor/destination/expiry checks, queues and cancellation; socket, spoofing, overflow, replacement and compatibility tests | General command routing, automatic independent actor provisioning and broader compatibility fixtures |
 | 3 | Language interface | Partial | `src/language.rs`, `src/backend.rs`, `src/config.rs`: strict advisory intent, clarification, original-goal preservation, explicit conversation references, optional synthesis, persistent role profiles; scripted and HTTP tests | Live interpretation and synthesis quality measurements; direct/managed/socket generation now succeeds |
 | 4, 9 | Jev+ coordination | Partial | `src/engine.rs`, `src/planning.rs`, `src/store.rs::route`: capability routing/gaps, bounded topological subtask execution, admission budgets; dependency and budget tests | General module scheduling, measured escalation policy, automatic subtask resumption and broader scheduling telemetry |
@@ -1579,3 +1579,34 @@ Earlier hashes/measurements in this entry refer to the preceding verified revisi
 Client/model variations and startup work prevent treating these timings as a
 controlled performance benchmark. Optimized/clean-OS installation of the new
 server remains separate release validation work.
+
+## Native conversation model-registration pinning (2026-10-13)
+
+Status: **Implemented**. `AgentRuntime::local` now supports enabled immutable
+model registrations through the existing selected model configuration. Startup
+and each admission validate endpoint, model, role-profile absence and output
+ceiling against the exact stored version. `run_until` snapshots registration
+metadata before creating the task and persists the same `model_registration`
+event contract as Engine, with weight identity explicitly unverified. Admitted
+turns retain that snapshot if the operator later disables the model; subsequent
+admissions reject before creating another task or calling inference.
+
+The actual HTTP regression in `src/agent/tests.rs` confirms the registered model
+and allocation in the provider request, pauses the response, disables the
+registration, then verifies the original completed-turn metadata and rejection
+of later turns. Mismatched configured model and excessive output ceilings are
+also denied. This is metadata consistency and lifecycle evidence, not weight
+attestation, automatic loading/unloading or exact context-token enforcement.
+Native managed-worker RPC and role overrides remain unsupported. This
+supersedes the earlier blanket native-registration limitation only.
+
+Formatting, workspace all-target check, Clippy with warnings denied, and all
+392 Rust tests (361 library, 31 integration) pass with flatc 25.12.19. Log:
+`/tmp/cogfabric-native-registration-all-tests.log`. HTTP_API.md and THREAT_MODEL.md
+now describe the supported selection boundary. No additional model calls or
+permissions are added per turn; one bounded registration read/snapshot is added.
+
+Hosted CI for the original modular agent API commit `f6ef304` completed
+successfully: [38366331807](https://github.com/DrapNard/cognitive-fabric/actions/runs/38366331807).
+This confirms that revision's workspace checks and existing CLI/socket workflow;
+it does not establish new server optimized installation or general agent quality.

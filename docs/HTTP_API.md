@@ -26,12 +26,16 @@ Git or an OpenCode config file. All routes require server bearer authentication.
 Ctrl-C stops admission and cancels pending turns before shutdown.
 
 The native conversation adapter currently requires direct local inference:
-`inference_process:false`, no selected model registration and no role overrides.
+`inference_process:false` and no role overrides. Enabled immutable model
+registrations are supported through the existing `model-select` configuration;
+the model, endpoint and output ceiling must match the selected version.
 Startup rejects those unsupported combinations rather than bypassing them. Use a
 separate state directory to preserve an existing managed configuration. Managed
 arithmetic/SQL tools on collective aliases still work: the server image exposes
 thin worker entry points backed by the existing authenticated FlatBuffers code.
-Native conversation worker RPC and registered-model pinning remain future work.
+Each turn snapshots the enabled registration before task creation. Disabling it
+after admission leaves the in-flight turn pinned; later admissions fail.
+Native conversation worker RPC remains future work.
 
 ## Models and requests
 
@@ -147,7 +151,8 @@ remain the client's responsibility.
 
 Native tasks use the existing global SQLite task admission and runtime leases.
 `agent_admission`, policy and `agent_result` events record request/content hashes,
-reserved resources, actual reported usage, model identity, elapsed time and
+reserved resources, actual reported usage, model identity and registration
+snapshot (with weight identity explicitly unverified), elapsed time and
 proposal counts. Raw client conversations, function arguments and output bodies
 are not persisted by this path. Tool proposals and client-reported results remain
 **unverified**; no tools are executed by the conversation runtime. Failed,

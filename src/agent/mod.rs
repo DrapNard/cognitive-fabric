@@ -37,12 +37,10 @@ impl AgentRuntime {
     pub fn local(cfg: Config, store: Arc<Store>) -> Result<Self> {
         // Native conversation RPC is deliberately separate from role-prompt RPC.
         // Never silently bypass an operator's managed worker requirement.
-        if cfg.inference_process
-            || cfg.model_registration.is_some()
-            || !cfg.role_profiles.is_empty()
-        {
-            bail!("Agent turns currently require a direct backend without model registrations or role overrides")
+        if cfg.inference_process || !cfg.role_profiles.is_empty() {
+            bail!("Agent turns currently require a direct backend without role overrides")
         }
+        store.pin_model(&cfg)?;
         Self::with_backend(cfg.clone(), store, Arc::new(LocalChat(cfg)))
     }
     pub fn with_backend(
@@ -82,6 +80,7 @@ impl AgentRuntime {
     ) -> Result<TurnResult> {
         let tokens = self.validate(&request)?;
         let start = Instant::now();
+        let model_registration = self.store.pin_model(&self.cfg)?;
         let _lease = self
             .store
             .runtime_lock
@@ -99,6 +98,7 @@ impl AgentRuntime {
             finished: false,
         };
         let result = async {
+            self.store.event(&task,"model_registration","runtime",json!({"registration":model_registration,"weight_identity_verified":false}))?;
             let policy = TaskPolicy::agent(&task)?;
             policy.authorize(&task,"jev-r","llm.generate")?;
             self.store.event(&task,"agent_admission","jev-plus",json!({"format_version":1,"request_hash":sha256(&bytes),"prompt_bytes":bytes.len(),"reserved_output_tokens":tokens,"calls":1,"cycles":1,"max_wall_seconds":self.cfg.max_wall_seconds,"model":self.cfg.model,"client_tools_executed":false,"verification":"unverified"}))?;

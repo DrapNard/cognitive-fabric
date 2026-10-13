@@ -2,6 +2,13 @@
 
 All notable changes are documented here in English.
 
+### Pin registered models for native agent turns
+
+- Support selected immutable local model registrations in the native adapter.
+- Record per-turn registration snapshots without claiming verified weight identity.
+- Preserve admitted turns after operator disable and deny later admissions.
+- Verify actual registered HTTP model selection and output-ceiling consistency.
+
 ### Serve modular OpenAI-compatible agent workflows
 
 - Add a separate `cogfabric-server` workspace crate over the reusable core.

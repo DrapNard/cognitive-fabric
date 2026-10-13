@@ -245,6 +245,9 @@ Native logs retain hashes/usage rather than raw source conversations.
 Streaming and non-streaming disconnects drop pending local inference; provider
 GPU work is not proven stopped. A client may initiate further independent turns,
 so session-wide client step ceilings remain a separate control. The native
-adapter refuses managed inference/model-registration/role-override combinations
-it cannot preserve. Existing collective FlatBuffers worker security is unchanged.
+adapter refuses managed inference and role overrides it cannot preserve. Native
+turns snapshot an enabled immutable model registration before admission and
+recheck model/endpoint/output-ceiling consistency. Disabling a registration
+blocks later snapshots while admitted turns preserve theirs; this is metadata
+pinning, not provider weight attestation. Existing collective FlatBuffers worker security is unchanged.
 See HTTP_API.md for exact limits and unsupported routes.
