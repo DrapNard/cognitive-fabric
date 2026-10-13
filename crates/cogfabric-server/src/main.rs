@@ -16,6 +16,13 @@ struct Args {
 // worker entry points here; all worker implementation remains in the core.
 #[derive(Subcommand)]
 enum Worker {
+    #[command(hide = true, name = "agent-worker")]
+    Agent {
+        #[arg(long)]
+        socket: PathBuf,
+        #[arg(long)]
+        host_pid: u32,
+    },
     #[command(hide = true, name = "inference-worker")]
     Inference {
         #[arg(long)]
@@ -47,6 +54,9 @@ async fn main() -> Result<()> {
             .as_deref()
             .ok_or_else(|| anyhow::anyhow!("Worker requires an explicit home"))?;
         return match worker {
+            Worker::Agent { socket, host_pid } => {
+                cogfabric::agent::process::run_worker(home, &socket, host_pid).await
+            }
             Worker::Inference { socket, host_pid } => {
                 cogfabric::fabric::unix::process::run_worker(home, &socket, host_pid).await
             }

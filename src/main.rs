@@ -29,6 +29,13 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
     #[command(hide = true)]
+    AgentWorker {
+        #[arg(long)]
+        socket: PathBuf,
+        #[arg(long)]
+        host_pid: u32,
+    },
+    #[command(hide = true)]
     InferenceWorker {
         #[arg(long)]
         socket: PathBuf,
@@ -405,6 +412,13 @@ fn output<T: Serialize>(value: T, force_json: bool) -> Result<()> {
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
+    if let Command::AgentWorker { socket, host_pid } = &cli.command {
+        let home = cli
+            .home
+            .as_deref()
+            .ok_or_else(|| anyhow::anyhow!("Worker requires an explicit home"))?;
+        return cogfabric::agent::process::run_worker(home, socket, *host_pid).await;
+    }
     if let Command::InferenceWorker { socket, host_pid } = &cli.command {
         let home = cli
             .home
@@ -464,7 +478,8 @@ async fn main() -> Result<()> {
     store::bootstrap(&store)?;
     let engine = Engine::new(cfg.clone(), store.clone());
     let response: Value = match cli.command {
-        Command::InferenceWorker { .. }
+        Command::AgentWorker { .. }
+        | Command::InferenceWorker { .. }
         | Command::ArithmeticWorker { .. }
         | Command::SqlWorker { .. } => {
             bail!("Worker must run before normal initialization")

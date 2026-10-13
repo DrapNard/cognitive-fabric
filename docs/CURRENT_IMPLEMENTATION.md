@@ -683,3 +683,11 @@ See `HTTP_API.md` for setup, buffered SSE semantics and remaining native worker
 and API limitations. Current workspace verification: 391 Rust tests, formatting,
 all-target checking and Clippy with warnings denied. Earlier counts above are
 historical milestones, not the current suite.
+
+Native conversations now support opt-in same-image managed workers, including
+registered models, scoped upstream credentials and one-task FlatBuffers grants.
+Authenticated Unix exchange, audit-before-dispatch, cancellation, worker capacity
+and normal/drop-path child reaping are verified. Actual OpenCode + Qwen3 8B also
+passed a managed read/edit/read workflow. This supersedes earlier native-worker
+limitations; role overrides and general independent executable isolation remain
+unsupported. See HTTP_API.md, WORKERS.md and the latest quality evidence.

@@ -1,8 +1,10 @@
 //! Transport-independent, bounded solver turns for external agent clients.
 //! Tool calls are proposals; execution and approval belong to the client.
 mod local;
+pub mod process;
 pub mod protocol;
 mod types;
+pub mod unix;
 use crate::{
     config::Config,
     recovery::ExecutionLease,
@@ -21,6 +23,15 @@ use std::{
 pub use types::*;
 
 pub trait ChatBackend: Send + Sync {
+    fn complete_for<'a>(
+        &'a self,
+        _task: &'a str,
+        request: &'a Turn,
+        tokens: usize,
+    ) -> Pin<Box<dyn Future<Output = Result<Completion>> + Send + 'a>> {
+        self.complete(request, tokens)
+    }
+
     fn complete<'a>(
         &'a self,
         request: &'a Turn,
@@ -33,16 +44,32 @@ pub struct AgentRuntime {
     cfg: Config,
     store: Arc<Store>,
     backend: Arc<dyn ChatBackend>,
+    managed: bool,
 }
 impl AgentRuntime {
     pub fn local(cfg: Config, store: Arc<Store>) -> Result<Self> {
         // Native conversation RPC is deliberately separate from role-prompt RPC.
         // Never silently bypass an operator's managed worker requirement.
-        if cfg.inference_process || !cfg.role_profiles.is_empty() {
-            bail!("Agent turns currently require a direct backend without role overrides")
+        if !cfg.role_profiles.is_empty() {
+            bail!("Agent turns currently require no role overrides")
+        }
+        if cfg.inference_process {
+            let mut expected = cfg.db().into_os_string();
+            expected.push(".runtime.lock");
+            if store
+                .runtime_lock
+                .as_deref()
+                .map(std::path::Path::as_os_str)
+                != Some(expected.as_os_str())
+            {
+                bail!("Native managed inference requires the persistent workspace database")
+            }
         }
         store.pin_model(&cfg)?;
-        Self::with_backend(cfg.clone(), store, Arc::new(LocalChat(cfg)))
+        let managed = cfg.inference_process;
+        let mut runtime = Self::with_backend(cfg.clone(), store, Arc::new(LocalChat(cfg)))?;
+        runtime.managed = managed;
+        Ok(runtime)
     }
     pub fn with_backend(
         cfg: Config,
@@ -54,6 +81,7 @@ impl AgentRuntime {
             cfg,
             store,
             backend,
+            managed: false,
         })
     }
     pub fn validate(&self, request: &Turn) -> Result<usize> {
@@ -71,6 +99,20 @@ impl AgentRuntime {
         let tokens = request.max_tokens.unwrap_or(self.cfg.max_tokens.min(4096));
         if tokens == 0 || tokens > self.cfg.max_tokens || tokens > 16384 {
             bail!("Requested output tokens exceed configured admission")
+        }
+        if self.managed {
+            // Reject an unrepresentable native frame before task/child admission.
+            protocol::encode(&protocol::Packet {
+                identity: protocol::Identity {
+                    correlation: uuid::Uuid::nil().to_string(),
+                    task: uuid::Uuid::nil().to_string(),
+                    expires_at_ms: 1,
+                },
+                payload: protocol::Payload::Request {
+                    turn: request.clone(),
+                    allocation: tokens,
+                },
+            })?;
         }
         Ok(tokens)
     }
@@ -98,6 +140,20 @@ impl AgentRuntime {
             task: task.clone(),
             finished: false,
         };
+        let process = if self.managed {
+            Some(Arc::new(process::ProcessTask::new(
+                self.cfg.clone(),
+                self.store.clone(),
+                &task,
+                start + Duration::from_secs(self.cfg.max_wall_seconds),
+            )?))
+        } else {
+            None
+        };
+        let backend: Arc<dyn ChatBackend> = process
+            .as_ref()
+            .map(|p| p.clone() as Arc<dyn ChatBackend>)
+            .unwrap_or_else(|| self.backend.clone());
         let result = async {
             self.store.event(&task,"model_registration","runtime",json!({"registration":model_registration,"weight_identity_verified":false}))?;
             let policy = TaskPolicy::agent(&task)?;
@@ -111,7 +167,7 @@ impl AgentRuntime {
             let completion = tokio::select! {
                 biased;
                 _ = cancel => { self.store.finish_task(&task,"cancelled","")?; guard.finished=true; bail!("Agent turn cancelled") },
-                result = tokio::time::timeout_at(tokio::time::Instant::from_std(start + Duration::from_secs(self.cfg.max_wall_seconds)),self.backend.complete(&request,tokens)) => match result {
+                result = tokio::time::timeout_at(tokio::time::Instant::from_std(start + Duration::from_secs(self.cfg.max_wall_seconds)),async { backend.complete_for(&task,&request,tokens).await }) => match result {
                     Ok(result) => result?,
                     Err(_) => {self.store.finish_task(&task,"exhausted","")?; guard.finished=true; bail!("Agent turn deadline exhausted")},
                 },
@@ -124,6 +180,13 @@ impl AgentRuntime {
             guard.finished=true;
             Ok(TurnResult {task_id:task.clone(), completion})
         }.await;
+        if let Some(process) = process {
+            if let Err(error) = process.shutdown().await {
+                self.store.finish_task(&task, "failed", "")?;
+                guard.finished = true;
+                return Err(error);
+            }
+        }
         if result.is_err() && !guard.finished {
             self.store.finish_task(&task, "failed", "")?;
             guard.finished = true;

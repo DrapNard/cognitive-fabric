@@ -4,14 +4,14 @@ This checklist preserves the 18 acceptance criteria in the goal objective. It is
 an evidence inventory, not a release approval. The canonical French architecture
 and the broader implementation matrix remain authoritative. Earlier test counts
 in the quality review are historical milestones. Current local verification is
-396 Rust tests (365 library, 31 integration), formatting, all-target checking and
+414 Rust tests (376 library, 38 integration), formatting, all-target checking and
 Clippy with warnings denied, using FlatBuffers compiler/crate 25.12.19.
 
 | Goal criterion | Evidence inspected | Assessment / remaining proof |
 |---|---|---|
 | 1. Workspace builds | `Cargo.toml`, all-target check | Passed locally; isolated optimized source installation also passed with cached dependencies. |
 | 2. Formatting and Clippy | Mandatory checks in `QUALITY_REVIEW.md` | Passed locally. |
-| 3. Mandatory tests | All-target test results, `tests/` | 396 passed; fixtures do not establish live model quality. |
+| 3. Mandatory tests | All-target test results, `tests/` | 414 passed; fixtures do not establish live model quality. |
 | 4. FlatBuffers IPC | `protocol/`, `src/wire.rs`, `src/fabric/`, malformed/compatibility/socket tests | Implemented for present transports; authenticated process event delivery/replay is now tested; broader module compatibility remains partial. |
 | 5. CLI/service communication | `src/service.rs`, socket tests, `tests/process_worker.rs` | Tested local transport, progress and cancellation; no general independent plugin service is claimed. |
 | 6. Compatible local LLM | `src/backend.rs`, `tests/inference_auth.rs`, `LIVE_INFERENCE.md` | Passed for Ollama and LM Studio Qwen3 8B compatible endpoints, including managed verified sorting. Native LM Studio read-only inventory passed; authenticated native access and controlled load/unload remain unverified. |
@@ -767,11 +767,19 @@ conversations/tools and separate collective goal aliases are exercised by
 workspace tests. Actual OpenCode v2.0.26 + Qwen3 8B completed a restricted
 read/edit/read fixture; see HTTP_API.md and QUALITY_REVIEW.md. This adds usable
 external agent interoperability without granting host tools to the Fabric model.
-392 workspace tests pass; native conversation worker RPC, broader API/client
+414 workspace tests pass; broader API/client
 compatibility, independent agentic-quality evaluation and new-server optimized
 installation validation remain incomplete. This does not close the full v1 gate.
 
 Native conversation model registrations now use exact enabled metadata snapshots
 with real HTTP disable-during-inference regression coverage. This closes the
-registration limitation for direct native turns, while worker RPC, provider
+registration limitation for native turns, while independent worker provisioning, provider
 weight attestation and ownership-aware residency remain incomplete.
+
+Native conversations now have authenticated same-image worker RPC, immutable
+one-task grants, scoped credential forwarding, audit-before-dispatch, bounded
+process capacity and actual child reaping tests. Managed OpenCode + Qwen read/edit/read
+also passed, with all five workers reaped normally. This closes the native-worker
+transport gap for the supplied binaries. Independent executable provisioning,
+attestation/isolation, native role profiles, broader API compatibility, new-server
+optimized installation and independent agentic evaluation remain open.

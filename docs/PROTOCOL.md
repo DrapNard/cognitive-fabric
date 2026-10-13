@@ -470,7 +470,7 @@ grants no permissions. Local availability is not remote health, executable
 attestation, loaded-weight identity or ownership. Physical model residency remains
 a separate native-server operation.
 
-## Native conversation worker packet format (codec implemented; transport pending)
+## Native conversation worker packet format
 
 `protocol/agent.fbs` (`COGA`, version 1) and `agent::protocol` define a separate
 native conversation packet instead of flattening history/tools into role prompts.
@@ -495,9 +495,15 @@ identities, malformed arguments, duplicate output call IDs and invalid request
 history fail closed. Existing module/bootstrap schemas are unchanged.
 
 This codec does **not** establish live authority, peer credentials, remaining wall
-time, proposal permissions, or backend execution. A future transport must compare
-correlation/task/expiry to the trusted exchange, authenticate the Unix peer,
-intersect the immutable task grant, enforce its budget/deadline, validate output
-against the original request, and own/reap its child. The HTTP native runtime
-still rejects `inference_process:true`; codec tests alone do not enable workers.
+time, proposal permissions, or backend execution. The native Unix transport compares
+correlation/task/expiry to the trusted exchange, authenticates the Unix peer,
+intersects the immutable task grant, enforces its budget/deadline, and validates
+output against the original request. `agent::process` owns and reaps its child;
+HTTP native managed mode is now enabled through `inference_process:true`.
+Trusted bootstrap appends `max_tool_calls` with legacy default four; prior role
+worker fields/versions are unchanged and compiler schema conformance passes.
+Only trusted host setup constructs native grants; message roles/tool definitions
+never grant execution permissions. Both initial response waiting and subsequent
+frame delivery obey deadlines: generation may use the grant lifetime, while a
+partially received frame must complete within ten seconds.
 Regression tests are in `src/agent/protocol/tests.rs`.

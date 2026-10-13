@@ -21,6 +21,7 @@ table Bootstrap {
   max_wall_seconds:ulong = 300;
   inference_auth_scope:string;
   reasoning_effort:string;
+  max_tool_calls:uint = 4;
 }
 root_type Bootstrap;
 file_identifier "COGB";

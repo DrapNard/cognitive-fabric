@@ -179,3 +179,35 @@ can change after the snapshot; this is an observation rather than a dispatch
 guarantee. Trusted observation callbacks can inspect registry metadata without
 holding its inventory lock. No backend probe, inference or permission renewal
 is performed. Arbitrary backend callbacks remain trusted host code.
+
+## Native conversation workers
+
+`configure-worker --enabled true` now applies to `cogfabric-agent` native turns
+as well as existing collective inference. The core `agent::process` wrapper
+lazily launches the same running image through `agent-worker`, exchanges trusted
+FlatBuffers bootstrap settings and one native conversation packet, then reaps
+its child. `agent::unix` checks UID/PID peers, exact task/correlation/expiry, a
+non-deserializable one-call grant and proposal/output/input ceilings. Its only
+capability is `llm.generate`; returned client tool calls are data, never executed.
+
+Ownership includes the socket journal/guard, shared execution lease, process
+handle and capacity permit until actual waiting confirms exit. At most eight
+native children per host process can remain owned, including background cleanup
+after an entire runtime future is dropped. Explicit completion/cancellation
+awaits cleanup; forced cleanup is recorded when required. Runtime/host death or
+unavailable audit storage may still leave cleanup unknown, without a false reap
+claim. Normal disconnect/shutdown tests verify actual provider-future drops and
+child reaping; external GPU work remains unverifiable.
+
+`max_tool_calls` is appended to trusted bootstrap with default four for old
+frames, preserving existing role workers. The new field bounds proposals in
+native mode and does not grant tool execution. Both supplied executables support
+the hidden native worker entry point. Other library embeddings enabling managed
+mode must delegate it to `agent::process::run_worker`. Native role overrides
+and arbitrary executable provisioning remain unsupported.
+
+HTTP shutdown also drains native ownership before returning to the embedding
+runtime, including reapers scheduled after disconnected request futures drop.
+The drain is bounded to ten seconds. Cleanup failures remain visible for the host
+lifetime, disable further native children and make shutdown fail; a successful
+shutdown is never inferred merely from closing the HTTP listener.

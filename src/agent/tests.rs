@@ -280,3 +280,97 @@ async fn registered_native_http_turn_pins_metadata_before_operator_disable() {
         1
     );
 }
+
+#[tokio::test]
+async fn already_cancelled_turn_never_constructs_backend_inference() {
+    let store = Arc::new(Store::in_memory().unwrap());
+    let backend = Arc::new(Fixed(AtomicUsize::new(0)));
+    let runtime = AgentRuntime::with_backend(Config::default(), store, backend.clone()).unwrap();
+    assert!(runtime
+        .run_until(turn(), std::future::ready(()))
+        .await
+        .is_err());
+    assert_eq!(backend.0.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn already_cancelled_managed_turn_does_not_launch_a_child() {
+    let home = std::env::temp_dir().join(format!("fabric-native-cancel-{}", uuid::Uuid::new_v4()));
+    let cfg = Config {
+        home: home.clone(),
+        backend: "openai-local".into(),
+        inference_process: true,
+        ..Config::default()
+    };
+    cfg.prepare().unwrap();
+    let store = Arc::new(Store::open(&cfg.db()).unwrap());
+    let runtime = AgentRuntime::local(cfg, store.clone()).unwrap();
+    assert!(runtime
+        .run_until(turn(), std::future::ready(()))
+        .await
+        .is_err());
+    assert_eq!(
+        store
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT count(*) FROM events WHERE kind='native_worker_process_launch'",
+                [],
+                |r| r.get::<_, u64>(0)
+            )
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        store
+            .lock()
+            .unwrap()
+            .query_row("SELECT status FROM tasks", [], |r| r.get::<_, String>(0))
+            .unwrap(),
+        "cancelled"
+    );
+    drop(runtime);
+    drop(store);
+    std::fs::remove_dir_all(home).unwrap();
+}
+
+#[tokio::test]
+async fn oversized_native_frame_is_rejected_before_task_or_child_admission() {
+    let home = std::env::temp_dir().join(format!("fabric-native-frame-{}", uuid::Uuid::new_v4()));
+    let cfg = Config {
+        home: home.clone(),
+        backend: "openai-local".into(),
+        inference_process: true,
+        max_input_bytes: 1_000_000,
+        ..Config::default()
+    };
+    cfg.prepare().unwrap();
+    let store = Arc::new(Store::open(&cfg.db()).unwrap());
+    let runtime = AgentRuntime::local(cfg, store.clone()).unwrap();
+    let mut request = turn();
+    request.messages = vec![
+        Message {
+            role: "user".into(),
+            content: Some("x".repeat(150000)),
+            tool_calls: vec![],
+            tool_call_id: None
+        };
+        2
+    ];
+    request.validate().unwrap();
+    assert!(runtime
+        .run_until(request, std::future::pending())
+        .await
+        .is_err());
+    assert_eq!(
+        store
+            .lock()
+            .unwrap()
+            .query_row("SELECT count(*) FROM tasks", [], |r| r.get::<_, u64>(0))
+            .unwrap(),
+        0
+    );
+    drop(runtime);
+    drop(store);
+    std::fs::remove_dir_all(home).unwrap();
+}

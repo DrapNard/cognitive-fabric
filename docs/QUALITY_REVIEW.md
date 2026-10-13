@@ -2711,3 +2711,92 @@ settings, bounded cancellation and audited owned-child reaping.
 Hosted native registration CI [38367824575](https://github.com/DrapNard/cognitive-fabric/actions/runs/38367824575)
 completed successfully for `4cf64ed`. Final codec formatting passes after
 removing a test-file leading blank line; all workspace checks and 396 tests pass.
+
+## Managed native conversation inference (2026-10-13)
+
+Status: **Implemented** for same-image owner-local native workers, including
+registered model configurations. `src/agent/unix.rs` adds UID/PID-authenticated
+one-task/one-call RPC over the native FlatBuffers codec. Trusted non-deserializable
+grants enforce task, input/output/proposal budgets and lifetime; replies match
+original correlation/task/expiry and are validated against the original tools.
+Connections are consumed on failure/cancellation rather than reused. A partial
+frame has a ten-second timeout after its first byte; generation may use its full
+granted deadline. Invalid peers/tasks, audit failures and pipelined data prevent
+backend dispatch. Native backend construction is now lazy under cancellation,
+so an already-cancelled turn invokes no backend or worker.
+
+`src/agent/process.rs` owns the same-running-image child, private journaled socket,
+execution lease and native process-capacity slot through reaping. Eight children
+per host process may remain owned, including background cleanup after an entire
+runtime future drops. Normal completion/cancellation waits for cleanup; failed
+cleanup never produces a successful result or a false reap claim. Without a live
+runtime/after host death, cleanup remains best effort and recovery preserves
+unknown outcomes. These workers are coordination, not a hostile-code sandbox.
+
+Trusted bootstrap appends `max_tool_calls` with legacy default four, tested absent
+from default-valued frames and round-tripped at 0/1/4/64. `flatc --conform` against
+the previous committed schema passes. Existing role-worker fields/versions and
+permissions remain unchanged. Both supplied binaries delegate `agent-worker` to
+the core implementation. Only explicitly scoped upstream inference credentials
+are forwarded into otherwise cleared environments; server API keys are excluded.
+
+Unit and actual-process regressions cover one-use proposals, forged identities
+and outputs, unauthorized tasks/ceilings, audit-before-dispatch, partial frames,
+provider-future cancellation, eight-worker capacity, live-lease recovery refusal,
+registered native model selection, independent upstream/server credentials,
+normal shutdown, streaming disconnect, whole-future non-stream disconnect and
+ownership-audit failure with confirmed child reaping. No client tool executes
+inside the worker or server. Files: `src/agent/`, `protocol/bootstrap.fbs`,
+`src/fabric/unix/bootstrap.rs`, shared socket helper, binary entry points and
+`crates/cogfabric-server/tests/native_worker.rs`.
+
+Mandatory formatting, workspace all-target check, Clippy with warnings denied and
+all **414 Rust tests** (376 library, 38 integration) passed with flatc 25.12.19.
+Full log: `/tmp/cogfabric-native-managed-all-tests.log`. Existing CLI self-test
+and complete installed-style typed socket smoke pass; socket evidence
+`/tmp/cogfabric-installed-smoke.wLpdmV`, logs
+`/tmp/cogfabric-native-managed-cli-smoke.log` and
+`/tmp/cogfabric-native-managed-socket-smoke.log`.
+
+Actual OpenCode v2.0.26 + LM Studio `qwen/qwen3-8b` passed the final managed
+read/edit/read smoke with only that disposable file allowed. Evidence:
+`/tmp/cogfabric-opencode-smoke.TnXEVJ`; runner log
+`/tmp/cogfabric-native-managed-final-opencode.log`. The script now asserts each
+admitted turn launched and reaped a worker. Five requests (including client
+metadata work) reported 4,901 input/103 output tokens, three tool proposals and
+7,549.771 ms summed turn duration. All five tasks remained unverified; all five
+children were reaped with no forced kills and exit code zero; server tool dispatch
+count was zero. Actual fixture contents matched `Status: after`. These are
+integration observations, not controlled quality or latency benchmark claims.
+
+Final debug server SHA-256:
+`a6371603c478bd6b23f6dc50e3bba129fe4ad6e52cda6d7a1b09f4e803181fde`.
+Final OpenCode JSONL SHA-256:
+`3eaad52ab1a5f54ad37067abb29ef887575c1074a77d596f1563f632e188306f`.
+Updated smoke script SHA-256:
+`bc4fe9a14427c9f10138ec82b5a33fa837213d0a75b291da9e6a4654743f1485`.
+
+This supersedes earlier native-worker-disabled statements. HTTP_API.md,
+PROTOCOL.md, WORKERS.md and THREAT_MODEL.md describe the supported boundary.
+Native role overrides, arbitrary executable provisioning/attestation, stronger
+isolation, independent agentic quality/security evaluation and optimized/clean-OS
+installation of the expanded server remain incomplete. External GPU completion
+is not established by local cancellation or reaping. Full v1 readiness is unproven.
+
+Shutdown additionally drains native ownership for up to ten seconds, including
+cleanup scheduled after a request future already disappeared. A cleanup/audit
+error disables new native worker admissions for that host lifetime and makes
+shutdown fail visibly. Actual-process regressions cover immediate shutdown after
+non-streaming disconnect and injected stop-audit failure with no further child
+launch; provider disconnect is observed asynchronously rather than inferred
+from the reaping timestamp alone.
+
+Managed frame encoding is also validated before task/child admission, so a
+request within a raised HTTP/input ceiling but beyond the 256 KiB native frame
+limit is rejected without launching a worker. The regression verifies no task
+row or child intent is created. Final mandatory workspace checks and 414 tests
+(376 library, 38 integration) pass.
+
+Hosted codec CI [38369517206](https://github.com/DrapNard/cognitive-fabric/actions/runs/38369517206)
+completed successfully for `e04fcd6`. The final managed-worker revision has local
+414-test and live-client verification above; its hosted run follows private sync.

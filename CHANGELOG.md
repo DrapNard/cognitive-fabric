@@ -2,6 +2,15 @@
 
 All notable changes are documented here in English.
 
+### Run native agent turns in owned typed workers
+
+- Add authenticated one-task Unix conversation RPC with bounded generation-only grants.
+- Support opt-in same-image native workers, registered models and scoped credentials.
+- Retain child/socket/lease/capacity ownership until verified reaping, including cancellation.
+- Append compatible proposal ceilings to bootstrap; preserve existing role workers.
+- Prevent backend construction on already-cancelled turns and bound partial frames.
+- Verify real managed OpenCode read/edit/read and five normal child exits.
+
 ### Define typed native conversation worker packets
 
 - Add a dedicated FlatBuffers codec for conversation history, tools and completions.

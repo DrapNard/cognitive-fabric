@@ -71,9 +71,14 @@ impl SocketDirectory {
             serde_json::to_value(record)?,
         )
     }
+    pub(crate) fn bind_native() -> Result<(Self, UnixListener, PathBuf)> {
+        Self::bind_named("cogfabric-worker")
+    }
     pub(crate) fn bind_tool() -> Result<(Self, UnixListener, PathBuf)> {
-        let directory =
-            PathBuf::from("/tmp").join(format!("cogfabric-tool-worker-{}", uuid::Uuid::new_v4()));
+        Self::bind_named("cogfabric-tool-worker")
+    }
+    fn bind_named(prefix: &str) -> Result<(Self, UnixListener, PathBuf)> {
+        let directory = PathBuf::from("/tmp").join(format!("{prefix}-{}", uuid::Uuid::new_v4()));
         std::fs::DirBuilder::new().mode(0o700).create(&directory)?;
         let identity = std::fs::symlink_metadata(&directory)?;
         let mut guard = Self {

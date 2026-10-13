@@ -23,19 +23,36 @@ Use the same dedicated server key in the client's environment. It is different
 from `COGFABRIC_INFERENCE_API_KEY`, which authenticates the upstream model only
 when the existing explicit inference scope is configured. Neither key belongs in
 Git or an OpenCode config file. All routes require server bearer authentication.
-Ctrl-C stops admission and cancels pending turns before shutdown.
+Ctrl-C stops admission, cancels pending turns and drains native ownership for
+up to ten seconds. Cleanup failure disables further native worker admission and
+makes shutdown exit with an error; inspect its audit before restarting.
 
-The native conversation adapter currently requires direct local inference:
-`inference_process:false` and no role overrides. Enabled immutable model
-registrations are supported through the existing `model-select` configuration;
-the model, endpoint and output ceiling must match the selected version.
-Startup rejects those unsupported combinations rather than bypassing them. Use a
-separate state directory to preserve an existing managed configuration. Managed
-arithmetic/SQL tools on collective aliases still work: the server image exposes
-thin worker entry points backed by the existing authenticated FlatBuffers code.
-Each turn snapshots the enabled registration before task creation. Disabling it
-after admission leaves the in-flight turn pinned; later admissions fail.
-Native conversation worker RPC remains future work.
+Native conversations support direct inference and opt-in managed inference.
+Enable the latter before starting the server:
+
+```bash
+cargo run -p cogfabric -- --home "$HOME/.local/share/cogfabric-http" configure-worker --enabled true
+```
+
+Managed mode requires the persistent database in that existing private workspace.
+Each turn launches the same running Rust image lazily, sends typed trusted settings,
+and exchanges native conversation FlatBuffers over an owner-local Unix socket.
+The host and worker authenticate each other's UID/PID; a one-task, one-call grant
+limits input, reserved output, proposals and the original deadline. The parent
+retains the child, socket, execution lease and process-capacity slot through
+reaping, including cancellation. Managed requests must fit the 256 KiB native FlatBuffers frame; requests that
+exceed it are rejected before creating a task or launching a child.
+The per-host native child ceiling is eight,
+including children awaiting cleanup. The process is not an untrusted-code sandbox.
+
+Enabled immutable model registrations are supported through `model-select`;
+the model, endpoint and output ceiling must match the selected version. Each turn
+snapshots that registration before task creation. Disabling it after admission
+leaves the admitted turn pinned; later admissions fail. Role overrides remain
+unsupported and fail at startup. Managed arithmetic/SQL on collective aliases
+continue to use their existing typed worker implementations. Library embeddings
+that opt into native workers must delegate the hidden `agent-worker` command to
+`cogfabric::agent::process::run_worker`; both supplied binaries already do so.
 
 ## Models and requests
 
@@ -162,17 +179,20 @@ resumed through `resume-task`.
 
 ## Reproduce the live client test
 
-With LM Studio exposing the tool-capable Qwen model, OpenCode v2, jq, rg, OpenSSL,
+With LM Studio exposing the tool-capable Qwen model, OpenCode v2, jq, rg, OpenSSL, sqlite3 (for managed-worker audit checks),
 GNU timeout and the built server available:
 
 ```bash
-COGFABRIC_MODEL=qwen/qwen3-8b COGFABRIC_API_BASE=http://127.0.0.1:1234/v1 \
-  bash scripts/opencode-smoke.sh "$PWD/target/debug/cogfabric-server"
+COGFABRIC_MANAGED_INFERENCE=true COGFABRIC_MODEL=qwen/qwen3-8b \
+  COGFABRIC_API_BASE=http://127.0.0.1:1234/v1 bash scripts/opencode-smoke.sh "$PWD/target/debug/cogfabric-server"
 ```
 
 The script creates isolated state, a fresh random API key and a disposable file.
 OpenCode is denied all actions except reading/editing that exact file. It must
 perform read → edit/write → read, report the observed new status, and produce the
-expected actual file contents. The script stops only its own server and retains
-logs/state at the printed path. This is an optional real-backend test, not an
+expected actual file contents. In managed mode it also checks that every admitted
+turn launched a native worker and that every such child has a reaping audit.
+The script stops only its own server and retains
+logs/state at the printed path. Omit `COGFABRIC_MANAGED_INFERENCE=true` to test
+direct inference instead. This is an optional real-backend test, not an
 unattended CI dependency or a general coding-quality benchmark.

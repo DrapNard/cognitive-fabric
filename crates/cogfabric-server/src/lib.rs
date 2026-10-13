@@ -79,12 +79,15 @@ pub async fn serve_until(
 ) -> anyhow::Result<()> {
     validate_bind(listener.local_addr()?)?;
     let stop = server.stop.clone();
-    axum::serve(listener::BoundedListener::new(listener), server.router())
+    let served = axum::serve(listener::BoundedListener::new(listener), server.router())
         .with_graceful_shutdown(async move {
             shutdown.await;
             stop.send_replace(true);
         })
-        .await?;
+        .await;
+    let cleanup = cogfabric::agent::process::drain_workers().await;
+    served?;
+    cleanup?;
     Ok(())
 }
 fn error(status: StatusCode, message: &str) -> Response {

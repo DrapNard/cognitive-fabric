@@ -109,6 +109,7 @@ impl Bootstrap {
             max_input_bytes: self.config.max_input_bytes as u64,
             role_profiles: Some(builder.create_vector(&profiles)),
             max_database_bytes: self.config.max_database_bytes,
+            max_tool_calls: self.config.max_tool_calls,
             max_wall_seconds: self.config.max_wall_seconds,
             inference_auth_scope: self
                 .config
@@ -167,6 +168,7 @@ impl Bootstrap {
             reasoning_effort: packet.reasoning_effort().map(str::to_string),
             interpret_goals: false,
             synthesize_results: false,
+            max_tool_calls: packet.max_tool_calls(),
             ..Config::default()
         };
         if let Some(profiles) = packet.role_profiles() {
@@ -253,6 +255,7 @@ mod tests {
                 temperature: 0.2,
                 timeout_seconds: 10,
                 max_calls: 4,
+                max_tool_calls: 4,
                 max_tokens: 512,
                 max_input_bytes: 4096,
                 role_profiles: Some(profiles),
@@ -379,5 +382,29 @@ mod tests {
         invalid.config.api_base = Config::default().api_base;
         invalid.config.max_calls = 0;
         assert!(invalid.encode().is_err());
+    }
+}
+
+#[cfg(test)]
+mod native_limits_tests {
+    use super::*;
+    #[test]
+    fn appended_proposal_ceiling_roundtrips_and_old_default_is_absent() {
+        for tools in [0, 1, 4, 64] {
+            let setup = Bootstrap {
+                task: uuid::Uuid::new_v4().to_string(),
+                config: Config {
+                    max_tool_calls: tools,
+                    ..Config::default()
+                },
+            };
+            let bytes = setup.encode().unwrap();
+            let decoded = Bootstrap::decode(&bytes).unwrap();
+            assert_eq!(decoded.config.max_tool_calls, tools);
+            if tools == 4 {
+                let root = flatbuffers::root::<fb::Bootstrap>(&bytes).unwrap();
+                assert_eq!(root._tab.vtable().get(fb::Bootstrap::VT_MAX_TOOL_CALLS), 0);
+            }
+        }
     }
 }

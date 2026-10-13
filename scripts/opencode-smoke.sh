@@ -4,6 +4,7 @@ set -euo pipefail
 umask 077
 server_binary=$(realpath "${1:?Usage: opencode-smoke.sh /path/to/cogfabric-server}")
 for program in opencode jq openssl timeout rg; do command -v "$program" >/dev/null; done
+case "${COGFABRIC_MANAGED_INFERENCE:-false}" in true|false) ;; *) echo "COGFABRIC_MANAGED_INFERENCE must be true or false" >&2; exit 1 ;; esac
 root=$(mktemp -d /tmp/cogfabric-opencode-smoke.XXXXXX)
 server_pid=
 cleanup() {
@@ -19,8 +20,8 @@ mkdir "$root/fabric" "$root/workspace"
 export COGFABRIC_SERVER_API_KEY
 COGFABRIC_SERVER_API_KEY=$(openssl rand -hex 32)
 # These configure a fresh workspace; they never change the operator's saved config.
-jq -n --arg model "${COGFABRIC_MODEL:-qwen/qwen3-8b}" --arg api "${COGFABRIC_API_BASE:-http://127.0.0.1:1234/v1}" \
-  '{backend:"openai-local",model:$model,api_base:$api,inference_process:false,max_calls:4,max_cycles:2,max_tokens:2048,max_input_bytes:128000,max_tool_calls:4,max_wall_seconds:90,timeout_seconds:80,reasoning_effort:"none",temperature:0}' > "$root/fabric/config.json"
+jq -n --arg model "${COGFABRIC_MODEL:-qwen/qwen3-8b}" --arg api "${COGFABRIC_API_BASE:-http://127.0.0.1:1234/v1}" --argjson managed "${COGFABRIC_MANAGED_INFERENCE:-false}" \
+  '{backend:"openai-local",model:$model,api_base:$api,inference_process:$managed,max_calls:4,max_cycles:2,max_tokens:2048,max_input_bytes:128000,max_tool_calls:4,max_wall_seconds:90,timeout_seconds:80,reasoning_effort:"none",temperature:0}' > "$root/fabric/config.json"
 "$server_binary" --home "$root/fabric" --bind 127.0.0.1:0 > "$root/server.log" 2>&1 &
 server_pid=$!
 for _ in {1..100}; do
@@ -49,4 +50,14 @@ jq -s -e '
   ([ .[] | select(.type=="text") | .part.text ] | any(contains("Status: after")))
 ' "$root/opencode.jsonl" >/dev/null
 [[ $(cat "$root/workspace/fixture.txt") == $'Cognitive Fabric OpenCode integration fixture.\nStatus: after' ]]
+if [[ "${COGFABRIC_MANAGED_INFERENCE:-false}" == true ]]; then
+  command -v sqlite3 >/dev/null
+  for _ in {1..50}; do
+    read -r launched reaped admitted < <(sqlite3 -init /dev/null -batch -noheader -list -separator ' ' -readonly "$root/fabric/fabric.sqlite3" \
+      "SELECT (SELECT count(*) FROM events WHERE kind='native_worker_process_launch'), (SELECT count(*) FROM events WHERE kind='native_worker_process_stopped' AND json_extract(payload,'$.reaped')=1), (SELECT count(*) FROM events WHERE kind='agent_admission');")
+    [[ "$launched" -gt 0 && "$launched" == "$reaped" && "$launched" == "$admitted" ]] && break
+    sleep 0.1
+  done
+  [[ "$launched" -gt 0 && "$launched" == "$reaped" && "$launched" == "$admitted" ]]
+fi
 printf 'OpenCode read/edit/read smoke passed. Evidence: %s\n' "$root"
