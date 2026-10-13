@@ -2,6 +2,13 @@
 
 All notable changes are documented here in English.
 
+### Inspect uncertain residency operations without changing state
+
+- Compare a bounded recorded operator intent with one fresh native inventory GET.
+- Reject corrupt, ambiguous or endpoint-mismatched intent before networking.
+- Use read-only CLI startup; preserve tasks, configuration and registry state.
+- Keep causality and ownership unproven and deny automatic retry or cleanup.
+
 ### Validate core and server installation on clean Arch
 
 - Verify fresh prerequisites, pinned FlatBuffers and all 417 workspace tests.

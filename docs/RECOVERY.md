@@ -572,3 +572,12 @@ This identifies compiled default instructions, not provider behavior, tokenizer,
 weights or arbitrary trusted-host backend implementations. It grants no new
 permissions. A malicious same-owner database writer can replace hashes; this is
 cooperative version consistency, not executable or database attestation.
+
+### Uncertain native residency requests
+
+Use `residency-inspect TASK_UUID --api-base NATIVE_BASE` to compare a bounded
+recorded operator intent with fresh inventory. This observes desired state while
+leaving the original task and unknown outcome unchanged. Matching instances do
+not prove this framework caused the state or owns the instance. There is no
+automatic retry/unload or migration; invalid/ambiguous intent fails before HTTP.
+See MODELS.md for report semantics and the separate credential scope.

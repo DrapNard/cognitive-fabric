@@ -277,3 +277,12 @@ is sticky, blocks subsequent collective worker construction and fails shutdown.
 Actual subprocess regressions cover disconnect, immediate shutdown and injected
 audit failure. Forced runtime/host termination and upstream GPU completion remain
 unproven; the process boundary still does not isolate arbitrary untrusted code.
+
+### Residency observation is not ownership recovery
+
+`residency-inspect` uses a current-schema read-only database handle and exactly
+one operator-scoped inventory GET after validating bounded recorded intent and
+its explicit endpoint. Provider state cannot prove request causality or exclusive
+ownership. Inspection never changes task state or grants retry/unload authority.
+Stored events remain local consistency evidence, not signatures against same-user
+database compromise; external inventory can race other clients.

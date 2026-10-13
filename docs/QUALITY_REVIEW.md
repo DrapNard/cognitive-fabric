@@ -1,8 +1,8 @@
 # Rust baseline quality review
 
-Current runtime source `38948b1` passes 417 Rust tests (378 library, 39 integration),
+Current local runtime passes 419 Rust tests (378 library, 41 integration),
 formatting, workspace all-target compilation and Clippy with warnings denied.
-Both core and HTTP server packages passed optimized host source installation,
+Before the residency-inspection addition, both core and HTTP server packages passed optimized host source installation,
 offline installed workflows and managed OpenCode/Qwen read/edit/read. Hosted CI
 for `a9933b3` passed, including the newly added offline HTTP workflow. Expanded
 clean-OS verification is tracked separately in INSTALLATION_VALIDATION.md and
@@ -2890,3 +2890,25 @@ passed for this exact source, including the new offline HTTP smoke step. These
 results close the clean-OS core/server installation gap; independent expert
 quality, broader module provisioning, ownership-aware residency and complete
 release acceptance remain incomplete. No release tag or public publication.
+
+## Read-only residency inspection verification
+
+`residency-inspect` validates a single bounded original operator intent and its
+explicit native endpoint before one fresh inventory GET. It preserves original
+task state, configuration and registry; observed desired state cannot finalize
+the task, establish ownership or authorize retry/cleanup. Parsing rejects unknown
+fields, invalid action bounds, missing/duplicate intents and oversized records
+before HTTP. SQL checks payload length before JSON extraction and owned copies.
+The CLI opens only an existing current-schema read-only database before normal
+workspace initialization. Missing-workspace inspection creates no state.
+
+Formatting, workspace all-target check, all 419 tests (378 library, 41 integration)
+and Clippy with warnings denied pass. Log:
+`/tmp/cogfabric-residency-inspection-tests.log`. CLI tests use actual local HTTP
+fixtures for present/absent load/unload state and negative pre-network cases,
+including unchanged task/configuration and no skill bootstrap. Mutation behavior
+is unchanged except sharing the same action validation helper. No model was loaded
+or unloaded; live authenticated operation inspection and optimized/clean-OS
+installation of this added command are not yet verified. Previous clean Arch
+evidence remains scoped to `a9933b3`. General exclusive residency ownership,
+automatic lifecycle scheduling and complete V1 acceptance remain open.

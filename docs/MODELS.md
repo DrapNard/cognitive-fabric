@@ -312,3 +312,29 @@ Concurrent submissions can change occupancy immediately after selection; routing
 does not reserve a slot or guarantee load balancing. Existing pins and failure
 handling are unchanged. A lower-priority rank cannot win through lower queue load.
 No probe, extra model call, grant, retry or provider load/unload is introduced.
+
+## Inspect an uncertain residency operation
+
+```sh
+cogfabric --json residency-inspect TASK_UUID \
+  --api-base http://127.0.0.1:1234/api/v1
+```
+
+This read-only command compares the task's single recorded operator intent with
+one fresh native inventory GET. Add `--authenticate` only for the dedicated
+residency credential. The explicit endpoint must exactly match the canonical
+endpoint recorded before the original request. Invalid, oversized, duplicate or
+unknown intent fields fail before networking; model/context/instance bounds are
+revalidated. Missing workspaces/current-schema databases fail without creating
+state, migrating schemas or bootstrapping skills.
+
+`desired_state_observed` reports matching loaded model/context instances for a
+load, or absence of the exact instance for an unload. `matching_instance_ids`
+lists matches (present instances for an unload). Another client could have made
+that state, and inventory may change immediately afterward. The report therefore
+keeps `operation_outcome: not_inferred` and `ownership_established: false`, with
+the task status labeled `task_state_at_read`. It does not update the task, retry
+a request, unload anything or authorize automatic cleanup. Existing requested
+or interrupted records remain unchanged, including when the desired state is
+observed. General ownership-aware scheduling and real authenticated lifecycle
+validation remain incomplete.

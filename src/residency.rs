@@ -196,11 +196,105 @@ mod tests {
     }
 }
 
-#[derive(Clone, Debug, Serialize)]
-#[serde(tag = "operation", rename_all = "snake_case")]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Mutation {
     Load { model: String, context_length: u32 },
     Unload { instance_id: String },
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Intent {
+    state: String,
+    adapter: String,
+    endpoint: String,
+    action: Mutation,
+    external_outcome: String,
+}
+
+/// Observe a recorded operator intent without retrying or resolving its outcome.
+/// Matching inventory cannot establish causality or exclusive instance ownership.
+pub async fn inspect_operation(
+    store: &crate::store::Store,
+    task: &str,
+    base: &str,
+    authenticate: bool,
+) -> Result<Value> {
+    security::authorize("human-cli", "model.residency.inspect")?;
+    uuid::Uuid::parse_str(task)?;
+    let expected = endpoint(base)?;
+    let (state, intent) = {
+        let db = store.lock()?;
+        let mut statement = db.prepare("SELECT CASE WHEN length(CAST(t.status AS BLOB))<=64 THEN t.status END, CASE WHEN length(CAST(e.payload AS BLOB))<=4096 THEN e.payload END FROM tasks t JOIN events e ON e.task_id=t.id WHERE t.id=?1 AND e.kind='model_residency' AND e.source='human-cli' AND CASE WHEN length(CAST(e.payload AS BLOB))<=4096 THEN json_extract(e.payload,'$.state')='requested' ELSE 1 END ORDER BY e.id LIMIT 2")?;
+        let mut rows = statement.query([task])?;
+        let row = rows
+            .next()?
+            .ok_or_else(|| anyhow::anyhow!("No recorded operator residency intent for task"))?;
+        let state: String = row.get(0)?;
+        let raw: String = row.get(1)?;
+        if rows.next()?.is_some() {
+            bail!("Ambiguous recorded residency intent")
+        }
+        let intent: Intent = serde_json::from_str(&raw)
+            .map_err(|_| anyhow::anyhow!("Invalid recorded residency intent"))?;
+        (state, intent)
+    };
+    if intent.state != "requested"
+        || intent.adapter != "lmstudio-native-v1"
+        || intent.external_outcome != "unknown"
+        || intent.endpoint != expected.as_str()
+    {
+        bail!("Recorded residency intent does not match the explicit native endpoint")
+    }
+    validate_action(&intent.action)?;
+    let inventory = status(base, authenticate).await?;
+    let models = parse(&serde_json::to_vec(&inventory)?)?;
+    let matching: Vec<&str> = match &intent.action {
+        Mutation::Load {
+            model,
+            context_length,
+        } => models
+            .iter()
+            .filter(|m| &m.key == model)
+            .flat_map(|m| &m.loaded_instances)
+            .filter(|i| i.config.context_length == u64::from(*context_length))
+            .map(|i| i.id.as_str())
+            .collect(),
+        Mutation::Unload { instance_id } => models
+            .iter()
+            .flat_map(|m| &m.loaded_instances)
+            .filter(|i| &i.id == instance_id)
+            .map(|i| i.id.as_str())
+            .collect(),
+    };
+    let observed = match intent.action {
+        Mutation::Load { .. } => !matching.is_empty(),
+        Mutation::Unload { .. } => matching.is_empty(),
+    };
+    Ok(
+        json!({"format_version":1,"task_id":task,"task_state_at_read":state,
+        "action":intent.action,"endpoint":expected.as_str(),"desired_state_observed":observed,
+        "matching_instance_ids":matching,"server_reported":true,
+        "operation_outcome":"not_inferred","ownership_established":false,
+        "model_mutation_performed":false,"task_updated":false,
+        "automatic_retry":false,"automatic_cleanup":false}),
+    )
+}
+
+fn validate_action(action: &Mutation) -> Result<()> {
+    match action {
+        Mutation::Load {
+            model,
+            context_length,
+        } if !identity(model) || !(1..=32768).contains(context_length) => {
+            bail!("Invalid load identity or context ceiling")
+        }
+        Mutation::Unload { instance_id } if !identity(instance_id) => {
+            bail!("Invalid unload instance identity")
+        }
+        _ => Ok(()),
+    }
 }
 
 /// Explicit operator mutation; no model capability, automatic retry or implicit unload.
@@ -216,18 +310,7 @@ pub async fn mutate(
         bail!("Model residency changes require explicit operator approval")
     }
     endpoint(base)?;
-    match &action {
-        Mutation::Load {
-            model,
-            context_length,
-        } if !identity(model) || !(1..=32768).contains(context_length) => {
-            bail!("Invalid load identity or context ceiling")
-        }
-        Mutation::Unload { instance_id } if !identity(instance_id) => {
-            bail!("Invalid unload instance identity")
-        }
-        _ => {}
-    }
+    validate_action(&action)?;
     let lease_path = store
         .runtime_lock
         .as_deref()

@@ -164,6 +164,13 @@ enum Command {
         #[arg(long)]
         authenticate: bool,
     },
+    ResidencyInspect {
+        id: String,
+        #[arg(long)]
+        api_base: String,
+        #[arg(long)]
+        authenticate: bool,
+    },
     Models,
     ModelRegister {
         manifest: PathBuf,
@@ -442,6 +449,18 @@ async fn main() -> Result<()> {
         .await;
     }
     let cfg = Config::load(cli.home, cli.backend)?;
+    if let Command::ResidencyInspect {
+        id,
+        api_base,
+        authenticate,
+    } = &cli.command
+    {
+        let store = Store::open_existing_read_only(&cfg.db())?;
+        return output(
+            cogfabric::residency::inspect_operation(&store, id, api_base, *authenticate).await?,
+            cli.json,
+        );
+    }
     if let Command::RestoreDatabase {
         snapshot,
         checksum,
@@ -706,6 +725,11 @@ async fn main() -> Result<()> {
             api_base,
             authenticate,
         } => cogfabric::residency::status(&api_base, authenticate).await?,
+        Command::ResidencyInspect {
+            id,
+            api_base,
+            authenticate,
+        } => cogfabric::residency::inspect_operation(&store, &id, &api_base, authenticate).await?,
         Command::SecurityEval => {
             let report = cogfabric::security_evaluation::run()?;
             let success = report["success"] == true;

@@ -1783,3 +1783,21 @@ image/source references, binary/log hashes and limits. This supersedes the prior
 new-server clean-OS and pending HTTP CI gaps. Native GPU/model setup in Arch,
 CachyOS-specific desktop setup, independent expert quality and general module
 provisioning remain unverified or partial. No runtime changes or new test count.
+
+### Read-only residency operation inspection
+
+**Implemented:** `residency::inspect_operation` and CLI `residency-inspect` compare
+one bounded recorded operator intent against a fresh inventory GET. Early
+read-only startup avoids migrations/bootstrap. Exact endpoint matching, strict
+intent/action parsing, original bounds and duplicate detection precede HTTP.
+**Tests:** `tests/residency.rs` covers load/unload present/absent observations,
+one GET without retry/POST, unchanged tasks/config/skill registry, and malformed,
+oversized, duplicate, missing or wrong-endpoint intent before network.
+**Partial:** observing desired state proves neither operation causality nor
+instance ownership. Tasks are never finalized or granted cleanup authority;
+automatic scheduling and live authenticated mutation validation remain open.
+
+Final inspection checks: formatting, workspace all-target check, Clippy with
+warnings denied and 419 Rust tests pass (378 library, 41 integration). Test log:
+`/tmp/cogfabric-residency-inspection-tests.log`. No live residency mutation or
+source-install refresh is claimed for the new command.

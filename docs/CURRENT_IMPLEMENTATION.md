@@ -710,3 +710,12 @@ and offline installed CLI/socket/HTTP workflows. Hosted CI also passed the new
 HTTP smoke. Host managed OpenCode/Qwen evidence is separate from this clean-OS
 run, which exercised no native inference or GPU. See INSTALLATION_VALIDATION.md
 and RELEASE_AUDIT.md for exact scope and reproduction.
+
+### Residency operation observation
+
+`residency-inspect TASK_UUID --api-base NATIVE_BASE` now compares recorded
+operator intent with fresh native inventory through read-only startup. It
+reports matching instance IDs and observed desired state without resolving the
+unknown outcome, changing task state or authorizing cleanup. Malformed/ambiguous
+intent and endpoint mismatches fail before HTTP. Ownership-aware automatic
+residency scheduling remains incomplete; MODELS.md specifies the limits.

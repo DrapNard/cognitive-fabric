@@ -4,14 +4,14 @@ This checklist preserves the 18 acceptance criteria in the goal objective. It is
 an evidence inventory, not a release approval. The canonical French architecture
 and the broader implementation matrix remain authoritative. Earlier test counts
 in the quality review are historical milestones. Current local verification is
-417 Rust tests (378 library, 39 integration), formatting, all-target checking and
+419 Rust tests (378 library, 41 integration), formatting, all-target checking and
 Clippy with warnings denied, using FlatBuffers compiler/crate 25.12.19.
 
 | Goal criterion | Evidence inspected | Assessment / remaining proof |
 |---|---|---|
 | 1. Workspace builds | `Cargo.toml`, all-target check | Passed locally; isolated optimized source installation also passed with cached dependencies. |
 | 2. Formatting and Clippy | Mandatory checks in `QUALITY_REVIEW.md` | Passed locally. |
-| 3. Mandatory tests | Workspace all-target test results, `tests/`, server integration tests | 417 passed; fixtures do not establish live model quality. |
+| 3. Mandatory tests | Workspace all-target test results, `tests/`, server integration tests | 419 passed; fixtures do not establish live model quality. |
 | 4. FlatBuffers IPC | `protocol/`, `src/wire.rs`, `src/fabric/`, malformed/compatibility/socket tests | Implemented for present transports; authenticated process event delivery/replay is now tested; broader module compatibility remains partial. |
 | 5. CLI/service communication | `src/service.rs`, socket tests, `tests/process_worker.rs`, `crates/cogfabric-server/tests/` | Tested typed local transport, progress, cancellation and optional HTTP client interoperability; native and collective ownership drains cover dropped request futures. No general independent plugin service is claimed. |
 | 6. Compatible local LLM | `src/backend.rs`, `tests/inference_auth.rs`, `LIVE_INFERENCE.md` | Passed for Ollama and LM Studio Qwen3 8B compatible endpoints, including managed verified sorting. Native LM Studio read-only inventory passed; authenticated native access and controlled load/unload remain unverified. |
@@ -873,3 +873,25 @@ passed for this exact source, including the new offline HTTP smoke step. These
 results close the clean-OS core/server installation gap; independent expert
 quality, broader module provisioning, ownership-aware residency and complete
 release acceptance remain incomplete. No release tag or public publication.
+
+## Read-only residency inspection verification
+
+`residency-inspect` validates a single bounded original operator intent and its
+explicit native endpoint before one fresh inventory GET. It preserves original
+task state, configuration and registry; observed desired state cannot finalize
+the task, establish ownership or authorize retry/cleanup. Parsing rejects unknown
+fields, invalid action bounds, missing/duplicate intents and oversized records
+before HTTP. SQL checks payload length before JSON extraction and owned copies.
+The CLI opens only an existing current-schema read-only database before normal
+workspace initialization. Missing-workspace inspection creates no state.
+
+Formatting, workspace all-target check, all 419 tests (378 library, 41 integration)
+and Clippy with warnings denied pass. Log:
+`/tmp/cogfabric-residency-inspection-tests.log`. CLI tests use actual local HTTP
+fixtures for present/absent load/unload state and negative pre-network cases,
+including unchanged task/configuration and no skill bootstrap. Mutation behavior
+is unchanged except sharing the same action validation helper. No model was loaded
+or unloaded; live authenticated operation inspection and optimized/clean-OS
+installation of this added command are not yet verified. Previous clean Arch
+evidence remains scoped to `a9933b3`. General exclusive residency ownership,
+automatic lifecycle scheduling and complete V1 acceptance remain open.

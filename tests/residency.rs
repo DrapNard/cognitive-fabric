@@ -223,3 +223,186 @@ async fn cli_residency_mutations_audit_confirm_and_preserve_unknown_outcomes() {
         std::fs::remove_dir_all(home).unwrap();
     }
 }
+
+#[tokio::test]
+async fn operation_inspection_observes_inventory_without_resolving_or_mutating_tasks() {
+    for (load, present) in [(true, true), (true, false), (false, true), (false, false)] {
+        let home =
+            std::env::temp_dir().join(format!("fabric-residency-inspect-{}", uuid::Uuid::new_v4()));
+        let cfg = cogfabric::config::Config {
+            home: home.clone(),
+            ..Default::default()
+        };
+        cfg.save().unwrap();
+        let store = cogfabric::store::Store::open(&cfg.db()).unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}/api/v1", listener.local_addr().unwrap());
+        let action = if load {
+            json!({"operation":"load","model":"installed","context_length":2048})
+        } else {
+            json!({"operation":"unload","instance_id":"instance"})
+        };
+        let task = store
+            .create_task("Operator residency unknown outcome", "fast")
+            .unwrap();
+        store.event(&task, "model_residency", "human-cli", json!({"state":"requested","adapter":"lmstudio-native-v1","endpoint":format!("{base}/models"),"action":action,"external_outcome":"unknown"})).unwrap();
+        store
+            .finish_task(&task, "interrupted", "Unknown outcome")
+            .unwrap();
+        let before = store.task(&task).unwrap();
+        let config_before = std::fs::read(home.join("config.json")).unwrap();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let request = read_request(&mut stream).await;
+            assert!(request.starts_with("GET /api/v1/models "));
+            assert!(!request.to_ascii_lowercase().contains("authorization:"));
+            let body = json!({"models":[{"key":"installed","type":"llm","loaded_instances":if present { json!([{"id":"instance","config":{"context_length":2048}}]) } else { json!([]) }}]}).to_string();
+            stream
+                .write_all(
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    )
+                    .as_bytes(),
+                )
+                .await
+                .unwrap();
+            assert!(
+                tokio::time::timeout(std::time::Duration::from_millis(100), listener.accept())
+                    .await
+                    .is_err(),
+                "Inspection must issue exactly one GET, never a mutation/retry"
+            );
+        });
+        let command_home = home.clone();
+        let id = task.clone();
+        let result = tokio::task::spawn_blocking(move || {
+            std::process::Command::new(env!("CARGO_BIN_EXE_cogfabric"))
+                .env_clear()
+                .arg("--home")
+                .arg(command_home)
+                .args(["--json", "residency-inspect", &id, "--api-base", &base])
+                .output()
+                .unwrap()
+        })
+        .await
+        .unwrap();
+        server.await.unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        let report: Value = serde_json::from_slice(&result.stdout).unwrap();
+        assert_eq!(report["desired_state_observed"], load == present);
+        assert_eq!(report["operation_outcome"], "not_inferred");
+        assert_eq!(report["ownership_established"], false);
+        assert_eq!(report["model_mutation_performed"], false);
+        assert_eq!(report["task_updated"], false);
+        assert_eq!(report["task_state_at_read"], "interrupted");
+        assert_eq!(store.task(&task).unwrap(), before);
+        assert_eq!(
+            std::fs::read(home.join("config.json")).unwrap(),
+            config_before
+        );
+        let db = rusqlite::Connection::open(cfg.db()).unwrap();
+        let skills: u64 = db
+            .query_row("SELECT count(*) FROM skills", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(skills, 0, "Read-only startup must not bootstrap skills");
+        drop(db);
+        drop(store);
+        std::fs::remove_dir_all(home).unwrap();
+    }
+}
+
+#[tokio::test]
+async fn operation_inspection_rejects_ambiguous_corrupt_or_wrong_endpoint_intent_before_network() {
+    for scenario in 0..7 {
+        let home = std::env::temp_dir().join(format!(
+            "fabric-residency-inspect-deny-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let cfg = cogfabric::config::Config {
+            home: home.clone(),
+            ..Default::default()
+        };
+        cfg.save().unwrap();
+        let store = cogfabric::store::Store::open(&cfg.db()).unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}/api/v1", listener.local_addr().unwrap());
+        let task = store
+            .create_task("Invalid residency intent", "fast")
+            .unwrap();
+        let mut intent = json!({"state":"requested","adapter":"lmstudio-native-v1","endpoint":format!("{base}/models"),"action":{"operation":"load","model":"installed","context_length":2048},"external_outcome":"unknown"});
+        match scenario {
+            0 => intent["endpoint"] = json!("http://127.0.0.1:1/api/v1/models"),
+            1 => intent["action"]["context_length"] = json!(32769),
+            2 => intent["action"]["permissions"] = json!(["shell"]),
+            3 => intent["adapter"] = json!("arbitrary-provider"),
+            4 => intent["action"]["model"] = json!("x".repeat(5000)),
+            _ => {}
+        }
+        if scenario != 6 {
+            store
+                .event(&task, "model_residency", "human-cli", intent.clone())
+                .unwrap();
+            if scenario == 5 {
+                store
+                    .event(&task, "model_residency", "human-cli", intent)
+                    .unwrap();
+            }
+        }
+        let before = store.task(&task).unwrap();
+        let command_home = home.clone();
+        let id = task.clone();
+        let result = tokio::task::spawn_blocking(move || {
+            std::process::Command::new(env!("CARGO_BIN_EXE_cogfabric"))
+                .env_clear()
+                .arg("--home")
+                .arg(command_home)
+                .args(["--json", "residency-inspect", &id, "--api-base", &base])
+                .output()
+                .unwrap()
+        })
+        .await
+        .unwrap();
+        assert!(!result.status.success());
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(30), listener.accept())
+                .await
+                .is_err(),
+            "Invalid intent must fail before contacting any provider"
+        );
+        assert_eq!(store.task(&task).unwrap(), before);
+        drop(store);
+        std::fs::remove_dir_all(home).unwrap();
+    }
+    let missing = std::env::temp_dir().join(format!(
+        "fabric-residency-inspect-missing-{}",
+        uuid::Uuid::new_v4()
+    ));
+    let command_home = missing.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        std::process::Command::new(env!("CARGO_BIN_EXE_cogfabric"))
+            .env_clear()
+            .arg("--home")
+            .arg(command_home)
+            .args([
+                "--json",
+                "residency-inspect",
+                &uuid::Uuid::new_v4().to_string(),
+                "--api-base",
+                "http://127.0.0.1:1/api/v1",
+            ])
+            .output()
+            .unwrap()
+    })
+    .await
+    .unwrap();
+    assert!(!result.status.success());
+    assert!(
+        !missing.exists(),
+        "Inspection must not initialize a missing workspace"
+    );
+}
