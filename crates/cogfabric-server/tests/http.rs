@@ -524,3 +524,48 @@ async fn duplicate_json_members_are_rejected_before_native_inference() {
     stop.send(()).unwrap();
     handle.await.unwrap().unwrap();
 }
+
+#[tokio::test]
+async fn unknown_named_tool_and_text_part_fields_fail_before_inference() {
+    let (base, _store, fixture, stop, handle) = setup(false).await;
+    let client = reqwest::Client::new();
+    for variant in 0..3 {
+        let mut request = body();
+        match variant {
+            0 => {
+                request["tool_choice"] =
+                    json!({"type":"function","function":{"name":"read"},"permissions":["shell"]})
+            }
+            1 => {
+                request["tool_choice"] =
+                    json!({"type":"function","function":{"name":"read","strict":true}})
+            }
+            _ => {
+                request["messages"][0]["content"][0]["image_url"] =
+                    json!({"url":"https://example.invalid/image"})
+            }
+        }
+        let response = client
+            .post(format!("{base}/v1/chat/completions"))
+            .bearer_auth(KEY)
+            .json(&request)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 400);
+        assert_eq!(fixture.calls.load(Ordering::SeqCst), 0);
+    }
+    let mut valid = body();
+    valid["tool_choice"] = json!({"type":"function","function":{"name":"read"}});
+    let response = client
+        .post(format!("{base}/v1/chat/completions"))
+        .bearer_auth(KEY)
+        .json(&valid)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    assert_eq!(fixture.calls.load(Ordering::SeqCst), 1);
+    stop.send(()).unwrap();
+    handle.await.unwrap().unwrap();
+}

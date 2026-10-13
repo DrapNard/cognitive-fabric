@@ -115,10 +115,20 @@ impl Turn {
         }
         if let Some(choice) = &self.tool_choice {
             if !matches!(choice.as_str(), Some("auto" | "none" | "required"))
-                && !(choice["type"] == "function"
-                    && choice["function"]["name"]
-                        .as_str()
-                        .is_some_and(|n| tools.contains(n)))
+                && !choice.as_object().is_some_and(|object| {
+                    object.len() == 2
+                        && object.get("type").is_some_and(|kind| kind == "function")
+                        && object
+                            .get("function")
+                            .and_then(Value::as_object)
+                            .is_some_and(|function| {
+                                function.len() == 1
+                                    && function
+                                        .get("name")
+                                        .and_then(Value::as_str)
+                                        .is_some_and(|name| tools.contains(name))
+                            })
+                })
             {
                 bail!("Invalid tool choice")
             }
@@ -305,6 +315,34 @@ mod duplicate_argument_tests {
                 },
             ]);
             assert_eq!(history.validate().is_ok(), valid);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tool_choice_shape_tests {
+    use super::*;
+    #[test]
+    fn named_tool_choices_reject_unknown_controls_and_preserve_supported_shapes() {
+        let mut turn:Turn=serde_json::from_value(serde_json::json!({"messages":[{"role":"user","content":"Read"}],"tools":[{"type":"function","function":{"name":"read","parameters":{"type":"object"}}}]})).unwrap();
+        for choice in [
+            serde_json::json!("auto"),
+            serde_json::json!("none"),
+            serde_json::json!("required"),
+            serde_json::json!({"type":"function","function":{"name":"read"}}),
+        ] {
+            turn.tool_choice = Some(choice);
+            turn.validate().unwrap();
+        }
+        for choice in [
+            serde_json::json!({"type":"function","function":{"name":"read"},"permissions":["shell"]}),
+            serde_json::json!({"type":"function","function":{"name":"read","strict":true}}),
+            serde_json::json!({"type":"function","function":{"name":"missing"}}),
+            serde_json::json!({"type":"function","function":["read"]}),
+            serde_json::json!(true),
+        ] {
+            turn.tool_choice = Some(choice);
+            assert!(turn.validate().is_err());
         }
     }
 }

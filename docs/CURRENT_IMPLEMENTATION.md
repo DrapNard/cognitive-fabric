@@ -1021,3 +1021,20 @@ Ordinary builds no longer require an installed flatc: verified pinned Rust bindi
 are included for all nine unchanged FlatBuffers schemas. Explicit FLATC still
 validates exact 25.12.19 regeneration. Schema/binding drift fails; see PROTOCOL.md
 for updating the bundle and INSTALLATION_VALIDATION.md for package evidence.
+
+
+### Exact native tool-choice and text-part controls
+
+Named `tool_choice` objects accept exactly
+`{"type":"function","function":{"name":"declared_tool"}}`. Unknown outer or
+nested fields, non-object function controls and undeclared names are rejected.
+String choices `auto`, `none` and `required` retain existing semantics. This avoids
+forwarding extra control fields in direct mode that native managed transport would
+otherwise drop. Strict-schema declaration belongs to the tool definition, not the
+named choice; the client still validates schemas and approves actions.
+
+HTTP text parts accept exactly `type: text` and a string `text`. Extra image or
+other fields are explicitly rejected rather than silently removed while flattening
+text. These unsupported shapes return 400 before inference. Valid named choices
+and ordinary text arrays remain supported. No tool execution, permission, budget,
+conversation role or FlatBuffers schema is added.

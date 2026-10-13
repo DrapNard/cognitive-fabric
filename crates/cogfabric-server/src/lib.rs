@@ -204,7 +204,10 @@ fn normalize(raw: ChatRequest) -> anyhow::Result<(String, Turn, bool, bool)> {
         if let Some(parts) = m.get("content").and_then(Value::as_array) {
             let mut text = String::new();
             for part in parts {
-                if part["type"] != "text" || part["text"].as_str().is_none() {
+                if !part.as_object().is_some_and(|object| object.len() == 2)
+                    || part["type"] != "text"
+                    || part["text"].as_str().is_none()
+                {
                     anyhow::bail!("Only text conversation content is supported")
                 }
                 text.push_str(part["text"].as_str().unwrap());

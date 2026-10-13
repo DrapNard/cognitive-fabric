@@ -1,6 +1,6 @@
 # Rust baseline quality review
 
-Current local runtime passes 490 Rust tests (440 library, 50 integration),
+Current local runtime passes 492 Rust tests (441 library, 51 integration),
 formatting, workspace all-target compilation and Clippy with warnings denied.
 Before the residency-inspection addition, both core and HTTP server packages passed optimized host source installation,
 offline installed workflows and managed OpenCode/Qwen read/edit/read. Hosted CI
@@ -3649,3 +3649,22 @@ provisioned isolated experts, physical residency and independent unseen model
 studies remain open V1 requirements. No public crate/repository publication or
 release tag was performed. HTTP_API.md now describes ordinary bundled builds
 rather than requiring an obsolete compiler export.
+
+
+### Agent control shape parity gate
+
+All 492 tests (441 library, 51 integration), formatting, workspace all-target
+check and Clippy pass with FLATC unset and the verified 25.12.19 bundle. Commands:
+`cargo fmt --all -- --check`, `cargo check --offline --workspace --all-targets`,
+`cargo test --offline --workspace --all-targets`, and
+`cargo clippy --offline --workspace --all-targets -- -D warnings`.
+Log: `/tmp/cogfabric-agent-control-shapes-tests.log`. A new core regression checks
+supported string/named choices and rejects extra/nonnative controls. Actual server
+HTTP coverage rejects unknown named-choice fields and text-part metadata before
+backend invocation, then accepts a valid named choice as its positive control.
+Existing native managed transports, proposals, disconnects and cleanup regressions
+pass. This intentionally narrows previously silently ignored input; it does not
+claim full JSON Schema enforcement or current live OpenCode/model compatibility.
+No new host action, authority, optimized installation or independent quality study.
+General scheduling, isolated executable provisioning, physical residency and
+independent unseen evaluations remain open V1 work.

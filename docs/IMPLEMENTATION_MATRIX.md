@@ -2296,3 +2296,20 @@ installed CLI/socket and HTTP workflows. Hosted CI `38454460668` succeeded with
 explicit regeneration and bundled checks. INSTALLATION_VALIDATION.md records
 hashes, logs and host-cache scope; 490 source tests remain passing. This updates
 installation evidence without claiming current clean-OS or live quality proof.
+
+
+### Exact native tool-choice and text-part controls
+
+Named `tool_choice` objects accept exactly
+`{"type":"function","function":{"name":"declared_tool"}}`. Unknown outer or
+nested fields, non-object function controls and undeclared names are rejected.
+String choices `auto`, `none` and `required` retain existing semantics. This avoids
+forwarding extra control fields in direct mode that native managed transport would
+otherwise drop. Strict-schema declaration belongs to the tool definition, not the
+named choice; the client still validates schemas and approves actions.
+
+HTTP text parts accept exactly `type: text` and a string `text`. Extra image or
+other fields are explicitly rejected rather than silently removed while flattening
+text. These unsupported shapes return 400 before inference. Valid named choices
+and ordinary text arrays remain supported. No tool execution, permission, budget,
+conversation role or FlatBuffers schema is added.

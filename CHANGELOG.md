@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Reject unsupported native agent control shapes
+
+- Validate exact named tool-choice fields for direct/managed semantic parity.
+- Reject extra text-part metadata instead of silently discarding it.
+- Keep valid named controls and client-owned schema/action permissions unchanged.
+
 ### Verify optimized installation without flatc
 
 - Install both current packages using bundled bindings and pass installed CLI/socket/HTTP workflows.

@@ -240,3 +240,20 @@ injection or schema violations. Tool JSON Schema semantics and action permission
 remain the client's responsibility; Fabric proposes tools and executes none through
 this API. No remote reference resolution, host capability, new tool or model
 permission is introduced. Internal FlatBuffers framing/schema is unchanged.
+
+
+### Exact native tool-choice and text-part controls
+
+Named `tool_choice` objects accept exactly
+`{"type":"function","function":{"name":"declared_tool"}}`. Unknown outer or
+nested fields, non-object function controls and undeclared names are rejected.
+String choices `auto`, `none` and `required` retain existing semantics. This avoids
+forwarding extra control fields in direct mode that native managed transport would
+otherwise drop. Strict-schema declaration belongs to the tool definition, not the
+named choice; the client still validates schemas and approves actions.
+
+HTTP text parts accept exactly `type: text` and a string `text`. Extra image or
+other fields are explicitly rejected rather than silently removed while flattening
+text. These unsupported shapes return 400 before inference. Valid named choices
+and ordinary text arrays remain supported. No tool execution, permission, budget,
+conversation role or FlatBuffers schema is added.
