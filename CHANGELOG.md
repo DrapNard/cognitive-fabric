@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Verify custom scheduling through public HTTP continuation
+
+- Resume a non-default committed subtask order without replaying completed work.
+- Assert original settings, charged calls and output allowances remain authoritative.
+- Reject damaged schedule records before HTTP dispatch or task-state changes.
+
 ### Make dependency scheduling replaceable and recovery-pinned
 
 - Add a trusted versioned subtask scheduler interface with strict dependency-order validation.

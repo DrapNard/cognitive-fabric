@@ -52,3 +52,24 @@ snapshots and already committed orders do not change when another engine install
 a different handle. Current execution remains sequential with a four-node graph
 limit. This is replaceable dependency ordering, not general module/GPU scheduling,
 calibrated expected utility or proof of faster/better reasoning.
+
+
+## HTTP continuation regression coverage
+
+`public_resume_preserves_custom_order_through_real_http_without_replay` saves an
+independent two-node graph with order `[1,0]` after node 1 completes. Public
+operator-approved continuation contacts a real loopback HTTP fixture exactly twice:
+node 0 and the final whole-goal solver. Requests retain the saved result and
+remaining result, with no planner or completed-subtask replay. The test asserts
+one original execution-settings record, one schedule intent/decision, four total
+charged calls, 1,024 reserved output tokens and the original remaining allowances.
+A deterministic sorting checker verifies the final answer; this is integration
+coverage rather than a model-quality result.
+
+`corrupted_custom_schedule_denies_resume_before_http_or_state_change` changes the
+completed prefix order, removes the required decision or changes its descriptor.
+Both preview and approved resume reject each case with unchanged task/event state,
+unchanged charges and no connection to the listening HTTP fixture. This extends
+custom-order execution/reconstruction coverage to actual public HTTP continuation.
+It does not prove arbitrary within-call recovery, backend weight identity or
+safety against an owner who rewrites every record consistently.

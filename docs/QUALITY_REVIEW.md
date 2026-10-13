@@ -3325,3 +3325,31 @@ GPU residency or parallel/general module scheduling is supplied. The prior
 optimized-install evidence is scoped to `840e63d`; no current optimized refresh
 or independent model-quality improvement is claimed. Full release gates remain
 open for broader scheduling, provisioning/isolation, residency and evaluation.
+
+
+### Custom scheduler public HTTP continuation proof
+
+Two added regressions extend scheduler proof from execution/reconstruction to
+public approved continuation. A separately saved independent graph ordered
+`[1,0]` with node 1 complete resumes only node 0 and the final solver over actual
+loopback HTTP. Assertions preserve one execution-settings record, one schedule
+intent/decision, four total charged calls, 1,024 reserved outputs, and original
+remaining allowances (four calls / 1,976 output tokens). Final sorting is checked
+independently. A companion regression changes completed prefix order, removes
+the required schedule or changes descriptor version; preview and approved resume
+fail before network dispatch, preserving all task/event state and charges.
+This is deterministic HTTP integration, not Qwen quality or arbitrary recovery.
+
+All 468 tests (422 library, 46 integration), formatting, workspace all-target
+check and Clippy pass with the existing FlatBuffers 25.12.19 pairing. Commands:
+`cargo fmt --all -- --check`, `cargo check --offline --workspace --all-targets`,
+`cargo test --offline --workspace --all-targets`, and
+`cargo clippy --offline --workspace --all-targets -- -D warnings`.
+Log: `/tmp/cogfabric-custom-resume-tests.log`; focused HTTP proof log:
+`/tmp/cogfabric-custom-resume-focused.log`. Initial Clippy flagged a manual test
+loop counter; replaced with enumeration and reran all gates, including strengthened
+budget assertions. Production behavior is unchanged in this test/documentation
+commit. No live provider inference, optimized-install refresh or general recovery
+claim. SCHEDULING.md and IMPLEMENTATION_MATRIX.md record the expanded proof;
+broader scheduling, untrusted expert isolation/provisioning, model residency and
+independent unseen model studies remain open V1 requirements.

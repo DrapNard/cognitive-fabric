@@ -2079,3 +2079,12 @@ protocol schemas or model-loading authority expand.
 Scheduler gate: all 466 tests and mandatory checks pass. Default CLI/HTTP graph
 audit passes; custom-order execution/reconstruction and tamper denials are covered.
 See QUALITY_REVIEW.md for recovery proof scope and unchanged release blockers.
+
+
+Custom-order HTTP continuation: **Verified (supported pre-solver graph scope)**
+in `src/recovery/continuation.rs` regressions. A recorded `[1,0]` order resumes
+only its pending node and final solver through real local HTTP, retaining original
+charges and settings. Changed prefix/descriptor or missing decision denies preview
+and approved resume before network/state change. SCHEDULING.md records exact
+assertions and limits; arbitrary within-call recovery and independent model quality
+remain incomplete.

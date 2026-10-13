@@ -709,6 +709,12 @@ mod tests {
         fixture_in(Arc::new(Store::in_memory().unwrap())).await
     }
     async fn fixture_in(store: Arc<Store>) -> (Arc<Store>, String) {
+        fixture_in_order(store, false).await
+    }
+    async fn fixture_in_order(store: Arc<Store>, custom_order: bool) -> (Arc<Store>, String) {
+        const INDEPENDENT_PLAN: &str = r#"{"steps":[{"id":"a","objective":"Inspect input","depends_on":[]},{"id":"b","objective":"Independent advice","depends_on":[]}]}"#;
+        let plan_text = if custom_order { INDEPENDENT_PLAN } else { PLAN };
+        let first = if custom_order { 1 } else { 0 };
         let task = store.create_task(QUERY, "deep").unwrap();
         let cfg = Config {
             backend: "openai-local".into(),
@@ -717,7 +723,7 @@ mod tests {
             ..Config::default()
         };
         let backend = Arc::new(Script(Mutex::new(
-            vec![("planner", PLAN), ("solver", "original advice")].into(),
+            vec![("planner", plan_text), ("solver", "original advice")].into(),
         )));
         let mut session = Session::new(cfg, store.clone(), backend, task.clone(), "deep").unwrap();
         store.event(&task,"execution_options","runtime",json!({"format_version":1,"profile":"full","explain":false,"conversation_ref":null})).unwrap();
@@ -728,15 +734,20 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        let plan = crate::planning::Plan::parse(PLAN).unwrap();
+        let plan = crate::planning::Plan::parse(plan_text).unwrap();
         store
             .event(
                 &task,
                 "plan",
                 "planner-r",
-                json!({"graph":plan,"trusted_permissions":false}),
+                json!({"graph":plan,"trusted_permissions":false,"scheduler_required":custom_order}),
             )
             .unwrap();
+        if custom_order {
+            let descriptor = json!({"id":"fixture.reverse","version":"1.0.0"});
+            store.event(&task,"subtask_schedule_intent","jev-plus",json!({"scheduler":descriptor,"permissions_granted":false,"implementation_attested":false})).unwrap();
+            store.event(&task,"subtask_schedule","jev-plus",json!({"format_version":1,"scheduler":descriptor,"graph_sha256":sha256(&serde_json::to_vec(&plan).unwrap()),"order":[1,0],"permissions_granted":false})).unwrap();
+        }
         let mut nodes = plan
             .steps
             .into_iter()
@@ -751,19 +762,19 @@ mod tests {
                 .event(&task, "subtask", "jev-plus", json!({"node":node}))
                 .unwrap();
         }
-        nodes[0].state = "running".into();
+        nodes[first].state = "running".into();
         store
-            .event(&task, "subtask", "jev-plus", json!({"node":nodes[0]}))
+            .event(&task, "subtask", "jev-plus", json!({"node":nodes[first]}))
             .unwrap();
         session
             .call("solver", "advisory", 192)
             .await
             .unwrap()
             .unwrap();
-        nodes[0].state = "unverified".into();
-        nodes[0].result = Some("original advice".into());
+        nodes[first].state = "unverified".into();
+        nodes[first].result = Some("original advice".into());
         store
-            .event(&task, "subtask", "jev-plus", json!({"node":nodes[0]}))
+            .event(&task, "subtask", "jev-plus", json!({"node":nodes[first]}))
             .unwrap();
         store.finish_task(&task, "interrupted", "").unwrap();
         (store, task)
@@ -1034,30 +1045,69 @@ mod tests {
     }
     #[tokio::test]
     async fn public_resume_uses_real_http_and_commits_a_durable_outcome() {
-        http_continuation(false, false, false, false).await;
+        http_continuation(false, false, false, false, false).await;
     }
     #[tokio::test]
     async fn registered_resume_uses_the_original_http_model() {
-        http_continuation(true, false, false, false).await;
+        http_continuation(true, false, false, false, false).await;
     }
     #[tokio::test]
     async fn public_resume_continues_a_saved_revision_through_http() {
-        http_continuation(false, true, false, false).await;
+        http_continuation(false, true, false, false, false).await;
     }
     #[tokio::test]
     async fn public_resume_handles_a_whole_goal_revision_without_a_graph() {
-        http_continuation(false, true, true, false).await;
+        http_continuation(false, true, true, false, false).await;
     }
     #[tokio::test]
     async fn recovered_failed_solver_continues_through_real_http_without_replay() {
-        http_continuation(false, true, false, true).await;
+        http_continuation(false, true, false, true, false).await;
     }
-    async fn http_continuation(registered: bool, revision: bool, no_graph: bool, failed: bool) {
+    #[tokio::test]
+    async fn public_resume_preserves_custom_order_through_real_http_without_replay() {
+        http_continuation(false, false, false, false, true).await;
+    }
+    #[tokio::test]
+    async fn corrupted_custom_schedule_denies_resume_before_http_or_state_change() {
+        for mutation in [
+            "UPDATE events SET payload=json_set(payload,'$.order',json('[0,1]')) WHERE kind='subtask_schedule'",
+            "DELETE FROM events WHERE kind='subtask_schedule'",
+            "UPDATE events SET payload=json_set(payload,'$.scheduler.version','2.0.0') WHERE kind='subtask_schedule'",
+        ] {
+            let root=std::env::temp_dir().join(format!("fabric-custom-denial-{}",uuid::Uuid::new_v4()));
+            let (store,task)=fixture_in_order(Arc::new(Store::open(&root.join("state.db")).unwrap()),true).await;
+            let listener=tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let endpoint=format!("http://{}/v1",listener.local_addr().unwrap());
+            {
+                let db=store.lock().unwrap();
+                db.execute("UPDATE events SET payload=json_set(payload,'$.configuration.api_base',?2) WHERE task_id=?1 AND kind='execution_settings'",rusqlite::params![task,endpoint]).unwrap();
+                db.execute_batch(mutation).unwrap();
+            }
+            let before=store.task(&task).unwrap();
+            assert!(preview(&store,&task).is_err());
+            assert!(resume(store.clone(),&task,true,std::future::pending()).await.is_err());
+            assert_eq!(store.task(&task).unwrap(),before);
+            assert_eq!(store.inference_audit(&task).unwrap()["reserved_calls"],2);
+            assert!(tokio::time::timeout(Duration::from_millis(30),listener.accept()).await.is_err());
+            drop(listener);drop(store);std::fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    async fn http_continuation(
+        registered: bool,
+        revision: bool,
+        no_graph: bool,
+        failed: bool,
+        custom_order: bool,
+    ) {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let root =
             std::env::temp_dir().join(format!("fabric-continuation-{}", uuid::Uuid::new_v4()));
-        let (store, task) =
-            fixture_in(Arc::new(Store::open(&root.join("state.db")).unwrap())).await;
+        let (store, task) = fixture_in_order(
+            Arc::new(Store::open(&root.join("state.db")).unwrap()),
+            custom_order,
+        )
+        .await;
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let endpoint = format!("http://{}/v1", listener.local_addr().unwrap());
         store.lock().unwrap().execute("UPDATE events SET payload=json_set(payload,'$.configuration.api_base',?2) WHERE task_id=?1 AND kind='execution_settings'",rusqlite::params![task,endpoint]).unwrap();
@@ -1084,11 +1134,12 @@ mod tests {
             .is_err());
         drop(lease);
         let server = tokio::spawn(async move {
-            for answer in if revision {
+            let answers = if revision {
                 vec!["[1,2,3]"]
             } else {
                 vec!["remaining advice", "[1,2,3]"]
-            } {
+            };
+            for (request_index, answer) in answers.into_iter().enumerate() {
                 let (mut socket, _) = listener.accept().await.unwrap();
                 let mut request = Vec::new();
                 loop {
@@ -1112,6 +1163,17 @@ mod tests {
                                 serde_json::from_slice(&request[end + 4..end + 4 + length])
                                     .unwrap();
                             assert_eq!(body["model"], "local-model");
+                            if custom_order {
+                                let messages = body["messages"].to_string();
+                                if request_index == 0 {
+                                    assert!(messages.contains("Solve only this advisory subgoal"));
+                                    assert!(messages.contains("Inspect input"));
+                                    assert!(!messages.contains("Independent advice"));
+                                } else {
+                                    assert!(messages.contains("original advice"));
+                                    assert!(messages.contains("remaining advice"));
+                                }
+                            }
                             break;
                         }
                     }
@@ -1157,6 +1219,33 @@ mod tests {
                 4
             }
         );
+        if custom_order {
+            let audit = inference::audit_from(&db, &task).unwrap();
+            assert_eq!(audit["reserved_output_tokens"], 1024);
+            assert_eq!(audit["remaining_inference_admission"]["calls"], 4);
+            assert_eq!(
+                audit["remaining_inference_admission"]["reserved_output_tokens"],
+                1976
+            );
+            let (_, graph, nodes) = super::super::graph::graph_from(&db, &task).unwrap();
+            let graph = graph.unwrap();
+            assert_eq!(
+                super::super::graph::order_from(&db, &task, &graph).unwrap(),
+                vec![1, 0]
+            );
+            assert_eq!(nodes[1].result.as_deref(), Some("original advice"));
+            assert_eq!(nodes[0].result.as_deref(), Some("remaining advice"));
+            assert_eq!(db.query_row("SELECT count(*) FROM events WHERE task_id=?1 AND kind='subtask_schedule_intent'", [&task], |r|r.get::<_,u64>(0)).unwrap(), 1);
+            assert_eq!(
+                db.query_row(
+                    "SELECT count(*) FROM events WHERE task_id=?1 AND kind='subtask_schedule'",
+                    [&task],
+                    |r| r.get::<_, u64>(0)
+                )
+                .unwrap(),
+                1
+            );
+        }
         assert!(prepare(&db, &task).is_err());
         drop(db);
         drop(store);
