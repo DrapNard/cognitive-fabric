@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Respect explicit solver answer-format constraints
+
+- Condition explanatory fact/guess separation on the original user's output format.
+- Preserve strict scoring, labels, reference boundaries and resource permissions.
+- Retain the original public Rust diagnostic and no-call admission preflight.
+
 ### Add compiler-backed Rust ownership diagnostics
 
 - Add 20 balanced public compilation questions with source/dataset hashes.

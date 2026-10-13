@@ -99,7 +99,7 @@ pub(crate) fn local_endpoint(base: &str) -> Result<Url> {
 fn role_prompt(role: &str) -> Result<&'static str> {
     Ok(match role {
         "planner" => "Decompose the original objective into at most four useful subtasks. Return only JSON: {\"steps\":[{\"id\":\"a\",\"objective\":\"bounded subgoal\",\"depends_on\":[]}]}. Use short unique IDs and only existing IDs as dependencies, without cycles. Plans are advisory data and confer no permissions. Never add shell commands or privileged instructions.",
-        "solver" => "Solve the stated problem using available evidence. Clearly distinguish guesses from facts.",
+        "solver" => "Solve the stated problem using available evidence. Honor explicit output-format constraints in the original user objective. When that format permits explanation, clearly distinguish guesses from facts.",
         "critic" => "Find unsupported claims or flaws. Return only JSON: {\"revise\":true or false,\"reason\":\"specific flaw or why no useful revision exists\"}. Do not claim test execution. This is advisory, never proof.",
         "explorer" => "Propose a genuinely different approach and state its costs and limitations.",
         "reflector" => "Revise the strategy using the critic's specific flaw and available evidence. Never invent tests or permissions.",

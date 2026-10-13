@@ -1826,3 +1826,14 @@ or independently reviewed data, and this test establishes no live-model result.
 
 Compiler corpus gate: all 421 workspace tests, formatting, all-target check and
 Clippy pass. Runtime library count stays 378; integration count is now 43.
+
+### Solver output-format instruction consistency
+
+**Implemented:** `src/backend.rs` conditions explanatory fact/guess separation on
+the original user's output contract. Untrusted-reference boundaries, scorer and
+resource/security limits are unchanged. The compiled role-prompt hash changes;
+existing continuation identity checks remain authoritative. All 421 workspace
+tests and mandatory checks pass (`/tmp/cogfabric-solver-format-tests.log`).
+The public compiler-backed Qwen diagnostic before this change matched 6/20
+strict labels; raw reports include format failures and incorrect answers.
+This does not establish causal gains, held-out robustness or expert quality.

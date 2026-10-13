@@ -298,3 +298,18 @@ evaluation/README.md and the separate manifest for provenance and scope.
 These public authored cases supplement the existing corpus; they are not unseen
 or independently reviewed held-out data. A correct yes/no answer establishes
 only performance on that concrete question, not broad Rust expertise.
+
+The first public Qwen3 8B Rust diagnostic at source `8f7964e` scored 6/20 exact
+yes/no matches in 95.053 seconds with 20 calls and zero tools. Several answers
+contained explanatory prose despite the required format; others were incorrect.
+Raw outputs and source/configuration metadata are retained in evaluation/results.
+A prior 128-token admission preflight dispatched no calls and exhausted all tasks;
+it is retained separately and is not a model-performance result. The measured
+run used a 512-token task ceiling, admitting the solver's 384-token reservation.
+
+The solver role prompt now honors explicit user output-format constraints and
+asks for fact/guess explanation only when the requested format permits it. This
+removes an instruction tension without changing labels, scoring, permissions,
+token reservations or the external-reference boundary. Model compliance is not
+guaranteed. The compiled role-prompt identity changes, so old saved continuation
+boundaries cannot silently resume under these changed instructions.

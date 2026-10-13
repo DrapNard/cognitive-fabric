@@ -2935,3 +2935,15 @@ output and expands no runtime permissions. All 421 tests and mandatory checks
 pass; log `/tmp/cogfabric-rust-ownership-corpus-tests.log`. Compiler labels were
 checked locally with rustc 1.97.1. Public authoring does not establish human review,
 training independence, held-out robustness or model expertise.
+
+### Solver prompt format-contract review
+
+The solver's generic instruction previously requested explicit fact/guess
+separation without conditioning that prose on a requested terse format. A real
+20-case Qwen run exposed extra explanation and factual errors. The instruction
+now explicitly honors the original objective's output format, while retaining
+uncertainty explanation when compatible. No output postprocessing, scorer
+relaxation, expected-label disclosure or additional capabilities were added.
+All 421 tests, formatting, check and Clippy pass. Saved prompt identity changes
+intentionally invalidate incompatible continuation boundaries. The before-change
+raw diagnostic and admission-only exhausted run are retained separately.

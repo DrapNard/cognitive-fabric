@@ -78,3 +78,15 @@ reasoning gains. Model labels do not attest weights; expected outputs remain
 outside inference requests. Independent review and the broader release gate remain
 incomplete. Reports contain public authored inputs and model answers intentionally
 retained as evaluation evidence, not private data or model weights.
+
+## Public Rust compiler diagnostics
+
+`qwen3-8b-rust-ownership-before-format.json` contains a 20-case FAST diagnostic
+against compiler-checked public Rust questions. Its summary pins source, dataset,
+configuration and raw-report hashes. Exact scoring matched 6/20; every runtime
+answer remained unverified. Explanations can fail the strict yes/no contract even
+when their leading word matches, and some answers were wrong. No score is relaxed
+retrospectively. `qwen3-8b-rust-ownership-admission-preflight.json` records the
+initial too-small reservation (20 exhausted tasks, zero model calls); it is not a
+model-quality result. These are public authored diagnostics, not held-out studies
+or evidence of general Rust expertise or collective superiority.

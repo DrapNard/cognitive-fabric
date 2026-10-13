@@ -1,0 +1,50 @@
+{
+  "format_version": 1,
+  "run_purpose": "public_diagnostic",
+  "held_out": false,
+  "independent_human_review": false,
+  "source_revision": "8f7964e61892c063666f527e2a23d8d6f5a52f1a",
+  "model": "qwen/qwen3-8b",
+  "weights_attested": false,
+  "mode": "fast",
+  "configuration": {
+    "backend": "openai-local",
+    "model": "qwen/qwen3-8b",
+    "api_base": "http://127.0.0.1:1234/v1",
+    "max_calls": 1,
+    "max_cycles": 1,
+    "max_tokens": 512,
+    "max_input_bytes": 64000,
+    "max_tool_calls": 0,
+    "max_wall_seconds": 20,
+    "timeout_seconds": 15,
+    "temperature": 0,
+    "reasoning_effort": "none",
+    "interpret_goals": false,
+    "synthesize_results": false
+  },
+  "dataset_sha256": "32b64461b352dfc0ee8c7b69bfdbec7eab51dc6fa2e8b8415d3ea0914ae37e60",
+  "report_sha256": "0b0cae2f8d4d0ad27e197447fdf47620a5f8f8b4713f5ee8b9483f043e5171c6",
+  "compiler_oracle": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+  "total": 20,
+  "exact_matches": 6,
+  "model_calls": 20,
+  "elapsed_ms": 95053.363656,
+  "reported_input_tokens": 3987,
+  "reported_output_tokens": 1452,
+  "tool_calls": 0,
+  "all_runtime_unverified": true,
+  "admission_preflight": {
+    "output_ceiling": 128,
+    "tasks": 20,
+    "model_calls": 0,
+    "all_exhausted": true,
+    "performance_measurement": false
+  },
+  "limitations": [
+    "Public authored data, no held-out or contamination proof",
+    "Single model and run, no comparative architecture or general expertise claim",
+    "Exact scorer remains unchanged; explanatory prose fails the requested yes/no contract",
+    "No compiler tool exposed to the runtime or model"
+  ]
+}
