@@ -1,6 +1,6 @@
 # Rust baseline quality review
 
-Current local runtime passes 474 Rust tests (427 library, 47 integration),
+Current local runtime passes 479 Rust tests (431 library, 48 integration),
 formatting, workspace all-target compilation and Clippy with warnings denied.
 Before the residency-inspection addition, both core and HTTP server packages passed optimized host source installation,
 offline installed workflows and managed OpenCode/Qwen read/edit/read. Hosted CI
@@ -3476,3 +3476,21 @@ observer poisoning or provider GPU completion is made. No new model study,
 optimized installation, permissions, acceptance thresholds or protocol schemas.
 General scheduling, independent expert provisioning/isolation, physical residency
 and independent unseen quality evaluation remain release work.
+
+
+### Strict agent JSON boundary validation
+
+All 479 tests (431 library, 48 integration), formatting, workspace all-target
+check and Clippy pass with existing flatc/Rust FlatBuffers 25.12.19. Commands:
+`cargo fmt --all -- --check`, `cargo check --offline --workspace --all-targets`,
+`cargo test --offline --workspace --all-targets`, and
+`cargo clippy --offline --workspace --all-targets -- -D warnings`.
+Log: `/tmp/cogfabric-strict-agent-json-tests.log`. Five new regressions cover
+valid numeric/scalar preservation, duplicate decoded/nested/array keys, bounds/
+recursion/trailing data, proposal and correlated-history rejection, real provider
+HTTP ambiguity with a valid control, and real server HTTP rejection before native
+inference. Existing native FlatBuffers, managed workers, disconnects and client
+workflow checks pass. No live model study, external tool execution, optimized
+installation, general JSON Schema validator or arbitrary client compatibility
+claim. General scheduling, isolated expert provisioning, physical residency and
+independent unseen reasoning/security evaluations remain release work.

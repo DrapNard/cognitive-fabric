@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Reject ambiguous agent JSON objects
+
+- Reject nested and escaped duplicate keys in HTTP bodies, provider objects, native schemas and tool arguments.
+- Preserve existing byte/depth limits and valid value semantics.
+- Verify real HTTP rejection before inference and keep client-owned tool permissions unchanged.
+
 ### Align inference charges with durable reservation outcomes
 
 - Preserve prior charges and usage when a database reservation is rejected.

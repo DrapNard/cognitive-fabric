@@ -83,7 +83,7 @@ pub(super) fn valid_call(c: &ToolCall) -> Result<()> {
     {
         bail!("Invalid function call")
     }
-    let args: Value = serde_json::from_str(&c.function.arguments)?;
+    let args = crate::strict_json::value(c.function.arguments.as_bytes(), 32000)?;
     if !args.is_object() {
         bail!("Function arguments must be a JSON object")
     }
@@ -237,5 +237,74 @@ impl Completion {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod duplicate_argument_tests {
+    use super::*;
+    #[test]
+    fn rejects_duplicate_arguments_in_proposals_and_correlated_history() {
+        let base = Turn {
+            messages: vec![Message {
+                role: "user".into(),
+                content: Some("Read a file".into()),
+                tool_calls: vec![],
+                tool_call_id: None,
+            }],
+            tools: vec![Tool {
+                kind: "function".into(),
+                function: Function {
+                    name: "read".into(),
+                    description: String::new(),
+                    parameters: serde_json::json!({"type":"object"}),
+                    strict: None,
+                },
+            }],
+            tool_choice: None,
+            max_tokens: None,
+            temperature: None,
+            parallel_tool_calls: None,
+        };
+        for args in [
+            r#"{"path":"a","path":"b"}"#,
+            r#"{"nested":{"path":"a","\u0070ath":"b"}}"#,
+            r#"{"path":"a","other":"b"}"#,
+        ] {
+            let valid = args.contains("other");
+            let call = ToolCall {
+                id: "read_1".into(),
+                kind: "function".into(),
+                function: FunctionCall {
+                    name: "read".into(),
+                    arguments: args.into(),
+                },
+            };
+            let completion = Completion {
+                content: None,
+                tool_calls: vec![call.clone()],
+                model: "fixture".into(),
+                finish_reason: "tool_calls".into(),
+                input_tokens: None,
+                output_tokens: None,
+            };
+            assert_eq!(completion.validate(&base, 1).is_ok(), valid);
+            let mut history = base.clone();
+            history.messages.extend([
+                Message {
+                    role: "assistant".into(),
+                    content: None,
+                    tool_calls: vec![call],
+                    tool_call_id: None,
+                },
+                Message {
+                    role: "tool".into(),
+                    content: Some("Result".into()),
+                    tool_calls: vec![],
+                    tool_call_id: Some("read_1".into()),
+                },
+            ]);
+            assert_eq!(history.validate().is_ok(), valid);
+        }
     }
 }

@@ -32,6 +32,7 @@ pub mod service;
 pub mod sql;
 pub mod storage;
 pub mod store;
+pub mod strict_json;
 mod structured;
 pub mod telemetry;
 mod verification;

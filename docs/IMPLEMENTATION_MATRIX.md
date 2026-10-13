@@ -2178,3 +2178,23 @@ The event schema, ceilings, authorization and backend execution order are otherw
 unchanged. A test-only observer poison hook exercises the post-commit boundary;
 it is absent from production builds. Observer failure is not provider availability
 and cannot enter the typed-timeout advice fallback.
+
+
+### Unambiguous JSON at agent boundaries
+
+Agent HTTP request bodies, native provider response objects, decoded native tool
+schemas and tool-argument objects now reject duplicate decoded JSON keys at every
+nesting level. This includes escaped spellings of the same name and duplicate
+objects inside arrays. Byte caps remain 512 KiB for HTTP request bodies, 256 KiB
+for provider responses and 32,000 bytes for schemas/arguments; ordinary JSON
+recursion limits and trailing-data rejection remain enforced. The reusable Rust
+`strict_json::value` helper preserves accepted JSON values without echoing the
+rejected key. Raw valid tool argument strings are not rewritten.
+
+Duplicate HTTP bodies fail before native inference. Ambiguous provider objects
+cannot supply a completion; ambiguous tool proposals and correlated history are
+also rejected. This eliminates a class of parser disagreement, not all prompt
+injection or schema violations. Tool JSON Schema semantics and action permissions
+remain the client's responsibility; Fabric proposes tools and executes none through
+this API. No remote reference resolution, host capability, new tool or model
+permission is introduced. Internal FlatBuffers framing/schema is unchanged.

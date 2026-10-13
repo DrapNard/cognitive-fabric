@@ -323,7 +323,9 @@ async fn chat(State(server): State<Server>, headers: HeaderMap, bytes: Bytes) ->
             "Expected application/json",
         );
     }
-    let raw = match serde_json::from_slice::<ChatRequest>(&bytes) {
+    let raw = match cogfabric::strict_json::value(&bytes, 512 * 1024)
+        .and_then(|value| Ok(serde_json::from_value::<ChatRequest>(value)?))
+    {
         Ok(v) => v,
         Err(_) => {
             return error(

@@ -275,7 +275,7 @@ pub fn decode(bytes: &[u8]) -> Result<Packet> {
                             function: Function {
                                 name: budget.text(f.name(), 64)?,
                                 description: budget.text(f.description(), 16000)?,
-                                parameters: serde_json::from_str(&raw)?,
+                                parameters: crate::strict_json::value(raw.as_bytes(), 32000)?,
                                 strict: f.strict(),
                             },
                         })

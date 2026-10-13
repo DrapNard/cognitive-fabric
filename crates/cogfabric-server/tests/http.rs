@@ -499,3 +499,28 @@ async fn slow_authenticated_bodies_have_bounded_request_admission() {
         .unwrap()
         .unwrap();
 }
+
+#[tokio::test]
+async fn duplicate_json_members_are_rejected_before_native_inference() {
+    let (base, _store, fixture, stop, handle) = setup(false).await;
+    let client = reqwest::Client::new();
+    for raw in [
+        r#"{"model":"cogfabric-agent","model":"cogfabric-fast","messages":[{"role":"user","content":"Read"}]}"#,
+        r#"{"model":"cogfabric-agent","messages":[{"role":"user","content":"Read","\u0063ontent":"Different"}]}"#,
+        r#"{"model":"cogfabric-agent","messages":[{"role":"user","content":"Read"}],"tools":[{"type":"function","function":{"name":"read","parameters":{"type":"object","properties":{"path":{"type":"string","type":"number"}}}}}]}"#,
+        r#"{"model":"cogfabric-agent","messages":[{"role":"assistant","tool_calls":[{"id":"read_1","type":"function","function":{"name":"read","arguments":"{\"path\":\"a\",\"path\":\"b\"}"}}]},{"role":"tool","tool_call_id":"read_1","content":"Result"}]}"#,
+    ] {
+        let response = client
+            .post(format!("{base}/v1/chat/completions"))
+            .bearer_auth(KEY)
+            .header("content-type", "application/json")
+            .body(raw)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 400);
+        assert_eq!(fixture.calls.load(Ordering::SeqCst), 0);
+    }
+    stop.send(()).unwrap();
+    handle.await.unwrap().unwrap();
+}

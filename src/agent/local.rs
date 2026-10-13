@@ -52,7 +52,7 @@ impl ChatBackend for LocalChat {
             if let Some(c) = &credential {
                 c.reject_echo(&bytes)?;
             }
-            let response: Value = serde_json::from_slice(&bytes)
+            let response: Value = crate::strict_json::value(&bytes, 256 * 1024)
                 .map_err(|_| anyhow::anyhow!("Invalid agent provider JSON"))?;
             if let Some(c) = &credential {
                 c.reject_echo(&serde_json::to_vec(&response)?)?;
@@ -83,5 +83,82 @@ impl ChatBackend for LocalChat {
                 output_tokens: response["usage"]["completion_tokens"].as_u64(),
             })
         })
+    }
+}
+
+#[cfg(test)]
+mod duplicate_provider_tests {
+    use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    #[tokio::test]
+    async fn provider_duplicate_members_fail_without_returning_ambiguous_content() {
+        for duplicate in [true, false] {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let endpoint = format!("http://{}/v1", listener.local_addr().unwrap());
+            let server = tokio::spawn(async move {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut bytes = Vec::new();
+                loop {
+                    let mut chunk = [0; 4096];
+                    let n = socket.read(&mut chunk).await.unwrap();
+                    assert!(n > 0);
+                    bytes.extend_from_slice(&chunk[..n]);
+                    assert!(bytes.len() < 65536);
+                    if let Some(end) = bytes.windows(4).position(|w| w == b"\r\n\r\n") {
+                        let headers = String::from_utf8_lossy(&bytes[..end]);
+                        let length = headers
+                            .lines()
+                            .find_map(|line| {
+                                line.to_ascii_lowercase()
+                                    .strip_prefix("content-length: ")
+                                    .and_then(|n| n.parse::<usize>().ok())
+                            })
+                            .unwrap();
+                        if bytes.len() >= end + 4 + length {
+                            let request: Value =
+                                serde_json::from_slice(&bytes[end + 4..end + 4 + length]).unwrap();
+                            assert!(request["messages"].is_array());
+                            break;
+                        }
+                    }
+                }
+                let body = if duplicate {
+                    r#"{"model":"fixture","choices":[{"message":{"role":"assistant","content":"safe","content":"ambiguous"},"finish_reason":"stop"}]}"#
+                } else {
+                    r#"{"model":"fixture","choices":[{"message":{"role":"assistant","content":"safe"},"finish_reason":"stop"}]}"#
+                };
+                socket.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",body.len(),body).as_bytes()).await.unwrap();
+            });
+            let backend = LocalChat(Config {
+                backend: "openai-local".into(),
+                api_base: endpoint,
+                ..Config::default()
+            });
+            let turn = Turn {
+                messages: vec![Message {
+                    role: "user".into(),
+                    content: Some("Read".into()),
+                    tool_calls: vec![],
+                    tool_call_id: None,
+                }],
+                tools: vec![],
+                tool_choice: None,
+                max_tokens: None,
+                temperature: None,
+                parallel_tool_calls: None,
+            };
+            let result = tokio::time::timeout(Duration::from_secs(3), backend.complete(&turn, 128))
+                .await
+                .unwrap();
+            if duplicate {
+                assert_eq!(
+                    result.unwrap_err().to_string(),
+                    "Invalid agent provider JSON"
+                );
+            } else {
+                assert_eq!(result.unwrap().content.as_deref(), Some("safe"));
+            }
+            server.await.unwrap();
+        }
     }
 }
