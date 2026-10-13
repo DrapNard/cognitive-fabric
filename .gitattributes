@@ -1,0 +1,2 @@
+# Preserve exact flatc output, including its extra EOF blank line.
+protocol/generated/*_generated.rs linguist-generated=true whitespace=-blank-at-eof

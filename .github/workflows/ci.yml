@@ -26,6 +26,8 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Test
         run: cargo test --workspace --all-targets
+      - name: Check reviewed bindings without native compiler
+        run: env -u FLATC cargo check --locked --workspace --all-targets
       - name: CLI smoke
         run: cargo run -- --home ./test-state self-test
       - name: Complete local CLI workflow smoke

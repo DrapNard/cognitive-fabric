@@ -2280,3 +2280,12 @@ ceiling is reached. `selected` describes route membership, not executed advice,
 provider health, factual correctness or granted authority. Existing dispatch,
 budget and verification records remain authoritative for those separate claims.
 No route ceiling, permission, model call or protocol schema changes.
+
+
+Pinned compiler-free source builds: **Implemented** in `build.rs`,
+`build_support/protocol.rs`, `protocol/generated/` and
+`scripts/update-protocol-bindings.sh`. Exact runtime pin and schema/generated hashes
+are required in default mode; explicit 25.12.19 regeneration must be byte-identical.
+CI covers both modes. Bundle tampering/staleness and normalized package pins have
+negative regressions; a locally archived/extracted core crate builds without FLATC.
+No IPC schema or security-grant change; broader release blockers remain open.

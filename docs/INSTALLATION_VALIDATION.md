@@ -102,3 +102,43 @@ and Clippy before these installs; documentation-only evidence recording does not
 require repeating those checks. Full V1 remains incomplete: general scheduling,
 independently provisioned executable experts/isolation, physical model residency
 and independent unseen reasoning/robustness evaluation are still open.
+
+
+### Pinned bundled FlatBuffers bindings
+
+Ordinary source builds now use `protocol/generated/*_generated.rs`, generated
+with flatc 25.12.19 from reviewed upstream commit
+`7e163021e59cca4f8e1e35a7c828b5c6b7915953`. These generated files are deliberately
+committed to remove the native schema-compiler prerequisite reported during CLI
+installation. They do not replace FlatBuffers, change schemas or weaken frame
+verification. `protocol/generated/manifest.sha256` binds all nine schemas and
+nine Rust outputs to SHA-256 digests and the generator pin. Build support verifies
+the complete inventory, byte limits and exact Rust runtime dependency pin before
+copying bindings into Cargo's output directory. Source and Cargo-normalized
+package manifest forms are supported.
+
+With `FLATC` unset, no compiler is discovered or executed from PATH. If a stale
+export points to a removed temporary compiler, unset it. Explicit `FLATC` remains
+strict: the compiler must report 25.12.19 and regenerate byte-identical bundle
+outputs. A wrong/missing compiler, stale schema, changed generated file, missing/
+duplicate manifest entry or incompatible Rust pin fails the build. Hashes are
+local consistency evidence, not signatures against an owner changing code and
+hashes together; the configured native compiler remains trusted developer code.
+
+For schema development:
+
+```bash
+bash scripts/build-flatc.sh /absolute/path/to/new-compiler-build
+bash scripts/update-protocol-bindings.sh /absolute/path/to/new-compiler-build/build/flatc
+export FLATC=/absolute/path/to/new-compiler-build/build/flatc
+cargo check --locked --workspace --all-targets
+cargo test --locked --workspace --all-targets
+```
+
+Review and commit schemas, generated bindings and the manifest together. The
+update helper retains staging evidence and does not install privileged tools.
+CI builds the pinned compiler, checks regenerated output equality, and additionally
+checks ordinary bundled builds. CMake/C++ are needed for compiler development;
+normal Rust/SQLite builds still need a C toolchain/linker but no `flatc`. Never
+hand-edit generated bindings or use a hash update as protocol compatibility proof;
+versioning, malformed-frame, socket and compatibility tests remain required.

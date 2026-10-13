@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Build without a manually installed FlatBuffers compiler
+
+- Bundle pinned generated Rust bindings with schema/output integrity checks.
+- Require exact byte-identical regeneration when FLATC is explicitly configured.
+- Verify normal and packaged builds without FLATC; keep stale bindings and wrong compilers fatal.
+
 ### Record pinned capability route provenance
 
 - Audit requested aliases and their pinned provider/capability versions.

@@ -28,6 +28,9 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "io-uti
 url = "2"
 uuid = { version = "1", features = ["v4"] }
 
+[build-dependencies]
+sha2 = "0.10"
+
 [dev-dependencies]
 tokio = { version = "1", features = ["test-util"] }
 

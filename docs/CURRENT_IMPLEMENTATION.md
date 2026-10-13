@@ -1015,3 +1015,9 @@ ceiling is reached. `selected` describes route membership, not executed advice,
 provider health, factual correctness or granted authority. Existing dispatch,
 budget and verification records remain authoritative for those separate claims.
 No route ceiling, permission, model call or protocol schema changes.
+
+
+Ordinary builds no longer require an installed flatc: verified pinned Rust bindings
+are included for all nine unchanged FlatBuffers schemas. Explicit FLATC still
+validates exact 25.12.19 regeneration. Schema/binding drift fails; see PROTOCOL.md
+for updating the bundle and INSTALLATION_VALIDATION.md for package evidence.
