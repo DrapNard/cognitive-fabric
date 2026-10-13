@@ -2289,3 +2289,10 @@ are required in default mode; explicit 25.12.19 regeneration must be byte-identi
 CI covers both modes. Bundle tampering/staleness and normalized package pins have
 negative regressions; a locally archived/extracted core crate builds without FLATC.
 No IPC schema or security-grant change; broader release blockers remain open.
+
+
+Both optimized packages at `84e097c` install with FLATC unset and pass complete
+installed CLI/socket and HTTP workflows. Hosted CI `38454460668` succeeded with
+explicit regeneration and bundled checks. INSTALLATION_VALIDATION.md records
+hashes, logs and host-cache scope; 490 source tests remain passing. This updates
+installation evidence without claiming current clean-OS or live quality proof.

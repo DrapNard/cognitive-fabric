@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Verify optimized installation without flatc
+
+- Install both current packages using bundled bindings and pass installed CLI/socket/HTTP workflows.
+- Record source/binary/bundle hashes and successful hosted dual-mode CI.
+- Update server setup to remove the obsolete native-compiler prerequisite.
+
 ### Build without a manually installed FlatBuffers compiler
 
 - Bundle pinned generated Rust bindings with schema/output integrity checks.

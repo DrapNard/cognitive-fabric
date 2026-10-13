@@ -142,3 +142,47 @@ checks ordinary bundled builds. CMake/C++ are needed for compiler development;
 normal Rust/SQLite builds still need a C toolchain/linker but no `flatc`. Never
 hand-edit generated bindings or use a hash update as protocol compatibility proof;
 versioning, malformed-frame, socket and compatibility tests remain required.
+
+
+### Optimized CLI and server installation without flatc — 2026-10-13
+
+Exact runtime source `84e097cec37c71a09d71b75a5eee6bb841376979` installed both
+optimized packages with `FLATC` unset into
+`/tmp/cogfabric-bundled-install.nVwT2q`. Reported Rust/Cargo: 1.97.1. Commands:
+`cargo install --offline --locked --path . --root PREFIX` and
+`cargo install --offline --locked --path crates/cogfabric-server --root PREFIX`.
+Core release build took 1m30s and server build 1m02s as reported by Cargo. This
+uses the current host's C toolchain/linker and cached dependencies; it is not a
+fresh OS or dependency-download study. No native FlatBuffers compiler was selected.
+
+Both complete installed workflows passed:
+- `scripts/installed-smoke.sh PREFIX/bin/cogfabric`: local persistence, reviewed
+  example RAG promotion/rollback, typed sockets, demo inference, managed workers,
+  policy denials, recovery and cleanup. Evidence:
+  `/tmp/cogfabric-installed-smoke.RRHCKp`.
+- `scripts/installed-http-smoke.sh PREFIX/bin/cogfabric PREFIX/bin/cogfabric-server`:
+  authenticated discovery, Origin denial, arithmetic/SQL worker verification and
+  reaping, and graceful shutdown against deliberately unavailable upstream
+  inference. Evidence: `/tmp/cogfabric-installed-http.20mTuz`.
+
+Binary SHA-256:
+- CLI: `cd8a29fe6a37a71e6fb0339630d9c55665140ebe2c368df72dbf8704941d51af`
+- Server: `6e4d5455e3a64a8eef9ad3cdd4c4515aa4fa3efa811670662b83ade45c904bc0`
+
+Bundled generation manifest SHA-256:
+`069657844f4c458c72858b69261e7097f2f6f59db8098f10bceba094c6391ba7`.
+Source/toolchain/install/smoke/hash logs remain under the installation prefix.
+The corresponding hosted CI run
+[38454460668](https://github.com/DrapNard/cognitive-fabric/actions/runs/38454460668)
+succeeded, including exact pinned compiler regeneration, all mandatory gates,
+bundled all-target checking, local/HTTP workflows, security boundary probes and
+offline training preflight. Source tests remain 490 passing (440 library,
+50 integration); no runtime code changed in this evidence/documentation update.
+
+No live-model coding quality, current clean-OS/GPU setup, provider ownership or
+neural safety is established by installation success. The earlier clean Arch
+results stay scoped to their recorded source. General scheduling, independently
+provisioned isolated experts, physical residency and independent unseen model
+studies remain open V1 requirements. No public crate/repository publication or
+release tag was performed. HTTP_API.md now describes ordinary bundled builds
+rather than requiring an obsolete compiler export.

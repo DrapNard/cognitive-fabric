@@ -15,14 +15,16 @@ cargo install --locked --path crates/cogfabric-server --root /tmp/cognitive-fabr
 bash scripts/installed-http-smoke.sh /tmp/cognitive-fabric-install/bin/cogfabric /tmp/cognitive-fabric-install/bin/cogfabric-server
 ```
 
-Use a fresh install directory and the pinned `FLATC` described in README. The
+Use a fresh install directory and the verified bundled bindings described in README.
+No `flatc` is needed; unset stale `FLATC` exports for ordinary builds. The
 HTTP smoke requires Bash, jq, curl, OpenSSL, rg and GNU timeout. It uses private
 temporary state, a random test key and an unavailable upstream; it verifies
 discovery/authentication, origin denial, actual arithmetic/SQL worker reaping
 and successful shutdown without requiring a model. Evidence paths are printed.
 This does not test native model inference or coding quality.
 
-Build with the pinned FlatBuffers compiler described in README:
+Build with the verified FlatBuffers bindings (optional compiler regeneration is
+documented in PROTOCOL.md):
 
 ```bash
 cargo build --locked --workspace --bins
