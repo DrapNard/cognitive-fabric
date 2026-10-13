@@ -2,6 +2,17 @@
 
 All notable changes are documented here in English.
 
+### Serve modular OpenAI-compatible agent workflows
+
+- Add a separate `cogfabric-server` workspace crate over the reusable core.
+- Support authenticated loopback model discovery, native chat/function proposals,
+  correlated tool results, buffered SSE, admission limits and cancellation.
+- Preserve collective Engine aliases and same-image typed math/SQL workers.
+- Add native turn budgets, limited generation-only policy and content-minimized audit.
+- Verify OpenCode v2.0.26 read/edit/read with real LM Studio Qwen3 8B.
+- Document setup and limitations; add a reproducible isolated OpenCode smoke script.
+- Include the server in workspace CI while preserving the default CLI command.
+
 ### Verify installed tool ceilings through the socket service
 
 - Exercise one-tool arithmetic/SQL execution and budget-preserving restore.

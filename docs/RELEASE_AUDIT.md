@@ -4,14 +4,14 @@ This checklist preserves the 18 acceptance criteria in the goal objective. It is
 an evidence inventory, not a release approval. The canonical French architecture
 and the broader implementation matrix remain authoritative. Earlier test counts
 in the quality review are historical milestones. Current local verification is
-378 Rust tests (355 library, 23 integration), formatting, all-target checking and
+391 Rust tests (360 library, 31 integration), formatting, all-target checking and
 Clippy with warnings denied, using FlatBuffers compiler/crate 25.12.19.
 
 | Goal criterion | Evidence inspected | Assessment / remaining proof |
 |---|---|---|
 | 1. Workspace builds | `Cargo.toml`, all-target check | Passed locally; isolated optimized source installation also passed with cached dependencies. |
 | 2. Formatting and Clippy | Mandatory checks in `QUALITY_REVIEW.md` | Passed locally. |
-| 3. Mandatory tests | All-target test results, `tests/` | 378 passed; fixtures do not establish live model quality. |
+| 3. Mandatory tests | All-target test results, `tests/` | 391 passed; fixtures do not establish live model quality. |
 | 4. FlatBuffers IPC | `protocol/`, `src/wire.rs`, `src/fabric/`, malformed/compatibility/socket tests | Implemented for present transports; authenticated process event delivery/replay is now tested; broader module compatibility remains partial. |
 | 5. CLI/service communication | `src/service.rs`, socket tests, `tests/process_worker.rs` | Tested local transport, progress and cancellation; no general independent plugin service is claimed. |
 | 6. Compatible local LLM | `src/backend.rs`, `tests/inference_auth.rs`, `LIVE_INFERENCE.md` | Passed for Ollama and LM Studio Qwen3 8B compatible endpoints, including managed verified sorting. Native LM Studio read-only inventory passed; authenticated native access and controlled load/unload remain unverified. |
@@ -758,3 +758,15 @@ exact binary/script hashes, logs and scope. Queue-routing and zero-tool source C
 passed; the inline-tool source run remains separately tracked. The Rust runtime
 retains its verified 374-test count; the expanded smoke changes no runtime code.
 General provisioning, residency scheduling and independent evaluation remain open.
+
+## Optional agent-facing HTTP service
+
+The core/serve separation now includes `cogfabric-server`, with authenticated
+loopback OpenAI-compatible model discovery and Chat Completions. Native client
+conversations/tools and separate collective goal aliases are exercised by
+workspace tests. Actual OpenCode v2.0.26 + Qwen3 8B completed a restricted
+read/edit/read fixture; see HTTP_API.md and QUALITY_REVIEW.md. This adds usable
+external agent interoperability without granting host tools to the Fabric model.
+391 workspace tests pass; native conversation worker RPC, broader API/client
+compatibility, independent agentic-quality evaluation and new-server optimized
+installation validation remain incomplete. This does not close the full v1 gate.

@@ -229,3 +229,22 @@ that descriptor. A connected peer cannot be accidentally advertised under anothe
 module's roles/version by the standard broker API. This is a consistency check
 inside trusted host code; implementations can lie and same-user/executable or
 loaded-weight attestation remains outside the guarantee.
+
+## Optional agent HTTP boundary
+
+`cogfabric-server` is a separate loopback-only front end using a dedicated bearer
+key, rejecting browser origins, bounding accepted connections, request bodies,
+concurrent parsing and active completions. It does not provide remote or tenant
+isolation. Native conversation roles and client tool results are preserved as
+explicit typed data; they cannot construct permissions. Only model generation is
+granted to native solver turns. Declared client tools produce proposals, not
+host execution; the connected client must enforce its own schema and action
+permissions. Fabric does not sandbox OpenCode or control tools it executes.
+Native logs retain hashes/usage rather than raw source conversations.
+
+Streaming and non-streaming disconnects drop pending local inference; provider
+GPU work is not proven stopped. A client may initiate further independent turns,
+so session-wide client step ceilings remain a separate control. The native
+adapter refuses managed inference/model-registration/role-override combinations
+it cannot preserve. Existing collective FlatBuffers worker security is unchanged.
+See HTTP_API.md for exact limits and unsupported routes.

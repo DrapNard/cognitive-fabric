@@ -1,5 +1,6 @@
 extern crate alloc;
 
+pub mod agent;
 pub mod backend;
 pub mod backups;
 pub mod benchmarking;

@@ -21,11 +21,11 @@ jobs:
       - name: Format
         run: cargo fmt --all -- --check
       - name: Check
-        run: cargo check --all-targets
+        run: cargo check --workspace --all-targets
       - name: Clippy
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Test
-        run: cargo test --all-targets
+        run: cargo test --workspace --all-targets
       - name: CLI smoke
         run: cargo run -- --home ./test-state self-test
       - name: Complete local CLI workflow smoke

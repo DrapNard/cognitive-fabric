@@ -1,5 +1,6 @@
 [package]
 name = "cogfabric"
+default-run = "cogfabric"
 version = "1.1.0-alpha.1"
 edition = "2021"
 authors = ["DrapNard"]
@@ -34,3 +35,8 @@ tokio = { version = "1", features = ["test-util"] }
 lto = "thin"
 codegen-units = 1
 strip = "symbols"
+
+[workspace]
+members = ["crates/cogfabric-server"]
+default-members = [".", "crates/cogfabric-server"]
+resolver = "2"

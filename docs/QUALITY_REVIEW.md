@@ -2574,3 +2574,79 @@ Validation: formatting, all-target check, Clippy with warnings denied and
 Full socket/HTTP tests ran outside network restrictions; log:
 `/tmp/cogfabric-inventory-observation-all-tests.log`. Inventory snapshots
 clone at most 128 retained handles; no additional model or tool calls occur.
+
+## Modular OpenAI-compatible agent serving (2026-10-13)
+
+Status: **Implemented** for authenticated loopback Chat Completions, native
+text/function turns and the tested OpenCode v2 workflow; broader API compatibility
+and native conversation worker/registered-model support remain **Partial**.
+
+The `cogfabric` library remains transport independent. `src/agent/` adds a typed,
+replaceable native conversation backend and bounded FAST solver-turn lifecycle,
+using the existing security kernel, global SQLite admission and execution leases.
+Only `llm.generate` is granted. Tool calls are validated proposals returned to the
+client, never executed or marked verified. Native audit records exclude raw
+conversation, tool argument and answer bodies. Existing collective modes remain
+available through separate aliases without accepting client tool definitions.
+
+`crates/cogfabric-server/` adds HTTP/SSE mapping, dedicated bearer authentication,
+loopback binding, browser-origin refusal, bounded connections/request bodies/turns,
+timeouts and shutdown/disconnect cancellation. Its thin worker entry points reuse
+core FlatBuffers workers, including actual math/SQL subprocess reaping tests.
+No internal IPC schema or canonical French architecture was replaced.
+
+Regression coverage: `src/agent/tests.rs`, server listener unit tests and
+`crates/cogfabric-server/tests/http.rs` cover protocol correlation, unknown tools,
+budget denial, durable cancellation/deadlines, authenticated two-turn tool/SSE
+exchange, malformed/oversized requests, slow-body admission, connection capacity
+and expiry, eight-turn saturation, streaming/non-streaming disconnects, collective
+verification and server-image worker relaunch. CI and default workspace checks
+now include the server crate; root `cargo run` retains the CLI default.
+
+Formatting, workspace all-target check, Clippy with warnings denied, and all
+391 Rust tests passed (360 library including the server listener; 31 integration).
+Test log: `/tmp/cogfabric-agent-final-tests.log`. `docs/HTTP_API.md` documents
+setup, limits, profile differences and unsupported capabilities.
+
+Actual OpenCode v2.0.26 + LM Studio `qwen/qwen3-8b` passed read/edit/read on a
+disposable fixture, with all other client actions denied. The first attempt
+identified OpenCode's `store:false` field, now supported and regression-covered.
+The final `scripts/opencode-smoke.sh` passed directly against the server: evidence
+`/tmp/cogfabric-opencode-smoke.fuLeiy`, runner log
+`/tmp/cogfabric-agent-opencode-smoke.log`. Five native requests (including client
+metadata/title work) reported 4,893 input and 103 output tokens, three tool
+proposals, 7,165.843 ms summed turn duration. All five persisted unverified;
+server tool dispatch count was zero. OpenCode performed the three approved
+client actions and the actual file contained `Status: after`. This is integration
+evidence, not a general coding-quality or performance benchmark.
+
+Debug server SHA-256:
+`51425d19c325aec5602d5475f38d42b4d67a97cabb3c98ad48a2d9d828311fc0`.
+OpenCode JSONL SHA-256:
+`3bdc2b3136128e68d29748739774b0217f0145e2cd2ecf23b65bc7c6d61a8edc`.
+SSE currently frames buffered upstream completions. Responses API, multimodal
+input, remote/multi-tenant serving, native conversation worker RPC and full
+collective reasoning over client tool loops remain unsupported. Existing
+managed requirements are rejected rather than silently bypassed. Full v1.0
+release gates and independent quality/security evaluations remain open.
+
+Existing root CLI self-test and full installed-style CLI/socket smoke also
+passed after the workspace split (evidence `/tmp/cogfabric-installed-smoke.IQKfcx`,
+logs `/tmp/cogfabric-agent-existing-cli-smoke.log` and
+`/tmp/cogfabric-agent-existing-socket-smoke.log`). Final protocol review additionally
+rejects provider reuse of historical tool-call IDs; the regression and full
+391-test workspace suite pass. Updated final live evidence follows below.
+
+Final historical-call-ID fix also passed the complete scripted real-client run:
+`/tmp/cogfabric-agent-opencode-final-smoke.log`, evidence
+`/tmp/cogfabric-opencode-smoke.mCoC2U`. Five requests reported 4,891 input
+and 98 output tokens, three client tool proposals and 7,213.491 ms summed turn
+duration; all five remained unverified and no server tool dispatch occurred.
+Final debug server SHA-256:
+`a74c5a13e1954899944028769cc09cb4ee2ac2fd3d30eef2888422146900d890`.
+Final OpenCode JSONL SHA-256:
+`791c5b92a37b5258f554b073f2b8ab835cded56cbe54280c9640ac04106f285f`.
+Earlier hashes/measurements in this entry refer to the preceding verified revision.
+Client/model variations and startup work prevent treating these timings as a
+controlled performance benchmark. Optimized/clean-OS installation of the new
+server remains separate release validation work.

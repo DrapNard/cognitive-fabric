@@ -2,7 +2,7 @@
 
 **Author:** DrapNard  
 **Language:** Rust (runtime), Python (optional offline model training)
-**Status:** **Verified Rust alpha baseline** — builds and 364 regression tests pass; Ollama and LM Studio Qwen3 8B generation and independently checked sorting have succeeded. v1.0 integration requirements remain incomplete.
+**Status:** **Verified Rust alpha baseline** — builds and the mandatory regression suite passes; Ollama and LM Studio Qwen3 8B generation and independently checked sorting have succeeded. v1.0 integration requirements remain incomplete.
 
 Optional managed inference workers: use `configure-worker --enabled true` to run
 each task's inference adapter in a host-authenticated child process. See
@@ -17,6 +17,16 @@ policy. Python is **not** used by the runtime.
 This is an **orchestration framework**; Jev+ is a deterministic router and
 Jev-R is a multi-role orchestration loop, not a trained neural reasoning model.
 It does **not** claim to outperform an 8B or Terra-class model.
+
+## Agent clients and modular HTTP serving
+
+The reusable `cogfabric` library and CLI remain separate from the optional
+`cogfabric-server` workspace crate. It exposes authenticated loopback
+`/v1/models` and `/v1/chat/completions`, including native tool-call proposals and
+SSE. OpenCode v2 with Qwen3 8B has completed a disposable read/edit/read workflow.
+The client executes its approved tools; the Fabric core enforces turn budgets and
+records unverified results. See [HTTP API and OpenCode setup](docs/HTTP_API.md)
+for installation, profile aliases, permissions and current limitations.
 
 ## Requirements
 

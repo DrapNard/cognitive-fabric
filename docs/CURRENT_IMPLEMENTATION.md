@@ -673,3 +673,13 @@ tests (345 library, 22 integration) passed on 2026-10-13 with flatc 25.12.19.
 Local test log: `/tmp/cogfabric-tool-retirement-tests.log`. No new permissions,
 provider unloading, owned-child cleanup guarantee or performance gain is claimed.
 Optimized installation verification must be refreshed for these retirement APIs.
+
+The optional `cogfabric-server` workspace crate now builds on the core library
+for authenticated loopback OpenAI-compatible Chat Completions. `src/agent/`
+provides a transport-independent bounded native solver turn; OpenCode owns its
+file/tool loop and approvals. Collective profile aliases retain Engine execution.
+Actual OpenCode v2.0.26 with Qwen3 8B passed a disposable read/edit/read workflow.
+See `HTTP_API.md` for setup, buffered SSE semantics and remaining native worker
+and API limitations. Current workspace verification: 391 Rust tests, formatting,
+all-target checking and Clippy with warnings denied. Earlier counts above are
+historical milestones, not the current suite.

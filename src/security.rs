@@ -9,6 +9,10 @@ pub struct TaskPolicy {
 }
 
 impl TaskPolicy {
+    pub(crate) fn agent(task: &str) -> Result<Self> {
+        Self::scoped(task, &[("jev-r", "llm.generate")])
+    }
+
     pub(crate) fn reasoning(task: &str) -> Result<Self> {
         Self::scoped(
             task,
