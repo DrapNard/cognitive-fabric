@@ -196,3 +196,10 @@ The script stops only its own server and retains
 logs/state at the printed path. Omit `COGFABRIC_MANAGED_INFERENCE=true` to test
 direct inference instead. This is an optional real-backend test, not an
 unattended CI dependency or a general coding-quality benchmark.
+
+Shutdown also drains collective inference and tool process ownership after
+request handlers finish, including reapers triggered by client disconnects.
+The collective drain has its own ten-second limit and sticky failure handling.
+Both native and collective cleanup are awaited before returning shutdown status.
+A cleanup/audit error blocks new workers of its affected family and makes server
+shutdown fail; forced host termination remains outside these guarantees.

@@ -2,6 +2,13 @@
 
 All notable changes are documented here in English.
 
+### Reap collective workers after dropped task futures
+
+- Retain inference/tool child, socket and execution lease through bounded drop cleanup.
+- Drain collective and expert process ownership during HTTP shutdown.
+- Block collective worker admission and fail shutdown after cleanup/audit errors.
+- Verify dropped startup, HTTP disconnect, immediate shutdown and audit failure.
+
 ### Run native agent turns in owned typed workers
 
 - Add authenticated one-task Unix conversation RPC with bounded generation-only grants.

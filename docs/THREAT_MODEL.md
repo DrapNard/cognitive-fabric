@@ -266,3 +266,14 @@ runtime future schedules bounded cleanup while retaining ownership. Runtime/host
 death or unavailable audit storage may leave completion unknown; recovery never
 claims GPU work stopped or kills a recorded PID. The same-image process boundary
 is coordination, not executable attestation or a hostile-code sandbox.
+
+### Dropped collective task owners
+
+Closing a client connection can drop the Engine future before its explicit
+shutdown code executes. Collective process owners now close their adapters and
+retain child/socket/execution-lease ownership in bounded reapers. HTTP shutdown
+waits for collective ownership as well as native ownership. Stop-audit failure
+is sticky, blocks subsequent collective worker construction and fails shutdown.
+Actual subprocess regressions cover disconnect, immediate shutdown and injected
+audit failure. Forced runtime/host termination and upstream GPU completion remain
+unproven; the process boundary still does not isolate arbitrary untrusted code.

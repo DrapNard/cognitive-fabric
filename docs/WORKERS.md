@@ -211,3 +211,24 @@ runtime, including reapers scheduled after disconnected request futures drop.
 The drain is bounded to ten seconds. Cleanup failures remain visible for the host
 lifetime, disable further native children and make shutdown fail; a successful
 shutdown is never inferred merely from closing the HTTP listener.
+
+## Collective ownership after task-future drop
+
+Inference, arithmetic and SQL process owners now transfer both unfinished
+startup and connected children to a bounded reaper when their last owner drops.
+Adapters close first; socket identity guards and execution leases remain held
+until waiting for the child finishes. A reaper waits one second, then requests
+a kill and waits at most two more seconds. Successful waits record the existing
+process-stopped event with `dropped_owner:true`; closing a socket alone is not
+recorded as reaping. Normal explicit shutdown retains unfinished startup state
+on failure and avoids duplicate stopped audits for already-waited children.
+
+`fabric::worker_cleanup::drain_workers` tracks collective task ownership from
+construction through cleanup, including dynamic expert inference workers. Call
+it after stopping admission and request handlers. The supplied HTTP server does
+so alongside the native drain. Its collective drain is bounded to ten seconds;
+cleanup/audit failure disables further collective process owners for the host
+lifetime and makes drain fail. Both drains are awaited even if one reports an
+error. Hosts embedding the core must integrate drain before dropping Tokio.
+Forced host/runtime termination still cannot guarantee reaping or upstream GPU
+completion. These same-image processes do not sandbox untrusted plugins.

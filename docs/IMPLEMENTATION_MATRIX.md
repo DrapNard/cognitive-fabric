@@ -1737,3 +1737,24 @@ the managed OpenCode/Qwen read/edit/read smoke using the optimized server.
 RELEASE_AUDIT.md records binary hashes and fresh evidence directories. Optimized
 workflow verification is implemented and tested; new-server clean-OS/package
 installation and independent agentic-quality evaluation remain incomplete.
+
+### Collective worker ownership on dropped futures
+
+**Implemented:** `src/fabric/worker_cleanup.rs`, collective inference/tool process
+Drop implementations and HTTP shutdown integration retain sockets and execution
+leases until child reaping. Shared ownership also includes expert inference
+processes. Failed cleanup/audit blocks subsequent collective process owners and
+fails drain; startup ownership remains retained after explicit cleanup errors.
+**Tests:** dropped startup subprocess owners for inference/tools;
+`crates/cogfabric-server/tests/collective_cleanup.rs` exercises real managed
+inference on HTTP disconnect, immediate shutdown and stop-audit failure with
+blocked readmission. No new external tools or untrusted plugin sandbox. General
+provisioning, residency scheduling and independent reasoning evaluation remain
+incomplete. WORKERS.md records bounded waits and forced-host-termination limits.
+
+Final verification: formatting, offline workspace all-target compilation and
+Clippy with warnings denied pass. All 417 Rust tests pass (378 library, 39
+integration). Full log: `/tmp/cogfabric-collective-cleanup-tests.log`. The first
+sandboxed socket test attempt was denied by local sandbox policy; the complete
+socket/subprocess suite passed with authorized local execution. No new live
+model study or optimized installation was run for this cleanup revision.

@@ -2800,3 +2800,22 @@ row or child intent is created. Final mandatory workspace checks and 414 tests
 Hosted codec CI [38369517206](https://github.com/DrapNard/cognitive-fabric/actions/runs/38369517206)
 completed successfully for `e04fcd6`. The final managed-worker revision has local
 414-test and live-client verification above; its hosted run follows private sync.
+
+## Collective dropped-future cleanup review
+
+The last ProcessTask owner transfers unfinished startup or connected child state
+to a tracked reaper. Adapters drop before waiting; sockets/leases remain owned
+through cleanup. Construction increments shared ownership synchronously, so an
+HTTP shutdown cannot miss a not-yet-scheduled reaper. Notify registration precedes
+the drain counter check to avoid lost wakeups. Explicit startup cleanup retains
+state on errors; already-waited children do not duplicate stopped events.
+Failure is sticky for collective admission/drain; no extra capabilities are
+granted. Regression evidence: dropped startup subprocess tests and real HTTP
+managed-inference disconnect/immediate-shutdown/audit-failure cases.
+
+Final verification: formatting, offline workspace all-target compilation and
+Clippy with warnings denied pass. All 417 Rust tests pass (378 library, 39
+integration). Full log: `/tmp/cogfabric-collective-cleanup-tests.log`. The first
+sandboxed socket test attempt was denied by local sandbox policy; the complete
+socket/subprocess suite passed with authorized local execution. No new live
+model study or optimized installation was run for this cleanup revision.

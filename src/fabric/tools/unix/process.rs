@@ -229,6 +229,37 @@ pub(crate) struct ProcessTask {
     starting: Mutex<Option<Starting>>,
     stopped: AtomicBool,
     initialization: Mutex<()>,
+    ownership: Option<crate::fabric::worker_cleanup::Ownership>,
+}
+impl Drop for ProcessTask {
+    fn drop(&mut self) {
+        use crate::fabric::worker_cleanup::{detached, Pending};
+        let mut pending = Vec::new();
+        if let Some(worker) = self.worker.take() {
+            drop(worker.adapter);
+            pending.push(Pending {
+                child: worker.child.into_inner(),
+                socket: worker._directory,
+                lease: worker._lease,
+            });
+        }
+        if let Some(starting) = self.starting.get_mut().take() {
+            pending.push(Pending {
+                child: starting.child,
+                socket: starting.directory,
+                lease: starting.lease,
+            });
+        }
+        if let Some(ownership) = self.ownership.take() {
+            detached(
+                pending,
+                ownership,
+                self.store.clone(),
+                self.task.clone(),
+                "tool_worker_process_stopped",
+            );
+        }
+    }
 }
 impl ProcessTask {
     fn observed_availability(&self) -> crate::fabric::Availability {
@@ -261,6 +292,7 @@ impl ProcessTask {
             starting: Mutex::new(None),
             stopped: AtomicBool::new(false),
             initialization: Mutex::new(()),
+            ownership: Some(crate::fabric::worker_cleanup::Ownership::acquire()?),
         })
     }
     pub(crate) fn new_sql(
@@ -388,16 +420,27 @@ impl ProcessTask {
         if let Some(worker) = self.worker.get() {
             worker.adapter.close().await;
             let mut child = worker.child.lock().await;
-            return self.reap(&mut child).await;
+            let result = self.reap(&mut child).await;
+            if result.is_err() {
+                crate::fabric::worker_cleanup::record_failure();
+            }
+            return result;
         }
-        let pending = self.starting.lock().await.take();
-        if let Some(mut pending) = pending {
-            return self.reap(&mut pending.child).await;
+        let mut pending = self.starting.lock().await;
+        if let Some(starting) = pending.as_mut() {
+            if let Err(error) = self.reap(&mut starting.child).await {
+                crate::fabric::worker_cleanup::record_failure();
+                return Err(error);
+            }
+            pending.take();
         }
         Ok(())
     }
     async fn reap(&self, child: &mut tokio::process::Child) -> Result<()> {
         let pid = child.id();
+        if pid.is_none() {
+            return Ok(());
+        }
         let mut forced = false;
         let status = match tokio::time::timeout(Duration::from_secs(2), child.wait()).await {
             Ok(status) => status?,
@@ -669,6 +712,57 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn dropped_startup_retains_socket_until_child_is_reaped() {
+        let store = Arc::new(Store::in_memory().unwrap());
+        let task = store.create_task("Dropped worker owner", "fast").unwrap();
+        let process = ProcessTask::new(
+            Config::default(),
+            store.clone(),
+            &task,
+            Instant::now() + Duration::from_secs(30),
+        )
+        .unwrap();
+        let (socket, listener, path) = SocketDirectory::bind_tool().unwrap();
+        let directory = path.parent().unwrap().to_path_buf();
+        let child = tokio::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "fabric::tools::unix::process::tests::startup_child_fixture",
+            ])
+            .env("COGFABRIC_TEST_TOOL_STARTUP_HOLD", "1")
+            .stdout(std::process::Stdio::null())
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        let pid = child.id().unwrap();
+        *process.starting.lock().await = Some(Starting {
+            child,
+            directory: socket,
+            lease: None,
+        });
+        drop(listener);
+        drop(process);
+        assert!(directory.exists());
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let trace = store.task(&task).unwrap();
+                if trace["events"].as_array().unwrap().iter().any(|event| {
+                    event["kind"] == "tool_worker_process_stopped"
+                        && event["payload"]["pid"] == pid
+                        && event["payload"]["reaped"] == true
+                        && event["payload"]["dropped_owner"] == true
+                }) {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        assert!(!directory.exists());
+        assert_eq!(unsafe { libc::kill(pid as i32, 0) }, -1);
+    }
     #[test]
     fn startup_child_fixture() {
         if std::env::var_os("COGFABRIC_TEST_TOOL_STARTUP_HOLD").is_some() {

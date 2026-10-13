@@ -800,3 +800,15 @@ Hosted CI [38377800359](https://github.com/DrapNard/cognitive-fabric/actions/run
 passed for the same runtime source. This closes optimized binary workflow
 verification, not clean-OS/package installation or independent agentic evaluation.
 General expert provisioning, residency scheduling and full V1 acceptance remain open.
+
+## Collective dropped-future ownership
+
+The previous native-only HTTP drain now also waits for collective inference/tool
+ownership, including dynamically selected expert inference owners. Bounded
+reapers retain socket guards and execution leases through child waiting when
+task futures drop. Subprocess regressions prove startup cleanup, HTTP disconnect,
+immediate shutdown and sticky failure when the stop audit is unavailable.
+This addresses the collective dropped-future ownership gap for supplied same-image
+workers. Forced host termination, untrusted plugin isolation and independent
+agentic/reasoning evaluation remain outside this verification. Optimized binaries
+recorded above predate this ownership change; installation refresh remains open.

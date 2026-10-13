@@ -86,8 +86,10 @@ pub async fn serve_until(
         })
         .await;
     let cleanup = cogfabric::agent::process::drain_workers().await;
+    let collective_cleanup = cogfabric::fabric::worker_cleanup::drain_workers().await;
     served?;
     cleanup?;
+    collective_cleanup?;
     Ok(())
 }
 fn error(status: StatusCode, message: &str) -> Response {

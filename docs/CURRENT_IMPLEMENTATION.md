@@ -691,3 +691,13 @@ and normal/drop-path child reaping are verified. Actual OpenCode + Qwen3 8B also
 passed a managed read/edit/read workflow. This supersedes earlier native-worker
 limitations; role overrides and general independent executable isolation remain
 unsupported. See HTTP_API.md, WORKERS.md and the latest quality evidence.
+
+### Collective dropped-future cleanup
+
+Collective inference/arithmetic/SQL process owners now retain child/socket/lease
+ownership through asynchronous reaping after a task future drops. A shared
+collective ownership drain is integrated into HTTP shutdown, including expert
+inference owners. Cleanup failures disable new collective process admission
+and fail shutdown for that host lifetime. Native and collective drains remain
+separate; no new tool permissions or third-party sandboxing are introduced.
+WORKERS.md describes deadlines and host-termination limits.

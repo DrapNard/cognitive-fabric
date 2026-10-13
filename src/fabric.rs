@@ -16,6 +16,7 @@ use tokio::sync::{mpsc, oneshot, watch, OnceCell};
 pub(crate) mod protocol;
 pub mod tools;
 pub mod unix;
+pub mod worker_cleanup;
 use protocol::{actor, decode, encode, now_ms, Header, Packet, Payload, ROLES};
 #[cfg(test)]
 mod tests;
