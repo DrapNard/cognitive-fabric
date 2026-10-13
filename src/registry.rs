@@ -283,6 +283,7 @@ pub fn register(store: &Store, manifest: &Manifest) -> Result<Value> {
     if count >= 4096 {
         bail!("Manifest storage capacity exhausted")
     }
+    crate::store::admit_skill_id(&tx, &manifest.id)?;
     tx.execute(
         "INSERT OR IGNORE INTO skills(id,description,tags_json,enabled) VALUES (?1,?2,?3,0)",
         params![
@@ -367,13 +368,15 @@ pub fn disable(store: &Store, id: &str) -> Result<Value> {
 }
 
 pub fn health(store: &Store) -> Result<Value> {
-    let db = store.lock()?;
-    let graph = active_graph(&db)?;
+    let mut db = store.lock()?;
+    let tx = db.transaction()?;
+    let retained_skill_ids = Store::skills_from(&tx)?.len();
+    let graph = active_graph(&tx)?;
     validate_graph(&graph)?;
     let mut entries = Vec::new();
     for manifest in graph.values() {
         let model_health = if let Some(selection) = &manifest.model {
-            match crate::models::registered_from(&db, selection)? {
+            match crate::models::registered_from(&tx, selection)? {
                 Some(model) if model.enabled && model.manifest.max_output_tokens >= 192 => {
                     "registered_enabled"
                 }
@@ -384,7 +387,7 @@ pub fn health(store: &Store) -> Result<Value> {
         } else {
             "shared_backend"
         };
-        let count: i64 = db.query_row(
+        let count: i64 = tx.query_row(
             "SELECT COUNT(*) FROM documents WHERE skill_id=?1",
             [&manifest.id],
             |row| row.get(0),
@@ -392,7 +395,10 @@ pub fn health(store: &Store) -> Result<Value> {
         entries.push(json!({"id":manifest.id,"version":manifest.version,"kind":manifest.kind,"checker":manifest.checker,"stored_documents":count,
             "dependency_health":"valid","model":manifest.model,"model_health":model_health,"note":"Stored document count and registration do not prove retrieval quality, provider availability or loaded weights"}));
     }
-    Ok(json!({"active":entries,"neural_loading":"unsupported"}))
+    tx.commit()?;
+    Ok(
+        json!({"active":entries,"retained_skill_ids":retained_skill_ids,"neural_loading":"unsupported"}),
+    )
 }
 
 pub(crate) fn snapshot_from(db: &Connection) -> Result<Vec<Manifest>> {

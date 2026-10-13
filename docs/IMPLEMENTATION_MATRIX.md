@@ -1913,3 +1913,26 @@ workspace check and Clippy. Default CLI policy metadata/audit and zero extra
 model calls also pass. QUALITY_REVIEW.md records new evidence paths after the
 previous temporary artifacts disappeared. Hosted identity CI `38402184154` passed
 for `929c6af`; the router revision's hosted result remains pending private sync.
+
+### Bounded skill inventory storage boundary
+
+**Implemented:** `Store::skills_from` uses row/SQL byte bounds before owned copies,
+strict tag parsing and field/version/enable validation. Legacy empty tag arrays
+remain readable. `ensure_skill` validates new writes and shares immediate-
+transaction ID admission with `registry::register`; retained legacy plus manifest
+IDs cannot bypass the common 4,096 ceiling. Router input uses that same constant.
+Four regressions cover corrupt/oversized metadata without data mutation, boundary
+read/write behavior and existing-ID versions, competing connection admission,
+and no routing/inference dispatch from invalid snapshots. No schema migration,
+data deletion, model load or new permissions. Existing invalid data fails closed
+and needs operator-reviewed repair; signatures and physical quotas remain separate.
+
+Health uses the same bounded inventory reader and one consistent read transaction
+for retained metadata, active graph, model references and document counts. Invalid
+legacy metadata fails health rather than being hidden behind an empty active graph.
+
+Final skill-inventory gate: 442 tests, formatting, workspace check and Clippy pass.
+CLI valid registration, duplicate-tag denial and consistent health count pass.
+QUALITY_REVIEW.md records evidence and the initial corrected CLI syntax attempt.
+Hosted router CI `38407375428` passed for `b3e85c3`; storage-hardening CI follows
+private sync. Independent evaluation and general lifecycle requirements stay open.

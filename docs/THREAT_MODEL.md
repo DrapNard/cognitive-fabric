@@ -298,3 +298,13 @@ external I/O/model calls, blocking and arbitrary allocations are outside its sup
 metadata-only contract. No model or remote API can install a callback. Untrusted
 policy loading needs separate isolation and review. Logical versions are declared
 metadata, not cryptographic implementation identity.
+
+### Skill metadata allocation and admission
+
+Skill inventory reads now cap row count and SQL field bytes before Rust copies,
+then reject invalid tags, IDs, enable state and versions. Malformed tag JSON is
+not downgraded into an empty list. Shared transactional admission prevents legacy
+registration from bypassing the manifest inventory's retained-ID bound, including
+competing connections. Invalid stored records remain unchanged and fail closed.
+These are resource/consistency checks, not authenticity against an owner able to
+rewrite the database; no executable or model permission is derived from metadata.

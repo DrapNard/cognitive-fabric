@@ -2,6 +2,13 @@
 
 All notable changes are documented here in English.
 
+### Bound skill inventory reads and shared identity admission
+
+- Cap skill rows and SQL field bytes before copying metadata into Rust.
+- Reject malformed tags and invalid metadata while preserving valid legacy empty tags.
+- Share transactional ID capacity across legacy and manifest registration.
+- Verify concurrent writers, no silent data repair and denial before inference.
+
 ### Separate executive expert selection behind a trusted router interface
 
 - Add versioned Rust expert-router callbacks while preserving default tag routing.

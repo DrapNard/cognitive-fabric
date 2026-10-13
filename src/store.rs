@@ -10,6 +10,8 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 use uuid::Uuid;
+#[cfg(test)]
+mod skill_inventory_tests;
 
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS tasks (
@@ -66,6 +68,47 @@ pub struct Skill {
     pub active_version: i64,
     pub enabled: bool,
     pub manifest_version: Option<String>,
+}
+pub const MAX_SKILLS: usize = 4096;
+
+fn validate_skill_fields(
+    id: &str,
+    description: &str,
+    tags: &[String],
+    allow_empty_tags: bool,
+) -> Result<()> {
+    let mut unique = std::collections::BTreeSet::new();
+    if !crate::registry::identifier(id)
+        || description.trim().is_empty()
+        || description.len() > 500
+        || (!allow_empty_tags && tags.is_empty())
+        || tags.len() > 32
+        || tags.iter().any(|tag| {
+            !(2..=40).contains(&tag.len())
+                || !tag
+                    .bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b"_+-".contains(&b))
+                || !unique.insert(tag)
+        })
+    {
+        bail!("Invalid skill identity, description or tags")
+    }
+    Ok(())
+}
+
+pub(crate) fn admit_skill_id(db: &Connection, id: &str) -> Result<()> {
+    let exists: bool = db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM skills WHERE id=?1)",
+        [id],
+        |r| r.get(0),
+    )?;
+    if !exists {
+        let count: u64 = db.query_row("SELECT count(*) FROM skills", [], |r| r.get(0))?;
+        if count >= MAX_SKILLS as u64 {
+            bail!("Skill identity capacity exhausted")
+        }
+    }
+    Ok(())
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Document {
@@ -401,33 +444,57 @@ impl Store {
         )
     }
     pub fn ensure_skill(&self, id: &str, description: &str, tags: &[String]) -> Result<()> {
-        self.lock()?.execute(
+        validate_skill_fields(id, description, tags, false)?;
+        let mut db = self.lock()?;
+        let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        admit_skill_id(&tx, id)?;
+        tx.execute(
             "INSERT OR IGNORE INTO skills(id,description,tags_json) VALUES (?1,?2,?3)",
             params![id, description, serde_json::to_string(tags)?],
         )?;
+        tx.commit()?;
         Ok(())
     }
     pub fn skills(&self) -> Result<Vec<Skill>> {
         let db = self.lock()?;
         Self::skills_from(&db)
     }
-    fn skills_from(db: &Connection) -> Result<Vec<Skill>> {
-        let mut stmt =
-            db.prepare("SELECT s.id,s.description,s.tags_json,s.active_version,s.enabled,m.version \
-                FROM skills s LEFT JOIN expert_manifests m ON m.skill_id=s.id AND m.active=1 ORDER BY s.id")?;
-        let entries = stmt
-            .query_map([], |r| {
-                let tags: String = r.get(2)?;
-                Ok(Skill {
-                    id: r.get(0)?,
-                    description: r.get(1)?,
-                    tags: serde_json::from_str(&tags).unwrap_or_default(),
-                    active_version: r.get(3)?,
-                    enabled: r.get(4)?,
-                    manifest_version: r.get(5)?,
-                })
-            })?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
+    pub(crate) fn skills_from(db: &Connection) -> Result<Vec<Skill>> {
+        let mut stmt=db.prepare("SELECT CASE WHEN length(CAST(s.id AS BLOB))<=101 THEN s.id END, CASE WHEN length(CAST(s.description AS BLOB))<=500 THEN s.description END, CASE WHEN length(CAST(s.tags_json AS BLOB))<=2048 THEN s.tags_json END, s.active_version,s.enabled,CASE WHEN length(CAST(m.version AS BLOB))<=64 THEN m.version END, m.version IS NULL OR length(CAST(m.version AS BLOB))<=64 FROM skills s LEFT JOIN expert_manifests m ON m.skill_id=s.id AND m.active=1 ORDER BY s.id LIMIT ?1")?;
+        let mut rows = stmt.query([MAX_SKILLS as i64 + 1])?;
+        let mut entries = Vec::new();
+        while let Some(row) = rows.next()? {
+            if entries.len() == MAX_SKILLS {
+                bail!("Skill inventory exceeds identity capacity")
+            }
+            if !row.get::<_, bool>(6)? {
+                bail!("Stored skill manifest version exceeds bounds")
+            }
+            let raw: String = row.get(2)?;
+            let skill = Skill {
+                id: row.get(0)?,
+                description: row.get(1)?,
+                tags: serde_json::from_str(&raw)
+                    .map_err(|_| anyhow!("Invalid stored skill tag JSON"))?,
+                active_version: row.get(3)?,
+                enabled: match row.get::<_, i64>(4)? {
+                    0 => false,
+                    1 => true,
+                    _ => bail!("Invalid stored skill enable state"),
+                },
+                manifest_version: row.get(5)?,
+            };
+            validate_skill_fields(&skill.id, &skill.description, &skill.tags, true)?;
+            if skill.active_version < 0 {
+                bail!("Invalid stored skill active version")
+            }
+            if let Some(version) = &skill.manifest_version {
+                if semver::Version::parse(version)?.to_string() != *version {
+                    bail!("Invalid stored skill manifest version")
+                }
+            }
+            entries.push(skill);
+        }
         Ok(entries)
     }
     pub fn add_document(&self, doc: &Document) -> Result<bool> {

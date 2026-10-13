@@ -63,3 +63,8 @@ persisted policy catalogs/rollback, independent scheduler replacement and
 calibrated expected-utility routing remain incomplete. Saved continuation still
 uses its already-validated context/decisions under the existing recovery gates;
 this API does not reconstruct or rerun arbitrary callback state.
+
+The 4,096-record input ceiling now shares `store::MAX_SKILLS` with persistent
+legacy/manifest admission. Storage reads cap rows and field bytes before copying
+metadata into routing snapshots; malformed tags are rejected rather than treated
+as empty. See EXPERTS.md for retained-ID and legacy compatibility rules.

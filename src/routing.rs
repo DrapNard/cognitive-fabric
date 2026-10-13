@@ -6,7 +6,7 @@ use std::{collections::BTreeSet, sync::Arc};
 #[cfg(test)]
 mod tests;
 pub const MAX_ROUTES: usize = 2;
-pub const MAX_ROUTING_SKILLS: usize = 4096;
+pub const MAX_ROUTING_SKILLS: usize = store::MAX_SKILLS;
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Descriptor {
     pub id: String,

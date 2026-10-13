@@ -755,3 +755,12 @@ enabled snapshot IDs are accepted, with policy version/audit disclosure. Old
 Engine clones and admitted decisions retain their original handles/snapshots.
 This adds no model/tool permissions or model calls. General native isolation,
 policy catalogs, scheduler replacement and calibrated utility remain incomplete.
+
+### Skill inventory bounds
+
+Legacy and manifest registration now share a 4,096 retained-ID capacity under
+immediate transactions. Skill snapshot/inventory reads cap rows and SQL field
+bytes before Rust copies, strictly parse tags and reject invalid state/versions.
+Valid legacy empty tags remain readable; malformed metadata is not silently
+converted or repaired. The router uses the same inventory ceiling. EXPERTS.md
+documents compatibility and the independent active/version limits.

@@ -264,3 +264,28 @@ unchanged. Callbacks run outside the database lock, and policy intent/version is
 audited before invocation. ROUTING.md specifies the API, ablation exclusions and
 trusted-native-code limits. This is not a model-controlled plugin loader or
 proof of learned routing quality.
+
+### Bounded retained skill inventory
+
+Legacy `skill-add` and immutable manifest registration now share a transactional
+4,096 retained skill-ID ceiling, including disabled IDs. This is separate from
+the 256-active-manifest and 4,096-manifest-version limits. Existing-ID idempotent
+legacy registration and new versions of an existing ID remain possible at the
+ID ceiling, subject to version limits; neither path can add a 4,097th identity.
+Concurrent connections serialize admission in immediate SQLite transactions.
+
+Skill reads use a capped query and SQL byte guards before owned Rust copies:
+101-byte IDs, 500-byte descriptions, 2,048-byte raw tag JSON and 64-byte optional
+manifest versions. Tags are parsed strictly and validated as at most 32 unique
+lowercase identifier tags of 2–40 bytes. Invalid JSON no longer becomes an empty
+tag list. Enable state, nonnegative RAG version and canonical manifest version
+are also checked. New legacy writes use the same metadata rules and require
+nonempty tags. Valid pre-existing empty tag arrays remain readable for migration
+compatibility. Invalid/oversized records fail the inventory rather than being
+truncated, silently repaired or deleted. Existing invalid legacy metadata requires
+explicit operator repair or restoration from reviewed valid data.
+
+`skill-health` validates the bounded retained inventory and active dependency
+graph in one read transaction, reporting `retained_skill_ids`. Invalid legacy
+metadata therefore fails health even without an active versioned manifest. This
+count is not a retrieval-quality, model-health or authenticity measurement.

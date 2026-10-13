@@ -4,14 +4,14 @@ This checklist preserves the 18 acceptance criteria in the goal objective. It is
 an evidence inventory, not a release approval. The canonical French architecture
 and the broader implementation matrix remain authoritative. Earlier test counts
 in the quality review are historical milestones. Current local verification is
-438 Rust tests (393 library, 45 integration), formatting, all-target checking and
+442 Rust tests (397 library, 45 integration), formatting, all-target checking and
 Clippy with warnings denied, using FlatBuffers compiler/crate 25.12.19.
 
 | Goal criterion | Evidence inspected | Assessment / remaining proof |
 |---|---|---|
 | 1. Workspace builds | `Cargo.toml`, all-target check | Passed locally; isolated optimized source installation also passed with cached dependencies. |
 | 2. Formatting and Clippy | Mandatory checks in `QUALITY_REVIEW.md` | Passed locally. |
-| 3. Mandatory tests | Workspace all-target test results, `tests/`, server integration tests | 438 passed; fixtures do not establish live model quality. |
+| 3. Mandatory tests | Workspace all-target test results, `tests/`, server integration tests | 442 passed; fixtures do not establish live model quality. |
 | 4. FlatBuffers IPC | `protocol/`, `src/wire.rs`, `src/fabric/`, malformed/compatibility/socket tests | Implemented for present transports; authenticated process event delivery/replay is now tested; broader module compatibility remains partial. |
 | 5. CLI/service communication | `src/service.rs`, socket tests, `tests/process_worker.rs`, `crates/cogfabric-server/tests/` | Tested typed local transport, progress, cancellation and optional HTTP client interoperability; native and collective ownership drains cover dropped request futures. No general independent plugin service is claimed. |
 | 6. Compatible local LLM | `src/backend.rs`, `tests/inference_auth.rs`, `LIVE_INFERENCE.md` | Passed for Ollama and LM Studio Qwen3 8B compatible endpoints, including managed verified sorting. Native LM Studio read-only inventory passed; authenticated native access and controlled load/unload remain unverified. |
@@ -1021,3 +1021,26 @@ lock-free re-entry, snapshot disable, clone/replacement isolation, audit failure
 and ablation exclusions. Actual CLI arithmetic/policy audit smoke also passed:
 `/tmp/cogfabric-router-smoke.NVCRKY`. No new live-model or optimized-install
 claim follows. Historical /tmp evidence remains nonportable, not recreated proof.
+
+### Skill inventory bounds and shared capacity verification
+
+Skill row projections now cap count and SQL field bytes before owned Rust copies,
+strictly parse tags and validate identity, description, enable state and versions.
+New legacy writes use those rules, with nonempty unique tags; valid pre-existing
+empty tags remain readable. Immediate transactions share retained-ID admission
+between legacy and manifest paths, including concurrent connections. Existing-ID
+idempotency and version registration still work at the ID ceiling. Invalid rows
+and over-cap databases fail without truncating, repairing or deleting records.
+Health validates retained inventory and graph/model/document metadata in one
+read transaction, exposing `retained_skill_ids` as an informational count.
+
+All 442 tests (397 library, 45 integration), formatting, workspace all-target check
+and Clippy pass. Log: `/tmp/cogfabric-skill-inventory-verification.log`. Four new
+regressions cover corrupt/oversized records, legacy empty tags, capacity boundaries
+and rollback, competing connections and denial before routing/model dispatch.
+Corrected positional-ID CLI registration/duplicate-tag smoke passed at
+`/tmp/cogfabric-skill-inventory-smoke.sTMHAw`; an earlier `--id` spelling failed
+Clap parsing and was not counted as validation. CLI health/count smoke passed at
+`/tmp/cogfabric-skill-health-smoke.9Nzbzh`. No model load/inference or optimized
+installation was tested for this storage revision. These checks bound metadata,
+not authenticity against an owner who can rewrite storage or neural quality.

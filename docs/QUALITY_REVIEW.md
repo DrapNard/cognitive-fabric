@@ -1,6 +1,6 @@
 # Rust baseline quality review
 
-Current local runtime passes 438 Rust tests (393 library, 45 integration),
+Current local runtime passes 442 Rust tests (397 library, 45 integration),
 formatting, workspace all-target compilation and Clippy with warnings denied.
 Before the residency-inspection addition, both core and HTTP server packages passed optimized host source installation,
 offline installed workflows and managed OpenCode/Qwen read/edit/read. Hosted CI
@@ -3057,3 +3057,26 @@ lock-free re-entry, snapshot disable, clone/replacement isolation, audit failure
 and ablation exclusions. Actual CLI arithmetic/policy audit smoke also passed:
 `/tmp/cogfabric-router-smoke.NVCRKY`. No new live-model or optimized-install
 claim follows. Historical /tmp evidence remains nonportable, not recreated proof.
+
+### Skill inventory bounds and shared capacity verification
+
+Skill row projections now cap count and SQL field bytes before owned Rust copies,
+strictly parse tags and validate identity, description, enable state and versions.
+New legacy writes use those rules, with nonempty unique tags; valid pre-existing
+empty tags remain readable. Immediate transactions share retained-ID admission
+between legacy and manifest paths, including concurrent connections. Existing-ID
+idempotency and version registration still work at the ID ceiling. Invalid rows
+and over-cap databases fail without truncating, repairing or deleting records.
+Health validates retained inventory and graph/model/document metadata in one
+read transaction, exposing `retained_skill_ids` as an informational count.
+
+All 442 tests (397 library, 45 integration), formatting, workspace all-target check
+and Clippy pass. Log: `/tmp/cogfabric-skill-inventory-verification.log`. Four new
+regressions cover corrupt/oversized records, legacy empty tags, capacity boundaries
+and rollback, competing connections and denial before routing/model dispatch.
+Corrected positional-ID CLI registration/duplicate-tag smoke passed at
+`/tmp/cogfabric-skill-inventory-smoke.sTMHAw`; an earlier `--id` spelling failed
+Clap parsing and was not counted as validation. CLI health/count smoke passed at
+`/tmp/cogfabric-skill-health-smoke.9Nzbzh`. No model load/inference or optimized
+installation was tested for this storage revision. These checks bound metadata,
+not authenticity against an owner who can rewrite storage or neural quality.
