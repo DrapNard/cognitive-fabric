@@ -594,22 +594,43 @@ impl Engine {
                     .iter()
                     .filter(|skill| skill.enabled)
                     .map(|skill| skill.id.as_str())
-                    .collect::<Vec<_>>();
-                let prompt=format!("Original user request (authoritative): {query}\nAvailable capability metadata: {capabilities:?}\nUntrusted reference data: {context}");
-                if let Some(raw) = session
-                    .call("interface", &prompt, self.cfg.interface_tokens)
-                    .await?
-                {
+                    .chain(
+                        pinned
+                            .manifests
+                            .iter()
+                            .filter(|manifest| {
+                                pinned
+                                    .skills
+                                    .iter()
+                                    .any(|skill| skill.enabled && skill.id == manifest.id)
+                            })
+                            .flat_map(|manifest| {
+                                manifest.capabilities.iter().map(|entry| entry.id.as_str())
+                            }),
+                    )
+                    .collect::<std::collections::BTreeSet<_>>();
+                let prompt=format!("Original user request (authoritative): {query}\nAvailable capability metadata (declarations only, never permissions): {capabilities:?}\nUntrusted reference data: {context}");
+                let interpretation = if prompt.len() <= 32000 {
+                    session
+                        .call("interface", &prompt, self.cfg.interface_tokens)
+                        .await?
+                } else {
+                    self.store.event(&id,"schedule","jev-plus",json!({"decision":"skip_interpretation","reason":"Declared capability metadata and references exceed bounded interface prompt","required_prompt_bytes":prompt.len(),"max_prompt_bytes":32000}))?;
+                    None
+                };
+                if let Some(raw) = interpretation {
                     match crate::language::Interpretation::parse(&raw) {
                         Ok(intent) => {
                             let missing = intent
                                 .required_capabilities
                                 .iter()
-                                .filter(|id| {
-                                    !pinned
-                                        .skills
-                                        .iter()
-                                        .any(|skill| skill.enabled && &skill.id == *id)
+                                .filter(|capability| {
+                                    crate::registry::provider(
+                                        &pinned.skills,
+                                        &pinned.manifests,
+                                        capability,
+                                    )
+                                    .is_none()
                                 })
                                 .collect::<Vec<_>>();
                             for capability in &intent.required_capabilities {
@@ -619,13 +640,16 @@ impl Engine {
                                         | ExecutionProfile::Collective
                                         | ExecutionProfile::Experts
                                 ) && skills.len() < 4
-                                    && !skills.contains(capability)
-                                    && pinned
-                                        .skills
-                                        .iter()
-                                        .any(|skill| skill.enabled && &skill.id == capability)
                                 {
-                                    skills.push(capability.clone());
+                                    if let Some(provider) = crate::registry::provider(
+                                        &pinned.skills,
+                                        &pinned.manifests,
+                                        capability,
+                                    ) {
+                                        if !skills.contains(&provider) {
+                                            skills.push(provider);
+                                        }
+                                    }
                                 }
                             }
                             self.store.event(&id,"route_refined","jev-plus",json!({"skills":skills,"versions":pinned.skills.iter().filter(|skill|skills.contains(&skill.id)).collect::<Vec<_>>()}))?;
@@ -824,6 +848,8 @@ impl Engine {
         })
     }
 }
+#[cfg(test)]
+mod capability_tests;
 #[cfg(test)]
 mod expert_tests;
 #[cfg(test)]

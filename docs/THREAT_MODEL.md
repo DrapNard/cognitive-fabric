@@ -454,3 +454,13 @@ POST has already occurred and its reply is ambiguous, the task remains interrupt
 with `outcome_unknown`; no confirmation request, retry, inferred ownership or
 cleanup follows. Model/provider content still confers no permissions or factual
 attestation. Internal FlatBuffers and stored benchmark results are unchanged.
+
+
+Declared expert capability aliases are immutable versioned metadata, not grants.
+Lookup is human-only and disclosure flags deny health/permission attestation.
+Advisory intent resolves only pinned enabled providers within existing route
+ceilings, preferring reviewed providers over legacy category placeholders.
+Sensitive names cannot modify compiled task policy. Invalid aliases fail registry
+validation; larger optional interface prompts are audited and skipped without
+truncating the catalog or increasing solver allowances. Untrusted executable
+provisioning/isolation remains outside this metadata feature.

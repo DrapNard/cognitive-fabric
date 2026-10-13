@@ -26,13 +26,15 @@ pub fn prepare(store: &Store, task: &str, capability: &str) -> Result<Preparatio
     if !crate::registry::identifier(capability) {
         bail!("Invalid capability identity")
     }
-    let db = store.lock()?;
+    let mut connection = store.lock()?;
+    let db = connection.transaction()?;
     let mut statement = db.prepare("SELECT id,substr(payload,1,16001) FROM events WHERE task_id=?1 AND kind='capability_gap' AND source='jev-plus' ORDER BY id DESC LIMIT 65")?;
     let rows = statement
         .query_map([task], |row| {
             Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
+    drop(statement);
     if rows.len() > 64 {
         bail!("Capability gap history exceeds inspection limit")
     }
@@ -63,11 +65,13 @@ pub fn prepare(store: &Store, task: &str, capability: &str) -> Result<Preparatio
     }
     let (id, checksum) =
         selected.ok_or_else(|| anyhow::anyhow!("No recorded gap for this task and capability"))?;
-    let available: bool = db.query_row(
-        "SELECT EXISTS(SELECT 1 FROM skills WHERE id=?1 AND enabled=1)",
-        [capability],
-        |r| r.get(0),
-    )?;
+    let available = crate::registry::provider(
+        &Store::skills_from(&db)?,
+        &crate::registry::snapshot_from(&db)?,
+        capability,
+    )
+    .is_some();
+    db.commit()?;
     Ok(Preparation {task_id:task.into(), capability:capability.into(), gap_event_id:id, gap_checksum:checksum,
         available_now:available, next_steps:vec!["Reuse an available reviewed skill before preparing new artifacts", "Review and register reference capability metadata if absent", "Select licensed source documents and import a quarantined RAG candidate", "Supply independent held-out retrieval cases and evaluate integrity, quality and historical regressions", "Review results before explicit human promotion"], candidate_created:false, permissions_granted:false})
 }

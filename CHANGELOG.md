@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Discover versioned declared expert capabilities
+
+- Add bounded immutable capability aliases while preserving legacy serialized hashes.
+- Expose semantic-version lookup and resolve advisory intent/gaps against pinned providers.
+- Keep declarations separate from permissions and skip oversized optional interface prompts.
+
 ### Reject ambiguous reasoning and residency provider fields
 
 - Extend bounded duplicate-key rejection to reasoning responses and advisory JSON.

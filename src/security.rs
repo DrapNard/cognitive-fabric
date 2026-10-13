@@ -104,6 +104,7 @@ pub fn authorize(principal: &str, capability: &str) -> Result<()> {
                 | "storage.backup"
                 | "storage.restore"
                 | "task.observe"
+                | "skill.inspect"
                 | "task.recover"
                 | "task.resume"
                 | "worker.recover"

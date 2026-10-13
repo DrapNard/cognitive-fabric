@@ -15,6 +15,8 @@ use std::{
 };
 #[cfg(test)]
 mod bounds_tests;
+#[cfg(test)]
+mod capability_tests;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -34,6 +36,13 @@ pub struct WorkflowStep {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct Capability {
+    pub id: String,
+    pub version: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Manifest {
     pub id: String,
     pub version: String,
@@ -42,6 +51,8 @@ pub struct Manifest {
     pub checker: Option<String>,
     pub description: String,
     pub tags: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub capabilities: Vec<Capability>,
     #[serde(default)]
     pub dependencies: Vec<Dependency>,
     pub source: String,
@@ -111,6 +122,20 @@ impl Manifest {
                 bail!("Invalid or duplicate manifest tag")
             }
         }
+        if self.capabilities.len() > 16 {
+            bail!("Expert capability count exceeds bounds")
+        }
+        let mut capabilities = BTreeSet::new();
+        for capability in &self.capabilities {
+            if !identifier(&capability.id)
+                || capability.id == self.id
+                || !capabilities.insert(&capability.id)
+                || capability.version.len() > 64
+                || Version::parse(&capability.version)?.to_string() != capability.version
+            {
+                bail!("Invalid or duplicate declared capability")
+            }
+        }
         let mut dependencies = BTreeSet::new();
         for dep in &self.dependencies {
             if !identifier(&dep.id) || dep.requirement.len() > 64 || !dependencies.insert(&dep.id) {
@@ -170,6 +195,66 @@ impl Manifest {
         }
         Ok(order)
     }
+}
+
+/// Resolve only enabled declaration metadata; no permission or execution proof.
+pub(crate) fn provider(
+    skills: &[crate::store::Skill],
+    manifests: &[Manifest],
+    capability: &str,
+) -> Option<String> {
+    let enabled = skills
+        .iter()
+        .filter(|skill| skill.enabled)
+        .map(|skill| skill.id.as_str())
+        .collect::<BTreeSet<_>>();
+    if enabled.contains(capability) && manifests.iter().any(|manifest| manifest.id == capability) {
+        return Some(capability.into());
+    }
+    manifests
+        .iter()
+        .filter(|manifest| {
+            enabled.contains(manifest.id.as_str())
+                && manifest
+                    .capabilities
+                    .iter()
+                    .any(|entry| entry.id == capability)
+        })
+        .map(|manifest| manifest.id.clone())
+        .min()
+        .or_else(|| enabled.contains(capability).then(|| capability.into()))
+}
+
+pub fn lookup(store: &Store, capability: &str, requirement: &str) -> Result<Value> {
+    security::authorize("human-cli", "skill.inspect")?;
+    if !identifier(capability) || requirement.is_empty() || requirement.len() > 64 {
+        bail!("Invalid capability lookup")
+    }
+    let requested = VersionReq::parse(requirement)?;
+    let mut db = store.lock()?;
+    let tx = db.transaction()?;
+    let manifests = snapshot_from(&tx)?;
+    let mut matches = Vec::new();
+    for manifest in manifests {
+        let version = if manifest.id == capability {
+            Some(manifest.version.as_str())
+        } else {
+            manifest
+                .capabilities
+                .iter()
+                .find(|entry| entry.id == capability)
+                .map(|entry| entry.version.as_str())
+        };
+        if let Some(version) = version {
+            if requested.matches(&Version::parse(version)?) {
+                matches.push(json!({"expert_id":manifest.id,"expert_version":manifest.version,"kind":manifest.kind,"capability_version":version}));
+            }
+        }
+    }
+    tx.commit()?;
+    Ok(
+        json!({"capability":capability,"requirement":requirement,"matches":matches,"declaration_only":true,"permissions_granted":false,"provider_health_proven":false}),
+    )
 }
 
 pub fn read_manifest(path: &Path) -> Result<Manifest> {
@@ -425,7 +510,7 @@ pub fn health(store: &Store) -> Result<Value> {
             [&manifest.id],
             |row| row.get(0),
         )?;
-        entries.push(json!({"id":manifest.id,"version":manifest.version,"kind":manifest.kind,"checker":manifest.checker,"stored_documents":count,
+        entries.push(json!({"id":manifest.id,"version":manifest.version,"kind":manifest.kind,"capabilities":manifest.capabilities,"checker":manifest.checker,"stored_documents":count,
             "dependency_health":"valid","model":manifest.model,"model_health":model_health,"note":"Stored document count and registration do not prove retrieval quality, provider availability or loaded weights"}));
     }
     tx.commit()?;
@@ -456,6 +541,7 @@ mod tests {
             model: None,
             description: "Reviewed reference skill".into(),
             tags: vec!["rust".into()],
+            capabilities: Vec::new(),
             dependencies: vec![],
             source: "test fixture".into(),
             license: "CC0-1.0".into(),

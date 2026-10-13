@@ -102,6 +102,7 @@ mod tests {
             checker: None,
             description: "Rust references".into(),
             tags: vec!["rust".into()],
+            capabilities: Vec::new(),
             dependencies: Vec::new(),
             source: "test".into(),
             license: "CC0".into(),

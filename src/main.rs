@@ -204,6 +204,11 @@ enum Command {
         id: String,
     },
     SkillHealth,
+    SkillLookup {
+        capability: String,
+        #[arg(long, default_value = "*")]
+        requirement: String,
+    },
     ConfigureLocal {
         #[arg(long)]
         model: String,
@@ -836,6 +841,10 @@ async fn main() -> Result<()> {
         Command::SkillDisableSet { ids } => cogfabric::registry::disable_set(&store, &ids)?,
         Command::SkillDisable { id } => cogfabric::registry::disable(&store, &id)?,
         Command::SkillHealth => cogfabric::registry::health(&store)?,
+        Command::SkillLookup {
+            capability,
+            requirement,
+        } => cogfabric::registry::lookup(&store, &capability, &requirement)?,
         Command::SkillAdd {
             id,
             description,

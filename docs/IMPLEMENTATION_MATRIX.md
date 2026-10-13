@@ -2216,3 +2216,50 @@ POST has already occurred and its reply is ambiguous, the task remains interrupt
 with `outcome_unknown`; no confirmation request, retry, inferred ownership or
 cleanup follows. Model/provider content still confers no permissions or factual
 attestation. Internal FlatBuffers and stored benchmark results are unchanged.
+
+
+### Versioned declared capabilities and discovery
+
+Expert manifests may now declare up to 16 distinct capability identities with
+independent canonical semantic versions:
+
+```json
+"capabilities": [{"id":"domain.sort","version":"2.1.0"}]
+```
+
+This field is optional and omitted from canonical serialization when empty,
+preserving legacy manifest hashes. Each expert's own ID implicitly provides its
+manifest version; redeclaring that same ID is rejected. Capability identities use
+the existing bounded project identifier syntax. Duplicate IDs, invalid versions,
+unknown capability fields and excessive entries fail manifest validation. Aliases
+are immutable with their manifest version and copied into task snapshots. Expert
+dependencies still refer to concrete expert IDs/versions; aliases do not rewrite
+or relax dependency constraints.
+
+`skill-lookup domain.sort --requirement '^2'` lists active manifest providers whose
+declared capability version matches the requested semantic range. The command
+uses human-only `skill.inspect`; it grants no runtime authority. Results explicitly
+say `declaration_only`, `permissions_granted: false` and `provider_health_proven:
+false`. Unversioned legacy categories remain listed by existing skill inventory,
+not fabricated as versioned lookup matches. Multiple compatible providers remain
+visible rather than being silently activated or loaded.
+
+Advisory language interpretation can name a declared capability separately from
+an expert ID. The engine resolves it against the pinned enabled snapshot and
+adds its provider ID within the existing four-refined-route ceiling. Resolution
+prefers an exact active manifest, then the lexically first reviewed alias provider,
+then legacy category metadata. This prevents a legacy placeholder from hiding a
+reviewed provider. Current gap preparation reads enabled declarations and manifests
+in one transaction, so aliases count as available metadata without creating a
+candidate or grant. Capability versions are exposed by lookup; language intent
+still names capabilities without version requirements.
+
+Large interface prompts exceeding 32,000 bytes explicitly audit
+`skip_interpretation` and preserve whole-goal reasoning rather than dispatching an
+invalid optional prompt. The catalog is not silently truncated. These changes do
+not prove operational expertise, document retrieval quality, provider availability,
+weights, executable isolation or calibrated expected utility. Declaring a sensitive
+name such as `shell.execute` cannot grant that permission. No model/tool loader,
+FlatBuffers schema change, database migration or neural promotion is introduced.
+Public Rust struct-literal callers must provide the new `capabilities` vector;
+legacy serialized manifests remain compatible.

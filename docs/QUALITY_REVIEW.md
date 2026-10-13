@@ -1,6 +1,6 @@
 # Rust baseline quality review
 
-Current local runtime passes 482 Rust tests (434 library, 48 integration),
+Current local runtime passes 487 Rust tests (439 library, 48 integration),
 formatting, workspace all-target compilation and Clippy with warnings denied.
 Before the residency-inspection addition, both core and HTTP server packages passed optimized host source installation,
 offline installed workflows and managed OpenCode/Qwen read/edit/read. Hosted CI
@@ -3515,3 +3515,29 @@ wrong test branch; corrected and reran all gates without changing acceptance
 criteria. No live model benchmark, optimized install, new permissions or protocol
 schema. General module scheduling, isolated expert provisioning, physical model
 residency and independent unseen evaluations remain incomplete.
+
+
+### Versioned capability discovery gate
+
+All 487 tests (439 library, 48 integration), formatting, workspace all-target
+check and Clippy pass with existing flatc/Rust FlatBuffers 25.12.19. Commands:
+`cargo fmt --all -- --check`, `cargo check --offline --workspace --all-targets`,
+`cargo test --offline --workspace --all-targets`, and
+`cargo clippy --offline --workspace --all-targets -- -D warnings`.
+Log: `/tmp/cogfabric-capability-discovery-tests.log`. Five new regressions cover
+legacy checksum preservation (pre-change CLI captured checksum
+`e43b6ec09af5f9be056f0f6b27c971439b42a0857eaa0bee812d107c874ecc91`), invalid/
+duplicate/excessive declarations, semantic lookup, disabled/current/pinned versions,
+legacy-placeholder precedence, gap inspection without grants/candidates, actual
+engine alias routing while activation changes during interpretation, and a large
+catalog that preserves the solver by skipping oversized optional interpretation.
+Sensitive alias metadata remains denied by the kernel.
+
+Actual CLI registration/activation, compatible/incompatible lookup, explicit
+metadata disclaimers and disabled exclusion pass in
+`/tmp/cogfabric-capability-lookup-smoke.ce2skzeh`. No model inference or lifecycle
+mutation is needed for lookup. Existing serialized manifests keep canonical hashes;
+Rust struct-literal callers have an additive source-field requirement documented
+in EXPERTS.md. No new live quality study, optimized install, executable plugin,
+protocol schema or database migration. General scheduling, isolated provisioning,
+physical residency and independent unseen model evaluations remain release work.
