@@ -409,7 +409,7 @@ where
             counts[arm_index] += 1;
             let identities = crate::evaluation::model_metadata::read(&store, &outcome.task_id)?;
             details.push(json!({"case_index":case_index,"arm_index":arm_index,"execution_position":position,"profile":profile,"configured_model":model,
-                "reported_models":identities.reported_models,"bound_expert_models":identities.bound_expert_models,"primary_model_snapshot":identities.primary_model_snapshot,"passed":passed,"expected":case.expected,"input":case.input,"outcome":outcome,"verification":case.verification}));
+                "expert_advice":identities.expert_advice,"reported_models":identities.reported_models,"bound_expert_models":identities.bound_expert_models,"primary_model_snapshot":identities.primary_model_snapshot,"passed":passed,"expected":case.expected,"input":case.input,"outcome":outcome,"verification":case.verification}));
             if cancelled || tokio::time::Instant::now() >= deadline {
                 stopped = true;
                 break 'cases;
@@ -470,6 +470,9 @@ mod tests {
         assert_eq!(report["held_out_run"], false);
         assert!(report["reviewed_dataset_checksum_operator_attested"].is_null());
         assert_eq!(report["details"].as_array().unwrap().len(), 6);
+        for detail in report["details"].as_array().unwrap() {
+            assert_eq!(detail["expert_advice"]["inference_timeout_fallbacks"], 0);
+        }
         review.held_out = true;
         assert!(compare(&cfg, store, &dataset, "deep", None, &review)
             .await

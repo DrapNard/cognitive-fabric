@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Expose expert advice fallback diagnostics in benchmarks
+
+- Record typed inference-timeout classifications in optional advice audits.
+- Report bounded per-task advice phase and fallback counts without error contents.
+- Keep historical and unknown failure kinds unclassified instead of guessing.
+
 ### Verify cancellation of optional expert workflows
 
 - Cover pending legacy advice and cancellation after a completed structured step.

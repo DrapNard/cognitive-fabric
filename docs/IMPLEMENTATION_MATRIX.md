@@ -2326,3 +2326,20 @@ test wait. Partial advice never becomes verified evidence. This adds regression
 coverage without changing production policy; dropping a local future does not
 prove an external provider stopped GPU inference. Broader expert effectiveness,
 independent verification and executable isolation remain Partial.
+
+### Expert advice diagnostics in benchmark reports
+
+Each benchmark/comparison detail now includes `expert_advice` audit counts:
+`phases_started`, `fallback_events`, `inference_timeout_fallbacks`, and
+`unclassified_fallbacks`. Current optional-advice timeouts persist the typed
+`failure_kind: inference_timeout` classification. Historical events without that
+classification and future unknown kinds remain unclassified; error text is never
+used to infer a timeout. Counts are task-scoped and read through bounded SQLite
+projections (128 events, 16 KiB per diagnostic event), without copying advice,
+prompts or error messages into the report. Oversized audits fail reporting.
+
+These are attempted-phase/fallback counts, not expert success rates. A fatal
+provider/audit failure or cancellation may leave a started phase without a fallback
+event; absence of fallback proves neither completion nor usefulness. Existing
+reports remain frozen. Independent quality evaluation, broader expert lifecycle
+and physical provider termination remain incomplete.

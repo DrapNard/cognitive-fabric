@@ -3684,3 +3684,18 @@ and bounded local backend-future cleanup after the broker observes cancellation.
 The initial synchronous cleanup assertion failed because the broker had not yet
 been polled; the test now awaits cleanup with a one-second ceiling. No production
 behavior changed, no external provider termination or quality gain is claimed.
+
+### Expert advice diagnostic reporting gate
+
+All 494 tests (443 library, 51 integration) and mandatory formatting, all-target
+workspace check and Clippy pass with FLATC unset. Commands:
+`cargo fmt --all -- --check`, `cargo check --offline --workspace --all-targets`,
+`cargo test --offline --workspace --all-targets`, and
+`cargo clippy --offline --workspace --all-targets -- -D warnings`.
+Log: `/tmp/cogfabric-advice-diagnostics-tests.log`. Tests cover typed timeout
+classification from an actual pending scripted expert phase, comparison report
+serialization, historical/unknown classifications, exclusion of error contents,
+and oversized/event-count rejection. No live-model rerun or new quality result.
+The additive JSON report fields change neither inference budgets nor permissions;
+the additional SQLite projection is bounded to 129 rows and returns fixed labels.
+General expert provisioning, residency and independent quality gates remain open.

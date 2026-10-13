@@ -657,7 +657,7 @@ impl Session {
                 self.resources.output_tokens = None;
                 self.complete_queue_metrics = false;
                 self.resources.queue_wait_ms = None;
-                self.store.event(&self.task,"expert_failure","jev-plus",json!({"id":manifest.id,"version":manifest.version,"reason":error.to_string().chars().take(250).collect::<String>(),"action":"Continue main solver within remaining budgets","verified":false,"provider_stop_proven":false,"partial_advice_discarded":true}))?;
+                self.store.event(&self.task,"expert_failure","jev-plus",json!({"id":manifest.id,"version":manifest.version,"failure_kind":"inference_timeout","reason":error.to_string().chars().take(250).collect::<String>(),"action":"Continue main solver within remaining budgets","verified":false,"provider_stop_proven":false,"partial_advice_discarded":true}))?;
                 Ok(None)
             }
             result => result,
@@ -1437,6 +1437,12 @@ mod tests {
                 assert_eq!(outcome.answer, "[1,2,3]");
                 assert_eq!(outcome.calls, 3);
                 assert_eq!(outcome.resources.reserved_output_tokens, 832);
+                let metadata =
+                    crate::evaluation::model_metadata::read(&store, &outcome.task_id).unwrap();
+                let diagnostics = serde_json::to_value(metadata.expert_advice).unwrap();
+                assert_eq!(diagnostics["inference_timeout_fallbacks"], 1);
+                assert_eq!(diagnostics["phases_started"], 1);
+                assert_eq!(diagnostics["unclassified_fallbacks"], 0);
                 assert!(outcome.resources.input_tokens.is_none());
                 assert!(outcome.resources.output_tokens.is_none());
                 assert!(outcome
