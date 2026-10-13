@@ -2,6 +2,13 @@
 
 All notable changes are documented here in English.
 
+### Verify installed HTTP workflows without model inference
+
+- Document separate core/server package installs and verify both optimized packages.
+- Add an offline HTTP smoke for authentication, origin denial and typed tool workers.
+- Run the HTTP workflow in CI and include it in clean-OS validation instructions.
+- Verify installed managed OpenCode/Qwen read/edit/read separately from offline tests.
+
 ### Reap collective workers after dropped task futures
 
 - Retain inference/tool child, socket and execution lease through bounded drop cleanup.

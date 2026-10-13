@@ -23,7 +23,7 @@ podman run --rm --volume "$snapshot:/source:ro" \
   docker.io/library/archlinux@sha256:363129b67b2bc6c5a634f8fb4961a7e2eba213a2ec075d159127b1260290a722 \
   bash -c '
     set -euo pipefail
-    pacman -Syu --noconfirm --needed rust flatbuffers base-devel cmake git jq
+    pacman -Syu --noconfirm --needed rust flatbuffers base-devel cmake git jq curl openssl ripgrep
     cp -a /source /tmp/cognitive-fabric
     cd /tmp/cognitive-fabric
     rustc --version
@@ -32,12 +32,14 @@ podman run --rm --volume "$snapshot:/source:ro" \
     bash scripts/build-flatc.sh /tmp/cogfabric-flatc
     export FLATC=/tmp/cogfabric-flatc/build/flatc
     cargo fmt --all -- --check
-    cargo check --locked --all-targets
-    cargo test --locked --all-targets
-    cargo clippy --locked --all-targets -- -D warnings
+    cargo check --locked --workspace --all-targets
+    cargo test --locked --workspace --all-targets
+    cargo clippy --locked --workspace --all-targets -- -D warnings
     cargo install --locked --path . --root /tmp/cogfabric-install
+    cargo install --locked --path crates/cogfabric-server --root /tmp/cogfabric-install
     bash scripts/installed-smoke.sh /tmp/cogfabric-install/bin/cogfabric
-    sha256sum /tmp/cogfabric-install/bin/cogfabric
+    bash scripts/installed-http-smoke.sh /tmp/cogfabric-install/bin/cogfabric /tmp/cogfabric-install/bin/cogfabric-server
+    sha256sum /tmp/cogfabric-install/bin/cogfabric /tmp/cogfabric-install/bin/cogfabric-server
   '
 ```
 
@@ -51,3 +53,8 @@ CachyOS-specific packages and independent model quality require separate checks.
 On 2026-10-13, source `35c4bdc` passed this workflow with Rust/Cargo 1.99.0,
 FlatBuffers 25.12.19 and all 359 tests. Optimized install and the full installed
 smoke passed. See `RELEASE_AUDIT.md` for evidence and scope limitations.
+
+The workflow above now includes the optional HTTP package and its offline smoke.
+That expanded clean-OS workflow has not yet been run; the historical result above
+covers the earlier core-only source. Current host source installs of both packages
+and offline/live client smokes are recorded separately in RELEASE_AUDIT.md.

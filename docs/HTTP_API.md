@@ -7,6 +7,21 @@ Unix socket service continue to work independently.
 
 ## Start the server
 
+Install the optional server separately from the core CLI:
+
+```bash
+cargo install --locked --path . --root /tmp/cognitive-fabric-install
+cargo install --locked --path crates/cogfabric-server --root /tmp/cognitive-fabric-install
+bash scripts/installed-http-smoke.sh /tmp/cognitive-fabric-install/bin/cogfabric /tmp/cognitive-fabric-install/bin/cogfabric-server
+```
+
+Use a fresh install directory and the pinned `FLATC` described in README. The
+HTTP smoke requires Bash, jq, curl, OpenSSL, rg and GNU timeout. It uses private
+temporary state, a random test key and an unavailable upstream; it verifies
+discovery/authentication, origin denial, actual arithmetic/SQL worker reaping
+and successful shutdown without requiring a model. Evidence paths are printed.
+This does not test native model inference or coding quality.
+
 Build with the pinned FlatBuffers compiler described in README:
 
 ```bash

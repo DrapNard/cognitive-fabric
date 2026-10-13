@@ -1758,3 +1758,16 @@ integration). Full log: `/tmp/cogfabric-collective-cleanup-tests.log`. The first
 sandboxed socket test attempt was denied by local sandbox policy; the complete
 socket/subprocess suite passed with authorized local execution. No new live
 model study or optimized installation was run for this cleanup revision.
+
+### Installed HTTP interoperability verification
+
+**Implemented and verified:** separate optimized core/server package installation
+from runtime source `38948b1`, installed CLI/socket smoke, new offline installed
+HTTP smoke and installed managed OpenCode/Qwen read/edit/read. HTTP_API.md records
+installation commands; INSTALLATION_VALIDATION.md extends the reproducible clean
+Arch workflow to both packages (that updated clean-OS workflow is not yet run).
+The offline HTTP smoke now runs in CI; this revision's hosted result remains
+pending. RELEASE_AUDIT.md records exact runtime source, binary/script hashes and
+evidence. Rust runtime/tests are unchanged: the previous 417-test quality gate
+and hosted runtime CI pass. Independent expert quality and general provisioning
+remain partial.

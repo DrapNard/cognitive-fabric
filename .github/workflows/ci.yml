@@ -30,6 +30,14 @@ jobs:
         run: cargo run -- --home ./test-state self-test
       - name: Complete local CLI workflow smoke
         run: bash scripts/installed-smoke.sh "$PWD/target/debug/cogfabric"
+      - name: Complete offline HTTP workflow smoke
+        run: |
+          if ! command -v rg >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install --yes ripgrep
+          fi
+          cargo build --workspace --bins
+          bash scripts/installed-http-smoke.sh "$PWD/target/debug/cogfabric" "$PWD/target/debug/cogfabric-server"
       - name: Offline security boundary evaluation
         run: cargo run -- --home ./test-state --json security-eval
       - name: Offline training preflight tests (no ML dependencies)

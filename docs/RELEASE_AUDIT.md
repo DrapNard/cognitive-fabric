@@ -812,3 +812,30 @@ This addresses the collective dropped-future ownership gap for supplied same-ima
 workers. Forced host termination, untrusted plugin isolation and independent
 agentic/reasoning evaluation remain outside this verification. Optimized binaries
 recorded above predate this ownership change; installation refresh remains open.
+
+## Installed core and HTTP server verification (2026-10-13)
+
+Runtime source `38948b112a8ddad8aa16133d1dac5b06aeb048c2` passed separate
+locked offline `cargo install --path .` and `cargo install --path
+crates/cogfabric-server` into `/tmp/cogfabric-collective-cleanup-install-20261013`.
+Build times were 1m30s and 1m05s using cached dependencies and flatc 25.12.19.
+Installed core CLI/socket smoke passed: `/tmp/cogfabric-installed-smoke.KLFG3z`.
+Installed HTTP offline smoke passed: `/tmp/cogfabric-installed-http.hLt7Ab`.
+It verifies five authenticated aliases, unauthenticated/origin denials, actual
+managed arithmetic/SQL results with reaping audits and no model dispatch, and
+successful server shutdown. Script SHA-256:
+`950ff16da845b970466e5af0b335dde9733e457760b4b81a65cc4dfc81976723`.
+
+Installed managed OpenCode v2.0.26 + Qwen3 8B read/edit/read also passed:
+`/tmp/cogfabric-opencode-smoke.04PbE7`. Actual fixture contents and matching
+nonzero admitted/launched/reaped counts are checked by that existing script.
+This is interoperability evidence, not independent coding-quality evaluation.
+Core binary SHA-256:
+`978cf090f81296bbe848472798c9155a97554e72f2456fbf584b7df467f57b6a`.
+Server binary SHA-256:
+`0e92638902ed376703794ee112871d9e14ca05c01329d452c005f98dc7f45b4e`.
+Hosted CI [38381031102](https://github.com/DrapNard/cognitive-fabric/actions/runs/38381031102)
+passed for this runtime source. These tests close the current host source-install
+verification gap for both packages, including collective cleanup. Clean-OS
+validation of the new server, plugin isolation, ownership-aware residency and
+independent reasoning/expert evaluation remain open.
