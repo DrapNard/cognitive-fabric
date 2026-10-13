@@ -2,6 +2,13 @@
 
 All notable changes are documented here in English.
 
+### Verify bounded shortest-path reasoning independently
+
+- Check original directed unweighted graph criteria with deterministic Rust search.
+- Integrate budgeted revision, checker bindings, recovery accounting and comparison scoring.
+- Accept alternate optimal paths and verify unreachable goals without model confidence.
+- Validate with 459 passing tests and a deterministic CLI/HTTP fixture.
+
 ### Contain an explicitly selected dependent expert set
 
 - Add `skill-disable-set ID...` with a bounded, distinct operator selection.
