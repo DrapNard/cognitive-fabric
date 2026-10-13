@@ -1695,6 +1695,122 @@ mod tests {
         assert_eq!(audit["reported_usage_complete"], false);
     }
 
+    #[tokio::test]
+    async fn cancelling_optional_advice_drops_work_without_timeout_fallback() {
+        struct Advice {
+            structured: bool,
+            calls: std::sync::atomic::AtomicUsize,
+            active: std::sync::atomic::AtomicUsize,
+            entered: tokio::sync::Notify,
+        }
+        struct Active<'a>(&'a std::sync::atomic::AtomicUsize);
+        impl Drop for Active<'_> {
+            fn drop(&mut self) {
+                self.0.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+            }
+        }
+        impl InferenceBackend for Advice {
+            fn generate<'a>(
+                &'a self,
+                role: &'a str,
+                _: &'a str,
+                _: usize,
+            ) -> Pin<Box<dyn Future<Output = Result<Generation>> + Send + 'a>> {
+                Box::pin(async move {
+                    assert_eq!(
+                        role, "solver",
+                        "Cancellation must not invoke planner fallback"
+                    );
+                    let call = self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    self.active
+                        .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    let _active = Active(&self.active);
+                    if self.structured && call == 0 {
+                        return Ok(Generation {
+                            text: "Partial advice".into(),
+                            model: "fixture/v1".into(),
+                            input_tokens: Some(10),
+                            output_tokens: Some(5),
+                            elapsed_ms: 1.0,
+                            queue_wait_ms: None,
+                        });
+                    }
+                    assert_eq!(call, usize::from(self.structured));
+                    self.entered.notify_one();
+                    std::future::pending::<()>().await;
+                    unreachable!()
+                })
+            }
+        }
+        for structured in [false, true] {
+            let store = Arc::new(Store::in_memory().unwrap());
+            let mut raw = json!({"id":"data.sort.s1","version":"1.0.0","kind":"workflow","description":"Optional sorting advice","tags":["sort"],"source":"fixture","license":"CC0","workflow":"Optional advice"});
+            if structured {
+                raw.as_object_mut().unwrap().remove("workflow");
+                raw["workflow_steps"] = json!([{"id":"first","advice":"Inspect","depends_on":[]},{"id":"second","advice":"Review","depends_on":["first"]}]);
+            }
+            let manifest: crate::registry::Manifest = serde_json::from_value(raw).unwrap();
+            crate::registry::register(&store, &manifest).unwrap();
+            crate::registry::activate(&store, &manifest.id, &manifest.version).unwrap();
+            let backend = Arc::new(Advice {
+                structured,
+                calls: std::sync::atomic::AtomicUsize::new(0),
+                active: std::sync::atomic::AtomicUsize::new(0),
+                entered: tokio::sync::Notify::new(),
+            });
+            let engine = Engine::with_backend(
+                Config {
+                    backend: "openai-local".into(),
+                    interpret_goals: false,
+                    ..Config::default()
+                },
+                store.clone(),
+                backend.clone(),
+            );
+            let outcome = tokio::time::timeout(
+                Duration::from_secs(3),
+                engine.run_until(
+                    r#"sort:{"values":[3,1,2]}"#,
+                    "deep",
+                    backend.entered.notified(),
+                ),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            let calls = if structured { 2 } else { 1 };
+            assert_eq!(outcome.status, "cancelled");
+            assert_eq!(outcome.calls, calls);
+            assert_eq!(
+                outcome.resources.reserved_output_tokens,
+                calls as usize * 192
+            );
+            assert!(outcome.resources.input_tokens.is_none());
+            assert!(outcome.resources.output_tokens.is_none());
+            // The broker observes its closed reply channel on its next poll.
+            // Task cancellation must not leave the local backend future alive.
+            tokio::time::timeout(Duration::from_secs(1), async {
+                while backend.active.load(std::sync::atomic::Ordering::SeqCst) != 0 {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .expect("Cancelled advice backend must be dropped");
+            assert_eq!(
+                backend.calls.load(std::sync::atomic::Ordering::SeqCst),
+                calls as usize
+            );
+            let trace = store.task(&outcome.task_id).unwrap();
+            assert!(!trace["events"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|e| e["kind"] == "expert_failure"));
+            assert_eq!(outcome.stop_reason, "cancelled");
+            assert!(outcome.evidence.is_empty());
+        }
+    }
+
     struct Script(Mutex<VecDeque<(&'static str, &'static str)>>);
     #[tokio::test]
     async fn shortest_path_revises_nonoptimal_candidates_and_preserves_checked_output() {

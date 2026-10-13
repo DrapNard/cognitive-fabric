@@ -3668,3 +3668,19 @@ claim full JSON Schema enforcement or current live OpenCode/model compatibility.
 No new host action, authority, optimized installation or independent quality study.
 General scheduling, isolated executable provisioning, physical residency and
 independent unseen evaluations remain open V1 work.
+
+### Optional expert cancellation gate
+
+All 493 tests (442 library, 51 integration), formatting, workspace all-target
+check and Clippy pass with FLATC unset. Commands: `cargo fmt --all -- --check`,
+`cargo check --offline --workspace --all-targets`,
+`cargo test --offline --workspace --all-targets`, and
+`cargo clippy --offline --workspace --all-targets -- -D warnings`.
+Log: `/tmp/cogfabric-advice-cancellation-tests.log`.
+The new regression covers legacy pending advice and a structured workflow with
+one completed step before cancellation. It verifies retained reservations,
+unknown reported usage, no fallback calls/events, no verified partial evidence
+and bounded local backend-future cleanup after the broker observes cancellation.
+The initial synchronous cleanup assertion failed because the broker had not yet
+been polled; the test now awaits cleanup with a one-second ceiling. No production
+behavior changed, no external provider termination or quality gain is claimed.

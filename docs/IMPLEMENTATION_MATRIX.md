@@ -2313,3 +2313,16 @@ other fields are explicitly rejected rather than silently removed while flatteni
 text. These unsupported shapes return 400 before inference. Valid named choices
 and ordinary text arrays remain supported. No tool execution, permission, budget,
 conversation role or FlatBuffers schema is added.
+
+### Optional expert cancellation regression
+
+**Implemented and tested:** `src/reasoning.rs` verifies explicit task cancellation
+while legacy advice is pending and while a dependent structured advice step is
+pending after its predecessor completed. Both return cancelled, preserve every
+dispatched call/output reservation, leave reported usage unknown, emit no timeout
+fallback event and start no primary planner/solver work. The broker observes the
+closed reply channel and drops the local pending backend future within a bounded
+test wait. Partial advice never becomes verified evidence. This adds regression
+coverage without changing production policy; dropping a local future does not
+prove an external provider stopped GPU inference. Broader expert effectiveness,
+independent verification and executable isolation remain Partial.

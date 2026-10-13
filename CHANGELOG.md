@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Verify cancellation of optional expert workflows
+
+- Cover pending legacy advice and cancellation after a completed structured step.
+- Verify local backend cleanup, retained charges and no timeout fallback reasoning.
+- Preserve unknown provider usage and avoid claiming external inference stopped.
+
 ### Reject unsupported native agent control shapes
 
 - Validate exact named tool-choice fields for direct/managed semantic parity.
