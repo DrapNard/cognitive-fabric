@@ -51,6 +51,7 @@ pub struct Engine {
     backend: Arc<dyn InferenceBackend>,
     corpus: Option<Arc<crate::corpus::FrozenCorpus>>,
     process_inference: bool,
+    router: crate::routing::Handle,
 }
 impl Engine {
     pub fn new(cfg: Config, store: Arc<Store>) -> Self {
@@ -74,7 +75,20 @@ impl Engine {
             tools: Arc::new(crate::fabric::tools::Broker::default()),
             corpus: None,
             process_inference: false,
+            router: Default::default(),
         }
+    }
+    /// Install an operator-trusted policy for future tasks on this Engine value.
+    /// Existing cloned engines and admitted route decisions remain unchanged.
+    pub fn with_expert_router(
+        mut self,
+        router: Arc<dyn crate::routing::ExpertRouter>,
+    ) -> Result<Self> {
+        self.router = crate::routing::Handle::new(router)?;
+        Ok(self)
+    }
+    pub fn expert_router_descriptor(&self) -> &crate::routing::Descriptor {
+        self.router.descriptor()
     }
     pub(crate) fn with_frozen_corpus(mut self, corpus: Arc<crate::corpus::FrozenCorpus>) -> Self {
         self.corpus = Some(corpus);
@@ -375,9 +389,10 @@ impl Engine {
                 profile,
                 ExecutionProfile::Full | ExecutionProfile::Collective | ExecutionProfile::Experts
             ) {
-                skills = store::route(&pinned.skills, query);
+                self.store.event(&id,"routing_policy","jev-plus",json!({"router":self.router.descriptor(),"max_routes":crate::routing::MAX_ROUTES,"skill_count":pinned.skills.len(),"permissions_granted":false,"implementation_attested":false}))?;
+                skills = self.router.select(query, &pinned.skills)?;
             }
-            self.store.event(&id,"route","jev-plus",json!({"skills":skills,
+            self.store.event(&id,"route","jev-plus",json!({"skills":skills,"router":self.router.descriptor(),"router_invoked":matches!(profile,ExecutionProfile::Full|ExecutionProfile::Collective|ExecutionProfile::Experts),
                 "versions":pinned.skills.iter().filter(|s|skills.contains(&s.id)).collect::<Vec<_>>(),
                 "manifests":pinned.manifests.iter().filter(|m|skills.contains(&m.id)).collect::<Vec<_>>()}))?;
             if experts {

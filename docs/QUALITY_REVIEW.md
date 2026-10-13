@@ -1,6 +1,6 @@
 # Rust baseline quality review
 
-Current local runtime passes 434 Rust tests (389 library, 45 integration),
+Current local runtime passes 438 Rust tests (393 library, 45 integration),
 formatting, workspace all-target compilation and Clippy with warnings denied.
 Before the residency-inspection addition, both core and HTTP server packages passed optimized host source installation,
 offline installed workflows and managed OpenCode/Qwen read/edit/read. Hosted CI
@@ -3031,3 +3031,29 @@ reported labels, tool-only empty labels and invalid configuration before ready
 cancellation. Actual CLI arithmetic metadata smoke passed with no model labels:
 `/tmp/cogfabric-bench-identities-smoke.gX4eGx`. Scoring, permissions and historical
 reports remain unchanged. No new live study or optimized install is claimed.
+
+### Trusted replaceable Jev+ router verification
+
+Expert selection now has an operator-trusted Rust interface with cached declared
+semantic identity. The default calls the existing tag algorithm; only two known
+enabled IDs from the original task snapshot are accepted. Policy audit precedes
+callbacks, transactions/mutexes are released first, old Engine clones retain
+handles and excluded comparison profiles never invoke the callback. Model/tool
+budgets, kernel authorization and checker/workflow admission remain unchanged.
+Native callbacks are not sandboxed or preemptible, and implementation identity
+is not attested. General provisioning, policy catalogs, independent scheduler
+replacement and calibrated utility remain incomplete. See ROUTING.md.
+
+After interruption, previous temporary compiler/log artifacts were absent. The
+pinned compiler was rebuilt from reviewed FlatBuffers commit
+`7e163021e59cca4f8e1e35a7c828b5c6b7915953`, with no host package changes. Fresh
+verification used rustc/cargo 1.97.1, flatc/crate 25.12.19 and
+`/tmp/cogfabric-router-target-20261013`, reusing cached Cargo dependencies.
+Formatting, workspace all-target check, all 438 tests (393 library, 45 integration)
+and Clippy with warnings denied pass. Current log:
+`/tmp/cogfabric-router-verification.log`; compiler bootstrap log:
+`/tmp/cogfabric-router-flatc-build.log`. Four new router tests cover bounds,
+lock-free re-entry, snapshot disable, clone/replacement isolation, audit failure
+and ablation exclusions. Actual CLI arithmetic/policy audit smoke also passed:
+`/tmp/cogfabric-router-smoke.NVCRKY`. No new live-model or optimized-install
+claim follows. Historical /tmp evidence remains nonportable, not recreated proof.

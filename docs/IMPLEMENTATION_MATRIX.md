@@ -1894,3 +1894,22 @@ attestation and independent quality remain unproven.
 Final identity-disclosure gate: 434 tests, format, workspace check and Clippy pass.
 Actual CLI arithmetic confirms configuration/prompt hashes, omitted home paths
 and no inferred model labels. QUALITY_REVIEW.md records evidence and scope.
+
+### Replaceable executive expert router
+
+**Implemented:** `src/routing.rs`, `Engine::with_expert_router` and audited cached
+logical policy identity. The default tag selector preserves behavior; accepted
+results are bounded to two known enabled snapshot IDs. Callbacks run outside
+SQLite locks, audit failure prevents invocation, and ablation exclusions persist.
+Tests cover decision/identity bounds, re-entry, in-flight snapshot disable, old
+Engine clone preservation, policy replacement and audit denial before callbacks.
+Bench/compare disclose configured router metadata without attesting implementation.
+**Partial:** this is a trusted Rust metadata callback, not untrusted executable
+provisioning, learned utility, persisted policy rollback or general scheduler
+replacement. ROUTING.md records contracts and resource/isolation limits.
+
+Final router gate: fresh-target verification passes 438 tests, formatting,
+workspace check and Clippy. Default CLI policy metadata/audit and zero extra
+model calls also pass. QUALITY_REVIEW.md records new evidence paths after the
+previous temporary artifacts disappeared. Hosted identity CI `38402184154` passed
+for `929c6af`; the router revision's hosted result remains pending private sync.

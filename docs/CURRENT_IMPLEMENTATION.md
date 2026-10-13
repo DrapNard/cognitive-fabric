@@ -10,7 +10,7 @@ The seven responsibilities currently map to these modules:
 | Layer | Implementation |
 |---|---|
 | Language Interface | `language.rs`, `backend.rs`, `config.rs`, `agent/`: advisory intent, explicit history, synthesis, loopback inference and bounded native conversation turns |
-| Jev+ | `engine.rs`, `planning.rs`: task lifecycle, reference routing, capability gaps, bounded dependency scheduling |
+| Jev+ | `engine.rs`, `planning.rs`, `routing.rs`: task lifecycle, replaceable trusted expert selection, capability gaps, bounded dependency scheduling |
 | Jev-R | `reasoning.rs`: shared-budget model roles, revisions, stagnation detection and independent verification status |
 | Expert Network | `registry.rs`: immutable reference manifests, dependencies, lifecycle and task version snapshots |
 | Cognitive Fabric | `wire.rs`, `service.rs`, `store.rs`, `agent/protocol.rs`: typed owner-local IPC, durable state/evidence and SQLite/FTS5; optional `crates/cogfabric-server` HTTP transport builds on the core |
@@ -745,3 +745,13 @@ version and compiled role-prompt hash. Both runners share a bounded identity
 reader for backend labels, expert bindings and primary registration snapshots,
 without copying reasoning text. Configuration/weight identity remains explicitly
 unattested; hashes and registrations describe metadata, not neural proof.
+
+### Replaceable Jev+ expert selection
+
+`routing::ExpertRouter` now separates executive skill selection from Engine
+orchestration. The default tag heuristic remains unchanged. Trusted replacements
+receive pinned skill metadata outside the SQLite lock; at most two distinct
+enabled snapshot IDs are accepted, with policy version/audit disclosure. Old
+Engine clones and admitted decisions retain their original handles/snapshots.
+This adds no model/tool permissions or model calls. General native isolation,
+policy catalogs, scheduler replacement and calibrated utility remain incomplete.

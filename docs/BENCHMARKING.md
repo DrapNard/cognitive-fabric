@@ -407,3 +407,13 @@ The compiled prompt hash identifies this package's local instructions, not proof
 a trusted replacement backend used them. `backend_configuration_attested` and
 `weights_attested` stay false. Metadata does not grant permissions or establish
 review independence, correct labels, immutable weights or model quality.
+
+### Executive policy disclosure
+
+`bench` records its Engine's cached `expert_router` declaration; `compare` records
+the default router used by its constructed arms. `router_implementation_attested`
+remains false. Task `route` audits distinguish configured policy metadata from
+actual invocation through `router_invoked`; excluded profiles do not call it.
+Default selection behavior, scoring and task budgets are unchanged. Custom native
+policies are trusted host code, not sandboxed or automatically model-budgeted.
+See ROUTING.md before comparing replacement policies.

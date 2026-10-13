@@ -286,3 +286,15 @@ its explicit endpoint. Provider state cannot prove request causality or exclusiv
 ownership. Inspection never changes task state or grants retry/unload authority.
 Stored events remain local consistency evidence, not signatures against same-user
 database compromise; external inventory can race other clients.
+
+### Trusted executive routing extensions
+
+A host-installed `ExpertRouter` may select only distinct enabled IDs from a
+pinned task snapshot, within the existing two-route ceiling. It cannot return
+permissions, budget overrides or executable commands. Policy audit precedes
+invocation; actual expert/tool checks remain independent. Native callbacks are
+trusted host code and cannot be preempted or sandboxed by this interface; direct
+external I/O/model calls, blocking and arbitrary allocations are outside its supported
+metadata-only contract. No model or remote API can install a callback. Untrusted
+policy loading needs separate isolation and review. Logical versions are declared
+metadata, not cryptographic implementation identity.

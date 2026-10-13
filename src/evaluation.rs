@@ -146,6 +146,7 @@ where
         json!({"format_version":1,"dataset_sha256":store::sha256(raw.as_bytes()),"mode":mode,
          "package_version":env!("CARGO_PKG_VERSION"),"configuration":configuration,"configuration_sha256":configuration_sha256,
          "compiled_role_prompts_sha256":compiled_role_prompts_sha256,"backend_configuration_attested":false,"weights_attested":false,
+         "expert_router":engine.expert_router_descriptor(),"router_implementation_attested":false,
          "total":cases.len(),"executed":details.len(),"unexecuted":cases.len()-details.len(),
          "complete":stop_reason=="completed","stop_reason":stop_reason,"max_run_seconds":max_run_seconds,
          "passed":passed,"accuracy":if details.is_empty() { None } else { Some(passed as f64/details.len() as f64) },

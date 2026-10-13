@@ -4,14 +4,14 @@ This checklist preserves the 18 acceptance criteria in the goal objective. It is
 an evidence inventory, not a release approval. The canonical French architecture
 and the broader implementation matrix remain authoritative. Earlier test counts
 in the quality review are historical milestones. Current local verification is
-434 Rust tests (389 library, 45 integration), formatting, all-target checking and
+438 Rust tests (393 library, 45 integration), formatting, all-target checking and
 Clippy with warnings denied, using FlatBuffers compiler/crate 25.12.19.
 
 | Goal criterion | Evidence inspected | Assessment / remaining proof |
 |---|---|---|
 | 1. Workspace builds | `Cargo.toml`, all-target check | Passed locally; isolated optimized source installation also passed with cached dependencies. |
 | 2. Formatting and Clippy | Mandatory checks in `QUALITY_REVIEW.md` | Passed locally. |
-| 3. Mandatory tests | Workspace all-target test results, `tests/`, server integration tests | 434 passed; fixtures do not establish live model quality. |
+| 3. Mandatory tests | Workspace all-target test results, `tests/`, server integration tests | 438 passed; fixtures do not establish live model quality. |
 | 4. FlatBuffers IPC | `protocol/`, `src/wire.rs`, `src/fabric/`, malformed/compatibility/socket tests | Implemented for present transports; authenticated process event delivery/replay is now tested; broader module compatibility remains partial. |
 | 5. CLI/service communication | `src/service.rs`, socket tests, `tests/process_worker.rs`, `crates/cogfabric-server/tests/` | Tested typed local transport, progress, cancellation and optional HTTP client interoperability; native and collective ownership drains cover dropped request futures. No general independent plugin service is claimed. |
 | 6. Compatible local LLM | `src/backend.rs`, `tests/inference_auth.rs`, `LIVE_INFERENCE.md` | Passed for Ollama and LM Studio Qwen3 8B compatible endpoints, including managed verified sorting. Native LM Studio read-only inventory passed; authenticated native access and controlled load/unload remain unverified. |
@@ -995,3 +995,29 @@ reported labels, tool-only empty labels and invalid configuration before ready
 cancellation. Actual CLI arithmetic metadata smoke passed with no model labels:
 `/tmp/cogfabric-bench-identities-smoke.gX4eGx`. Scoring, permissions and historical
 reports remain unchanged. No new live study or optimized install is claimed.
+
+### Trusted replaceable Jev+ router verification
+
+Expert selection now has an operator-trusted Rust interface with cached declared
+semantic identity. The default calls the existing tag algorithm; only two known
+enabled IDs from the original task snapshot are accepted. Policy audit precedes
+callbacks, transactions/mutexes are released first, old Engine clones retain
+handles and excluded comparison profiles never invoke the callback. Model/tool
+budgets, kernel authorization and checker/workflow admission remain unchanged.
+Native callbacks are not sandboxed or preemptible, and implementation identity
+is not attested. General provisioning, policy catalogs, independent scheduler
+replacement and calibrated utility remain incomplete. See ROUTING.md.
+
+After interruption, previous temporary compiler/log artifacts were absent. The
+pinned compiler was rebuilt from reviewed FlatBuffers commit
+`7e163021e59cca4f8e1e35a7c828b5c6b7915953`, with no host package changes. Fresh
+verification used rustc/cargo 1.97.1, flatc/crate 25.12.19 and
+`/tmp/cogfabric-router-target-20261013`, reusing cached Cargo dependencies.
+Formatting, workspace all-target check, all 438 tests (393 library, 45 integration)
+and Clippy with warnings denied pass. Current log:
+`/tmp/cogfabric-router-verification.log`; compiler bootstrap log:
+`/tmp/cogfabric-router-flatc-build.log`. Four new router tests cover bounds,
+lock-free re-entry, snapshot disable, clone/replacement isolation, audit failure
+and ablation exclusions. Actual CLI arithmetic/policy audit smoke also passed:
+`/tmp/cogfabric-router-smoke.NVCRKY`. No new live-model or optimized-install
+claim follows. Historical /tmp evidence remains nonportable, not recreated proof.

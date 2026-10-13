@@ -2,6 +2,13 @@
 
 All notable changes are documented here in English.
 
+### Separate executive expert selection behind a trusted router interface
+
+- Add versioned Rust expert-router callbacks while preserving default tag routing.
+- Validate selections against pinned enabled skills and retain the two-route ceiling.
+- Audit before callback invocation and preserve database re-entry and ablation exclusions.
+- Disclose configured router identity without granting permissions or attesting native code.
+
 ### Disclose benchmark configuration and bounded model identities
 
 - Record declared configuration hashes, package version and compiled role-prompt identity.

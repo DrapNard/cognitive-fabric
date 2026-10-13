@@ -253,3 +253,14 @@ remote capacity, and it reserves no slot. Concurrent changes can invalidate the
 observation. Existing pins never migrate or retry on another adapter. Original
 permission, call, deadline and capability checks remain unchanged. No new tool or
 provider lifecycle operation is exposed.
+
+### Replaceable executive selection
+
+Trusted Rust hosts may install a versioned `routing::ExpertRouter` through
+`Engine::with_expert_router`. Selection is restricted to at most two enabled IDs
+in the task's pinned snapshot; invalid results fail before expert/model dispatch.
+Default tag behavior and all existing workflow/checker/tool admission rules remain
+unchanged. Callbacks run outside the database lock, and policy intent/version is
+audited before invocation. ROUTING.md specifies the API, ablation exclusions and
+trusted-native-code limits. This is not a model-controlled plugin loader or
+proof of learned routing quality.
