@@ -1729,3 +1729,11 @@ row or child intent is created. Final mandatory workspace checks and 414 tests
 Hosted codec CI [38369517206](https://github.com/DrapNard/cognitive-fabric/actions/runs/38369517206)
 completed successfully for `e04fcd6`. The final managed-worker revision has local
 414-test and live-client verification above; its hosted run follows private sync.
+
+Update 2026-10-13: managed-worker source `d807e9e` also passed hosted CI
+[38377800359](https://github.com/DrapNard/cognitive-fabric/actions/runs/38377800359),
+locked offline optimized workspace binary builds, the core CLI/socket smoke and
+the managed OpenCode/Qwen read/edit/read smoke using the optimized server.
+RELEASE_AUDIT.md records binary hashes and fresh evidence directories. Optimized
+workflow verification is implemented and tested; new-server clean-OS/package
+installation and independent agentic-quality evaluation remain incomplete.

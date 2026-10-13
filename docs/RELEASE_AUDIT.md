@@ -783,3 +783,20 @@ also passed, with all five workers reaped normally. This closes the native-worke
 transport gap for the supplied binaries. Independent executable provisioning,
 attestation/isolation, native role profiles, broader API compatibility, new-server
 optimized installation and independent agentic evaluation remain open.
+
+## Optimized managed-agent verification (2026-10-13)
+
+Runtime source `d807e9e` passed locked offline release builds for both workspace
+binaries (1m48s), using flatc 25.12.19 and cached dependencies. The optimized core
+passed `scripts/installed-smoke.sh` with fresh state; evidence:
+`/tmp/cogfabric-installed-smoke.OCsbbk`. The optimized server passed the managed
+OpenCode/Qwen3 8B read/edit/read smoke; evidence:
+`/tmp/cogfabric-opencode-smoke.yDN43Y`. The script checks actual fixture contents
+and equal nonzero admitted, launched and reaped worker counts.
+
+Binary SHA-256: core `5f55fc94a287ef06a0db135b2a8a729393eb4e2f06529ad3a327e1debbf7af77`;
+server `b3954ff1357f8359b31f518f7f64d714e5f371d44ba25c5aae7265ce7ea7800b`.
+Hosted CI [38377800359](https://github.com/DrapNard/cognitive-fabric/actions/runs/38377800359)
+passed for the same runtime source. This closes optimized binary workflow
+verification, not clean-OS/package installation or independent agentic evaluation.
+General expert provisioning, residency scheduling and full V1 acceptance remain open.
