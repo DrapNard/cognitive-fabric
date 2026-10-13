@@ -1,6 +1,6 @@
 # Rust baseline quality review
 
-Current local runtime passes 420 Rust tests (378 library, 42 integration),
+Current local runtime passes 421 Rust tests (378 library, 43 integration),
 formatting, workspace all-target compilation and Clippy with warnings denied.
 Before the residency-inspection addition, both core and HTTP server packages passed optimized host source installation,
 offline installed workflows and managed OpenCode/Qwen read/edit/read. Hosted CI
@@ -2924,3 +2924,14 @@ All 420 workspace tests and mandatory format/check/Clippy gates pass; log:
 was accessed and no real model was loaded/unloaded. This extends fixture coverage,
 not live authentication or exclusive residency ownership proof. MODELS.md records
 the reviewed public REST ownership limitation and its exact scope.
+
+### Rust compiler diagnostic corpus
+
+The new public 20-case corpus has balanced yes/no labels, versioned source/dataset
+hashes and specific compiler error codes. The fixture test compiles only fixed
+repository Rust 2021 library sources as metadata, with ten-second waits, two-second
+kill/reap cleanup on timeout and kill-on-drop. It never executes snippets or model
+output and expands no runtime permissions. All 421 tests and mandatory checks
+pass; log `/tmp/cogfabric-rust-ownership-corpus-tests.log`. Compiler labels were
+checked locally with rustc 1.97.1. Public authoring does not establish human review,
+training independence, held-out robustness or model expertise.

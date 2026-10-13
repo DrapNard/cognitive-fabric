@@ -2,6 +2,13 @@
 
 All notable changes are documented here in English.
 
+### Add compiler-backed Rust ownership diagnostics
+
+- Add 20 balanced public compilation questions with source/dataset hashes.
+- Verify labels and negative error codes using bounded rustc metadata compilation.
+- Keep snippet execution and compiler tools outside the runtime and model permissions.
+- Preserve explicit public-data and independent-review limitations.
+
 ### Verify residency inspection credential isolation
 
 - Test dedicated credential forwarding and Unicode-escaped provider echo rejection.

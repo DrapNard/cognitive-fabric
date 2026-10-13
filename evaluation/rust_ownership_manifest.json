@@ -1,0 +1,157 @@
+{
+  "format_version": 1,
+  "dataset": "rust_ownership_cases.jsonl",
+  "dataset_sha256": "32b64461b352dfc0ee8c7b69bfdbec7eab51dc6fa2e8b8415d3ea0914ae37e60",
+  "case_count": 20,
+  "license": "CC0-1.0",
+  "source": "Original public synthetic Rust ownership/borrowing snippets authored alongside Cognitive Fabric",
+  "edition": "2021",
+  "crate_type": "lib",
+  "oracle": "rustc metadata compilation; no snippet execution",
+  "independent_human_review": false,
+  "held_out": false,
+  "training_contamination_checked": false,
+  "live_model_evaluated": false,
+  "cases": [
+    {
+      "id": "rust.ownership.move_after_use",
+      "line": 1,
+      "source": "pub fn example() { let s = String::from(\"x\"); let moved = s; let _ = s.len(); drop(moved); }",
+      "source_sha256": "f60d2085ac21a873e2941d4d3f135623bdcda20c3d7f2b4a41efa1cad9f5b62c",
+      "expected_error_code": "E0382"
+    },
+    {
+      "id": "rust.ownership.clone_preserves_owner",
+      "line": 2,
+      "source": "pub fn example() { let s = String::from(\"x\"); let cloned = s.clone(); let _ = s.len(); drop(cloned); }",
+      "source_sha256": "50b69bbb35a650198276d18ae04f8b81cdb85bdb7173617743171a0bb2c86063",
+      "expected_error_code": null
+    },
+    {
+      "id": "rust.ownership.integer_copy",
+      "line": 3,
+      "source": "pub fn example() { let x = 7_i32; let copied = x; let _ = x + copied; }",
+      "source_sha256": "b6613c5f6596d2070cd3c85e6bfc21924239472db836a6d690b28592780373f1",
+      "expected_error_code": null
+    },
+    {
+      "id": "rust.ownership.mutable_then_shared",
+      "line": 4,
+      "source": "pub fn example() { let mut v = vec![1]; let mutable = &mut v; let shared = &v; mutable.push(2); let _ = shared.len(); }",
+      "source_sha256": "3956c874f1fa302c949cd5694ae3c1380c3d56d5a0e5c3ad31b2a64f197279c6",
+      "expected_error_code": "E0502"
+    },
+    {
+      "id": "rust.ownership.two_mutable",
+      "line": 5,
+      "source": "pub fn example() { let mut v = vec![1]; let first = &mut v; let second = &mut v; first.push(2); second.push(3); }",
+      "source_sha256": "694c3cfb716f7067396bde30e93fc8dd475580320e101f73712a2ba74e6bec19",
+      "expected_error_code": "E0499"
+    },
+    {
+      "id": "rust.ownership.sequential_mutable",
+      "line": 6,
+      "source": "pub fn example() { let mut v = vec![1]; let first = &mut v; first.push(2); let second = &mut v; second.push(3); }",
+      "source_sha256": "fc0d0a2f417e87b120b7a7035871c0f5c1e668ca40fa922eff6dfebac059ee92",
+      "expected_error_code": null
+    },
+    {
+      "id": "rust.ownership.shared_then_mutation",
+      "line": 7,
+      "source": "pub fn example() { let mut v = vec![1]; let shared = &v; v.push(2); let _ = shared.len(); }",
+      "source_sha256": "fc91f2104f44d4eb1ad0eac19821f9927b74a196546aa0a25aeef836cd1d22f6",
+      "expected_error_code": "E0502"
+    },
+    {
+      "id": "rust.ownership.multiple_shared",
+      "line": 8,
+      "source": "pub fn example() { let v = vec![1]; let first = &v; let second = &v; let _ = first.len() + second.len(); }",
+      "source_sha256": "cf2216c7fa141d09fbc29c1bd03c3887a9bd3ba692f18405cac73d95c0c910d5",
+      "expected_error_code": null
+    },
+    {
+      "id": "rust.ownership.immutable_binding",
+      "line": 9,
+      "source": "pub fn example() { let s = String::new(); s.push('x'); }",
+      "source_sha256": "bab02c6dce06f2b178cd871866dee043ccbd991fd596c6b20bb6660041e5a3e3",
+      "expected_error_code": "E0596"
+    },
+    {
+      "id": "rust.ownership.mutable_binding",
+      "line": 10,
+      "source": "pub fn example() { let mut s = String::new(); s.push('x'); }",
+      "source_sha256": "99a7346128406e01ac695644296d8d40d50ddf37e198ceb5a488d8d73abeb5bb",
+      "expected_error_code": null
+    },
+    {
+      "id": "rust.ownership.return_local_reference",
+      "line": 11,
+      "source": "pub fn example() -> &'static str { let s = String::from(\"x\"); &s }",
+      "source_sha256": "d6b5b86a2ff542ceca2f2207c617e4cb05919bde2e3f46ee58e7e40eb85e0dc5",
+      "expected_error_code": "E0515"
+    },
+    {
+      "id": "rust.ownership.return_owned",
+      "line": 12,
+      "source": "pub fn example() -> String { String::from(\"x\") }",
+      "source_sha256": "86f82ee0bd82e37a5cbfd06907e11c0503f01fa6a59b3219bcf6d80b59f467ab",
+      "expected_error_code": null
+    },
+    {
+      "id": "rust.ownership.forward_borrow",
+      "line": 13,
+      "source": "pub fn example<'a>(s: &'a str) -> &'a str { s }",
+      "source_sha256": "b72deb3aff6b28af130173d764fbab313391323961a47146b2e1088145865d76",
+      "expected_error_code": null
+    },
+    {
+      "id": "rust.ownership.borrow_outlives_block",
+      "line": 14,
+      "source": "pub fn example() { let r; { let s = String::from(\"x\"); r = &s; } let _ = r.len(); }",
+      "source_sha256": "5379bec6d552fcd1a7b97282abd902c534fc75433bf96bb02a932c15b3be17ec",
+      "expected_error_code": "E0597"
+    },
+    {
+      "id": "rust.ownership.move_out_of_block",
+      "line": 15,
+      "source": "pub fn example() { let s = { let inner = String::from(\"x\"); inner }; let _ = s.len(); }",
+      "source_sha256": "fd78101501d8a5616282cfbe3b8fa1acb55f63f717f15aacf219761c989dc509",
+      "expected_error_code": null
+    },
+    {
+      "id": "rust.ownership.consuming_iteration",
+      "line": 16,
+      "source": "pub fn example() { let v = vec![1, 2]; for x in v { let _ = x; } let _ = v.len(); }",
+      "source_sha256": "f4794c41a13bd543e4589f5745f9a80aa6a99b36a092b2c8759beacd123e8717",
+      "expected_error_code": "E0382"
+    },
+    {
+      "id": "rust.ownership.borrowed_iteration",
+      "line": 17,
+      "source": "pub fn example() { let v = vec![1, 2]; for x in &v { let _ = x; } let _ = v.len(); }",
+      "source_sha256": "ea698195d8f011365f8af86d850e607bae3ea2fd6ea4edcc5faac41b1132f530",
+      "expected_error_code": null
+    },
+    {
+      "id": "rust.ownership.move_closure_capture",
+      "line": 18,
+      "source": "pub fn example() { let s = String::from(\"x\"); let f = move || s.len(); let _ = s.len(); let _ = f(); }",
+      "source_sha256": "a2d1bbeb338e7cf8c83c714be2582c7a8a3aa4fd2a672068972f6d3fa6544977",
+      "expected_error_code": "E0382"
+    },
+    {
+      "id": "rust.ownership.immutable_fnmut_binding",
+      "line": 19,
+      "source": "pub fn example() { let mut n = 0; let f = || n += 1; f(); }",
+      "source_sha256": "3bd12f676f274c5aeadfbf8be37ccc199451deb1d59d4feb9c8440eae99d0a1c",
+      "expected_error_code": "E0596"
+    },
+    {
+      "id": "rust.ownership.mutable_fnmut_binding",
+      "line": 20,
+      "source": "pub fn example() { let mut n = 0; let mut f = || n += 1; f(); }",
+      "source_sha256": "72d2196c9b98da447b074016259e8958e536782b9a7759a4c047f80e8256f880",
+      "expected_error_code": null
+    }
+  ]
+}

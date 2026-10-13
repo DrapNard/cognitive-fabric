@@ -1813,3 +1813,16 @@ coordination contract needed for safe automatic unloading.
 Hosted runtime CI [38384114873](https://github.com/DrapNard/cognitive-fabric/actions/runs/38384114873)
 passed for `d4b9cf5` (419 tests). The added credential regression is verified
 locally with the 420-test gate above; its own hosted run follows private sync.
+
+### External compiler oracle for public Rust diagnostics
+
+**Implemented:** 20 balanced ownership/borrowing cases and a versioned hash/label
+manifest under `evaluation/rust_ownership_*`; fixture regression compiles fixed
+trusted snippets as Rust 2021 metadata and checks specific negative diagnostics.
+Compiler subprocess waits and cleanup are bounded; snippets/model output never
+execute. This adds an oracle outside the model and built-in framework checkers,
+without adding runtime permissions. **Partial:** public authoring is not unseen
+or independently reviewed data, and this test establishes no live-model result.
+
+Compiler corpus gate: all 421 workspace tests, formatting, all-target check and
+Clippy pass. Runtime library count stays 378; integration count is now 43.

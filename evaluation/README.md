@@ -60,3 +60,30 @@ The complete pre-contract-parity Qwen3 8B workflow (600 tasks) is retained under
 strict-format false negatives; it does not supply the missing independent review
 or a validated comparative study. The manifest's formal evaluation/review flags
 remain false. The corrected full public rerun also completed all 600 tasks; raw reports and limitations are retained in the same results directory.
+
+## Compiler-backed Rust ownership diagnostics
+
+`rust_ownership_cases.jsonl` adds 20 public yes/no compilation questions, balanced
+between valid and invalid Rust 2021 library snippets. The separate manifest pins
+dataset/source hashes and the specific expected error code for each negative
+case. Topics include moves, clones, Copy values, overlapping/sequential borrows,
+mutable bindings, returned references, block lifetimes, iteration and closures.
+These original snippets are provided under CC0-1.0. They supplement rather than
+rewrite the historical 100-case suite or its reports.
+
+`tests/rust_ownership_corpus.rs` invokes the configured trusted `rustc` on only
+these fixed repository fixtures, emits metadata and checks exit status plus
+specific negative diagnostic codes. It executes neither snippets nor model
+output, uses no external crates and bounds each compiler wait to ten seconds
+with owned-child cleanup. It also checks source/prompt correspondence, hashes,
+balance, unique IDs and conservative input/diagnostic bounds. Run with
+`cargo test --test rust_ownership_corpus -- --nocapture` to record compiler version.
+
+This oracle is the Rust compiler, separate from the model and Fabric's built-in
+checkers. It is not independent human curation, held-out data, general code
+execution support or proof of Rust expertise. Compiler identity/version and
+fixture provenance must accompany measurements. The manifest deliberately keeps
+formal review/held-out/live-study flags false. Public diagnostics may use `bench`
+or `compare --workflow-check`; never attest held-out status just because labels
+compile as expected. Runtime tasks see source questions, not labels or compiler
+diagnostics. The runtime itself receives no compiler tool capability.

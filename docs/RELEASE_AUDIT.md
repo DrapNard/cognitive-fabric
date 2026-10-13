@@ -4,14 +4,14 @@ This checklist preserves the 18 acceptance criteria in the goal objective. It is
 an evidence inventory, not a release approval. The canonical French architecture
 and the broader implementation matrix remain authoritative. Earlier test counts
 in the quality review are historical milestones. Current local verification is
-420 Rust tests (378 library, 42 integration), formatting, all-target checking and
+421 Rust tests (378 library, 43 integration), formatting, all-target checking and
 Clippy with warnings denied, using FlatBuffers compiler/crate 25.12.19.
 
 | Goal criterion | Evidence inspected | Assessment / remaining proof |
 |---|---|---|
 | 1. Workspace builds | `Cargo.toml`, all-target check | Passed locally; isolated optimized source installation also passed with cached dependencies. |
 | 2. Formatting and Clippy | Mandatory checks in `QUALITY_REVIEW.md` | Passed locally. |
-| 3. Mandatory tests | Workspace all-target test results, `tests/`, server integration tests | 420 passed; fixtures do not establish live model quality. |
+| 3. Mandatory tests | Workspace all-target test results, `tests/`, server integration tests | 421 passed; fixtures do not establish live model quality. |
 | 4. FlatBuffers IPC | `protocol/`, `src/wire.rs`, `src/fabric/`, malformed/compatibility/socket tests | Implemented for present transports; authenticated process event delivery/replay is now tested; broader module compatibility remains partial. |
 | 5. CLI/service communication | `src/service.rs`, socket tests, `tests/process_worker.rs`, `crates/cogfabric-server/tests/` | Tested typed local transport, progress, cancellation and optional HTTP client interoperability; native and collective ownership drains cover dropped request futures. No general independent plugin service is claimed. |
 | 6. Compatible local LLM | `src/backend.rs`, `tests/inference_auth.rs`, `LIVE_INFERENCE.md` | Passed for Ollama and LM Studio Qwen3 8B compatible endpoints, including managed verified sorting. Native LM Studio read-only inventory passed; authenticated native access and controlled load/unload remain unverified. |
@@ -907,3 +907,14 @@ All 420 workspace tests and mandatory format/check/Clippy gates pass; log:
 was accessed and no real model was loaded/unloaded. This extends fixture coverage,
 not live authentication or exclusive residency ownership proof. MODELS.md records
 the reviewed public REST ownership limitation and its exact scope.
+
+### Rust compiler diagnostic corpus
+
+The new public 20-case corpus has balanced yes/no labels, versioned source/dataset
+hashes and specific compiler error codes. The fixture test compiles only fixed
+repository Rust 2021 library sources as metadata, with ten-second waits, two-second
+kill/reap cleanup on timeout and kill-on-drop. It never executes snippets or model
+output and expands no runtime permissions. All 421 tests and mandatory checks
+pass; log `/tmp/cogfabric-rust-ownership-corpus-tests.log`. Compiler labels were
+checked locally with rustc 1.97.1. Public authoring does not establish human review,
+training independence, held-out robustness or model expertise.

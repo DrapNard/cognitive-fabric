@@ -287,3 +287,14 @@ instructions in every reasoning profile: numeric-only output and the SQL
 columns/rows JSON contract, respectively. No expected result or executed tool
 output is supplied to the alone baseline. Pre-fix arithmetic/SQL scores have the
 same format-fairness limitation; the correction does not relax any scorer.
+
+### Rust compiler-backed diagnostic cases
+
+`evaluation/rust_ownership_cases.jsonl` supplies 20 balanced Rust 2021 compilation
+questions with labels independently checked by actual `rustc` metadata compilation
+and expected negative diagnostic codes in the fixture regression. No snippets or
+model output are executed, and no runtime compiler capability is added. See
+evaluation/README.md and the separate manifest for provenance and scope.
+These public authored cases supplement the existing corpus; they are not unseen
+or independently reviewed held-out data. A correct yes/no answer establishes
+only performance on that concrete question, not broad Rust expertise.
