@@ -1,6 +1,6 @@
 # Rust baseline quality review
 
-Current local runtime passes 419 Rust tests (378 library, 41 integration),
+Current local runtime passes 420 Rust tests (378 library, 42 integration),
 formatting, workspace all-target compilation and Clippy with warnings denied.
 Before the residency-inspection addition, both core and HTTP server packages passed optimized host source installation,
 offline installed workflows and managed OpenCode/Qwen read/edit/read. Hosted CI
@@ -2912,3 +2912,15 @@ or unloaded; live authenticated operation inspection and optimized/clean-OS
 installation of this added command are not yet verified. Previous clean Arch
 evidence remains scoped to `a9933b3`. General exclusive residency ownership,
 automatic lifecycle scheduling and complete V1 acceptance remain open.
+
+### Inspection credential-boundary regression
+
+The real inspection CLI now has a separate-authentication fixture regression:
+only the dedicated residency token reaches its native inventory endpoint, while
+a separate inference token is not forwarded. Unicode-escaped provider echoes are
+rejected without printing provider metadata or changing the original task.
+All 420 workspace tests and mandatory format/check/Clippy gates pass; log:
+`/tmp/cogfabric-residency-inspection-auth-tests.log`. No production credential
+was accessed and no real model was loaded/unloaded. This extends fixture coverage,
+not live authentication or exclusive residency ownership proof. MODELS.md records
+the reviewed public REST ownership limitation and its exact scope.

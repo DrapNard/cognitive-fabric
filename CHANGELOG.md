@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Verify residency inspection credential isolation
+
+- Test dedicated credential forwarding and Unicode-escaped provider echo rejection.
+- Keep provider metadata and both fixture credentials out of CLI output.
+- Document the native REST ownership limitation without claiming live ownership.
+
 ### Inspect uncertain residency operations without changing state
 
 - Compare a bounded recorded operator intent with one fresh native inventory GET.

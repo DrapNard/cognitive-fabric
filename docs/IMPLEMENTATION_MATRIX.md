@@ -1801,3 +1801,15 @@ Final inspection checks: formatting, workspace all-target check, Clippy with
 warnings denied and 419 Rust tests pass (378 library, 41 integration). Test log:
 `/tmp/cogfabric-residency-inspection-tests.log`. No live residency mutation or
 source-install refresh is claimed for the new command.
+
+Inspection credential regression: **Implemented and tested** in `tests/residency.rs`.
+Separate fixture residency/inference tokens verify scoped forwarding and encoded
+provider-echo rejection without task changes or response metadata disclosure.
+Current workspace gates pass with 420 tests (378 library, 42 integration).
+This proves the local CLI credential path, not real server ownership/authentication.
+MODELS.md records why documented native REST instance IDs do not supply the
+coordination contract needed for safe automatic unloading.
+
+Hosted runtime CI [38384114873](https://github.com/DrapNard/cognitive-fabric/actions/runs/38384114873)
+passed for `d4b9cf5` (419 tests). The added credential regression is verified
+locally with the 420-test gate above; its own hosted run follows private sync.

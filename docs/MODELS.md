@@ -338,3 +338,18 @@ a request, unload anything or authorize automatic cleanup. Existing requested
 or interrupted records remain unchanged, including when the desired state is
 observed. General ownership-aware scheduling and real authenticated lifecycle
 validation remain incomplete.
+
+Inspection authentication is integration-tested with separate fixture residency
+and inference credentials. Only the dedicated residency key is sent; a provider
+echo hidden by JSON Unicode escaping is rejected without printing response
+metadata or changing the task. This verifies the CLI path against a local
+fixture, not real host authentication or resistance to all transformed leaks.
+
+The published native [load](https://lmstudio.ai/docs/developer/rest/load) and
+[unload](https://lmstudio.ai/docs/developer/rest/unload) request schemas expose
+model/configuration fields and an instance ID, respectively, without an ownership
+lease or conditional compare-and-unload field. This observation is limited to
+those documented REST operations. The current adapter therefore cannot infer
+exclusive cross-client ownership from an instance ID or matching inventory.
+Automatic unload remains unsupported; a separately controlled provider boundary
+or stronger coordination contract is needed before implementing it safely.

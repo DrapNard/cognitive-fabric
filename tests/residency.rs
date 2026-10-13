@@ -406,3 +406,100 @@ async fn operation_inspection_rejects_ambiguous_corrupt_or_wrong_endpoint_intent
         "Inspection must not initialize a missing workspace"
     );
 }
+
+#[tokio::test]
+async fn operation_inspection_scopes_authentication_and_rejects_encoded_token_echo() {
+    const RESIDENCY_KEY: &str = "inspection-residency-fixture-token";
+    const INFERENCE_KEY: &str = "inspection-inference-fixture-token";
+    for echo in [false, true] {
+        let home =
+            std::env::temp_dir().join(format!("fabric-inspection-auth-{}", uuid::Uuid::new_v4()));
+        let cfg = cogfabric::config::Config {
+            home: home.clone(),
+            ..Default::default()
+        };
+        cfg.save().unwrap();
+        let store = cogfabric::store::Store::open(&cfg.db()).unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}/api/v1", listener.local_addr().unwrap());
+        let task = store
+            .create_task("Operator residency inspection fixture", "fast")
+            .unwrap();
+        store.event(&task,"model_residency","human-cli",json!({"state":"requested","adapter":"lmstudio-native-v1","endpoint":format!("{base}/models"),"action":{"operation":"load","model":"installed","context_length":2048},"external_outcome":"unknown"})).unwrap();
+        let before = store.task(&task).unwrap();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let request = read_request(&mut stream).await;
+            assert!(request.starts_with("GET /api/v1/models "));
+            assert!(request
+                .to_ascii_lowercase()
+                .contains(&format!("authorization: bearer {RESIDENCY_KEY}")));
+            assert!(!request.contains(INFERENCE_KEY));
+            let mut body = json!({"models":[{"key":"installed","type":"llm","loaded_instances":[{"id":"instance","config":{"context_length":2048}}]}]}).to_string();
+            if echo {
+                let mut value: Value = serde_json::from_str(&body).unwrap();
+                value["provider_metadata"] = json!(RESIDENCY_KEY);
+                body = value
+                    .to_string()
+                    .replace(RESIDENCY_KEY, "\\u0069nspection-residency-fixture-token");
+                assert!(
+                    !body.contains(RESIDENCY_KEY),
+                    "Fixture must exercise decoded echo protection"
+                );
+            }
+            stream
+                .write_all(
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    )
+                    .as_bytes(),
+                )
+                .await
+                .unwrap();
+            assert!(
+                tokio::time::timeout(std::time::Duration::from_millis(50), listener.accept())
+                    .await
+                    .is_err()
+            );
+        });
+        let command_home = home.clone();
+        let id = task.clone();
+        let result = tokio::task::spawn_blocking(move || {
+            std::process::Command::new(env!("CARGO_BIN_EXE_cogfabric"))
+                .env_clear()
+                .env("COGFABRIC_RESIDENCY_API_KEY", RESIDENCY_KEY)
+                .env("COGFABRIC_INFERENCE_API_KEY", INFERENCE_KEY)
+                .arg("--home")
+                .arg(command_home)
+                .args([
+                    "--json",
+                    "residency-inspect",
+                    &id,
+                    "--api-base",
+                    &base,
+                    "--authenticate",
+                ])
+                .output()
+                .unwrap()
+        })
+        .await
+        .unwrap();
+        server.await.unwrap();
+        assert_eq!(result.status.success(), !echo);
+        let stdout = String::from_utf8_lossy(&result.stdout);
+        let stderr = String::from_utf8_lossy(&result.stderr);
+        assert!(!stdout.contains(RESIDENCY_KEY) && !stderr.contains(RESIDENCY_KEY));
+        assert!(!stdout.contains(INFERENCE_KEY) && !stderr.contains(INFERENCE_KEY));
+        assert!(!stdout.contains("provider_metadata") && !stderr.contains("provider_metadata"));
+        if !echo {
+            let report: Value = serde_json::from_slice(&result.stdout).unwrap();
+            assert_eq!(report["desired_state_observed"], true);
+            assert_eq!(report["ownership_established"], false);
+        }
+        assert_eq!(store.task(&task).unwrap(), before);
+        assert!(!before.to_string().contains(RESIDENCY_KEY));
+        drop(store);
+        std::fs::remove_dir_all(home).unwrap();
+    }
+}
