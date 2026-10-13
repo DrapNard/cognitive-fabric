@@ -3244,3 +3244,43 @@ unverified status and the new stop reason. Initial smoke setup wrongly assumed
 No live-model quality, energy/speed improvement, clean-OS install or calibrated
 expected utility is claimed. General scheduling, independent reasoning evaluation,
 expert provisioning/isolation and physical model residency remain incomplete.
+
+
+### Current optimized host installation refresh
+
+On 2026-10-13, exact source `840e63d55fa7af3b99a24d683104064e4a9f2c24`
+installed both packages into `/tmp/cogfabric-current-install.rTuVwk` using
+Rust/Cargo 1.97.1 and flatc/Rust FlatBuffers 25.12.19. Commands:
+`cargo install --offline --locked --path . --root PREFIX` and
+`cargo install --offline --locked --path crates/cogfabric-server --root PREFIX`.
+Core optimized build: 2m17s; server: 56.30s. This is the current host with cached
+Cargo dependencies, not a fresh OS/dependency-download validation.
+
+Both `scripts/installed-smoke.sh PREFIX/bin/cogfabric` and
+`scripts/installed-http-smoke.sh PREFIX/bin/cogfabric PREFIX/bin/cogfabric-server`
+passed. Evidence directories: `/tmp/cogfabric-installed-smoke.PRz9GB` and
+`/tmp/cogfabric-installed-http.dWe7xP`; installation/toolchain/source/hash logs
+remain under the installation prefix. Core checks cover persistence, RAG candidate
+promotion/rollback, typed sockets, demo inference, same-image tool/inference
+workers, denials, recovery and cleanup. HTTP checks cover authentication, Origin
+denial, discovery, typed arithmetic/SQL workers with confirmed reaping and graceful
+shutdown, deliberately using an unavailable upstream. Installed disable-set help
+also parses. No live-model quality or GPU inference is established by these runs.
+
+Binary SHA-256:
+- CLI: `e16e12e89725a820f93518e31037e0c0fc14c1e0a49972eff4d73482be571ef2`
+- Server: `61e40bc77fcc1978f9e3fdf799af7449178462c88544b33021c7ed38f69d5594`
+
+Script SHA-256:
+- CLI smoke: `afa1fba2e74971edf335ae7f485d10e0d2fe09566039d5d7dcccd679242073cd`
+- HTTP smoke: `950ff16da845b970466e5af0b335dde9733e457760b4b81a65cc4dfc81976723`
+
+Hosted CI run `38420337608` also completed successfully for this exact source:
+https://github.com/DrapNard/cognitive-fabric/actions/runs/38420337608
+The earlier clean Arch evidence remains scoped to its recorded older source;
+this refresh does not replace it with a claim of current clean-OS validation.
+Source verification already passed all 462 tests, formatting, workspace check
+and Clippy before these installs; documentation-only evidence recording does not
+require repeating those checks. Full V1 remains incomplete: general scheduling,
+independently provisioned executable experts/isolation, physical model residency
+and independent unseen reasoning/robustness evaluation are still open.

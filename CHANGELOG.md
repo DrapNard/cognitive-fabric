@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Refresh current optimized installation evidence
+
+- Install both current packages and pass complete CLI/socket and offline HTTP workflows.
+- Record exact source, toolchain, binary/script hashes and successful hosted CI.
+- Preserve the distinction between current host checks and older clean-OS validation.
+
 ### Preserve a revised solver before spending on critique
 
 - Admit critique/reflection only when the complete revision chain fits original ceilings.

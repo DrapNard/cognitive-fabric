@@ -2053,3 +2053,10 @@ verification or evidence of improved model accuracy.
 
 Revision-chain gate: 462 workspace tests and mandatory checks pass. Actual CLI
 fixture confirms avoided critique dispatch; see QUALITY_REVIEW.md for scope.
+
+
+Current host optimized packaging: exact source `840e63d` installed both CLI and
+server offline with pinned FlatBuffers; complete installed CLI/socket and HTTP
+workflow scripts pass. Hosted CI `38420337608` succeeded. See
+INSTALLATION_VALIDATION.md for hashes, evidence and scope; current clean-OS, live
+model-quality and broader lifecycle gates remain unproven.
