@@ -1877,3 +1877,20 @@ check and Clippy pass. Actual successful CLI arithmetic also passes under an
 explicit five-second run ceiling. QUALITY_REVIEW.md records logs and scope.
 Hosted preflight CI `38398499992` passed for `a4ca9b8`; the new cancellation
 revision's hosted result follows private sync.
+
+### Bounded benchmark model/configuration disclosure
+
+**Implemented:** `bench` records declared configuration/checksum, package version
+and compiled local-role prompt hash with explicit non-attestation flags. Basic
+and comparison cases share `evaluation::model_metadata` for content-minimized
+backend labels, expert bindings and primary registration snapshots. SQL avoids
+materializing reasoning bodies; label/event/snapshot/aggregate bounds fail closed.
+Tests cover large excluded bodies, malformed/oversized/duplicate metadata, count
+and aggregate limits, configuration hashing/home omission, distinct requested vs
+reported labels, tool-only empty labels and invalid configuration before even
+pre-cancelled reporting. No permissions or scoring changes; weight/backend
+attestation and independent quality remain unproven.
+
+Final identity-disclosure gate: 434 tests, format, workspace check and Clippy pass.
+Actual CLI arithmetic confirms configuration/prompt hashes, omitted home paths
+and no inferred model labels. QUALITY_REVIEW.md records evidence and scope.

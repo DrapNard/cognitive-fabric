@@ -1,6 +1,6 @@
 # Rust baseline quality review
 
-Current local runtime passes 432 Rust tests (387 library, 45 integration),
+Current local runtime passes 434 Rust tests (389 library, 45 integration),
 formatting, workspace all-target compilation and Clippy with warnings denied.
 Before the residency-inspection addition, both core and HTTP server packages passed optimized host source installation,
 offline installed workflows and managed OpenCode/Qwen read/edit/read. Hosted CI
@@ -3011,3 +3011,23 @@ arithmetic with an explicit five-second ceiling also passed: evidence
 `/tmp/cogfabric-bench-deadline-smoke.mOASVP`. No real model study or optimized
 source-install refresh was run for this cancellation revision. Independent
 reasoning/expert evaluation and broader lifecycle requirements remain open.
+
+### Benchmark model/configuration disclosure verification
+
+Basic reports now record validated declared configuration, its serde_json
+checksum, package version and compiled local-role prompt identity. Bench and
+compare share a bounded SQLite identity projection for backend labels, expert
+bindings and primary registration snapshots. Reasoning text is not copied into
+Rust for identity extraction. Limits cover source row length, projected labels,
+snapshots, event count and aggregate projected bytes; malformed/non-object or
+duplicate primary metadata fails closed. Declared configuration and compiled
+prompt identity do not attest replacement-backend behavior or neural weights.
+
+All 434 tests (389 library, 45 integration), formatting, workspace all-target
+check and Clippy pass. Log: `/tmp/cogfabric-benchmark-identities-tests.log`.
+Regressions cover large excluded reasoning, malformed/oversized identity data,
+count/aggregate ceilings, configuration hashes/home omission, requested-versus-
+reported labels, tool-only empty labels and invalid configuration before ready
+cancellation. Actual CLI arithmetic metadata smoke passed with no model labels:
+`/tmp/cogfabric-bench-identities-smoke.gX4eGx`. Scoring, permissions and historical
+reports remain unchanged. No new live study or optimized install is claimed.

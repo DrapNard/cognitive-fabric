@@ -11,6 +11,7 @@ use std::{collections::BTreeMap, path::Path, time::Duration};
 use tokio::time::Instant;
 #[cfg(test)]
 mod benchmark_tests;
+pub(crate) mod model_metadata;
 
 fn read_capped(path: &Path, max: usize) -> Result<String> {
     Ok(String::from_utf8(security::read_regular_bytes(path, max)?)?)
@@ -75,6 +76,10 @@ where
     }
     let began = Instant::now();
     let deadline = began + Duration::from_secs(max_run_seconds);
+    engine.cfg.validate()?;
+    let configuration = serde_json::to_value(&engine.cfg)?;
+    let configuration_sha256 = store::sha256(&serde_json::to_vec(&configuration)?);
+    let compiled_role_prompts_sha256 = crate::backend::runtime_role_prompts_sha256()?;
     let raw = read_capped(file, 2_000_000)?;
     let cases = benchmark_cases(&raw)?;
     let mut passed = 0;
@@ -124,7 +129,9 @@ where
             passed += 1
         }
         calls += out.calls;
+        let identities = model_metadata::read(&engine.store, &out.task_id)?;
         details.push(json!({"task_id":out.task_id,"passed":ok,"input":case.input,
+            "reported_models":identities.reported_models,"bound_expert_models":identities.bound_expert_models,"primary_model_snapshot":identities.primary_model_snapshot,
             "expected":case.expected,"answer":out.answer,"latency_ms":out.elapsed_ms,"model_calls":out.calls,
             "verification":"expected_output_exact_match","runtime_status":out.status,"resources":out.resources,"stop_reason":out.stop_reason}));
         if stop_reason != "completed" {
@@ -137,6 +144,8 @@ where
     }
     Ok(
         json!({"format_version":1,"dataset_sha256":store::sha256(raw.as_bytes()),"mode":mode,
+         "package_version":env!("CARGO_PKG_VERSION"),"configuration":configuration,"configuration_sha256":configuration_sha256,
+         "compiled_role_prompts_sha256":compiled_role_prompts_sha256,"backend_configuration_attested":false,"weights_attested":false,
          "total":cases.len(),"executed":details.len(),"unexecuted":cases.len()-details.len(),
          "complete":stop_reason=="completed","stop_reason":stop_reason,"max_run_seconds":max_run_seconds,
          "passed":passed,"accuracy":if details.is_empty() { None } else { Some(passed as f64/details.len() as f64) },

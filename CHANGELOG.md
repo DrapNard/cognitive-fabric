@@ -2,6 +2,13 @@
 
 All notable changes are documented here in English.
 
+### Disclose benchmark configuration and bounded model identities
+
+- Record declared configuration hashes, package version and compiled role-prompt identity.
+- Share content-minimized task model/registration reads between bench and compare.
+- Reject invalid or oversized identity records without copying reasoning bodies.
+- Keep backend/weight attestation false and deterministic tool-only labels empty.
+
 ### Bound benchmark runs and retain cancelled results
 
 - Add run-wide deadlines and Ctrl-C propagation through Engine cancellation.

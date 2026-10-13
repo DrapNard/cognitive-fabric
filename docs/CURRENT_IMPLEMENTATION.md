@@ -737,3 +737,11 @@ distinguish cancellation from score failure. Existing Rust `benchmark` calls
 retain a default 1800-second ceiling; `benchmark_until` accepts cancellation.
 Cleanup grace and external provider continuation remain outside strict GPU-stop
 guarantees. BENCHMARKING.md documents partial accuracy semantics.
+
+### Benchmark identity disclosure
+
+Basic benchmark reports now retain declared configuration and its hash, package
+version and compiled role-prompt hash. Both runners share a bounded identity
+reader for backend labels, expert bindings and primary registration snapshots,
+without copying reasoning text. Configuration/weight identity remains explicitly
+unattested; hashes and registrations describe metadata, not neural proof.

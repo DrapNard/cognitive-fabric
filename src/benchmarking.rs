@@ -403,31 +403,9 @@ where
             paired_results[case_index][arm_index] = Some(passed);
             totals[arm_index].add(&outcome, counts[arm_index] == 0);
             counts[arm_index] += 1;
-            let mut models = Vec::new();
-            let mut expert_models = Vec::new();
-            {
-                // Report identities without materializing full potentially large traces.
-                let db = store.lock()?;
-                let mut statement=db.prepare("SELECT kind,CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN payload END FROM events WHERE task_id=?1 AND kind IN ('reasoning','expert_model_snapshot') ORDER BY id LIMIT 129")?;
-                let mut rows = statement.query([&outcome.task_id])?;
-                let mut count = 0;
-                while let Some(row) = rows.next()? {
-                    count += 1;
-                    if count > 128 {
-                        bail!("Comparison identity audit exceeds bounds")
-                    }
-                    let kind: String = row.get(0)?;
-                    let raw: String = row.get(1)?;
-                    let payload: Value = serde_json::from_str(&raw)?;
-                    if kind == "reasoning" {
-                        models.push(payload["node"]["model"].clone());
-                    } else {
-                        expert_models.push(payload);
-                    }
-                }
-            }
+            let identities = crate::evaluation::model_metadata::read(&store, &outcome.task_id)?;
             details.push(json!({"case_index":case_index,"arm_index":arm_index,"execution_position":position,"profile":profile,"configured_model":model,
-                "reported_models":models,"bound_expert_models":expert_models,"passed":passed,"expected":case.expected,"input":case.input,"outcome":outcome,"verification":case.verification}));
+                "reported_models":identities.reported_models,"bound_expert_models":identities.bound_expert_models,"primary_model_snapshot":identities.primary_model_snapshot,"passed":passed,"expected":case.expected,"input":case.input,"outcome":outcome,"verification":case.verification}));
             if cancelled || tokio::time::Instant::now() >= deadline {
                 stopped = true;
                 break 'cases;

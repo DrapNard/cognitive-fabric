@@ -379,3 +379,31 @@ beyond the execution deadline. Synchronous bounded file/preflight work and OS
 scheduling are not preempted by a timer. Disconnect does not prove an external
 model server stopped GPU work. No new retries, resource refunds, permission grants
 or expected-label disclosure are introduced. Historical reports are unchanged.
+
+### Configuration and task model identity
+
+Basic benchmark reports now include package version, declared effective
+`configuration`, its SHA-256 (serde_json encoding of the reported JSON object),
+and `compiled_role_prompts_sha256`. Configuration validation precedes reporting,
+including already-cancelled runs. Home paths are omitted by Config serialization
+and credentials are never read into these fields. Package/prompt hashes alone
+do not identify every source change; pin source revision externally or use the
+comparison runner's explicit revision/provenance fields.
+
+Each executed case in `bench` and `compare` includes backend `reported_models`,
+`bound_expert_models` and `primary_model_snapshot` from its durable trace. Repeated
+labels preserve call order. Failed/cancelled/no-call tasks may have no reported
+label despite recorded configuration or charged reservations. Deterministic
+tool-only tasks report no inference model labels. Local adapters may fall back
+to the requested model when a provider omits its label; these are backend labels,
+not attestation of provider weights.
+
+Both runners share one bounded, content-minimized identity reader: at most 128
+identity events, 256-byte labels, 16 KiB snapshots and 256 KiB aggregate projected
+metadata. SQL projects model labels without copying reasoning bodies into Rust.
+Invalid/oversized labels, malformed snapshots or duplicate primary snapshots fail
+closed; full reasoning remains in ordinary task traces, outside identity fields.
+The compiled prompt hash identifies this package's local instructions, not proof
+a trusted replacement backend used them. `backend_configuration_attested` and
+`weights_attested` stay false. Metadata does not grant permissions or establish
+review independence, correct labels, immutable weights or model quality.

@@ -125,6 +125,21 @@ async fn benchmark_discloses_dataset_identity_and_charged_execution_without_labe
     let report = benchmark(&engine, &dataset.0, "fast").await.unwrap();
     assert_eq!(report["dataset_sha256"], store::sha256(raw.as_bytes()));
     assert_eq!(report["mode"], "fast");
+    assert_eq!(report["configuration"]["model"], engine.cfg.model);
+    assert!(report["configuration"].get("home").is_none());
+    assert_eq!(
+        report["configuration_sha256"],
+        store::sha256(&serde_json::to_vec(&report["configuration"]).unwrap())
+    );
+    assert_eq!(
+        report["compiled_role_prompts_sha256"],
+        crate::backend::runtime_role_prompts_sha256().unwrap()
+    );
+    assert_eq!(report["weights_attested"], false);
+    assert_eq!(report["backend_configuration_attested"], false);
+    assert_eq!(report["details"][0]["reported_models"], json!(["fixture"]));
+    assert!(report["details"][0]["primary_model_snapshot"]["registration"].is_null());
+
     assert_eq!(report["total"], 2);
     assert_eq!(report["passed"], 1);
     assert_eq!(report["tasks_with_model_calls"], 2);
@@ -161,6 +176,7 @@ async fn deterministic_tool_benchmark_is_a_valid_no_model_execution() {
     assert_eq!(report["tasks_with_tool_calls"], 1);
     assert_eq!(report["runtime_status_counts"]["completed"], 1);
     assert_eq!(backend.calls.load(Ordering::SeqCst), 0);
+    assert_eq!(report["details"][0]["reported_models"], json!([]));
 }
 
 #[tokio::test]
@@ -187,7 +203,7 @@ async fn ready_cancellation_returns_empty_partial_report_without_task_admission(
 
 #[tokio::test]
 async fn invalid_run_limits_and_modes_fail_before_admission() {
-    let (engine, backend) = engine();
+    let (mut engine, backend) = engine();
     let dataset = Dataset::new(&json!({"input":"Answer yes.","expected":"yes"}).to_string());
     for (mode, limit) in [("fast", 0), ("fast", 86401), ("unbounded", 10)] {
         assert!(
@@ -204,6 +220,13 @@ async fn invalid_run_limits_and_modes_fail_before_admission() {
         .query_row("SELECT count(*) FROM tasks", [], |r| r.get(0))
         .unwrap();
     assert_eq!(count, 0);
+    engine.cfg.api_base = "http://user:secret@127.0.0.1/v1".into();
+    assert!(
+        benchmark_until(&engine, &dataset.0, "fast", 10, async {})
+            .await
+            .is_err(),
+        "Unsafe configuration must fail before reporting even when already cancelled"
+    );
 }
 
 struct Pending {
