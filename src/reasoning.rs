@@ -79,6 +79,15 @@ pub struct Session {
     expert_processes: Vec<Arc<crate::fabric::unix::process::ProcessTask>>,
 }
 
+#[derive(Debug)]
+struct InferenceTimeout;
+impl std::fmt::Display for InferenceTimeout {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("Inference timeout")
+    }
+}
+impl std::error::Error for InferenceTimeout {}
+
 impl Session {
     pub(crate) fn restrict_deadline(&mut self, deadline: Instant) {
         self.deadline = self.deadline.min(deadline);
@@ -512,7 +521,7 @@ impl Session {
             backend.generate_for(&self.task, role, prompt, allocation),
         )
         .await
-        .map_err(|_| anyhow::anyhow!("Inference timeout"))??;
+        .map_err(|_| InferenceTimeout)??;
         if report.text.len() > 96_000
             || report.text.trim().is_empty()
             || report.model.is_empty()
@@ -607,23 +616,44 @@ impl Session {
         } else {
             self.backend.clone()
         };
-        let result = self
-            .workflow_advice_on(manifest, query, context, backend)
-            .await;
-        if manifest.model.is_some() {
-            if let Err(error) = result {
+        // Optional advice must leave original wall time for whole-goal reasoning.
+        // This is a phase ceiling, not a promise of provider completion or utility.
+        let phase_budget = self.deadline.saturating_duration_since(Instant::now()) / 3;
+        let phase_budget = phase_budget.min(Duration::from_secs(self.cfg.timeout_seconds));
+        self.store.event(
+            &self.task,
+            "expert_phase_budget",
+            "jev-plus",
+            json!({
+                "id":manifest.id,"version":manifest.version,
+                "max_milliseconds":phase_budget.as_millis().min(u64::MAX as u128) as u64,
+                "original_deadline_preserved":true,"provider_stop_proven":false
+            }),
+        )?;
+        let result = match tokio::time::timeout(
+            phase_budget,
+            self.workflow_advice_on(manifest, query, context, backend),
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(_) => Err(InferenceTimeout.into()),
+        };
+        match result {
+            Err(error) if manifest.model.is_some() || error.is::<InferenceTimeout>() => {
                 self.finish_metrics();
                 self.complete_usage = false;
                 self.resources.input_tokens = None;
                 self.resources.output_tokens = None;
                 self.complete_queue_metrics = false;
                 self.resources.queue_wait_ms = None;
-                self.store.event(&self.task,"expert_failure","jev-plus",json!({"id":manifest.id,"version":manifest.version,"reason":error.to_string().chars().take(250).collect::<String>(),"action":"Continue main solver within remaining budgets","verified":false}))?;
-                return Ok(None);
+                self.store.event(&self.task,"expert_failure","jev-plus",json!({"id":manifest.id,"version":manifest.version,"reason":error.to_string().chars().take(250).collect::<String>(),"action":"Continue main solver within remaining budgets","verified":false,"provider_stop_proven":false,"partial_advice_discarded":true}))?;
+                Ok(None)
             }
+            result => result,
         }
-        result
     }
+
     pub(crate) async fn shutdown_experts(&self) -> Result<()> {
         for process in &self.expert_processes {
             process.shutdown().await?;
@@ -1326,6 +1356,100 @@ mod tests {
                 e["kind"].as_str(),
                 Some("model_dispatch" | "cycle_reservation")
             )));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn optional_shared_advice_timeout_preserves_solver_and_fails_closed_on_audit_error() {
+        struct AdviceBackend {
+            calls: std::sync::atomic::AtomicUsize,
+            fail: bool,
+        }
+        impl InferenceBackend for AdviceBackend {
+            fn generate<'a>(
+                &'a self,
+                role: &'a str,
+                _: &'a str,
+                _: usize,
+            ) -> Pin<Box<dyn Future<Output = Result<Generation>> + Send + 'a>> {
+                let call = self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Box::pin(async move {
+                    if call == 0 {
+                        assert_eq!(role, "solver");
+                        if self.fail {
+                            bail!("Non-timeout advisory failure")
+                        }
+                        std::future::pending::<()>().await;
+                    }
+                    let text = if call == 1 {
+                        assert_eq!(role, "planner");
+                        "Plan"
+                    } else {
+                        assert_eq!(role, "solver");
+                        "[1,2,3]"
+                    };
+                    Ok(Generation {
+                        text: text.into(),
+                        model: "fixture/v1".into(),
+                        input_tokens: Some(10),
+                        output_tokens: Some(5),
+                        elapsed_ms: 1.0,
+                        queue_wait_ms: None,
+                    })
+                })
+            }
+        }
+        for variant in 0..3 {
+            let store = Arc::new(Store::in_memory().unwrap());
+            let manifest:crate::registry::Manifest=serde_json::from_value(json!({"id":"data.sort.s1","version":"1.0.0","kind":"workflow","description":"Optional sorting advice","tags":["sort"],"source":"fixture","license":"CC0","workflow":"Offer sorting advice only; do not claim proof"})).unwrap();
+            crate::registry::register(&store, &manifest).unwrap();
+            crate::registry::activate(&store, &manifest.id, &manifest.version).unwrap();
+            if variant == 1 {
+                store.lock().unwrap().execute_batch("CREATE TRIGGER refuse_advice_failure BEFORE INSERT ON events WHEN NEW.kind='expert_failure' BEGIN SELECT RAISE(ABORT,'audit unavailable'); END;").unwrap();
+            }
+            let backend = Arc::new(AdviceBackend {
+                calls: std::sync::atomic::AtomicUsize::new(0),
+                fail: variant == 2,
+            });
+            let cfg = Config {
+                backend: "openai-local".into(),
+                interpret_goals: false,
+                max_wall_seconds: 3,
+                timeout_seconds: 60,
+                ..Config::default()
+            };
+            let outcome = Engine::with_backend(cfg, store.clone(), backend.clone())
+                .run(r#"sort:{"values":[3,1,2]}"#, "deep")
+                .await
+                .unwrap();
+            let trace = store.task(&outcome.task_id).unwrap();
+            if variant == 0 {
+                assert_eq!(outcome.status, "completed");
+                assert_eq!(outcome.answer, "[1,2,3]");
+                assert_eq!(outcome.calls, 3);
+                assert_eq!(outcome.resources.reserved_output_tokens, 832);
+                assert!(outcome.resources.input_tokens.is_none());
+                assert!(outcome.resources.output_tokens.is_none());
+                assert!(outcome
+                    .evidence
+                    .contains(&"verified:integer_sort/v1".into()));
+                assert!(trace["events"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|e| e["kind"] == "expert_failure"
+                        && e["payload"]["provider_stop_proven"] == false));
+            } else {
+                assert_eq!(outcome.status, "failed");
+                assert_eq!(outcome.calls, 1);
+                assert_eq!(backend.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+            }
+            assert!(trace["events"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|e| e["kind"] == "expert_phase_budget"
+                    && e["payload"]["max_milliseconds"].as_u64().unwrap() <= 1000));
+        }
     }
 
     struct Script(Mutex<VecDeque<(&'static str, &'static str)>>);

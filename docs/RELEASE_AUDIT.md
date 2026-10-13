@@ -4,14 +4,14 @@ This checklist preserves the 18 acceptance criteria in the goal objective. It is
 an evidence inventory, not a release approval. The canonical French architecture
 and the broader implementation matrix remain authoritative. Earlier test counts
 in the quality review are historical milestones. Current local verification is
-469 Rust tests (422 library, 47 integration), formatting, all-target checking and
+470 Rust tests (423 library, 47 integration), formatting, all-target checking and
 Clippy with warnings denied, using FlatBuffers compiler/crate 25.12.19.
 
 | Goal criterion | Evidence inspected | Assessment / remaining proof |
 |---|---|---|
 | 1. Workspace builds | `Cargo.toml`, all-target check | Passed locally; isolated optimized source installation also passed with cached dependencies. |
 | 2. Formatting and Clippy | Mandatory checks in `QUALITY_REVIEW.md` | Passed locally. |
-| 3. Mandatory tests | Workspace all-target test results, `tests/`, server integration tests | 469 passed; fixtures do not establish live model quality. |
+| 3. Mandatory tests | Workspace all-target test results, `tests/`, server integration tests | 470 passed; fixtures do not establish live model quality. |
 | 4. FlatBuffers IPC | `protocol/`, `src/wire.rs`, `src/fabric/`, malformed/compatibility/socket tests | Implemented for present transports; authenticated process event delivery/replay is now tested; broader module compatibility remains partial. |
 | 5. CLI/service communication | `src/service.rs`, socket tests, `tests/process_worker.rs`, `crates/cogfabric-server/tests/` | Tested typed local transport, progress, cancellation and optional HTTP client interoperability; native and collective ownership drains cover dropped request futures. No general independent plugin service is claimed. |
 | 6. Compatible local LLM | `src/backend.rs`, `tests/inference_auth.rs`, `LIVE_INFERENCE.md` | Passed for Ollama and LM Studio Qwen3 8B compatible endpoints, including managed verified sorting. Native LM Studio read-only inventory passed; authenticated native access and controlled load/unload remain unverified. |
@@ -1392,3 +1392,28 @@ cogfabric --home /path/to/fresh-state --json compare evaluation/shortest_path_ca
 
 Record the actual tested source and load configuration for each new run. This
 reproduces the controlled procedure, not identical stochastic model responses.
+
+
+### Optional advice timeout containment validation
+
+All 470 tests (423 library, 47 integration), formatting, workspace all-target
+check and Clippy pass with existing FlatBuffers 25.12.19 pairing. Commands:
+`cargo fmt --all -- --check`, `cargo check --offline --workspace --all-targets`,
+`cargo test --offline --workspace --all-targets`, and
+`cargo clippy --offline --workspace --all-targets -- -D warnings`.
+Log: `/tmp/cogfabric-advice-timeout-tests.log`. A paused-clock regression covers
+shared optional advice timeout followed by independently checked solving,
+preserved call/output charges and unavailable usage; failure-audit denial and
+non-timeout shared errors both prevent further calls. Existing bound-model,
+structured-workflow, cancellation, recovery and managed-worker regressions pass.
+
+Actual CLI/HTTP fixture `/tmp/cogfabric-advice-timeout-smoke.4fk1xuvh` stalled the
+first optional call under a six-second task allowance, then served planner and
+solver. The checked path completed with three calls and 832 reserved output
+tokens; input/output usage stayed null and timeout fallback was durably audited.
+The provider-side fixture remained independently controlled, so cancellation does
+not prove upstream computation stopped. No new live Qwen score, optimized install,
+calibrated expected utility or general provider recovery guarantee is claimed.
+This addresses a measured failure mode while preserving the adverse historical
+Qwen study. General scheduling, untrusted expert isolation/provisioning, physical
+model residency and independent unseen model evaluation remain V1 blockers.

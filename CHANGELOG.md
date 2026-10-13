@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Contain optional expert timeouts before whole-goal reasoning
+
+- Bound the whole advice phase within original remaining task time.
+- Permit audited shared-advice timeout fallback without refunding spent calls or tokens.
+- Preserve fatal audit/non-timeout errors and unknown upstream completion/usage.
+
 ### Retain real Qwen graph costs and partial failures
 
 - Freeze a bounded six-profile Qwen graph study: 56 of 96 tasks before deadline.

@@ -2098,3 +2098,30 @@ load context, advisory manifest and hashes are committed; a separate exhaustive
 oracle validates every pass bit and totals. No expert/collective advantage or
 held-out independence is established. BENCHMARKING.md records conditions and
 limits; broad release blockers remain open.
+
+
+### Optional advice wall-time containment and shared timeout fallback
+
+Optional legacy/structured workflow advice now has one cooperative phase deadline:
+one third of the task's remaining original wall time, capped by the configured
+inference timeout. The `expert_phase_budget` event records that ceiling before
+advice execution. This is a deterministic feasibility heuristic, not measured
+expected utility or a guarantee that later inference fits. Structured steps share
+one phase allowance rather than resetting it per step. Original task deadline,
+call/output/prompt/tool ceilings and individual authorizations remain in force.
+
+A typed runtime inference timeout permits shared-backend advice to return control
+to whole-goal reasoning, matching the existing bound-model fallback intent.
+The spent call/output reservation remains charged; partial advice is discarded,
+reported usage/queue totals become unavailable, and `expert_failure` must persist
+before any main-solver work. Failure-audit errors stop execution. Other shared
+backend errors, malformed results and kernel/audit denials remain fatal. Existing
+bound-model failure fallback semantics are unchanged. Provider computation may
+continue after client cancellation; `provider_stop_proven` remains false. This
+adds no retries, new model loads, tool grants or fresh task allowances.
+
+The real partial Qwen study at `22dbc5a` remains frozen and is not rescored or
+rewritten. Its six expert timeouts motivated containment; this change has not
+established improved Qwen accuracy or resolved its transport failure. Shared
+backend recovery after a dropped managed exchange still depends on that adapter's
+fail-closed session lifecycle; no automatic worker restart is introduced.

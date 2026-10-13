@@ -1,6 +1,6 @@
 # Rust baseline quality review
 
-Current local runtime passes 469 Rust tests (422 library, 47 integration),
+Current local runtime passes 470 Rust tests (423 library, 47 integration),
 formatting, workspace all-target compilation and Clippy with warnings denied.
 Before the residency-inspection addition, both core and HTTP server packages passed optimized host source installation,
 offline installed workflows and managed OpenCode/Qwen read/edit/read. Hosted CI
@@ -3379,3 +3379,28 @@ succeeded before this test/data/documentation change. No production runtime code
 permissions, thresholds or release tag changes. General scheduling, isolated
 expert provisioning, ownership-aware residency and independent unseen studies
 remain incomplete.
+
+
+### Optional advice timeout containment validation
+
+All 470 tests (423 library, 47 integration), formatting, workspace all-target
+check and Clippy pass with existing FlatBuffers 25.12.19 pairing. Commands:
+`cargo fmt --all -- --check`, `cargo check --offline --workspace --all-targets`,
+`cargo test --offline --workspace --all-targets`, and
+`cargo clippy --offline --workspace --all-targets -- -D warnings`.
+Log: `/tmp/cogfabric-advice-timeout-tests.log`. A paused-clock regression covers
+shared optional advice timeout followed by independently checked solving,
+preserved call/output charges and unavailable usage; failure-audit denial and
+non-timeout shared errors both prevent further calls. Existing bound-model,
+structured-workflow, cancellation, recovery and managed-worker regressions pass.
+
+Actual CLI/HTTP fixture `/tmp/cogfabric-advice-timeout-smoke.4fk1xuvh` stalled the
+first optional call under a six-second task allowance, then served planner and
+solver. The checked path completed with three calls and 832 reserved output
+tokens; input/output usage stayed null and timeout fallback was durably audited.
+The provider-side fixture remained independently controlled, so cancellation does
+not prove upstream computation stopped. No new live Qwen score, optimized install,
+calibrated expected utility or general provider recovery guarantee is claimed.
+This addresses a measured failure mode while preserving the adverse historical
+Qwen study. General scheduling, untrusted expert isolation/provisioning, physical
+model residency and independent unseen model evaluation remain V1 blockers.
