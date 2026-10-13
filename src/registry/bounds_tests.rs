@@ -202,3 +202,113 @@ fn reviewed_version_activation_updates_projection_and_keeps_previous_snapshots()
     assert_eq!(current.manifests[0].version, "2.0.0");
     assert!(health(&store).is_ok());
 }
+
+#[test]
+fn explicit_disable_contains_a_corrupted_target_and_allows_reviewed_rollback() {
+    let store = Store::in_memory().unwrap();
+    let first = fixture();
+    register(&store, &first).unwrap();
+    activate(&store, &first.id, &first.version).unwrap();
+    let mut next = first.clone();
+    next.version = "2.0.0".into();
+    register(&store, &next).unwrap();
+    activate(&store, &next.id, &next.version).unwrap();
+    store
+        .lock()
+        .unwrap()
+        .execute(
+            "UPDATE expert_manifests SET manifest='corrupted' WHERE version='2.0.0'",
+            [],
+        )
+        .unwrap();
+    assert!(health(&store).is_err());
+    assert!(activate(&store, &first.id, &first.version).is_err());
+    disable(&store, &first.id).unwrap();
+    assert_eq!(health(&store).unwrap()["active"], json!([]));
+    activate(&store, &first.id, &first.version).unwrap();
+    assert_eq!(health(&store).unwrap()["active"][0]["version"], "1.0.0");
+    let db = store.lock().unwrap();
+    assert_eq!(
+        db.query_row(
+            "SELECT manifest FROM expert_manifests WHERE version='2.0.0'",
+            [],
+            |r| r.get::<_, String>(0)
+        )
+        .unwrap(),
+        "corrupted"
+    );
+    assert_eq!(
+        db.query_row(
+            "SELECT count(*) FROM expert_audit WHERE action='disable'",
+            [],
+            |r| r.get::<_, u64>(0)
+        )
+        .unwrap(),
+        1
+    );
+}
+#[test]
+fn corrupted_target_containment_cannot_break_reverse_dependencies_or_ignore_other_corruption() {
+    let store = Store::in_memory().unwrap();
+    let target = fixture();
+    register(&store, &target).unwrap();
+    activate(&store, &target.id, &target.version).unwrap();
+    let mut dependent = target.clone();
+    dependent.id = "fixture.dependent".into();
+    dependent.dependencies = vec![Dependency {
+        id: target.id.clone(),
+        requirement: "^1.0".into(),
+    }];
+    register(&store, &dependent).unwrap();
+    activate(&store, &dependent.id, &dependent.version).unwrap();
+    store
+        .lock()
+        .unwrap()
+        .execute(
+            "UPDATE skills SET description='valid but drifting' WHERE id=?1",
+            [&target.id],
+        )
+        .unwrap();
+    assert!(disable(&store, &target.id).is_err());
+    assert!(
+        disable(&store, &dependent.id).is_err(),
+        "Unrelated active corruption must still fail closed"
+    );
+    let db = store.lock().unwrap();
+    assert_eq!(
+        db.query_row("SELECT sum(enabled) FROM skills", [], |r| r
+            .get::<_, u64>(0))
+            .unwrap(),
+        2
+    );
+    assert_eq!(
+        db.query_row(
+            "SELECT count(*) FROM expert_audit WHERE action='disable'",
+            [],
+            |r| r.get::<_, u64>(0)
+        )
+        .unwrap(),
+        0
+    );
+}
+#[test]
+fn containment_audit_failure_rolls_back_disable_without_repairing_the_target() {
+    let store = Store::in_memory().unwrap();
+    let target = fixture();
+    register(&store, &target).unwrap();
+    activate(&store, &target.id, &target.version).unwrap();
+    store.lock().unwrap().execute_batch("UPDATE expert_manifests SET manifest='corrupted'; CREATE TRIGGER refuse_disable BEFORE INSERT ON expert_audit WHEN NEW.action='disable' BEGIN SELECT RAISE(ABORT,'audit unavailable'); END;").unwrap();
+    assert!(disable(&store, &target.id).is_err());
+    let db = store.lock().unwrap();
+    assert_eq!(
+        db.query_row("SELECT enabled FROM skills", [], |r| r.get::<_, i64>(0))
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        db.query_row("SELECT manifest FROM expert_manifests", [], |r| r
+            .get::<_, String>(0))
+            .unwrap(),
+        "corrupted"
+    );
+}

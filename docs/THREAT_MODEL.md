@@ -319,3 +319,10 @@ body instead of trusting a retained checksum alone. Errors leave corruption
 unchanged and deny activation; no automatic repair or neural promotion follows.
 An owner who can rewrite content and hashes still defeats local consistency
 checks, so these bounds are not signatures or executable attestation.
+
+Operator-directed disable excludes only its explicit target from graph validation
+so body/projection corruption cannot prevent containment. The remaining graph
+and reverse dependencies must still validate. Enable change and audit commit
+atomically; audit failure rolls back. No corrupt body is trusted or rewritten,
+no dependent cascade occurs and normal activation stays strict. Models receive
+no disable capability through this change.

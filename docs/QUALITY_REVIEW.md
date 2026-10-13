@@ -1,6 +1,6 @@
 # Rust baseline quality review
 
-Current local runtime passes 447 Rust tests (402 library, 45 integration),
+Current local runtime passes 450 Rust tests (405 library, 45 integration),
 formatting, workspace all-target compilation and Clippy with warnings denied.
 Before the residency-inspection addition, both core and HTTP server packages passed optimized host source installation,
 offline installed workflows and managed OpenCode/Qwen read/edit/read. Hosted CI
@@ -3117,3 +3117,25 @@ new regressions cover projection drift and legitimate version replacement with
 retained snapshots. Valid actual CLI register/activate/health also passed:
 `/tmp/cogfabric-projection-smoke.wPHJe9`. No model load or live quality measurement
 was performed. Broader independent evaluation and module lifecycle remain open.
+
+### Explicit damaged-expert containment
+
+`skill-disable ID` now validates the remaining active graph with only the explicit
+target excluded, then atomically changes its enable flag and records the audit.
+A corrupted target body or drifting projection can therefore be contained
+without treating it as valid. Reverse dependencies and unrelated corrupt active
+records still block disable; there is no cascade, forced bypass or automatic
+promotion. Snapshots/health/activation retain full validation for enabled experts.
+Corrupted bodies/hashes remain untouched. An operator may subsequently activate
+a separately verified older version under the normal lifecycle checks. Invalid
+retained skill fields may still require reviewed repair/restoration even after
+disable; this does not silently normalize bad inventory data.
+
+All 450 tests (405 library, 45 integration), formatting, workspace all-target
+check and Clippy pass. Log: `/tmp/cogfabric-expert-containment-tests.log`. Three
+regressions verify containment plus reviewed rollback, reverse-dependency/other-
+corruption refusal and atomic audit-failure rollback. Actual CLI containment
+with an intentionally damaged temporary expert passed:
+`/tmp/cogfabric-containment-smoke.7K1MQu`. The initial check used a misspelled
+compiler path; verification was rerun with the existing pinned 25.12.19 compiler.
+No model inference/load, executable permission or optimized install is claimed.

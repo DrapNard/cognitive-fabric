@@ -1959,3 +1959,11 @@ repair. Reviewed version activation updates the projection and preserves prior
 task snapshots. Two regressions plus the 447-test workspace gate pass;
 QUALITY_REVIEW.md records scope and actual CLI evidence. Owner-resistant
 authenticity and broader independent quality evaluation remain unproven.
+
+Explicit `skill-disable` can now exclude a damaged target while validating every
+remaining active expert and reverse dependency. Only its enable flag and audit
+change; corrupted body/hash data is retained. Other active corruption or required
+dependents still deny the operation. A verified older version may be activated
+after successful containment. This is operator-directed, not automatic repair
+or a bypass for activation/promotion. Three regressions and all 450 workspace
+tests pass; QUALITY_REVIEW.md records CLI evidence and remaining data-repair limits.

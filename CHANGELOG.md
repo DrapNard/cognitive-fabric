@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Allow explicit containment of a damaged expert
+
+- Validate the remaining graph when an operator disables a corrupt target.
+- Preserve reverse dependencies, unrelated corruption denial and atomic audits.
+- Keep damaged bodies intact and allow separately verified version rollback.
+
 ### Reject active expert routing metadata drift
 
 - Match projected descriptions/tags against verified active manifest content.

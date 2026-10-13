@@ -192,8 +192,15 @@ fn verified_manifest(raw: String, checksum: String) -> Result<Manifest> {
 }
 
 fn active_graph(db: &Connection) -> Result<BTreeMap<String, Manifest>> {
-    let mut statement=db.prepare("SELECT CASE WHEN length(CAST(m.manifest AS BLOB))<=64000 THEN m.manifest END, CASE WHEN length(CAST(m.checksum AS BLOB))=64 THEN m.checksum END, CASE WHEN length(CAST(m.skill_id AS BLOB))<=101 THEN m.skill_id END, CASE WHEN length(CAST(m.version AS BLOB))<=64 THEN m.version END, CASE WHEN length(CAST(s.description AS BLOB))<=500 THEN s.description END, CASE WHEN length(CAST(s.tags_json AS BLOB))<=2048 THEN s.tags_json END FROM expert_manifests m JOIN skills s ON s.id=m.skill_id WHERE m.active=1 AND s.enabled=1 ORDER BY m.skill_id LIMIT 257")?;
-    let mut rows = statement.query([])?;
+    active_graph_except(db, None)
+}
+
+fn active_graph_except(
+    db: &Connection,
+    excluded: Option<&str>,
+) -> Result<BTreeMap<String, Manifest>> {
+    let mut statement=db.prepare("SELECT CASE WHEN length(CAST(m.manifest AS BLOB))<=64000 THEN m.manifest END, CASE WHEN length(CAST(m.checksum AS BLOB))=64 THEN m.checksum END, CASE WHEN length(CAST(m.skill_id AS BLOB))<=101 THEN m.skill_id END, CASE WHEN length(CAST(m.version AS BLOB))<=64 THEN m.version END, CASE WHEN length(CAST(s.description AS BLOB))<=500 THEN s.description END, CASE WHEN length(CAST(s.tags_json AS BLOB))<=2048 THEN s.tags_json END FROM expert_manifests m JOIN skills s ON s.id=m.skill_id WHERE m.active=1 AND s.enabled=1 AND (?1 IS NULL OR m.skill_id<>?1) ORDER BY m.skill_id LIMIT 257")?;
+    let mut rows = statement.query([excluded])?;
     let mut graph = BTreeMap::new();
     while let Some(row) = rows.next()? {
         if graph.len() == 256 {
@@ -360,10 +367,12 @@ pub fn activate(store: &Store, id: &str, version: &str) -> Result<Value> {
 
 pub fn disable(store: &Store, id: &str) -> Result<Value> {
     security::authorize("human-cli", "skill.disable")?;
+    if !identifier(id) {
+        bail!("Invalid skill disable identity")
+    }
     let mut db = store.lock()?;
     let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-    let mut graph = active_graph(&tx)?;
-    graph.remove(id);
+    let graph = active_graph_except(&tx, Some(id))?;
     validate_graph(&graph)?;
     let changed = tx.execute(
         "UPDATE skills SET enabled=0 WHERE id=?1 AND enabled=1",
