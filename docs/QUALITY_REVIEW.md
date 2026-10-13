@@ -3139,3 +3139,26 @@ with an intentionally damaged temporary expert passed:
 `/tmp/cogfabric-containment-smoke.7K1MQu`. The initial check used a misspelled
 compiler path; verification was rerun with the existing pinned 25.12.19 compiler.
 No model inference/load, executable permission or optimized install is claimed.
+
+
+### Explicit dependent-set containment validation
+
+`skill-disable-set ID...` contains only the operator-selected set, bounded to
+256 distinct canonical IDs. Remaining graph verification precedes atomic flag
+updates and per-ID disable audits. Three new regressions cover a corrupted
+root/dependent chain with an unselected independent survivor, incomplete-set
+refusal, empty/duplicate/invalid/oversized/unknown/already-disabled requests,
+and rollback after a later audit failure. No inferred cascade or body repair.
+
+All 453 tests (408 library, 45 integration) pass. `cargo fmt --all -- --check`,
+`cargo check --offline --workspace --all-targets`,
+`cargo test --offline --workspace --all-targets` and
+`cargo clippy --offline --workspace --all-targets -- -D warnings` pass with
+flatc 25.12.19 paired to the pinned Rust crate. Test log:
+`/tmp/cogfabric-disable-set-tests.log`. Actual temporary CLI corruption,
+incomplete selection rejection, complete set disable and empty-active health
+passed in `/tmp/cogfabric-disable-set-smoke.q17scmqs`. Initial smoke setup used
+unsupported backend `mock` then searched `.db`; corrected to `demo` and
+`fabric.sqlite3`. No inference, model load, schema migration, protocol change,
+optimized install or fresh clean-OS validation is claimed. Independent reasoning
+quality, general executable experts/isolation and model residency remain open.

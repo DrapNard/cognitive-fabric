@@ -772,3 +772,16 @@ Rust copies and verify bounded rows incrementally. Duplicate active identities
 fail instead of silently overwriting a graph entry. Existing-version registration
 checks stored body integrity before returning idempotent success. Corrupt data
 remains unchanged and cannot be implicitly repaired or promoted by these reads.
+
+
+### Explicit atomic expert disable sets
+
+`skill-disable-set ID...` / `registry::disable_set` accepts 1–256 distinct
+canonical IDs under the existing human-only `skill.disable` permission. The
+operator explicitly selects the damaged expert and any dependents to contain.
+Remaining enabled manifests, projections and dependencies must validate. No
+cascade is inferred; unknown/already-disabled targets and late audit failures
+roll back every enable change and audit in the immediate transaction. Bodies,
+hashes and retained inventory capacity are preserved. Normal activation stays
+strict; this is not executable isolation or automatic recovery. Invalid retained
+inventory metadata can still require reviewed repair/restoration.

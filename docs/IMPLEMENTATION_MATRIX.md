@@ -1967,3 +1967,19 @@ dependents still deny the operation. A verified older version may be activated
 after successful containment. This is operator-directed, not automatic repair
 or a bypass for activation/promotion. Three regressions and all 450 workspace
 tests pass; QUALITY_REVIEW.md records CLI evidence and remaining data-repair limits.
+
+
+### Explicit atomic expert disable sets
+
+`skill-disable-set ID...` / `registry::disable_set` accepts 1–256 distinct
+canonical IDs under the existing human-only `skill.disable` permission. The
+operator explicitly selects the damaged expert and any dependents to contain.
+Remaining enabled manifests, projections and dependencies must validate. No
+cascade is inferred; unknown/already-disabled targets and late audit failures
+roll back every enable change and audit in the immediate transaction. Bodies,
+hashes and retained inventory capacity are preserved. Normal activation stays
+strict; this is not executable isolation or automatic recovery. Invalid retained
+inventory metadata can still require reviewed repair/restoration.
+
+Validation: all 453 workspace tests and mandatory checks pass; actual CLI
+containment passes. See QUALITY_REVIEW.md for evidence and unchanged release gaps.

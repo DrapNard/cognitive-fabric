@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Contain an explicitly selected dependent expert set
+
+- Add `skill-disable-set ID...` with a bounded, distinct operator selection.
+- Validate the remaining dependency graph and commit all disable audits atomically.
+- Reject incomplete selections without inferred cascades or manifest repair.
+
 ### Allow explicit containment of a damaged expert
 
 - Validate the remaining graph when an operator disables a corrupt target.

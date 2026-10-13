@@ -195,6 +195,11 @@ enum Command {
         id: String,
         version: String,
     },
+    /// Atomically disable an explicitly selected set without cascading.
+    SkillDisableSet {
+        #[arg(required = true, num_args = 1..=256)]
+        ids: Vec<String>,
+    },
     SkillDisable {
         id: String,
     },
@@ -828,6 +833,7 @@ async fn main() -> Result<()> {
         Command::SkillActivate { id, version } => {
             cogfabric::registry::activate(&store, &id, &version)?
         }
+        Command::SkillDisableSet { ids } => cogfabric::registry::disable_set(&store, &ids)?,
         Command::SkillDisable { id } => cogfabric::registry::disable(&store, &id)?,
         Command::SkillHealth => cogfabric::registry::health(&store)?,
         Command::SkillAdd {

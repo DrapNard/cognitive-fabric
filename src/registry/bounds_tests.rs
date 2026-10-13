@@ -312,3 +312,128 @@ fn containment_audit_failure_rolls_back_disable_without_repairing_the_target() {
         "corrupted"
     );
 }
+
+#[test]
+fn explicit_disable_set_contains_a_chain_without_inferred_cascade() {
+    let store = Store::in_memory().unwrap();
+    let mut previous = None;
+    for id in [
+        "fixture.root",
+        "fixture.child",
+        "fixture.leaf",
+        "fixture.other",
+    ] {
+        let mut manifest = fixture();
+        manifest.id = id.into();
+        if id != "fixture.other" {
+            if let Some(parent) = previous {
+                manifest.dependencies.push(Dependency {
+                    id: parent,
+                    requirement: "^1.0".into(),
+                });
+            }
+            previous = Some(manifest.id.clone());
+        }
+        register(&store, &manifest).unwrap();
+        activate(&store, id, &manifest.version).unwrap();
+    }
+    store
+        .lock()
+        .unwrap()
+        .execute(
+            "UPDATE expert_manifests SET manifest='corrupted' WHERE skill_id='fixture.root'",
+            [],
+        )
+        .unwrap();
+    let partial = vec!["fixture.root".into(), "fixture.child".into()];
+    assert!(disable_set(&store, &partial).is_err());
+    let mut complete = partial;
+    complete.push("fixture.leaf".into());
+    disable_set(&store, &complete).unwrap();
+    let active = health(&store).unwrap();
+    assert_eq!(active["active"].as_array().unwrap().len(), 1);
+    assert_eq!(active["active"][0]["id"], "fixture.other");
+    let db = store.lock().unwrap();
+    assert_eq!(
+        db.query_row(
+            "SELECT count(*) FROM expert_audit WHERE action='disable'",
+            [],
+            |r| r.get::<_, i64>(0)
+        )
+        .unwrap(),
+        3
+    );
+    assert_eq!(
+        db.query_row(
+            "SELECT manifest FROM expert_manifests WHERE skill_id='fixture.root'",
+            [],
+            |r| r.get::<_, String>(0)
+        )
+        .unwrap(),
+        "corrupted"
+    );
+}
+
+#[test]
+fn disable_set_rejects_invalid_sets_and_rolls_back_late_unknown_targets() {
+    let store = Store::in_memory().unwrap();
+    let target = fixture();
+    register(&store, &target).unwrap();
+    activate(&store, &target.id, &target.version).unwrap();
+    for ids in [
+        vec![],
+        vec![target.id.clone(); 2],
+        vec!["invalid/identity".into()],
+        vec![target.id.clone(); 257],
+        vec![target.id.clone(), "fixture.unknown".into()],
+    ] {
+        assert!(disable_set(&store, &ids).is_err());
+    }
+    let db = store.lock().unwrap();
+    assert_eq!(
+        db.query_row("SELECT enabled FROM skills", [], |r| r.get::<_, i64>(0))
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        db.query_row(
+            "SELECT count(*) FROM expert_audit WHERE action='disable'",
+            [],
+            |r| r.get::<_, i64>(0)
+        )
+        .unwrap(),
+        0
+    );
+    drop(db);
+    disable(&store, &target.id).unwrap();
+    assert!(disable_set(&store, &[target.id]).is_err());
+}
+
+#[test]
+fn disable_set_late_audit_failure_rolls_back_all_selected_skills() {
+    let store = Store::in_memory().unwrap();
+    for id in ["fixture.first", "fixture.second"] {
+        let mut manifest = fixture();
+        manifest.id = id.into();
+        register(&store, &manifest).unwrap();
+        activate(&store, id, &manifest.version).unwrap();
+    }
+    store.lock().unwrap().execute_batch("CREATE TRIGGER refuse_second_disable BEFORE INSERT ON expert_audit WHEN NEW.action='disable' AND NEW.skill_id='fixture.second' BEGIN SELECT RAISE(ABORT,'audit unavailable'); END;").unwrap();
+    assert!(disable_set(&store, &["fixture.first".into(), "fixture.second".into()]).is_err());
+    let db = store.lock().unwrap();
+    assert_eq!(
+        db.query_row("SELECT sum(enabled) FROM skills", [], |r| r
+            .get::<_, i64>(0))
+            .unwrap(),
+        2
+    );
+    assert_eq!(
+        db.query_row(
+            "SELECT count(*) FROM expert_audit WHERE action='disable'",
+            [],
+            |r| r.get::<_, i64>(0)
+        )
+        .unwrap(),
+        0
+    );
+}
