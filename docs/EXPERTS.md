@@ -302,3 +302,10 @@ well as comparing its checksum with the submitted content. Corruption does not
 become an idempotent success or trigger implicit repair/promotion. Activation
 validates its explicit logical ID and canonical semantic version before querying.
 These remain local consistency checks rather than owner-resistant signatures.
+
+Active routing description/tags are now checked against the verified manifest
+body. Valid-sized projection drift fails snapshots/health without automatic
+repair. Reviewed version activation updates the projection and preserves prior
+task snapshots. Two regressions plus the 447-test workspace gate pass;
+QUALITY_REVIEW.md records scope and actual CLI evidence. Owner-resistant
+authenticity and broader independent quality evaluation remain unproven.

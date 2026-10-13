@@ -192,7 +192,7 @@ fn verified_manifest(raw: String, checksum: String) -> Result<Manifest> {
 }
 
 fn active_graph(db: &Connection) -> Result<BTreeMap<String, Manifest>> {
-    let mut statement=db.prepare("SELECT CASE WHEN length(CAST(m.manifest AS BLOB))<=64000 THEN m.manifest END, CASE WHEN length(CAST(m.checksum AS BLOB))=64 THEN m.checksum END, CASE WHEN length(CAST(m.skill_id AS BLOB))<=101 THEN m.skill_id END, CASE WHEN length(CAST(m.version AS BLOB))<=64 THEN m.version END FROM expert_manifests m JOIN skills s ON s.id=m.skill_id WHERE m.active=1 AND s.enabled=1 ORDER BY m.skill_id LIMIT 257")?;
+    let mut statement=db.prepare("SELECT CASE WHEN length(CAST(m.manifest AS BLOB))<=64000 THEN m.manifest END, CASE WHEN length(CAST(m.checksum AS BLOB))=64 THEN m.checksum END, CASE WHEN length(CAST(m.skill_id AS BLOB))<=101 THEN m.skill_id END, CASE WHEN length(CAST(m.version AS BLOB))<=64 THEN m.version END, CASE WHEN length(CAST(s.description AS BLOB))<=500 THEN s.description END, CASE WHEN length(CAST(s.tags_json AS BLOB))<=2048 THEN s.tags_json END FROM expert_manifests m JOIN skills s ON s.id=m.skill_id WHERE m.active=1 AND s.enabled=1 ORDER BY m.skill_id LIMIT 257")?;
     let mut rows = statement.query([])?;
     let mut graph = BTreeMap::new();
     while let Some(row) = rows.next()? {
@@ -203,7 +203,14 @@ fn active_graph(db: &Connection) -> Result<BTreeMap<String, Manifest>> {
         let checksum: String = row.get(1)?;
         let id: String = row.get(2)?;
         let version: String = row.get(3)?;
+        let description: String = row.get(4)?;
+        let tags_raw: String = row.get(5)?;
+        let tags: Vec<String> = serde_json::from_str(&tags_raw)
+            .map_err(|_| anyhow::anyhow!("Invalid active expert routing tags"))?;
         let manifest = verified_manifest(raw, checksum)?;
+        if manifest.description != description || manifest.tags != tags {
+            bail!("Active expert routing metadata differs from its immutable manifest")
+        }
         if manifest.id != id || manifest.version != version {
             bail!("Manifest identity mismatch")
         }

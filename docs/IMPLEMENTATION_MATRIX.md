@@ -1952,3 +1952,10 @@ Final manifest-bound gate: 445 tests, formatting, workspace check and Clippy pas
 Valid CLI registration/idempotency/activation/health also pass. QUALITY_REVIEW.md
 records actual evidence and unchanged corruption/audit state on denial. Broader
 independent evaluation, module lifecycle and code authenticity remain incomplete.
+
+Active routing description/tags are now checked against the verified manifest
+body. Valid-sized projection drift fails snapshots/health without automatic
+repair. Reviewed version activation updates the projection and preserves prior
+task snapshots. Two regressions plus the 447-test workspace gate pass;
+QUALITY_REVIEW.md records scope and actual CLI evidence. Owner-resistant
+authenticity and broader independent quality evaluation remain unproven.

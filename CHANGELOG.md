@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Reject active expert routing metadata drift
+
+- Match projected descriptions/tags against verified active manifest content.
+- Deny inconsistent snapshots and health without silently repairing metadata.
+- Preserve reviewed version activation and previously pinned task snapshots.
+
 ### Bound manifest reads and reject ambiguous active versions
 
 - Guard stored manifest/hash/identity fields in SQL before Rust copies.

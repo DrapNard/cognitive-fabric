@@ -138,3 +138,67 @@ fn ambiguous_or_excessive_active_registries_fail_without_implicit_promotion_or_t
         257
     );
 }
+
+#[test]
+fn active_routing_projection_drift_is_rejected_without_rewriting_data() {
+    for tags in [false, true] {
+        let store = Store::in_memory().unwrap();
+        let value = fixture();
+        register(&store, &value).unwrap();
+        activate(&store, &value.id, &value.version).unwrap();
+        if tags {
+            store
+                .lock()
+                .unwrap()
+                .execute("UPDATE skills SET tags_json='[\"other\"]'", [])
+                .unwrap();
+        } else {
+            store
+                .lock()
+                .unwrap()
+                .execute(
+                    "UPDATE skills SET description='Different valid description'",
+                    [],
+                )
+                .unwrap();
+        }
+        assert!(snapshot_from(&store.lock().unwrap()).is_err());
+        assert!(store.task_context("test").is_err());
+        assert!(health(&store).is_err());
+        assert_eq!(
+            store
+                .lock()
+                .unwrap()
+                .query_row("SELECT count(*) FROM expert_audit", [], |r| r
+                    .get::<_, u64>(0))
+                .unwrap(),
+            2
+        );
+        let skill = store.skills().unwrap().remove(0);
+        if tags {
+            assert_eq!(skill.tags, vec!["other"]);
+        } else {
+            assert_eq!(skill.description, "Different valid description");
+        }
+    }
+}
+#[test]
+fn reviewed_version_activation_updates_projection_and_keeps_previous_snapshots() {
+    let store = Store::in_memory().unwrap();
+    let first = fixture();
+    register(&store, &first).unwrap();
+    activate(&store, &first.id, &first.version).unwrap();
+    let old = store.task_context("test").unwrap();
+    let mut next = first.clone();
+    next.version = "2.0.0".into();
+    next.description = "Reviewed second version".into();
+    next.tags = vec!["other".into()];
+    register(&store, &next).unwrap();
+    activate(&store, &next.id, &next.version).unwrap();
+    let current = store.task_context("other").unwrap();
+    assert_eq!(old.skills[0].description, first.description);
+    assert_eq!(old.manifests[0].version, "1.0.0");
+    assert_eq!(current.skills[0].tags, next.tags);
+    assert_eq!(current.manifests[0].version, "2.0.0");
+    assert!(health(&store).is_ok());
+}

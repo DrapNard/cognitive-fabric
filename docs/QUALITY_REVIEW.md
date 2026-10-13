@@ -1,6 +1,6 @@
 # Rust baseline quality review
 
-Current local runtime passes 445 Rust tests (400 library, 45 integration),
+Current local runtime passes 447 Rust tests (402 library, 45 integration),
 formatting, workspace all-target compilation and Clippy with warnings denied.
 Before the residency-inspection addition, both core and HTTP server packages passed optimized host source installation,
 offline installed workflows and managed OpenCode/Qwen read/edit/read. Hosted CI
@@ -3100,3 +3100,20 @@ index. Audit counts and active flags remain unchanged on failure. Valid actual
 CLI register/idempotent/activate/health smoke passed:
 `/tmp/cogfabric-manifest-bounds-smoke.AWGFjP`. No model inference/load, new tool
 permissions or optimized installation is claimed for this storage revision.
+
+### Active routing projection consistency
+
+Enabled active manifests now require their bounded routing description and parsed
+tag projection to match the verified immutable body before graph acceptance.
+Valid-but-different projection fields therefore fail task snapshots and health,
+without rewriting data or issuing new success audits. This is a consistency
+check, not authenticity against an owner who can rewrite both body and hash.
+Reviewed version activation still updates the projection atomically, while
+previous task snapshots retain their original fields/versions.
+
+All 447 tests (402 library, 45 integration), formatting, workspace all-target
+check and Clippy pass. Log: `/tmp/cogfabric-manifest-projection-tests.log`. Two
+new regressions cover projection drift and legitimate version replacement with
+retained snapshots. Valid actual CLI register/activate/health also passed:
+`/tmp/cogfabric-projection-smoke.wPHJe9`. No model load or live quality measurement
+was performed. Broader independent evaluation and module lifecycle remain open.
