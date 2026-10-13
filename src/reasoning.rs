@@ -1274,6 +1274,73 @@ mod tests {
 
     struct Script(Mutex<VecDeque<(&'static str, &'static str)>>);
     #[tokio::test]
+    async fn shortest_path_revises_nonoptimal_candidates_and_preserves_checked_output() {
+        let query = r#"path:{"nodes":["a","b","c","d"],"edges":[["a","b"],["b","c"],["c","d"],["a","c"]],"start":"a","goal":"d"}"#;
+        for variant in 0..4 {
+            let store = Arc::new(Store::in_memory().unwrap());
+            let cfg = Config {
+                backend: "openai-local".into(),
+                interpret_goals: false,
+                max_tool_calls: if variant == 2 { 1 } else { 4 },
+                ..Config::default()
+            };
+            if variant == 0 {
+                let manifest: crate::registry::Manifest = serde_json::from_value(json!({"id":"data.path.s1","version":"1.0.0","kind":"checker","checker":"shortest_path/v1","description":"Independent shortest path checker","tags":["path"],"source":"fixture","license":"CC0"})).unwrap();
+                crate::registry::register(&store, &manifest).unwrap();
+                crate::registry::activate(&store, &manifest.id, &manifest.version).unwrap();
+            }
+            let script = match variant {
+                0 => vec![
+                    ("planner", "no graph"),
+                    ("solver", r#"["a","b","c","d"]"#),
+                    ("solver", r#"["a","c","d"]"#),
+                ],
+                1 => vec![("solver", r#"["a","d"]"#)],
+                2 => vec![("solver", r#"["a","c","d"]"#)],
+                _ => vec![],
+            };
+            let engine = Engine::with_backend(
+                cfg,
+                store.clone(),
+                Arc::new(Script(Mutex::new(script.into()))),
+            );
+            let objective = if variant == 3 {
+                r#"path:{"nodes":["a"],"edges":[],"start":"a","goal":"x"}"#
+            } else {
+                query
+            };
+            let outcome = engine
+                .run(objective, if variant == 0 { "deep" } else { "fast" })
+                .await
+                .unwrap();
+            match variant {
+                0 => {
+                    assert_eq!(outcome.status, "completed");
+                    assert_eq!(outcome.cycles, 2);
+                    assert_eq!(outcome.answer, r#"["a","c","d"]"#);
+                    assert!(outcome
+                        .evidence
+                        .contains(&"verified:shortest_path/v1".into()));
+                    assert!(store.task(&outcome.task_id).unwrap()["events"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|e| e["kind"] == "verification" && e["payload"]["verified"] == false));
+                }
+                1 => {
+                    assert_eq!(outcome.status, "rejected");
+                    assert!(outcome.evidence.is_empty());
+                }
+                _ => {
+                    assert_eq!(outcome.status, "failed");
+                    assert_eq!(outcome.calls, if variant == 2 { 1 } else { 0 });
+                    assert!(outcome.evidence.is_empty());
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
     async fn integer_sorting_uses_independent_revision_and_honest_evidence() {
         for variant in 0..4 {
             let store = Arc::new(Store::in_memory().unwrap());

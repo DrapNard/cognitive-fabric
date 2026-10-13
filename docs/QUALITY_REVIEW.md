@@ -3162,3 +3162,30 @@ unsupported backend `mock` then searched `.db`; corrected to `demo` and
 `fabric.sqlite3`. No inference, model load, schema migration, protocol change,
 optimized install or fresh clean-OS validation is claimed. Independent reasoning
 quality, general executable experts/isolation and model residency remain open.
+
+
+### Independent shortest-path checker validation
+
+The bounded `shortest_path/v1` criterion verifies supplied directed unweighted
+graphs, including alternative optima and unreachable goals. Six new tests cover
+all 64 three-node directed graphs and every endpoint pair against simple-path
+enumeration, malformed/oversized criteria and answers, direction/cycles/nonoptimal
+candidates, task/actor/agent denials, registered-checker revision and tool-budget
+failure, and comparison scoring without expected-answer leakage. The existing
+recovery accounting allowlist includes `path.verify`; saved-result checking uses
+the same criterion parser and original reservations. No executable plugin,
+external fact source or runtime filesystem/network permission is added.
+
+All 459 tests (414 library, 45 integration), formatting, workspace all-target
+check and Clippy pass with pinned flatc/Rust FlatBuffers 25.12.19. Commands:
+`cargo fmt --all -- --check`, `cargo check --offline --workspace --all-targets`,
+`cargo test --offline --workspace --all-targets`, and
+`cargo clippy --offline --workspace --all-targets -- -D warnings`.
+Test log: `/tmp/cogfabric-shortest-path-tests.log`. Actual CLI plus temporary
+loopback OpenAI HTTP fixture passes in `/tmp/cogfabric-path-smoke.h_5fzot5`,
+returning a completed result with exact checked answer and criterion evidence.
+This deterministic fixture does not establish Qwen effectiveness, held-out
+reasoning gains, external graph truth, weighted routing or neural safety. No
+optimized install/clean-OS refresh or real-model inference is claimed here.
+General independent executable verification, expert provisioning/isolation,
+model residency and broader release evaluation remain incomplete.

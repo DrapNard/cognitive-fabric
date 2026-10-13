@@ -1983,3 +1983,17 @@ inventory metadata can still require reviewed repair/restoration.
 
 Validation: all 453 workspace tests and mandatory checks pass; actual CLI
 containment passes. See QUALITY_REVIEW.md for evidence and unchanged release gaps.
+
+
+### Bounded shortest-path evidence
+
+**Implemented:** `src/verification/path.rs` independently checks shortest directed
+unweighted paths from original `path:` objectives. `src/reasoning.rs` uses existing
+budgeted verification/revision and preserved checked results; checker registry
+bindings, recovery reservation validation and comparison scoring support the new
+version. Exhaustive three-node graph tests, malformed/bounds cases, actor/task
+denials and failed-then-correct reasoning cover the slice. This expands executable
+criteria without claiming general semantic verification or measured model gains.
+
+Shortest-path gate: all 459 workspace tests and mandatory checks pass; actual
+CLI/HTTP fixture passes. See QUALITY_REVIEW.md for evidence scope and limitations.

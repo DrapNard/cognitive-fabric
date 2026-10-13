@@ -785,3 +785,32 @@ roll back every enable change and audit in the immediate transaction. Bodies,
 hashes and retained inventory capacity are preserved. Normal activation stays
 strict; this is not executable isolation or automatic recovery. Invalid retained
 inventory metadata can still require reviewed repair/restoration.
+
+
+### Independent directed shortest-path verification
+
+Explicit `path:` objectives declare `nodes`, directed unweighted `edges`, `start`
+and `goal`. The compiled `shortest_path/v1` checker computes minimum distance
+with bounded breadth-first search, then validates the candidate path. Any optimal
+path is accepted; unreachable goals require `[]`, and identical endpoints require
+`[start]`. Bounds: 64 unique ASCII node IDs (1–32 bytes), 256 unique non-self edges,
+10,000 criterion bytes and 4,096 answer bytes. Unknown fields, missing endpoints,
+invalid edges and duplicate IDs/edges fail closed before model dispatch. Cycles
+are allowed; distance discovery visits each node once.
+
+Example:
+
+```text
+path:{"nodes":["a","b","c"],"edges":[["a","b"],["b","c"],["a","c"]],"start":"a","goal":"c"}
+```
+
+The solver returns `["a","c"]`. Each check consumes a tool invocation and requires
+`path.verify` for the original reasoning task's Jev+ actor. Failed checks feed the
+existing bounded revision loop; checked answers retain hashes and cannot be
+rewritten by optional synthesis. Criteria originate from the original objective;
+model output, retrieved text and checker manifests cannot alter them or grant
+permissions. Checker manifests may bind the built-in implementation as
+`shortest_path/v1`; they do not install executable code. Recovery rechecks use the
+same criterion and original durable tool accounting. Agent HTTP turns have no
+checker grant. This verifies only the supplied finite graph, not external map
+accuracy, weighted routing, real-world feasibility or general reasoning quality.

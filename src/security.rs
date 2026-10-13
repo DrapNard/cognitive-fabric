@@ -23,6 +23,7 @@ impl TaskPolicy {
                 ("jev-plus", "math.evaluate"),
                 ("jev-plus", "ordering.verify"),
                 ("jev-plus", "sorting.verify"),
+                ("jev-plus", "path.verify"),
                 ("jev-plus", "sql.query"),
             ],
         )
@@ -85,6 +86,7 @@ pub fn authorize(principal: &str, capability: &str) -> Result<()> {
                 | "math.evaluate"
                 | "ordering.verify"
                 | "sorting.verify"
+                | "path.verify"
                 | "sql.query"
         ),
         "human-cli" => matches!(
@@ -205,5 +207,24 @@ mod tests {
     #[test]
     fn allow_knowledge_search() {
         assert!(authorize("jev-r", "knowledge.search").is_ok());
+    }
+}
+
+#[cfg(test)]
+mod path_policy_tests {
+    use super::*;
+    #[test]
+    fn path_check_is_bound_to_reasoning_actor_and_task() {
+        let task = "00000000-0000-4000-8000-000000000001";
+        let other = "00000000-0000-4000-8000-000000000002";
+        let policy = TaskPolicy::reasoning(task).unwrap();
+        policy.authorize(task, "jev-plus", "path.verify").unwrap();
+        assert!(policy.authorize(other, "jev-plus", "path.verify").is_err());
+        assert!(policy.authorize(task, "jev-r", "path.verify").is_err());
+        assert!(TaskPolicy::agent(task)
+            .unwrap()
+            .authorize(task, "jev-plus", "path.verify")
+            .is_err());
+        assert!(authorize("interface", "path.verify").is_err());
     }
 }

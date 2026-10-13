@@ -26,6 +26,7 @@ enum Criterion {
     ExpectedOutputExactMatch,
     DependencyOrderV1,
     IntegerSortV1,
+    ShortestPathV1,
     SqlResultJsonV1,
 }
 
@@ -80,7 +81,7 @@ impl Case {
                 })?)?;
                 Ok(None)
             }
-            Criterion::DependencyOrderV1 | Criterion::IntegerSortV1 => {
+            Criterion::DependencyOrderV1 | Criterion::IntegerSortV1 | Criterion::ShortestPathV1 => {
                 if self.expected.is_some() {
                     bail!("Structured criterion must omit expected output")
                 }
@@ -93,6 +94,9 @@ impl Case {
                     ) | (
                         Criterion::IntegerSortV1,
                         Some(crate::verification::Criterion::Sorting(_))
+                    ) | (
+                        Criterion::ShortestPathV1,
+                        Some(crate::verification::Criterion::ShortestPath(_))
                     )
                 );
                 if !matching {
@@ -471,6 +475,30 @@ mod tests {
             .await
             .is_err());
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn shortest_path_scoring_accepts_alternate_optima_without_expected_answers() {
+        let input = r#"path:{"nodes":["a","b","c","d"],"edges":[["a","b"],["b","d"],["a","c"],["c","d"]],"start":"a","goal":"d"}"#;
+        let case: Case =
+            serde_json::from_value(json!({"input":input,"verification":"shortest_path_v1"}))
+                .unwrap();
+        let criterion = case.prepare().unwrap();
+        for answer in [r#"["a","b","d"]"#, r#"["a","c","d"]"#] {
+            assert!(case.score(criterion.as_ref(), "unverified", answer));
+            assert!(!case.score(criterion.as_ref(), "failed", answer));
+        }
+        assert!(!case.score(criterion.as_ref(), "completed", r#"["a","d"]"#));
+        for bad in [
+            json!({"input":input,"verification":"integer_sort_v1"}),
+            json!({"input":input,"verification":"shortest_path_v1","expected":"[]"}),
+            json!({"input":"plain prose","verification":"shortest_path_v1"}),
+        ] {
+            assert!(serde_json::from_value::<Case>(bad)
+                .unwrap()
+                .prepare()
+                .is_err());
+        }
     }
 
     #[test]

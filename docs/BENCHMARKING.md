@@ -417,3 +417,10 @@ actual invocation through `router_invoked`; excluded profiles do not call it.
 Default selection behavior, scoring and task budgets are unchanged. Custom native
 policies are trusted host code, not sandboxed or automatically model-budgeted.
 See ROUTING.md before comparing replacement policies.
+
+
+Comparison cases support `verification: shortest_path_v1` with an explicit
+`path:` objective and no `expected` field. Scoring independently accepts any
+shortest directed unweighted path, including `[]` only for unreachable goals.
+The alone arm receives the same output contract without runtime checker authority.
+This is structured diagnostic coverage, not an independent held-out quality study.
