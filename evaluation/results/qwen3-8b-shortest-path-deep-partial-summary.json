@@ -1,0 +1,160 @@
+{
+  "format_version": 1,
+  "report": "qwen3-8b-shortest-path-deep-partial.json",
+  "report_sha256": "b130096ecafe1d99b7e43db412361f0ff1dbac81277213305db700472b09294f",
+  "dataset_sha256": "0fedaaf6bef27f45ae0a13debcd5c6e391a32637c84891b0f38a19d9cba93edc",
+  "workflow": "../shortest_path_workflow.json",
+  "workflow_file_sha256": "dbf10d1005032bdbdab4f1af2c0de3f1d5cebe9ec7192ff90068f7c9b9167ba1",
+  "runtime_source_revision": "22dbc5acbfb55df7c9d8f55c103fa0af28cfcd21",
+  "runtime_binary_sha256": "27fb7d8f409f0e87d32db9586634921c3a0fbf380399c55a98c5f1b646e91e6b",
+  "complete": false,
+  "stop_reason": "run_deadline",
+  "executed_tasks": 56,
+  "planned_tasks": 96,
+  "unexecuted_tasks": 40,
+  "common_completed_case_indices": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8
+  ],
+  "independent_human_review": false,
+  "held_out": false,
+  "training_contamination_checked": false,
+  "weights_attested": false,
+  "load": {
+    "initial_server_state": "off",
+    "initial_loaded_models": 0,
+    "server_bind": "127.0.0.1:1234",
+    "default_gpu_load": "failed",
+    "failure_cause_confirmed": false,
+    "configured_gpu_offload_ratio": 0.35,
+    "configured_context_tokens": 8192,
+    "configured_parallel_predictions": 1,
+    "configured_idle_ttl_seconds": 600,
+    "partial_load_cli_reported_seconds": 4.05,
+    "unrelated_device_memory_used_before_load_mib": 6905,
+    "device_total_memory_mib": 12288,
+    "whole_device_activity_controlled": false
+  },
+  "elapsed_ms": 1200006.026556,
+  "arms": [
+    {
+      "index": 0,
+      "profile": "alone",
+      "executed": 9,
+      "passed": 6,
+      "common_cases": 9,
+      "passed_common_cases": 6,
+      "status_counts": {
+        "unverified": 9
+      },
+      "model_calls": 9,
+      "tool_calls": 0,
+      "latency_ms": 30139.252663,
+      "input_tokens": 2114,
+      "output_tokens": 68
+    },
+    {
+      "index": 1,
+      "profile": "tools",
+      "executed": 9,
+      "passed": 6,
+      "common_cases": 9,
+      "passed_common_cases": 6,
+      "status_counts": {
+        "completed": 6,
+        "rejected": 3
+      },
+      "model_calls": 14,
+      "tool_calls": 14,
+      "latency_ms": 48106.530234000005,
+      "input_tokens": 3410,
+      "output_tokens": 118
+    },
+    {
+      "index": 2,
+      "profile": "recursive",
+      "executed": 9,
+      "passed": 7,
+      "common_cases": 9,
+      "passed_common_cases": 7,
+      "status_counts": {
+        "completed": 7,
+        "rejected": 2
+      },
+      "model_calls": 11,
+      "tool_calls": 11,
+      "latency_ms": 32340.627326000005,
+      "input_tokens": 2616,
+      "output_tokens": 76
+    },
+    {
+      "index": 3,
+      "profile": "collective",
+      "executed": 10,
+      "passed": 6,
+      "common_cases": 9,
+      "passed_common_cases": 6,
+      "status_counts": {
+        "completed": 6,
+        "rejected": 4
+      },
+      "model_calls": 40,
+      "tool_calls": 14,
+      "latency_ms": 293716.339744,
+      "input_tokens": 10522,
+      "output_tokens": 742
+    },
+    {
+      "index": 4,
+      "profile": "memory",
+      "executed": 10,
+      "passed": 6,
+      "common_cases": 9,
+      "passed_common_cases": 6,
+      "status_counts": {
+        "completed": 6,
+        "rejected": 3,
+        "cancelled": 1
+      },
+      "model_calls": 38,
+      "tool_calls": 23,
+      "latency_ms": 272094.688434,
+      "input_tokens": null,
+      "output_tokens": null
+    },
+    {
+      "index": 5,
+      "profile": "experts",
+      "executed": 9,
+      "passed": 2,
+      "common_cases": 9,
+      "passed_common_cases": 2,
+      "status_counts": {
+        "failed": 7,
+        "completed": 2
+      },
+      "model_calls": 13,
+      "tool_calls": 11,
+      "latency_ms": 523558.9866570001,
+      "input_tokens": null,
+      "output_tokens": null
+    }
+  ],
+  "limitations": [
+    "Public original diagnostics, not an independent held-out study",
+    "Partial run; unequal executed counts, compare matched cases separately",
+    "One interleaved run with no seed control or replicate study",
+    "Backend labels and CLI configuration do not attest weights or task GPU usage",
+    "No larger or 1\u20133B baseline; no general reasoning or neural safety claim",
+    "Advisory workflow costs include timeout failures; no expert benefit demonstrated",
+    "Memory started without document evidence; no memory-learning advantage assessed",
+    "Client cancellation does not prove provider GPU computation stopped"
+  ]
+}

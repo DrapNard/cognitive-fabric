@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Retain real Qwen graph costs and partial failures
+
+- Freeze a bounded six-profile Qwen graph study: 56 of 96 tasks before deadline.
+- Preserve expert timeout/transport failures and unmatched/unexecuted cases.
+- Validate every pass with a separate path oracle; record no demonstrated expert benefit.
+
 ### Verify custom scheduling through public HTTP continuation
 
 - Resume a non-default committed subtask order without replaying completed work.

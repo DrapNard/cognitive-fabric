@@ -9,7 +9,7 @@
   "independent_human_review": false,
   "held_out": false,
   "training_contamination_checked": false,
-  "live_model_evaluated": false,
+  "live_model_evaluated": true,
   "independent_live_study_completed": false,
   "cases": [
     {
@@ -170,5 +170,7 @@
         "g"
       ]
     }
-  ]
+  ],
+  "live_model_evaluation_complete": false,
+  "live_result": "results/qwen3-8b-shortest-path-deep-partial.json"
 }

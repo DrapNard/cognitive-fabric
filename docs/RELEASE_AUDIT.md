@@ -4,22 +4,22 @@ This checklist preserves the 18 acceptance criteria in the goal objective. It is
 an evidence inventory, not a release approval. The canonical French architecture
 and the broader implementation matrix remain authoritative. Earlier test counts
 in the quality review are historical milestones. Current local verification is
-450 Rust tests (405 library, 45 integration), formatting, all-target checking and
+469 Rust tests (422 library, 47 integration), formatting, all-target checking and
 Clippy with warnings denied, using FlatBuffers compiler/crate 25.12.19.
 
 | Goal criterion | Evidence inspected | Assessment / remaining proof |
 |---|---|---|
 | 1. Workspace builds | `Cargo.toml`, all-target check | Passed locally; isolated optimized source installation also passed with cached dependencies. |
 | 2. Formatting and Clippy | Mandatory checks in `QUALITY_REVIEW.md` | Passed locally. |
-| 3. Mandatory tests | Workspace all-target test results, `tests/`, server integration tests | 450 passed; fixtures do not establish live model quality. |
+| 3. Mandatory tests | Workspace all-target test results, `tests/`, server integration tests | 469 passed; fixtures do not establish live model quality. |
 | 4. FlatBuffers IPC | `protocol/`, `src/wire.rs`, `src/fabric/`, malformed/compatibility/socket tests | Implemented for present transports; authenticated process event delivery/replay is now tested; broader module compatibility remains partial. |
 | 5. CLI/service communication | `src/service.rs`, socket tests, `tests/process_worker.rs`, `crates/cogfabric-server/tests/` | Tested typed local transport, progress, cancellation and optional HTTP client interoperability; native and collective ownership drains cover dropped request futures. No general independent plugin service is claimed. |
 | 6. Compatible local LLM | `src/backend.rs`, `tests/inference_auth.rs`, `LIVE_INFERENCE.md` | Passed for Ollama and LM Studio Qwen3 8B compatible endpoints, including managed verified sorting. Native LM Studio read-only inventory passed; authenticated native access and controlled load/unload remain unverified. |
-| 7. Jev+ routes real tasks | `src/engine.rs`, registry/routing tests, built-in SQL execution | Deterministic tools and registered advice routing work; live expert usefulness and general module scheduling remain incomplete. |
+| 7. Jev+ routes real tasks | `src/engine.rs`, registry/routing tests, built-in SQL execution | Deterministic tools, registered advice routing and trusted replaceable dependency ordering work; general module/GPU scheduling and independently established expert usefulness remain incomplete. |
 | 8. Bounded Jev-R revision | `src/reasoning.rs`, scripted revision and budget tests | Enforced calls/cycles/tools/time; real-model effectiveness unverified. |
 | 9. Skill registration/discovery | `src/registry.rs`, `EXPERTS.md` | Versioned RAG/workflow/compiled-checker registrations work; arbitrary executable loading is absent. |
 | 10. Persistent memory | `src/store.rs`, migrations, retrieval/reopen/rollback tests | Implemented bounded persistence and fresh structured-answer checks; general fact verification and physical disk bounds remain partial. |
-| 11. Budgets/cancellation | Session/broker/worker tests, `RECOVERY.md` | Current execution ceilings tested; exact tokenizer/GPU ceilings and safe automatic interrupted execution remain incomplete. |
+| 11. Budgets/cancellation | Session/broker/worker tests, `RECOVERY.md` | Current execution ceilings and approved recovery of pinned custom dependency orders tested; exact tokenizer/GPU ceilings and general automatic/within-call interrupted execution remain incomplete. |
 | 12. Security regressions | `security-eval`, policy/transport/artifact tests, `THREAT_MODEL.md` | 24 fixed boundary probes plus regression tests. Live Qwen reference injection contaminated answers; quoted-reference mitigation resisted that attack once. Broader poisoning, sandbox escape and peer identity evaluation remain incomplete. |
 | 13. RAG evaluation/promotion | `src/evaluation.rs`, `src/evolution.rs`, promotion/rollback tests | Transactional reviewed promotion with integrity/regression gates; dataset independence is operator-attested, not independently established. |
 | 14. Lifecycle documented | `MODELS.md`, `EXPERTS.md`, `WORKERS.md` | Metadata lifecycle documented; explicit native load/unload is fixture-tested; real native read-only inventory passed; lifecycle mutations and ownership-aware automatic scheduling remain incomplete. |
@@ -1317,3 +1317,78 @@ commit. No live provider inference, optimized-install refresh or general recover
 claim. SCHEDULING.md and IMPLEMENTATION_MATRIX.md record the expanded proof;
 broader scheduling, untrusted expert isolation/provisioning, model residency and
 independent unseen model studies remain open V1 requirements.
+
+
+### Real Qwen graph diagnostics: bounded partial deep comparison
+
+On 2026-10-13, source `22dbc5acbfb55df7c9d8f55c103fa0af28cfcd21` ran
+`qwen/qwen3-8b` through LM Studio on the frozen 16-case public graph corpus.
+The server was initially off and no model was loaded. Its CLI started the server
+on `127.0.0.1:1234` without changing authentication; the existing configuration
+allowed access. Default GPU loading failed (cause not established). With 6,905 MiB
+of whole-device memory already occupied out of 12,288 MiB, a 35% GPU-offload load
+succeeded in 4.05 seconds as reported by the CLI. Context was 8,192 tokens,
+parallelism one, idle TTL 600 seconds. Other workloads were not stopped. This is
+operator CLI setup, not proof of framework-managed residency ownership, native
+REST lifecycle switching, immutable weights or GPU attribution. The loopback
+LM Studio server remains started; the loaded model has the configured idle TTL.
+
+A fresh isolated state registered `evaluation/shortest_path_workflow.json` as
+`graph.path.s1` version 1.0.0. It is an advisory breadth-first-search checklist,
+not an executable or verification grant. All six arms used the same Qwen backend
+and original per-task ceilings: eight calls, three cycles, 3,000 reserved outputs,
+eight tools, 128,000 input bytes, 90 seconds wall time, 60-second inference timeout,
+temperature 0.15, reasoning effort none, interpretation/synthesis disabled. Profiles
+may further narrow these common operator ceilings. The memory arm started without document evidence. No larger or 1–3B baseline ran.
+
+The 1,200-second run cap produced **56/96 task outcomes**, with **40 unexecuted**,
+`complete: false`, `stop_reason: run_deadline`, and one cancelled memory task.
+CLI exit 1 explicitly reported the incomplete comparison. Raw evidence is
+`evaluation/results/qwen3-8b-shortest-path-deep-partial.json`; its separately
+hashed summary records load context, workflow/binary hashes and limitations.
+Temporary execution state/logs remain at `/tmp/cogfabric-qwen-path-study.0f37ok`.
+The initial real FAST probe independently verified `["a","c"]` in one call;
+its temporary evidence is `/tmp/cogfabric-qwen-path-probe.GcHvdD`.
+
+| Profile | Passed / executed | Passed / 9 common cases | Charged model calls | Total task seconds |
+|---|---:|---:|---:|---:|
+| Alone | 6 / 9 | 6 / 9 | 9 | 30.14 |
+| Tools | 6 / 9 | 6 / 9 | 14 | 48.11 |
+| Recursive | 7 / 9 | 7 / 9 | 11 | 32.34 |
+| Collective | 6 / 10 | 6 / 9 | 40 | 293.72 |
+| Memory | 6 / 10 | 6 / 9 | 38 | 272.09 |
+| Experts | 2 / 9 | 2 / 9 | 13 | 523.56 |
+
+There were 125 charged model calls and 73 charged tool invocations. These are
+runtime reservations/dispatches, not proof of completed GPU work. Expert failures
+were six inference timeouts and one HTTP transport failure. Missing reported token
+usage stays null for affected arms. Backend labels do not attest weights; external
+GPU activity and partial offload prevent comparing latency against earlier
+full-GPU runs. The report's old general limitation strings predate explicit graph
+wording; shortest-path scoring also shares the compiled runtime checker. The
+separate corpus regression independently enumerates simple paths and rechecks
+every frozen outcome's pass bit, identities, totals and reference hashes.
+
+**No expert or collective benefit is demonstrated.** Recursive corrected one
+additional case in this single nine-case matched subset. This is incomplete,
+public, non-human-reviewed data with no replicate/seed-controlled study; it is not
+causal evidence, held-out robustness, general reasoning ability or neural safety.
+Direction-trap answers using reversed undeclared edges were independently rejected.
+Corpus labels/scoring and budgets were not changed to improve results. The corpus
+manifest now records partial live evaluation while retaining incomplete/independent
+study flags. Framework residency, broader scheduling/expert isolation and unseen
+independent comparisons remain release work.
+
+To reproduce the procedure, configure a fresh state with the report's declared
+settings, register/activate the committed workflow, then run:
+
+```bash
+cogfabric --home /path/to/fresh-state --json compare evaluation/shortest_path_cases.jsonl \
+  --mode deep --source 'Public synthetic shortest-path diagnostics with advisory BFS workflow' \
+  --license CC0-1.0 --code-revision "$(git rev-parse HEAD)" \
+  --dataset-sha256 0fedaaf6bef27f45ae0a13debcd5c6e391a32637c84891b0f38a19d9cba93edc \
+  --workflow-check --max-run-seconds 1200
+```
+
+Record the actual tested source and load configuration for each new run. This
+reproduces the controlled procedure, not identical stochastic model responses.

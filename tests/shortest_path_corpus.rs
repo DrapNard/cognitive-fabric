@@ -42,11 +42,12 @@ fn public_graph_labels_match_independent_simple_path_enumeration() {
         "held_out",
         "independent_human_review",
         "training_contamination_checked",
-        "live_model_evaluated",
         "independent_live_study_completed",
     ] {
         assert_eq!(manifest[field], false);
     }
+    assert_eq!(manifest["live_model_evaluated"], true);
+    assert_eq!(manifest["live_model_evaluation_complete"], false);
     let cases: Vec<Case> = raw
         .lines()
         .map(|line| serde_json::from_str(line).unwrap())
@@ -102,4 +103,117 @@ fn public_graph_labels_match_independent_simple_path_enumeration() {
     assert_eq!(unreachable, 4);
     assert_eq!(identities, 2);
     assert!(alternatives >= 2);
+}
+
+fn oracle_accepts(graph: &Graph, answer: &str) -> bool {
+    let Ok(actual) = serde_json::from_str::<Vec<String>>(answer) else {
+        return false;
+    };
+    let mut paths = Vec::new();
+    enumerate(graph, vec![graph.start.clone()], &mut paths);
+    let Some(minimum) = paths.iter().map(Vec::len).min() else {
+        return actual.is_empty();
+    };
+    actual.len() == minimum && paths.contains(&actual)
+}
+
+#[test]
+fn frozen_partial_live_report_matches_independent_oracle_and_resource_totals() {
+    let raw = include_str!("../evaluation/results/qwen3-8b-shortest-path-deep-partial.json");
+    let report: serde_json::Value = serde_json::from_str(raw).unwrap();
+    let summary: serde_json::Value = serde_json::from_str(include_str!(
+        "../evaluation/results/qwen3-8b-shortest-path-deep-partial-summary.json"
+    ))
+    .unwrap();
+    assert_eq!(
+        summary["report_sha256"],
+        cogfabric::store::sha256(raw.as_bytes())
+    );
+    assert_eq!(
+        summary["workflow_file_sha256"],
+        cogfabric::store::sha256(include_bytes!("../evaluation/shortest_path_workflow.json"))
+    );
+    assert_eq!(
+        report["dataset_checksum"],
+        cogfabric::store::sha256(include_bytes!("../evaluation/shortest_path_cases.jsonl"))
+    );
+    assert_eq!(report["complete"], false);
+    assert_eq!(report["stop_reason"], "run_deadline");
+    assert_eq!(report["held_out_run"], false);
+    assert_eq!(summary["held_out"], false);
+    assert_eq!(summary["weights_attested"], false);
+    assert_eq!(summary["independent_human_review"], false);
+    assert_eq!(
+        report["code_revision_operator_attested"],
+        summary["runtime_source_revision"]
+    );
+    let cases: Vec<Case> = include_str!("../evaluation/shortest_path_cases.jsonl")
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let details = report["details"].as_array().unwrap();
+    assert_eq!(
+        details.len() as u64,
+        summary["executed_tasks"].as_u64().unwrap()
+    );
+    assert_eq!(
+        summary["planned_tasks"].as_u64().unwrap(),
+        summary["executed_tasks"].as_u64().unwrap() + summary["unexecuted_tasks"].as_u64().unwrap()
+    );
+    let mut identities = BTreeSet::new();
+    for detail in details {
+        let index = detail["case_index"].as_u64().unwrap() as usize;
+        let arm = detail["arm_index"].as_u64().unwrap() as usize;
+        assert!(index < cases.len() && arm < 6);
+        assert!(identities.insert((index, arm)));
+        assert_eq!(detail["input"], cases[index].input);
+        assert_eq!(detail["verification"], "shortest_path_v1");
+        assert!(detail["expected"].is_null());
+        let graph: Graph =
+            serde_json::from_str(cases[index].input.strip_prefix("path:").unwrap()).unwrap();
+        let outcome = &detail["outcome"];
+        let eligible = matches!(outcome["status"].as_str(), Some("completed" | "unverified"));
+        let valid = oracle_accepts(&graph, outcome["answer"].as_str().unwrap());
+        assert_eq!(detail["passed"], eligible && valid);
+        if outcome["status"] == "completed" {
+            assert!(valid, "Invalid path marked completed");
+        }
+    }
+    for (index, arm) in report["arms"].as_array().unwrap().iter().enumerate() {
+        let rows: Vec<_> = details.iter().filter(|d| d["arm_index"] == index).collect();
+        let matched: Vec<_> = rows
+            .iter()
+            .filter(|d| {
+                summary["common_completed_case_indices"]
+                    .as_array()
+                    .unwrap()
+                    .contains(&d["case_index"])
+            })
+            .collect();
+        let passed = rows.iter().filter(|d| d["passed"] == true).count();
+        assert_eq!(arm["executed"], rows.len());
+        assert_eq!(arm["passed"], passed);
+        assert_eq!(summary["arms"][index]["executed"], rows.len());
+        assert_eq!(summary["arms"][index]["passed"], passed);
+        assert_eq!(summary["arms"][index]["common_cases"], matched.len());
+        assert_eq!(
+            summary["arms"][index]["passed_common_cases"],
+            matched.iter().filter(|d| d["passed"] == true).count()
+        );
+        let calls: u64 = rows
+            .iter()
+            .map(|d| d["outcome"]["calls"].as_u64().unwrap())
+            .sum();
+        let tools: u64 = rows
+            .iter()
+            .map(|d| d["outcome"]["resources"]["tool_calls"].as_u64().unwrap())
+            .sum();
+        assert_eq!(arm["resources"]["model_calls"], calls);
+        assert_eq!(summary["arms"][index]["model_calls"], calls);
+        assert_eq!(arm["resources"]["tool_calls"], tools);
+        assert_eq!(summary["arms"][index]["tool_calls"], tools);
+    }
+    let workflow: cogfabric::registry::Manifest =
+        serde_json::from_str(include_str!("../evaluation/shortest_path_workflow.json")).unwrap();
+    workflow.validate().unwrap();
 }

@@ -2088,3 +2088,13 @@ charges and settings. Changed prefix/descriptor or missing decision denies previ
 and approved resume before network/state change. SCHEDULING.md records exact
 assertions and limits; arbitrary within-call recovery and independent model quality
 remain incomplete.
+
+
+Real Qwen shortest-path deep diagnostics: **Partial / Measured public workflow**.
+Source `22dbc5a` produced 56/96 outcomes before its unchanged 1,200-second cap.
+Nine common cases scored alone 6, tools 6, recursive 7, collective 6, memory 6,
+experts 2. Six expert timeouts/one transport failure remain counted. Raw reports,
+load context, advisory manifest and hashes are committed; a separate exhaustive
+oracle validates every pass bit and totals. No expert/collective advantage or
+held-out independence is established. BENCHMARKING.md records conditions and
+limits; broad release blockers remain open.

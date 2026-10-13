@@ -1,6 +1,6 @@
 # Rust baseline quality review
 
-Current local runtime passes 450 Rust tests (405 library, 45 integration),
+Current local runtime passes 469 Rust tests (422 library, 47 integration),
 formatting, workspace all-target compilation and Clippy with warnings denied.
 Before the residency-inspection addition, both core and HTTP server packages passed optimized host source installation,
 offline installed workflows and managed OpenCode/Qwen read/edit/read. Hosted CI
@@ -3353,3 +3353,29 @@ commit. No live provider inference, optimized-install refresh or general recover
 claim. SCHEDULING.md and IMPLEMENTATION_MATRIX.md record the expanded proof;
 broader scheduling, untrusted expert isolation/provisioning, model residency and
 independent unseen model studies remain open V1 requirements.
+
+
+### Frozen real-Qwen partial graph evidence validation
+
+All 469 tests (422 library, 47 integration), formatting, all-target check and
+Clippy pass using existing FlatBuffers 25.12.19. Commands:
+`cargo fmt --all -- --check`, `cargo check --offline --workspace --all-targets`,
+`cargo test --offline --workspace --all-targets`, and
+`cargo clippy --offline --workspace --all-targets -- -D warnings`.
+Log: `/tmp/cogfabric-live-path-evidence-tests.log`. A new fixed-report regression
+independently enumerates paths to recheck all 56 outcomes and reported pass bits,
+source/dataset/workflow hashes, unique case/arm pairs, executed/passed/common-case
+counts and charged call/tool totals. It rejects treating a completed invalid path
+as proof. Existing corpus provenance checks now disclose partial live evaluation;
+labels and acceptance criteria are unchanged. Report data is public diagnostics,
+not training, independent held-out review or a neural promotion gate.
+
+BENCHMARKING.md records the exact unchanged 20-minute deep run, configuration,
+partial-GPU setup, initial failed default load, 56/96 outcomes, six expert timeouts
+and one transport failure. Runtime stop is recorded honestly as incomplete; missing
+token metrics remain null, and provider GPU stopping remains unknown. No expert
+or collective benefit is demonstrated. Source `22dbc5a` hosted CI `38423013492`
+succeeded before this test/data/documentation change. No production runtime code,
+permissions, thresholds or release tag changes. General scheduling, isolated
+expert provisioning, ownership-aware residency and independent unseen studies
+remain incomplete.

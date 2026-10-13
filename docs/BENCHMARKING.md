@@ -455,3 +455,78 @@ for `qwen/qwen3-8b` and run a bounded `compare` with this dataset, its pinned ha
 same configuration and budgets across the six profiles, retain raw reports and
 usage, and report incomplete/failed runs. Do not label this public corpus held out.
 Independent unseen tasks and equal-budget model studies remain release work.
+
+
+### Real Qwen graph diagnostics: bounded partial deep comparison
+
+On 2026-10-13, source `22dbc5acbfb55df7c9d8f55c103fa0af28cfcd21` ran
+`qwen/qwen3-8b` through LM Studio on the frozen 16-case public graph corpus.
+The server was initially off and no model was loaded. Its CLI started the server
+on `127.0.0.1:1234` without changing authentication; the existing configuration
+allowed access. Default GPU loading failed (cause not established). With 6,905 MiB
+of whole-device memory already occupied out of 12,288 MiB, a 35% GPU-offload load
+succeeded in 4.05 seconds as reported by the CLI. Context was 8,192 tokens,
+parallelism one, idle TTL 600 seconds. Other workloads were not stopped. This is
+operator CLI setup, not proof of framework-managed residency ownership, native
+REST lifecycle switching, immutable weights or GPU attribution. The loopback
+LM Studio server remains started; the loaded model has the configured idle TTL.
+
+A fresh isolated state registered `evaluation/shortest_path_workflow.json` as
+`graph.path.s1` version 1.0.0. It is an advisory breadth-first-search checklist,
+not an executable or verification grant. All six arms used the same Qwen backend
+and original per-task ceilings: eight calls, three cycles, 3,000 reserved outputs,
+eight tools, 128,000 input bytes, 90 seconds wall time, 60-second inference timeout,
+temperature 0.15, reasoning effort none, interpretation/synthesis disabled. Profiles
+may further narrow these common operator ceilings. The memory arm started without document evidence. No larger or 1–3B baseline ran.
+
+The 1,200-second run cap produced **56/96 task outcomes**, with **40 unexecuted**,
+`complete: false`, `stop_reason: run_deadline`, and one cancelled memory task.
+CLI exit 1 explicitly reported the incomplete comparison. Raw evidence is
+`evaluation/results/qwen3-8b-shortest-path-deep-partial.json`; its separately
+hashed summary records load context, workflow/binary hashes and limitations.
+Temporary execution state/logs remain at `/tmp/cogfabric-qwen-path-study.0f37ok`.
+The initial real FAST probe independently verified `["a","c"]` in one call;
+its temporary evidence is `/tmp/cogfabric-qwen-path-probe.GcHvdD`.
+
+| Profile | Passed / executed | Passed / 9 common cases | Charged model calls | Total task seconds |
+|---|---:|---:|---:|---:|
+| Alone | 6 / 9 | 6 / 9 | 9 | 30.14 |
+| Tools | 6 / 9 | 6 / 9 | 14 | 48.11 |
+| Recursive | 7 / 9 | 7 / 9 | 11 | 32.34 |
+| Collective | 6 / 10 | 6 / 9 | 40 | 293.72 |
+| Memory | 6 / 10 | 6 / 9 | 38 | 272.09 |
+| Experts | 2 / 9 | 2 / 9 | 13 | 523.56 |
+
+There were 125 charged model calls and 73 charged tool invocations. These are
+runtime reservations/dispatches, not proof of completed GPU work. Expert failures
+were six inference timeouts and one HTTP transport failure. Missing reported token
+usage stays null for affected arms. Backend labels do not attest weights; external
+GPU activity and partial offload prevent comparing latency against earlier
+full-GPU runs. The report's old general limitation strings predate explicit graph
+wording; shortest-path scoring also shares the compiled runtime checker. The
+separate corpus regression independently enumerates simple paths and rechecks
+every frozen outcome's pass bit, identities, totals and reference hashes.
+
+**No expert or collective benefit is demonstrated.** Recursive corrected one
+additional case in this single nine-case matched subset. This is incomplete,
+public, non-human-reviewed data with no replicate/seed-controlled study; it is not
+causal evidence, held-out robustness, general reasoning ability or neural safety.
+Direction-trap answers using reversed undeclared edges were independently rejected.
+Corpus labels/scoring and budgets were not changed to improve results. The corpus
+manifest now records partial live evaluation while retaining incomplete/independent
+study flags. Framework residency, broader scheduling/expert isolation and unseen
+independent comparisons remain release work.
+
+To reproduce the procedure, configure a fresh state with the report's declared
+settings, register/activate the committed workflow, then run:
+
+```bash
+cogfabric --home /path/to/fresh-state --json compare evaluation/shortest_path_cases.jsonl \
+  --mode deep --source 'Public synthetic shortest-path diagnostics with advisory BFS workflow' \
+  --license CC0-1.0 --code-revision "$(git rev-parse HEAD)" \
+  --dataset-sha256 0fedaaf6bef27f45ae0a13debcd5c6e391a32637c84891b0f38a19d9cba93edc \
+  --workflow-check --max-run-seconds 1200
+```
+
+Record the actual tested source and load configuration for each new run. This
+reproduces the controlled procedure, not identical stochastic model responses.
