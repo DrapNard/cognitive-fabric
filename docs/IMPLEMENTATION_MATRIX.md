@@ -1610,3 +1610,33 @@ Hosted CI for the original modular agent API commit `f6ef304` completed
 successfully: [38366331807](https://github.com/DrapNard/cognitive-fabric/actions/runs/38366331807).
 This confirms that revision's workspace checks and existing CLI/socket workflow;
 it does not establish new server optimized installation or general agent quality.
+
+## Typed native conversation worker packets (2026-10-13)
+
+Status: **Implemented** codec, **Partial** managed native execution.
+`protocol/agent.fbs`, `src/agent/protocol.rs` and build integration add a dedicated
+verified FlatBuffers native conversation format. This preserves history, tool
+proposals and results without JSON envelopes or flattening into existing role
+prompts. It is the prerequisite for the next managed-worker transport slice.
+Existing schemas and native worker admission behavior remain unchanged.
+
+The codec bounds physical/verifier/copy resources, validates fixed identity and
+UUID fields, exclusive payloads, typed enums, allocations and history, and
+preserves null text/unknown usage for tool-only completions. Four regression tests
+in `src/agent/protocol/tests.rs` cover all choice modes and conversation roles,
+malformed packets and identities, invalid enums/allocations, duplicate and
+malformed output calls, and borrowed shared-string amplification. The API only
+returns data; it grants no permissions, checks no live peer/deadline and launches
+no worker. HTTP native managed mode remains explicitly disabled until those
+transport/lifecycle checks exist. PROTOCOL.md records the integration contract.
+
+Formatting, workspace all-target check, Clippy with warnings denied and all
+396 Rust tests (365 library, 31 integration) passed using exact flatc 25.12.19.
+Full log: `/tmp/cogfabric-native-protocol-all-tests.log`. No inference or new
+permissions were added; the previously verified OpenCode workflow is unchanged.
+Next milestone: authenticated one-task Unix exchange with trusted bootstrap
+settings, bounded cancellation and audited owned-child reaping.
+
+Hosted native registration CI [38367824575](https://github.com/DrapNard/cognitive-fabric/actions/runs/38367824575)
+completed successfully for `4cf64ed`. Final codec formatting passes after
+removing a test-file leading blank line; all workspace checks and 396 tests pass.

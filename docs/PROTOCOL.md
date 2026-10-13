@@ -469,3 +469,35 @@ service under existing owner-UID authentication. This starts no inference and
 grants no permissions. Local availability is not remote health, executable
 attestation, loaded-weight identity or ownership. Physical model residency remains
 a separate native-server operation.
+
+## Native conversation worker packet format (codec implemented; transport pending)
+
+`protocol/agent.fbs` (`COGA`, version 1) and `agent::protocol` define a separate
+native conversation packet instead of flattening history/tools into role prompts.
+Typed messages preserve system/developer/user/assistant/tool roles, function call
+IDs and arguments, textual tool results, function definitions and strictness,
+tool-choice modes, optional generation controls, and usage/finish metadata.
+JSON Schema and function arguments remain bounded external data strings; the
+internal envelope, message vectors, enums and scalar fields are FlatBuffers.
+
+Packets carry UUID correlation/task IDs, a nonzero expiry timestamp, the fixed
+`jev-r` request initiator, `inference.native` destination and module version
+`1.0.0`. Responses preserve the exchange's initiator identity; that field does
+not authenticate a responding process. Exactly one request/response/error is
+required. Requests carry a separate 1–16,384-token allocation which must agree
+with an explicit client ceiling. Tool proposals can be represented without text.
+
+The codec verifies frames before accessing fields, with 256 KiB physical size,
+depth 32, 4,096 tables and 1 MiB apparent verifier size. Borrowed vectors are
+bounded before copying; a separate 512 KiB aggregate string-copy budget prevents
+shared-string amplification. Unknown enums, conflicting payloads, forged static
+identities, malformed arguments, duplicate output call IDs and invalid request
+history fail closed. Existing module/bootstrap schemas are unchanged.
+
+This codec does **not** establish live authority, peer credentials, remaining wall
+time, proposal permissions, or backend execution. A future transport must compare
+correlation/task/expiry to the trusted exchange, authenticate the Unix peer,
+intersect the immutable task grant, enforce its budget/deadline, validate output
+against the original request, and own/reap its child. The HTTP native runtime
+still rejects `inference_process:true`; codec tests alone do not enable workers.
+Regression tests are in `src/agent/protocol/tests.rs`.

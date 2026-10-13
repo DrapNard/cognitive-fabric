@@ -1,6 +1,7 @@
 //! Transport-independent, bounded solver turns for external agent clients.
 //! Tool calls are proposals; execution and approval belong to the client.
 mod local;
+pub mod protocol;
 mod types;
 use crate::{
     config::Config,

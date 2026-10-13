@@ -2,6 +2,13 @@
 
 All notable changes are documented here in English.
 
+### Define typed native conversation worker packets
+
+- Add a dedicated FlatBuffers codec for conversation history, tools and completions.
+- Validate packet identity, enum/allocation/history bounds and shared-string copies.
+- Preserve tool-only answers and unknown usage; keep managed mode disabled until
+  authenticated transport and child cleanup are integrated.
+
 ### Pin registered models for native agent turns
 
 - Support selected immutable local model registrations in the native adapter.

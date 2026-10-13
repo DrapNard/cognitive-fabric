@@ -9,6 +9,7 @@ fn main() {
     println!("cargo:rerun-if-changed=protocol/tool.fbs");
     println!("cargo:rerun-if-changed=protocol/sql_tool.fbs");
     println!("cargo:rerun-if-changed=protocol/tool_bootstrap.fbs");
+    println!("cargo:rerun-if-changed=protocol/agent.fbs");
     println!("cargo:rerun-if-env-changed=FLATC");
     let compiler = env::var_os("FLATC").unwrap_or_else(|| "flatc".into());
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR must be set by Cargo"));
@@ -33,6 +34,7 @@ fn main() {
         .arg("protocol/tool.fbs")
         .arg("protocol/sql_tool.fbs")
         .arg("protocol/tool_bootstrap.fbs")
+        .arg("protocol/agent.fbs")
         .status()
         .expect("flatc was not found. Install FlatBuffers compiler (e.g. pacman -S flatbuffers).");
     assert!(status.success(), "flatc could not compile protocol schemas");

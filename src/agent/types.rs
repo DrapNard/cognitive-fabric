@@ -75,7 +75,7 @@ fn name(s: &str) -> bool {
         && s.bytes()
             .all(|b| b.is_ascii_alphanumeric() || b"_-".contains(&b))
 }
-fn valid_call(c: &ToolCall) -> Result<()> {
+pub(super) fn valid_call(c: &ToolCall) -> Result<()> {
     if c.kind != "function"
         || !name(&c.function.name)
         || !name(&c.id)

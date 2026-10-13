@@ -1,0 +1,43 @@
+// Native conversation RPC. Tool proposals never authorize worker-side execution.
+namespace Agent;
+enum Role:ubyte { System, Developer, User, Assistant, Tool }
+enum Choice:ubyte { Unspecified, Auto, None, Required, Named }
+enum Finish:ubyte { Stop, Length, ToolCalls }
+table FunctionCall { name:string (required); arguments:string (required); }
+table ToolCall { id:string (required); function:FunctionCall (required); }
+table Message { role:Role; content:string; tool_calls:[ToolCall]; tool_call_id:string; }
+// JSON Schema is bounded external data, not a replacement for this typed envelope.
+table Function { name:string (required); description:string (required); parameters_json:string (required); strict:bool = null; }
+table Tool { function:Function (required); }
+table Turn {
+  messages:[Message] (required);
+  tools:[Tool];
+  choice:Choice;
+  choice_name:string;
+  max_tokens:uint = null;
+  temperature:double = null;
+  parallel_tool_calls:bool = null;
+}
+table Request { turn:Turn (required); allocation:uint; }
+table Response {
+  content:string;
+  tool_calls:[ToolCall];
+  model:string (required);
+  finish:Finish;
+  input_tokens:ulong = null;
+  output_tokens:ulong = null;
+}
+table Packet {
+  version:ushort = 1;
+  correlation_id:string (required);
+  task_id:string (required);
+  sender:string (required);
+  destination:string (required);
+  module_version:string (required);
+  expires_at_ms:ulong;
+  request:Request;
+  response:Response;
+  error:string;
+}
+root_type Packet;
+file_identifier "COGA";
