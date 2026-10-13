@@ -933,3 +933,21 @@ injection or schema violations. Tool JSON Schema semantics and action permission
 remain the client's responsibility; Fabric proposes tools and executes none through
 this API. No remote reference resolution, host capability, new tool or model
 permission is introduced. Internal FlatBuffers framing/schema is unchanged.
+
+
+### Strict provider and advisory JSON
+
+Ordinary OpenAI-compatible reasoning responses now use the bounded duplicate-key
+parser before selecting answer/model/usage fields. Structured advisory parsing
+applies the same rule after validating its optional JSON fence, including nested
+objects inside arrays. Native residency responses and inventory decoding also
+reject duplicate decoded names before their values can be normalized or observed.
+Existing response/role byte caps, JSON recursion limits, trailing-data checks,
+credential echo checks, loopback-only HTTP and redirect/proxy denials remain.
+Unique unknown native metadata stays forward-compatible; duplicate metadata fails.
+
+Ambiguous initial inventory cannot authorize a residency POST. If an approved
+POST has already occurred and its reply is ambiguous, the task remains interrupted
+with `outcome_unknown`; no confirmation request, retry, inferred ownership or
+cleanup follows. Model/provider content still confers no permissions or factual
+attestation. Internal FlatBuffers and stored benchmark results are unchanged.

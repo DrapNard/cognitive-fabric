@@ -1,6 +1,6 @@
 # Rust baseline quality review
 
-Current local runtime passes 479 Rust tests (431 library, 48 integration),
+Current local runtime passes 482 Rust tests (434 library, 48 integration),
 formatting, workspace all-target compilation and Clippy with warnings denied.
 Before the residency-inspection addition, both core and HTTP server packages passed optimized host source installation,
 offline installed workflows and managed OpenCode/Qwen read/edit/read. Hosted CI
@@ -3494,3 +3494,24 @@ workflow checks pass. No live model study, external tool execution, optimized
 installation, general JSON Schema validator or arbitrary client compatibility
 claim. General scheduling, isolated expert provisioning, physical residency and
 independent unseen reasoning/security evaluations remain release work.
+
+
+### Remaining provider JSON boundary gate
+
+All 482 tests (434 library, 48 integration), formatting, workspace all-target
+check and Clippy pass with existing flatc/Rust FlatBuffers 25.12.19. Commands:
+`cargo fmt --all -- --check`, `cargo check --offline --workspace --all-targets`,
+`cargo test --offline --workspace --all-targets`, and
+`cargo clippy --offline --workspace --all-targets -- -D warnings`.
+Log: `/tmp/cogfabric-provider-json-tests.log`. Three new regressions cover actual
+reasoning-provider HTTP duplicate answer/model/usage fields, fenced advisory
+nested/escaped duplicates with valid controls, and actual native inventory HTTP
+ambiguity while preserving valid unknown metadata. Existing CLI residency tests
+now also inject duplicate initial inventory and duplicate post-load reply. The
+first produces no POST; the second preserves interrupted/unknown outcome and
+neither causes another network request. These are isolated fixtures, not real
+model lifecycle mutations. The first expanded scenario assertion selected the
+wrong test branch; corrected and reran all gates without changing acceptance
+criteria. No live model benchmark, optimized install, new permissions or protocol
+schema. General module scheduling, isolated expert provisioning, physical model
+residency and independent unseen evaluations remain incomplete.

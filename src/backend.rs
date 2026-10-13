@@ -210,7 +210,7 @@ pub async fn generate_report(
     if let Some(credential) = &credential {
         credential.reject_echo(&body)?;
     }
-    let response: serde_json::Value = serde_json::from_slice(&body)
+    let response = crate::strict_json::value(&body, MAX_RESPONSE_BYTES)
         .map_err(|_| anyhow::anyhow!("Invalid inference JSON response"))?;
     if let Some(credential) = &credential {
         credential.reject_echo(&serde_json::to_vec(&response)?)?;
@@ -353,6 +353,26 @@ mod tests {
         let body = "x".repeat(MAX_RESPONSE_BYTES + 1);
         let response = format!("HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n{body}");
         assert!(fixture_response(response.into_bytes()).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn duplicate_provider_response_fields_fail_without_selecting_a_winner() {
+        for body in [
+            r#"{"model":"a","model":"b","choices":[{"message":{"content":"answer"}}]}"#,
+            r#"{"choices":[{"message":{"content":"safe","\u0063ontent":"ambiguous"}}]}"#,
+            r#"{"choices":[{"message":{"content":"answer"}}],"usage":{"completion_tokens":1,"completion_tokens":999}}"#,
+        ] {
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            let error = fixture_response(response.into_bytes())
+                .await
+                .unwrap_err()
+                .to_string();
+            assert_eq!(error, "Invalid inference JSON response");
+        }
     }
 
     #[tokio::test]

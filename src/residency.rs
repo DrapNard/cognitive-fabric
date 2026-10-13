@@ -35,7 +35,8 @@ fn identity(value: &str) -> bool {
     !value.trim().is_empty() && value.len() <= 256 && !value.chars().any(char::is_control)
 }
 fn parse(bytes: &[u8]) -> Result<Vec<Model>> {
-    let inventory: Inventory = serde_json::from_slice(bytes)
+    let inventory: Inventory = crate::strict_json::value(bytes, 262144)
+        .and_then(|value| Ok(serde_json::from_value(value)?))
         .map_err(|_| anyhow::anyhow!("Invalid native model inventory"))?;
     if inventory.models.len() > 256 {
         bail!("Native model inventory exceeds bounds")
@@ -122,7 +123,7 @@ async fn request(
     if let Some(credential) = &credential {
         credential.reject_echo(&bytes)?;
     }
-    let value: Value = serde_json::from_slice(&bytes)
+    let value = crate::strict_json::value(&bytes, 262144)
         .map_err(|_| anyhow::anyhow!("Invalid native inventory JSON"))?;
     if let Some(credential) = &credential {
         credential.reject_echo(&serde_json::to_vec(&value)?)?;
@@ -178,6 +179,52 @@ mod tests {
         assert!(parse(br#"{"models":[{"key":"small","type":"llm"}]}"#).is_err());
         assert!(security::authorize("jev-plus", "model.residency.inspect").is_err());
     }
+    #[tokio::test]
+    async fn native_http_inventory_rejects_duplicate_fields_before_observation() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        for body in [
+            r#"{"models":[],"models":[]}"#,
+            r#"{"models":[],"metadata":{"flag":true,"flag":false}}"#,
+            r#"{"models":[],"metadata":{"flag":true}}"#,
+        ] {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let base = format!("http://{}/api/v1/", listener.local_addr().unwrap());
+            let server = tokio::spawn(async move {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut request = Vec::new();
+                while !request.windows(4).any(|w| w == b"\r\n\r\n") {
+                    let mut chunk = [0; 1024];
+                    let n = socket.read(&mut chunk).await.unwrap();
+                    assert!(n > 0);
+                    request.extend_from_slice(&chunk[..n]);
+                    assert!(request.len() < 8192);
+                }
+                assert!(request.starts_with(b"GET /api/v1/models "));
+                socket
+                    .write_all(
+                        format!(
+                            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                            body.len(),
+                            body
+                        )
+                        .as_bytes(),
+                    )
+                    .await
+                    .unwrap();
+            });
+            let result = status(&base, false).await;
+            if body.contains("false") || body == r#"{"models":[],"models":[]}"# {
+                assert_eq!(
+                    result.unwrap_err().to_string(),
+                    "Invalid native inventory JSON"
+                );
+            } else {
+                assert!(result.is_ok());
+            }
+            server.await.unwrap();
+        }
+    }
+
     #[test]
     fn native_endpoint_never_inherits_inference_paths_or_remote_access() {
         assert_eq!(

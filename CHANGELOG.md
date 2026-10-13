@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Reject ambiguous reasoning and residency provider fields
+
+- Extend bounded duplicate-key rejection to reasoning responses and advisory JSON.
+- Reject ambiguous native inventory before effects; preserve unknown outcomes after POST.
+- Verify actual HTTP and CLI denials without retries or real lifecycle mutations.
+
 ### Reject ambiguous agent JSON objects
 
 - Reject nested and escaped duplicate keys in HTTP bodies, provider objects, native schemas and tool arguments.

@@ -114,7 +114,7 @@ async fn read_request(stream: &mut tokio::net::TcpStream) -> String {
 
 #[tokio::test]
 async fn cli_residency_mutations_audit_confirm_and_preserve_unknown_outcomes() {
-    for scenario in 0..5 {
+    for scenario in 0..7 {
         let home =
             std::env::temp_dir().join(format!("fabric-residency-change-{}", uuid::Uuid::new_v4()));
         let cfg = cogfabric::config::Config {
@@ -130,7 +130,9 @@ async fn cli_residency_mutations_audit_confirm_and_preserve_unknown_outcomes() {
         let base = format!("http://{}/api/v1", listener.local_addr().unwrap());
         let server_store = cfg.db();
         let server = tokio::spawn(async move {
-            let count = if scenario >= 3 {
+            let count = if scenario == 5 {
+                2
+            } else if scenario >= 3 {
                 1
             } else if scenario == 2 {
                 2
@@ -140,7 +142,7 @@ async fn cli_residency_mutations_audit_confirm_and_preserve_unknown_outcomes() {
             for call in 0..count {
                 let (mut stream, _) = listener.accept().await.unwrap();
                 let request = read_request(&mut stream).await;
-                let body = if call == 1 {
+                let mut body = if call == 1 {
                     let db = rusqlite::Connection::open(&server_store).unwrap();
                     let recorded: i64 = db.query_row("SELECT COUNT(*) FROM events WHERE kind='model_residency' AND json_extract(payload,'$.state')='requested'", [], |r| r.get(0)).unwrap();
                     assert_eq!(recorded, 1, "Intent must exist before POST");
@@ -159,7 +161,20 @@ async fn cli_residency_mutations_audit_confirm_and_preserve_unknown_outcomes() {
                     let loaded = if call == 0 { scenario == 1 || scenario == 3 } else { scenario == 0 };
                     json!({"models":[{"key":"installed","type":"llm","loaded_instances":if loaded { json!([{"id":"instance","config":{"context_length":2048}}]) } else { json!([]) }}]})
                 }.to_string();
+                if scenario == 5 && call == 1 {
+                    body = r#"{"type":"llm","status":"loaded","instance_id":"instance","instance_id":"different","load_time_seconds":0.25}"#.into();
+                } else if scenario == 6 {
+                    body = r#"{"models":[{"key":"installed","type":"llm","loaded_instances":[]}],"models":[{"key":"installed","type":"llm","loaded_instances":[]}]}"#.into();
+                }
                 stream.write_all(format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len()).as_bytes()).await.unwrap();
+            }
+            if matches!(scenario, 5 | 6) {
+                assert!(
+                    tokio::time::timeout(std::time::Duration::from_millis(100), listener.accept())
+                        .await
+                        .is_err(),
+                    "Ambiguous native JSON must not cause another request"
+                );
             }
         });
         let task_home = home.clone();
@@ -201,7 +216,7 @@ async fn cli_residency_mutations_audit_confirm_and_preserve_unknown_outcomes() {
                 store.task(report["task_id"].as_str().unwrap()).unwrap()["task"]["status"],
                 "completed"
             );
-        } else if scenario == 2 {
+        } else if matches!(scenario, 2 | 5) {
             let state: String = db
                 .query_row("SELECT status FROM tasks", [], |r| r.get(0))
                 .unwrap();
