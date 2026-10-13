@@ -960,6 +960,55 @@ impl Session {
             }
             let critique_prompt =
                 format!("{base}\nUnverified candidate: {}\nCritique your candidate. Return only JSON with revise (boolean) and reason (string). Never claim verification or permissions.", truncate(&answer, 6000));
+            // A critique is useful only if reflection and a revised solver still fit.
+            // Reason bytes are validated at 1,000; strategy truncation allows at
+            // most 4,000 Unicode scalars (16,000 UTF-8 bytes).
+            let reflection_bound = format!(
+                "{base}\nCandidate flaw (unverified advice): {}\nCandidate: {}",
+                "x".repeat(1000),
+                truncate(&answer, 4000)
+            )
+            .len();
+            let solver_bound = format!(
+                "{base}\nUnverified strategy: {}\nPrevious unverified answer: {}",
+                "x".repeat(16000),
+                truncate(&answer, 6000)
+            )
+            .len();
+            let prompt_bound = critique_prompt
+                .len()
+                .saturating_add(reflection_bound)
+                .saturating_add(solver_bound);
+            let admitted = Instant::now() < self.deadline
+                && (self.resources.cycles as usize) < self.cycle_limit
+                && self
+                    .call_limit
+                    .saturating_sub(self.resources.calls as usize)
+                    >= 3
+                && self
+                    .cfg
+                    .max_tokens
+                    .saturating_sub(self.resources.reserved_output_tokens)
+                    >= 640
+                && self
+                    .cfg
+                    .max_input_bytes
+                    .saturating_sub(self.resources.prompt_bytes)
+                    >= prompt_bound
+                && [critique_prompt.len(), reflection_bound, solver_bound]
+                    .iter()
+                    .all(|bytes| *bytes <= 32000);
+            self.store.event(&self.task,"schedule","jev-plus",json!({
+                "decision":if admitted {"admit_revision"} else {"skip_revision"},
+                "reason":"Preserve critique, reflection and one revised solver within original ceilings",
+                "required_calls":3,"required_output_tokens":640,
+                "reserved_prompt_bytes":prompt_bound,"reservation_charged":false,
+                "expected_utility_measured":false
+            }))?;
+            if !admitted {
+                self.stop_reason = "insufficient_revision_budget".into();
+                break;
+            }
             let Some(review) = self
                 .call(
                     if collective { "critic" } else { "solver" },
@@ -1841,20 +1890,10 @@ mod tests {
 
     #[tokio::test]
     async fn small_budget_skips_decomposition_but_retains_a_whole_goal_solver() {
-        let (outcome, trace) = execute(
-            vec![
-                ("planner", GRAPH),
-                ("solver", "whole goal answer"),
-                (
-                    "critic",
-                    r#"{"revise":false,"reason":"No useful revision"}"#,
-                ),
-            ],
-            3,
-        )
-        .await;
+        let (outcome, trace) =
+            execute(vec![("planner", GRAPH), ("solver", "whole goal answer")], 3).await;
         assert_eq!(outcome.answer, "whole goal answer");
-        assert_eq!(outcome.calls, 3);
+        assert_eq!(outcome.calls, 2);
         let skipped = trace["events"]
             .as_array()
             .unwrap()
@@ -1902,12 +1941,6 @@ mod tests {
                 script.extend([("solver", "collected"), ("solver", "combined")]);
             }
             script.push(("solver", "whole goal answer"));
-            if mode == "deep" {
-                script.push((
-                    "critic",
-                    r#"{"revise":false,"reason":"No useful revision"}"#,
-                ));
-            }
             let backend = Arc::new(Script(Mutex::new(script.into())));
             let outcome = Engine::with_backend(cfg, store.clone(), backend.clone())
                 .run("Explain borrowing", mode)
@@ -2089,12 +2122,12 @@ mod tests {
 
     #[tokio::test]
     async fn critique_drives_a_real_bounded_revision_without_claiming_proof() {
-        let (outcome,trace)=execute(vec![
+        let (outcome,trace)=execute_configured(vec![
             ("planner","Collect evidence"),("solver","first answer"),
             ("critic","```json\n{\"revise\":true,\"reason\":\"The ownership claim lacks its lifetime condition\"}\n```"),
             ("reflector","Include the lifetime condition"),("solver","revised answer"),
             ("critic","```json\r\n{\"revise\":false,\"reason\":\"No specific useful revision\"}\r\n```"),
-        ],6).await;
+        ],8, |cfg| cfg.max_tokens = 2048).await;
         assert_eq!(outcome.answer, "revised answer");
         assert_eq!(outcome.status, "unverified");
         assert_eq!(outcome.calls, 6);
@@ -2135,19 +2168,43 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn call_budget_prevents_the_next_solver() {
-        let (outcome, _) = execute(
-            vec![
-                ("planner", "Plan"),
-                ("solver", "candidate"),
-                ("critic", r#"{"revise":true,"reason":"Missing condition"}"#),
-                ("reflector", "Improve"),
-            ],
-            4,
-        )
-        .await;
-        assert_eq!(outcome.calls, 4);
-        assert_eq!(outcome.stop_reason, "budget_exhausted");
+    async fn revision_admission_preserves_cycles_outputs_and_prompt_budget() {
+        for variant in 0..3 {
+            let (outcome, trace) = execute_configured(
+                vec![("planner", "Plan"), ("solver", "candidate")],
+                8,
+                |cfg| match variant {
+                    0 => cfg.max_cycles = 1,
+                    1 => cfg.max_tokens = 1000,
+                    _ => cfg.max_input_bytes = 1000,
+                },
+            )
+            .await;
+            assert_eq!(outcome.answer, "candidate");
+            assert_eq!(outcome.calls, 2);
+            assert_eq!(outcome.cycles, 1);
+            assert_eq!(outcome.status, "unverified");
+            assert_eq!(outcome.stop_reason, "insufficient_revision_budget");
+            assert!(trace["events"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|e| e["kind"] == "schedule"
+                    && e["payload"]["decision"] == "skip_revision"
+                    && e["payload"]["reservation_charged"] == false));
+            assert!(!trace["events"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|e| e["kind"] == "reasoning" && e["payload"]["node"]["role"] == "critic"));
+        }
+    }
+
+    #[tokio::test]
+    async fn call_budget_skips_futile_critique_and_reflection() {
+        let (outcome, _) = execute(vec![("planner", "Plan"), ("solver", "candidate")], 4).await;
+        assert_eq!(outcome.calls, 2);
+        assert_eq!(outcome.stop_reason, "insufficient_revision_budget");
         assert_eq!(outcome.status, "unverified");
     }
 

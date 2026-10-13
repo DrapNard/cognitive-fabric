@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Preserve a revised solver before spending on critique
+
+- Admit critique/reflection only when the complete revision chain fits original ceilings.
+- Check remaining cycles, calls, output reservations and bounded prompt bytes.
+- Audit skipped chains and preserve the current explicitly unverified candidate.
+
 ### Freeze reproducible public graph diagnostics
 
 - Add 16 hashed shortest-path cases with separately stored oracle metadata.

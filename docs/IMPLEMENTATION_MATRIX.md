@@ -2028,3 +2028,28 @@ for `qwen/qwen3-8b` and run a bounded `compare` with this dataset, its pinned ha
 same configuration and budgets across the six profiles, retain raw reports and
 usage, and report incomplete/failed runs. Do not label this public corpus held out.
 Independent unseen tasks and equal-budget model studies remain release work.
+
+
+### Revision-chain resource admission
+
+Before unverified deep/research answers enter critique, Jev+ now checks that an
+additional cycle, three calls and 640 output-token reservations remain for the
+critic (128), reflector (128) and revised solver (384). It also checks cumulative
+prompt-byte upper bounds and each backend prompt's 32,000-byte ceiling. Bounds
+use the exact candidate truncations, the validated 1,000-byte critique reason,
+and a 4,000-character strategy bound of 16,000 UTF-8 bytes. No new allowance is
+granted or charged by this advisory admission; each subsequent call still uses
+normal durable reservations, authorization, deadline and cancellation checks.
+Elapsed provider time can still prevent later stages after initial admission.
+
+The durable `schedule` event precedes critique and records `admit_revision` or
+`skip_revision`, required costs, uncharged prompt bounds and
+`expected_utility_measured: false`. A denied chain preserves the current
+unverified candidate with `insufficient_revision_budget`, avoiding critique or
+reflection that cannot support another answer. Independent executable-criterion
+revision retains its direct checker-to-solver path. This is feasibility-based
+resource control, not calibrated expected utility, general scheduling, semantic
+verification or evidence of improved model accuracy.
+
+Revision-chain gate: 462 workspace tests and mandatory checks pass. Actual CLI
+fixture confirms avoided critique dispatch; see QUALITY_REVIEW.md for scope.

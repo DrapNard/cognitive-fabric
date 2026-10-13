@@ -3213,3 +3213,34 @@ comparison remains unrun. No server launch, weight download/load/unload, new too
 permission, runtime schema/protocol change or optimized-install validation.
 Independent unseen quality/security evaluation and broader lifecycle gates stay
 open. BENCHMARKING.md records provenance and the bounded follow-up procedure.
+
+
+### Revision-chain admission verification
+
+Jev+ now admits critique only if the complete critic/reflector/revised-solver
+sequence fits remaining cycles, calls, output reservations and bounded prompt
+bytes. Per-call durable charges, policy checks, wall time and cancellation remain
+authoritative. Admission is not a precharge, time guarantee or measured utility
+estimate. An unavailable chain preserves the unverified candidate and records
+`skip_revision` / `insufficient_revision_budget`. Independent checker revision
+is unchanged. No permission, provider call ceiling or recovery allowance grows.
+
+All 462 tests (416 library, 46 integration), formatting, workspace all-target
+check and Clippy pass with existing flatc/Rust pairing 25.12.19. Commands:
+`cargo fmt --all -- --check`, `cargo check --offline --workspace --all-targets`,
+`cargo test --offline --workspace --all-targets`, and
+`cargo clippy --offline --workspace --all-targets -- -D warnings`.
+Log: `/tmp/cogfabric-revision-admission-tests.log`. Focused tests initially found
+three old expectations of critic calls without a feasible follow-up. Tests now
+assert avoided dispatch; the valid critique/revision test has explicit sufficient
+call/output budgets and still exercises real critique/reflection. A new regression
+covers exhausted cycles, output reservations and prompt bytes. Existing call-limit
+regression now proves two calls saved without promoting the candidate.
+
+Actual CLI/HTTP fixture `/tmp/cogfabric-revision-admission-smoke.qmquuoj1`
+confirmed only planner+solver dispatch with a one-cycle ceiling, preserved answer,
+unverified status and the new stop reason. Initial smoke setup wrongly assumed
+`init` saves config; corrected by explicitly supplying a temporary configuration.
+No live-model quality, energy/speed improvement, clean-OS install or calibrated
+expected utility is claimed. General scheduling, independent reasoning evaluation,
+expert provisioning/isolation and physical model residency remain incomplete.
