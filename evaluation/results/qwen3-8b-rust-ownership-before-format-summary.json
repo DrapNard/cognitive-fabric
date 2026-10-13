@@ -46,5 +46,6 @@
     "Single model and run, no comparative architecture or general expertise claim",
     "Exact scorer remains unchanged; explanatory prose fails the requested yes/no contract",
     "No compiler tool exposed to the runtime or model"
-  ]
+  ],
+  "runtime_binary_sha256": "a67a80d3bc669f994da0b648cbf5c78827e18c207d3b30cdb57391379075265d"
 }

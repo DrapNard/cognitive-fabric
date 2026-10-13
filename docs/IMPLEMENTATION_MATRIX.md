@@ -1837,3 +1837,9 @@ tests and mandatory checks pass (`/tmp/cogfabric-solver-format-tests.log`).
 The public compiler-backed Qwen diagnostic before this change matched 6/20
 strict labels; raw reports include format failures and incorrect answers.
 This does not establish causal gains, held-out robustness or expert quality.
+
+Frozen public Rust rerun: strict matches changed from 6/20 to 8/20, with three
+improvements and one regression, unchanged labels/scorer/configuration and zero
+tools. Both raw reports and metadata are committed. Extra prose and incorrect
+judgments remain; this does not establish reliable expert behavior or causal
+reasoning gains. BENCHMARKING.md records actual latency and reported usage.

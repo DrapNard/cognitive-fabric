@@ -26,7 +26,8 @@ async fn public_rust_ownership_labels_match_compiler_and_specific_error_codes() 
     assert_eq!(manifest["case_count"], 20);
     assert_eq!(manifest["independent_human_review"], false);
     assert_eq!(manifest["held_out"], false);
-    assert_eq!(manifest["live_model_evaluated"], false);
+    assert_eq!(manifest["live_model_evaluated"], true);
+    assert_eq!(manifest["independent_live_study_completed"], false);
     let rows: Vec<Case> = raw
         .lines()
         .map(|line| serde_json::from_str(line).unwrap())
@@ -127,5 +128,49 @@ async fn public_rust_ownership_labels_match_compiler_and_specific_error_codes() 
                 "Expected specific diagnostic {code} for {id}"
             );
         }
+    }
+    for (report_raw, summary_raw) in [
+        (
+            include_str!("../evaluation/results/qwen3-8b-rust-ownership-before-format.json"),
+            include_str!(
+                "../evaluation/results/qwen3-8b-rust-ownership-before-format-summary.json"
+            ),
+        ),
+        (
+            include_str!("../evaluation/results/qwen3-8b-rust-ownership-after-format.json"),
+            include_str!("../evaluation/results/qwen3-8b-rust-ownership-after-format-summary.json"),
+        ),
+    ] {
+        let report: serde_json::Value = serde_json::from_str(report_raw).unwrap();
+        let summary: serde_json::Value = serde_json::from_str(summary_raw).unwrap();
+        assert_eq!(
+            summary["report_sha256"],
+            cogfabric::store::sha256(report_raw.as_bytes())
+        );
+        assert_eq!(summary["dataset_sha256"], manifest["dataset_sha256"]);
+        assert_eq!(summary["held_out"], false);
+        assert_eq!(summary["weights_attested"], false);
+        assert_eq!(report["model_calls"], 20);
+        let details = report["details"].as_array().unwrap();
+        assert_eq!(details.len(), rows.len());
+        let mut passed = 0;
+        for (detail, case) in details.iter().zip(&rows) {
+            assert_eq!(detail["input"], case.input);
+            assert_eq!(detail["expected"], case.expected);
+            assert_eq!(detail["runtime_status"], "unverified");
+            assert_eq!(detail["resources"]["tool_calls"], 0);
+            let normalized = detail["answer"]
+                .as_str()
+                .unwrap()
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+                .to_lowercase();
+            let matches = normalized == case.expected;
+            assert_eq!(detail["passed"], matches);
+            passed += usize::from(matches);
+        }
+        assert_eq!(report["passed"], passed);
+        assert_eq!(summary["exact_matches"], passed);
     }
 }

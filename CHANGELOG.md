@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Record frozen public Rust diagnostic rerun
+
+- Retain unchanged-label before/after reports and exact source/binary metadata.
+- Record 6/20 and 8/20 strict matches, paired regressions and actual resource usage.
+- Preserve imperfect format adherence and factual errors as release evidence.
+
 ### Respect explicit solver answer-format constraints
 
 - Condition explanatory fact/guess separation on the original user's output format.

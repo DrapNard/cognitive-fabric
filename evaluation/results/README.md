@@ -90,3 +90,12 @@ retrospectively. `qwen3-8b-rust-ownership-admission-preflight.json` records the
 initial too-small reservation (20 exhausted tasks, zero model calls); it is not a
 model-quality result. These are public authored diagnostics, not held-out studies
 or evidence of general Rust expertise or collective superiority.
+
+The frozen rerun after format clarification is retained as
+`qwen3-8b-rust-ownership-after-format.json` plus its summary. It matched 8/20 strict
+labels in 51.657 seconds (20 calls, zero tools; 4,327/780 reported input/output
+tokens). Three exact cases improved and one regressed. Original and rerun labels,
+configuration and dataset bytes match; extra explanations and factual errors
+remain. This is descriptive public evidence only, not reliable Rust expertise or
+a causal reasoning gain. Summaries include source, dataset, report and executable
+hashes. Model weight identity and GPU attribution remain unverified.

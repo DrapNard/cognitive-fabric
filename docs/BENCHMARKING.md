@@ -313,3 +313,21 @@ removes an instruction tension without changing labels, scoring, permissions,
 token reservations or the external-reference boundary. Model compliance is not
 guaranteed. The compiled role-prompt identity changes, so old saved continuation
 boundaries cannot silently resume under these changed instructions.
+
+### Frozen Rust diagnostic rerun
+
+After the solver-format clarification, source `b04b5b5` matched 8/20 strict labels
+in 51.657 seconds, with 20 calls, zero tools, 4,327 reported input tokens and 780
+reported output tokens. The before run matched 6/20 in 95.053 seconds with 3,987
+input and 1,452 output tokens. Dataset bytes, generation/resource configuration,
+exact scoring and question order were unchanged; each used fresh isolated state.
+All runtime answers remained unverified. Zero-based exact-match indices 1, 7 and
+16 improved, while index 14 regressed. Extra prose and incorrect Rust judgments
+remain. Both raw reports, summaries, source/dataset/binary hashes and the no-call
+admission preflight are retained under evaluation/results.
+
+This is a single public before/after diagnostic, not a randomized controlled
+study, held-out robustness result, proof of reasoning improvement or Rust expert
+readiness. Output-contract adherence remains imperfect; no labels or scorer were
+relaxed to raise scores. Timings include host dispatch and are not GPU compute or
+energy measurements. No compiler capability was granted to the model.

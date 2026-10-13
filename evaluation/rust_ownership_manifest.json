@@ -11,7 +11,7 @@
   "independent_human_review": false,
   "held_out": false,
   "training_contamination_checked": false,
-  "live_model_evaluated": false,
+  "live_model_evaluated": true,
   "cases": [
     {
       "id": "rust.ownership.move_after_use",
@@ -153,5 +153,10 @@
       "source_sha256": "72d2196c9b98da447b074016259e8958e536782b9a7759a4c047f80e8256f880",
       "expected_error_code": null
     }
+  ],
+  "independent_live_study_completed": false,
+  "diagnostic_reports": [
+    "results/qwen3-8b-rust-ownership-before-format.json",
+    "results/qwen3-8b-rust-ownership-after-format.json"
   ]
 }

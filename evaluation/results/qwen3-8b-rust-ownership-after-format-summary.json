@@ -1,0 +1,56 @@
+{
+  "format_version": 1,
+  "run_purpose": "public_diagnostic",
+  "held_out": false,
+  "independent_human_review": false,
+  "source_revision": "b04b5b50d45b28039a3418ae62ac9eab0a3e2a39",
+  "requested_model": "qwen/qwen3-8b",
+  "weights_attested": false,
+  "mode": "fast",
+  "configuration": {
+    "backend": "openai-local",
+    "model": "qwen/qwen3-8b",
+    "api_base": "http://127.0.0.1:1234/v1",
+    "max_calls": 1,
+    "max_cycles": 1,
+    "max_tokens": 512,
+    "max_input_bytes": 64000,
+    "max_tool_calls": 0,
+    "max_wall_seconds": 20,
+    "timeout_seconds": 15,
+    "temperature": 0,
+    "reasoning_effort": "none",
+    "interpret_goals": false,
+    "synthesize_results": false
+  },
+  "dataset_sha256": "32b64461b352dfc0ee8c7b69bfdbec7eab51dc6fa2e8b8415d3ea0914ae37e60",
+  "report_sha256": "0075e83f386330a759c8908cce414f5837be0ffcc6d9f7e6cfb4d4cc1cdd86f2",
+  "compiler_oracle": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+  "total": 20,
+  "exact_matches": 8,
+  "model_calls": 20,
+  "elapsed_ms": 51657.170848,
+  "reported_input_tokens": 4327,
+  "reported_output_tokens": 780,
+  "tool_calls": 0,
+  "all_runtime_unverified": true,
+  "same_dataset_and_configuration_as_before": true,
+  "before_exact_matches": 6,
+  "improved_exact_indices": [
+    1,
+    7,
+    16
+  ],
+  "regressed_exact_indices": [
+    14
+  ],
+  "limitations": [
+    "Public authored data, no held-out or contamination proof",
+    "Single before/after runs, no randomized or independently controlled study",
+    "No causal reasoning gain or general Rust expertise established",
+    "Extra explanations and incorrect judgments remain; strict scorer is unchanged",
+    "Latency is host dispatch time, not GPU-only compute or energy",
+    "No runtime compiler tool capability or model weight attestation"
+  ],
+  "runtime_binary_sha256": "c95b9d7d2a862ccba3950ab64037e4a8a3b074e15513f5d16117072faa6faacb"
+}

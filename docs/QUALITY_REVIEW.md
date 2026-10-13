@@ -2947,3 +2947,28 @@ relaxation, expected-label disclosure or additional capabilities were added.
 All 421 tests, formatting, check and Clippy pass. Saved prompt identity changes
 intentionally invalidate incompatible continuation boundaries. The before-change
 raw diagnostic and admission-only exhausted run are retained separately.
+
+### Frozen Rust diagnostic rerun
+
+After the solver-format clarification, source `b04b5b5` matched 8/20 strict labels
+in 51.657 seconds, with 20 calls, zero tools, 4,327 reported input tokens and 780
+reported output tokens. The before run matched 6/20 in 95.053 seconds with 3,987
+input and 1,452 output tokens. Dataset bytes, generation/resource configuration,
+exact scoring and question order were unchanged; each used fresh isolated state.
+All runtime answers remained unverified. Zero-based exact-match indices 1, 7 and
+16 improved, while index 14 regressed. Extra prose and incorrect Rust judgments
+remain. Both raw reports, summaries, source/dataset/binary hashes and the no-call
+admission preflight are retained under evaluation/results.
+
+This is a single public before/after diagnostic, not a randomized controlled
+study, held-out robustness result, proof of reasoning improvement or Rust expert
+readiness. Output-contract adherence remains imperfect; no labels or scorer were
+relaxed to raise scores. Timings include host dispatch and are not GPU compute or
+energy measurements. No compiler capability was granted to the model.
+
+Final corpus/report integrity gate also passes all 421 tests, format, workspace
+check and Clippy. Log: `/tmp/cogfabric-rust-diagnostic-final-tests.log`. The corpus
+regression verifies retained report hashes, source-question/label identity, exact
+match counts, unverified runtime status and zero tools. The manifest now records
+public live diagnostic completion while independent review/live-study and
+held-out flags remain false.

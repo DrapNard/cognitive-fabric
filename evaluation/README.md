@@ -82,8 +82,9 @@ balance, unique IDs and conservative input/diagnostic bounds. Run with
 This oracle is the Rust compiler, separate from the model and Fabric's built-in
 checkers. It is not independent human curation, held-out data, general code
 execution support or proof of Rust expertise. Compiler identity/version and
-fixture provenance must accompany measurements. The manifest deliberately keeps
-formal review/held-out/live-study flags false. Public diagnostics may use `bench`
+fixture provenance must accompany measurements. The manifest records the completed public live diagnostics separately from
+independent review, held-out status and independent live-study completion, which
+remain false. Public diagnostics may use `bench`
 or `compare --workflow-check`; never attest held-out status just because labels
 compile as expected. Runtime tasks see source questions, not labels or compiler
 diagnostics. The runtime itself receives no compiler tool capability.
