@@ -4,14 +4,14 @@ This checklist preserves the 18 acceptance criteria in the goal objective. It is
 an evidence inventory, not a release approval. The canonical French architecture
 and the broader implementation matrix remain authoritative. Earlier test counts
 in the quality review are historical milestones. Current local verification is
-487 Rust tests (439 library, 48 integration), formatting, all-target checking and
+488 Rust tests (440 library, 48 integration), formatting, all-target checking and
 Clippy with warnings denied, using FlatBuffers compiler/crate 25.12.19.
 
 | Goal criterion | Evidence inspected | Assessment / remaining proof |
 |---|---|---|
 | 1. Workspace builds | `Cargo.toml`, all-target check | Passed locally; isolated optimized source installation also passed with cached dependencies. |
 | 2. Formatting and Clippy | Mandatory checks in `QUALITY_REVIEW.md` | Passed locally. |
-| 3. Mandatory tests | Workspace all-target test results, `tests/`, server integration tests | 487 passed; fixtures do not establish live model quality. |
+| 3. Mandatory tests | Workspace all-target test results, `tests/`, server integration tests | 488 passed; fixtures do not establish live model quality. |
 | 4. FlatBuffers IPC | `protocol/`, `src/wire.rs`, `src/fabric/`, malformed/compatibility/socket tests | Implemented for present transports; authenticated process event delivery/replay is now tested; broader module compatibility remains partial. |
 | 5. CLI/service communication | `src/service.rs`, socket tests, `tests/process_worker.rs`, `crates/cogfabric-server/tests/` | Tested typed local transport, progress, cancellation and optional HTTP client interoperability; native and collective ownership drains cover dropped request futures. No general independent plugin service is claimed. |
 | 6. Compatible local LLM | `src/backend.rs`, `tests/inference_auth.rs`, `LIVE_INFERENCE.md` | Passed for Ollama and LM Studio Qwen3 8B compatible endpoints, including managed verified sorting. Native LM Studio read-only inventory passed; authenticated native access and controlled load/unload remain unverified. |
@@ -1554,3 +1554,26 @@ Rust struct-literal callers have an additive source-field requirement documented
 in EXPERTS.md. No new live quality study, optimized install, executable plugin,
 protocol schema or database migration. General scheduling, isolated provisioning,
 physical residency and independent unseen model evaluations remain release work.
+
+
+### Capability binding provenance gate
+
+All 488 tests (440 library, 48 integration), formatting, workspace all-target
+check and Clippy pass with existing flatc/Rust FlatBuffers 25.12.19. Commands:
+`cargo fmt --all -- --check`, `cargo check --offline --workspace --all-targets`,
+`cargo test --offline --workspace --all-targets`, and
+`cargo clippy --offline --workspace --all-targets -- -D warnings`.
+Log: `/tmp/cogfabric-capability-binding-tests.log`. Existing in-flight replacement
+coverage now asserts the old provider/capability versions in the audit. A new
+regression requests five available providers plus one missing capability: four
+are selected, the fifth is available/unselected with its versions, and the missing
+binding stays null/unselected with explicit gap metadata. No version or permission
+is fabricated.
+
+Actual CLI/HTTP fixture `/tmp/cogfabric-capability-binding-smoke.i1wb1vse` records
+`domain.sort` -> `reviewed.sort.s1`, provider 1.0.0 / capability 2.1.0, selected
+and declaration-only with no permission grant. Original sorting is independently
+checked after three expected interface/planner/solver calls. No live model study,
+optimized install, operational expertise claim or new authority. General module
+scheduling, isolated executable provisioning, physical residency and independent
+unseen reasoning/security evaluations remain incomplete.

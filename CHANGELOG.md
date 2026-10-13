@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Record pinned capability route provenance
+
+- Audit requested aliases and their pinned provider/capability versions.
+- Distinguish available-but-unselected providers from missing capabilities.
+- Preserve route ceilings and keep declarations separate from execution and permissions.
+
 ### Discover versioned declared expert capabilities
 
 - Add bounded immutable capability aliases while preserving legacy serialized hashes.

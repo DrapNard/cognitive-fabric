@@ -468,3 +468,20 @@ name such as `shell.execute` cannot grant that permission. No model/tool loader,
 FlatBuffers schema change, database migration or neural promotion is introduced.
 Public Rust struct-literal callers must provide the new `capabilities` vector;
 legacy serialized manifests remain compatible.
+
+
+### Pinned capability route bindings
+
+`route_refined` now records one bounded binding for each requested advisory
+capability: requested ID, resolved provider, provider manifest version, declared
+capability version, route-selection state, declaration-only status and no granted
+permissions. Values come exclusively from the task's pinned snapshot. Replacing
+an active declaration during interpretation cannot change the recorded old
+binding. Legacy unversioned declarations retain null versions; missing capabilities
+have null providers/versions and remain explicitly unselected with a gap record.
+
+A compatible provider can be available but unselected when the existing four-route
+ceiling is reached. `selected` describes route membership, not executed advice,
+provider health, factual correctness or granted authority. Existing dispatch,
+budget and verification records remain authoritative for those separate claims.
+No route ceiling, permission, model call or protocol schema changes.

@@ -1,6 +1,6 @@
 # Rust baseline quality review
 
-Current local runtime passes 487 Rust tests (439 library, 48 integration),
+Current local runtime passes 488 Rust tests (440 library, 48 integration),
 formatting, workspace all-target compilation and Clippy with warnings denied.
 Before the residency-inspection addition, both core and HTTP server packages passed optimized host source installation,
 offline installed workflows and managed OpenCode/Qwen read/edit/read. Hosted CI
@@ -3541,3 +3541,26 @@ Rust struct-literal callers have an additive source-field requirement documented
 in EXPERTS.md. No new live quality study, optimized install, executable plugin,
 protocol schema or database migration. General scheduling, isolated provisioning,
 physical residency and independent unseen model evaluations remain release work.
+
+
+### Capability binding provenance gate
+
+All 488 tests (440 library, 48 integration), formatting, workspace all-target
+check and Clippy pass with existing flatc/Rust FlatBuffers 25.12.19. Commands:
+`cargo fmt --all -- --check`, `cargo check --offline --workspace --all-targets`,
+`cargo test --offline --workspace --all-targets`, and
+`cargo clippy --offline --workspace --all-targets -- -D warnings`.
+Log: `/tmp/cogfabric-capability-binding-tests.log`. Existing in-flight replacement
+coverage now asserts the old provider/capability versions in the audit. A new
+regression requests five available providers plus one missing capability: four
+are selected, the fifth is available/unselected with its versions, and the missing
+binding stays null/unselected with explicit gap metadata. No version or permission
+is fabricated.
+
+Actual CLI/HTTP fixture `/tmp/cogfabric-capability-binding-smoke.i1wb1vse` records
+`domain.sort` -> `reviewed.sort.s1`, provider 1.0.0 / capability 2.1.0, selected
+and declaration-only with no permission grant. Original sorting is independently
+checked after three expected interface/planner/solver calls. No live model study,
+optimized install, operational expertise claim or new authority. General module
+scheduling, isolated executable provisioning, physical residency and independent
+unseen reasoning/security evaluations remain incomplete.
