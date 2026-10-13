@@ -9,11 +9,11 @@ The seven responsibilities currently map to these modules:
 
 | Layer | Implementation |
 |---|---|
-| Language Interface | `language.rs`, `backend.rs`, `config.rs`: advisory intent, explicit history, synthesis and loopback inference |
+| Language Interface | `language.rs`, `backend.rs`, `config.rs`, `agent/`: advisory intent, explicit history, synthesis, loopback inference and bounded native conversation turns |
 | Jev+ | `engine.rs`, `planning.rs`: task lifecycle, reference routing, capability gaps, bounded dependency scheduling |
 | Jev-R | `reasoning.rs`: shared-budget model roles, revisions, stagnation detection and independent verification status |
 | Expert Network | `registry.rs`: immutable reference manifests, dependencies, lifecycle and task version snapshots |
-| Cognitive Fabric | `wire.rs`, `service.rs`, `store.rs`: typed owner-local IPC, durable state/evidence and SQLite/FTS5 |
+| Cognitive Fabric | `wire.rs`, `service.rs`, `store.rs`, `agent/protocol.rs`: typed owner-local IPC, durable state/evidence and SQLite/FTS5; optional `crates/cogfabric-server` HTTP transport builds on the core |
 | Evolution Engine | `evolution.rs`, candidate storage: quarantined immutable artifacts and explicit lifecycle |
 | Security & Evaluation Kernel | `security.rs`, `evaluation.rs`: task-bound dispatch authorization and independent deterministic gates |
 
@@ -701,3 +701,12 @@ inference owners. Cleanup failures disable new collective process admission
 and fail shutdown for that host lifetime. Native and collective drains remain
 separate; no new tool permissions or third-party sandboxing are introduced.
 WORKERS.md describes deadlines and host-termination limits.
+
+### Current installation verification
+
+Source `a9933b3` passes a fresh Arch setup with Rust/Cargo 1.99.0 and FlatBuffers
+25.12.19: 417 tests, all quality checks, optimized installations of both packages
+and offline installed CLI/socket/HTTP workflows. Hosted CI also passed the new
+HTTP smoke. Host managed OpenCode/Qwen evidence is separate from this clean-OS
+run, which exercised no native inference or GPU. See INSTALLATION_VALIDATION.md
+and RELEASE_AUDIT.md for exact scope and reproduction.

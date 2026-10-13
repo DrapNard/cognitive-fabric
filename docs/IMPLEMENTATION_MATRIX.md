@@ -1771,3 +1771,15 @@ pending. RELEASE_AUDIT.md records exact runtime source, binary/script hashes and
 evidence. Rust runtime/tests are unchanged: the previous 417-test quality gate
 and hosted runtime CI pass. Independent expert quality and general provisioning
 remain partial.
+
+### Clean-OS installation refresh
+
+**Implemented and verified:** source `a9933b3` passes fresh Arch prerequisite
+setup/dependency download, pinned FlatBuffers, all mandatory workspace checks and
+417 tests, separate optimized core/server installs, and both installed offline
+workflow smokes. Hosted CI `38381768218` also passed the new HTTP smoke step.
+INSTALLATION_VALIDATION.md gives reproduction; RELEASE_AUDIT.md records immutable
+image/source references, binary/log hashes and limits. This supersedes the prior
+new-server clean-OS and pending HTTP CI gaps. Native GPU/model setup in Arch,
+CachyOS-specific desktop setup, independent expert quality and general module
+provisioning remain unverified or partial. No runtime changes or new test count.

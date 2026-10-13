@@ -1,5 +1,15 @@
 # Rust baseline quality review
 
+Current runtime source `38948b1` passes 417 Rust tests (378 library, 39 integration),
+formatting, workspace all-target compilation and Clippy with warnings denied.
+Both core and HTTP server packages passed optimized host source installation,
+offline installed workflows and managed OpenCode/Qwen read/edit/read. Hosted CI
+for `a9933b3` passed, including the newly added offline HTTP workflow. Expanded
+clean-OS verification is tracked separately in INSTALLATION_VALIDATION.md and
+RELEASE_AUDIT.md. Earlier counts and paths below are historical milestones.
+
+## Historical verification milestones
+
 Worker image consistency verified on 2026-10-13: formatting, all-target check,
 Clippy with warnings denied and all-target tests passed (343 library plus 22
 integration tests). The Linux real-service regression replaces the service's
@@ -2846,3 +2856,37 @@ passed for this runtime source. These tests close the current host source-instal
 verification gap for both packages, including collective cleanup. Clean-OS
 validation of the new server, plugin isolation, ownership-aware residency and
 independent reasoning/expert evaluation remain open.
+
+## Clean Arch core/server acceptance verification (2026-10-13)
+
+Tracked source `a9933b323c54d6441210e104ec59d37808370357` passed the expanded
+INSTALLATION_VALIDATION.md workflow in a fresh rootless Arch container using
+`docker.io/library/archlinux@sha256:363129b67b2bc6c5a634f8fb4961a7e2eba213a2ec075d159127b1260290a722`.
+Only read-only source and the validation script were mounted; no host Cargo
+cache, credentials, Git metadata or model weights were shared. Prerequisite
+installation and fresh dependency downloads succeeded. Rust/Cargo 1.99.0 and
+flatc/Rust FlatBuffers 25.12.19 were used. Formatting, workspace all-target check,
+all 417 tests and Clippy with warnings denied passed. Optimized core and server
+installs completed in 3m37s and 1m41s respectively. Both installed offline
+workflow scripts passed, including actual authenticated HTTP discovery, origin
+denial, arithmetic/SQL child reaping and graceful shutdown.
+
+Core binary SHA-256:
+`9b371386214bb6c43a87d3fff5dc441148e20e86461c0b0ec9b136dfa1dd84e2`.
+Server binary SHA-256:
+`784bd85c90b758076b4eb87c3564b73b854965a42aed9a9bb2a9b4aebeb64bf2`.
+Retained terminal log: `/tmp/cogfabric-clean-server-validation-20261013.log`,
+SHA-256 `150cee98aceafb2c7f470a1bf1276bab6fbf10d7af7033bdd2f60c778c95305e`.
+Read-only source snapshot: `/tmp/cogfabric-clean-server-source-20261013`.
+The disposable container exited successfully and was removed; its temporary
+smoke JSON directories were not exported. Successful script assertions and
+binary hashes remain in the log. No native model inference, GPU integration,
+CachyOS desktop setup or untrusted-plugin security evaluation was performed
+inside the container. The separate host live OpenCode evidence remains valid
+within its own stated scope.
+
+Hosted CI [38381768218](https://github.com/DrapNard/cognitive-fabric/actions/runs/38381768218)
+passed for this exact source, including the new offline HTTP smoke step. These
+results close the clean-OS core/server installation gap; independent expert
+quality, broader module provisioning, ownership-aware residency and complete
+release acceptance remain incomplete. No release tag or public publication.

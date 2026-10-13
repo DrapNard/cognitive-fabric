@@ -2,6 +2,13 @@
 
 All notable changes are documented here in English.
 
+### Validate core and server installation on clean Arch
+
+- Verify fresh prerequisites, pinned FlatBuffers and all 417 workspace tests.
+- Install both optimized packages and pass CLI/socket and offline HTTP workflows.
+- Record exact source/image references, binary hashes and completed HTTP CI.
+- Refresh current verification summaries while preserving historical milestones.
+
 ### Verify installed HTTP workflows without model inference
 
 - Document separate core/server package installs and verify both optimized packages.

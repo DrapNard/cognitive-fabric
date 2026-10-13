@@ -4,16 +4,16 @@ This checklist preserves the 18 acceptance criteria in the goal objective. It is
 an evidence inventory, not a release approval. The canonical French architecture
 and the broader implementation matrix remain authoritative. Earlier test counts
 in the quality review are historical milestones. Current local verification is
-414 Rust tests (376 library, 38 integration), formatting, all-target checking and
+417 Rust tests (378 library, 39 integration), formatting, all-target checking and
 Clippy with warnings denied, using FlatBuffers compiler/crate 25.12.19.
 
 | Goal criterion | Evidence inspected | Assessment / remaining proof |
 |---|---|---|
 | 1. Workspace builds | `Cargo.toml`, all-target check | Passed locally; isolated optimized source installation also passed with cached dependencies. |
 | 2. Formatting and Clippy | Mandatory checks in `QUALITY_REVIEW.md` | Passed locally. |
-| 3. Mandatory tests | All-target test results, `tests/` | 414 passed; fixtures do not establish live model quality. |
+| 3. Mandatory tests | Workspace all-target test results, `tests/`, server integration tests | 417 passed; fixtures do not establish live model quality. |
 | 4. FlatBuffers IPC | `protocol/`, `src/wire.rs`, `src/fabric/`, malformed/compatibility/socket tests | Implemented for present transports; authenticated process event delivery/replay is now tested; broader module compatibility remains partial. |
-| 5. CLI/service communication | `src/service.rs`, socket tests, `tests/process_worker.rs` | Tested local transport, progress and cancellation; no general independent plugin service is claimed. |
+| 5. CLI/service communication | `src/service.rs`, socket tests, `tests/process_worker.rs`, `crates/cogfabric-server/tests/` | Tested typed local transport, progress, cancellation and optional HTTP client interoperability; native and collective ownership drains cover dropped request futures. No general independent plugin service is claimed. |
 | 6. Compatible local LLM | `src/backend.rs`, `tests/inference_auth.rs`, `LIVE_INFERENCE.md` | Passed for Ollama and LM Studio Qwen3 8B compatible endpoints, including managed verified sorting. Native LM Studio read-only inventory passed; authenticated native access and controlled load/unload remain unverified. |
 | 7. Jev+ routes real tasks | `src/engine.rs`, registry/routing tests, built-in SQL execution | Deterministic tools and registered advice routing work; live expert usefulness and general module scheduling remain incomplete. |
 | 8. Bounded Jev-R revision | `src/reasoning.rs`, scripted revision and budget tests | Enforced calls/cycles/tools/time; real-model effectiveness unverified. |
@@ -25,7 +25,7 @@ Clippy with warnings denied, using FlatBuffers compiler/crate 25.12.19.
 | 14. Lifecycle documented | `MODELS.md`, `EXPERTS.md`, `WORKERS.md` | Metadata lifecycle documented; explicit native load/unload is fixture-tested; real native read-only inventory passed; lifecycle mutations and ownership-aware automatic scheduling remain incomplete. |
 | 15. Reproducible benchmarks | `src/benchmarking.rs`, `evaluation/`, `BENCHMARKING.md` | Six-arm runner and public live workflows exist for Ollama and Qwen3 8B; reviewed unseen dataset and held-out equal-budget model study missing. |
 | 16. Accurate matrix | `IMPLEMENTATION_MATRIX.md` | Partial statuses retained; historical paragraphs must be read with later explicit superseding entries. |
-| 17. Verified docs/installation | `README.md`, CI workflow | Isolated source install and offline CLI walkthrough passed; live Qwen setup was exercised; clean Arch container setup now passes; CachyOS desktop/GPU setup remains unverified. |
+| 17. Verified docs/installation | `README.md`, HTTP_API.md, CI workflow, INSTALLATION_VALIDATION.md | Host source installs and offline workflows passed for core and HTTP packages; installed managed OpenCode/Qwen read/edit/read passed. Expanded clean Arch setup, all checks and installed core/server workflows passed at `a9933b3`. CachyOS desktop/GPU setup remains unverified. |
 | 18. Honest experimental claims | `EVOLUTION.md`, `MODELS.md`, `THREAT_MODEL.md` | Neural adaptation remains experimental and neural promotion denied; no trained Jev or superiority claim. |
 
 ## Next verifiable milestones
@@ -839,3 +839,37 @@ passed for this runtime source. These tests close the current host source-instal
 verification gap for both packages, including collective cleanup. Clean-OS
 validation of the new server, plugin isolation, ownership-aware residency and
 independent reasoning/expert evaluation remain open.
+
+## Clean Arch core/server acceptance verification (2026-10-13)
+
+Tracked source `a9933b323c54d6441210e104ec59d37808370357` passed the expanded
+INSTALLATION_VALIDATION.md workflow in a fresh rootless Arch container using
+`docker.io/library/archlinux@sha256:363129b67b2bc6c5a634f8fb4961a7e2eba213a2ec075d159127b1260290a722`.
+Only read-only source and the validation script were mounted; no host Cargo
+cache, credentials, Git metadata or model weights were shared. Prerequisite
+installation and fresh dependency downloads succeeded. Rust/Cargo 1.99.0 and
+flatc/Rust FlatBuffers 25.12.19 were used. Formatting, workspace all-target check,
+all 417 tests and Clippy with warnings denied passed. Optimized core and server
+installs completed in 3m37s and 1m41s respectively. Both installed offline
+workflow scripts passed, including actual authenticated HTTP discovery, origin
+denial, arithmetic/SQL child reaping and graceful shutdown.
+
+Core binary SHA-256:
+`9b371386214bb6c43a87d3fff5dc441148e20e86461c0b0ec9b136dfa1dd84e2`.
+Server binary SHA-256:
+`784bd85c90b758076b4eb87c3564b73b854965a42aed9a9bb2a9b4aebeb64bf2`.
+Retained terminal log: `/tmp/cogfabric-clean-server-validation-20261013.log`,
+SHA-256 `150cee98aceafb2c7f470a1bf1276bab6fbf10d7af7033bdd2f60c778c95305e`.
+Read-only source snapshot: `/tmp/cogfabric-clean-server-source-20261013`.
+The disposable container exited successfully and was removed; its temporary
+smoke JSON directories were not exported. Successful script assertions and
+binary hashes remain in the log. No native model inference, GPU integration,
+CachyOS desktop setup or untrusted-plugin security evaluation was performed
+inside the container. The separate host live OpenCode evidence remains valid
+within its own stated scope.
+
+Hosted CI [38381768218](https://github.com/DrapNard/cognitive-fabric/actions/runs/38381768218)
+passed for this exact source, including the new offline HTTP smoke step. These
+results close the clean-OS core/server installation gap; independent expert
+quality, broader module provisioning, ownership-aware residency and complete
+release acceptance remain incomplete. No release tag or public publication.

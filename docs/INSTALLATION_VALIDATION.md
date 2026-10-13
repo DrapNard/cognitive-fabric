@@ -54,7 +54,11 @@ On 2026-10-13, source `35c4bdc` passed this workflow with Rust/Cargo 1.99.0,
 FlatBuffers 25.12.19 and all 359 tests. Optimized install and the full installed
 smoke passed. See `RELEASE_AUDIT.md` for evidence and scope limitations.
 
-The workflow above now includes the optional HTTP package and its offline smoke.
-That expanded clean-OS workflow has not yet been run; the historical result above
-covers the earlier core-only source. Current host source installs of both packages
-and offline/live client smokes are recorded separately in RELEASE_AUDIT.md.
+The expanded workflow above passed on 2026-10-13 for source
+`a9933b323c54d6441210e104ec59d37808370357`, with Rust/Cargo 1.99.0 and FlatBuffers
+25.12.19. All 417 workspace tests, formatting, compilation and Clippy passed.
+Both optimized packages installed, and the installed CLI/socket and offline HTTP
+smokes passed. Log: `/tmp/cogfabric-clean-server-validation-20261013.log`.
+RELEASE_AUDIT.md records binary hashes and the exact image/source scope. Container
+removal discarded its temporary JSON evidence; the retained log records successful
+script assertions. This does not verify native inference or GPU setup inside Arch.
