@@ -1010,3 +1010,5 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
 - Add read-only `resume-preview` with shared admission validation and remaining budget reporting; approved resume still revalidates.
 
 - Bypass initialization and migrations for recovery preview; preserve workspace permissions and reject missing or legacy state.
+
+- Observe inference and tool inventory availability outside registry locks to avoid callback lock recursion.

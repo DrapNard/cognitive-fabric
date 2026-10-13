@@ -1478,3 +1478,27 @@ Validation: formatting, all-target check, Clippy with warnings denied and all
 376 Rust tests (353 library, 23 integration) passed with flatc 25.12.19.
 Actual socket/HTTP integration ran outside network-restricted sandboxing.
 Full test log: `/tmp/cogfabric-preview-readonly-tests.log`.
+
+## Module inventory callback isolation (2026-10-13)
+
+Status: **Implemented** for inference, arithmetic and SQL inventory observations.
+`src/fabric.rs` and `src/fabric/tools.rs` now snapshot bounded retained handles
+and activation flags before calling backend availability methods. Those callbacks
+run after releasing the registry lock, preventing registry inspection inside an
+inventory callback from deadlocking against lifecycle writes. Regression tests
+in `src/fabric/tests.rs` and `src/fabric/tools.rs` assert write-lock availability
+and inspect version metadata from actual observation callbacks. No model or tool
+execution occurs. Snapshot references temporarily keep observed versions alive.
+
+Membership and activation flags are sampled together; availability is observed
+afterwards and can change independently. This is not an atomic remote-health
+report, a provider probe or permission grant. Backend code remains trusted and
+can block or panic. Other routing/activation callbacks have their existing
+contracts; this change does not establish general callback reentrancy or
+independent executable provisioning/isolation.
+
+Validation: formatting, all-target check, Clippy with warnings denied and
+378 Rust tests (355 library, 23 integration) passed with flatc 25.12.19.
+Full socket/HTTP tests ran outside network restrictions; log:
+`/tmp/cogfabric-inventory-observation-all-tests.log`. Inventory snapshots
+clone at most 128 retained handles; no additional model or tool calls occur.

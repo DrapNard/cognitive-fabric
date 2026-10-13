@@ -371,19 +371,30 @@ impl Broker {
 
     /// Bounded retained-version inventory without network calls or new grants.
     pub fn statuses(&self) -> Result<Vec<ModuleStatus>> {
-        let registry = self
-            .registry
-            .read()
-            .map_err(|_| anyhow!("Module registry poisoned"))?;
-        Ok(registry
-            .versions
-            .values()
-            .map(|module| ModuleStatus {
+        // Freeze bounded membership and activation metadata, then release the
+        // lock before invoking trusted backend observation callbacks.
+        let snapshot = {
+            let registry = self
+                .registry
+                .read()
+                .map_err(|_| anyhow::anyhow!("Module registry poisoned"))?;
+            registry
+                .versions
+                .values()
+                .map(|module| {
+                    let active = registry
+                        .active
+                        .get(&module.descriptor.id)
+                        .is_some_and(|active| Arc::ptr_eq(active, module));
+                    (module.clone(), active)
+                })
+                .collect::<Vec<_>>()
+        };
+        Ok(snapshot
+            .into_iter()
+            .map(|(module, active)| ModuleStatus {
                 descriptor: module.descriptor.clone(),
-                active: registry
-                    .active
-                    .get(&module.descriptor.id)
-                    .is_some_and(|active| Arc::ptr_eq(active, module)),
+                active,
                 availability: module.backend.availability(),
                 routing_rank: module.routing_rank,
             })

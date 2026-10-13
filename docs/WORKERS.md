@@ -172,3 +172,10 @@ Existing bounded startup waits still apply, so shutdown may wait for an already
 running initialization before reaping its owned child. Repeated shutdown can retry
 cleanup. Stopped availability means dispatch is prohibited, not that process
 reaping or external provider completion is already proven; use the cleanup audit.
+
+Retained module inventory snapshots membership and active flags under the
+registry lock, then observes adapter availability outside that lock. Availability
+can change after the snapshot; this is an observation rather than a dispatch
+guarantee. Trusted observation callbacks can inspect registry metadata without
+holding its inventory lock. No backend probe, inference or permission renewal
+is performed. Arbitrary backend callbacks remain trusted host code.

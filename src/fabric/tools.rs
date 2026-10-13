@@ -548,24 +548,36 @@ impl Broker {
     }
     /// Retained version observations without provider probes or renewed grants.
     pub fn statuses(&self) -> Result<Vec<ModuleStatus>> {
-        let registry = self
-            .registry
-            .read()
-            .map_err(|_| anyhow::anyhow!("Capability registry poisoned"))?;
-        Ok(registry
-            .versions
-            .values()
-            .map(|module| ModuleStatus {
+        // Freeze bounded membership and activation metadata, then release the
+        // lock before invoking trusted backend observation callbacks.
+        let snapshot = {
+            let registry = self
+                .registry
+                .read()
+                .map_err(|_| anyhow::anyhow!("Capability registry poisoned"))?;
+            registry
+                .versions
+                .values()
+                .map(|module| {
+                    let active = registry
+                        .active
+                        .get(&module.descriptor.id)
+                        .is_some_and(|active| Arc::ptr_eq(active, module));
+                    (module.clone(), active)
+                })
+                .collect::<Vec<_>>()
+        };
+        Ok(snapshot
+            .into_iter()
+            .map(|(module, active)| ModuleStatus {
                 descriptor: module.descriptor.clone(),
-                active: registry
-                    .active
-                    .get(&module.descriptor.id)
-                    .is_some_and(|active| Arc::ptr_eq(active, module)),
+                active,
                 availability: module.backend.availability(),
                 routing_rank: module.routing_rank,
             })
             .collect())
     }
+
     pub fn discover(&self) -> Result<Vec<Descriptor>> {
         Ok(self
             .registry
@@ -792,6 +804,70 @@ mod tests {
             .register(descriptor("2.0.0"), Arc::new(Fixed("new version")))
             .unwrap();
         assert_eq!(broker.pin().unwrap().unwrap().descriptor().version, "2.0.0");
+    }
+
+    struct InventoryObserver(std::sync::Weak<Broker>);
+    impl InventoryObserver {
+        fn observe(&self) -> super::super::Availability {
+            let broker = self.0.upgrade().unwrap();
+            assert!(
+                broker.registry.try_write().is_ok(),
+                "Inventory callback must run outside registry locks"
+            );
+            assert!(!broker.versions().unwrap().is_empty());
+            super::super::Availability::Connected
+        }
+    }
+    impl ArithmeticBackend for InventoryObserver {
+        fn availability(&self) -> super::super::Availability {
+            self.observe()
+        }
+        fn evaluate<'a>(
+            &'a self,
+            _: &'a str,
+        ) -> Pin<Box<dyn Future<Output = Result<String>> + Send + 'a>> {
+            Box::pin(async { bail!("Inventory must not execute tools") })
+        }
+    }
+    impl sql::SqlBackend for InventoryObserver {
+        fn availability(&self) -> super::super::Availability {
+            self.observe()
+        }
+        fn query<'a>(
+            &'a self,
+            _: &'a str,
+            _: &'a str,
+        ) -> Pin<Box<dyn Future<Output = Result<String>> + Send + 'a>> {
+            Box::pin(async { bail!("Inventory must not execute SQL") })
+        }
+    }
+    #[test]
+    fn inventory_tool_observation_can_inspect_registry_without_lock_recursion() {
+        for sql in [false, true] {
+            let broker = Arc::new(Broker::default());
+            let capability = if sql { "sql.query" } else { "math.evaluate" };
+            broker
+                .unregister(if sql { "sql.local" } else { "arithmetic.local" })
+                .unwrap();
+            let descriptor = Descriptor {
+                id: "observer".into(),
+                version: "1.0.0".into(),
+                capability: capability.into(),
+            };
+            let backend = Arc::new(InventoryObserver(Arc::downgrade(&broker)));
+            if sql {
+                broker.register_sql(descriptor, backend).unwrap();
+            } else {
+                broker.register(descriptor, backend).unwrap();
+            }
+            let observed = broker.statuses().unwrap();
+            let observer = observed
+                .iter()
+                .find(|m| m.descriptor.id == "observer")
+                .unwrap();
+            assert!(observer.active);
+            assert_eq!(observer.availability, super::super::Availability::Connected);
+        }
     }
 
     struct RegistryCleanup {

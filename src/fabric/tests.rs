@@ -1069,3 +1069,47 @@ async fn equal_rank_routing_uses_queue_pressure_without_migrating_existing_pins(
         "candidate.a"
     );
 }
+
+struct InventoryObserver(std::sync::Weak<Broker>);
+impl InferenceBackend for InventoryObserver {
+    fn availability(&self) -> Availability {
+        let broker = self.0.upgrade().unwrap();
+        assert!(
+            broker.registry.try_write().is_ok(),
+            "Inventory callback must run outside registry locks"
+        );
+        assert_eq!(broker.versions().unwrap().len(), 1);
+        Availability::Connected
+    }
+    fn generate<'a>(
+        &'a self,
+        _: &'a str,
+        _: &'a str,
+        _: usize,
+    ) -> Pin<Box<dyn Future<Output = Result<Generation>> + Send + 'a>> {
+        Box::pin(async { bail!("Inventory must not generate") })
+    }
+}
+#[test]
+fn inventory_backend_observation_can_inspect_registry_without_lock_recursion() {
+    let broker = Arc::new(Broker::with_inference(Arc::new(Fixed(
+        "initial",
+        AtomicUsize::new(0),
+    ))));
+    broker.unregister("inference.local").unwrap();
+    broker.retire("inference.local", "1.0.0").unwrap();
+    broker
+        .register(
+            ModuleDescriptor {
+                id: "observer".into(),
+                version: "1.0.0".into(),
+                roles: vec!["solver".into()],
+            },
+            Arc::new(InventoryObserver(Arc::downgrade(&broker))),
+        )
+        .unwrap();
+    let observed = broker.statuses().unwrap();
+    assert_eq!(observed.len(), 1);
+    assert!(observed[0].active);
+    assert_eq!(observed[0].availability, Availability::Connected);
+}
