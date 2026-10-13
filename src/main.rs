@@ -309,6 +309,8 @@ enum Command {
         file: PathBuf,
         #[arg(long, default_value = "fast")]
         mode: String,
+        #[arg(long, default_value_t = evaluation::DEFAULT_BENCHMARK_RUN_SECONDS)]
+        max_run_seconds: u64,
     },
     Compare {
         file: PathBuf,
@@ -899,7 +901,22 @@ async fn main() -> Result<()> {
         Command::TaskEvents { id, after } => store.task_events_since(&id, after)?,
         Command::GraphAudit { id } => store.graph_audit(&id)?,
         Command::InferenceAudit { id } => store.inference_audit(&id)?,
-        Command::Bench { file, mode } => evaluation::benchmark(&engine, &file, &mode).await?,
+        Command::Bench {
+            file,
+            mode,
+            max_run_seconds,
+        } => {
+            let report =
+                evaluation::benchmark_until(&engine, &file, &mode, max_run_seconds, async {
+                    let _ = tokio::signal::ctrl_c().await;
+                })
+                .await?;
+            if report["complete"] != true {
+                output(&report, cli.json)?;
+                bail!("Benchmark interrupted or exceeded its run duration")
+            }
+            report
+        }
         Command::Compare {
             file,
             mode,

@@ -2,6 +2,13 @@
 
 All notable changes are documented here in English.
 
+### Bound benchmark runs and retain cancelled results
+
+- Add run-wide deadlines and Ctrl-C propagation through Engine cancellation.
+- Retain completed prefixes, cancelled task charges and partial JSON reports.
+- Report executed/unexecuted coverage and stop reason; exit unsuccessfully on interruption.
+- Verify ready cancellation, active cancellation, deadline expiry and real CLI SIGINT.
+
 ### Preflight complete benchmark datasets before execution
 
 - Reject invalid later cases and unsupported fields before any task or model call.

@@ -162,3 +162,158 @@ async fn deterministic_tool_benchmark_is_a_valid_no_model_execution() {
     assert_eq!(report["runtime_status_counts"]["completed"], 1);
     assert_eq!(backend.calls.load(Ordering::SeqCst), 0);
 }
+
+#[tokio::test]
+async fn ready_cancellation_returns_empty_partial_report_without_task_admission() {
+    let (engine, backend) = engine();
+    let dataset = Dataset::new(&json!({"input":"Answer yes.","expected":"yes"}).to_string());
+    let report = benchmark_until(&engine, &dataset.0, "fast", 10, async {})
+        .await
+        .unwrap();
+    assert_eq!(report["complete"], false);
+    assert_eq!(report["stop_reason"], "cancelled");
+    assert_eq!(report["executed"], 0);
+    assert_eq!(report["unexecuted"], 1);
+    assert!(report["accuracy"].is_null());
+    assert_eq!(backend.calls.load(Ordering::SeqCst), 0);
+    let count: u64 = engine
+        .store
+        .lock()
+        .unwrap()
+        .query_row("SELECT count(*) FROM tasks", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(count, 0);
+}
+
+#[tokio::test]
+async fn invalid_run_limits_and_modes_fail_before_admission() {
+    let (engine, backend) = engine();
+    let dataset = Dataset::new(&json!({"input":"Answer yes.","expected":"yes"}).to_string());
+    for (mode, limit) in [("fast", 0), ("fast", 86401), ("unbounded", 10)] {
+        assert!(
+            benchmark_until(&engine, &dataset.0, mode, limit, std::future::pending())
+                .await
+                .is_err()
+        );
+    }
+    assert_eq!(backend.calls.load(Ordering::SeqCst), 0);
+    let count: u64 = engine
+        .store
+        .lock()
+        .unwrap()
+        .query_row("SELECT count(*) FROM tasks", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(count, 0);
+}
+
+struct Pending {
+    entered: tokio::sync::Notify,
+    calls: AtomicUsize,
+    dropped: AtomicUsize,
+}
+struct Active<'a>(&'a AtomicUsize);
+impl Drop for Active<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_add(1, Ordering::SeqCst);
+    }
+}
+impl InferenceBackend for Pending {
+    fn generate<'a>(
+        &'a self,
+        _: &'a str,
+        _: &'a str,
+        _: usize,
+    ) -> Pin<Box<dyn Future<Output = Result<Generation>> + Send + 'a>> {
+        if self.calls.fetch_add(1, Ordering::SeqCst) == 0 {
+            return Box::pin(async {
+                Ok(Generation {
+                    text: "yes".into(),
+                    model: "fixture".into(),
+                    input_tokens: Some(1),
+                    output_tokens: Some(1),
+                    elapsed_ms: 0.0,
+                    queue_wait_ms: None,
+                })
+            });
+        }
+        Box::pin(async move {
+            let _active = Active(&self.dropped);
+            self.entered.notify_one();
+            std::future::pending().await
+        })
+    }
+}
+#[tokio::test(start_paused = true)]
+async fn run_deadline_cancels_active_inference_and_retains_charges_without_later_cases() {
+    run_interrupted(false).await;
+}
+#[tokio::test]
+async fn cancellation_cancels_active_inference_and_retains_charges_without_later_cases() {
+    run_interrupted(true).await;
+}
+async fn run_interrupted(cancel: bool) {
+    let (engine, _) = engine();
+    let backend = Arc::new(Pending {
+        entered: tokio::sync::Notify::new(),
+        calls: AtomicUsize::new(0),
+        dropped: AtomicUsize::new(0),
+    });
+    let engine = Engine::with_backend(engine.cfg, engine.store, backend.clone());
+    let raw = format!(
+        "{}\n{}\n{}\n",
+        json!({"input":"Answer yes.","expected":"yes"}),
+        json!({"input":"Another question","expected":"no"}),
+        json!({"input":"Not admitted","expected":"yes"})
+    );
+    let dataset = Dataset::new(&raw);
+    let report = benchmark_until(
+        &engine,
+        &dataset.0,
+        "fast",
+        if cancel { 10 } else { 1 },
+        async {
+            if cancel {
+                backend.entered.notified().await;
+            } else {
+                std::future::pending::<()>().await;
+            }
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(report["complete"], false);
+    assert_eq!(
+        report["stop_reason"],
+        if cancel { "cancelled" } else { "run_deadline" }
+    );
+    assert_eq!(report["total"], 3);
+    assert_eq!(report["executed"], 2);
+    assert_eq!(report["unexecuted"], 1);
+    assert_eq!(report["model_calls"], 2);
+    assert_eq!(report["runtime_status_counts"]["cancelled"], 1);
+    assert_eq!(report["passed"], 1);
+    assert_eq!(report["accuracy"], 0.5);
+    assert_eq!(report["details"][0]["passed"], true);
+    let detail = &report["details"][1];
+    assert!(detail["resources"]["input_tokens"].is_null());
+    assert!(detail["resources"]["output_tokens"].is_null());
+    let trace = engine
+        .store
+        .task(detail["task_id"].as_str().unwrap())
+        .unwrap();
+    assert_eq!(trace["task"]["status"], "cancelled");
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while backend.dropped.load(Ordering::SeqCst) == 0 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    let count: u64 = engine
+        .store
+        .lock()
+        .unwrap()
+        .query_row("SELECT count(*) FROM tasks", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(count, 2);
+}

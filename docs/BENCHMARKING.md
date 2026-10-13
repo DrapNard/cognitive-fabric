@@ -1,6 +1,7 @@
 # Reproducible evaluation
 
-Run `cogfabric --home STATE --json bench DATASET --mode MODE`. DATASET is UTF-8
+Run `cogfabric --home STATE --json bench DATASET --mode MODE`, optionally adding
+`--max-run-seconds SECONDS` (default 1800; allowed range 1–86400). DATASET is UTF-8
 JSONL with `input` and `expected` strings, at most 1,000 cases / 2 MB. Each case is
 bounded before execution. Every case is validated before the first task starts;
 empty fields and unknown JSON fields (including unsupported `verification` fields)
@@ -350,3 +351,31 @@ Conversely, deterministic arithmetic can pass with zero model calls and a real
 tool invocation. Dataset hashes prove content identity, not independent review,
 correct labels or held-out status. Existing historical reports are not rewritten
 to add fields they did not originally contain.
+
+### Basic benchmark deadlines and partial results
+
+`bench` now has a run-wide deadline in addition to each task's existing ceilings.
+The run clock includes bounded dataset reading/preflight; it is checked before
+each new task. Deadline expiry or Ctrl-C cancels the active task through the
+Engine and retains its durable cancelled outcome and charged reservations.
+Completed prefix results stay in the report and later cases are not admitted.
+A cancellation already ready before admission returns no task records.
+
+Reports add `complete`, run `stop_reason` (`completed`, `run_deadline`, `cancelled`),
+`max_run_seconds`, `executed` and `unexecuted`. `total` still means dataset cases.
+Accuracy uses attempted/executed cases (including a cancelled attempt), excludes
+unexecuted cases and is null when none were admitted. Partial subsets can be
+biased. A complete run can still have failed/exhausted outcomes or zero model
+calls; completion is not task success or model-quality proof.
+
+The CLI prints partial JSON to stdout and exits unsuccessfully on interruption;
+stderr carries the error. Keep stdout redirected to retain results. Rust callers
+may use `evaluation::benchmark_until` with an explicit cancellation future; the
+existing `benchmark` wrapper uses the default deadline and returns the same
+partial report shape, so callers must check `complete`.
+
+Cancellation awaits existing task/worker cleanup, which can extend response time
+beyond the execution deadline. Synchronous bounded file/preflight work and OS
+scheduling are not preempted by a timer. Disconnect does not prove an external
+model server stopped GPU work. No new retries, resource refunds, permission grants
+or expected-label disclosure are introduced. Historical reports are unchanged.

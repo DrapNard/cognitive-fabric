@@ -727,3 +727,13 @@ fields and empty/oversized cases, and records dataset identity plus runtime stat
 and charged model/tool task counts. Zero-call exhaustion remains distinguishable
 from legitimate zero-model deterministic tool execution. Expected labels stay
 outside inference prompts; scoring and comparison behavior are unchanged.
+
+### Basic benchmark run cancellation
+
+`bench --max-run-seconds` now bounds the run as well as each task. Ctrl-C or expiry
+returns a partial report, durably cancels active inference and stops later cases;
+the CLI exits unsuccessfully. Executed/unexecuted counts and run stop reason
+distinguish cancellation from score failure. Existing Rust `benchmark` calls
+retain a default 1800-second ceiling; `benchmark_until` accepts cancellation.
+Cleanup grace and external provider continuation remain outside strict GPU-stop
+guarantees. BENCHMARKING.md documents partial accuracy semantics.

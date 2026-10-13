@@ -1858,3 +1858,22 @@ or tool capability. General independent benchmark review remains incomplete.
 Final preflight gate: 426 tests, formatting, workspace all-target check and
 Clippy pass. CLI arithmetic report smoke verifies ten tool successes, no model
 calls and status/hash disclosure. QUALITY_REVIEW.md records logs and scope.
+
+### Bounded basic-benchmark cancellation
+
+**Implemented:** `evaluation::benchmark_until` and CLI `bench --max-run-seconds`
+apply a 1–86400-second run ceiling (default 1800) alongside task limits. Ctrl-C
+and deadline expiry retain partial results and durable cancelled active tasks,
+preserve charged calls/unknown usage and prevent later admission. Ready
+cancellation creates no task; partial accuracy excludes unexecuted cases.
+Four new unit regressions cover invalid bounds/mode, pre-admission cancellation,
+active cancellation and virtual-time expiry with retained completed prefixes.
+Two real CLI/stalled-provider tests verify partial JSON, nonzero exits, SIGINT
+and durable task status. Cleanup grace and external GPU-stop limits remain
+explicit in BENCHMARKING.md; no permissions or model-quality claims expand.
+
+Final benchmark cancellation gate: 432 tests, formatting, workspace all-target
+check and Clippy pass. Actual successful CLI arithmetic also passes under an
+explicit five-second run ceiling. QUALITY_REVIEW.md records logs and scope.
+Hosted preflight CI `38398499992` passed for `a4ca9b8`; the new cancellation
+revision's hosted result follows private sync.

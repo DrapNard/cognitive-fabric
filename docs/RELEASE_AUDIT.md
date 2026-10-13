@@ -4,14 +4,14 @@ This checklist preserves the 18 acceptance criteria in the goal objective. It is
 an evidence inventory, not a release approval. The canonical French architecture
 and the broader implementation matrix remain authoritative. Earlier test counts
 in the quality review are historical milestones. Current local verification is
-426 Rust tests (383 library, 43 integration), formatting, all-target checking and
+432 Rust tests (387 library, 45 integration), formatting, all-target checking and
 Clippy with warnings denied, using FlatBuffers compiler/crate 25.12.19.
 
 | Goal criterion | Evidence inspected | Assessment / remaining proof |
 |---|---|---|
 | 1. Workspace builds | `Cargo.toml`, all-target check | Passed locally; isolated optimized source installation also passed with cached dependencies. |
 | 2. Formatting and Clippy | Mandatory checks in `QUALITY_REVIEW.md` | Passed locally. |
-| 3. Mandatory tests | Workspace all-target test results, `tests/`, server integration tests | 426 passed; fixtures do not establish live model quality. |
+| 3. Mandatory tests | Workspace all-target test results, `tests/`, server integration tests | 432 passed; fixtures do not establish live model quality. |
 | 4. FlatBuffers IPC | `protocol/`, `src/wire.rs`, `src/fabric/`, malformed/compatibility/socket tests | Implemented for present transports; authenticated process event delivery/replay is now tested; broader module compatibility remains partial. |
 | 5. CLI/service communication | `src/service.rs`, socket tests, `tests/process_worker.rs`, `crates/cogfabric-server/tests/` | Tested typed local transport, progress, cancellation and optional HTTP client interoperability; native and collective ownership drains cover dropped request futures. No general independent plugin service is claimed. |
 | 6. Compatible local LLM | `src/backend.rs`, `tests/inference_auth.rs`, `LIVE_INFERENCE.md` | Passed for Ollama and LM Studio Qwen3 8B compatible endpoints, including managed verified sorting. Native LM Studio read-only inventory passed; authenticated native access and controlled load/unload remain unverified. |
@@ -953,3 +953,25 @@ calls: `/tmp/cogfabric-bench-report-smoke.TbaewW`. No new live model study or
 optimized installation is claimed for this runner revision; historical diagnostic
 reports retain the fields originally emitted. This improves evaluation admission
 and disclosure, not held-out independence or reasoning/expert readiness.
+
+### Benchmark run deadline and cancellation verification
+
+`benchmark_until` and CLI `bench --max-run-seconds` now apply bounded run duration
+and explicit cancellation on top of original task limits. Reports retain completed
+prefixes and the cancelled active task, preserve call reservations/unknown token
+usage, and stop later admission. Ready cancellation creates no task. Dataset
+count stays `total`; `executed`/`unexecuted`, `complete`, run stop reason and
+configured duration make partial coverage explicit. Partial accuracy excludes
+unexecuted cases and is null for no attempts. CLI interruption prints valid JSON
+and exits unsuccessfully. Synchronous preflight and approved cleanup grace can
+extend observed command time; external provider/GPU termination is not inferred.
+
+All 432 tests (387 library, 45 integration), formatting, workspace all-target check
+and Clippy pass. Log: `/tmp/cogfabric-benchmark-cancellation-tests.log`. Virtual-time
+and scripted cancellation tests retain a successful prefix, cancel the next task
+and never admit the last one. Actual CLI/stalled-provider tests cover deadline,
+SIGINT, JSON/nonzero exit and durable cancelled task status. Successful CLI
+arithmetic with an explicit five-second ceiling also passed: evidence
+`/tmp/cogfabric-bench-deadline-smoke.mOASVP`. No real model study or optimized
+source-install refresh was run for this cancellation revision. Independent
+reasoning/expert evaluation and broader lifecycle requirements remain open.

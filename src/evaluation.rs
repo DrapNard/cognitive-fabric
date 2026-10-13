@@ -7,7 +7,8 @@ use crate::{
 use anyhow::{bail, Result};
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::{collections::BTreeMap, path::Path, time::Instant};
+use std::{collections::BTreeMap, path::Path, time::Duration};
+use tokio::time::Instant;
 #[cfg(test)]
 mod benchmark_tests;
 
@@ -44,18 +45,65 @@ fn benchmark_cases(raw: &str) -> Result<Vec<Case>> {
     Ok(cases)
 }
 
+pub const DEFAULT_BENCHMARK_RUN_SECONDS: u64 = 1800;
+
 pub async fn benchmark(engine: &Engine, file: &Path, mode: &str) -> Result<Value> {
+    benchmark_until(
+        engine,
+        file,
+        mode,
+        DEFAULT_BENCHMARK_RUN_SECONDS,
+        std::future::pending(),
+    )
+    .await
+}
+
+pub async fn benchmark_until<F>(
+    engine: &Engine,
+    file: &Path,
+    mode: &str,
+    max_run_seconds: u64,
+    cancel: F,
+) -> Result<Value>
+where
+    F: std::future::Future<Output = ()>,
+{
+    if !(1..=86400).contains(&max_run_seconds)
+        || !matches!(mode, "fast" | "standard" | "deep" | "research")
+    {
+        bail!("Benchmark requires a valid mode and a run duration between 1 and 86400 seconds")
+    }
+    let began = Instant::now();
+    let deadline = began + Duration::from_secs(max_run_seconds);
     let raw = read_capped(file, 2_000_000)?;
     let cases = benchmark_cases(&raw)?;
-    let began = Instant::now();
     let mut passed = 0;
     let mut calls = 0;
     let mut details = Vec::new();
     let mut statuses = BTreeMap::<String, usize>::new();
     let mut model_tasks = 0usize;
     let mut tool_tasks = 0usize;
+    let mut stop_reason = "completed";
+    tokio::pin!(cancel);
     for case in &cases {
-        let out = engine.run(&case.input, mode).await?;
+        if Instant::now() >= deadline {
+            stop_reason = "run_deadline";
+            break;
+        }
+        tokio::select! {
+            biased;
+            _ = &mut cancel => { stop_reason = "cancelled"; break; },
+            _ = std::future::ready(()) => {},
+        }
+        let out = engine
+            .run_until(&case.input, mode, async {
+                tokio::select! {
+                    biased;
+                    _ = &mut cancel => { stop_reason = "cancelled"; },
+                    _ = tokio::time::sleep_until(deadline) => { stop_reason = "run_deadline"; },
+                }
+            })
+            .await?;
         *statuses.entry(out.status.clone()).or_default() += 1;
         model_tasks += usize::from(out.calls > 0);
         tool_tasks += usize::from(out.resources.tool_calls > 0);
@@ -79,10 +127,19 @@ pub async fn benchmark(engine: &Engine, file: &Path, mode: &str) -> Result<Value
         details.push(json!({"task_id":out.task_id,"passed":ok,"input":case.input,
             "expected":case.expected,"answer":out.answer,"latency_ms":out.elapsed_ms,"model_calls":out.calls,
             "verification":"expected_output_exact_match","runtime_status":out.status,"resources":out.resources,"stop_reason":out.stop_reason}));
+        if stop_reason != "completed" {
+            break;
+        }
+        if Instant::now() >= deadline {
+            stop_reason = "run_deadline";
+            break;
+        }
     }
     Ok(
         json!({"format_version":1,"dataset_sha256":store::sha256(raw.as_bytes()),"mode":mode,
-         "total":cases.len(),"passed":passed,"accuracy":passed as f64/cases.len() as f64,
+         "total":cases.len(),"executed":details.len(),"unexecuted":cases.len()-details.len(),
+         "complete":stop_reason=="completed","stop_reason":stop_reason,"max_run_seconds":max_run_seconds,
+         "passed":passed,"accuracy":if details.is_empty() { None } else { Some(passed as f64/details.len() as f64) },
          "runtime_status_counts":statuses,"tasks_with_model_calls":model_tasks,"tasks_with_tool_calls":tool_tasks,
          "elapsed_ms":began.elapsed().as_secs_f64()*1000.0,"model_calls":calls,"details":details}),
     )
