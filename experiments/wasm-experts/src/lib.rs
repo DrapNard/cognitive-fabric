@@ -2,6 +2,8 @@
 pub mod artifact;
 pub mod audit;
 pub mod authority;
+#[cfg(feature = "core-audit")]
+pub mod core_audit;
 mod preflight;
 
 fn compile_checked(wasm: &[u8]) -> Result<(wasmi::Engine, wasmi::Module), String> {

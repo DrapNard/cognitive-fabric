@@ -481,3 +481,19 @@ other fields are explicitly rejected rather than silently removed while flatteni
 text. These unsupported shapes return 400 before inference. Valid named choices
 and ordinary text arrays remain supported. No tool execution, permission, budget,
 conversation role or FlatBuffers schema is added.
+
+### Experimental Core-backed scalar module audits
+
+The optional Wasm bridge admits only trusted operator Rust embeddings. The actor
+label is checked by deterministic policy; this is not remote user authentication.
+Core owns fresh task IDs, immutable approved artifact identities, original deadlines
+and a live recovery lease. SQLite immediate transactions reject duplicate allocation
+slots and invalid dispatch/outcome sequences, including attempts by independent
+executor wrappers sharing the context. Ledger reads are bounded to 25 rows and
+4096 bytes per record and fail closed on malformed/overflow evidence. Scalar values
+and guest diagnostic bodies are excluded. In-memory acknowledgements are not disk
+durability. Cancellation denies further acknowledgements; already executing guests
+are fuel bounded rather than forcibly terminated. Trusted host Store access can
+alter state and is outside the guest threat boundary. No production execution
+endpoint, artifact signature trust, domain correctness or independent sandbox audit
+is established by these tests.

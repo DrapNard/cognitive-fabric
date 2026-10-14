@@ -2688,3 +2688,20 @@ tests include before/after-write failures, uncertainty, ordering and cancellatio
 The sink's durability/authenticity and callback latency are trusted embedding
 responsibilities, not attested by the prototype. Denial logging, crash recovery,
 persistent registry and production actors/IPC remain unimplemented here.
+
+Experimental Core module audit bridge: **Partial / operator embedding only**.
+`src/module_tasks.rs` creates fresh tasks with immutable approved identities, a
+1–8 invocation limit bounded by configuration, original 1–30 second clock, and
+Core execution lease. SQLite immediate transactions validate at most 24 bounded
+prior invocation records plus an overflow sentinel and enforce allocation,
+dispatch and terminal ordering. Duplicate independent wrappers cannot reset a
+recorded allocation. Cancellation closes the task transactionally; model actors
+are denied `expert.module.evaluate`. `experiments/wasm-experts/src/core_audit.rs`
+connects the existing executor through the optional `core-audit` feature; production
+Core does not depend on Wasmi. Tests cover persisted records/reopen, recovery lease,
+concurrent duplicate reservations, SQLite write failure, malformed history,
+identity substitutions, expiry, inactive tasks and duplicate wrapper reset.
+Trusted Rust callers still authenticate operator intent. No automatic resume,
+registry installation, CLI/HTTP/model execution endpoint, domain verification or
+independent sandbox audit is provided. Cancellation/expiry after guest entry
+withholds results; fuel, rather than forced process termination, bounds the guest.

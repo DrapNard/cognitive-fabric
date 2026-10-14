@@ -1085,3 +1085,13 @@ persistent phase-deadline recovery, synchronous-callback preemption, physical
 provider cancellation or calibrated expected utility. Original task deadlines,
 calls, tokens and permissions remain unchanged. Live effect and current optimized
 installation after these phase changes are not yet verified.
+
+The optional Wasm experiment now has a Core task audit bridge (`module_tasks` and
+`experiments/wasm-experts/src/core_audit.rs`, feature `core-audit`). Trusted operator
+embeddings can create fresh bounded tasks with pinned identities, original clocks,
+recovery leases and transactional allocation/dispatch/outcome records. Duplicate
+executor wrappers cannot reuse a recorded allocation. Cancelled or expired tasks
+cannot acknowledge further results. Abandoned tasks recover as interrupted with
+uncertain dispatch records preserved; guest resumption is unsupported. The bridge
+adds no model capability, production interpreter dependency or execution endpoint.
+An in-memory Store is useful for tests but does not provide disk durability.

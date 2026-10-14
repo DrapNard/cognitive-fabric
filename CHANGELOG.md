@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Persist experimental module authority in Core task storage
+
+- Create operator-only task scopes with original deadlines and recovery leases.
+- Enforce ordered, bounded SQLite audit reservations across duplicate wrappers.
+- Add an optional Wasm-to-Core sink without adding an interpreter to Core builds.
+
 ### Require audit acknowledgements for experimental Wasm execution
 
 - Record bounded allocation, dispatch reservation and terminal metadata before exposing results.

@@ -18,6 +18,7 @@ pub mod language;
 pub mod math;
 pub mod memory;
 pub mod models;
+pub mod module_tasks;
 pub mod planning;
 pub mod reasoning;
 pub mod recovery;

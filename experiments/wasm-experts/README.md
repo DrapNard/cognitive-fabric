@@ -103,3 +103,26 @@ complete this experiment. Public autonomy changes require their own release revi
 
 Sources: https://docs.rs/wasmi/2.0.0/wasmi/ and the downloaded 2.0.0 crate source.
 The local toolchain is Rust/Cargo 1.97.1; Wasmi declares minimum Rust 1.86.
+
+## Optional Core audit bridge
+
+Enable `core-audit` to use `core_audit::operator` with an existing Core Store and
+configuration. This creates a fresh experimental task, immutable artifact scope,
+original deadline and Core execution lease. The SQLite sink acknowledges allocation,
+dispatch and terminal records transactionally. It rejects duplicate slots even if
+a trusted caller constructs another TaskAuthority for the same context. Core itself
+has no dependency on this interpreter. Run:
+
+```sh
+cargo test --locked --manifest-path experiments/wasm-experts/Cargo.toml --features core-audit
+```
+
+Keep the context while operating; grants retain its lease through the audit sink.
+`Context::cancel` closes admission and suppresses subsequent result acknowledgement.
+An abandoned context releases its lease; ordinary explicit Core recovery marks its
+unfinished task interrupted, preserving uncertain dispatch evidence. This does not
+resume the guest or recreate its allowance. Store access remains trusted host code.
+An in-memory Store supplies transactional acknowledgements without disk durability;
+use a persistent Store when durability is required. This optional bridge supersedes
+the default standalone sink limitation above, but does not install a registry expert,
+authenticate remote users, verify domain results or add production execution access.

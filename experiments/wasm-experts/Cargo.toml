@@ -18,3 +18,10 @@ uuid = "1"
 
 [dev-dependencies]
 wat = "1"
+
+[features]
+core-audit = ["dep:cogfabric"]
+
+[dependencies.cogfabric]
+path = "../.."
+optional = true

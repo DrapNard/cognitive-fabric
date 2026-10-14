@@ -103,6 +103,7 @@ pub fn authorize(principal: &str, capability: &str) -> Result<()> {
                 | "storage.retention"
                 | "storage.backup"
                 | "storage.restore"
+                | "expert.module.evaluate"
                 | "task.observe"
                 | "skill.inspect"
                 | "task.recover"
