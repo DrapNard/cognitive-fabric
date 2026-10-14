@@ -821,6 +821,41 @@ impl Session {
         })
     }
 
+    async fn exploration_advice(&mut self, base: &str) -> Result<Option<String>> {
+        let phase_budget = (self.deadline.saturating_duration_since(Instant::now()) / 3)
+            .min(Duration::from_secs(self.cfg.timeout_seconds));
+        self.store.event(
+            &self.task,
+            "exploration_phase_budget",
+            "jev-plus",
+            json!({
+                "max_milliseconds":phase_budget.as_millis().min(u64::MAX as u128) as u64,
+                "original_deadline_preserved":true,"provider_stop_proven":false
+            }),
+        )?;
+        let result =
+            match tokio::time::timeout(phase_budget, self.call("explorer", base, 128)).await {
+                Ok(result) => result,
+                Err(_) => Err(InferenceTimeout.into()),
+            };
+        match result {
+            Err(error) if error.is::<InferenceTimeout>() => {
+                self.finish_metrics();
+                self.complete_usage = false;
+                self.resources.input_tokens = None;
+                self.resources.output_tokens = None;
+                self.complete_queue_metrics = false;
+                self.resources.queue_wait_ms = None;
+                self.store.event(&self.task, "exploration_failure", "jev-plus", json!({
+                    "failure_kind":"inference_timeout","action":"Solve original objective within remaining budgets",
+                    "provider_stop_proven":false,"verified":false
+                }))?;
+                Ok(None)
+            }
+            result => result,
+        }
+    }
+
     async fn planning_advice(&mut self, base: &str) -> Result<String> {
         let phase_budget = (self.deadline.saturating_duration_since(Instant::now()) / 3)
             .min(Duration::from_secs(self.cfg.timeout_seconds));
@@ -984,7 +1019,7 @@ impl Session {
                 && base.len().saturating_add(16064) <= 32000;
             self.store.event(&self.task,"schedule","jev-plus",json!({"decision":if admitted {"admit_exploration"} else {"skip_exploration"},"reason":"Preserve first whole-goal solver call, output and prompt budget","reserved_prompt_bytes":prompt_reserve}))?;
             if admitted {
-                if let Some(exploration) = self.call("explorer", &base, 128).await? {
+                if let Some(exploration) = self.exploration_advice(&base).await? {
                     strategy.push_str("\nAlternative: ");
                     strategy.push_str(&exploration);
                 }
@@ -1191,6 +1226,120 @@ mod tests {
     use super::*;
     use crate::engine::Engine;
     use std::{collections::VecDeque, future::Future, pin::Pin, sync::Mutex};
+
+    #[tokio::test(start_paused = true)]
+    async fn exploration_timeout_preserves_solver_without_masking_other_failures() {
+        struct Exploration {
+            variant: usize,
+            calls: std::sync::atomic::AtomicUsize,
+        }
+        impl InferenceBackend for Exploration {
+            fn generate<'a>(
+                &'a self,
+                role: &'a str,
+                prompt: &'a str,
+                _: usize,
+            ) -> Pin<Box<dyn Future<Output = Result<Generation>> + Send + 'a>> {
+                let index = self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Box::pin(async move {
+                    let text = match index {
+                        0 => {
+                            assert_eq!(role, "planner");
+                            r#"{"steps":[{"id":"a","objective":"Consider objective","depends_on":[]}]}"#
+                        }
+                        1 => {
+                            assert_eq!(role, "explorer");
+                            if self.variant == 2 {
+                                bail!("Inference timeout");
+                            }
+                            if self.variant != 3 {
+                                std::future::pending::<()>().await;
+                            }
+                            "Try sorting integers"
+                        }
+                        2 => {
+                            assert_eq!(role, "solver");
+                            assert_eq!(
+                                prompt.contains("Alternative: Try sorting integers"),
+                                self.variant == 3
+                            );
+                            "[1,2,3]"
+                        }
+                        _ => panic!("Unexpected model call"),
+                    };
+                    Ok(Generation {
+                        text: text.into(),
+                        model: "fixture/v1".into(),
+                        input_tokens: Some(10),
+                        output_tokens: Some(5),
+                        elapsed_ms: 1.0,
+                        queue_wait_ms: None,
+                    })
+                })
+            }
+        }
+        for variant in 0..4 {
+            let store = Arc::new(Store::in_memory().unwrap());
+            if variant == 1 {
+                store.lock().unwrap().execute_batch("CREATE TRIGGER refuse_exploration_failure BEFORE INSERT ON events WHEN NEW.kind='exploration_failure' BEGIN SELECT RAISE(ABORT,'audit unavailable'); END;").unwrap();
+            }
+            let backend = Arc::new(Exploration {
+                variant,
+                calls: std::sync::atomic::AtomicUsize::new(0),
+            });
+            let outcome = Engine::with_backend(
+                Config {
+                    backend: "openai-local".into(),
+                    interpret_goals: false,
+                    max_wall_seconds: 3,
+                    timeout_seconds: 60,
+                    ..Config::default()
+                },
+                store.clone(),
+                backend.clone(),
+            )
+            .run(r#"sort:{"values":[3,1,2]}"#, "research")
+            .await
+            .unwrap();
+            let trace = store.task(&outcome.task_id).unwrap();
+            if variant == 0 || variant == 3 {
+                assert_eq!(outcome.status, "completed");
+                assert_eq!(outcome.calls, 3);
+                assert_eq!(outcome.resources.reserved_output_tokens, 768);
+                assert_eq!(outcome.answer, "[1,2,3]");
+                assert!(outcome
+                    .evidence
+                    .contains(&"verified:integer_sort/v1".into()));
+                assert_eq!(
+                    outcome.resources.input_tokens,
+                    if variant == 3 { Some(30) } else { None }
+                );
+            } else {
+                assert_eq!(outcome.status, "failed");
+                assert_eq!(outcome.calls, 2);
+                assert_eq!(outcome.resources.reserved_output_tokens, 384);
+            }
+            assert_eq!(
+                trace["events"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .filter(|e| e["kind"] == "exploration_failure")
+                    .count(),
+                usize::from(variant == 0)
+            );
+            assert!(trace["events"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|e| e["kind"] == "exploration_phase_budget"
+                    && e["payload"]["max_milliseconds"].as_u64().unwrap() <= 1000));
+            assert_eq!(
+                backend.calls.load(std::sync::atomic::Ordering::SeqCst),
+                outcome.calls as usize
+            );
+        }
+    }
 
     #[tokio::test(start_paused = true)]
     async fn planning_timeout_preserves_final_solver_and_discards_partial_strategy() {

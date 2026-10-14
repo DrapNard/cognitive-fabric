@@ -1065,3 +1065,23 @@ a stalled dependent step, retained calls/outputs, discarded partial strategy and
 fatal failure-audit denial. Final integer-sort answers still require compiled
 verification. Live quality/latency after this change is not yet measured; previous
 installed binaries and graph reports retain their original source scope.
+
+### Research exploration phase ceiling
+
+The fresh RESEARCH explorer call now receives a separately audited ceiling of
+one-third of remaining original task wall time, capped by configured inference
+timeout. `exploration_phase_budget` is persisted before dispatch. Only a typed
+inference timeout may become `exploration_failure` and continue the original
+whole-goal solver within remaining budgets. Charged calls/output reservations are
+retained, elapsed inference is accounted and reported usage/queue totals remain
+unknown after interruption. No alternative is appended on timeout. Successful
+exploration is still unverified strategy, not evidence or permissions.
+
+Policy/provider/audit errors remain fatal, including a backend error whose text
+says "Inference timeout" without the typed timeout condition. Failure auditing
+must succeed before the final solver can start. This supersedes the earlier
+fresh-planning note that excluded research exploration; it does not claim general
+persistent phase-deadline recovery, synchronous-callback preemption, physical
+provider cancellation or calibrated expected utility. Original task deadlines,
+calls, tokens and permissions remain unchanged. Live effect and current optimized
+installation after these phase changes are not yet verified.

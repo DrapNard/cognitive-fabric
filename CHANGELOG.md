@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Bound research exploration before final solving
+
+- Give the optional explorer a shared-task time ceiling and audit it before dispatch.
+- Keep charges and unknown usage after typed timeouts; require durable failure auditing.
+- Preserve fatal provider/policy errors and successful unverified alternatives.
+
 ### Bound fresh planning and decomposition wall time
 
 - Share one advisory phase ceiling before the first whole-goal solver.

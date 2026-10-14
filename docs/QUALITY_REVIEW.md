@@ -3849,3 +3849,19 @@ bounds async fresh planning only; trusted synchronous callbacks, saved phase
 recovery and separate research exploration retain their stated limitations.
 No current optimized installation or live-model benefit is claimed for this new
 runtime revision. Broader lifecycle, scheduling and independent evaluation remain.
+
+### Research exploration containment gate
+
+All 500 tests (446 library, 54 integration), formatting, workspace all-target
+check and Clippy pass with FLATC unset. Commands: `cargo fmt --all -- --check`,
+`cargo check --offline --workspace --all-targets`,
+`cargo test --offline --workspace --all-targets`, and
+`cargo clippy --offline --workspace --all-targets -- -D warnings`.
+Log: `/tmp/cogfabric-exploration-phase-tests.log`. Paused-clock end-to-end cases
+cover pending explorer timeout followed by independently verified final solving,
+fatal failure-audit denial, a non-typed backend error with timeout-like text, and
+successful alternative/known-usage preservation. Reservations remain 768 tokens
+for successful three-call tasks or 384 for two-call failures; no calls are refunded.
+Existing planning containment, cancellation, recovery and negative policy tests
+pass. No new authority or provider termination/quality claim. Current optimized
+and real-provider verification for these latest phase changes remains pending.
