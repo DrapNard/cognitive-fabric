@@ -213,3 +213,25 @@ not a new clean-OS validation. The observed LM Studio inventory had no loaded
 models after their idle TTL, and these offline smokes perform no live inference.
 The earlier real graph measurements remain source-specific. Independent quality,
 physical residency and general expert lifecycle gates remain incomplete.
+
+### Current installed live socket inference
+
+The optimized CLI from source `fc839768a0dc2105dbdd1c971f9ba3abc2cf31ab`
+was run through its real Unix-socket service with Qwen3 8B in fresh state.
+FAST `sort:{"values":[3,1,2,1]}` returned `[1,1,2,3]`, independently checked,
+with one call in 3.00 seconds. DEEP on the three-node directed graph with edges
+`a->b`, `b->c`, `a->c` returned the minimum path `["a","c"]`, independently
+checked, with six calls in 26.67 seconds under the original 30-second budget.
+The latter audit contains one plan, one committed schedule and four subtask
+resource records, so installed scoped intermediate calls actually ran.
+Both clients exited zero. The owned service stopped and its socket was removed.
+
+Raw outcomes, audit counts, installed source/binary identity and limitations are
+retained in `evaluation/results/qwen3-8b-current-installed-socket-smoke.json`.
+Temporary state/logs: `/tmp/cogfabric-installed-live-socket.p9vx_m4i`.
+No model was initially loaded; the existing Qwen weights were loaded via LM Studio
+CLI with 8192 context, 0.35 requested offload, one parallel prediction and 600s
+idle TTL (3.40 seconds reported load). Other models/workloads were not unloaded.
+This is two installed smoke tasks, not a held-out reasoning/latency study or proof
+of native framework residency ownership. The prior 96-task graph report remains
+source-specific. Broader independent quality and model/expert lifecycle stay open.

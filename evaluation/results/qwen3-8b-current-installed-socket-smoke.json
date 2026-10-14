@@ -1,0 +1,90 @@
+{
+  "format_version": 1,
+  "runtime_source_revision": "fc839768a0dc2105dbdd1c971f9ba3abc2cf31ab",
+  "binary_sha256": "0f3b665c3b9416bb2736774bc847c9114ac0bdf4b9bd1e697286a58f052b1aa1",
+  "model": "qwen/qwen3-8b",
+  "context_tokens": 8192,
+  "requested_gpu_offload_ratio": 0.35,
+  "load_cli_seconds": 3.4,
+  "model_idle_ttl_seconds": 600,
+  "state_isolated": true,
+  "socket_removed_after_shutdown": true,
+  "held_out": false,
+  "weights_attested": false,
+  "independent_quality_study": false,
+  "physical_residency_ownership_proven": false,
+  "outcomes": [
+    {
+      "label": "fast",
+      "outcome": {
+        "answer": "[1, 1, 2, 3]",
+        "calls": 1,
+        "cycles": 1,
+        "elapsed_ms": 3002.446776,
+        "evidence": [
+          "verified:integer_sort/v1"
+        ],
+        "resources": {
+          "calls": 1,
+          "cycles": 1,
+          "inference_ms": 3000.684057,
+          "input_tokens": 193,
+          "output_tokens": 13,
+          "process_lifetime_peak_rss_bytes": 12165120,
+          "process_rss_bytes": 12165120,
+          "prompt_bytes": 306,
+          "queue_wait_ms": 0.009568,
+          "reserved_output_tokens": 384,
+          "tool_calls": 2
+        },
+        "skills": [],
+        "status": "completed",
+        "stop_reason": "verified",
+        "task_id": "f3c8fbc2-e659-4c19-a5be-8e114d1b0364"
+      },
+      "audit_event_counts": {
+        "model_dispatch": 1
+      }
+    },
+    {
+      "label": "deep",
+      "outcome": {
+        "answer": "[\"a\",\"c\"]",
+        "calls": 6,
+        "cycles": 1,
+        "elapsed_ms": 26669.963309,
+        "evidence": [
+          "verified:shortest_path/v1"
+        ],
+        "resources": {
+          "calls": 6,
+          "cycles": 1,
+          "inference_ms": 26664.597354,
+          "input_tokens": 1864,
+          "output_tokens": 119,
+          "process_lifetime_peak_rss_bytes": 12447744,
+          "process_rss_bytes": 12447744,
+          "prompt_bytes": 4853,
+          "queue_wait_ms": 0.051197000000000006,
+          "reserved_output_tokens": 1408,
+          "tool_calls": 2
+        },
+        "skills": [],
+        "status": "completed",
+        "stop_reason": "verified",
+        "task_id": "cc228046-4c6a-4586-8e70-3db0d5405fd4"
+      },
+      "audit_event_counts": {
+        "model_dispatch": 6,
+        "plan": 1,
+        "subtask_resources": 4,
+        "subtask_schedule": 1
+      }
+    }
+  ],
+  "limitations": [
+    "Two public installed socket smoke tasks, not a quality benchmark",
+    "CLI-owned model startup is not framework-native ownership or model switching proof",
+    "Provider/device activity and sampling uncontrolled"
+  ]
+}

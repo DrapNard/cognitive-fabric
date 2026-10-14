@@ -2488,3 +2488,9 @@ optional HTTP packages at fc83976 with FLATC unset, locked cached dependencies
 and both installed workflow scripts. See INSTALLATION_VALIDATION.md for hashes,
 toolchain, source and logs. This refresh does not supersede the old clean-OS scope
 or prove live inference, residency ownership or independent reasoning quality.
+
+Installed current real-provider socket execution: **Implemented / Verified** for
+FAST sorting and DEEP path reasoning at optimized source fc83976. Both answers
+passed compiled independent checks; DEEP executed four advisory subtasks within
+original budgets. Service shutdown removed its socket. See LIVE_INFERENCE.md
+and the raw installed socket smoke report. General quality/residency remain Partial.

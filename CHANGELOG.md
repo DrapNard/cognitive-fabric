@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Verify current installed live socket reasoning
+
+- Run FAST sorting and DEEP graph reasoning through the installed socket service with Qwen.
+- Confirm independently checked outputs, charged calls, subtask execution and graceful shutdown.
+- Retain exact source/binary identity and separate smoke evidence from quality/residency claims.
+
 ### Refresh current optimized installation evidence
 
 - Install both current packages offline without a native FlatBuffers compiler.
