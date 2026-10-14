@@ -186,3 +186,30 @@ provisioned isolated experts, physical residency and independent unseen model
 studies remain open V1 requirements. No public crate/repository publication or
 release tag was performed. HTTP_API.md now describes ordinary bundled builds
 rather than requiring an obsolete compiler export.
+
+### Current optimized installation refresh
+
+Source `fc839768a0dc2105dbdd1c971f9ba3abc2cf31ab` was installed offline with locked cached dependencies on
+Rust/Cargo 1.97.1, leaving FLATC unset. Both packages built in optimized mode:
+core 2m46s, HTTP server 1m04s (Cargo-reported build durations, not startup latency).
+Prefix: `/tmp/cogfabric-current-install.cj8eTv`. Both `scripts/installed-smoke.sh` and
+`scripts/installed-http-smoke.sh` passed against the installed executables.
+CLI/socket evidence: `/tmp/cogfabric-installed-smoke.eQsFRe`;
+HTTP evidence: `/tmp/cogfabric-installed-http.TrhSq2`.
+
+Installed CLI SHA256:
+`0f3b665c3b9416bb2736774bc847c9114ac0bdf4b9bd1e697286a58f052b1aa1`.
+Installed server SHA256:
+`02a8b456b08bafea1e05f29987af6ec6ff4c9db846603e96c59c1ae01ae817c0`.
+Protocol bundle manifest SHA256:
+`069657844f4c458c72858b69261e7097f2f6f59db8098f10bceba094c6391ba7`.
+Build and smoke logs are retained under the prefix. Core smoke covers the existing
+fresh-state installed CLI/socket workflows. HTTP smoke verifies authenticated
+discovery, Origin denial, typed arithmetic/SQL workers and graceful cleanup.
+The installed runtime includes concise advice and scoped subtask prompts.
+
+This refresh uses the current host's cached dependencies and C toolchain; it is
+not a new clean-OS validation. The observed LM Studio inventory had no loaded
+models after their idle TTL, and these offline smokes perform no live inference.
+The earlier real graph measurements remain source-specific. Independent quality,
+physical residency and general expert lifecycle gates remain incomplete.

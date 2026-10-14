@@ -2482,3 +2482,9 @@ scope/dependency prompts, then requires the original final output contract and a
 compiled verified answer. It retains four calls and 1024 reserved output tokens.
 This addresses conflicting instructions; live-model cost/quality benefit after
 this change remains unmeasured. Earlier graph measurements remain frozen.
+
+Current source optimized installation: **Implemented and verified** for core and
+optional HTTP packages at fc83976 with FLATC unset, locked cached dependencies
+and both installed workflow scripts. See INSTALLATION_VALIDATION.md for hashes,
+toolchain, source and logs. This refresh does not supersede the old clean-OS scope
+or prove live inference, residency ownership or independent reasoning quality.

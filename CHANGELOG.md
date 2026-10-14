@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Refresh current optimized installation evidence
+
+- Install both current packages offline without a native FlatBuffers compiler.
+- Pass installed CLI/socket and authenticated HTTP/typed-worker workflows.
+- Record binary/source hashes and preserve clean-OS/live-inference proof limits.
+
 ### Scope final-answer formats during subtask reasoning
 
 - Distinguish intermediate advisory results from the whole-goal answer format.
