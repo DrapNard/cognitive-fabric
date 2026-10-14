@@ -3919,3 +3919,13 @@ Log snapshot: `/tmp/cogfabric-current-hosted-ci.log`.
 This strengthens protocol/build/reproducibility evidence for the current metadata
 runtime. It provides no GPU, real residency, independent quality or neural safety
 proof. The separately running RESEARCH study retains its own deadline/state.
+
+Native-worker fixture isolation: parallel cases previously derived state directory
+names solely from wall-clock nanoseconds, which are not a uniqueness guarantee.
+An additional full-suite run encountered duplicate model registration during
+fixture setup, consistent with shared state. Each case now atomically reserves
+an owner-only directory using a process-local sequence/PID, skipping existing
+paths within a bounded 128 attempts. Unexpected filesystem failures still fail.
+No runtime behavior, database lock policy, worker or policy assertion was weakened.
+The precise source of the earlier isolated database-locked error remains unproven;
+this removes a concrete unsafe fixture naming assumption rather than masking it.

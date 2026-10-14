@@ -6,6 +6,7 @@ use cogfabric::{
 };
 use serde_json::{json, Value};
 use std::{
+    os::unix::fs::DirBuilderExt,
     process::{Child, Command, Stdio},
     sync::{
         atomic::{AtomicUsize, Ordering},
@@ -106,13 +107,23 @@ async fn run(mode: Mode) {
     let audit_failure = matches!(mode, Mode::OwnerAuditFailure);
     let nonstream = matches!(mode, Mode::NonstreamDisconnect | Mode::NonstreamShutdown);
     let stop_failure = matches!(mode, Mode::StopAuditFailure);
-    let home = std::env::temp_dir().join(format!(
-        "fabric-native-process-{}",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
+    // Clock resolution does not guarantee distinct names for parallel cases.
+    // Reserve the directory atomically rather than sharing an existing database.
+    static NEXT_HOME: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let home = (0..128)
+        .find_map(|_| {
+            let sequence = NEXT_HOME.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!(
+                "fabric-native-process-{}-{sequence}",
+                std::process::id()
+            ));
+            match std::fs::DirBuilder::new().mode(0o700).create(&path) {
+                Ok(()) => Some(path),
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => None,
+                Err(error) => panic!("Cannot reserve native worker fixture directory: {error}"),
+            }
+        })
+        .expect("Cannot reserve a unique native worker fixture directory");
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let endpoint = format!("http://{}/v1", listener.local_addr().unwrap());
     let provider = Arc::new(Provider {

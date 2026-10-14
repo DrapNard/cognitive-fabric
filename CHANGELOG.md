@@ -2,6 +2,11 @@
 
 All notable changes are documented here in English.
 
+### Reserve native-worker fixture state atomically
+
+- Replace timestamp-only directory naming with bounded atomic reservation.
+- Keep parallel test databases separate and owner-only without relaxing assertions.
+
 ### Report planning and exploration phase diagnostics
 
 - Expose task-scoped advisory phase/fallback counts without strategy or error contents.
