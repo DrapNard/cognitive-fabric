@@ -3865,3 +3865,24 @@ for successful three-call tasks or 384 for two-call failures; no calls are refun
 Existing planning containment, cancellation, recovery and negative policy tests
 pass. No new authority or provider termination/quality claim. Current optimized
 and real-provider verification for these latest phase changes remains pending.
+
+### Inactive Rust reference candidate gate
+
+All 501 tests (446 library, 55 integration), formatting, workspace all-target
+check and Clippy passed with FLATC unset. Commands: `cargo fmt --all -- --check`,
+`cargo check --offline --workspace --all-targets`,
+`cargo test --offline --workspace --all-targets`, and
+`cargo clippy --offline --workspace --all-targets -- -D warnings`.
+Log: `/tmp/cogfabric-rust-reference-tests.log`. A real installed CLI imports the
+source-linked guide into immutable quarantine and passes integrity; unattested
+quality evaluation fails. The integration test validates quarantine, active
+retrieval exclusion, promotion denial without quality and separate mechanical
+retrieval. Draft tests establish no held-out quality or domain expertise.
+
+An initial parallel suite hit a transient database-locked error during native
+worker fixture Store::open. The unchanged targeted test and complete suite passed
+on recheck; no production or native-worker test was weakened and the precise
+contention source is unconfirmed. Reference edits created new immutable candidate
+versions rather than overwriting quarantine. No runtime code, active model/skill,
+permissions or learning acceptance thresholds changed. Independent Rust retrieval
+review/security tests and explicit operator promotion remain required.

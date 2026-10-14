@@ -1,0 +1,3 @@
+{"query":"String ownership transfer","expected_excerpt":"transfers its ownership"}
+{"query":"mutable borrow overlapping","expected_excerpt":"other overlapping borrows"}
+{"query":"Lifetime annotations relationships","expected_excerpt":"do not extend"}

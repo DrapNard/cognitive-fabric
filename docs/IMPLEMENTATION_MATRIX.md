@@ -2555,3 +2555,12 @@ unknown usage; independently checked path completed in 14.48 seconds. Both
 optimized packages and installed workflows passed with FLATC unset. See raw
 phase smoke and INSTALLATION_VALIDATION.md. Broad effectiveness, synchronous
 preemption, persistent phase recovery and residency remain Partial.
+
+Rust reference candidate preparation: **Partial / inactive draft**. The original
+source-linked ownership guide and hashed provenance inventory live in examples/.
+Installed CLI import/integrity passed; unattested draft quality was denied.
+`tests/rust_reference_candidate.rs` proves quarantined content is unavailable to
+active retrieval, promotion without quality fails even with approval, and isolated
+mechanical retrieval works. Independent acceptance, poisoning/security evaluation,
+operator promotion and measured model benefit remain unimplemented/unverified.
+Bootstrap rust.s1 therefore remains routing metadata in ordinary fresh workspaces.

@@ -1,0 +1,28 @@
+{
+  "format_version": 1,
+  "skill_id": "rust.s1",
+  "artifact": "rust_ownership_reference.md",
+  "artifact_sha256": "92fe80b20d2b9c1e09cd2844c53a536adc2cfb2cc5c3ceb8258dea5d2d257303",
+  "artifact_license": "Apache-2.0",
+  "source_pages": [
+    "https://doc.rust-lang.org/book/ch04-01-what-is-ownership.html",
+    "https://doc.rust-lang.org/book/ch04-02-references-and-borrowing.html",
+    "https://doc.rust-lang.org/book/ch10-03-lifetime-syntax.html"
+  ],
+  "source_accessed": "2026-10-14",
+  "upstream_content_attested": false,
+  "artifact_original_explanatory_text": true,
+  "status": "quarantined_draft",
+  "quality_cases": "rust_ownership_retrieval_draft.jsonl",
+  "quality_cases_sha256": "f0e490c3f1d1ca438a5db371d8512d56873ec04b515e717cf2449fbd0bf8d4b8",
+  "held_out": false,
+  "independent_human_review": false,
+  "quality_acceptance_passed": false,
+  "integrity_check_passed": true,
+  "active": false,
+  "limitations": [
+    "Source semantics do not prove model expertise",
+    "Draft queries are same-author mechanical fixtures, never independent acceptance tests",
+    "Candidate cannot be promoted without passing reviewed quality gates and explicit operator approval"
+  ]
+}

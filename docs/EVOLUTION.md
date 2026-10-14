@@ -170,3 +170,27 @@ modify acceptance suites or activate candidates. Existing integrity, held-out
 quality, historical regression and explicit promotion gates remain mandatory.
 This implements traceable gap-guided preparation from reviewed documents; unattended
 source acquisition, dataset cleaning and poisoning evaluation remain incomplete.
+
+## Rust ownership reference draft
+
+`examples/rust_ownership_reference.md` is original explanatory text linked to three
+official Rust Book pages. `rust_ownership_reference_manifest.json` records local
+hashes, provenance and draft/review status; it is not a registry Manifest and must
+not be passed to skill-register. `rust_ownership_retrieval_draft.jsonl` contains
+same-author mechanical retrieval fixtures, not independent acceptance data.
+
+The installed CLI created a content-addressed rust.s1 RAG candidate in fresh
+state and passed integrity. Quality evaluation without a held-out attestation
+correctly failed. Text corrections produced immutable new versions, leaving older
+candidates inactive. Final temporary candidate: af152253-e3cc-4165-9d55-655205c0bff2,
+version 3, SHA256 92fe80b20d2b9c1e09cd2844c53a536adc2cfb2cc5c3ceb8258dea5d2d257303.
+State/logs: `/tmp/cogfabric-rust-reference-candidate.gZbJKo`.
+No active document/version or permission was promoted.
+
+To prepare another isolated copy, use candidate create with skill rust.s1, kind
+rag, the Markdown artifact, its source description and Apache-2.0 license, then
+candidate evaluate with suite integrity. Obtain independently authored/reviewed
+retrieval cases before quality acceptance; never label these draft queries held
+out to bypass the gate. Runtime operator attestation does not itself establish
+independence or poisoning resistance. Promotion still requires passing gates and
+explicit human approval. This draft is not a trained Rust model or proven expert.

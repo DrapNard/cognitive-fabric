@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Prepare an inactive Rust reference candidate
+
+- Add original source-linked ownership/borrowing/lifetime notes and hashed provenance.
+- Verify immutable quarantine, integrity and rejection of unattested draft acceptance.
+- Keep active retrieval and promotion gated; distinguish fixtures from independent quality.
+
 ### Verify real-provider phase handoff and current installation
 
 - Retain the real Qwen RESEARCH task after a bounded planning timeout.
