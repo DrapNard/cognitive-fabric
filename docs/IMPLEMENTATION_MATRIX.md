@@ -2643,3 +2643,14 @@ include a tiny huge-local declaration and positive/negative boundaries; full
 semantic validation is retained. Production dependencies/authority remain unchanged.
 Host heap/time quotas, task grants, immutable artifact/version lifecycle, IPC and
 independent security evaluation remain incomplete; no general sandbox claim.
+
+Wasm artifact/invocation binding: **Implemented experimentally / not production
+integrated** in `experiments/wasm-experts/src/artifact.rs`. Canonical IDs/versions
+and expected hashes bind immutable validated compiled artifacts. Opaque non-cloneable
+grants bind one task/input/artifact to the human-cli actor; mismatch/replay is denied
+and admitted traps consume the grant. Each call has fresh instance state; compiled
+old versions survive source/replacement changes. Thirteen tests pass. Authentication
+and approval of grant creation remain the trusted embedding's responsibility;
+these comparisons are not remote identity verification. Persistent conflict checks,
+cumulative task budgets, audits, lifecycle/recovery and Core permissions/IPC remain
+incomplete. No active module, registry or model grant changed.

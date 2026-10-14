@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Bind experimental Wasm artifacts to single-use task grants
+
+- Validate immutable compiled artifact ID/version/hash before invocation.
+- Bind task, actor and input; deny replay and charge admitted traps.
+- Preserve old version snapshots and fresh guest state without production activation.
+
 ### Bound experimental Wasm shapes before translation
 
 - Admit only bounded scalar module declarations, locals, operators and nesting.

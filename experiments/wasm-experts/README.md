@@ -13,10 +13,34 @@ function calls. Stack height is capped at 64 KiB and recursion depth at 32. Floa
 reference-type and tail-call proposals are disabled; SIMD and memory64 features
 are not compiled. Wasmi strict compilation limits are selected.
 
-Nine tests cover execution, imports, nontermination including start functions,
+Thirteen tests cover execution, imports, nontermination including start functions,
 initial/growing memory and tables, malformed/oversized bytes and wrong signatures.
 Run cargo test --manifest-path experiments/wasm-experts/Cargo.toml --locked.
 The separate workspace prevents adding this interpreter to production builds.
+
+## Artifact and invocation binding
+
+The public prototype API imports an Artifact using a canonical identifier,
+semantic version, expected SHA256 and binary bytes. Full shape/semantic validation
+finishes before import succeeds. Compiled state is immutable and shared by artifact
+clones; later source-buffer mutation or replacement cannot change a granted call.
+The raw execution helper is private.
+
+operator_grant binds one exact input and task UUID to that artifact identity. The
+non-serializable, non-cloneable TaskGrant permits the human-cli actor only; invoke
+checks task, actor, input, ID/version/hash, then consumes the grant before guest
+execution. Traps and fuel exhaustion consume it; scope denials do not dispatch.
+Each successful dispatch creates fresh guest instance state, including globals.
+Tests check mismatched tasks/actors/inputs/artifacts, replay, traps, version/content
+replacement and state isolation.
+
+The embedding Rust caller must authenticate the actor and approve grant creation.
+String comparison is not user authentication. This library has no remote/CLI
+endpoint, does not deserialize grants from model output, and cannot establish
+cumulative task budgets or durable audit/registry authority. A trusted caller can
+issue additional grants; production policy must govern that. Hashes identify
+content, not signatures, licensing or domain correctness. No active runtime expert
+or candidate is created by this API.
 
 ## Limits of the evidence
 
@@ -37,8 +61,8 @@ bugs remain part of the trusted computing base; this is not OS process isolation
 or a proof of general sandbox safety. No independent security audit is claimed.
 Execution of a scalar function is not verification of its domain correctness.
 
-Before runtime integration, implement immutable version
-and artifact binding, deterministic per-task/actor permission and invocation
+Before runtime integration, implement persistent conflict-checked artifact/version
+registration, authenticated deterministic per-task/actor permission and cumulative invocation
 budgets, audits before dispatch, cancellation ownership, held-out domain/security
 evaluation, lifecycle/rollback, and typed protocol integration where IPC is used.
 Do not enable arbitrary native executables or model-controlled host imports to

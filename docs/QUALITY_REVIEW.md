@@ -4004,3 +4004,27 @@ fmt/check/test/Clippy with FLATC unset; log `/tmp/cogfabric-wasm-preflight-core-
 No production dependency, protocol, actor grant, registry entry or candidate changed.
 This reduces concrete translation amplification but does not prove hard host heap,
 wall-clock compilation deadlines, OS isolation or an independently audited sandbox.
+
+### Experimental Wasm artifact/grant gate
+
+Thirteen isolated tests and format/check/test/Clippy passed. Commands:
+`cargo fmt --manifest-path experiments/wasm-experts/Cargo.toml -- --check`,
+`cargo check --offline --locked --manifest-path experiments/wasm-experts/Cargo.toml --all-targets`,
+`cargo test --offline --locked --manifest-path experiments/wasm-experts/Cargo.toml`,
+`cargo clippy --offline --locked --manifest-path experiments/wasm-experts/Cargo.toml --all-targets -- -D warnings`.
+Log: `/tmp/cogfabric-wasm-artifact-grants-tests.log`. Import verifies bounded bytes,
+canonical ID/version and expected SHA256 plus full module validation. Tests deny
+mismatched task/actor/input/version/content and grant replay, consume grants on
+traps/fuel exhaustion, retain old compiled snapshots after source changes and prove
+fresh mutable-global state. Raw execution is no longer public in non-test builds.
+
+Production retains all 503 tests (447 library, 56 integration), mandatory formatting,
+all-target check/test and Clippy with FLATC unset; log:
+`/tmp/cogfabric-wasm-artifact-core-tests.log`. Root commands remain
+`cargo fmt --all -- --check`, `cargo check --offline --workspace --all-targets`,
+`cargo test --offline --workspace --all-targets`, and
+`cargo clippy --offline --workspace --all-targets -- -D warnings`.
+No production dependency, endpoint, actor grant, active artifact or protocol changed.
+Grant constructors require an authenticated/approved trusted embedding; this is
+not user authentication, durable auditing, cumulative task authority or registry
+conflict/lifecycle enforcement. No generic sandbox or domain-correctness claim.

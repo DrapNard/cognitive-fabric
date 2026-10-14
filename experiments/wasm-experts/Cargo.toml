@@ -12,5 +12,9 @@ wasmi = { version = "=2.0.0", default-features = false, features = ["std", "vali
 
 wasmparser = { version = "=0.228.0", default-features = false, features = ["std"] }
 
+sha2 = "0.10"
+semver = "1"
+uuid = "1"
+
 [dev-dependencies]
 wat = "1"

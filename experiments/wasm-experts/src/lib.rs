@@ -1,7 +1,8 @@
 //! Experimental import-free scalar expert executor; not wired into runtime authority.
+pub mod artifact;
 mod preflight;
 
-pub fn evaluate_i64(wasm: &[u8], input: i64) -> Result<i64, String> {
+fn compile_checked(wasm: &[u8]) -> Result<(wasmi::Engine, wasmi::Module), String> {
     if wasm.len() > 65536 {
         return Err("module byte limit".into());
     }
@@ -25,6 +26,10 @@ pub fn evaluate_i64(wasm: &[u8], input: i64) -> Result<i64, String> {
     if module.imports().next().is_some() {
         return Err("imports forbidden".into());
     }
+    Ok((engine, module))
+}
+
+fn call_checked(engine: &wasmi::Engine, module: &wasmi::Module, input: i64) -> Result<i64, String> {
     let limits = wasmi::StoreLimitsBuilder::new()
         .memory_size(65536)
         .memories(1)
@@ -33,17 +38,23 @@ pub fn evaluate_i64(wasm: &[u8], input: i64) -> Result<i64, String> {
         .instances(1)
         .trap_on_grow_failure(true)
         .build();
-    let mut store = wasmi::Store::new(&engine, limits);
+    let mut store = wasmi::Store::new(engine, limits);
     store.limiter(|limits| limits);
     store.set_fuel(1000).map_err(|e| e.to_string())?;
-    let instance = wasmi::Linker::new(&engine)
-        .instantiate_and_start(&mut store, &module)
+    let instance = wasmi::Linker::new(engine)
+        .instantiate_and_start(&mut store, module)
         .map_err(|e| e.to_string())?;
     let function = instance
         .get_typed_func::<i64, i64>(&store, "evaluate")
         .map_err(|e| e.to_string())?;
     function.call(&mut store, input).map_err(|e| e.to_string())
 }
+#[cfg(test)]
+fn evaluate_i64(wasm: &[u8], input: i64) -> Result<i64, String> {
+    let (engine, module) = compile_checked(wasm)?;
+    call_checked(&engine, &module, input)
+}
+
 #[test]
 fn integer_guest() {
     let bytes=wat::parse_str("(module (func (export \"evaluate\") (param i64) (result i64) local.get 0 i64.const 2 i64.mul))").unwrap();
