@@ -3886,3 +3886,20 @@ contention source is unconfirmed. Reference edits created new immutable candidat
 versions rather than overwriting quarantine. No runtime code, active model/skill,
 permissions or learning acceptance thresholds changed. Independent Rust retrieval
 review/security tests and explicit operator promotion remain required.
+
+### Phase diagnostic reporting gate
+
+All 502 tests (447 library, 55 integration), formatting, workspace all-target
+check and Clippy pass with FLATC unset. Commands: `cargo fmt --all -- --check`,
+`cargo check --offline --workspace --all-targets`,
+`cargo test --offline --workspace --all-targets`, and
+`cargo clippy --offline --workspace --all-targets -- -D warnings`.
+Log: `/tmp/cogfabric-phase-diagnostic-reports-tests.log`. Tests distinguish
+planning/exploration/expert families, unrelated tasks and unknown historical
+classification; verify content exclusion and oversize rejection; project actual
+scripted explorer timeouts; and recompute all arm diagnostic sums from detail rows.
+Each bounded family adds a task-scoped SQLite query and fixed-label projection;
+no strategy/error content is exposed by the counters. No policy or model change.
+These additive report fields measure recorded attempts/fallbacks, not success,
+physical provider stop or expected utility. Historical reports remain unchanged;
+current optimized/live benchmark reporting refresh and broad release gates remain.

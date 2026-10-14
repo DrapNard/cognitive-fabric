@@ -656,3 +656,22 @@ not controlled; no 1–3B or larger baseline, unseen technical evaluation or neu
 safety claim follows. The same existing Qwen load was reused; no automatic physical
 residency ownership is proven. All earlier reports remain unchanged. Broader
 module lifecycle, independent verifiers/evaluation and residency gates stay open.
+
+### Planning/exploration diagnostics and comparison totals
+
+Evaluation details now include `planning_advice` and `exploration_advice` alongside
+existing `expert_advice`. Each contains phases_started, fallback_events,
+inference_timeout_fallbacks and unclassified_fallbacks. Comparison arm resource
+summaries additionally aggregate all three sets over executed tasks only. These
+are audit event counts, not verified success, calibrated utility or remote-provider
+termination. A task may fail or cancel without a fallback event; missing events
+never establish completion. Historical untyped/unknown kinds remain unclassified,
+not guessed from error text. Frozen reports are unchanged and may lack new fields.
+
+One bounded reader projects fixed type labels through SQLite for each phase family:
+128 relevant events, 16 KiB per event. It copies no strategy, prompt or error body
+into these diagnostics and fails on excess audit size/count. Additional queries
+use task scope and bound parameters. New tests distinguish phase families and
+unrelated tasks, reject oversized data, verify unknown classifications, project a
+real scripted explorer timeout and check arm totals against per-case counts.
+No runtime execution policy, permissions or inference budgets change.

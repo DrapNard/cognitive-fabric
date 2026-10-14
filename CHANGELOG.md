@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Report planning and exploration phase diagnostics
+
+- Expose task-scoped advisory phase/fallback counts without strategy or error contents.
+- Aggregate expert, planning and exploration counts over executed comparison tasks.
+- Preserve unknown classifications and historical reports instead of inferring success.
+
 ### Prepare an inactive Rust reference candidate
 
 - Add original source-linked ownership/borrowing/lifetime notes and hashed provenance.

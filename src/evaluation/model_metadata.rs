@@ -6,39 +6,54 @@ pub(crate) struct ModelMetadata {
     pub bound_expert_models: Vec<Value>,
     pub primary_model_snapshot: Option<Value>,
     pub expert_advice: AdviceDiagnostics,
+    pub planning_advice: AdviceDiagnostics,
+    pub exploration_advice: AdviceDiagnostics,
 }
 /// Audit counts describe attempted advice, never its usefulness or provider stop.
-#[derive(Default, serde::Serialize)]
+#[derive(Clone, Default, serde::Serialize)]
 pub(crate) struct AdviceDiagnostics {
     phases_started: usize,
     fallback_events: usize,
     inference_timeout_fallbacks: usize,
     unclassified_fallbacks: usize,
 }
-fn advice_diagnostics(db: &rusqlite::Connection, task: &str) -> Result<AdviceDiagnostics> {
+impl AdviceDiagnostics {
+    pub(crate) fn add(&mut self, other: &Self) {
+        self.phases_started += other.phases_started;
+        self.fallback_events += other.fallback_events;
+        self.inference_timeout_fallbacks += other.inference_timeout_fallbacks;
+        self.unclassified_fallbacks += other.unclassified_fallbacks;
+    }
+}
+fn advice_diagnostics(
+    db: &rusqlite::Connection,
+    task: &str,
+    budget_kind: &str,
+    failure_kind: &str,
+) -> Result<AdviceDiagnostics> {
     // Copy only bounded type labels, never advice, prompts or error messages.
-    let mut statement = db.prepare("SELECT kind, CASE WHEN length(CAST(payload AS BLOB))<=16384 THEN CASE WHEN kind='expert_phase_budget' THEN 'phase' WHEN json_type(payload,'$.failure_kind')='text' AND json_extract(payload,'$.failure_kind')='inference_timeout' THEN 'timeout' ELSE 'unclassified' END END FROM events WHERE task_id=?1 AND kind IN ('expert_phase_budget','expert_failure') ORDER BY id LIMIT 129")?;
-    let mut rows = statement.query([task])?;
+    let mut statement = db.prepare("SELECT kind, CASE WHEN length(CAST(payload AS BLOB))<=16384 THEN CASE WHEN kind=?2 THEN 'phase' WHEN json_type(payload,'$.failure_kind')='text' AND json_extract(payload,'$.failure_kind')='inference_timeout' THEN 'timeout' ELSE 'unclassified' END END FROM events WHERE task_id=?1 AND kind IN (?2,?3) ORDER BY id LIMIT 129")?;
+    let mut rows = statement.query([task, budget_kind, failure_kind])?;
     let mut result = AdviceDiagnostics::default();
     let mut count = 0;
     while let Some(row) = rows.next()? {
         count += 1;
         if count > 128 {
-            bail!("Expert advice diagnostic audit exceeds event limit")
+            bail!("Advisory phase diagnostic audit exceeds event limit")
         }
         let kind: String = row.get(0)?;
         let label: String = row.get(1)?;
-        match (kind.as_str(), label.as_str()) {
-            ("expert_phase_budget", "phase") => result.phases_started += 1,
-            ("expert_failure", "timeout" | "unclassified") => {
-                result.fallback_events += 1;
-                if label == "timeout" {
-                    result.inference_timeout_fallbacks += 1;
-                } else {
-                    result.unclassified_fallbacks += 1;
-                }
+        if kind == budget_kind && label == "phase" {
+            result.phases_started += 1;
+        } else if kind == failure_kind && matches!(label.as_str(), "timeout" | "unclassified") {
+            result.fallback_events += 1;
+            if label == "timeout" {
+                result.inference_timeout_fallbacks += 1;
+            } else {
+                result.unclassified_fallbacks += 1;
             }
-            _ => bail!("Invalid expert advice diagnostic audit"),
+        } else {
+            bail!("Invalid advisory phase diagnostic audit")
         }
     }
     Ok(result)
@@ -89,13 +104,82 @@ pub(crate) fn read(store: &Store, task: &str) -> Result<ModelMetadata> {
             _ => bail!("Unsupported model identity event"),
         }
     }
-    result.expert_advice = advice_diagnostics(&db, task)?;
+    result.expert_advice = advice_diagnostics(&db, task, "expert_phase_budget", "expert_failure")?;
+    result.planning_advice =
+        advice_diagnostics(&db, task, "planning_phase_budget", "planning_failure")?;
+    result.exploration_advice =
+        advice_diagnostics(&db, task, "exploration_phase_budget", "exploration_failure")?;
     Ok(result)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn planning_and_exploration_counts_are_task_scoped_and_content_minimized() {
+        let store = Store::in_memory().unwrap();
+        let task = store.create_task("Phase metadata", "research").unwrap();
+        let other = store.create_task("Other task", "research").unwrap();
+        for (budget, failure) in [
+            ("planning_phase_budget", "planning_failure"),
+            ("exploration_phase_budget", "exploration_failure"),
+        ] {
+            store
+                .event(&task, budget, "jev-plus", json!({"max_milliseconds":1000}))
+                .unwrap();
+            store.event(&task, failure, "jev-plus", json!({"failure_kind":"inference_timeout","private":"private_strategy_not_for_reports"})).unwrap();
+            store
+                .event(
+                    &task,
+                    failure,
+                    "jev-plus",
+                    json!({"reason":"Inference timeout"}),
+                )
+                .unwrap();
+            if budget == "planning_phase_budget" {
+                store
+                    .event(&task, budget, "jev-plus", json!({"max_milliseconds":500}))
+                    .unwrap();
+            }
+            store
+                .event(
+                    &other,
+                    failure,
+                    "jev-plus",
+                    json!({"failure_kind":"inference_timeout"}),
+                )
+                .unwrap();
+        }
+        let metadata = read(&store, &task).unwrap();
+        for (diagnostic, phases) in [
+            (&metadata.planning_advice, 2),
+            (&metadata.exploration_advice, 1),
+        ] {
+            let value = serde_json::to_value(diagnostic).unwrap();
+            assert_eq!(
+                value,
+                json!({"phases_started":phases,"fallback_events":2,"inference_timeout_fallbacks":1,"unclassified_fallbacks":1})
+            );
+            assert!(!value.to_string().contains("private_strategy"));
+        }
+        assert_eq!(
+            serde_json::to_value(metadata.expert_advice).unwrap()["phases_started"],
+            0
+        );
+        for budget in ["planning_phase_budget", "exploration_phase_budget"] {
+            let task = store.create_task("Oversized phase", "research").unwrap();
+            store
+                .event(
+                    &task,
+                    budget,
+                    "jev-plus",
+                    json!({"extra":"x".repeat(17000)}),
+                )
+                .unwrap();
+            assert!(read(&store, &task).is_err());
+        }
+    }
+
     #[test]
     fn advice_diagnostics_preserve_unknown_failures_and_bound_projection() {
         let store = Store::in_memory().unwrap();

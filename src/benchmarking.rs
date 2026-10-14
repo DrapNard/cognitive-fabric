@@ -192,6 +192,9 @@ struct Totals {
     input_tokens: Option<u64>,
     output_tokens: Option<u64>,
     failed_tasks: usize,
+    expert_advice: crate::evaluation::model_metadata::AdviceDiagnostics,
+    planning_advice: crate::evaluation::model_metadata::AdviceDiagnostics,
+    exploration_advice: crate::evaluation::model_metadata::AdviceDiagnostics,
 }
 
 impl Totals {
@@ -408,8 +411,17 @@ where
             totals[arm_index].add(&outcome, counts[arm_index] == 0);
             counts[arm_index] += 1;
             let identities = crate::evaluation::model_metadata::read(&store, &outcome.task_id)?;
+            totals[arm_index]
+                .expert_advice
+                .add(&identities.expert_advice);
+            totals[arm_index]
+                .planning_advice
+                .add(&identities.planning_advice);
+            totals[arm_index]
+                .exploration_advice
+                .add(&identities.exploration_advice);
             details.push(json!({"case_index":case_index,"arm_index":arm_index,"execution_position":position,"profile":profile,"configured_model":model,
-                "expert_advice":identities.expert_advice,"reported_models":identities.reported_models,"bound_expert_models":identities.bound_expert_models,"primary_model_snapshot":identities.primary_model_snapshot,"passed":passed,"expected":case.expected,"input":case.input,"outcome":outcome,"verification":case.verification}));
+                "planning_advice":identities.planning_advice,"exploration_advice":identities.exploration_advice,"expert_advice":identities.expert_advice,"reported_models":identities.reported_models,"bound_expert_models":identities.bound_expert_models,"primary_model_snapshot":identities.primary_model_snapshot,"passed":passed,"expected":case.expected,"input":case.input,"outcome":outcome,"verification":case.verification}));
             if cancelled || tokio::time::Instant::now() >= deadline {
                 stopped = true;
                 break 'cases;
@@ -472,6 +484,25 @@ mod tests {
         assert_eq!(report["details"].as_array().unwrap().len(), 6);
         for detail in report["details"].as_array().unwrap() {
             assert_eq!(detail["expert_advice"]["inference_timeout_fallbacks"], 0);
+        }
+        for arm in report["arms"].as_array().unwrap() {
+            for stage in ["expert_advice", "planning_advice", "exploration_advice"] {
+                for metric in [
+                    "phases_started",
+                    "fallback_events",
+                    "inference_timeout_fallbacks",
+                    "unclassified_fallbacks",
+                ] {
+                    let total: u64 = report["details"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .filter(|d| d["arm_index"] == arm["index"])
+                        .map(|d| d[stage][metric].as_u64().unwrap())
+                        .sum();
+                    assert_eq!(arm["resources"][stage][metric], total);
+                }
+            }
         }
         review.held_out = true;
         assert!(compare(&cfg, store, &dataset, "deep", None, &review)

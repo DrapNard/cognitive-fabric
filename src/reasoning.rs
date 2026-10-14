@@ -1302,6 +1302,14 @@ mod tests {
             .await
             .unwrap();
             let trace = store.task(&outcome.task_id).unwrap();
+            let metadata =
+                crate::evaluation::model_metadata::read(&store, &outcome.task_id).unwrap();
+            let diagnostic = serde_json::to_value(metadata.exploration_advice).unwrap();
+            assert_eq!(diagnostic["phases_started"], 1);
+            assert_eq!(
+                diagnostic["inference_timeout_fallbacks"],
+                usize::from(variant == 0)
+            );
             if variant == 0 || variant == 3 {
                 assert_eq!(outcome.status, "completed");
                 assert_eq!(outcome.calls, 3);
