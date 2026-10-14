@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Contain failed arithmetic and SQL workers
+
+- Exclude closed tool queues despite optimistic backend health and preserve no-retry handles.
+- Observe tool health outside registry locks and revalidate activation after retirement.
+- Cover both capabilities with failure, healthy future selection and reentrant-observer regressions.
+
 ### Exclude failed inference workers without retrying pinned tasks
 
 - Let closed local worker queues override optimistic backend availability.

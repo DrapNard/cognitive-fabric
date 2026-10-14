@@ -544,3 +544,11 @@ sample. Tests deliberately panic a trusted callback inside its Tokio worker and
 exercise metadata reentry/retirement races. This is not OS isolation: panic-abort
 builds, arbitrary native code, external provider execution and blocked callbacks
 remain outside that limited containment claim.
+
+The closed-worker lifecycle protection also applies to arithmetic and SQL tool
+queues. A failed old handle is never redirected to another implementation, and
+no budget is refunded. Only future approved handles can select a healthy registered
+alternative. Tool observation callbacks run outside registry locks; final activation
+rechecks retained identity and constraints. Deliberate trusted callback panic tests
+exercise this local Tokio-worker behavior without claiming process isolation,
+provider cancellation or permission expansion.

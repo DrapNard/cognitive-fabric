@@ -1,6 +1,6 @@
 # Rust baseline quality review
 
-Current local runtime passes 524 Rust tests (466 library including the server,
+Current local runtime passes 526 Rust tests (468 library including the server,
 58 integration), formatting, workspace all-target checking and Clippy with warnings
 denied. The separate Wasm experiment passes 24 tests with the optional Core audit
 bridge. Default builds use reviewed bundled FlatBuffers 25.12.19 sources without
@@ -4270,3 +4270,21 @@ All mandatory checks pass: formatting, offline workspace/all-target check,
 `/tmp/cogfabric-worker-health-final-check.log`,
 `/tmp/cogfabric-worker-health-clippy.log`. No new provider mutation, automatic
 reconnect, permission grant, budget refund or live inference claim is introduced.
+
+### Arithmetic/SQL closed-worker lifecycle parity
+
+Tool brokers now combine local queue closure with backend health for inventory,
+activation, future pinning and existing handle dispatch. Health observations run
+outside registry locks; activation revalidates retained immutable identity and
+current capability/conflict/capacity/shutdown constraints. Deliberately panicking
+arithmetic and SQL callbacks run once despite advertising Connected, old handles
+fail without replay, and future handles choose an approved healthy implementation.
+Both capability types reject resurrection after retirement during observation;
+immutable history still refuses redefinition. The existing metadata-reentry test
+now covers inventory, pinning and activation for both types.
+
+All mandatory checks pass: formatting, offline workspace/all-target check,
+526 workspace tests and Clippy with warnings denied. Logs:
+`/tmp/cogfabric-tool-health-all-tests.log`, `/tmp/cogfabric-tool-health-check.log`,
+`/tmp/cogfabric-tool-health-clippy.log`. No new grants, tool APIs, schema changes,
+provider mutation, automatic retry or native sandbox guarantee is introduced.

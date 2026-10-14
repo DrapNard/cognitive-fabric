@@ -1,7 +1,7 @@
 # Implementation matrix — 1.1.0-alpha.1
 
 Current evidence review (2026-10-14): **pre-release; V1 incomplete**. The current
-workspace passes 524 tests (466 library including the server, 58 integration),
+workspace passes 526 tests (468 library including the server, 58 integration),
 formatting, all-target checking and Clippy. See `RELEASE_AUDIT.md` for the 18 goal
 acceptance criteria and scoped evidence. Later narrative entries below are a
 historical implementation ledger; their old counts, unavailable endpoints and
@@ -2794,3 +2794,13 @@ future-only healthy selection, and prevents reactivation/retirement resurrection
 The existing reentrant observer test now covers inventory, pinning and activation.
 No process sandbox, provider stop proof, automatic reconnect or model mutation
 is established. General independent executable isolation remains incomplete.
+
+Tool worker failure containment: **Implemented for arithmetic/SQL broker queues**.
+`src/fabric/tools.rs` now excludes closed local queues from inventory, new pinning,
+activation and existing-handle dispatch even when the backend reports Connected.
+Health callbacks execute outside registry locks; activation revalidates retained
+identity and current capability/conflict/capacity/shutdown constraints. Regressions
+cover both tool types with deliberate worker panic, no old-handle replay, future
+healthy selection, metadata reentry and retirement during observation. Immutable
+history remains reserved. No new tool permission, automatic retry, provider-stop
+proof, native sandbox or residency operation is introduced.

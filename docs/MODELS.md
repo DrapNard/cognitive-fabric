@@ -438,3 +438,11 @@ committing. A version retired during observation cannot be resurrected by that
 activation. Callbacks can inspect metadata without lock recursion; arbitrary
 blocking, recursion or panic in trusted native code is still not a sandboxed or
 preemptible operation. In-flight pins retain their documented immutable routes.
+
+Tool brokers apply the same closed-worker lifecycle rule to arithmetic and SQL:
+a closed initialized queue dominates a backend's Connected advertisement; existing
+handles fail without replay, future handles can choose an approved healthy module,
+and same-version activation is refused. Tool health callbacks run outside registry
+locks, with retained identity/capability/conflict/capacity/shutdown revalidated
+before activation. Retirement during observation cannot resurrect a version.
+This does not sandbox native code, prove external effects stopped or add retries.

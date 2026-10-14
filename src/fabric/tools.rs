@@ -183,6 +183,13 @@ struct Module {
     routing_rank: Option<u32>,
 }
 impl Module {
+    fn availability(&self) -> super::Availability {
+        if self.queue.get().is_some_and(mpsc::Sender::is_closed) {
+            super::Availability::Closed
+        } else {
+            self.backend.availability()
+        }
+    }
     async fn queue(&self) -> &mpsc::Sender<Work> {
         self.queue
             .get_or_init(|| async {
@@ -462,6 +469,23 @@ impl Broker {
         if id.len() > 64 || version.len() > 64 {
             bail!("Invalid capability version selection")
         }
+        let module = {
+            let registry = self
+                .registry
+                .read()
+                .map_err(|_| anyhow::anyhow!("Capability registry poisoned"))?;
+            if *self.stop.borrow() {
+                bail!("Capability registry stopped")
+            }
+            registry
+                .versions
+                .get(&(id.into(), version.into()))
+                .cloned()
+                .context("Unknown registered capability version")?
+        };
+        if module.availability().unavailable() {
+            bail!("Registered capability transport is unavailable")
+        }
         let mut registry = self
             .registry
             .write()
@@ -469,13 +493,12 @@ impl Broker {
         if *self.stop.borrow() {
             bail!("Capability registry stopped")
         }
-        let module = registry
+        let retained = registry
             .versions
             .get(&(id.into(), version.into()))
-            .cloned()
-            .context("Unknown registered capability version")?;
-        if module.backend.availability().unavailable() {
-            bail!("Registered capability transport is unavailable")
+            .context("Capability version retired during observation")?;
+        if !Arc::ptr_eq(retained, &module) {
+            bail!("Capability identity changed during observation")
         }
         if !registry.active.contains_key(id) && registry.active.len() >= 32 {
             bail!("Active capability module capacity exhausted")
@@ -572,7 +595,7 @@ impl Broker {
             .map(|(module, active)| ModuleStatus {
                 descriptor: module.descriptor.clone(),
                 active,
-                availability: module.backend.availability(),
+                availability: module.availability(),
                 routing_rank: module.routing_rank,
             })
             .collect())
@@ -595,27 +618,34 @@ impl Broker {
         if !matches!(capability, "math.evaluate" | "sql.query") {
             bail!("Unsupported tool capability")
         }
-        Ok(self
-            .registry
-            .read()
-            .map_err(|_| anyhow::anyhow!("Capability registry poisoned"))?
-            .active
-            .values()
-            .filter(|m| {
-                m.descriptor.capability == capability && !m.backend.availability().unavailable()
+        let candidates = {
+            let registry = self
+                .registry
+                .read()
+                .map_err(|_| anyhow::anyhow!("Capability registry poisoned"))?;
+            if *self.stop.borrow() {
+                bail!("Capability registry stopped")
+            }
+            registry.active.values().cloned().collect::<Vec<_>>()
+        };
+        Ok(candidates
+            .into_iter()
+            .filter(|module| {
+                module.descriptor.capability == capability && !module.availability().unavailable()
             })
-            .min_by_key(|m| {
+            .min_by_key(|module| {
                 (
-                    m.routing_rank.unwrap_or(0),
-                    m.queue
+                    module.routing_rank.unwrap_or(0),
+                    module
+                        .queue
                         .get()
                         .map_or(0, |queue| queue.max_capacity() - queue.capacity()),
-                    &m.descriptor.id,
+                    module.descriptor.id.clone(),
                 )
             })
-            .cloned()
             .map(|module| Handle { module }))
     }
+
     pub fn shutdown(&self) -> Result<()> {
         let mut registry = self
             .registry
@@ -692,7 +722,7 @@ impl Handle {
         sql::response(&response, &identity)
     }
     async fn dispatch(&self, bytes: Vec<u8>, identity: Identity) -> Result<Vec<u8>> {
-        if self.module.backend.availability().unavailable() {
+        if self.module.availability().unavailable() {
             bail!("Pinned capability transport is unavailable")
         }
         tokio::time::timeout(Duration::from_secs(30), async {
@@ -867,6 +897,16 @@ mod tests {
                 .unwrap();
             assert!(observer.active);
             assert_eq!(observer.availability, super::super::Availability::Connected);
+            assert_eq!(
+                broker
+                    .pin_capability(capability)
+                    .unwrap()
+                    .unwrap()
+                    .descriptor()
+                    .id,
+                "observer"
+            );
+            broker.activate("observer", "1.0.0").unwrap();
         }
     }
 
@@ -1467,5 +1507,204 @@ mod tests {
         broker.shutdown().unwrap();
         assert!(first.await.unwrap().is_err());
         assert!(second.await.unwrap().is_err());
+    }
+    struct FailedWorker(std::sync::atomic::AtomicUsize);
+    impl ArithmeticBackend for FailedWorker {
+        fn availability(&self) -> super::super::Availability {
+            super::super::Availability::Connected
+        }
+        fn evaluate<'a>(
+            &'a self,
+            _: &'a str,
+        ) -> Pin<Box<dyn Future<Output = Result<String>> + Send + 'a>> {
+            Box::pin(async move {
+                self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                panic!("Expected tool worker failure");
+            })
+        }
+    }
+    impl sql::SqlBackend for FailedWorker {
+        fn availability(&self) -> super::super::Availability {
+            super::super::Availability::Connected
+        }
+        fn query<'a>(
+            &'a self,
+            _: &'a str,
+            _: &'a str,
+        ) -> Pin<Box<dyn Future<Output = Result<String>> + Send + 'a>> {
+            Box::pin(async move {
+                self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                panic!("Expected SQL worker failure");
+            })
+        }
+    }
+    #[tokio::test]
+    async fn failed_tool_queues_override_backend_health_without_replaying_handles() {
+        for sql in [false, true] {
+            let broker = Broker::default();
+            let capability = if sql { "sql.query" } else { "math.evaluate" };
+            broker
+                .unregister(if sql { "sql.local" } else { "arithmetic.local" })
+                .unwrap();
+            let descriptor = |id: &str| Descriptor {
+                id: id.into(),
+                version: "1.0.0".into(),
+                capability: capability.into(),
+            };
+            let failed = Arc::new(FailedWorker(std::sync::atomic::AtomicUsize::new(0)));
+            if sql {
+                broker
+                    .register_sql_candidate(descriptor("failed"), failed.clone(), 10)
+                    .unwrap();
+                broker
+                    .register_sql_candidate(descriptor("healthy"), Arc::new(sql::LocalSql), 20)
+                    .unwrap();
+            } else {
+                broker
+                    .register_candidate(descriptor("failed"), failed.clone(), 10)
+                    .unwrap();
+                broker
+                    .register_candidate(descriptor("healthy"), Arc::new(LocalMath), 20)
+                    .unwrap();
+            }
+            let task = uuid::Uuid::new_v4().to_string();
+            let original = broker.pin_capability(capability).unwrap().unwrap();
+            if sql {
+                assert!(original
+                    .query_sql(
+                        &task,
+                        "jev-plus",
+                        r#"{"tables":[],"query":"SELECT 42 AS answer"}"#
+                    )
+                    .await
+                    .is_err());
+            } else {
+                assert!(original.evaluate(&task, "jev-plus", "6*7").await.is_err());
+            }
+            assert_eq!(
+                broker
+                    .statuses()
+                    .unwrap()
+                    .iter()
+                    .find(|s| s.descriptor.id == "failed")
+                    .unwrap()
+                    .availability,
+                super::super::Availability::Closed
+            );
+            assert!(broker.activate("failed", "1.0.0").is_err());
+            if sql {
+                assert!(original
+                    .query_sql(
+                        &task,
+                        "jev-plus",
+                        r#"{"tables":[],"query":"SELECT 42 AS answer"}"#
+                    )
+                    .await
+                    .is_err());
+            } else {
+                assert!(original.evaluate(&task, "jev-plus", "6*7").await.is_err());
+            }
+            assert_eq!(failed.0.load(std::sync::atomic::Ordering::Acquire), 1);
+            let future = broker.pin_capability(capability).unwrap().unwrap();
+            assert_eq!(future.descriptor().id, "healthy");
+            if sql {
+                assert_eq!(
+                    serde_json::from_str::<serde_json::Value>(
+                        &future
+                            .query_sql(
+                                &task,
+                                "jev-plus",
+                                r#"{"tables":[],"query":"SELECT 42 AS answer"}"#
+                            )
+                            .await
+                            .unwrap()
+                    )
+                    .unwrap()["rows"],
+                    serde_json::json!([[42]])
+                );
+            } else {
+                assert_eq!(
+                    future.evaluate(&task, "jev-plus", "6*7").await.unwrap(),
+                    "42"
+                );
+            }
+        }
+    }
+    struct RetireObserver(std::sync::Weak<Broker>);
+    impl RetireObserver {
+        fn observe(&self) -> super::super::Availability {
+            self.0
+                .upgrade()
+                .unwrap()
+                .retire("retiring", "1.0.0")
+                .unwrap();
+            super::super::Availability::Connected
+        }
+    }
+    impl ArithmeticBackend for RetireObserver {
+        fn availability(&self) -> super::super::Availability {
+            self.observe()
+        }
+        fn evaluate<'a>(
+            &'a self,
+            _: &'a str,
+        ) -> Pin<Box<dyn Future<Output = Result<String>> + Send + 'a>> {
+            Box::pin(async { bail!("Retired fixture cannot execute") })
+        }
+    }
+    impl sql::SqlBackend for RetireObserver {
+        fn availability(&self) -> super::super::Availability {
+            self.observe()
+        }
+        fn query<'a>(
+            &'a self,
+            _: &'a str,
+            _: &'a str,
+        ) -> Pin<Box<dyn Future<Output = Result<String>> + Send + 'a>> {
+            Box::pin(async { bail!("Retired fixture cannot execute SQL") })
+        }
+    }
+    #[test]
+    fn activation_does_not_resurrect_tools_retired_by_health_observation() {
+        for sql in [false, true] {
+            let broker = Arc::new(Broker::default());
+            broker
+                .unregister(if sql { "sql.local" } else { "arithmetic.local" })
+                .unwrap();
+            let descriptor = Descriptor {
+                id: "retiring".into(),
+                version: "1.0.0".into(),
+                capability: if sql { "sql.query" } else { "math.evaluate" }.into(),
+            };
+            let backend = Arc::new(RetireObserver(Arc::downgrade(&broker)));
+            if sql {
+                broker.register_sql(descriptor.clone(), backend).unwrap();
+            } else {
+                broker.register(descriptor.clone(), backend).unwrap();
+            }
+            broker.unregister("retiring").unwrap();
+            assert!(broker
+                .activate("retiring", "1.0.0")
+                .unwrap_err()
+                .to_string()
+                .contains("retired"));
+            assert!(!broker
+                .versions()
+                .unwrap()
+                .iter()
+                .any(|d| d.id == "retiring"));
+            assert!(!broker
+                .discover()
+                .unwrap()
+                .iter()
+                .any(|d| d.id == "retiring"));
+            if sql {
+                assert!(broker
+                    .register_sql(descriptor, Arc::new(sql::LocalSql))
+                    .is_err());
+            } else {
+                assert!(broker.register(descriptor, Arc::new(LocalMath)).is_err());
+            }
+        }
     }
 }

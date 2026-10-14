@@ -42,7 +42,7 @@ Quality requires operator-attested held-out data. Promotion checks quality,
 cumulative approved-version retrieval regressions and unchanged versions transactionally.
 Rollback restores approved stored snapshots. Neural promotion stays disabled.
 
-Current verification (2026-10-14): 524 workspace tests, formatting, all-target
+Current verification (2026-10-14): 526 workspace tests, formatting, all-target
 checking and Clippy pass. Bundled generated protocol sources and the Rust runtime
 are pinned to FlatBuffers 25.12.19; default builds require no installed compiler.
 Current CLI/service arithmetic and real Qwen generation smokes pass. Public graph
@@ -1138,3 +1138,9 @@ select another approved candidate. Registry health callbacks run outside locks;
 activation revalidates retained identity so retirement during observation cannot
 restore a removed version. This is local failure containment, not a proof of
 external provider termination or isolated native execution.
+
+Arithmetic and SQL brokers now share the inference broker's local failure rule:
+closed queues override optimistic backend health, existing handles fail without
+rerouting, and future handles may select another approved candidate. Tool health
+callbacks can inspect registry metadata outside locks; activation revalidation
+prevents restoration of a version retired during that observation.
