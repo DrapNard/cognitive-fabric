@@ -235,3 +235,33 @@ idle TTL (3.40 seconds reported load). Other models/workloads were not unloaded.
 This is two installed smoke tasks, not a held-out reasoning/latency study or proof
 of native framework residency ownership. The prior 96-task graph report remains
 source-specific. Broader independent quality and model/expert lifecycle stay open.
+
+### Real-provider phase handoff and optimized refresh
+
+Source `18de498` completed a public three-node path task in RESEARCH mode using
+real Qwen3 8B: verified `["a","c"]`, three charged calls, 14.48 seconds within
+an unchanged 30-second task ceiling. The planner hit its audited 9999 ms phase
+ceiling, emitted typed planning_failure with partial strategy discarded, then
+exploration ran under a 6665 ms ceiling and the original solver completed.
+Reported input/output usage remained unknown after interruption. The distinct
+endpoints and direct a->c edge independently establish the minimum one-edge path.
+Raw outcome, configuration, dispatch/phase audits, binary hash and limitations:
+`evaluation/results/qwen3-8b-research-phase-limits-smoke.json`.
+Temporary evidence: `/tmp/cogfabric-live-phase-limits.nhyn3roq`.
+This is one debug-CLI smoke, not a quality or causal latency study; provider stop,
+immutable weights and framework-native residency ownership remain unproven.
+
+The same source was then installed offline with locked cached dependencies and
+FLATC unset on Rust/Cargo 1.97.1. Both optimized packages and installed workflow
+scripts passed. Prefix/logs: `/tmp/cogfabric-phase-install.Z1M9bI`.
+Cargo reported core build 1m31s and HTTP build 1m04s. CLI/socket evidence:
+`/tmp/cogfabric-installed-smoke.pl80HA`; authenticated HTTP discovery, Origin denial,
+typed arithmetic/SQL worker and graceful cleanup evidence:
+`/tmp/cogfabric-installed-http.cnkIYD`.
+CLI SHA256: `6f3f7faae624d5ef36098ded440882a6019832352b5fe1dddd3d2729793e1519`.
+Server SHA256: `353996f14767a7eed63c05260bdde5028b01fedb050fe1cd26dbc59500d8f76d`.
+These installed smokes do not themselves invoke a model; the real-provider result
+above used the debug binary. This is a current-host refresh, not new clean-OS
+proof. All 500 mandatory tests/checks remain tied to the preceding runtime gate;
+no runtime source changed in this evidence-only update. General phase recovery,
+module/residency lifecycle and independent quality evaluation remain incomplete.

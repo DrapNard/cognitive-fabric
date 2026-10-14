@@ -2548,3 +2548,10 @@ persistent phase-deadline recovery, synchronous-callback preemption, physical
 provider cancellation or calibrated expected utility. Original task deadlines,
 calls, tokens and permissions remain unchanged. Live effect and current optimized
 installation after these phase changes are not yet verified.
+
+Planning/exploration phase handoff: **Implemented / live smoke verified** at
+18de498. Real Qwen planner timeout preserved original-budget final solving and
+unknown usage; independently checked path completed in 14.48 seconds. Both
+optimized packages and installed workflows passed with FLATC unset. See raw
+phase smoke and INSTALLATION_VALIDATION.md. Broad effectiveness, synchronous
+preemption, persistent phase recovery and residency remain Partial.

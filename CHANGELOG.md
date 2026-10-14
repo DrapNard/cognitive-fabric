@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Verify real-provider phase handoff and current installation
+
+- Retain the real Qwen RESEARCH task after a bounded planning timeout.
+- Confirm original-budget final verification and unknown interrupted usage.
+- Refresh both optimized installed workflows with source/binary hashes and proof limits.
+
 ### Bound research exploration before final solving
 
 - Give the optional explorer a shared-task time ceiling and audit it before dispatch.

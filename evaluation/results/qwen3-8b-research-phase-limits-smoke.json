@@ -1,0 +1,126 @@
+{
+  "format_version": 1,
+  "runtime_source_revision": "18de498b284a10db2222c33d2031e1b0d9f92c79",
+  "runtime_binary_sha256": "3866eb81e1c26d0c62323fdd57d949ee1c3ee3d7fff1a7972f2e6767ed913873",
+  "purpose": "Single public RESEARCH phase-limit smoke, not a quality benchmark",
+  "model": "qwen/qwen3-8b",
+  "context_tokens": 8192,
+  "requested_gpu_offload_ratio": 0.35,
+  "idle_ttl_seconds": 600,
+  "cli_reported_load_seconds": 3.49,
+  "configuration": {
+    "api_base": "http://127.0.0.1:1234/v1",
+    "arithmetic_process": false,
+    "backend": "openai-local",
+    "format_version": 1,
+    "inference_auth_scope": null,
+    "inference_process": false,
+    "interpret_goals": false,
+    "max_artifact_bytes": 256000000,
+    "max_calls": 8,
+    "max_cycles": 3,
+    "max_database_bytes": 256000000,
+    "max_input_bytes": 128000,
+    "max_tokens": 3000,
+    "max_tool_calls": 8,
+    "max_wall_seconds": 30,
+    "model": "qwen/qwen3-8b",
+    "model_registration": null,
+    "reasoning_effort": "none",
+    "role_profiles": {},
+    "sql_process": false,
+    "synthesize_results": false,
+    "temperature": 0.15,
+    "timeout_seconds": 20
+  },
+  "held_out": false,
+  "weights_attested": false,
+  "physical_provider_stop_proven": false,
+  "outcome": {
+    "answer": "[\"a\",\"c\"]",
+    "calls": 3,
+    "cycles": 1,
+    "elapsed_ms": 14484.264118000001,
+    "evidence": [
+      "verified:shortest_path/v1"
+    ],
+    "resources": {
+      "calls": 3,
+      "cycles": 1,
+      "inference_ms": 14470.233264999999,
+      "input_tokens": null,
+      "output_tokens": null,
+      "process_lifetime_peak_rss_bytes": 23961600,
+      "process_rss_bytes": 23961600,
+      "prompt_bytes": 1343,
+      "queue_wait_ms": null,
+      "reserved_output_tokens": 768,
+      "tool_calls": 2
+    },
+    "skills": [],
+    "status": "completed",
+    "stop_reason": "verified",
+    "task_id": "b8c342f1-715b-4467-875f-554df1661346"
+  },
+  "phase_and_dispatch_audit": [
+    {
+      "kind": "planning_phase_budget",
+      "payload": {
+        "max_milliseconds": 9999,
+        "original_deadline_preserved": true,
+        "provider_stop_proven": false
+      }
+    },
+    {
+      "kind": "model_dispatch",
+      "payload": {
+        "allocation": 256,
+        "call": 1,
+        "prompt_bytes": 423,
+        "role": "planner"
+      }
+    },
+    {
+      "kind": "planning_failure",
+      "payload": {
+        "action": "Solve original objective within remaining budgets",
+        "failure_kind": "inference_timeout",
+        "partial_strategy_discarded": true,
+        "provider_stop_proven": false,
+        "verified": false
+      }
+    },
+    {
+      "kind": "exploration_phase_budget",
+      "payload": {
+        "max_milliseconds": 6665,
+        "original_deadline_preserved": true,
+        "provider_stop_proven": false
+      }
+    },
+    {
+      "kind": "model_dispatch",
+      "payload": {
+        "allocation": 128,
+        "call": 2,
+        "prompt_bytes": 423,
+        "role": "explorer"
+      }
+    },
+    {
+      "kind": "model_dispatch",
+      "payload": {
+        "allocation": 384,
+        "call": 3,
+        "prompt_bytes": 497,
+        "role": "solver"
+      }
+    }
+  ],
+  "independent_answer_check": "Different start and goal, direct a->c edge gives minimum one-edge path",
+  "limitations": [
+    "One public graph with uncontrolled provider/sampling/device state",
+    "Debug CLI smoke, not optimized measurement or broad reasoning effectiveness",
+    "CLI loading does not prove native framework residency ownership"
+  ]
+}
