@@ -13,7 +13,7 @@ function calls. Stack height is capped at 64 KiB and recursion depth at 32. Floa
 reference-type and tail-call proposals are disabled; SIMD and memory64 features
 are not compiled. Wasmi strict compilation limits are selected.
 
-Sixteen tests cover execution, imports, nontermination including start functions,
+Twenty tests cover execution, imports, nontermination including start functions,
 initial/growing memory and tables, malformed/oversized bytes and wrong signatures.
 Run cargo test --manifest-path experiments/wasm-experts/Cargo.toml --locked.
 The separate workspace prevents adding this interpreter to production builds.
@@ -26,7 +26,9 @@ finishes before import succeeds. Compiled state is immutable and shared by artif
 clones; later source-buffer mutation or replacement cannot change a granted call.
 The raw execution helper is private.
 
-operator_grant binds one exact input and task UUID to that artifact identity. The
+TaskAuthority::operator pins an approved artifact set, one version/content per ID,
+a canonical task UUID, immutable expiry and a total allocation allowance of 1–8.
+Its grant method binds one exact input and task UUID to that artifact identity. The
 non-serializable, non-cloneable TaskGrant permits the human-cli actor only; invoke
 checks task, actor, input, ID/version/hash, then consumes the grant before guest
 execution. Traps and fuel exhaustion consume it; scope denials do not dispatch.
@@ -34,9 +36,8 @@ Each successful dispatch creates fresh guest instance state, including globals.
 Tests check mismatched tasks/actors/inputs/artifacts, replay, traps, version/content
 replacement and state isolation.
 
-Grants expire after at most 30 seconds. operator_grant_until accepts a shorter
-monotonic deadline; the embedding must use its original task deadline, not reset
-that allowance. No public method extends a deadline. A cloneable Revoker can only
+Grants expire at the authority's original deadline, at most 30 seconds. The
+embedding must use its original task deadline, not reset that allowance. No public method extends a deadline. A cloneable Revoker can only
 reduce authority. Its atomic transition orders revocation against invocation
 admission: queued revoked work never starts; cancellation after admission discards
 the result and keeps the grant spent. Expiry is checked before admission and after
@@ -46,9 +47,15 @@ bounds execution, and host parsing/compilation is outside these grant checks.
 
 The embedding Rust caller must authenticate the actor and approve grant creation.
 String comparison is not user authentication. This library has no remote/CLI
-endpoint, does not deserialize grants from model output, and cannot establish
-cumulative task budgets or durable audit/registry authority. A trusted caller can
-issue additional grants; production policy must govern that. Hashes identify
+endpoint and does not deserialize grants from model output. Per-artifact issuers
+are crate-private outside tests; the public authority shares one allowance across
+all its approved artifacts/inputs. Allocation is conservative: unused, revoked or
+trapped grants are never refunded. Revoking the authority cancels its issued
+grants and prevents new issuance. It is not cloneable or serializable.
+
+The embedding must ensure exactly one approved authority per real task: a trusted
+caller can construct independent authorities, so this is not yet global task,
+durable audit or registry enforcement. Hashes identify
 content, not signatures, licensing or domain correctness. No active runtime expert
 or candidate is created by this API.
 

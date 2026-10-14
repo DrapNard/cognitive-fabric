@@ -4053,3 +4053,27 @@ Root commands remain `cargo fmt --all -- --check`,
 No production dependency, endpoint, scope, registry or active artifact changed.
 The embedding must authenticate/approve issuance and narrow expiry to original
 task budgets; cumulative authority, audited lifecycle and persistence remain open.
+
+### Experimental Wasm shared task authority gate
+
+Twenty isolated tests, formatting, locked all-target checking/test and Clippy pass.
+Commands: `cargo fmt --manifest-path experiments/wasm-experts/Cargo.toml -- --check`,
+`cargo check --offline --locked --manifest-path experiments/wasm-experts/Cargo.toml --all-targets`,
+`cargo test --offline --locked --manifest-path experiments/wasm-experts/Cargo.toml`,
+`cargo clippy --offline --locked --manifest-path experiments/wasm-experts/Cargo.toml --all-targets -- -D warnings`.
+Log: `/tmp/cogfabric-wasm-task-authority-tests.log`. Tests enforce a shared allowance
+across distinct approved artifacts/inputs, no refund after trap/unused/revocation,
+pinned version/content and denial of ambiguous artifact sets, expired authorities,
+invalid task IDs and invalid limits. Group revocation denies existing/future calls.
+Single-artifact grant issuers are crate-private; public callers use the authority.
+
+Production still passes 503 tests (447 library, 56 integration), formatting,
+workspace all-target check/test and Clippy with FLATC unset; log
+`/tmp/cogfabric-wasm-task-authority-core-tests.log`. Root commands remain
+`cargo fmt --all -- --check`, `cargo check --offline --workspace --all-targets`,
+`cargo test --offline --workspace --all-targets`, and
+`cargo clippy --offline --workspace --all-targets -- -D warnings`.
+No production actor, dependency, model or registry changed. The embedding must
+still authenticate/approve construction and enforce one authority per real task;
+this does not yet prove durable/global task budgeting, audited lifecycle or Core
+integration, and parsing/compilation remains outside invocation allocation.

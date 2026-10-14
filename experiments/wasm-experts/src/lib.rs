@@ -1,5 +1,6 @@
 //! Experimental import-free scalar expert executor; not wired into runtime authority.
 pub mod artifact;
+pub mod authority;
 mod preflight;
 
 fn compile_checked(wasm: &[u8]) -> Result<(wasmi::Engine, wasmi::Module), String> {

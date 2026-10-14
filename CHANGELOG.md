@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Share experimental Wasm allocations across approved artifacts
+
+- Pin a task's artifact set, expiry and total nonrefundable invocation allowance.
+- Deny version/content substitutions and revoke issued/future grants together.
+- Require the authority API instead of public per-artifact issuance.
+
 ### Expire and revoke experimental Wasm task grants
 
 - Bound grant lifetime and deny queued expired or revoked execution.

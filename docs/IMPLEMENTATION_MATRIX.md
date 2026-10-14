@@ -2665,3 +2665,14 @@ terminal-state/expiry checks without sleeps. Interpreter execution is fuel-bound
 not forcibly interrupted by revocation; parsing/compilation, authenticated task
 budget integration, audits, persistence and general lifecycle remain incomplete.
 No production actor or active expert changed.
+
+Experimental Wasm cumulative authority: **Implemented experimentally / not Core
+integrated**. One non-cloneable TaskAuthority pins task UUID, original deadline,
+one exact version/content per approved artifact ID and 1–8 total allocations.
+Only approved artifacts obtain grants; allocation is shared across inputs/artifacts
+and never refunded after unused, revoked or trapped work. Authority revocation
+cancels issued grants and prevents new issuance. Per-artifact grant constructors
+are no longer publicly available in non-test builds. Twenty experiment tests pass.
+The trusted embedding must authenticate approval and prevent duplicate independent
+authorities per real task. Global/persistent task enforcement, audits, registry
+lifecycle and runtime/IPC integration remain incomplete; production unchanged.

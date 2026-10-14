@@ -14,6 +14,22 @@ const REVOKED: u8 = 2;
 const CANCELLED: u8 = 3;
 const COMPLETE: u8 = 4;
 const MAX_GRANT_LIFETIME: Duration = Duration::from_secs(30);
+pub(crate) fn validate_scope(task: &str, deadline: Instant) -> Result<(), String> {
+    let remaining = deadline
+        .checked_duration_since(Instant::now())
+        .ok_or("expired grant deadline")?;
+    if remaining.is_zero() || remaining > MAX_GRANT_LIFETIME {
+        return Err("invalid grant lifetime".into());
+    }
+    if uuid::Uuid::parse_str(task)
+        .map_err(|_| "invalid task identity")?
+        .to_string()
+        != task
+    {
+        return Err("noncanonical task identity".into());
+    }
+    Ok(())
+}
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Identity {
     pub id: String,
@@ -113,32 +129,21 @@ impl Artifact {
     }
     /// Only an authenticated/approved embedding may call this constructor.
     /// It grants one exact input, not cumulative task or registry authority.
-    pub fn operator_grant(&self, task: &str, input: i64) -> Result<TaskGrant, String> {
+    #[cfg(test)]
+    fn operator_grant(&self, task: &str, input: i64) -> Result<TaskGrant, String> {
         let deadline = Instant::now()
             .checked_add(MAX_GRANT_LIFETIME)
             .ok_or("invalid grant lifetime")?;
         self.operator_grant_until(task, input, deadline)
     }
     /// The embedding must narrow this to its original task deadline.
-    pub fn operator_grant_until(
+    pub(crate) fn operator_grant_until(
         &self,
         task: &str,
         input: i64,
         deadline: Instant,
     ) -> Result<TaskGrant, String> {
-        let remaining = deadline
-            .checked_duration_since(Instant::now())
-            .ok_or("expired grant deadline")?;
-        if remaining.is_zero() || remaining > MAX_GRANT_LIFETIME {
-            return Err("invalid grant lifetime".into());
-        }
-        if uuid::Uuid::parse_str(task)
-            .map_err(|_| "invalid task identity")?
-            .to_string()
-            != task
-        {
-            return Err("noncanonical task identity".into());
-        }
+        validate_scope(task, deadline)?;
         Ok(TaskGrant {
             task: task.into(),
             identity: self.identity.clone(),
