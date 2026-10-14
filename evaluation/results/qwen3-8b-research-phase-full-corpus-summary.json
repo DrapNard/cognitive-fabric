@@ -1,0 +1,214 @@
+{
+  "format_version": 1,
+  "report": "qwen3-8b-research-phase-full-corpus.json",
+  "report_sha256": "f61cd87a66815ef8085d297ebff3bdc0052e8001125c91932c5ea7ed572fdce4",
+  "dataset_sha256": "0fedaaf6bef27f45ae0a13debcd5c6e391a32637c84891b0f38a19d9cba93edc",
+  "dataset_selection": "All sixteen public shortest_path_cases.jsonl cases",
+  "runtime_source_revision": "5a782a2e3a2fc8f7c0e933a9c2dfcb357c234166",
+  "runtime_binary_sha256": "d7354017d64def15c6969c5caaf0061134bb3b680d0df873130441f9a033cc09",
+  "complete": true,
+  "stop_reason": "completed",
+  "executed_tasks": 96,
+  "planned_tasks": 96,
+  "independent_human_review": false,
+  "held_out": false,
+  "weights_attested": false,
+  "independent_simple_path_oracle_checked": true,
+  "task_wall_seconds": 30,
+  "inference_timeout_seconds": 20,
+  "elapsed_ms": 813459.5564080001,
+  "arms": [
+    {
+      "profile": "alone",
+      "executed": 16,
+      "passed": 11,
+      "diagnostics": {
+        "expert_advice": {
+          "phases_started": 0,
+          "fallback_events": 0,
+          "inference_timeout_fallbacks": 0,
+          "unclassified_fallbacks": 0
+        },
+        "planning_advice": {
+          "phases_started": 0,
+          "fallback_events": 0,
+          "inference_timeout_fallbacks": 0,
+          "unclassified_fallbacks": 0
+        },
+        "exploration_advice": {
+          "phases_started": 0,
+          "fallback_events": 0,
+          "inference_timeout_fallbacks": 0,
+          "unclassified_fallbacks": 0
+        }
+      },
+      "model_calls": 16,
+      "tool_calls": 0,
+      "latency_ms": 34377.637895
+    },
+    {
+      "profile": "tools",
+      "executed": 16,
+      "passed": 12,
+      "diagnostics": {
+        "expert_advice": {
+          "phases_started": 0,
+          "fallback_events": 0,
+          "inference_timeout_fallbacks": 0,
+          "unclassified_fallbacks": 0
+        },
+        "planning_advice": {
+          "phases_started": 0,
+          "fallback_events": 0,
+          "inference_timeout_fallbacks": 0,
+          "unclassified_fallbacks": 0
+        },
+        "exploration_advice": {
+          "phases_started": 0,
+          "fallback_events": 0,
+          "inference_timeout_fallbacks": 0,
+          "unclassified_fallbacks": 0
+        }
+      },
+      "model_calls": 23,
+      "tool_calls": 23,
+      "latency_ms": 44521.88783800001
+    },
+    {
+      "profile": "recursive",
+      "executed": 16,
+      "passed": 12,
+      "diagnostics": {
+        "expert_advice": {
+          "phases_started": 0,
+          "fallback_events": 0,
+          "inference_timeout_fallbacks": 0,
+          "unclassified_fallbacks": 0
+        },
+        "planning_advice": {
+          "phases_started": 0,
+          "fallback_events": 0,
+          "inference_timeout_fallbacks": 0,
+          "unclassified_fallbacks": 0
+        },
+        "exploration_advice": {
+          "phases_started": 0,
+          "fallback_events": 0,
+          "inference_timeout_fallbacks": 0,
+          "unclassified_fallbacks": 0
+        }
+      },
+      "model_calls": 23,
+      "tool_calls": 23,
+      "latency_ms": 45367.14514099999
+    },
+    {
+      "profile": "collective",
+      "executed": 16,
+      "passed": 12,
+      "diagnostics": {
+        "expert_advice": {
+          "phases_started": 0,
+          "fallback_events": 0,
+          "inference_timeout_fallbacks": 0,
+          "unclassified_fallbacks": 0
+        },
+        "planning_advice": {
+          "phases_started": 16,
+          "fallback_events": 10,
+          "inference_timeout_fallbacks": 10,
+          "unclassified_fallbacks": 0
+        },
+        "exploration_advice": {
+          "phases_started": 16,
+          "fallback_events": 0,
+          "inference_timeout_fallbacks": 0,
+          "unclassified_fallbacks": 0
+        }
+      },
+      "model_calls": 56,
+      "tool_calls": 24,
+      "latency_ms": 232956.79522700002
+    },
+    {
+      "profile": "memory",
+      "executed": 16,
+      "passed": 12,
+      "diagnostics": {
+        "expert_advice": {
+          "phases_started": 0,
+          "fallback_events": 0,
+          "inference_timeout_fallbacks": 0,
+          "unclassified_fallbacks": 0
+        },
+        "planning_advice": {
+          "phases_started": 16,
+          "fallback_events": 9,
+          "inference_timeout_fallbacks": 9,
+          "unclassified_fallbacks": 0
+        },
+        "exploration_advice": {
+          "phases_started": 16,
+          "fallback_events": 0,
+          "inference_timeout_fallbacks": 0,
+          "unclassified_fallbacks": 0
+        }
+      },
+      "model_calls": 56,
+      "tool_calls": 40,
+      "latency_ms": 205109.19125799998
+    },
+    {
+      "profile": "experts",
+      "executed": 16,
+      "passed": 16,
+      "diagnostics": {
+        "expert_advice": {
+          "phases_started": 16,
+          "fallback_events": 0,
+          "inference_timeout_fallbacks": 0,
+          "unclassified_fallbacks": 0
+        },
+        "planning_advice": {
+          "phases_started": 16,
+          "fallback_events": 5,
+          "inference_timeout_fallbacks": 5,
+          "unclassified_fallbacks": 0
+        },
+        "exploration_advice": {
+          "phases_started": 16,
+          "fallback_events": 0,
+          "inference_timeout_fallbacks": 0,
+          "unclassified_fallbacks": 0
+        }
+      },
+      "model_calls": 69,
+      "tool_calls": 37,
+      "latency_ms": 251056.99539699996
+    }
+  ],
+  "mode": "research",
+  "status_counts": {
+    "unverified": 16,
+    "completed": 64,
+    "rejected": 16
+  },
+  "total_model_calls": 243,
+  "total_tool_calls": 147,
+  "model_setup": {
+    "initial_loaded_models": 0,
+    "context_tokens": 8192,
+    "requested_gpu_offload_ratio": 0.35,
+    "parallel_predictions": 1,
+    "idle_ttl_seconds": 600,
+    "cli_reported_load_seconds": 4.2,
+    "physical_residency_ownership_proven": false,
+    "whole_device_activity_controlled": false
+  },
+  "limitations": [
+    "Single project-authored public corpus; no held-out or independent human review",
+    "Higher expert score used more calls and time; no causal/general superiority claim",
+    "Different mode/revision from earlier DEEP runs prevents controlled before-after comparison",
+    "No 1-3B/larger-model baseline, immutable-weight attestation or independent neural security study"
+  ]
+}

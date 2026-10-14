@@ -276,6 +276,34 @@ fn full_live_concise_report_matches_independent_oracle_and_resources() {
     }
 }
 
+#[test]
+fn full_research_report_matches_independent_scores_and_all_phase_totals() {
+    let raw = include_str!("../evaluation/results/qwen3-8b-research-phase-full-corpus.json");
+    check_advice_report(
+        raw,
+        include_str!("../evaluation/results/qwen3-8b-research-phase-full-corpus-summary.json"),
+        16,
+    );
+    let report: serde_json::Value = serde_json::from_str(raw).unwrap();
+    assert_eq!(report["mode"], "research");
+    assert_eq!(report["complete"], true);
+    assert_eq!(report["arms"][5]["passed"], 16);
+    assert_eq!(report["arms"][5]["resources"]["model_calls"], 69);
+    let mut planning_fallbacks = 0;
+    for detail in report["details"].as_array().unwrap() {
+        planning_fallbacks += detail["planning_advice"]["inference_timeout_fallbacks"]
+            .as_u64()
+            .unwrap();
+        assert_eq!(detail["exploration_advice"]["fallback_events"], 0);
+        assert_eq!(detail["expert_advice"]["fallback_events"], 0);
+        assert!(detail["outcome"]["elapsed_ms"].as_f64().unwrap() < 30000.0);
+        if detail["profile"] == "experts" {
+            assert_eq!(detail["outcome"]["status"], "completed");
+        }
+    }
+    assert_eq!(planning_fallbacks, 24);
+}
+
 fn check_advice_report(raw: &str, summary_raw: &str, case_count: usize) {
     let report: serde_json::Value = serde_json::from_str(raw).unwrap();
     let summary: serde_json::Value = serde_json::from_str(summary_raw).unwrap();
@@ -357,7 +385,20 @@ fn check_advice_report(raw: &str, summary_raw: &str, case_count: usize) {
                 .iter()
                 .map(|d| d["expert_advice"][metric].as_u64().unwrap())
                 .sum();
-            assert_eq!(summary["arms"][index]["diagnostics"][metric], count);
+            let diagnostic = &summary["arms"][index]["diagnostics"];
+            if diagnostic.get("expert_advice").is_some() {
+                assert_eq!(diagnostic["expert_advice"][metric], count);
+                for stage in ["expert_advice", "planning_advice", "exploration_advice"] {
+                    let count: u64 = rows
+                        .iter()
+                        .map(|d| d[stage][metric].as_u64().unwrap())
+                        .sum();
+                    assert_eq!(diagnostic[stage][metric], count);
+                    assert_eq!(arm["resources"][stage][metric], count);
+                }
+            } else {
+                assert_eq!(diagnostic[metric], count);
+            }
         }
     }
 }

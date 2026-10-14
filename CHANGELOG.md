@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Retain the complete RESEARCH phase comparison
+
+- Independently verify all 96 public graph outcomes and three phase diagnostic families.
+- Record expert successes, planning fallbacks and their additional inference/time cost.
+- Preserve historical results and exclude general/causal or held-out quality claims.
+
 ### Reserve native-worker fixture state atomically
 
 - Replace timestamp-only directory naming with bounded atomic reservation.

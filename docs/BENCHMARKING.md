@@ -675,3 +675,41 @@ use task scope and bound parameters. New tests distinguish phase families and
 unrelated tasks, reject oversized data, verify unknown classifications, project a
 real scripted explorer timeout and check arm totals against per-case counts.
 No runtime execution policy, permissions or inference budgets change.
+
+### Complete public RESEARCH phase comparison
+
+Source `5a782a2e3a2fc8f7c0e933a9c2dfcb357c234166` completed all 96 tasks from
+the sixteen public graph cases in RESEARCH mode, in 813.46 seconds. Each task
+retained 30-second wall/20-second inference ceilings and declared shared call,
+token and tool limits. Reports and hashed summary are retained in
+`evaluation/results/qwen3-8b-research-phase-full-corpus*.json`. Independent exhaustive
+simple-path enumeration agrees with every score; diagnostic arm sums agree with
+per-task rows. No failed/exhausted task was omitted: outcomes were 64 completed,
+16 unverified and 16 rejected. Maximum observed task latency was 21.26 seconds.
+
+| Profile | Passed / executed | Charged model calls | Total task latency (seconds) | Planning timeout fallbacks |
+|---|---|---|---|---|
+| Alone | 11 / 16 | 16 | 34.38 | 0 |
+| Tools | 12 / 16 | 23 | 44.52 | 0 |
+| Recursive | 12 / 16 | 23 | 45.37 | 0 |
+| Collective | 12 / 16 | 56 | 232.96 | 10 |
+| Memory | 12 / 16 | 56 | 205.11 | 9 |
+| Experts | 16 / 16 | 69 | 251.06 | 5 |
+
+All 16 expert advice phases and 48 exploration phases recorded zero fallbacks.
+The 48 planning phases recorded 24 typed timeouts, with no unclassified fallbacks.
+Totals: 243 charged model calls and 147 checker calls. Experts improved five
+paired cases over the small-model-alone arm with no observed regression, at more
+than four times the calls and over seven times total task latency in this run.
+The advice was the public BFS workflow, not a promoted Rust RAG candidate or
+trained neural expert. Empty frozen document memory supplies no trained-memory
+advantage. These results support bounded phase containment and useful outcomes on
+this specific workflow, not a general or causal superiority claim.
+
+This is one project-authored public corpus/run with no held-out independence,
+human review, contamination control, 1–3B/larger baseline or independent neural
+security study. Weights/provider state, device activity and sampling were not
+controlled. Different mode/revision from the earlier DEEP run prevents treating
+its score change as a controlled before/after effect. All historical reports
+remain unchanged. General lifecycle, phase recovery, calibrated scheduling and
+independent quality gates stay open.

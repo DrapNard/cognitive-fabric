@@ -3929,3 +3929,25 @@ paths within a bounded 128 attempts. Unexpected filesystem failures still fail.
 No runtime behavior, database lock policy, worker or policy assertion was weakened.
 The precise source of the earlier isolated database-locked error remains unproven;
 this removes a concrete unsafe fixture naming assumption rather than masking it.
+
+### Full RESEARCH report gate
+
+All 503 tests (447 library, 56 integration), formatting, workspace all-target
+check and Clippy pass with FLATC unset. Commands: `cargo fmt --all -- --check`,
+`cargo check --offline --workspace --all-targets`,
+`cargo test --offline --workspace --all-targets`, and
+`cargo clippy --offline --workspace --all-targets -- -D warnings`.
+Log: `/tmp/cogfabric-full-research-phase-report-tests.log`. Independent enumeration
+validates every one of the 96 score bits; frozen tests verify coverage, unique
+case/arm pairs, hashes, model/tool charges and all per-case/arm/summary phase sums.
+The run completed in 813.46 seconds with 24 planning fallbacks, no expert/explorer
+fallback, no task failure/exhaustion and 16 verified expert outcomes. Baseline
+alone scored 11/16; extra expert success cost 69 versus 16 calls. No general,
+causal, held-out or independent human-reviewed advantage is established.
+
+An initial full-suite run hit duplicate registration during a parallel native
+worker fixture. Timestamp-only naming was replaced with atomic owner-only state
+reservation in a separate test commit; existing assertions remain intact. Final
+complete checks pass. No production permissions, model weights or active RAG
+candidates changed. Source/binary/provenance/limitations are retained in raw and
+hashed summary reports. Broader lifecycle and independent evaluation remain open.
