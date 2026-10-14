@@ -1,7 +1,7 @@
 # Implementation matrix — 1.1.0-alpha.1
 
 Current evidence review (2026-10-14): **pre-release; V1 incomplete**. The current
-workspace passes 518 tests (460 library including the server, 58 integration),
+workspace passes 520 tests (462 library including the server, 58 integration),
 formatting, all-target checking and Clippy. See `RELEASE_AUDIT.md` for the 18 goal
 acceptance criteria and scoped evidence. Later narrative entries below are a
 historical implementation ledger; their old counts, unavailable endpoints and
@@ -2758,3 +2758,15 @@ legacy prompt-budget refusal, one admitted timeout, fatal provider errors and
 refusal-audit failure. Candidate versions, permissions and cumulative task budgets
 remain pinned. General module/GPU scheduling and independently measured utility
 are not established by these deterministic tests.
+
+Expert backend setup admission: **Implemented** in `src/reasoning.rs`.
+Legacy/structured prompt preparation and durable whole-workflow admission now
+precede expert backend/worker-handle construction, model snapshots and phase
+allocation. Refused candidates no longer look like admitted model bindings or
+started advice phases in comparison metadata. Two additional regressions in
+`src/engine/expert_admission_tests.rs` cover a refused registered managed backend
+with no server/workspace requirement and all candidates refused with only main
+reasoning calls. Event ordering verifies admission before phase before dispatch.
+Model identity validation, call/token/prompt limits, prompt contents, timeout
+fallback and one-admitted-workflow policy remain enforced. This is not a claim of
+physical weight loading, exclusive GPU ownership or calibrated expert utility.

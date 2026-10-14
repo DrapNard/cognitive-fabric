@@ -4,7 +4,7 @@ This checklist preserves the 18 acceptance criteria in the goal objective. It is
 an evidence inventory, not a release approval. The canonical French architecture
 and the broader implementation matrix remain authoritative. Earlier test counts
 in the quality review are historical milestones. Current local verification is
-518 Rust tests (460 library including the server, 58 integration), formatting, all-target checking and
+520 Rust tests (462 library including the server, 58 integration), formatting, all-target checking and
 Clippy with warnings denied. Default builds use bundled generated sources and
 Rust FlatBuffers 25.12.19; no installed compiler was used in this current run.
 
@@ -12,7 +12,7 @@ Rust FlatBuffers 25.12.19; no installed compiler was used in this current run.
 |---|---|---|
 | 1. Workspace builds | `Cargo.toml`, all-target check | Passed locally; isolated optimized source installation also passed with cached dependencies. |
 | 2. Formatting and Clippy | Mandatory checks in `QUALITY_REVIEW.md` | Passed locally. |
-| 3. Mandatory tests | Workspace all-target test results, `tests/`, server integration tests | 518 passed; fixtures do not establish live model quality. |
+| 3. Mandatory tests | Workspace all-target test results, `tests/`, server integration tests | 520 passed; fixtures do not establish live model quality. |
 | 4. FlatBuffers IPC | `protocol/`, `src/wire.rs`, `src/fabric/`, malformed/compatibility/socket tests | Implemented for present transports; authenticated process event delivery/replay is now tested; broader module compatibility remains partial. |
 | 5. CLI/service communication | `src/service.rs`, socket tests, `tests/process_worker.rs`, `crates/cogfabric-server/tests/` | Tested typed local transport, progress, cancellation and optional HTTP client interoperability; native and collective ownership drains cover dropped request futures. No general independent plugin service is claimed. |
 | 6. Compatible local LLM | `src/backend.rs`, `tests/inference_auth.rs`, `LIVE_INFERENCE.md` | Passed for Ollama and LM Studio Qwen3 8B compatible endpoints, including managed verified sorting. Native inventory and one operator-approved embedding load/unload passed; authenticated native access and generative switching remain unverified. |
@@ -25,7 +25,7 @@ Rust FlatBuffers 25.12.19; no installed compiler was used in this current run.
 | 13. RAG evaluation/promotion | `src/evaluation.rs`, `src/evolution.rs`, promotion/rollback tests | Transactional reviewed promotion with integrity/regression gates; dataset independence is operator-attested, not independently established. |
 | 14. Lifecycle documented | `MODELS.md`, `EXPERTS.md`, `WORKERS.md` | Metadata lifecycle documented; explicit native load/unload is fixture-tested; real native inventory and one approved embedding load/unload passed; generative switching and ownership-aware automatic scheduling remain incomplete. |
 | 15. Reproducible benchmarks | `src/benchmarking.rs`, `evaluation/`, `BENCHMARKING.md` | Six-arm runner and public live workflows exist for Ollama and Qwen3 8B; reviewed unseen dataset and held-out equal-budget model study missing. |
-| 16. Accurate matrix | `IMPLEMENTATION_MATRIX.md` | Current summary reconciled with 518-test evidence, present live endpoint and public graph/Rust diagnostics; historical paragraphs are explicitly labeled as a ledger. |
+| 16. Accurate matrix | `IMPLEMENTATION_MATRIX.md` | Current summary reconciled with 520-test evidence, present live endpoint and public graph/Rust diagnostics; historical paragraphs are explicitly labeled as a ledger. |
 | 17. Verified docs/installation | `README.md`, HTTP_API.md, CI workflow, INSTALLATION_VALIDATION.md | Optimized host installs and offline workflows passed at prior source `e1f3ffd` without flatc; the new recovery source needs a final install refresh; historical installed managed OpenCode/Qwen read/edit/read passed. Expanded clean Arch setup, all checks and installed core/server workflows passed at `a9933b3`. CachyOS desktop/GPU setup remains unverified. |
 | 18. Honest experimental claims | `EVOLUTION.md`, `MODELS.md`, `THREAT_MODEL.md` | Neural adaptation remains experimental and neural promotion denied; no trained Jev or superiority claim. |
 
@@ -38,6 +38,17 @@ and its hashed summary. The full 16-case run has now completed all 96 tasks with
 scores: experts tied alone at 12/16 with 65 versus 16 charged calls, and no advice
 fallbacks. This completes a public workflow measurement, not the missing
 independent held-out study. See its `concise-advice-full-corpus` report.
+
+## Expert backend setup gate — 2026-10-14
+
+Whole-workflow admission now precedes backend/worker construction, expert model
+snapshots and phase allocation. Refused model-bound candidates no longer affect
+admitted-model comparison metadata or advice-phase counters. Two new tests verify
+that boundary and the all-refused path; the existing injected audit-failure test
+now checks the stronger stage-specific snapshot invariant. All 520 workspace tests,
+formatting, check and Clippy pass. Prompts and resource ceilings remain unchanged;
+this does not establish actual weight residency, calibrated utility or broader
+module scheduling. Historical phase counts retain their source-scoped semantics.
 
 ## Ranked workflow admission gate — 2026-10-14
 

@@ -519,3 +519,10 @@ by Rust. An admitted timeout/partial answer does not grant retries; generic
 provider failures and failed refusal audits remain fatal. No new actors, shell,
 network or filesystem capabilities are granted. Budget-phase metadata is not
 proof of provider execution or model utility.
+
+Expert workflow admission is now durably recorded before constructing a bound
+backend/worker handle or allocating its phase. Refused candidates cannot emit
+an admitted model snapshot or enter backend setup. Immutable prepared prompts and
+DAG orders are internal Rust values; no deserialization grants execution. Registry
+identity validation and per-call policy enforcement remain separate. Admission
+is intent, not attestation of provider entry, output correctness or loaded weights.

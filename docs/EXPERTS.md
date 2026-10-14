@@ -535,6 +535,8 @@ result, timeout, exhausted call or provider failure never triggers another exper
 attempt. Timeout fallback preserves unknown usage and spent reservations; other
 errors still fail the task. Main reasoning keeps its original budgets/deadline.
 This implements budget-aware selection, not a calibrated utility estimator or
-proof that advice improves answers. Phase-budget records declare ceilings and
-can include preflight assessment; use actual model-dispatch/resource records to
-measure inference rather than treating every rejected candidate as a model call.
+proof that advice improves answers. Current phase-budget records are emitted only after durable admission, before
+actual dispatch. Refused candidates produce no backend/worker setup, model snapshot
+or advice-phase allocation. Use model-dispatch/resource records for actual inference;
+an admitted phase alone still does not prove provider entry or successful output.
+Historical reports retain the event semantics of their recorded runtime.

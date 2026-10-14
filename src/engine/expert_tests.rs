@@ -29,7 +29,7 @@ impl InferenceBackend for Main {
         })
     }
 }
-fn register_model(store: &Store, endpoint: &str) -> Selection {
+pub(super) fn register_model(store: &Store, endpoint: &str) -> Selection {
     let path =
         std::env::temp_dir().join(format!("fabric-expert-model-{}.json", uuid::Uuid::new_v4()));
     let manifest = json!({"id":"domain.local","version":"1.0.0","model":"domain-model","api_base":endpoint,"source":"fixture","license":"CC0","context_tokens":4096,"max_output_tokens":512,"weights_sha256":null});

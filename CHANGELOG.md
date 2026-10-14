@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Admit workflows before preparing expert backends
+
+- Separate bounded prompt preparation from execution while preserving existing budgets and prompts.
+- Avoid model snapshots, managed backend setup and phase allocation for refused candidates.
+- Keep comparison metadata aligned with admitted configurations and actual dispatch records.
+
 ### Select an affordable routed workflow after budget refusal
 
 - Distinguish pre-admission refusal from an admitted expert attempt.

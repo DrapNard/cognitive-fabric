@@ -1,6 +1,6 @@
 # Rust baseline quality review
 
-Current local runtime passes 518 Rust tests (460 library including the server,
+Current local runtime passes 520 Rust tests (462 library including the server,
 58 integration), formatting, workspace all-target checking and Clippy with warnings
 denied. The separate Wasm experiment passes 24 tests with the optional Core audit
 bridge. Default builds use reviewed bundled FlatBuffers 25.12.19 sources without
@@ -4190,3 +4190,28 @@ All mandatory checks pass: formatting, offline workspace/all-target check,
 and optimized installation retain their exact earlier source scopes. No new live
 reasoning result, residency scheduler or independently calibrated utility claim is
 established by this change.
+
+### Expert setup follows durable admission
+
+Legacy/structured workflow preparation now returns immutable internal prompt/DAG
+values only after durable whole-workflow admission. Backend construction, managed
+worker handles, model snapshots and phase allocation follow that decision. Tests
+cover an unaffordable registered managed backend without a server/workspace and an
+all-refused set with zero advice phases, only two main calls and 640 reserved
+output tokens. Serialized comparison diagnostics show no refused bound model and
+only the actually admitted phase. Event order is admission, phase, then dispatch.
+
+The existing bound-advice audit-fault regression initially expected a model
+snapshot even when the admission write failed. It now verifies the stronger stage
+invariant: selected route present; no snapshot or phase on admission-write failure;
+a snapshot retained on deeper policy/dispatch/step failure. Failed status, zero
+model calls and no availability fallback remain required in all cases.
+
+All mandatory checks pass: formatting, offline workspace/all-target check,
+520 workspace tests and Clippy with warnings denied. Logs:
+`/tmp/cogfabric-expert-preflight-approved-tests.log`,
+`/tmp/cogfabric-expert-preflight-approved-check.log`,
+`/tmp/cogfabric-expert-preflight-approved-clippy.log`. Prompts, resource ceilings
+and timeout fallback remain unchanged. Older report phase semantics stay tied to
+their original source revisions. No new live-model or GPU result is claimed;
+final optimized installation still needs to match the final runtime source.

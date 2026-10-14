@@ -207,3 +207,80 @@ async fn prompt_budget_refusal_of_legacy_workflow_can_select_shorter_advice() {
     assert_eq!(outcome.calls, 3);
     assert!(outcome.resources.prompt_bytes <= 6000);
 }
+
+#[tokio::test]
+async fn refused_bound_model_has_no_backend_snapshot_or_phase_allocation() {
+    let (mut engine, store, _) = engine(true, 0);
+    // Refusal must precede even a managed backend's construction. No server or
+    // worker is required for a candidate which cannot fit the call allowance.
+    engine.cfg.inference_process = true;
+    let selection = super::expert_tests::register_model(&store, "http://127.0.0.1:1/v1");
+    let manifest:registry::Manifest=serde_json::from_value(json!({"id":"rust.first.s1","version":"2.0.0","kind":"workflow","description":"Bound model refused by call ceiling","tags":["ownership"],"source":"fixture","license":"CC0","model":selection,"workflow_steps":(0..4).map(|i|json!({"id":format!("step{i}"),"advice":"FIRST_ADVICE","depends_on":[]})).collect::<Vec<_>>()})).unwrap();
+    registry::register(&store, &manifest).unwrap();
+    registry::activate(&store, "rust.first.s1", "2.0.0").unwrap();
+    let outcome = engine.run("Explain Rust ownership", "deep").await.unwrap();
+    assert_eq!(outcome.status, "unverified");
+    assert_eq!(outcome.calls, 3);
+    let trace = store.task(&outcome.task_id).unwrap();
+    let events = trace["events"].as_array().unwrap();
+    assert!(!events.iter().any(|e| e["kind"] == "expert_model_snapshot"));
+    assert_eq!(
+        events
+            .iter()
+            .filter(|e| e["kind"] == "expert_phase_budget")
+            .count(),
+        1
+    );
+    let metadata = crate::evaluation::model_metadata::read(&store, &outcome.task_id).unwrap();
+    assert!(metadata.bound_expert_models.is_empty());
+    assert_eq!(
+        serde_json::to_value(&metadata.expert_advice).unwrap()["phases_started"],
+        1
+    );
+    let admission = events
+        .iter()
+        .position(|e| e["kind"] == "expert_dispatch" && e["payload"]["admitted"] == true)
+        .unwrap();
+    let phase = events
+        .iter()
+        .position(|e| e["kind"] == "expert_phase_budget")
+        .unwrap();
+    let dispatch = events
+        .iter()
+        .position(|e| e["kind"] == "model_dispatch")
+        .unwrap();
+    assert!(admission < phase && phase < dispatch);
+}
+
+#[tokio::test]
+async fn all_refused_candidates_allocate_no_advice_phase_or_model_calls() {
+    let (mut engine, store, backend) = engine(true, 0);
+    engine.cfg.max_calls = 2;
+    let outcome = engine.run("Explain Rust ownership", "deep").await.unwrap();
+    let trace = store.task(&outcome.task_id).unwrap();
+    assert_eq!(
+        dispatches(&trace),
+        vec![
+            ("rust.first.s1".into(), false),
+            ("rust.second.s1".into(), false)
+        ]
+    );
+    assert!(!trace["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|e| e["kind"] == "expert_phase_budget" || e["kind"] == "expert_model_snapshot"));
+    assert!(!backend
+        .prompts
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|p| p.contains("FIRST_ADVICE") || p.contains("SECOND_ADVICE")));
+    assert_eq!(outcome.calls, 2);
+    assert_eq!(outcome.resources.reserved_output_tokens, 640);
+    let metadata = crate::evaluation::model_metadata::read(&store, &outcome.task_id).unwrap();
+    assert_eq!(
+        serde_json::to_value(metadata.expert_advice).unwrap()["phases_started"],
+        0
+    );
+}

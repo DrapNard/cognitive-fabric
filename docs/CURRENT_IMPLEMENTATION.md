@@ -42,7 +42,7 @@ Quality requires operator-attested held-out data. Promotion checks quality,
 cumulative approved-version retrieval regressions and unchanged versions transactionally.
 Rollback restores approved stored snapshots. Neural promotion stays disabled.
 
-Current verification (2026-10-14): 518 workspace tests, formatting, all-target
+Current verification (2026-10-14): 520 workspace tests, formatting, all-target
 checking and Clippy pass. Bundled generated protocol sources and the Rust runtime
 are pinned to FlatBuffers 25.12.19; default builds require no installed compiler.
 Current CLI/service arithmetic and real Qwen generation smokes pass. Public graph
@@ -1117,3 +1117,9 @@ workflow. It can skip an unaffordable routed workflow in favor of the next route
 candidate while admitting at most one workflow. An admitted timeout/failure never
 adds another expert attempt or resets budget. This addresses budget selection;
 calibrated usefulness and general model/module scheduling remain incomplete.
+
+Workflow admission now precedes backend setup. A refused model-bound candidate
+creates no expert model snapshot, worker handle or advice-phase allocation. Actual
+admitted workflows retain their original prompt construction and shared resource
+ceilings. Diagnostic phase counts no longer include newly refused candidates;
+historical reports retain the semantics of their recorded source revision.
