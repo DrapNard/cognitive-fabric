@@ -217,3 +217,83 @@ fn frozen_partial_live_report_matches_independent_oracle_and_resource_totals() {
         serde_json::from_str(include_str!("../evaluation/shortest_path_workflow.json")).unwrap();
     workflow.validate().unwrap();
 }
+
+#[test]
+fn frozen_advice_diagnostics_match_paths_scores_and_charged_calls() {
+    let raw = include_str!("../evaluation/results/qwen3-8b-advice-diagnostics-four-cases.json");
+    let report: serde_json::Value = serde_json::from_str(raw).unwrap();
+    let summary: serde_json::Value = serde_json::from_str(include_str!(
+        "../evaluation/results/qwen3-8b-advice-diagnostics-four-cases-summary.json"
+    ))
+    .unwrap();
+    assert_eq!(
+        summary["report_sha256"],
+        cogfabric::store::sha256(raw.as_bytes())
+    );
+    assert_eq!(summary["held_out"], false);
+    assert_eq!(summary["independent_human_review"], false);
+    assert_eq!(summary["weights_attested"], false);
+    assert_eq!(report["held_out_run"], false);
+    assert_eq!(report["case_count"], 4);
+    assert_eq!(
+        report["code_revision_operator_attested"],
+        summary["runtime_source_revision"]
+    );
+    let dataset = include_str!("../evaluation/shortest_path_cases.jsonl")
+        .lines()
+        .take(4)
+        .map(|line| format!("{line}\n"))
+        .collect::<String>();
+    assert_eq!(
+        report["dataset_checksum"],
+        cogfabric::store::sha256(dataset.as_bytes())
+    );
+    let cases: Vec<Case> = dataset
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let details = report["details"].as_array().unwrap();
+    let mut seen = BTreeSet::new();
+    assert_eq!(summary["executed_tasks"], details.len());
+    for detail in details {
+        let index = detail["case_index"].as_u64().unwrap() as usize;
+        let arm = detail["arm_index"].as_u64().unwrap() as usize;
+        assert!(index < 4 && arm < 6 && seen.insert((index, arm)));
+        assert_eq!(detail["input"], cases[index].input);
+        let graph: Graph =
+            serde_json::from_str(cases[index].input.strip_prefix("path:").unwrap()).unwrap();
+        let outcome = &detail["outcome"];
+        let valid = oracle_accepts(&graph, outcome["answer"].as_str().unwrap());
+        let eligible = matches!(outcome["status"].as_str(), Some("completed" | "unverified"));
+        assert_eq!(detail["passed"], eligible && valid);
+        if outcome["status"] == "completed" {
+            assert!(valid);
+        }
+    }
+    for (index, arm) in report["arms"].as_array().unwrap().iter().enumerate() {
+        let rows: Vec<_> = details.iter().filter(|d| d["arm_index"] == index).collect();
+        assert_eq!(arm["executed"], rows.len());
+        assert_eq!(
+            arm["passed"],
+            rows.iter().filter(|d| d["passed"] == true).count()
+        );
+        let calls: u64 = rows
+            .iter()
+            .map(|d| d["outcome"]["calls"].as_u64().unwrap())
+            .sum();
+        assert_eq!(arm["resources"]["model_calls"], calls);
+        assert_eq!(summary["arms"][index]["model_calls"], calls);
+        for metric in [
+            "phases_started",
+            "fallback_events",
+            "inference_timeout_fallbacks",
+            "unclassified_fallbacks",
+        ] {
+            let count: u64 = rows
+                .iter()
+                .map(|d| d["expert_advice"][metric].as_u64().unwrap())
+                .sum();
+            assert_eq!(summary["arms"][index]["diagnostics"][metric], count);
+        }
+    }
+}

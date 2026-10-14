@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Record live Qwen expert timeout diagnostics
+
+- Retain all 24 outcomes from a bounded public four-case, six-profile run.
+- Check every path score independently and freeze diagnostic/resource regressions.
+- Record four advice timeouts and no expert quality advantage without rewriting older results.
+
 ### Expose expert advice fallback diagnostics in benchmarks
 
 - Record typed inference-timeout classifications in optional advice audits.

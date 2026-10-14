@@ -3699,3 +3699,23 @@ and oversized/event-count rejection. No live-model rerun or new quality result.
 The additive JSON report fields change neither inference budgets nor permissions;
 the additional SQLite projection is bounded to 129 rows and returns fixed labels.
 General expert provisioning, residency and independent quality gates remain open.
+
+### Live advice diagnostic artifact gate
+
+Source b6b704323cac67b54935fd06397eeb66113be673 completed the live four-case
+comparison (24 tasks, 282.33 seconds). Independent exhaustive simple-path
+validation agrees with every score. Experts scored 2/4 with four typed advice
+timeouts; alone/tools/recursive/collective scored 3/4 and memory 2/4. Original
+budgets remained enforced; no expert gain, unseen quality or causal before/after
+claim is supported. Public results and their hashed summary are retained in
+`evaluation/results/qwen3-8b-advice-diagnostics-four-cases*.json`.
+
+All 495 tests (443 library, 52 integration), formatting, workspace all-target
+check and Clippy pass with FLATC unset. Commands: `cargo fmt --all -- --check`,
+`cargo check --offline --workspace --all-targets`,
+`cargo test --offline --workspace --all-targets`, and
+`cargo clippy --offline --workspace --all-targets -- -D warnings`.
+Log: `/tmp/cogfabric-live-advice-report-tests.log`. The new frozen artifact test
+validates hashes, task/input uniqueness, independent scores, charged calls and
+diagnostic totals. No permission expansion or model-weight changes. Advice
+latency/usefulness, independent evaluations and broader lifecycle remain blockers.

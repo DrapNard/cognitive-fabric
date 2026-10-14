@@ -547,3 +547,31 @@ provider/audit failure or cancellation may leave a started phase without a fallb
 event; absence of fallback proves neither completion nor usefulness. Existing
 reports remain frozen. Independent quality evaluation, broader expert lifecycle
 and physical provider termination remain incomplete.
+
+### Live four-case expert diagnostic follow-up
+
+Source `b6b704323cac67b54935fd06397eeb66113be673`, Qwen3 8B through LM Studio,
+completed 24/24 tasks in 282.33 seconds. The first four public graph cases were
+run across all six profiles in fresh state with the committed advisory workflow,
+empty document memory, 30-second task ceilings and 20-second inference ceilings.
+Other declared settings and per-task resources are retained in
+`evaluation/results/qwen3-8b-advice-diagnostics-four-cases.json`; hashed context and
+summary are in its `-summary.json` companion. The CLI loaded the existing Qwen
+weights with 8192 context, 0.35 requested GPU offload, one parallel prediction and
+600-second idle TTL. No other model was unloaded; framework residency ownership
+and immutable weights remain unproven.
+
+Scores: alone 3/4, tools 3/4, recursive 3/4, collective 3/4, memory 2/4,
+experts 2/4. All four expert advice phases emitted typed timeout fallback events;
+main reasoning then completed two answers and exhausted two original task budgets.
+The six arms charged respectively 4, 5, 5, 17, 16 and 13 model calls. Independent
+simple-path enumeration agrees with every recorded pass bit; a frozen integration
+regression checks scores, hashes, charged calls and diagnostic totals.
+
+This demonstrates live bounded advice failure containment and report diagnostics,
+not expert usefulness. There is no expert gain in this run. The corpus is public,
+small and authored in this project; no held-out or independent human review,
+training-contamination control, larger baseline or causal quality study is claimed.
+Task ceilings differ from the older 90-second partial run, so these results must
+not be treated as a controlled before/after comparison. Historical reports remain
+unchanged. General expert lifecycle/isolation and independent quality remain open.
