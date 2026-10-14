@@ -26,7 +26,7 @@ Rust FlatBuffers 25.12.19; no installed compiler was used in this current run.
 | 14. Lifecycle documented | `MODELS.md`, `EXPERTS.md`, `WORKERS.md` | Metadata lifecycle documented; explicit native load/unload is fixture-tested; real native read-only inventory passed; lifecycle mutations and ownership-aware automatic scheduling remain incomplete. |
 | 15. Reproducible benchmarks | `src/benchmarking.rs`, `evaluation/`, `BENCHMARKING.md` | Six-arm runner and public live workflows exist for Ollama and Qwen3 8B; reviewed unseen dataset and held-out equal-budget model study missing. |
 | 16. Accurate matrix | `IMPLEMENTATION_MATRIX.md` | Current summary reconciled with 508-test evidence, present live endpoint and public graph/Rust diagnostics; historical paragraphs are explicitly labeled as a ledger. |
-| 17. Verified docs/installation | `README.md`, HTTP_API.md, CI workflow, INSTALLATION_VALIDATION.md | Host source installs and offline workflows passed for core and HTTP packages; installed managed OpenCode/Qwen read/edit/read passed. Expanded clean Arch setup, all checks and installed core/server workflows passed at `a9933b3`. CachyOS desktop/GPU setup remains unverified. |
+| 17. Verified docs/installation | `README.md`, HTTP_API.md, CI workflow, INSTALLATION_VALIDATION.md | Current optimized host installs and offline workflows passed at `e1f3ffd` without flatc; historical installed managed OpenCode/Qwen read/edit/read passed. Expanded clean Arch setup, all checks and installed core/server workflows passed at `a9933b3`. CachyOS desktop/GPU setup remains unverified. |
 | 18. Honest experimental claims | `EVOLUTION.md`, `MODELS.md`, `THREAT_MODEL.md` | Neural adaptation remains experimental and neural promotion denied; no trained Jev or superiority claim. |
 
 The current concise-advice runtime has a complete four-case live Qwen workflow
@@ -41,8 +41,7 @@ independent held-out study. See its `concise-advice-full-corpus` report.
 
 ## Current acceptance reconciliation — 2026-10-14
 
-Source reviewed: `ee46e81f31de42662c0ab0b658b3c7c3967bc3ac` plus the current
-security-suite/documentation changes. The workspace test log reports 508 passing
+Source reviewed and installed: `e1f3ffde2f416944b68a9d760dec8ca170c3dcc9`. The workspace test log reports 508 passing
 tests; optional `core-audit` reports 24. Mandatory fmt/check/test/clippy passed with
 `FLATC` unset. The bounded security command now tests operator module permission,
 inference-actor denials and denial of that capability under reasoning task scope.
@@ -55,8 +54,10 @@ STOP. Real Qwen3 8B compatible inference returned a Rust explanation in 8309.62 
 with one call, 158 reported input tokens and 243 reported output tokens; status was
 correctly unverified. Endpoint advertisement is not weight attestation or native
 residency ownership. These temporary paths are local observations; existing smoke
-scripts provide portable reproduction. No optimized-install refresh is inferred
-from this debug smoke.
+scripts provide portable reproduction. A separate optimized-install refresh at `e1f3ffd` subsequently passed for both
+packages, including the complete CLI and HTTP scripts. See
+`INSTALLATION_VALIDATION.md` for exact hashes and source scope; the debug inference
+smoke itself does not establish optimized model quality.
 
 The complete public RESEARCH graph report now covers all 96 tasks: expert arm
 16/16 versus alone 11/16, 69 versus 16 model calls, approximately 251 versus 34

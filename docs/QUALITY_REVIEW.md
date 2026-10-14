@@ -8,6 +8,17 @@ an installed compiler. `RELEASE_AUDIT.md` records the current acceptance review;
 installation and live reports identify their actual source revisions. Earlier
 counts and paths below are historical milestones, not current readiness claims.
 
+Current installation verification: exact source `e1f3ffd` installed optimized
+CLI and HTTP packages with cached locked dependencies and `FLATC` unset. Both
+reproducible offline scripts passed, including 31 security probes with 25 expected
+denials. Build/check/fmt/clippy and 508 tests passed. The first test run detected
+the old CLI fixture count (24); updating it to assert 31 and the specific new
+permission outcomes resolved the failure, and the full suite then passed. This
+changes diagnostic coverage; it does not add model execution permission.
+See `INSTALLATION_VALIDATION.md` for binary/script hashes and scope. Real debug
+Qwen inference also succeeded once and remained unverified. Independent held-out
+studies and ownership-aware native switching remain incomplete.
+
 ## Historical verification milestones
 
 Worker image consistency verified on 2026-10-13: formatting, all-target check,

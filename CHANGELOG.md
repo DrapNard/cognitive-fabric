@@ -1421,3 +1421,5 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
 - Extend deterministic security probes to cover operator-only module permissions and reasoning task-scope denials.
 - Require those controls in the reproducible offline smoke workflow.
 - Replace stale current test/endpoint claims with scoped release evidence and preserve historical records.
+
+- Refresh optimized CLI/HTTP installation evidence at `e1f3ffd`; both reproducible offline workflows pass without an installed FlatBuffers compiler.

@@ -265,3 +265,40 @@ above used the debug binary. This is a current-host refresh, not new clean-OS
 proof. All 500 mandatory tests/checks remain tied to the preceding runtime gate;
 no runtime source changed in this evidence-only update. General phase recovery,
 module/residency lifecycle and independent quality evaluation remain incomplete.
+
+### Latest optimized host validation — 2026-10-14
+
+Exact source `e1f3ffde2f416944b68a9d760dec8ca170c3dcc9` installed both packages
+into `/tmp/cogfabric-v1-current-install.1Vmeqx` with Rust/Cargo 1.97.1, cached locked
+dependencies and `FLATC` unset. Default builds verified bundled FlatBuffers
+25.12.19 sources; this run did not invoke a native generator. Commands:
+
+```sh
+cargo install --offline --locked --path . --root PREFIX
+cargo install --offline --locked --path crates/cogfabric-server --root PREFIX
+bash scripts/installed-smoke.sh PREFIX/bin/cogfabric
+bash scripts/installed-http-smoke.sh PREFIX/bin/cogfabric PREFIX/bin/cogfabric-server
+```
+
+Both installs and scripts passed. Cargo reported 1m05s for the CLI and 48.20s for
+the HTTP server. CLI evidence: `/tmp/cogfabric-installed-smoke.rs16vt`; HTTP
+evidence: `/tmp/cogfabric-installed-http.CVPVNw`. The CLI workflow verifies all
+31 security probes (25 expected denials), skill registration/lifecycle, reference
+retrieval, RAG promotions/rollback, backup/restore, workers and typed socket tasks.
+HTTP verifies bearer/Origin denials, discovery, typed arithmetic/SQL workers with
+reaping and graceful shutdown against an intentionally unavailable upstream.
+
+| Installed binary | SHA-256 |
+|---|---|
+| CLI | `6008417f03303e39b4e481266e8e100035ebc7a5b4d965194394d5eecc32dedc` |
+| HTTP server | `c41f87263c29bdda5a80f412780426dab6e2d436878a1de77a263fffa49aa846` |
+
+CLI smoke script SHA-256:
+`986680949b8f901e6ac804cba15547daf33389e8eb1d989d47ea66b8960530ae`.
+HTTP smoke script SHA-256:
+`950ff16da845b970466e5af0b335dde9733e457760b4b81a65cc4dfc81976723`.
+Security fixture SHA-256:
+`89c0e02c38b5e149f5ab8d2b65c6d77593fa3e7f1c35fe0baf09a114c082c8e7`.
+Temporary evidence paths are local observations; scripts are reproducible source
+artifacts. This refresh supersedes older host-install evidence for this source,
+not the separate clean-OS, GPU, residency or independent-quality requirements.
