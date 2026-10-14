@@ -1,5 +1,6 @@
 //! Experimental import-free scalar expert executor; not wired into runtime authority.
 pub mod artifact;
+pub mod audit;
 pub mod authority;
 mod preflight;
 

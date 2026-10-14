@@ -13,7 +13,7 @@ function calls. Stack height is capped at 64 KiB and recursion depth at 32. Floa
 reference-type and tail-call proposals are disabled; SIMD and memory64 features
 are not compiled. Wasmi strict compilation limits are selected.
 
-Twenty tests cover execution, imports, nontermination including start functions,
+Twenty-three tests cover execution, imports, nontermination including start functions,
 initial/growing memory and tables, malformed/oversized bytes and wrong signatures.
 Run cargo test --manifest-path experiments/wasm-experts/Cargo.toml --locked.
 The separate workspace prevents adding this interpreter to production builds.
@@ -45,6 +45,22 @@ execution; late results are discarded. Final result commitment wins against late
 revocation. Revocation does not forcibly interrupt the interpreter: fuel still
 bounds execution, and host parsing/compilation is outside these grant checks.
 
+The authority now requires a trusted Audit sink; there is no public unaudited
+constructor. Typed events contain only task/artifact identity, allocation slot and
+Allocated/DispatchReserved/Returned/NotReturned kind. Scalar inputs, outputs and
+backend error bodies are omitted. Allocation is reserved before its acknowledgement;
+failed/uncertain acknowledgements revoke the unreturned grant without refunds.
+Dispatch acknowledgement must succeed before guest entry. Cancellation/expiry is
+rechecked after that callback. Terminal acknowledgement must succeed before a
+result is exposed, and failure leaves the invocation consumed. DispatchReserved
+means reserved work, not proof the guest entered or returned a correct result.
+
+The sink must acknowledge durable recording. The library does not attest that
+claim, bound synchronous callback time or provide a persistent backend itself.
+Tests inject failures before/after record writes, preserve spent allocation,
+check metadata ordering/privacy and cancellation during acknowledgement. Comprehensive
+policy-denial logging and crash reconciliation remain production integration work.
+
 The embedding Rust caller must authenticate the actor and approve grant creation.
 String comparison is not user authentication. This library has no remote/CLI
 endpoint and does not deserialize grants from model output. Per-artifact issuers
@@ -55,7 +71,7 @@ grants and prevents new issuance. It is not cloneable or serializable.
 
 The embedding must ensure exactly one approved authority per real task: a trusted
 caller can construct independent authorities, so this is not yet global task,
-durable audit or registry enforcement. Hashes identify
+verified durable audit or registry enforcement. Hashes identify
 content, not signatures, licensing or domain correctness. No active runtime expert
 or candidate is created by this API.
 

@@ -1,5 +1,6 @@
 //! Immutable compiled artifact and non-serializable single-invocation scope.
 //! The embedding Rust caller must authenticate/approve grant construction.
+use crate::audit::{Audit, Event, Kind};
 use sha2::{Digest, Sha256};
 use std::{
     sync::{
@@ -50,6 +51,8 @@ pub struct TaskGrant {
     input: i64,
     state: Arc<AtomicU8>,
     deadline: Instant,
+    audit: Arc<dyn Audit>,
+    slot: usize,
 }
 /// Cloneable cancellation authority can only reduce an existing grant.
 #[derive(Clone)]
@@ -66,6 +69,17 @@ impl Revoker {
     }
 }
 impl TaskGrant {
+    pub(crate) fn record(&self, kind: Kind) -> Result<(), String> {
+        self.audit
+            .record(&Event {
+                task: self.task.clone(),
+                artifact: self.identity.clone(),
+                slot: self.slot,
+                kind,
+            })
+            .map_err(|_| "audit acknowledgement failed".into())
+    }
+
     pub fn revoker(&self) -> Revoker {
         Revoker(self.state.clone())
     }
@@ -134,23 +148,51 @@ impl Artifact {
         let deadline = Instant::now()
             .checked_add(MAX_GRANT_LIFETIME)
             .ok_or("invalid grant lifetime")?;
-        self.operator_grant_until(task, input, deadline)
+        self.issue_grant(
+            task,
+            input,
+            deadline,
+            Arc::new(crate::audit::MemoryAudit::default()),
+            1,
+        )
     }
     /// The embedding must narrow this to its original task deadline.
-    pub(crate) fn operator_grant_until(
+    pub(crate) fn issue_grant(
         &self,
         task: &str,
         input: i64,
         deadline: Instant,
+        audit: Arc<dyn Audit>,
+        slot: usize,
     ) -> Result<TaskGrant, String> {
         validate_scope(task, deadline)?;
+        if !(1..=8).contains(&slot) {
+            return Err("invalid audit slot".into());
+        }
         Ok(TaskGrant {
             task: task.into(),
             identity: self.identity.clone(),
             input,
             state: Arc::new(AtomicU8::new(READY)),
             deadline,
+            audit,
+            slot,
         })
+    }
+    #[cfg(test)]
+    fn operator_grant_until(
+        &self,
+        task: &str,
+        input: i64,
+        deadline: Instant,
+    ) -> Result<TaskGrant, String> {
+        self.issue_grant(
+            task,
+            input,
+            deadline,
+            Arc::new(crate::audit::MemoryAudit::default()),
+            1,
+        )
     }
     pub fn invoke(
         &self,
@@ -181,8 +223,25 @@ impl Artifact {
                     "invocation grant already consumed"
                 }
             })?;
-        let result = crate::call_checked(&self.engine, &self.module, input);
-        grant.finish(result)
+        if let Err(error) = grant.record(Kind::DispatchReserved) {
+            grant.state.store(COMPLETE, Ordering::SeqCst);
+            return Err(error);
+        }
+        // A trusted audit callback can take time or trigger revocation. Recheck
+        // admission before entering the guest; the reservation is never refunded.
+        let result =
+            if grant.state.load(Ordering::SeqCst) != RUNNING || Instant::now() >= grant.deadline {
+                Err("invocation admission interrupted".into())
+            } else {
+                crate::call_checked(&self.engine, &self.module, input)
+            };
+        let result = grant.finish(result);
+        grant.record(if result.is_ok() {
+            Kind::Returned
+        } else {
+            Kind::NotReturned
+        })?;
+        result
     }
 }
 #[cfg(test)]

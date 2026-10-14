@@ -4077,3 +4077,27 @@ No production actor, dependency, model or registry changed. The embedding must
 still authenticate/approve construction and enforce one authority per real task;
 this does not yet prove durable/global task budgeting, audited lifecycle or Core
 integration, and parsing/compilation remains outside invocation allocation.
+
+### Experimental Wasm audit acknowledgement gate
+
+Twenty-three isolated tests, formatting, locked all-target checking/test and
+Clippy pass. Commands: `cargo fmt --manifest-path experiments/wasm-experts/Cargo.toml -- --check`,
+`cargo check --offline --locked --manifest-path experiments/wasm-experts/Cargo.toml --all-targets`,
+`cargo test --offline --locked --manifest-path experiments/wasm-experts/Cargo.toml`,
+`cargo clippy --offline --locked --manifest-path experiments/wasm-experts/Cargo.toml --all-targets -- -D warnings`.
+Log: `/tmp/cogfabric-wasm-audit-tests.log`. Injected allocation/dispatch/terminal
+failures before and after simulated writes retain allocation, prevent successful
+response and deny replay. Typed records preserve order/task/artifact/slot without
+input/output/error bodies. Revocation during dispatch acknowledgement produces
+no returned result; code rechecks cancellation/expiry before guest entry.
+No test attests real disk durability or interpreter interruption.
+
+Production retains 503 tests (447 library, 56 integration), mandatory format,
+workspace all-target check/test and Clippy with FLATC unset; log
+`/tmp/cogfabric-wasm-audit-core-tests.log`. Root commands remain
+`cargo fmt --all -- --check`, `cargo check --offline --workspace --all-targets`,
+`cargo test --offline --workspace --all-targets`, and
+`cargo clippy --offline --workspace --all-targets -- -D warnings`.
+No production dependency, permission, active expert or protocol changed. Trusted
+sinks can block or misrepresent durability; Core persistence, denial audits,
+reconciliation, authenticated task ownership and lifecycle remain open.

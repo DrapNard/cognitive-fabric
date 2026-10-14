@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Require audit acknowledgements for experimental Wasm execution
+
+- Record bounded allocation, dispatch reservation and terminal metadata before exposing results.
+- Keep uncertain/failed allocations spent and block unaudited guest execution.
+- Recheck cancellation after callbacks while excluding scalar and error contents.
+
 ### Share experimental Wasm allocations across approved artifacts
 
 - Pin a task's artifact set, expiry and total nonrefundable invocation allowance.

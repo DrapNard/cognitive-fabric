@@ -1,6 +1,7 @@
 //! One trusted embedding authority per task; no serialization or duplication API.
 use crate::artifact::{validate_scope, Artifact, Identity, Revoker, TaskGrant};
-use std::time::Instant;
+use crate::audit::{Audit, Kind};
+use std::{sync::Arc, time::Instant};
 pub struct TaskAuthority {
     task: String,
     deadline: Instant,
@@ -8,6 +9,7 @@ pub struct TaskAuthority {
     maximum: usize,
     issued: Vec<Revoker>,
     revoked: bool,
+    audit: Arc<dyn Audit>,
 }
 impl TaskAuthority {
     /// The embedding authenticates/approves this constructor and must prevent
@@ -17,6 +19,7 @@ impl TaskAuthority {
         deadline: Instant,
         maximum: usize,
         allowed: &[&Artifact],
+        audit: Arc<dyn Audit>,
     ) -> Result<Self, String> {
         validate_scope(task, deadline)?;
         if !(1..=8).contains(&maximum) || allowed.is_empty() || allowed.len() > 8 {
@@ -39,6 +42,7 @@ impl TaskAuthority {
             maximum,
             issued: Vec::new(),
             revoked: false,
+            audit,
         })
     }
     pub fn remaining(&self) -> usize {
@@ -57,10 +61,20 @@ impl TaskAuthority {
         if self.remaining() == 0 {
             return Err("task invocation allowance exhausted".into());
         }
-        let grant = artifact.operator_grant_until(&self.task, input, self.deadline)?;
+        let grant = artifact.issue_grant(
+            &self.task,
+            input,
+            self.deadline,
+            self.audit.clone(),
+            self.issued.len() + 1,
+        )?;
         // Allocation is conservative: unused, revoked and trapped grants are not
         // refunded. Issuance is serialized by the mutable authority reference.
         self.issued.push(grant.revoker());
+        if let Err(error) = grant.record(Kind::Allocated) {
+            grant.revoker().revoke();
+            return Err(error);
+        }
         Ok(grant)
     }
     pub fn revoke(&mut self) {
@@ -68,6 +82,23 @@ impl TaskAuthority {
         for grant in &self.issued {
             grant.revoke();
         }
+    }
+}
+#[cfg(test)]
+impl TaskAuthority {
+    fn operator_for_test(
+        task: &str,
+        deadline: Instant,
+        maximum: usize,
+        allowed: &[&Artifact],
+    ) -> Result<Self, String> {
+        Self::operator(
+            task,
+            deadline,
+            maximum,
+            allowed,
+            Arc::new(crate::audit::MemoryAudit::default()),
+        )
     }
 }
 #[cfg(test)]
@@ -92,7 +123,7 @@ mod tests {
     #[test]
     fn allowance_is_shared_across_inputs_and_not_refunded() {
         let artifact = artifact("1.0.0", "local.get 0");
-        let mut authority = TaskAuthority::operator(
+        let mut authority = TaskAuthority::operator_for_test(
             TASK,
             Instant::now() + Duration::from_secs(10),
             2,
@@ -117,9 +148,13 @@ mod tests {
         let old = artifact("1.0.0", "local.get 0");
         let new = artifact("2.0.0", "local.get 0");
         let altered = artifact("1.0.0", "i64.const 99");
-        let mut authority =
-            TaskAuthority::operator(TASK, Instant::now() + Duration::from_secs(10), 2, &[&old])
-                .unwrap();
+        let mut authority = TaskAuthority::operator_for_test(
+            TASK,
+            Instant::now() + Duration::from_secs(10),
+            2,
+            &[&old],
+        )
+        .unwrap();
         assert!(authority.grant(&new, 0).is_err());
         assert!(authority.grant(&altered, 0).is_err());
         assert_eq!(authority.remaining(), 2);
@@ -129,9 +164,13 @@ mod tests {
         assert!(old.invoke(&mut first, TASK, "human-cli", 1).is_err());
         assert!(old.invoke(&mut second, TASK, "human-cli", 2).is_err());
         assert!(authority.grant(&old, 3).is_err());
-        let mut expired =
-            TaskAuthority::operator(TASK, Instant::now() + Duration::from_secs(10), 1, &[&old])
-                .unwrap();
+        let mut expired = TaskAuthority::operator_for_test(
+            TASK,
+            Instant::now() + Duration::from_secs(10),
+            1,
+            &[&old],
+        )
+        .unwrap();
         expired.deadline = Instant::now();
         assert!(expired.grant(&old, 0).is_err());
         assert_eq!(expired.remaining(), 1);
@@ -147,7 +186,7 @@ mod tests {
             &bytes,
         )
         .unwrap();
-        let mut authority = TaskAuthority::operator(
+        let mut authority = TaskAuthority::operator_for_test(
             TASK,
             Instant::now() + Duration::from_secs(10),
             2,
@@ -169,11 +208,11 @@ mod tests {
         let new = artifact("2.0.0", "local.get 0");
         let deadline = Instant::now() + Duration::from_secs(10);
         for count in [0, 9] {
-            assert!(TaskAuthority::operator(TASK, deadline, count, &[&old]).is_err());
+            assert!(TaskAuthority::operator_for_test(TASK, deadline, count, &[&old]).is_err());
         }
-        assert!(TaskAuthority::operator(TASK, deadline, 1, &[]).is_err());
-        assert!(TaskAuthority::operator(TASK, deadline, 1, &[&old, &new]).is_err());
-        assert!(TaskAuthority::operator("bad-task", deadline, 1, &[&old]).is_err());
-        assert!(TaskAuthority::operator(TASK, Instant::now(), 1, &[&old]).is_err());
+        assert!(TaskAuthority::operator_for_test(TASK, deadline, 1, &[]).is_err());
+        assert!(TaskAuthority::operator_for_test(TASK, deadline, 1, &[&old, &new]).is_err());
+        assert!(TaskAuthority::operator_for_test("bad-task", deadline, 1, &[&old]).is_err());
+        assert!(TaskAuthority::operator_for_test(TASK, Instant::now(), 1, &[&old]).is_err());
     }
 }

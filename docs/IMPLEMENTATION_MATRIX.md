@@ -2676,3 +2676,15 @@ are no longer publicly available in non-test builds. Twenty experiment tests pas
 The trusted embedding must authenticate approval and prevent duplicate independent
 authorities per real task. Global/persistent task enforcement, audits, registry
 lifecycle and runtime/IPC integration remain incomplete; production unchanged.
+
+Experimental Wasm acknowledged auditing: **Implemented experimentally / durable
+Core integration incomplete**. Authorities require a trusted sink for fixed metadata
+records at allocation, dispatch reservation and terminal outcome. Allocation audit
+failure consumes/revokes the attempted slot; dispatch failure prevents guest entry;
+terminal failure withholds output and keeps the invocation spent. Cancellation and
+expiry are rechecked after synchronous dispatch acknowledgement. No scalar values,
+program/error text or guest-controlled audit callbacks are supplied. Twenty-three
+tests include before/after-write failures, uncertainty, ordering and cancellation.
+The sink's durability/authenticity and callback latency are trusted embedding
+responsibilities, not attested by the prototype. Denial logging, crash recovery,
+persistent registry and production actors/IPC remain unimplemented here.
