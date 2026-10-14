@@ -1,0 +1,132 @@
+{
+  "format_version": 1,
+  "report": "qwen3-8b-concise-advice-full-corpus.json",
+  "report_sha256": "a7eb274afb637a581ce89c77ca05913b1a7c301ff52f60c242529259220cc868",
+  "dataset_sha256": "0fedaaf6bef27f45ae0a13debcd5c6e391a32637c84891b0f38a19d9cba93edc",
+  "dataset_selection": "All sixteen public shortest_path_cases.jsonl cases",
+  "runtime_source_revision": "40e18992a13c9e18b036a21ea94ea03b98427e5c",
+  "runtime_binary_sha256": "3ef15c2515537d2dfe606989b7523dcbca60b0a23183f6a33ac805139c70b936",
+  "complete": true,
+  "stop_reason": "completed",
+  "executed_tasks": 96,
+  "planned_tasks": 96,
+  "independent_human_review": false,
+  "held_out": false,
+  "weights_attested": false,
+  "independent_simple_path_oracle_checked": true,
+  "task_wall_seconds": 30,
+  "inference_timeout_seconds": 20,
+  "elapsed_ms": 927432.323003,
+  "arms": [
+    {
+      "profile": "alone",
+      "executed": 16,
+      "passed": 12,
+      "diagnostics": {
+        "phases_started": 0,
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "unclassified_fallbacks": 0
+      },
+      "model_calls": 16,
+      "tool_calls": 0,
+      "latency_ms": 32115.203657000005
+    },
+    {
+      "profile": "tools",
+      "executed": 16,
+      "passed": 12,
+      "diagnostics": {
+        "phases_started": 0,
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "unclassified_fallbacks": 0
+      },
+      "model_calls": 22,
+      "tool_calls": 22,
+      "latency_ms": 38789.776948
+    },
+    {
+      "profile": "recursive",
+      "executed": 16,
+      "passed": 13,
+      "diagnostics": {
+        "phases_started": 0,
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "unclassified_fallbacks": 0
+      },
+      "model_calls": 21,
+      "tool_calls": 21,
+      "latency_ms": 33634.942803000005
+    },
+    {
+      "profile": "collective",
+      "executed": 16,
+      "passed": 11,
+      "diagnostics": {
+        "phases_started": 0,
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "unclassified_fallbacks": 0
+      },
+      "model_calls": 69,
+      "tool_calls": 20,
+      "latency_ms": 280365.805885
+    },
+    {
+      "profile": "memory",
+      "executed": 16,
+      "passed": 12,
+      "diagnostics": {
+        "phases_started": 0,
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "unclassified_fallbacks": 0
+      },
+      "model_calls": 72,
+      "tool_calls": 36,
+      "latency_ms": 271365.722945
+    },
+    {
+      "profile": "experts",
+      "executed": 16,
+      "passed": 12,
+      "diagnostics": {
+        "phases_started": 16,
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "unclassified_fallbacks": 0
+      },
+      "model_calls": 65,
+      "tool_calls": 29,
+      "latency_ms": 271090.572182
+    }
+  ],
+  "status_counts": {
+    "unverified": 16,
+    "completed": 60,
+    "rejected": 13,
+    "exhausted": 6,
+    "failed": 1
+  },
+  "total_model_calls": 265,
+  "total_tool_calls": 128,
+  "model_setup": {
+    "existing_loaded_qwen_reused": true,
+    "context_tokens": 8192,
+    "parallel_predictions": 1,
+    "requested_gpu_offload_ratio": 0.35,
+    "idle_ttl_seconds": 600,
+    "weights_attested": false,
+    "framework_residency_ownership_proven": false,
+    "whole_device_activity_controlled": false,
+    "host_build_activity_during_run": true
+  },
+  "limitations": [
+    "Public project-authored corpus, no held-out or independent human review",
+    "Single live run, provider/sampling/whole-device state uncontrolled",
+    "No larger or 1-3B baseline; no causal comparison to prior revisions",
+    "Experts tied baseline accuracy with more calls; no expert benefit demonstrated"
+  ]
+}

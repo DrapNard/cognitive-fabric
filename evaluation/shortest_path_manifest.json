@@ -171,6 +171,7 @@
       ]
     }
   ],
-  "live_model_evaluation_complete": false,
-  "live_result": "results/qwen3-8b-shortest-path-deep-partial.json"
+  "live_model_evaluation_complete": true,
+  "live_result": "results/qwen3-8b-shortest-path-deep-partial.json",
+  "complete_live_workflow_report": "results/qwen3-8b-concise-advice-full-corpus.json"
 }

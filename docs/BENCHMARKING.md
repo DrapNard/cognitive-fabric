@@ -622,3 +622,37 @@ controlled; changing collective/memory scores illustrate that uncertainty.
 Independent human review, unseen technical evaluation, broader expert provisioning
 and physical model lifecycle remain incomplete. No neural training or permissions
 were added.
+
+### Complete public graph workflow measurement
+
+Source `40e18992a13c9e18b036a21ea94ea03b98427e5c` completed all 96 tasks from
+16 public cases across six profiles in 927.43 seconds. The input hash, declared
+30-second task/20-second inference ceilings, immutable advisory workflow and
+fresh empty document corpus are recorded in
+`evaluation/results/qwen3-8b-concise-advice-full-corpus.json` and its hashed
+summary. Every pass bit agrees with independent exhaustive simple-path enumeration.
+The corpus manifest now marks this public live workflow complete; independent
+study, human review, held-out and contamination-control flags remain false.
+
+| Profile | Passed / executed | Charged model calls | Task latency total (seconds) |
+|---|---|---|---|
+| Alone | 12 / 16 | 16 | 32.12 |
+| Tools | 12 / 16 | 22 | 38.79 |
+| Recursive | 13 / 16 | 21 | 33.63 |
+| Collective | 11 / 16 | 69 | 280.37 |
+| Memory | 12 / 16 | 72 | 271.37 |
+| Experts | 12 / 16 | 65 | 271.09 |
+
+All 16 optional advice phases recorded zero fallback events, but experts tied
+baseline accuracy with substantially more calls/time. The four-case 4/4 result
+therefore must not be generalized to this larger corpus. In total: 265 charged
+model calls, 128 checks; task outcomes include 60 completed, 16 unverified,
+13 rejected, 6 exhausted and 1 failed (inference timeout). All remain counted.
+No expert/collective benefit is demonstrated. The single extra recursive pass is
+an observation in one run, not proof of causal or general reasoning improvement.
+
+Model weights/provider state, sampling, device activity and host compilation were
+not controlled; no 1–3B or larger baseline, unseen technical evaluation or neural
+safety claim follows. The same existing Qwen load was reused; no automatic physical
+residency ownership is proven. All earlier reports remain unchanged. Broader
+module lifecycle, independent verifiers/evaluation and residency gates stay open.

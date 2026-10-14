@@ -3785,3 +3785,26 @@ attempt missed the test's qualified JSON macro; that was fixed before verificati
 The separate 96-task live graph study remains running with its original deadline;
 these socket fixtures use their own provider and never invoke Qwen. Provider/device
 activity in the model study remains uncontrolled, including host build activity.
+
+### Full public graph measurement gate
+
+Source 40e18992a13c9e18b036a21ea94ea03b98427e5c completed all 96 tasks in
+927.43 seconds. Independent exhaustive path enumeration agrees with every score.
+Experts tied alone at 12/16 with 65 versus 16 calls; recursive scored 13/16.
+Sixteen advice phases had no fallback. All unsuccessful outcomes remain counted,
+including one inference timeout. No broad expert advantage, causal improvement,
+held-out study or independent human review is demonstrated. Host/device/provider
+activity was not controlled. Frozen source/binary/input/report hashes and all
+outcomes are retained in the full-corpus report and summary.
+
+All 497 tests (443 library, 54 integration), formatting, workspace all-target
+check and Clippy pass with FLATC unset. Commands: `cargo fmt --all -- --check`,
+`cargo check --offline --workspace --all-targets`,
+`cargo test --offline --workspace --all-targets`, and
+`cargo clippy --offline --workspace --all-targets -- -D warnings`.
+Log: `/tmp/cogfabric-full-live-graph-tests.log`. The shared independent report
+checker now validates four- and sixteen-case reports, complete-run coverage,
+hashes, unique case/arm identities, model/tool charges and diagnostic totals.
+The corpus live-workflow flag is updated; independent-review flags stay false.
+No production runtime, permission or original architecture changed. General
+module/residency lifecycle and independent evaluation remain release blockers.

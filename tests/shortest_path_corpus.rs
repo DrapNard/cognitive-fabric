@@ -47,7 +47,7 @@ fn public_graph_labels_match_independent_simple_path_enumeration() {
         assert_eq!(manifest[field], false);
     }
     assert_eq!(manifest["live_model_evaluated"], true);
-    assert_eq!(manifest["live_model_evaluation_complete"], false);
+    assert_eq!(manifest["live_model_evaluation_complete"], true);
     let cases: Vec<Case> = raw
         .lines()
         .map(|line| serde_json::from_str(line).unwrap())
@@ -223,6 +223,7 @@ fn frozen_advice_diagnostics_match_paths_scores_and_charged_calls() {
     check_advice_report(
         include_str!("../evaluation/results/qwen3-8b-advice-diagnostics-four-cases.json"),
         include_str!("../evaluation/results/qwen3-8b-advice-diagnostics-four-cases-summary.json"),
+        4,
     );
 }
 
@@ -232,6 +233,7 @@ fn frozen_concise_advice_matches_independent_scores_and_diagnostics() {
     check_advice_report(
         raw,
         include_str!("../evaluation/results/qwen3-8b-concise-advice-four-cases-summary.json"),
+        4,
     );
     let report: serde_json::Value = serde_json::from_str(raw).unwrap();
     assert_eq!(report["complete"], true);
@@ -249,7 +251,32 @@ fn frozen_concise_advice_matches_independent_scores_and_diagnostics() {
     }
 }
 
-fn check_advice_report(raw: &str, summary_raw: &str) {
+#[test]
+fn full_live_concise_report_matches_independent_oracle_and_resources() {
+    let raw = include_str!("../evaluation/results/qwen3-8b-concise-advice-full-corpus.json");
+    check_advice_report(
+        raw,
+        include_str!("../evaluation/results/qwen3-8b-concise-advice-full-corpus-summary.json"),
+        16,
+    );
+    let report: serde_json::Value = serde_json::from_str(raw).unwrap();
+    assert_eq!(report["complete"], true);
+    assert_eq!(report["details"].as_array().unwrap().len(), 96);
+    let experts = &report["arms"][5];
+    assert_eq!(experts["passed"], 12);
+    assert_eq!(experts["resources"]["model_calls"], 65);
+    for detail in report["details"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|d| d["profile"] == "experts")
+    {
+        assert_eq!(detail["expert_advice"]["phases_started"], 1);
+        assert_eq!(detail["expert_advice"]["fallback_events"], 0);
+    }
+}
+
+fn check_advice_report(raw: &str, summary_raw: &str, case_count: usize) {
     let report: serde_json::Value = serde_json::from_str(raw).unwrap();
     let summary: serde_json::Value = serde_json::from_str(summary_raw).unwrap();
     assert_eq!(
@@ -260,14 +287,14 @@ fn check_advice_report(raw: &str, summary_raw: &str) {
     assert_eq!(summary["independent_human_review"], false);
     assert_eq!(summary["weights_attested"], false);
     assert_eq!(report["held_out_run"], false);
-    assert_eq!(report["case_count"], 4);
+    assert_eq!(report["case_count"], case_count);
     assert_eq!(
         report["code_revision_operator_attested"],
         summary["runtime_source_revision"]
     );
     let dataset = include_str!("../evaluation/shortest_path_cases.jsonl")
         .lines()
-        .take(4)
+        .take(case_count)
         .map(|line| format!("{line}\n"))
         .collect::<String>();
     assert_eq!(
@@ -281,10 +308,15 @@ fn check_advice_report(raw: &str, summary_raw: &str) {
     let details = report["details"].as_array().unwrap();
     let mut seen = BTreeSet::new();
     assert_eq!(summary["executed_tasks"], details.len());
+    assert_eq!(summary["complete"], report["complete"]);
+    assert_eq!(summary["stop_reason"], report["stop_reason"]);
+    if report["complete"] == true {
+        assert_eq!(details.len(), case_count * 6);
+    }
     for detail in details {
         let index = detail["case_index"].as_u64().unwrap() as usize;
         let arm = detail["arm_index"].as_u64().unwrap() as usize;
-        assert!(index < 4 && arm < 6 && seen.insert((index, arm)));
+        assert!(index < case_count && arm < 6 && seen.insert((index, arm)));
         assert_eq!(detail["input"], cases[index].input);
         let graph: Graph =
             serde_json::from_str(cases[index].input.strip_prefix("path:").unwrap()).unwrap();
@@ -309,6 +341,12 @@ fn check_advice_report(raw: &str, summary_raw: &str) {
             .sum();
         assert_eq!(arm["resources"]["model_calls"], calls);
         assert_eq!(summary["arms"][index]["model_calls"], calls);
+        let tools: u64 = rows
+            .iter()
+            .map(|d| d["outcome"]["resources"]["tool_calls"].as_u64().unwrap())
+            .sum();
+        assert_eq!(arm["resources"]["tool_calls"], tools);
+        assert_eq!(summary["arms"][index]["tool_calls"], tools);
         for metric in [
             "phases_started",
             "fallback_events",

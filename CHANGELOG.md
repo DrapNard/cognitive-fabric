@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Retain the complete live graph comparison
+
+- Record all 96 public Qwen workflow outcomes and independently verify scores and resources.
+- Mark the public corpus workflow complete while preserving missing independent evaluation flags.
+- Record zero advice fallbacks and no expert accuracy gain over the single-model baseline.
+
 ### Verify socket cancellation during optional expert advice
 
 - Exercise disconnect, shutdown and both operator cancellation paths against a stalled provider.
