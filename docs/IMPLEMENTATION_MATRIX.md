@@ -2371,3 +2371,24 @@ training-contamination control, larger baseline or causal quality study is claim
 Task ceilings differ from the older 90-second partial run, so these results must
 not be treated as a controlled before/after comparison. Historical reports remain
 unchanged. General expert lifecycle/isolation and independent quality remain open.
+
+### Concise optional advice output contract
+
+Legacy and structured advice prompts now request one sentence of at most 24
+words naming the most important domain constraint/pitfall, without restating the
+problem, enumerating steps or producing the final answer. This is a model output
+request, not enforced linguistic correctness. Runtime token reservations, phase
+ceilings, permissions, audit failure handling and independent verification remain
+unchanged. Advice remains unverified; no new trusted evidence is created.
+
+A direct Qwen probe on the first public graph used the same system/model settings:
+192 output tokens exceeded a 30-second client deadline; 64 tokens returned in
+15.78 seconds with length truncation and an incorrect undirected description;
+the original 192-token allowance plus concise contract returned a complete
+17-token directed-edge/cycle warning in 3.93 seconds. Full requests, responses,
+order and limitations are retained in
+`evaluation/results/qwen3-8b-advice-output-contract-probe.json`. This is one
+sequential sample per setting, not a controlled latency study or independent
+quality evaluation. The cancelled provider request's physical termination is
+unproven. Full six-profile results from the preceding revision remain unchanged;
+after-change collective effectiveness has not yet been measured.

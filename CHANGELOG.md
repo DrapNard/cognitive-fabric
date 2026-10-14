@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Request concise optional expert advice
+
+- Ask legacy and structured workflows for one short constraint/pitfall sentence.
+- Preserve runtime budgets and unverified advice boundaries.
+- Retain direct Qwen latency probes and their sampling/quality limitations.
+
 ### Record live Qwen expert timeout diagnostics
 
 - Retain all 24 outcomes from a bounded public four-case, six-profile run.

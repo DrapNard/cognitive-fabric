@@ -3719,3 +3719,22 @@ Log: `/tmp/cogfabric-live-advice-report-tests.log`. The new frozen artifact test
 validates hashes, task/input uniqueness, independent scores, charged calls and
 diagnostic totals. No permission expansion or model-weight changes. Advice
 latency/usefulness, independent evaluations and broader lifecycle remain blockers.
+
+### Concise expert advice gate
+
+All 495 tests (443 library, 52 integration), formatting, workspace all-target
+check and Clippy pass with FLATC unset. Commands: `cargo fmt --all -- --check`,
+`cargo check --offline --workspace --all-targets`,
+`cargo test --offline --workspace --all-targets`, and
+`cargo clippy --offline --workspace --all-targets -- -D warnings`.
+Log: `/tmp/cogfabric-concise-advice-tests.log`. The legacy/structured cancellation
+regression now also verifies both paths carry the concise contract; existing
+shared/bound timeouts, partial-advice discard, admission, audit failure and charged
+reservation regressions pass. No policy or budget expansion.
+
+The direct public Qwen probe returned concise advice in 3.93 seconds/17 tokens
+with a natural stop, while the original 192-token request exceeded 30 seconds.
+A 64-token variant was truncated and incorrect. Raw requests/responses and
+limitations are retained separately from the frozen six-profile report. This
+single sequential probe does not establish stable latency or expert quality;
+full revised-workflow measurement remains the next verifiable milestone.
