@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Test an isolated import-free Wasm expert foundation
+
+- Add a non-publishable experimental Rust workspace with pinned interpreter and no host imports.
+- Exercise fuel, memory/table and signature limits without exposing production permissions.
+- Record remaining compilation, lifecycle and security integration requirements.
+
 ### Retain the complete RESEARCH phase comparison
 
 - Independently verify all 96 public graph outcomes and three phase diagnostic families.

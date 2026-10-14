@@ -2621,3 +2621,14 @@ controlled. Different mode/revision from the earlier DEEP run prevents treating
 its score change as a controlled before/after effect. All historical reports
 remain unchanged. General lifecycle, phase recovery, calibrated scheduling and
 independent quality gates stay open.
+
+Import-free WebAssembly expert foundation: **Experimental / not runtime integrated**.
+`experiments/wasm-experts/` is a separate non-publishable Rust workspace pinned to
+Wasmi 2.0.0 without WASI or host imports. Five tests exercise integer execution,
+import denial, fuel exhaustion including start functions, memory/table ceilings
+and malformed/oversized/signature rejection. It supplies no default CLI/API,
+model permission, active expert, registry lifecycle or IPC replacement. Core
+Cargo dependencies/lockfile remain unchanged. Compilation declaration/local-count
+preflight, task/actor grants, version/artifact pinning, cancellation/ownership,
+evaluation and rollback integration remain required before claiming executable
+expert provisioning. Interpreter bugs/host heap remain independent review risks.

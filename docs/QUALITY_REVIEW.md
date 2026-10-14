@@ -3951,3 +3951,34 @@ reservation in a separate test commit; existing assertions remain intact. Final
 complete checks pass. No production permissions, model weights or active RAG
 candidates changed. Source/binary/provenance/limitations are retained in raw and
 hashed summary reports. Broader lifecycle and independent evaluation remain open.
+
+### Import-free Wasm feasibility gate
+
+The isolated non-publishable experiment passed five tests, formatting, locked
+all-target checking and Clippy with warnings denied. Wasmi is pinned to 2.0.0;
+Cargo reports minimum Rust 1.86, tested using host 1.97.1. Features include std,
+validation, stable API, deterministic arithmetic and portable dispatch; WASI,
+host functions, SIMD and memory64 are absent. Strict compiler limits, 64 KiB input,
+64 KiB memory/stack, no tables, recursion 32 and fuel 1000 are configured. Both
+infinite export/start loops exhaust fuel. Invalid inputs/imports/signatures and
+initial/growing memory/table cases fail. Probe log:
+`/tmp/cogfabric-wasm-experts-experiment-tests.log`.
+
+Commands: `cargo fmt --manifest-path experiments/wasm-experts/Cargo.toml -- --check`,
+`cargo check --offline --locked --manifest-path experiments/wasm-experts/Cargo.toml --all-targets`,
+`cargo test --manifest-path experiments/wasm-experts/Cargo.toml`, and
+`cargo clippy --manifest-path experiments/wasm-experts/Cargo.toml --all-targets -- -D warnings`.
+The initial disposable probe called feature-gated config methods that do not
+exist when SIMD/memory64 are not compiled; actual source confirmed those features
+are disabled by default and the calls were removed before the passing probe.
+
+Production core/server still pass all 503 tests (447 library, 56 integration),
+formatting, workspace all-target check and Clippy with FLATC unset. Log:
+`/tmp/cogfabric-wasm-experiment-core-regression-tests.log`. Root commands remain
+`cargo fmt --all -- --check`, `cargo check --offline --workspace --all-targets`,
+`cargo test --offline --workspace --all-targets`, and
+`cargo clippy --offline --workspace --all-targets -- -D warnings`.
+No production dependency, permission, runtime actor, candidate or IPC changed.
+This is not OS isolation or an independently audited sandbox: fuel does not bound
+parsing/compilation, strict defaults are not complete declaration/local-count
+admission, and interpreter/host heap/cancellation/lifecycle remain to evaluate.
