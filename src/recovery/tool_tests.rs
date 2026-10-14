@@ -192,7 +192,27 @@ async fn live_arithmetic_and_sql_sessions_block_recovery_until_dropped() {
         assert!(store.recover_workers().is_err());
         worker.abort();
         assert!(worker.await.unwrap_err().is_cancelled());
-        assert_eq!(store.recover_workers().unwrap().len(), 1);
+        // Physical lease release can lag task cancellation under concurrent load.
+        // Recovery must remain denied until every physical owner releases it.
+        let recovered = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            loop {
+                match store.recover_workers() {
+                    Ok(recovered) => break recovered,
+                    Err(error) => {
+                        assert!(
+                            error.chain().any(|cause| cause
+                                .downcast_ref::<std::io::Error>()
+                                .is_some_and(|io| io.kind() == std::io::ErrorKind::WouldBlock)),
+                            "Unexpected recovery failure: {error}"
+                        );
+                        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                    }
+                }
+            }
+        })
+        .await
+        .expect("Dropped worker lease must become recoverable");
+        assert_eq!(recovered.len(), 1);
         assert!(store.recover_workers().unwrap().is_empty());
         drop(store);
         std::fs::remove_dir_all(root).unwrap();

@@ -2,6 +2,11 @@
 
 All notable changes are documented here in English.
 
+### Await physical lease release in recovery regression
+
+- Keep recovery denied while owned arithmetic/SQL sessions are live.
+- Bound the wait after cancellation and reject every non-contention error.
+
 ### Verify current installed live socket reasoning
 
 - Run FAST sorting and DEEP graph reasoning through the installed socket service with Qwen.

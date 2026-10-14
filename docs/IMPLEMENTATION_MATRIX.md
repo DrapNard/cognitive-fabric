@@ -2494,3 +2494,10 @@ FAST sorting and DEEP path reasoning at optimized source fc83976. Both answers
 passed compiled independent checks; DEEP executed four advisory subtasks within
 original budgets. Service shutdown removed its socket. See LIVE_INFERENCE.md
 and the raw installed socket smoke report. General quality/residency remain Partial.
+
+Recovery lease test synchronization: the live arithmetic/SQL regression now waits
+up to two seconds after cancellation for physical lease release. Only WouldBlock
+errors are retryable; other errors fail immediately. It still proves recovery
+is denied while the worker is live, recovers exactly one owned registration, then
+returns an empty second recovery. This corrects an immediate-release assumption
+without weakening runtime lease enforcement or expanding recovery authority.
