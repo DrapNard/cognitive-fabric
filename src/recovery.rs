@@ -1,4 +1,5 @@
 //! Kernel-released execution leases distinguish live engines from abandoned tasks.
+mod advisory;
 pub mod continuation;
 pub(crate) mod graph;
 mod inference;
@@ -67,7 +68,7 @@ impl Store {
             .as_deref()
             .ok_or_else(|| anyhow::anyhow!("Worker recovery requires a persistent store"))?;
         let _exclusive = ExecutionLease::acquire(path, true).map_err(|error| {
-            anyhow::anyhow!("Cannot recover workers while a runtime lease is held: {error}")
+            error.context("Cannot recover workers while a runtime lease is held")
         })?;
         let mut db = self.lock()?;
         let started = std::time::Instant::now();

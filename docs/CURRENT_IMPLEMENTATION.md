@@ -42,7 +42,7 @@ Quality requires operator-attested held-out data. Promotion checks quality,
 cumulative approved-version retrieval regressions and unchanged versions transactionally.
 Rollback restores approved stored snapshots. Neural promotion stays disabled.
 
-Current verification (2026-10-14): 508 workspace tests, formatting, all-target
+Current verification (2026-10-14): 512 workspace tests, formatting, all-target
 checking and Clippy pass. Bundled generated protocol sources and the Rust runtime
 are pinned to FlatBuffers 25.12.19; default builds require no installed compiler.
 Current CLI/service arithmetic and real Qwen generation smokes pass. Public graph
@@ -1097,3 +1097,10 @@ cannot acknowledge further results. Abandoned tasks recover as interrupted with
 uncertain dispatch records preserved; guest resumption is unsupported. The bridge
 adds no model capability, production interpreter dependency or execution endpoint.
 An in-memory Store is useful for tests but does not provide disk durability.
+
+Explicit `recover-advisory-result TASK_UUID --human-approve` now handles the
+crash window between durable advisory inference and its graph-state write. It
+links only the latest charged cycle-zero result after validating the complete
+prospective continuation checkpoint. Advice remains unverified; task status,
+original budgets/deadline and permissions remain unchanged. Unknown outcomes,
+expired clocks and unsupported phases still cannot resume through this operation.

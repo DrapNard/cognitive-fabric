@@ -497,3 +497,16 @@ are fuel bounded rather than forcibly terminated. Trusted host Store access can
 alter state and is outside the guest threat boundary. No production execution
 endpoint, artifact signature trust, domain correctness or independent sandbox audit
 is established by these tests.
+
+### Advisory crash-result reconciliation
+
+The operator-only advisory recovery operation writes no new inference or tool
+reservation. It requires an exclusive runtime lease, one running advisory node,
+a latest fully recorded cycle-zero solver call after that node started, and a
+valid original continuation checkpoint. The prospective unverified graph result
+and metadata audit commit together or roll back together. Missing/uncertain
+outcomes, changed hashes/schedules/context, expired deadlines and unsupported
+phases deny reconciliation. Advice remains untrusted and continuation needs a
+separate approved operation. No new actor capability or provider-stop claim is
+introduced. Recovery preserves typed kernel lease errors; tests distinguish
+transient lock contention from malformed history and live-owner denial.

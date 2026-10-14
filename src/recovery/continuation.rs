@@ -364,6 +364,10 @@ fn prepare(db: &rusqlite::Connection, task: &str) -> Result<Checkpoint> {
     })
 }
 
+pub(super) fn validate_checkpoint(db: &rusqlite::Connection, task: &str) -> Result<()> {
+    prepare(db, task).map(|_| ())
+}
+
 /// Construct a revision boundary only after a fresh failed independent check.
 /// The caller's transaction owns both verification charges and this checkpoint.
 pub(super) fn record_failed_revision(
@@ -779,6 +783,108 @@ mod tests {
         store.finish_task(&task, "interrupted", "").unwrap();
         (store, task)
     }
+    async fn advisory_crash_fixture(
+        custom_order: bool,
+    ) -> (Arc<Store>, String, std::path::PathBuf) {
+        let root =
+            std::env::temp_dir().join(format!("fabric-advisory-recovery-{}", uuid::Uuid::new_v4()));
+        let (store, task) = fixture_in_order(
+            Arc::new(Store::open(&root.join("state.db")).unwrap()),
+            custom_order,
+        )
+        .await;
+        store.lock().unwrap().execute("DELETE FROM events WHERE task_id=?1 AND kind='subtask' AND json_extract(payload,'$.node.state')='unverified'",[&task]).unwrap();
+        (store, task, root)
+    }
+    #[tokio::test]
+    async fn reconciles_recorded_advice_without_replay_and_preserves_custom_schedule() {
+        for custom in [false, true] {
+            let (store, task, root) = advisory_crash_fixture(custom).await;
+            assert!(preview(&store, &task).is_err());
+            let mut before = store.inference_audit(&task).unwrap();
+            assert!(store.recover_advisory_result(&task, false).is_err());
+            let lease = store.execution_lease().unwrap();
+            assert!(store.recover_advisory_result(&task, true).is_err());
+            drop(lease);
+            let report = store.recover_advisory_result(&task, true).unwrap();
+            assert_eq!(report["subtask_id"], if custom { "b" } else { "a" });
+            assert_eq!(report["call"], 2);
+            assert_eq!(report["result_verified"], false);
+            assert_eq!(report["inference_replayed"], false);
+            assert!(!report.to_string().contains("original advice"));
+            let mut after = store.inference_audit(&task).unwrap();
+            assert!(
+                after["remaining_inference_admission"]["wall_time"]["remaining_ns"]
+                    .as_u64()
+                    .unwrap()
+                    <= before["remaining_inference_admission"]["wall_time"]["remaining_ns"]
+                        .as_u64()
+                        .unwrap()
+            );
+            before["remaining_inference_admission"]
+                .as_object_mut()
+                .unwrap()
+                .remove("wall_time");
+            after["remaining_inference_admission"]
+                .as_object_mut()
+                .unwrap()
+                .remove("wall_time");
+            assert_eq!(after, before);
+            let restored = prepare(&store.lock().unwrap(), &task).unwrap();
+            assert_eq!(restored.state.resources.calls, 2);
+            assert_eq!(restored.state.resources.reserved_output_tokens, 448);
+            assert_eq!(
+                restored
+                    .subtasks
+                    .iter()
+                    .filter(|s| s.state == "unverified")
+                    .count(),
+                1
+            );
+            assert_eq!(preview(&store, &task).unwrap()["checkpoint_eligible"], true);
+            assert!(store.recover_advisory_result(&task, true).is_err());
+            drop(store);
+            std::fs::remove_dir_all(root).unwrap();
+        }
+    }
+    #[tokio::test]
+    async fn invalid_or_unresolved_advice_never_commits_a_graph_transition() {
+        for alteration in [
+            "DELETE FROM events WHERE kind='reasoning' AND json_extract(payload,'$.call')=2",
+            "UPDATE events SET payload=json_set(payload,'$.text','tampered') WHERE kind='reasoning' AND json_extract(payload,'$.call')=2",
+            "UPDATE events SET payload=json_set(payload,'$.execution_clock',NULL) WHERE kind='execution_settings'",
+            "DELETE FROM events WHERE kind='subtask_schedule'",
+            "UPDATE events SET id=(SELECT max(id)+1 FROM events) WHERE kind='subtask' AND json_extract(payload,'$.node.state')='running'",
+            "UPDATE events SET payload=json_set(payload,'$.node.role','critic') WHERE kind='reasoning' AND json_extract(payload,'$.call')=2; UPDATE events SET payload=json_set(payload,'$.role','critic') WHERE kind='model_dispatch' AND json_extract(payload,'$.call')=2",
+            "UPDATE events SET payload=json_set(payload,'$.execution_clock.started_ns',0,'$.execution_clock.deadline_ns',json_extract(payload,'$.configuration.max_wall_seconds')*1000000000) WHERE kind='execution_settings'",
+        ] {
+            let (store,task,root)=advisory_crash_fixture(true).await;
+            store.lock().unwrap().execute_batch(alteration).unwrap();
+            assert!(store.recover_advisory_result(&task,true).is_err(),"{alteration}");
+            let count:u64=store.lock().unwrap().query_row("SELECT count(*) FROM events WHERE kind='advisory_recovery' OR (kind='subtask' AND json_extract(payload,'$.node.state')='unverified')",[],|r|r.get(0)).unwrap();
+            assert_eq!(count,0,"{alteration}");
+            drop(store); std::fs::remove_dir_all(root).unwrap();
+        }
+    }
+    #[tokio::test]
+    async fn failed_reconciliation_audit_rolls_back_the_linked_result() {
+        let (store, task, root) = advisory_crash_fixture(false).await;
+        store.lock().unwrap().execute_batch("CREATE TRIGGER reject_advisory_recovery BEFORE INSERT ON events WHEN NEW.kind='advisory_recovery' BEGIN SELECT RAISE(ABORT,'audit unavailable'); END;").unwrap();
+        assert!(store.recover_advisory_result(&task, true).is_err());
+        assert_eq!(
+            graph::graph_from(&store.lock().unwrap(), &task).unwrap().2[0].state,
+            "running"
+        );
+        store
+            .lock()
+            .unwrap()
+            .execute_batch("DROP TRIGGER reject_advisory_recovery")
+            .unwrap();
+        assert!(store.recover_advisory_result(&task, true).is_ok());
+        drop(store);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[tokio::test]
     async fn preview_preserves_task_and_events_and_rejects_live_or_invalid_checkpoints() {
         let root = std::env::temp_dir().join(format!("fabric-preview-{}", uuid::Uuid::new_v4()));

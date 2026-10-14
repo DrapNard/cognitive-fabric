@@ -1,7 +1,7 @@
 # Implementation matrix — 1.1.0-alpha.1
 
 Current evidence review (2026-10-14): **pre-release; V1 incomplete**. The current
-workspace passes 508 tests (452 library including the server, 56 integration),
+workspace passes 512 tests (455 library including the server, 57 integration),
 formatting, all-target checking and Clippy. See `RELEASE_AUDIT.md` for the 18 goal
 acceptance criteria and scoped evidence. Later narrative entries below are a
 historical implementation ledger; their old counts, unavailable endpoints and
@@ -2722,3 +2722,15 @@ Trusted Rust callers still authenticate operator intent. No automatic resume,
 registry installation, CLI/HTTP/model execution endpoint, domain verification or
 independent sandbox audit is provided. Cancellation/expiry after guest entry
 withholds results; fuel, rather than forced process termination, bounds the guest.
+
+Recorded advisory-result reconciliation: **Implemented for the supported
+pre-solver graph boundary / general recovery remains Partial**.
+`src/recovery/advisory.rs` and `recover-advisory-result --human-approve` atomically
+link a durable cycle-zero solver result to its running subtask after a crash.
+The original continuation validator checks pinned context, dependency schedule,
+models/modules, charges and same-boot deadline before commit. No inference is
+replayed or advice verified. `src/recovery/continuation.rs` tests default/custom
+schedules, no approval/live lease, unknown/tampered results, missing schedule,
+invalid/expired clocks and audit rollback. `tests/resume_worker.rs` exercises
+actual CLI reconciliation followed by real HTTP managed continuation and reaping;
+completed advice is not repeated. Other phases and unknown outcomes remain denied.

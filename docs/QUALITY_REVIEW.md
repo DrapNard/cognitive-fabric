@@ -1,14 +1,14 @@
 # Rust baseline quality review
 
-Current local runtime passes 508 Rust tests (452 library including the server,
-56 integration), formatting, workspace all-target checking and Clippy with warnings
+Current local runtime passes 512 Rust tests (455 library including the server,
+57 integration), formatting, workspace all-target checking and Clippy with warnings
 denied. The separate Wasm experiment passes 24 tests with the optional Core audit
 bridge. Default builds use reviewed bundled FlatBuffers 25.12.19 sources without
 an installed compiler. `RELEASE_AUDIT.md` records the current acceptance review;
 installation and live reports identify their actual source revisions. Earlier
 counts and paths below are historical milestones, not current readiness claims.
 
-Current installation verification: exact source `e1f3ffd` installed optimized
+Prior installed-source verification: exact source `e1f3ffd` installed optimized
 CLI and HTTP packages with cached locked dependencies and `FLATC` unset. Both
 reproducible offline scripts passed, including 31 security probes with 25 expected
 denials. Build/check/fmt/clippy and 508 tests passed. The first test run detected
@@ -4112,3 +4112,37 @@ workspace all-target check/test and Clippy with FLATC unset; log
 No production dependency, permission, active expert or protocol changed. Trusted
 sinks can block or misrepresent durability; Core persistence, denial audits,
 reconciliation, authenticated task ownership and lifecycle remain open.
+
+### Advisory graph crash-window recovery
+
+`recover-advisory-result --human-approve` links already recorded advisory inference
+without replay. Default/custom scheduler tests cover original charges and aging
+wall time, repeated recovery denial, missing/tampered results, wrong roles and
+chronology, missing committed order, invalid/expired clocks, live leases, and
+transaction rollback if the recovery audit cannot be written. The managed CLI
+integration now records events in real chronological order, simulates the missing
+graph-result write, reconciles through the actual executable, and continues only
+pending advice/final solving over HTTP before confirming worker reaping.
+
+An initial broad continuation run lacked socket permissions; the appropriately
+approved run passed. The first new budget-equality assertion included continuously
+aging wall time; it now checks remaining time only decreases while all other
+charges remain exactly equal. Full testing also observed a transient exclusive
+lease contention in an existing quiescent worker-recovery assertion. Kernel errors
+now retain their typed cause; positive quiescent tests wait at most two seconds
+only for WouldBlock. Live-owner rejection remains immediate and explicitly checks
+that typed cause; unexpected failures remain fatal. The original audit/result/
+charge/idempotence assertions are preserved. No runtime lease bypass or wait was
+introduced.
+
+Final advisory-recovery verification: `cargo fmt --all -- --check`,
+`cargo check --offline --workspace --all-targets`,
+`cargo test --offline --workspace --all-targets` (512 passed), and
+`cargo clippy --offline --workspace --all-targets -- -D warnings` pass.
+Logs: `/tmp/cogfabric-advisory-recovery-approved-tests.log`,
+`/tmp/cogfabric-advisory-recovery-approved-check.log`,
+`/tmp/cogfabric-advisory-recovery-final-quality.log`. A Clippy-only assertion
+correction to expect_err was followed by the targeted worker-recovery regressions.
+The previously installed `e1f3ffd` binaries predate this runtime change; repeat
+optimized installation validation before final release. No new live model or
+GPU evaluation was performed for this recovery feature.

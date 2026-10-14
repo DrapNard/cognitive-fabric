@@ -26,6 +26,29 @@ fn tool_start(store: &Store, task: &str, capability: &str) -> String {
     store.event(task, "tool_worker", "security-kernel", serde_json::json!({"session_id":session,"state":"started","charged_calls":0,"module_id":"tool.local","module_version":"1.0.0","capability":capability})).unwrap();
     session
 }
+// Parallel child creation can briefly retain a close-on-exec lease descriptor.
+// Positive quiescent assertions wait only for typed kernel lock contention.
+fn recover_quiescent(store: &Store) -> Vec<RecoveredWorker> {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    loop {
+        match store.recover_workers() {
+            Ok(recovered) => return recovered,
+            Err(error) => {
+                assert!(
+                    error.chain().any(|cause| cause
+                        .downcast_ref::<std::io::Error>()
+                        .is_some_and(|io| io.kind() == std::io::ErrorKind::WouldBlock)),
+                    "Unexpected recovery failure: {error}"
+                );
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "Quiescent recovery lease did not release: {error}"
+                );
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+        }
+    }
+}
 #[test]
 fn mixed_tool_recovery_preserves_results_charges_and_closed_sessions() {
     let root = std::env::temp_dir().join(format!("fabric-mixed-recovery-{}", uuid::Uuid::new_v4()));
@@ -55,7 +78,7 @@ fn mixed_tool_recovery_preserves_results_charges_and_closed_sessions() {
             )
             .unwrap();
     }
-    let recovered = store.recover_workers().unwrap();
+    let recovered = recover_quiescent(&store);
     assert_eq!(
         recovered
             .iter()
@@ -66,7 +89,7 @@ fn mixed_tool_recovery_preserves_results_charges_and_closed_sessions() {
             .map(String::as_str)
             .collect::<Vec<_>>()
     );
-    assert!(store.recover_workers().unwrap().is_empty());
+    assert!(recover_quiescent(&store).is_empty());
     let trace = store.task(&task).unwrap();
     assert_eq!(trace["task"]["answer"], "42");
     let events = trace["events"].as_array().unwrap();
@@ -189,7 +212,12 @@ async fn live_arithmetic_and_sql_sessions_block_recovery_until_dropped() {
         })
         .await
         .unwrap();
-        assert!(store.recover_workers().is_err());
+        let denial = store
+            .recover_workers()
+            .expect_err("Live worker lease must deny recovery");
+        assert!(denial.chain().any(|cause| cause
+            .downcast_ref::<std::io::Error>()
+            .is_some_and(|io| io.kind() == std::io::ErrorKind::WouldBlock)));
         worker.abort();
         assert!(worker.await.unwrap_err().is_cancelled());
         // Physical lease release can lag task cancellation under concurrent load.
@@ -213,7 +241,7 @@ async fn live_arithmetic_and_sql_sessions_block_recovery_until_dropped() {
         .await
         .expect("Dropped worker lease must become recoverable");
         assert_eq!(recovered.len(), 1);
-        assert!(store.recover_workers().unwrap().is_empty());
+        assert!(recover_quiescent(&store).is_empty());
         drop(store);
         std::fs::remove_dir_all(root).unwrap();
     }

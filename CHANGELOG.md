@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Reconcile recorded advisory results before continuation
+
+- Recover the crash window between durable inference and its subtask-state write.
+- Validate original checkpoints and atomically link unverified advice without replay or budget refunds.
+- Exercise operator approval, leases, corruption/expiry denials, rollback and real managed CLI continuation.
+
 ### Persist experimental module authority in Core task storage
 
 - Create operator-only task scopes with original deadlines and recovery leases.

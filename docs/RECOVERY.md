@@ -581,3 +581,31 @@ leaving the original task and unknown outcome unchanged. Matching instances do
 not prove this framework caused the state or owns the instance. There is no
 automatic retry/unload or migration; invalid/ambiguous intent fails before HTTP.
 See MODELS.md for report semantics and the separate credential scope.
+
+## Reconcile saved advisory inference after a crash
+
+A crash can occur after the charged solver result is durably recorded but before
+the running subtask stores its advisory result. For this specific boundary:
+
+```sh
+cogfabric --home STATE --json recover-advisory-result TASK_UUID --human-approve
+cogfabric --home STATE --json resume-preview TASK_UUID
+cogfabric --home STATE resume-task TASK_UUID --human-approve
+```
+
+Recovery acquires an exclusive runtime lease and requires one running node in an
+abandoned/interrupted graph. The latest charged inference must be its recorded
+cycle-zero solver result, chronologically after the node started. The complete
+prospective checkpoint is validated with the same original settings, model/module
+snapshots, prompt fingerprints, dependency schedule, remaining admission and
+same-boot deadline as continuation. Missing/uncertain inference, changed history,
+unsupported snapshots, expired clocks and live runtime leases are rejected.
+
+One transaction links at most 1200 characters of existing advice as **unverified**
+and records a metadata-only operator audit. Failure of either write or validation
+rolls back both. No inference/tool is replayed, no charge refunded, and neither
+permissions nor wall time are renewed. Task status/answer remain unchanged;
+continuation still needs separate approval and revalidation. A repeated recovery
+finds no running node and fails without another transition. The report excludes
+advice text and includes its stored-result hash. This is not reconciliation of an
+unknown provider outcome or recovery inside a consumed solver cycle.

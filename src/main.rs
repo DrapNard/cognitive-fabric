@@ -76,6 +76,11 @@ enum Command {
         #[arg(long)]
         human_approve: bool,
     },
+    RecoverAdvisoryResult {
+        id: String,
+        #[arg(long)]
+        human_approve: bool,
+    },
     RecoverVerifiedResult {
         id: String,
     },
@@ -460,6 +465,15 @@ async fn main() -> Result<()> {
         )
         .await;
     }
+    if matches!(
+        &cli.command,
+        Command::RecoverAdvisoryResult {
+            human_approve: false,
+            ..
+        }
+    ) {
+        bail!("Advisory recovery requires explicit operator approval")
+    }
     let cfg = Config::load(cli.home, cli.backend)?;
     if let Command::ResidencyInspect {
         id,
@@ -605,6 +619,9 @@ async fn main() -> Result<()> {
         Command::ModelDisable { id, version } => {
             store.set_model_enabled(&cogfabric::models::Selection { id, version }, false)?;
             json!({"enabled":false})
+        }
+        Command::RecoverAdvisoryResult { id, human_approve } => {
+            store.recover_advisory_result(&id, human_approve)?
         }
         Command::RecoverVerifiedResult { id } => store.recover_verified_result(&id)?,
         Command::RecoverTasks => {

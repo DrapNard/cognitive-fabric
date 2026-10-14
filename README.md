@@ -219,6 +219,9 @@ supports default Full/Collective advisory graphs and unconsumed solver boundarie
 including FAST, whole-goal fallback and skipped-plan tasks, with direct or managed
 inference and validated original model registrations. See
 [recovery documentation](docs/RECOVERY.md) before using this command.
+If inference was saved just before a crash left its advisory node running,
+`recover-advisory-result TASK_UUID --human-approve` can link that recorded result
+without repeating inference. It preserves original charges and keeps advice unverified.
 
 
 Optional arithmetic workers: `cogfabric configure-tool-worker --enabled true`
