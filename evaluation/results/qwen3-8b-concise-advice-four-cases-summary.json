@@ -1,0 +1,114 @@
+{
+  "format_version": 1,
+  "report": "qwen3-8b-concise-advice-four-cases.json",
+  "report_sha256": "f81b621cca6543e74dcbc519311d8efcc07a6b6abf37204b0142a7edcc10e18b",
+  "dataset_sha256": "995a57fb828503374398af860837be01ea9631823697dd4bfb8a030f47b6759c",
+  "dataset_selection": "First four cases of public shortest_path_cases.jsonl",
+  "runtime_source_revision": "21970615d1b22439bec35e6082277f99f86b1a1d",
+  "runtime_binary_sha256": "3ef15c2515537d2dfe606989b7523dcbca60b0a23183f6a33ac805139c70b936",
+  "complete": true,
+  "stop_reason": "completed",
+  "executed_tasks": 24,
+  "planned_tasks": 24,
+  "independent_human_review": false,
+  "held_out": false,
+  "weights_attested": false,
+  "independent_simple_path_oracle_checked": true,
+  "task_wall_seconds": 30,
+  "inference_timeout_seconds": 20,
+  "elapsed_ms": 227289.49713899998,
+  "arms": [
+    {
+      "profile": "alone",
+      "executed": 4,
+      "passed": 3,
+      "diagnostics": {
+        "phases_started": 0,
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "unclassified_fallbacks": 0
+      },
+      "model_calls": 4,
+      "tool_calls": 0
+    },
+    {
+      "profile": "tools",
+      "executed": 4,
+      "passed": 3,
+      "diagnostics": {
+        "phases_started": 0,
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "unclassified_fallbacks": 0
+      },
+      "model_calls": 5,
+      "tool_calls": 5
+    },
+    {
+      "profile": "recursive",
+      "executed": 4,
+      "passed": 3,
+      "diagnostics": {
+        "phases_started": 0,
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "unclassified_fallbacks": 0
+      },
+      "model_calls": 5,
+      "tool_calls": 5
+    },
+    {
+      "profile": "collective",
+      "executed": 4,
+      "passed": 2,
+      "diagnostics": {
+        "phases_started": 0,
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "unclassified_fallbacks": 0
+      },
+      "model_calls": 21,
+      "tool_calls": 4
+    },
+    {
+      "profile": "memory",
+      "executed": 4,
+      "passed": 3,
+      "diagnostics": {
+        "phases_started": 0,
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "unclassified_fallbacks": 0
+      },
+      "model_calls": 17,
+      "tool_calls": 9
+    },
+    {
+      "profile": "experts",
+      "executed": 4,
+      "passed": 4,
+      "diagnostics": {
+        "phases_started": 4,
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "unclassified_fallbacks": 0
+      },
+      "model_calls": 12,
+      "tool_calls": 8
+    }
+  ],
+  "model_setup": {
+    "existing_loaded_qwen_reused": true,
+    "context_tokens": 8192,
+    "parallel_predictions": 1,
+    "requested_gpu_offload_ratio": 0.35,
+    "idle_ttl_seconds": 600,
+    "framework_residency_ownership_proven": false,
+    "whole_device_activity_controlled": false
+  },
+  "comparison_limitations": [
+    "One sequential run per revision on four public cases; no independent human review or held-out study",
+    "Matching operator configurations do not freeze provider state, sampling or whole-device activity",
+    "Expert score change from 2/4 to 4/4 and timeout change from 4 to 0 are observations, not causal effect estimates"
+  ]
+}

@@ -220,12 +220,38 @@ fn frozen_partial_live_report_matches_independent_oracle_and_resource_totals() {
 
 #[test]
 fn frozen_advice_diagnostics_match_paths_scores_and_charged_calls() {
-    let raw = include_str!("../evaluation/results/qwen3-8b-advice-diagnostics-four-cases.json");
+    check_advice_report(
+        include_str!("../evaluation/results/qwen3-8b-advice-diagnostics-four-cases.json"),
+        include_str!("../evaluation/results/qwen3-8b-advice-diagnostics-four-cases-summary.json"),
+    );
+}
+
+#[test]
+fn frozen_concise_advice_matches_independent_scores_and_diagnostics() {
+    let raw = include_str!("../evaluation/results/qwen3-8b-concise-advice-four-cases.json");
+    check_advice_report(
+        raw,
+        include_str!("../evaluation/results/qwen3-8b-concise-advice-four-cases-summary.json"),
+    );
     let report: serde_json::Value = serde_json::from_str(raw).unwrap();
-    let summary: serde_json::Value = serde_json::from_str(include_str!(
-        "../evaluation/results/qwen3-8b-advice-diagnostics-four-cases-summary.json"
-    ))
-    .unwrap();
+    assert_eq!(report["complete"], true);
+    assert_eq!(report["arms"][5]["passed"], 4);
+    for detail in report["details"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|d| d["profile"] == "experts")
+    {
+        assert_eq!(detail["outcome"]["status"], "completed");
+        assert_eq!(detail["outcome"]["calls"], 3);
+        assert_eq!(detail["expert_advice"]["phases_started"], 1);
+        assert_eq!(detail["expert_advice"]["fallback_events"], 0);
+    }
+}
+
+fn check_advice_report(raw: &str, summary_raw: &str) {
+    let report: serde_json::Value = serde_json::from_str(raw).unwrap();
+    let summary: serde_json::Value = serde_json::from_str(summary_raw).unwrap();
     assert_eq!(
         summary["report_sha256"],
         cogfabric::store::sha256(raw.as_bytes())

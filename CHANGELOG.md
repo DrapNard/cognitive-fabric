@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Measure concise advice in the live collective
+
+- Retain the complete repeated four-case Qwen comparison with matching operator settings.
+- Verify every path score independently; record four expert successes and zero advice fallbacks.
+- Preserve previous failures and distinguish observations from causal quality claims.
+
 ### Request concise optional expert advice
 
 - Ask legacy and structured workflows for one short constraint/pitfall sentence.

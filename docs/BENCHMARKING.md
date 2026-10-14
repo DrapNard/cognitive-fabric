@@ -596,3 +596,29 @@ sequential sample per setting, not a controlled latency study or independent
 quality evaluation. The cancelled provider request's physical termination is
 unproven. Full six-profile results from the preceding revision remain unchanged;
 after-change collective effectiveness has not yet been measured.
+
+### Concise advice measured through the collective runtime
+
+Source `21970615d1b22439bec35e6082277f99f86b1a1d` completed the same four public
+cases across all six profiles in fresh state: 24 tasks in 227.29 seconds. Operator
+settings, input hash, workflow and empty document corpus match the preceding
+four-case run; the existing loaded Qwen was reused. Results and a hashed summary
+are retained in `evaluation/results/qwen3-8b-concise-advice-four-cases*.json`.
+Independent exhaustive simple-path enumeration agrees with every recorded score.
+
+Alone/tools/recursive scored 3/4 each; collective 2/4; memory 3/4; experts 4/4.
+All four expert tasks completed with three charged calls each and no advice
+fallback events. Expert totals: 12 calls, 8 checks, 43.67 seconds task latency,
+3940 reported input tokens and 210 output tokens. Their elapsed times were
+13.92, 12.24, 12.12 and 5.39 seconds, within unchanged 30-second task budgets.
+The previous run's four advice timeouts are preserved in its historical report;
+this revised run recorded zero. The frozen integration checks both reports with
+one independent oracle and verifies hashes, scores, charges and diagnostic totals.
+
+These are encouraging observations on one small public workflow. Two sequential
+runs do not establish causality, stable latency, held-out robustness or a general
+expert advantage. Sampling, provider state and whole-device activity were not
+controlled; changing collective/memory scores illustrate that uncertainty.
+Independent human review, unseen technical evaluation, broader expert provisioning
+and physical model lifecycle remain incomplete. No neural training or permissions
+were added.

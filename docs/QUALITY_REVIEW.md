@@ -3738,3 +3738,25 @@ A 64-token variant was truncated and incorrect. Raw requests/responses and
 limitations are retained separately from the frozen six-profile report. This
 single sequential probe does not establish stable latency or expert quality;
 full revised-workflow measurement remains the next verifiable milestone.
+
+### Revised live collective advice evidence
+
+Source 21970615d1b22439bec35e6082277f99f86b1a1d completed 24 repeated public
+four-case tasks in 227.29 seconds with matching operator configuration and fresh
+state. Expert tasks all independently verified (4/4), three calls each, zero
+advice fallback events; alone scored 3/4. Historical failed/time-out outcomes
+remain frozen. Independent simple-path enumeration validates every pass bit in
+both reports. This is a small sequential workflow observation, not a causal,
+held-out or independent human-reviewed quality study. Model/provider/device state
+was not frozen; no general expert advantage or trained network is claimed.
+
+All 496 tests (443 library, 53 integration), formatting, workspace all-target
+check and Clippy pass with FLATC unset. Commands: `cargo fmt --all -- --check`,
+`cargo check --offline --workspace --all-targets`,
+`cargo test --offline --workspace --all-targets`, and
+`cargo clippy --offline --workspace --all-targets -- -D warnings`.
+Log: `/tmp/cogfabric-concise-live-comparison-tests.log`. A shared frozen-report
+checker verifies hashes, uniqueness, independent scores, model-call charges and
+diagnostic totals; revised expert outcomes additionally require completed status,
+three calls, one phase and no fallback. No runtime code changed in this evidence
+commit. Broader expert provisioning, residency and independent evaluation remain.
