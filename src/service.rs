@@ -875,6 +875,8 @@ mod tests {
         assert!(inference_inventory[0].active);
         assert_eq!(inference_inventory[0].descriptor.id, "inference.local");
         assert_eq!(inference_inventory[0].routing_rank, None);
+        assert_eq!(inference_inventory[0].queued_requests, Some(0));
+        assert_eq!(inference_inventory[0].processing_request, Some(false));
         let tool_inventory = tool_modules(&cfg).await.unwrap();
         assert_eq!(tool_inventory.len(), 2);
         assert!(tool_inventory.iter().all(|module| module.active));

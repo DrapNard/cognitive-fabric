@@ -3027,6 +3027,8 @@ impl<'a> InferenceModuleInfo<'a> {
   pub const VT_ACTIVE: ::flatbuffers::VOffsetT = 6;
   pub const VT_AVAILABILITY: ::flatbuffers::VOffsetT = 8;
   pub const VT_ROUTING_RANK: ::flatbuffers::VOffsetT = 10;
+  pub const VT_QUEUED_REQUESTS: ::flatbuffers::VOffsetT = 12;
+  pub const VT_PROCESSING_REQUEST: ::flatbuffers::VOffsetT = 14;
 
   #[inline]
   pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
@@ -3038,8 +3040,10 @@ impl<'a> InferenceModuleInfo<'a> {
     args: &'args InferenceModuleInfoArgs<'args>
   ) -> ::flatbuffers::WIPOffset<InferenceModuleInfo<'bldr>> {
     let mut builder = InferenceModuleInfoBuilder::new(_fbb);
+    if let Some(x) = args.queued_requests { builder.add_queued_requests(x); }
     if let Some(x) = args.routing_rank { builder.add_routing_rank(x); }
     if let Some(x) = args.descriptor { builder.add_descriptor(x); }
+    if let Some(x) = args.processing_request { builder.add_processing_request(x); }
     builder.add_availability(args.availability);
     builder.add_active(args.active);
     builder.finish()
@@ -3053,11 +3057,15 @@ impl<'a> InferenceModuleInfo<'a> {
     let active = self.active();
     let availability = self.availability();
     let routing_rank = self.routing_rank();
+    let queued_requests = self.queued_requests();
+    let processing_request = self.processing_request();
     InferenceModuleInfoT {
       descriptor,
       active,
       availability,
       routing_rank,
+      queued_requests,
+      processing_request,
     }
   }
 
@@ -3089,6 +3097,20 @@ impl<'a> InferenceModuleInfo<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<u32>(InferenceModuleInfo::VT_ROUTING_RANK, None)}
   }
+  #[inline]
+  pub fn queued_requests(&self) -> Option<u32> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u32>(InferenceModuleInfo::VT_QUEUED_REQUESTS, None)}
+  }
+  #[inline]
+  pub fn processing_request(&self) -> Option<bool> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<bool>(InferenceModuleInfo::VT_PROCESSING_REQUEST, None)}
+  }
 }
 
 impl ::flatbuffers::Verifiable for InferenceModuleInfo<'_> {
@@ -3101,6 +3123,8 @@ impl ::flatbuffers::Verifiable for InferenceModuleInfo<'_> {
      .visit_field::<bool>("active", Self::VT_ACTIVE, false)?
      .visit_field::<ToolAvailability>("availability", Self::VT_AVAILABILITY, false)?
      .visit_field::<u32>("routing_rank", Self::VT_ROUTING_RANK, false)?
+     .visit_field::<u32>("queued_requests", Self::VT_QUEUED_REQUESTS, false)?
+     .visit_field::<bool>("processing_request", Self::VT_PROCESSING_REQUEST, false)?
      .finish();
     Ok(())
   }
@@ -3110,6 +3134,8 @@ pub struct InferenceModuleInfoArgs<'a> {
     pub active: bool,
     pub availability: ToolAvailability,
     pub routing_rank: Option<u32>,
+    pub queued_requests: Option<u32>,
+    pub processing_request: Option<bool>,
 }
 impl<'a> Default for InferenceModuleInfoArgs<'a> {
   #[inline]
@@ -3119,6 +3145,8 @@ impl<'a> Default for InferenceModuleInfoArgs<'a> {
       active: false,
       availability: ToolAvailability::Unknown,
       routing_rank: None,
+      queued_requests: None,
+      processing_request: None,
     }
   }
 }
@@ -3145,6 +3173,14 @@ impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> InferenceModuleInfoBuilder<'a
     self.fbb_.push_slot_always::<u32>(InferenceModuleInfo::VT_ROUTING_RANK, routing_rank);
   }
   #[inline]
+  pub fn add_queued_requests(&mut self, queued_requests: u32) {
+    self.fbb_.push_slot_always::<u32>(InferenceModuleInfo::VT_QUEUED_REQUESTS, queued_requests);
+  }
+  #[inline]
+  pub fn add_processing_request(&mut self, processing_request: bool) {
+    self.fbb_.push_slot_always::<bool>(InferenceModuleInfo::VT_PROCESSING_REQUEST, processing_request);
+  }
+  #[inline]
   pub fn new(_fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>) -> InferenceModuleInfoBuilder<'a, 'b, A> {
     let start = _fbb.start_table();
     InferenceModuleInfoBuilder {
@@ -3167,6 +3203,8 @@ impl ::core::fmt::Debug for InferenceModuleInfo<'_> {
       ds.field("active", &self.active());
       ds.field("availability", &self.availability());
       ds.field("routing_rank", &self.routing_rank());
+      ds.field("queued_requests", &self.queued_requests());
+      ds.field("processing_request", &self.processing_request());
       ds.finish()
   }
 }
@@ -3177,6 +3215,8 @@ pub struct InferenceModuleInfoT {
   pub active: bool,
   pub availability: ToolAvailability,
   pub routing_rank: Option<u32>,
+  pub queued_requests: Option<u32>,
+  pub processing_request: Option<bool>,
 }
 impl Default for InferenceModuleInfoT {
   fn default() -> Self {
@@ -3185,6 +3225,8 @@ impl Default for InferenceModuleInfoT {
       active: false,
       availability: ToolAvailability::Unknown,
       routing_rank: None,
+      queued_requests: None,
+      processing_request: None,
     }
   }
 }
@@ -3200,11 +3242,15 @@ impl InferenceModuleInfoT {
     let active = self.active;
     let availability = self.availability;
     let routing_rank = self.routing_rank;
+    let queued_requests = self.queued_requests;
+    let processing_request = self.processing_request;
     InferenceModuleInfo::create(_fbb, &InferenceModuleInfoArgs{
       descriptor,
       active,
       availability,
       routing_rank,
+      queued_requests,
+      processing_request,
     })
   }
 }

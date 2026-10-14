@@ -1,7 +1,7 @@
 # Implementation matrix — 1.1.0-alpha.1
 
 Current evidence review (2026-10-14): **pre-release; V1 incomplete**. The current
-workspace passes 520 tests (462 library including the server, 58 integration),
+workspace passes 522 tests (464 library including the server, 58 integration),
 formatting, all-target checking and Clippy. See `RELEASE_AUDIT.md` for the 18 goal
 acceptance criteria and scoped evidence. Later narrative entries below are a
 historical implementation ledger; their old counts, unavailable endpoints and
@@ -2770,3 +2770,15 @@ reasoning calls. Event ordering verifies admission before phase before dispatch.
 Model identity validation, call/token/prompt limits, prompt contents, timeout
 fallback and one-admitted-workflow policy remain enforced. This is not a claim of
 physical weight loading, exclusive GPU ownership or calibrated expert utility.
+
+Active-aware inference routing: **Implemented for trusted registered inference
+modules / general scheduling remains Partial**. `src/fabric.rs` samples queued
+plus processing work for equal-rank new pins. Operator ranks still dominate;
+existing pins never migrate. A scoped processing observation clears on normal
+completion, caller cancellation and broker shutdown. `src/fabric/tests.rs` tests
+an active empty queue versus an idle peer, post-completion tie restoration,
+unchanged old pins and cancellation/shutdown cleanup; existing priority/queue/
+retirement tests remain. `protocol/cognitive.fbs` and `src/wire.rs` add optional
+bounded load observations with legacy unknown preservation, round-trip and forged
+frame tests. Exact 25.12.19 bindings/manifest regenerated together. Observations
+are local samples, not GPU budgets, provider health or capacity reservations.

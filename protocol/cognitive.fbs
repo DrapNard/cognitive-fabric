@@ -97,4 +97,6 @@ table InferenceModuleInfo {
   active:bool;
   availability:ToolAvailability;
   routing_rank:uint = null;
+  queued_requests:uint = null;
+  processing_request:bool = null;
 }

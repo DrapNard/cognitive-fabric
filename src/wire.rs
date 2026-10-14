@@ -81,7 +81,9 @@ fn validate_inference_modules(modules: &[crate::fabric::ModuleStatus]) -> Result
     for module in modules {
         let d = &module.descriptor;
         d.validate()?;
-        if module.routing_rank.is_some_and(|rank| rank > 1_000_000)
+        if module.queued_requests.is_some_and(|queued| queued > 4)
+            || module.queued_requests.is_some() != module.processing_request.is_some()
+            || module.routing_rank.is_some_and(|rank| rank > 1_000_000)
             || !versions.insert((&d.id, &d.version))
             || (module.active && !active.insert(&d.id))
         {
@@ -326,6 +328,8 @@ pub fn encode(message: &Message) -> Result<Vec<u8>> {
                         active: module.active,
                         availability: encode_availability(module.availability),
                         routing_rank: module.routing_rank,
+                        queued_requests: module.queued_requests,
+                        processing_request: module.processing_request,
                     },
                 ));
             }
@@ -643,6 +647,8 @@ pub fn decode(body: &[u8]) -> Result<Message> {
                         active: entry.active(),
                         availability: decode_availability(entry.availability())?,
                         routing_rank: entry.routing_rank(),
+                        queued_requests: entry.queued_requests(),
+                        processing_request: entry.processing_request(),
                     });
                 }
             }
@@ -835,6 +841,8 @@ mod tests {
             active: n < 3,
             availability,
             routing_rank: Some(n as u32),
+            queued_requests: Some((n % 5) as u32),
+            processing_request: Some(n % 2 == 0),
         })
         .collect::<Vec<_>>();
         let reply = |inference_modules| Message::ControlReply {
@@ -860,8 +868,25 @@ mod tests {
             assert_eq!(actual.active, expected.active);
             assert_eq!(actual.availability, expected.availability);
             assert_eq!(actual.routing_rank, expected.routing_rank);
+            assert_eq!(actual.queued_requests, expected.queued_requests);
+            assert_eq!(actual.processing_request, expected.processing_request);
         }
-        for variant in 0..5 {
+        let mut legacy = inventory.clone();
+        for module in &mut legacy {
+            module.queued_requests = None;
+            module.processing_request = None;
+        }
+        let Message::ControlReply {
+            inference_modules: legacy,
+            ..
+        } = decode(&encode(&reply(legacy)).unwrap()).unwrap()
+        else {
+            panic!("Expected legacy inventory")
+        };
+        assert!(legacy
+            .iter()
+            .all(|module| module.queued_requests.is_none() && module.processing_request.is_none()));
+        for variant in 0..7 {
             let mut invalid = inventory.clone();
             match variant {
                 0 => invalid.push(invalid[0].clone()),
@@ -873,6 +898,8 @@ mod tests {
                     invalid.push(next);
                 }
                 4 => invalid[0].descriptor.roles = vec!["shell".into()],
+                5 => invalid[0].queued_requests = Some(5),
+                6 => invalid[0].processing_request = None,
                 _ => unreachable!(),
             }
             assert!(
@@ -884,7 +911,7 @@ mod tests {
 
     #[test]
     fn forged_inference_inventory_rejects_states_conflicts_and_capacity() {
-        for variant in 0..5 {
+        for variant in 0..7 {
             let mut builder = flatbuffers::FlatBufferBuilder::new();
             let count = match variant {
                 3 => 33,
@@ -920,6 +947,12 @@ mod tests {
                             fb::ToolAvailability::Unknown
                         },
                         routing_rank: if variant == 2 { None } else { Some(0) },
+                        queued_requests: match variant {
+                            5 => Some(5),
+                            6 => Some(0),
+                            _ => None,
+                        },
+                        processing_request: if variant == 5 { Some(false) } else { None },
                     },
                 ));
             }

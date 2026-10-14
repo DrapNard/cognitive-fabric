@@ -526,3 +526,11 @@ an admitted model snapshot or enter backend setup. Immutable prepared prompts an
 DAG orders are internal Rust values; no deserialization grants execution. Registry
 identity validation and per-call policy enforcement remain separate. Admission
 is intent, not attestation of provider entry, output correctness or loaded weights.
+
+Local broker load observations are bounded metadata, not authorization. A module
+has at most four buffered requests and one processed request. The processing
+observation uses scoped cleanup, including cancelled/shutdown work. New routing
+uses sampled local load only after operator rank; existing pins and failure
+handling are unchanged. IPC accepts absent legacy observations as unknown and
+rejects counts above four or partial observation pairs. Remote inventory values
+do not overwrite the broker's internal counters or grant model/tool permissions.

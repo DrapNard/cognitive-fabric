@@ -1113,3 +1113,122 @@ fn inventory_backend_observation_can_inspect_registry_without_lock_recursion() {
     assert!(observed[0].active);
     assert_eq!(observed[0].availability, Availability::Connected);
 }
+
+#[tokio::test]
+async fn equal_rank_routes_prefer_idle_peer_when_running_queue_is_empty() {
+    let backend = Arc::new(Gated {
+        calls: AtomicUsize::new(0),
+        entered: tokio::sync::Notify::new(),
+        release: tokio::sync::Notify::new(),
+    });
+    let broker = Broker::with_inference(Arc::new(Fixed("initial", AtomicUsize::new(0))));
+    broker.unregister("inference.local").unwrap();
+    let descriptor = |id: &str| ModuleDescriptor {
+        id: id.into(),
+        version: "1.0.0".into(),
+        roles: vec!["solver".into()],
+    };
+    broker
+        .register_candidate(descriptor("candidate.a"), backend.clone(), 10)
+        .unwrap();
+    broker
+        .register_candidate(
+            descriptor("candidate.b"),
+            Arc::new(Fixed("idle", AtomicUsize::new(0))),
+            10,
+        )
+        .unwrap();
+    let pinned = Arc::new(broker.snapshot().unwrap());
+    assert_eq!(pinned.routes["solver"].descriptor.id, "candidate.a");
+    let active = pinned.clone();
+    let call = tokio::spawn(async move { active.generate("solver", "running", 128).await });
+    tokio::time::timeout(Duration::from_secs(1), backend.entered.notified())
+        .await
+        .unwrap();
+    let inventory = broker.statuses().unwrap();
+    let busy = inventory
+        .iter()
+        .find(|s| s.descriptor.id == "candidate.a")
+        .unwrap();
+    assert_eq!(busy.queued_requests, Some(0));
+    assert_eq!(busy.processing_request, Some(true));
+    let next = broker.snapshot().unwrap();
+    assert_eq!(next.routes["solver"].descriptor.id, "candidate.b");
+    assert_eq!(
+        next.generate("solver", "independent", 128)
+            .await
+            .unwrap()
+            .text,
+        "idle"
+    );
+    assert_eq!(pinned.routes["solver"].descriptor.id, "candidate.a");
+    backend.release.notify_one();
+    assert_eq!(call.await.unwrap().unwrap().text, "answer");
+    assert_eq!(
+        pinned
+            .generate("solver", "still pinned", 128)
+            .await
+            .unwrap()
+            .text,
+        "answer"
+    );
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while broker
+            .statuses()
+            .unwrap()
+            .iter()
+            .any(|s| s.processing_request == Some(true))
+        {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        broker.snapshot().unwrap().routes["solver"].descriptor.id,
+        "candidate.a"
+    );
+    assert_eq!(backend.calls.load(Ordering::Acquire), 2);
+}
+
+#[tokio::test]
+async fn processing_observation_clears_after_cancellation_and_shutdown() {
+    for shutdown in [false, true] {
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let backend = Arc::new(Hanging {
+            entered: tokio::sync::Notify::new(),
+            cancelled: cancelled.clone(),
+        });
+        let broker = Arc::new(Broker::with_inference(backend.clone()));
+        let pinned = broker.snapshot().unwrap();
+        let module = pinned.routes["solver"].clone();
+        let call = tokio::spawn(async move { pinned.generate("solver", "pending", 128).await });
+        tokio::time::timeout(Duration::from_secs(1), backend.entered.notified())
+            .await
+            .unwrap();
+        assert_eq!(broker.statuses().unwrap()[0].processing_request, Some(true));
+        if shutdown {
+            broker.shutdown().unwrap();
+            assert!(call.await.unwrap().is_err());
+        } else {
+            call.abort();
+            assert!(call.await.unwrap_err().is_cancelled());
+        }
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while module.processing.load(Ordering::Acquire) {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        assert!(cancelled.load(Ordering::Acquire));
+        assert_eq!(module.queued_requests(), 0);
+        if shutdown {
+            assert!(broker.statuses().unwrap().is_empty());
+        } else {
+            let status = broker.statuses().unwrap();
+            assert_eq!(status[0].processing_request, Some(false));
+            assert_eq!(status[0].queued_requests, Some(0));
+        }
+    }
+}

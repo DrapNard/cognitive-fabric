@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Account for processing requests when selecting inference routes
+
+- Prefer idle equal-rank peers even when a busy module has no queued requests.
+- Preserve operator ranks, bounded queues and existing task pins; clear processing observations on cancellation and shutdown.
+- Carry optional bounded load observations through FlatBuffers while preserving legacy unknown values.
+
 ### Admit workflows before preparing expert backends
 
 - Separate bounded prompt preparation from execution while preserving existing budgets and prompts.

@@ -241,7 +241,7 @@ implicit reconnect, retry or budget refund.
 
 Trusted Rust hosts may use `Broker::register_candidate(descriptor, backend, rank)`
 to approve alternative inference modules for the same role. Lower ranks are
-preferred; equally ranked candidates prefer fewer occupied local queue slots,
+preferred; equally ranked candidates prefer fewer combined queued and processing requests,
 then lexicographic module IDs break ties. Rank is bounded to
 0..=1,000,000 and immutable per registered version. Overlap is permitted only
 between ranked registrations. Ordinary `register` and the initial local module
@@ -305,10 +305,13 @@ outside the registry lock. A trusted backend destructor can inspect the committe
 registry; arbitrary destructor blocking/panic behavior is not isolated or bounded.
 
 
-Queue occupancy is sampled once per inference candidate when forming new pins.
-Uninitialized queues count as empty. It measures buffered/reserved channel slots,
-not an executing request, remote server load, GPU residency or expected latency.
-Concurrent submissions can change occupancy immediately after selection; routing
+Local work is sampled once per inference candidate when forming new pins.
+The score includes occupied queue slots plus its currently processed request.
+Uninitialized queues count as empty. Inventory exposes optional queued_requests
+(0–4) and processing_request; older IPC frames preserve both as unknown. Processing
+includes local validation/dispatch and does not attest remote execution, GPU
+residency or expected latency. Concurrent submissions can change observations
+immediately after selection; routing
 does not reserve a slot or guarantee load balancing. Existing pins and failure
 handling are unchanged. A lower-priority rank cannot win through lower queue load.
 No probe, extra model call, grant, retry or provider load/unload is introduced.
@@ -406,3 +409,14 @@ is `evaluation/results/lmstudio-native-embedding-lifecycle-smoke.json` (SHA-256
 `c69857287d9e95207ca6f2eeb7e6d86d75504aa8458815580a65a96742175f26`).
 This verifies a native embedding-model lifecycle operation, not generation,
 generative model switching, weight attestation, exclusive ownership or GPU usage.
+
+The processing observation is scoped to a module's serial worker and clears on
+completion, cancellation, provider failure, shutdown or unwinding. It does not
+change the four buffered slots, operator rank precedence or existing pinned
+routes. Equal-rank routing now prefers an idle peer even when the busy module's
+buffer is empty. These observations remain samples, not reserved capacity or
+cross-client/provider scheduling guarantees.
+
+Inventory is per broker. A service's registered inference inventory does not
+aggregate separate task-scoped managed brokers or other applications' requests.
+Zero local work must not be interpreted as global provider/GPU idleness.

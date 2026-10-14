@@ -9,7 +9,10 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     future::Future,
     pin::Pin,
-    sync::{Arc, RwLock},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, RwLock,
+    },
     time::Duration,
 };
 use tokio::sync::{mpsc, oneshot, watch, OnceCell};
@@ -51,6 +54,8 @@ pub struct ModuleStatus {
     pub active: bool,
     pub availability: Availability,
     pub routing_rank: Option<u32>,
+    pub queued_requests: Option<u32>,
+    pub processing_request: Option<bool>,
 }
 
 impl ModuleDescriptor {
@@ -91,8 +96,24 @@ struct Module {
     descriptor: ModuleDescriptor,
     backend: Arc<dyn InferenceBackend>,
     queue: OnceCell<mpsc::Sender<Work>>,
+    processing: Arc<AtomicBool>,
     shutdown: Arc<watch::Sender<bool>>,
     routing_rank: Option<u32>,
+}
+
+// One worker processes each module serially. Drop also clears observation on
+// cancellation, shutdown, malformed input, provider error or worker unwinding.
+struct Processing(Arc<AtomicBool>);
+impl Processing {
+    fn new(flag: Arc<AtomicBool>) -> Self {
+        flag.store(true, Ordering::Release);
+        Self(flag)
+    }
+}
+impl Drop for Processing {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
 }
 
 fn same_header(left: &Header, right: &Header) -> bool {
@@ -105,11 +126,17 @@ fn same_header(left: &Header, right: &Header) -> bool {
 }
 
 impl Module {
+    fn queued_requests(&self) -> usize {
+        self.queue
+            .get()
+            .map_or(0, |queue| queue.max_capacity() - queue.capacity())
+    }
     async fn queue(&self) -> &mpsc::Sender<Work> {
         self.queue.get_or_init(|| async {
             let (sender, mut receiver) = mpsc::channel::<Work>(4);
             let backend = self.backend.clone();
             let descriptor = self.descriptor.clone();
+            let processing = self.processing.clone();
             let mut shutdown = self.shutdown.subscribe();
             tokio::spawn(async move {
                 loop {
@@ -119,6 +146,7 @@ impl Module {
                         work = receiver.recv() => match work { Some(work) => work, None => break },
                     };
                     if work.reply.is_closed() { continue; }
+                    let _processing = Processing::new(processing.clone());
                     let queue_wait_ms = work.enqueued.elapsed().as_secs_f64() * 1000.0;
                     let result = async {
                         let packet = decode(&work.bytes)?;
@@ -182,6 +210,7 @@ impl Broker {
             descriptor: descriptor.clone(),
             backend,
             queue: OnceCell::new(),
+            processing: Arc::new(AtomicBool::new(false)),
             shutdown: shutdown.clone(),
             routing_rank: None,
         });
@@ -273,6 +302,7 @@ impl Broker {
             descriptor,
             backend,
             queue: OnceCell::new(),
+            processing: Arc::new(AtomicBool::new(false)),
             shutdown: self.shutdown.clone(),
             routing_rank,
         });
@@ -398,6 +428,8 @@ impl Broker {
                 active,
                 availability: module.backend.availability(),
                 routing_rank: module.routing_rank,
+                queued_requests: Some(module.queued_requests() as u32),
+                processing_request: Some(module.processing.load(Ordering::Acquire)),
             })
             .collect())
     }
@@ -454,10 +486,7 @@ impl Broker {
         candidates.sort_by_cached_key(|module| {
             (
                 module.routing_rank.unwrap_or(0),
-                module
-                    .queue
-                    .get()
-                    .map_or(0, |queue| queue.max_capacity() - queue.capacity()),
+                module.queued_requests() + usize::from(module.processing.load(Ordering::Acquire)),
                 module.descriptor.id.clone(),
             )
         });

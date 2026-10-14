@@ -1,6 +1,6 @@
 # Rust baseline quality review
 
-Current local runtime passes 520 Rust tests (462 library including the server,
+Current local runtime passes 522 Rust tests (464 library including the server,
 58 integration), formatting, workspace all-target checking and Clippy with warnings
 denied. The separate Wasm experiment passes 24 tests with the optional Core audit
 bridge. Default builds use reviewed bundled FlatBuffers 25.12.19 sources without
@@ -4215,3 +4215,35 @@ All mandatory checks pass: formatting, offline workspace/all-target check,
 and timeout fallback remain unchanged. Older report phase semantics stay tied to
 their original source revisions. No new live-model or GPU result is claimed;
 final optimized installation still needs to match the final runtime source.
+
+### Active-aware inference routing and typed load observations
+
+Equal-rank routing now samples queued requests plus the module worker's currently
+processed request. An active empty queue no longer ties an idle peer. Tests prove
+operator ranks remain authoritative, pins do not migrate, idle tie order returns
+after completion, and processing clears on caller cancellation/broker shutdown.
+Shutdown removes inventory, so the cleanup regression retains the physical module
+handle to verify its guard clears rather than indexing a removed registry entry.
+No runtime cancellation/registry behavior was relaxed.
+
+Optional FlatBuffers queued_requests and processing_request observations round-trip
+including zero/false. Absent legacy fields remain unknown; out-of-range/partial
+pairs fail semantic encoding and forged-frame decoding. The real authenticated
+socket inventory test additionally checks known idle observations.
+
+The exact native compiler was rebuilt using scripts/build-flatc.sh at
+`/tmp/cogfabric-active-routing-flatc-20261014/build/flatc`, verifying upstream
+`7e163021e59cca4f8e1e35a7c828b5c6b7915953` and version 25.12.19. Reviewed bindings
+were regenerated with scripts/update-protocol-bindings.sh; manifest SHA-256 is
+`444e320dca429f38b408e435dd9bf58439809113c43553edee061d4387a8029f`.
+Both explicit native regeneration/byte-comparison checking and compiler-free
+bundled checking passed. Formatting, 522 workspace tests and Clippy passed.
+The strengthened socket assertions also passed separately. Logs:
+`/tmp/cogfabric-active-routing-native-check.log`,
+`/tmp/cogfabric-active-routing-bundled-check.log`,
+`/tmp/cogfabric-active-routing-all-tests.log`,
+`/tmp/cogfabric-active-routing-final-clippy.log`,
+`/tmp/cogfabric-active-routing-socket-tests.log`.
+These are per-broker samples, not provider/GPU load or reserved capacity. Managed
+task brokers may be separate from the service's registered broker inventory.
+No new live model switching, latency benchmark or ownership claim is made.

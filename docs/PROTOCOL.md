@@ -551,3 +551,20 @@ versioning, malformed-frame, socket and compatibility tests remain required.
 Generated Rust retains flatc's exact bytes, including its extra EOF blank line.
 A scoped `.gitattributes` rule permits that EOF style and marks these files as
 generated for review; ordinary whitespace checks remain in force.
+
+### Inference local-work observations
+
+`InferenceModuleInfo` appends optional `queued_requests:uint = null` and
+`processing_request:bool = null`. Present observations require both fields;
+queued requests must be 0–4. Missing fields in legacy frames remain None/null,
+never an invented idle observation. Local inventory emits both values. Semantic
+encode/decode validation rejects oversized counts and partially present pairs.
+Round-trip tests preserve Some(0)/Some(false), and omitted-field fixtures retain
+unknown values. Forged-frame tests cover the same negative bounds.
+
+The observations describe the local bounded broker worker, not GPU residency,
+provider execution or permissions. Equal-rank new routing samples queued plus
+processing work; existing task pins are unchanged. Schemas/bindings were regenerated
+with exact flatc 25.12.19 (upstream commit
+`7e163021e59cca4f8e1e35a7c828b5c6b7915953`), alongside the reviewed hash manifest.
+Typed dispatch and all existing authentication/frame limits remain in force.
