@@ -2,6 +2,11 @@
 
 All notable changes are documented here in English.
 
+### Verify socket cancellation during optional expert advice
+
+- Exercise disconnect, shutdown and both operator cancellation paths against a stalled provider.
+- Retain expert reservations and unknown usage without starting fallback reasoning.
+
 ### Measure concise advice in the live collective
 
 - Retain the complete repeated four-case Qwen comparison with matching operator settings.

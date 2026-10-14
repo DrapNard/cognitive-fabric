@@ -2418,3 +2418,16 @@ controlled; changing collective/memory scores illustrate that uncertainty.
 Independent human review, unseen technical evaluation, broader expert provisioning
 and physical model lifecycle remain incomplete. No neural training or permissions
 were added.
+
+### Expert advice cancellation through the socket service
+
+The real Unix-socket service cancellation regression now covers all four paths
+for pending optional workflow advice, as well as ordinary inference: request
+client disconnect, service shutdown, cancel-active and task-specific cancel.
+The fixture stalls a loopback HTTP provider during expert advice; each path
+persists cancelled status and terminal progress where observed. It verifies one
+durable call/192-token reservation, unknown provider usage, exactly one advice
+phase, no timeout fallback event and no main planner dispatch. Existing busy,
+wrong-task/prior-task cancellation and broker cleanup assertions remain intact.
+This tests transport/lifecycle cancellation, not physical provider GPU stopping.
+No production code, permission or inference budget changed.

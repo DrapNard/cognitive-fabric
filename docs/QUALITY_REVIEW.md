@@ -3760,3 +3760,28 @@ checker verifies hashes, uniqueness, independent scores, model-call charges and
 diagnostic totals; revised expert outcomes additionally require completed status,
 three calls, one phase and no fallback. No runtime code changed in this evidence
 commit. Broader expert provisioning, residency and independent evaluation remain.
+
+### Expert advice cancellation through the socket service
+
+The real Unix-socket service cancellation regression now covers all four paths
+for pending optional workflow advice, as well as ordinary inference: request
+client disconnect, service shutdown, cancel-active and task-specific cancel.
+The fixture stalls a loopback HTTP provider during expert advice; each path
+persists cancelled status and terminal progress where observed. It verifies one
+durable call/192-token reservation, unknown provider usage, exactly one advice
+phase, no timeout fallback event and no main planner dispatch. Existing busy,
+wrong-task/prior-task cancellation and broker cleanup assertions remain intact.
+This tests transport/lifecycle cancellation, not physical provider GPU stopping.
+No production code, permission or inference budget changed.
+
+Socket advice gate: all 496 tests (443 library, 53 integration), formatting,
+workspace all-target check and Clippy passed with FLATC unset. Commands:
+`cargo fmt --all -- --check`, `cargo check --offline --workspace --all-targets`,
+`cargo test --offline --workspace --all-targets`, and
+`cargo clippy --offline --workspace --all-targets -- -D warnings`.
+Log: `/tmp/cogfabric-socket-advice-cancellation-tests.log`. The expanded existing
+regression runs eight cases; its targeted test also passed. An initial compile
+attempt missed the test's qualified JSON macro; that was fixed before verification.
+The separate 96-task live graph study remains running with its original deadline;
+these socket fixtures use their own provider and never invoke Qwen. Provider/device
+activity in the model study remains uncontrolled, including host build activity.

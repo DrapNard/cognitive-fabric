@@ -957,13 +957,26 @@ mod tests {
 
     #[tokio::test]
     async fn disconnect_and_shutdown_cancel_inference_durably() {
-        for cancellation_mode in 0..4 {
+        for cancellation_case in 0..8 {
+            let expert_advice = cancellation_case >= 4;
+            let cancellation_mode = cancellation_case % 4;
             let (mut cfg, _) = setup();
             let http = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             cfg.backend = "openai-local".into();
             cfg.api_base = format!("http://{}/v1", http.local_addr().unwrap());
             let store = Arc::new(Store::open(&cfg.db()).unwrap());
-            let engine = Engine::new(cfg.clone(), store);
+            if expert_advice {
+                cfg.interpret_goals = false;
+                let manifest: crate::registry::Manifest = serde_json::from_value(serde_json::json!({
+                    "id":"data.sort.s1","version":"1.0.0","kind":"workflow",
+                    "description":"Pending expert advice fixture","tags":["sort"],
+                    "source":"fixture","license":"CC0","workflow":"Offer optional sorting advice"
+                }))
+                .unwrap();
+                crate::registry::register(&store, &manifest).unwrap();
+                crate::registry::activate(&store, &manifest.id, &manifest.version).unwrap();
+            }
+            let engine = Engine::new(cfg.clone(), store.clone());
             let broker = engine.broker.clone();
             let (accepted, received) = oneshot::channel();
             let backend = tokio::spawn(async move {
@@ -987,7 +1000,15 @@ mod tests {
             let mut client = UnixStream::connect(cfg.socket()).await.unwrap();
             wire::write_message(
                 &mut client,
-                &wire::new_request("Explain Tokio".into(), "fast".into()),
+                &wire::new_request(
+                    if expert_advice {
+                        r#"sort:{"values":[3,1,2]}"#
+                    } else {
+                        "Explain Tokio"
+                    }
+                    .into(),
+                    if expert_advice { "deep" } else { "fast" }.into(),
+                ),
             )
             .await
             .unwrap();
@@ -1073,6 +1094,27 @@ mod tests {
             }
             service.await.unwrap().unwrap();
             assert!(broker.discover().unwrap().is_empty());
+            if expert_advice {
+                let db = store.lock().unwrap();
+                let task: String = db
+                    .query_row(
+                        "SELECT id FROM tasks ORDER BY created DESC LIMIT 1",
+                        [],
+                        |row| row.get(0),
+                    )
+                    .unwrap();
+                let counts: (u64,u64,u64,u64) = db.query_row(
+                    "SELECT sum(kind='model_dispatch'),sum(kind='expert_phase_budget'),sum(kind='expert_failure'),sum(kind='model_dispatch' AND json_extract(payload,'$.role')='planner') FROM events WHERE task_id=?1",
+                    [&task], |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?)),
+                ).unwrap();
+                assert_eq!(counts, (1, 1, 0, 0));
+                drop(db);
+                let audit = store.inference_audit(&task).unwrap();
+                assert_eq!(audit["reserved_calls"], 1);
+                assert_eq!(audit["reserved_output_tokens"], 192);
+                assert_eq!(audit["reported_usage_complete"], false);
+            }
+
             backend.abort();
             let _ = backend.await;
             std::fs::remove_dir_all(cfg.home).unwrap();
