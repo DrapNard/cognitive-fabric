@@ -1,7 +1,7 @@
 # Implementation matrix — 1.1.0-alpha.1
 
 Current evidence review (2026-10-14): **pre-release; V1 incomplete**. The current
-workspace passes 512 tests (455 library including the server, 57 integration),
+workspace passes 513 tests (455 library including the server, 58 integration),
 formatting, all-target checking and Clippy. See `RELEASE_AUDIT.md` for the 18 goal
 acceptance criteria and scoped evidence. Later narrative entries below are a
 historical implementation ledger; their old counts, unavailable endpoints and
@@ -76,7 +76,7 @@ remains a pre-release. `QUALITY_REVIEW.md` preserves verification history.
 | 9 | Resource enforcement | Partial | `src/config.rs`, `src/reasoning.rs`: FAST/STANDARD/DEEP/RESEARCH ceilings, calls/cycles/reserved outputs/prompt bytes/tools/time, cancellation; exhaustion tests; optional provider usage and measured inference duration | Exact input-token preflight, model-load cost and retry metrics, process-isolated inference/GPU memory and optional energy telemetry |
 | 10, 11 | Security kernel | Partial | `src/security.rs`: immutable task/actor scope intersected with global policy, per-dispatch audits, deny-default capabilities, bounded no-follow reads; replay/actor/promotion denials and artifact tampering tests | General executable attestation and isolation before untrusted experts; signatures/attestations and neural behavioral evaluator absent |
 | 13 | Reproducible evaluation | Partial | `src/evaluation.rs`, `src/benchmarking.rs`, `src/corpus.rs`: expected exact-match benchmarks, six isolated same-model ablation profiles plus optional larger baseline, per-arm resources, reviewed dataset hashes, bounded read-only corpus snapshots and durable run cancellation; profile/isolation/deadline tests | Independent review of the provisional 100-case corpus, unseen technical tasks, robustness/security studies and measured live-model comparisons |
-| 12, 14 | CLI/service | Partial | `src/main.rs`: initialization/configuration, ask, service controls, task-specific socket progress/cancellation, skill lifecycle, ingestion/search, task traces, candidates/rollback, benchmark, self-test; real socket fixtures | Live residency lifecycle |
+| 12, 14 | CLI/service | Partial | `src/main.rs`: initialization/configuration, ask, service controls, task-specific socket progress/cancellation, skill lifecycle, ingestion/search, task traces, candidates/rollback, benchmark, self-test; real socket fixtures | Generative switching and ownership-aware residency scheduling |
 | 12, 13 | Hardware/performance claims | Partial | Optional whole-device GPU diagnostics sampled real host memory/utilization/power; no energy or large-model advantage claimed | Task-attributed telemetry, real model switching and equal-budget comparisons |
 
 Historical 355-test milestone: all then-current tests passed, including actual socket/loopback HTTP fixtures; formatting,
@@ -2734,3 +2734,16 @@ schedules, no approval/live lease, unknown/tampered results, missing schedule,
 invalid/expired clocks and audit rollback. `tests/resume_worker.rs` exercises
 actual CLI reconciliation followed by real HTTP managed continuation and reaping;
 completed advice is not repeated. Other phases and unknown outcomes remain denied.
+
+Native operator lifecycle workflow: **Implemented and real embedding-cycle tested /
+automatic ownership-aware residency remains Partial**.
+`scripts/native-residency-smoke.sh` defaults to read-only planning, requires an
+inactive installed key, and runs one explicit approved load/unload cycle while
+checking other loaded IDs/contexts. It does not retry or clean up uncertain/drifted
+state. `tests/native_residency_smoke.rs` tests the actual CLI against loopback
+fixtures for planning, existing-instance refusal, an approved cycle and unrelated
+inventory drift (no unload). One real user-approved Nomic embedding cycle completed
+with requested/server-confirmed Core audits and the existing Qwen ID/context
+preserved. Frozen evidence: `evaluation/results/lmstudio-native-embedding-lifecycle-smoke.json`.
+Generative switching, exclusive ownership, attributed GPU metrics, native authenticated
+live mutation and automatic loading decisions are not established by this result.

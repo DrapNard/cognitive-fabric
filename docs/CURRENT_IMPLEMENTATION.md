@@ -42,7 +42,7 @@ Quality requires operator-attested held-out data. Promotion checks quality,
 cumulative approved-version retrieval regressions and unchanged versions transactionally.
 Rollback restores approved stored snapshots. Neural promotion stays disabled.
 
-Current verification (2026-10-14): 512 workspace tests, formatting, all-target
+Current verification (2026-10-14): 513 workspace tests, formatting, all-target
 checking and Clippy pass. Bundled generated protocol sources and the Rust runtime
 are pinned to FlatBuffers 25.12.19; default builds require no installed compiler.
 Current CLI/service arithmetic and real Qwen generation smokes pass. Public graph
@@ -1104,3 +1104,10 @@ links only the latest charged cycle-zero result after validating the complete
 prospective continuation checkpoint. Advice remains unverified; task status,
 original budgets/deadline and permissions remain unchanged. Unknown outcomes,
 expired clocks and unsupported phases still cannot resume through this operation.
+
+An operator-approved native LM Studio load/unload workflow now has one real
+embedding-model lifecycle result in addition to fixtures. The Nomic instance was
+loaded and unloaded through Core, preserving the already-loaded Qwen instance and
+context. The script defaults to inspection and stops without cleanup on unrelated
+residency drift or uncertainty. This is not generative model switching or an
+ownership-aware automatic scheduler; see `MODELS.md` and the frozen native report.

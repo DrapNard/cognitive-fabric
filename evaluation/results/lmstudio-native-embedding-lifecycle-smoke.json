@@ -1,0 +1,258 @@
+{
+  "format_version": 1,
+  "kind": "operator_native_residency_smoke",
+  "observed_date_utc": "2026-10-14",
+  "runtime_source_revision": "73df44018d203f42fecbdbae99389aa934a0f18f",
+  "runtime_binary_sha256": "c13ddd453eb79e85db2cae4ee2156a31ca6e1b5381a822c3db1eadaf200395be",
+  "script": "scripts/native-residency-smoke.sh",
+  "script_sha256": "3b73d8598005e05c2a949be63d9a53239c89b8bfb7974ec90fb17cd4343f6a12",
+  "operator_approved": true,
+  "authenticated_native_api": false,
+  "model": "text-embedding-nomic-embed-text-v1.5",
+  "model_kind": "embedding",
+  "before": {
+    "adapter": "lmstudio-native-v1",
+    "endpoint": "http://127.0.0.1:1234/api/v1/models",
+    "format_version": 1,
+    "generation_tested": false,
+    "loaded_instances": 1,
+    "model_mutation_performed": false,
+    "models": [
+      {
+        "key": "qwen/qwen3-8b",
+        "loaded_instances": [
+          {
+            "config": {
+              "context_length": 4096
+            },
+            "id": "qwen/qwen3-8b"
+          }
+        ],
+        "type": "llm"
+      },
+      {
+        "key": "qwen3.8-27b-uncensored@q4_k_m",
+        "loaded_instances": [],
+        "type": "llm"
+      },
+      {
+        "key": "qwen3.8-27b-uncensored@q6_k",
+        "loaded_instances": [],
+        "type": "llm"
+      },
+      {
+        "key": "text-embedding-nomic-embed-text-v1.5",
+        "loaded_instances": [],
+        "type": "embedding"
+      }
+    ],
+    "observation_ms": 3.6800689999999996,
+    "ownership_established": false,
+    "server_reported": true,
+    "weights_attested": false
+  },
+  "loaded": {
+    "adapter": "lmstudio-native-v1",
+    "endpoint": "http://127.0.0.1:1234/api/v1/models",
+    "format_version": 1,
+    "generation_tested": false,
+    "loaded_instances": 2,
+    "model_mutation_performed": false,
+    "models": [
+      {
+        "key": "qwen/qwen3-8b",
+        "loaded_instances": [
+          {
+            "config": {
+              "context_length": 4096
+            },
+            "id": "qwen/qwen3-8b"
+          }
+        ],
+        "type": "llm"
+      },
+      {
+        "key": "qwen3.8-27b-uncensored@q4_k_m",
+        "loaded_instances": [],
+        "type": "llm"
+      },
+      {
+        "key": "qwen3.8-27b-uncensored@q6_k",
+        "loaded_instances": [],
+        "type": "llm"
+      },
+      {
+        "key": "text-embedding-nomic-embed-text-v1.5",
+        "loaded_instances": [
+          {
+            "config": {
+              "context_length": 2048
+            },
+            "id": "text-embedding-nomic-embed-text-v1.5"
+          }
+        ],
+        "type": "embedding"
+      }
+    ],
+    "observation_ms": 5.008521999999999,
+    "ownership_established": false,
+    "server_reported": true,
+    "weights_attested": false
+  },
+  "after": {
+    "adapter": "lmstudio-native-v1",
+    "endpoint": "http://127.0.0.1:1234/api/v1/models",
+    "format_version": 1,
+    "generation_tested": false,
+    "loaded_instances": 1,
+    "model_mutation_performed": false,
+    "models": [
+      {
+        "key": "qwen/qwen3-8b",
+        "loaded_instances": [
+          {
+            "config": {
+              "context_length": 4096
+            },
+            "id": "qwen/qwen3-8b"
+          }
+        ],
+        "type": "llm"
+      },
+      {
+        "key": "qwen3.8-27b-uncensored@q4_k_m",
+        "loaded_instances": [],
+        "type": "llm"
+      },
+      {
+        "key": "qwen3.8-27b-uncensored@q6_k",
+        "loaded_instances": [],
+        "type": "llm"
+      },
+      {
+        "key": "text-embedding-nomic-embed-text-v1.5",
+        "loaded_instances": [],
+        "type": "embedding"
+      }
+    ],
+    "observation_ms": 3.8511539999999997,
+    "ownership_established": false,
+    "server_reported": true,
+    "weights_attested": false
+  },
+  "load": {
+    "automatic_cleanup_performed": false,
+    "elapsed_ms": 670.961314,
+    "generation_tested": false,
+    "instance_id": "text-embedding-nomic-embed-text-v1.5",
+    "operation": "load",
+    "ownership_established": false,
+    "provider_load_seconds": 0.653,
+    "server_confirmed": true,
+    "task_id": "61d283fb-0c8d-4f11-b1bf-0f2b70293aaa",
+    "weights_attested": false
+  },
+  "unload": {
+    "automatic_cleanup_performed": false,
+    "elapsed_ms": 20.579165,
+    "generation_tested": false,
+    "instance_id": "text-embedding-nomic-embed-text-v1.5",
+    "operation": "unload",
+    "ownership_established": false,
+    "provider_load_seconds": null,
+    "server_confirmed": true,
+    "task_id": "06a071dd-16b0-4237-aac0-30f0fb2a0532",
+    "weights_attested": false
+  },
+  "task_audits": [
+    {
+      "task_id": "61d283fb-0c8d-4f11-b1bf-0f2b70293aaa",
+      "status": "completed",
+      "events": [
+        {
+          "source": "human-cli",
+          "payload": {
+            "action": {
+              "context_length": 2048,
+              "model": "text-embedding-nomic-embed-text-v1.5",
+              "operation": "load"
+            },
+            "adapter": "lmstudio-native-v1",
+            "endpoint": "http://127.0.0.1:1234/api/v1/models",
+            "external_outcome": "unknown",
+            "state": "requested"
+          }
+        },
+        {
+          "source": "human-cli",
+          "payload": {
+            "report": {
+              "automatic_cleanup_performed": false,
+              "elapsed_ms": 670.961314,
+              "generation_tested": false,
+              "instance_id": "text-embedding-nomic-embed-text-v1.5",
+              "operation": "load",
+              "ownership_established": false,
+              "provider_load_seconds": 0.653,
+              "server_confirmed": true,
+              "task_id": "61d283fb-0c8d-4f11-b1bf-0f2b70293aaa",
+              "weights_attested": false
+            },
+            "state": "server_confirmed"
+          }
+        }
+      ]
+    },
+    {
+      "task_id": "06a071dd-16b0-4237-aac0-30f0fb2a0532",
+      "status": "completed",
+      "events": [
+        {
+          "source": "human-cli",
+          "payload": {
+            "action": {
+              "instance_id": "text-embedding-nomic-embed-text-v1.5",
+              "operation": "unload"
+            },
+            "adapter": "lmstudio-native-v1",
+            "endpoint": "http://127.0.0.1:1234/api/v1/models",
+            "external_outcome": "unknown",
+            "state": "requested"
+          }
+        },
+        {
+          "source": "human-cli",
+          "payload": {
+            "report": {
+              "automatic_cleanup_performed": false,
+              "elapsed_ms": 20.579165,
+              "generation_tested": false,
+              "instance_id": "text-embedding-nomic-embed-text-v1.5",
+              "operation": "unload",
+              "ownership_established": false,
+              "provider_load_seconds": null,
+              "server_confirmed": true,
+              "task_id": "06a071dd-16b0-4237-aac0-30f0fb2a0532",
+              "weights_attested": false
+            },
+            "state": "server_confirmed"
+          }
+        }
+      ]
+    }
+  ],
+  "server_confirmed_cycle": true,
+  "baseline_loaded_instances_preserved": true,
+  "ownership_established": false,
+  "generation_tested": false,
+  "generative_model_switching_tested": false,
+  "weights_attested": false,
+  "independent_security_evaluation": false,
+  "limitations": [
+    "Single operator-approved embedding-model cycle on a local backend",
+    "Server-reported inventories and outcomes; no exclusive ownership or weight attestation",
+    "Existing Qwen instance ID/context preserved; Qwen generation not tested in this cycle",
+    "No automatic cleanup after uncertainty or unrelated inventory drift",
+    "No generative model switching, GPU attribution, cross-client concurrency or neural safety evaluation"
+  ]
+}

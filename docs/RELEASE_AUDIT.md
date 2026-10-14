@@ -4,7 +4,7 @@ This checklist preserves the 18 acceptance criteria in the goal objective. It is
 an evidence inventory, not a release approval. The canonical French architecture
 and the broader implementation matrix remain authoritative. Earlier test counts
 in the quality review are historical milestones. Current local verification is
-512 Rust tests (455 library including the server, 57 integration), formatting, all-target checking and
+513 Rust tests (455 library including the server, 58 integration), formatting, all-target checking and
 Clippy with warnings denied. Default builds use bundled generated sources and
 Rust FlatBuffers 25.12.19; no installed compiler was used in this current run.
 
@@ -12,10 +12,10 @@ Rust FlatBuffers 25.12.19; no installed compiler was used in this current run.
 |---|---|---|
 | 1. Workspace builds | `Cargo.toml`, all-target check | Passed locally; isolated optimized source installation also passed with cached dependencies. |
 | 2. Formatting and Clippy | Mandatory checks in `QUALITY_REVIEW.md` | Passed locally. |
-| 3. Mandatory tests | Workspace all-target test results, `tests/`, server integration tests | 512 passed; fixtures do not establish live model quality. |
+| 3. Mandatory tests | Workspace all-target test results, `tests/`, server integration tests | 513 passed; fixtures do not establish live model quality. |
 | 4. FlatBuffers IPC | `protocol/`, `src/wire.rs`, `src/fabric/`, malformed/compatibility/socket tests | Implemented for present transports; authenticated process event delivery/replay is now tested; broader module compatibility remains partial. |
 | 5. CLI/service communication | `src/service.rs`, socket tests, `tests/process_worker.rs`, `crates/cogfabric-server/tests/` | Tested typed local transport, progress, cancellation and optional HTTP client interoperability; native and collective ownership drains cover dropped request futures. No general independent plugin service is claimed. |
-| 6. Compatible local LLM | `src/backend.rs`, `tests/inference_auth.rs`, `LIVE_INFERENCE.md` | Passed for Ollama and LM Studio Qwen3 8B compatible endpoints, including managed verified sorting. Native LM Studio read-only inventory passed; authenticated native access and controlled load/unload remain unverified. |
+| 6. Compatible local LLM | `src/backend.rs`, `tests/inference_auth.rs`, `LIVE_INFERENCE.md` | Passed for Ollama and LM Studio Qwen3 8B compatible endpoints, including managed verified sorting. Native inventory and one operator-approved embedding load/unload passed; authenticated native access and generative switching remain unverified. |
 | 7. Jev+ routes real tasks | `src/engine.rs`, registry/routing tests, built-in SQL execution | Deterministic tools, registered advice routing and trusted replaceable dependency ordering work; general module/GPU scheduling and independently established expert usefulness remain incomplete. |
 | 8. Bounded Jev-R revision | `src/reasoning.rs`, scripted revision and budget tests | Enforced calls/cycles/tools/time and measured public Qwen graph/Rust workflows; broader independent effectiveness remains unverified. |
 | 9. Skill registration/discovery | `src/registry.rs`, `EXPERTS.md` | Versioned RAG/workflow/compiled-checker registrations work; arbitrary executable loading is absent. |
@@ -23,9 +23,9 @@ Rust FlatBuffers 25.12.19; no installed compiler was used in this current run.
 | 11. Budgets/cancellation | Session/broker/worker tests, `RECOVERY.md` | Current execution ceilings and approved recovery of pinned custom dependency orders tested; exact tokenizer/GPU ceilings and general automatic/within-call interrupted execution remain incomplete. |
 | 12. Security regressions | `security-eval`, policy/transport/artifact tests, `THREAT_MODEL.md` | 31 fixed boundary probes (25 expected denials) plus regression tests. Live Qwen reference injection contaminated answers; quoted-reference mitigation resisted that attack once. Broader poisoning, sandbox escape and peer identity evaluation remain incomplete. |
 | 13. RAG evaluation/promotion | `src/evaluation.rs`, `src/evolution.rs`, promotion/rollback tests | Transactional reviewed promotion with integrity/regression gates; dataset independence is operator-attested, not independently established. |
-| 14. Lifecycle documented | `MODELS.md`, `EXPERTS.md`, `WORKERS.md` | Metadata lifecycle documented; explicit native load/unload is fixture-tested; real native read-only inventory passed; lifecycle mutations and ownership-aware automatic scheduling remain incomplete. |
+| 14. Lifecycle documented | `MODELS.md`, `EXPERTS.md`, `WORKERS.md` | Metadata lifecycle documented; explicit native load/unload is fixture-tested; real native inventory and one approved embedding load/unload passed; generative switching and ownership-aware automatic scheduling remain incomplete. |
 | 15. Reproducible benchmarks | `src/benchmarking.rs`, `evaluation/`, `BENCHMARKING.md` | Six-arm runner and public live workflows exist for Ollama and Qwen3 8B; reviewed unseen dataset and held-out equal-budget model study missing. |
-| 16. Accurate matrix | `IMPLEMENTATION_MATRIX.md` | Current summary reconciled with 512-test evidence, present live endpoint and public graph/Rust diagnostics; historical paragraphs are explicitly labeled as a ledger. |
+| 16. Accurate matrix | `IMPLEMENTATION_MATRIX.md` | Current summary reconciled with 513-test evidence, present live endpoint and public graph/Rust diagnostics; historical paragraphs are explicitly labeled as a ledger. |
 | 17. Verified docs/installation | `README.md`, HTTP_API.md, CI workflow, INSTALLATION_VALIDATION.md | Optimized host installs and offline workflows passed at prior source `e1f3ffd` without flatc; the new recovery source needs a final install refresh; historical installed managed OpenCode/Qwen read/edit/read passed. Expanded clean Arch setup, all checks and installed core/server workflows passed at `a9933b3`. CachyOS desktop/GPU setup remains unverified. |
 | 18. Honest experimental claims | `EVOLUTION.md`, `MODELS.md`, `THREAT_MODEL.md` | Neural adaptation remains experimental and neural promotion denied; no trained Jev or superiority claim. |
 
@@ -38,6 +38,20 @@ and its hashed summary. The full 16-case run has now completed all 96 tasks with
 scores: experts tied alone at 12/16 with 65 versus 16 charged calls, and no advice
 fallbacks. This completes a public workflow measurement, not the missing
 independent held-out study. See its `concise-advice-full-corpus` report.
+
+## Native operator lifecycle gate — 2026-10-14
+
+One explicitly user-approved real Nomic embedding cycle now verifies the existing
+Core native load/unload path with durable requested/server-confirmed audits. The
+Qwen instance ID/context baseline survived. The new workflow defaults to
+inspection, refuses pre-existing selected instances and stops without cleanup
+on unrelated inventory drift or uncertainty. Its four fixture scenarios pass via
+the actual CLI; the complete workspace has 513 passing tests and all quality
+checks pass. Frozen inventories/reports/audits and reproduction are documented in
+`MODELS.md` and `evaluation/results/lmstudio-native-embedding-lifecycle-smoke.json`.
+This closes the absence of any real native mutation evidence. It does not close
+generative model switching, exclusive ownership, authenticated live native access,
+automatic residency scheduling, weight attestation or independent evaluation.
 
 ## Advisory-result recovery gate — 2026-10-14
 

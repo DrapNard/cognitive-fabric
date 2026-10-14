@@ -1,7 +1,7 @@
 # Rust baseline quality review
 
-Current local runtime passes 512 Rust tests (455 library including the server,
-57 integration), formatting, workspace all-target checking and Clippy with warnings
+Current local runtime passes 513 Rust tests (455 library including the server,
+58 integration), formatting, workspace all-target checking and Clippy with warnings
 denied. The separate Wasm experiment passes 24 tests with the optional Core audit
 bridge. Default builds use reviewed bundled FlatBuffers 25.12.19 sources without
 an installed compiler. `RELEASE_AUDIT.md` records the current acceptance review;
@@ -4146,3 +4146,26 @@ correction to expect_err was followed by the targeted worker-recovery regression
 The previously installed `e1f3ffd` binaries predate this runtime change; repeat
 optimized installation validation before final release. No new live model or
 GPU evaluation was performed for this recovery feature.
+
+### Real operator-approved native embedding lifecycle
+
+The new inspection-first native residency script passed a real user-approved
+Nomic embedding load/unload cycle on 2026-10-14. Both Core operation tasks have
+requested/server-confirmed audit pairs and completed status. The existing Qwen
+instance ID and 4096 context were preserved. Load elapsed 670.961314 ms, provider
+load 0.653 s, unload elapsed 20.579165 ms. Runtime source was `73df440`; exact source,
+binary/script hashes, inventories and audits are frozen in
+`evaluation/results/lmstudio-native-embedding-lifecycle-smoke.json` (SHA-256
+`c69857287d9e95207ca6f2eeb7e6d86d75504aa8458815580a65a96742175f26`).
+No native credential was required in this local configuration. No generation,
+generative switching, exclusive ownership, GPU attribution or security evaluation
+is inferred from this embedding-model operation.
+
+`tests/native_residency_smoke.rs` tests the actual script/CLI against bounded
+loopback fixtures: inspection performs no mutation; an already-loaded selected
+model is refused; an approved cycle unloads only its new ID; unrelated inventory
+drift stops before unload. Full mandatory formatting/check/test/clippy pass,
+513 tests total. Logs: `/tmp/cogfabric-native-cycle-all-tests.log`,
+`/tmp/cogfabric-native-cycle-check.log`, `/tmp/cogfabric-native-cycle-clippy.log`.
+Live temporary evidence: `/tmp/cogfabric-native-residency.aVh51I`; committed JSON
+preserves scoped evidence if that directory is removed.

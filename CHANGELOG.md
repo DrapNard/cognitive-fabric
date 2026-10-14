@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Verify an operator-controlled native model lifecycle
+
+- Add inspection-first load/unload validation with explicit approval and unrelated-instance checks.
+- Exercise existing-instance refusal, approved lifecycle and drift abort through real CLI fixtures.
+- Preserve one user-approved real Nomic embedding cycle with Core audits; keep ownership and generative-switching claims unproven.
+
 ### Reconcile recorded advisory results before continuation
 
 - Recover the crash window between durable inference and its subtask-state write.

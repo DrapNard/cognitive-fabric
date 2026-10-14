@@ -371,3 +371,38 @@ POST has already occurred and its reply is ambiguous, the task remains interrupt
 with `outcome_unknown`; no confirmation request, retry, inferred ownership or
 cleanup follows. Model/provider content still confers no permissions or factual
 attestation. Internal FlatBuffers and stored benchmark results are unchanged.
+
+## Reproducible operator residency cycle
+
+Use the new workflow in inspection-only mode first:
+
+```sh
+bash scripts/native-residency-smoke.sh /path/to/cogfabric \
+  http://127.0.0.1:1234/api/v1 INSTALLED_INACTIVE_MODEL
+```
+
+It requires Bash, jq and coreutils and prints the exact planned model, fixed 2048
+context and existing loaded-instance baseline. It refuses an unknown or already
+loaded model. Reserve the backend against other clients before adding
+`--human-approve`; that flag approves one load and unload of only the newly returned
+instance ID. Add `--authenticate` only when using the dedicated residency
+credential. Core validates the literal-loopback endpoint and every mutation.
+
+The workflow compares all other loaded IDs/model keys/context lengths after load
+and the complete baseline after unload. If another instance changes, a request
+fails or the outcome is uncertain, it stops and retains evidence without retries
+or automatic cleanup. Inspect the Core operation audits before taking another
+action. This is an operator-controlled test, not an exclusive provider lease or an
+automatic inference residency scheduler. Equal inventories do not prove exclusive
+cross-client ownership.
+
+On 2026-10-14, one explicitly user-approved real cycle passed for the already
+installed `text-embedding-nomic-embed-text-v1.5`: load elapsed 670.961 ms (provider
+reported 0.653 s), unload elapsed 20.579 ms. Both Core tasks recorded requested and
+server-confirmed audits and completed. The pre-existing Qwen3 8B instance ID and
+4096 context remained present. The API used no authentication in this configured
+local session; credential-scoping tests remain separate fixtures. The frozen report
+is `evaluation/results/lmstudio-native-embedding-lifecycle-smoke.json` (SHA-256
+`c69857287d9e95207ca6f2eeb7e6d86d75504aa8458815580a65a96742175f26`).
+This verifies a native embedding-model lifecycle operation, not generation,
+generative model switching, weight attestation, exclusive ownership or GPU usage.

@@ -99,3 +99,14 @@ configuration and dataset bytes match; extra explanations and factual errors
 remain. This is descriptive public evidence only, not reliable Rust expertise or
 a causal reasoning gain. Summaries include source, dataset, report and executable
 hashes. Model weight identity and GPU attribution remain unverified.
+
+## Native embedding lifecycle smoke — 2026-10-14
+
+`lmstudio-native-embedding-lifecycle-smoke.json` freezes one explicitly approved
+operator load/unload cycle, its before/loaded/after inventories, both Core reports
+and metadata audit records. Runtime source: `73df440`; script/binary hashes are in
+the report. It is infrastructure evidence rather than a reasoning benchmark.
+Nomic embedding load/unload completed and the existing Qwen instance/context were
+preserved. Generation, generative switching, ownership and weight attestation are
+explicitly untested. Report SHA-256:
+`c69857287d9e95207ca6f2eeb7e6d86d75504aa8458815580a65a96742175f26`.
