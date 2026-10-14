@@ -1,7 +1,19 @@
 //! Immutable compiled artifact and non-serializable single-invocation scope.
 //! The embedding Rust caller must authenticate/approve grant construction.
 use sha2::{Digest, Sha256};
-use std::sync::Arc;
+use std::{
+    sync::{
+        atomic::{AtomicU8, Ordering},
+        Arc,
+    },
+    time::{Duration, Instant},
+};
+const READY: u8 = 0;
+const RUNNING: u8 = 1;
+const REVOKED: u8 = 2;
+const CANCELLED: u8 = 3;
+const COMPLETE: u8 = 4;
+const MAX_GRANT_LIFETIME: Duration = Duration::from_secs(30);
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Identity {
     pub id: String,
@@ -20,7 +32,41 @@ pub struct TaskGrant {
     task: String,
     identity: Identity,
     input: i64,
-    consumed: bool,
+    state: Arc<AtomicU8>,
+    deadline: Instant,
+}
+/// Cloneable cancellation authority can only reduce an existing grant.
+#[derive(Clone)]
+pub struct Revoker(Arc<AtomicU8>);
+impl Revoker {
+    pub fn revoke(&self) -> bool {
+        self.0
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |state| match state {
+                READY => Some(REVOKED),
+                RUNNING => Some(CANCELLED),
+                _ => None,
+            })
+            .is_ok()
+    }
+}
+impl TaskGrant {
+    pub fn revoker(&self) -> Revoker {
+        Revoker(self.state.clone())
+    }
+    fn finish(&self, result: Result<i64, String>) -> Result<i64, String> {
+        if self
+            .state
+            .compare_exchange(RUNNING, COMPLETE, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
+            self.state.store(COMPLETE, Ordering::SeqCst);
+            return Err("invocation grant revoked".into());
+        }
+        if Instant::now() >= self.deadline {
+            return Err("invocation grant expired".into());
+        }
+        result
+    }
 }
 impl Artifact {
     pub fn import(id: &str, version: &str, checksum: &str, bytes: &[u8]) -> Result<Self, String> {
@@ -68,6 +114,24 @@ impl Artifact {
     /// Only an authenticated/approved embedding may call this constructor.
     /// It grants one exact input, not cumulative task or registry authority.
     pub fn operator_grant(&self, task: &str, input: i64) -> Result<TaskGrant, String> {
+        let deadline = Instant::now()
+            .checked_add(MAX_GRANT_LIFETIME)
+            .ok_or("invalid grant lifetime")?;
+        self.operator_grant_until(task, input, deadline)
+    }
+    /// The embedding must narrow this to its original task deadline.
+    pub fn operator_grant_until(
+        &self,
+        task: &str,
+        input: i64,
+        deadline: Instant,
+    ) -> Result<TaskGrant, String> {
+        let remaining = deadline
+            .checked_duration_since(Instant::now())
+            .ok_or("expired grant deadline")?;
+        if remaining.is_zero() || remaining > MAX_GRANT_LIFETIME {
+            return Err("invalid grant lifetime".into());
+        }
         if uuid::Uuid::parse_str(task)
             .map_err(|_| "invalid task identity")?
             .to_string()
@@ -79,7 +143,8 @@ impl Artifact {
             task: task.into(),
             identity: self.identity.clone(),
             input,
-            consumed: false,
+            state: Arc::new(AtomicU8::new(READY)),
+            deadline,
         })
     }
     pub fn invoke(
@@ -96,12 +161,23 @@ impl Artifact {
         {
             return Err("invocation outside grant scope".into());
         }
-        if grant.consumed {
-            return Err("invocation grant already consumed".into());
+        if Instant::now() >= grant.deadline {
+            return Err("invocation grant expired".into());
         }
-        // Reserve before guest execution. Traps consume the grant too.
-        grant.consumed = true;
-        crate::call_checked(&self.engine, &self.module, input)
+        // Atomic admission orders cancellation against dispatch. Admitted work
+        // remains consumed even if it traps or cancellation suppresses its result.
+        grant
+            .state
+            .compare_exchange(READY, RUNNING, Ordering::SeqCst, Ordering::SeqCst)
+            .map_err(|state| {
+                if state == REVOKED {
+                    "invocation grant revoked"
+                } else {
+                    "invocation grant already consumed"
+                }
+            })?;
+        let result = crate::call_checked(&self.engine, &self.module, input);
+        grant.finish(result)
     }
 }
 #[cfg(test)]
@@ -186,6 +262,86 @@ mod tests {
                 .unwrap_err(),
             "invocation grant already consumed"
         );
+    }
+
+    #[test]
+    fn revocation_and_expiry_prevent_admission() {
+        let artifact = import("1.0.0", &bytes("(loop $l br $l) i64.const 0"));
+        let mut grant = artifact.operator_grant(TASK, 0).unwrap();
+        let revoker = grant.revoker();
+        assert!(revoker.clone().revoke());
+        assert!(!revoker.revoke());
+        assert_eq!(
+            artifact
+                .invoke(&mut grant, TASK, "human-cli", 0)
+                .unwrap_err(),
+            "invocation grant revoked"
+        );
+        assert_eq!(grant.state.load(Ordering::SeqCst), REVOKED);
+        let mut expired = artifact.operator_grant(TASK, 0).unwrap();
+        // Simulate time passing without sleeps; public callers cannot alter it.
+        expired.deadline = Instant::now();
+        assert_eq!(
+            artifact
+                .invoke(&mut expired, TASK, "human-cli", 0)
+                .unwrap_err(),
+            "invocation grant expired"
+        );
+        assert_eq!(expired.state.load(Ordering::SeqCst), READY);
+        assert!(artifact
+            .operator_grant_until(TASK, 0, Instant::now())
+            .is_err());
+        assert!(artifact
+            .operator_grant_until(TASK, 0, Instant::now() + Duration::from_secs(60))
+            .is_err());
+    }
+    #[test]
+    fn cloned_revoker_cancels_queued_work_on_another_thread() {
+        let artifact = import("1.0.0", &bytes("(loop $l br $l) i64.const 0"));
+        let mut grant = artifact.operator_grant(TASK, 0).unwrap();
+        let revoker = grant.revoker();
+        let barrier = Arc::new(std::sync::Barrier::new(2));
+        let worker_barrier = barrier.clone();
+        let worker = std::thread::spawn(move || {
+            worker_barrier.wait();
+            let result = artifact.invoke(&mut grant, TASK, "human-cli", 0);
+            (result, grant.state.load(Ordering::SeqCst))
+        });
+        assert!(revoker.revoke());
+        barrier.wait();
+        let (result, state) = worker.join().unwrap();
+        assert_eq!(result.unwrap_err(), "invocation grant revoked");
+        assert_eq!(state, REVOKED, "Queued cancellation must prevent admission");
+    }
+
+    #[test]
+    fn cancellation_after_admission_suppresses_result_and_remains_consumed() {
+        let artifact = import("1.0.0", &bytes("local.get 0"));
+        let mut grant = artifact.operator_grant(TASK, 42).unwrap();
+        // Exercise the terminal state transition independently of scheduler timing.
+        grant.state.store(RUNNING, Ordering::SeqCst);
+        assert!(grant.revoker().revoke());
+        assert_eq!(grant.state.load(Ordering::SeqCst), CANCELLED);
+        assert_eq!(
+            grant.finish(Ok(42)).unwrap_err(),
+            "invocation grant revoked"
+        );
+        assert_eq!(grant.state.load(Ordering::SeqCst), COMPLETE);
+        assert!(!grant.revoker().revoke());
+        assert_eq!(
+            artifact
+                .invoke(&mut grant, TASK, "human-cli", 42)
+                .unwrap_err(),
+            "invocation grant already consumed"
+        );
+        let mut expired = artifact.operator_grant(TASK, 42).unwrap();
+        expired.state.store(RUNNING, Ordering::SeqCst);
+        expired.deadline = Instant::now();
+        assert_eq!(
+            expired.finish(Ok(42)).unwrap_err(),
+            "invocation grant expired"
+        );
+        assert_eq!(expired.state.load(Ordering::SeqCst), COMPLETE);
     }
 
     #[test]

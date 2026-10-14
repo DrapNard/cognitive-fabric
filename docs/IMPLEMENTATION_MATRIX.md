@@ -2654,3 +2654,14 @@ and approval of grant creation remain the trusted embedding's responsibility;
 these comparisons are not remote identity verification. Persistent conflict checks,
 cumulative task budgets, audits, lifecycle/recovery and Core permissions/IPC remain
 incomplete. No active module, registry or model grant changed.
+
+Experimental Wasm grant lifetime: **Implemented experimentally / not production
+integrated**. Grants now have immutable monotonic expiry (at most 30 seconds,
+caller-narrowable), cloneable revoke-only handles and atomic admission/commit
+ordering. Pre-admission cancellation prevents guest dispatch; cancellation or
+expiry after admission suppresses results without refund/replay. Sixteen isolated
+tests pass, including actual cross-thread queued cancellation and deterministic
+terminal-state/expiry checks without sleeps. Interpreter execution is fuel-bounded,
+not forcibly interrupted by revocation; parsing/compilation, authenticated task
+budget integration, audits, persistence and general lifecycle remain incomplete.
+No production actor or active expert changed.

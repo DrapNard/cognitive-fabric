@@ -4028,3 +4028,28 @@ No production dependency, endpoint, actor grant, active artifact or protocol cha
 Grant constructors require an authenticated/approved trusted embedding; this is
 not user authentication, durable auditing, cumulative task authority or registry
 conflict/lifecycle enforcement. No generic sandbox or domain-correctness claim.
+
+### Experimental Wasm grant lifetime gate
+
+Sixteen isolated tests and format/check/test/Clippy pass. Commands:
+`cargo fmt --manifest-path experiments/wasm-experts/Cargo.toml -- --check`,
+`cargo check --offline --locked --manifest-path experiments/wasm-experts/Cargo.toml --all-targets`,
+`cargo test --offline --locked --manifest-path experiments/wasm-experts/Cargo.toml`,
+`cargo clippy --offline --locked --manifest-path experiments/wasm-experts/Cargo.toml --all-targets -- -D warnings`.
+Log: `/tmp/cogfabric-wasm-grant-lifetime-tests.log`. Tests reject expired/overlong
+grants, preserve one-shot trap/fuel consumption, revoke queued work on an actual
+second thread through a barrier, and check cancellation/expiry result suppression
+with deterministic private-state/time setup rather than timing-dependent sleeps.
+Atomic admission and result commitment prevent revoke-only handles from restoring
+or reusing authority. No hard wall-clock interpreter interruption is claimed;
+execution fuel remains the bound, and parsing/compilation precedes grants.
+
+Production retains 503 tests (447 library, 56 integration), formatting, all-target
+check/test and Clippy with FLATC unset; log `/tmp/cogfabric-wasm-grant-lifetime-core-tests.log`.
+Root commands remain `cargo fmt --all -- --check`,
+`cargo check --offline --workspace --all-targets`,
+`cargo test --offline --workspace --all-targets`, and
+`cargo clippy --offline --workspace --all-targets -- -D warnings`.
+No production dependency, endpoint, scope, registry or active artifact changed.
+The embedding must authenticate/approve issuance and narrow expiry to original
+task budgets; cumulative authority, audited lifecycle and persistence remain open.

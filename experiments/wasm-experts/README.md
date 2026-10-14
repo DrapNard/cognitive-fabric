@@ -13,7 +13,7 @@ function calls. Stack height is capped at 64 KiB and recursion depth at 32. Floa
 reference-type and tail-call proposals are disabled; SIMD and memory64 features
 are not compiled. Wasmi strict compilation limits are selected.
 
-Thirteen tests cover execution, imports, nontermination including start functions,
+Sixteen tests cover execution, imports, nontermination including start functions,
 initial/growing memory and tables, malformed/oversized bytes and wrong signatures.
 Run cargo test --manifest-path experiments/wasm-experts/Cargo.toml --locked.
 The separate workspace prevents adding this interpreter to production builds.
@@ -33,6 +33,16 @@ execution. Traps and fuel exhaustion consume it; scope denials do not dispatch.
 Each successful dispatch creates fresh guest instance state, including globals.
 Tests check mismatched tasks/actors/inputs/artifacts, replay, traps, version/content
 replacement and state isolation.
+
+Grants expire after at most 30 seconds. operator_grant_until accepts a shorter
+monotonic deadline; the embedding must use its original task deadline, not reset
+that allowance. No public method extends a deadline. A cloneable Revoker can only
+reduce authority. Its atomic transition orders revocation against invocation
+admission: queued revoked work never starts; cancellation after admission discards
+the result and keeps the grant spent. Expiry is checked before admission and after
+execution; late results are discarded. Final result commitment wins against later
+revocation. Revocation does not forcibly interrupt the interpreter: fuel still
+bounds execution, and host parsing/compilation is outside these grant checks.
 
 The embedding Rust caller must authenticate the actor and approve grant creation.
 String comparison is not user authentication. This library has no remote/CLI

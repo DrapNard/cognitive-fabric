@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Expire and revoke experimental Wasm task grants
+
+- Bound grant lifetime and deny queued expired or revoked execution.
+- Order admission/result commitment atomically and discard cancelled/late results.
+- Keep admitted work spent while preserving interpreter fuel bounds and scope limits.
+
 ### Bind experimental Wasm artifacts to single-use task grants
 
 - Validate immutable compiled artifact ID/version/hash before invocation.
