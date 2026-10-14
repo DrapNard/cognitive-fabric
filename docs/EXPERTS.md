@@ -485,3 +485,20 @@ ceiling is reached. `selected` describes route membership, not executed advice,
 provider health, factual correctness or granted authority. Existing dispatch,
 budget and verification records remain authoritative for those separate claims.
 No route ceiling, permission, model call or protocol schema changes.
+
+### Concise advice behavior and measured limits
+
+Legacy and structured workflow calls request one sentence of at most 24 words
+identifying a domain constraint or pitfall. The request discourages restating the
+problem, listing steps or supplying the whole-goal answer. It is an output request,
+not a word-count enforcement mechanism or correctness proof. Every call retains
+its original 192-token reservation and shared task/phase limits. The primary
+solver consumes advice as untrusted evidence; compiled verification remains the
+source of checked success for supported tasks.
+
+The live four-case Qwen rerun completed all four expert tasks without an advice
+fallback, compared with four advice timeouts in the preceding run. Its independent
+path oracle agrees with the recorded scores. These sequential public diagnostics
+are not held-out evaluation or proof of general expert usefulness. Full requests,
+latency probes, historical failures and revised outcomes are retained under
+`evaluation/results/`; see `BENCHMARKING.md` for exact configurations and limits.
