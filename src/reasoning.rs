@@ -821,6 +821,77 @@ impl Session {
         })
     }
 
+    async fn planning_advice(&mut self, base: &str) -> Result<String> {
+        let phase_budget = (self.deadline.saturating_duration_since(Instant::now()) / 3)
+            .min(Duration::from_secs(self.cfg.timeout_seconds));
+        self.store.event(
+            &self.task,
+            "planning_phase_budget",
+            "jev-plus",
+            json!({
+                "max_milliseconds":phase_budget.as_millis().min(u64::MAX as u128) as u64,
+                "original_deadline_preserved":true,"provider_stop_proven":false
+            }),
+        )?;
+        let result = tokio::time::timeout(phase_budget, async {
+            let Some(plan) = self.call("planner", base, 256).await? else {
+                return Ok(String::new());
+            };
+            match Plan::parse(&plan) {
+                Ok(graph) => {
+                    self.store.event(
+                        &self.task,
+                        "plan",
+                        "planner-r",
+                        json!({
+                            "graph":graph,"trusted_permissions":false,"scheduler_required":true
+                        }),
+                    )?;
+                    self.execute_plan(graph, base).await
+                }
+                Err(error) => {
+                    self.store.event(
+                        &self.task,
+                        "plan_fallback",
+                        "jev-plus",
+                        json!({
+                            "reason":error.to_string(),"action":"Solve original objective"
+                        }),
+                    )?;
+                    Ok(String::new())
+                }
+            }
+        })
+        .await;
+        let result = match result {
+            Ok(result) => result,
+            Err(_) => Err(InferenceTimeout.into()),
+        };
+        match result {
+            Err(error) if error.is::<InferenceTimeout>() => {
+                self.finish_metrics();
+                self.complete_usage = false;
+                self.resources.input_tokens = None;
+                self.resources.output_tokens = None;
+                self.complete_queue_metrics = false;
+                self.resources.queue_wait_ms = None;
+                self.finish_subtasks("exhausted")?;
+                self.store.event(
+                    &self.task,
+                    "planning_failure",
+                    "jev-plus",
+                    json!({
+                        "failure_kind":"inference_timeout","partial_strategy_discarded":true,
+                        "action":"Solve original objective within remaining budgets",
+                        "provider_stop_proven":false,"verified":false
+                    }),
+                )?;
+                Ok(String::new())
+            }
+            result => result,
+        }
+    }
+
     pub async fn solve(&mut self, query: &str, context: &str, mode: &str) -> Result<String> {
         self.solve_configured(query, context, mode, true).await
     }
@@ -891,27 +962,7 @@ impl Session {
                 && base.len().saturating_add(64) <= 32000;
             self.store.event(&self.task,"schedule","jev-plus",json!({"decision":if admitted {"admit_planning"} else {"skip_planning"},"reason":"Preserve first whole-goal solver call, output and prompt budget","reserved_prompt_bytes":prompt_reserve}))?;
             if admitted {
-                if let Some(plan) = self.call("planner", &base, 256).await? {
-                    match Plan::parse(&plan) {
-                        Ok(graph) => {
-                            self.store.event(
-                                &self.task,
-                                "plan",
-                                "planner-r",
-                                json!({"graph":graph,"trusted_permissions":false,"scheduler_required":true}),
-                            )?;
-                            strategy = self.execute_plan(graph, &base).await?;
-                        }
-                        Err(err) => {
-                            self.store.event(
-                            &self.task,
-                            "plan_fallback",
-                            "jev-plus",
-                            json!({"reason":err.to_string(),"action":"Solve original objective"}),
-                        )?;
-                        }
-                    }
-                }
+                strategy = self.planning_advice(&base).await?;
             }
         }
         if collective && !resuming && mode == "research" && self.call_limit >= 4 {
@@ -1140,6 +1191,118 @@ mod tests {
     use super::*;
     use crate::engine::Engine;
     use std::{collections::VecDeque, future::Future, pin::Pin, sync::Mutex};
+
+    #[tokio::test(start_paused = true)]
+    async fn planning_timeout_preserves_final_solver_and_discards_partial_strategy() {
+        struct Planning {
+            structured: bool,
+            calls: std::sync::atomic::AtomicUsize,
+        }
+        impl InferenceBackend for Planning {
+            fn generate<'a>(
+                &'a self,
+                role: &'a str,
+                prompt: &'a str,
+                _: usize,
+            ) -> Pin<Box<dyn Future<Output = Result<Generation>> + Send + 'a>> {
+                let index = self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Box::pin(async move {
+                    let text = if self.structured && index == 0 {
+                        assert_eq!(role, "planner");
+                        r#"{"steps":[{"id":"first","objective":"Inspect","depends_on":[]},{"id":"second","objective":"Review","depends_on":["first"]}]}"#
+                    } else if self.structured && index == 1 {
+                        "partial_strategy_sentinel"
+                    } else if index == if self.structured { 2 } else { 0 } {
+                        std::future::pending::<()>().await;
+                        unreachable!()
+                    } else {
+                        assert_eq!(index, if self.structured { 3 } else { 1 });
+                        assert_eq!(role, "solver");
+                        assert!(!prompt.contains("partial_strategy_sentinel"));
+                        "[1,2,3]"
+                    };
+                    Ok(Generation {
+                        text: text.into(),
+                        model: "fixture/v1".into(),
+                        input_tokens: Some(10),
+                        output_tokens: Some(5),
+                        elapsed_ms: 1.0,
+                        queue_wait_ms: None,
+                    })
+                })
+            }
+        }
+        for variant in 0..3 {
+            let store = Arc::new(Store::in_memory().unwrap());
+            if variant == 2 {
+                store.lock().unwrap().execute_batch("CREATE TRIGGER refuse_planning_failure BEFORE INSERT ON events WHEN NEW.kind='planning_failure' BEGIN SELECT RAISE(ABORT,'audit unavailable'); END;").unwrap();
+            }
+            let backend = Arc::new(Planning {
+                structured: variant == 1,
+                calls: std::sync::atomic::AtomicUsize::new(0),
+            });
+            let outcome = Engine::with_backend(
+                Config {
+                    backend: "openai-local".into(),
+                    interpret_goals: false,
+                    max_wall_seconds: 3,
+                    timeout_seconds: 60,
+                    ..Config::default()
+                },
+                store.clone(),
+                backend.clone(),
+            )
+            .run(r#"sort:{"values":[3,1,2]}"#, "deep")
+            .await
+            .unwrap();
+            if variant == 2 {
+                assert_eq!(outcome.status, "failed");
+                assert_eq!(outcome.calls, 1);
+            } else {
+                assert_eq!(outcome.status, "completed");
+                assert_eq!(outcome.answer, "[1,2,3]");
+                assert_eq!(outcome.calls, if variant == 1 { 4 } else { 2 });
+                assert_eq!(
+                    outcome.resources.reserved_output_tokens,
+                    if variant == 1 { 1024 } else { 640 }
+                );
+                assert!(outcome.resources.input_tokens.is_none());
+                assert!(outcome.resources.output_tokens.is_none());
+                assert!(outcome
+                    .evidence
+                    .contains(&"verified:integer_sort/v1".into()));
+                let trace = store.task(&outcome.task_id).unwrap();
+                assert_eq!(
+                    trace["events"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .filter(|e| e["kind"] == "planning_failure")
+                        .count(),
+                    1
+                );
+                assert!(trace["events"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|e| e["kind"] == "planning_phase_budget"
+                        && e["payload"]["max_milliseconds"].as_u64().unwrap() <= 1000));
+                if variant == 1 {
+                    assert!(trace["events"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|e| e["kind"] == "subtask"
+                            && e["payload"]["node"]["step"]["id"] == "second"
+                            && e["payload"]["node"]["state"] == "skipped"));
+                }
+            }
+            assert_eq!(
+                backend.calls.load(std::sync::atomic::Ordering::SeqCst),
+                outcome.calls as usize
+            );
+        }
+    }
 
     #[tokio::test]
     async fn intermediate_subtask_format_does_not_replace_final_answer_contract() {

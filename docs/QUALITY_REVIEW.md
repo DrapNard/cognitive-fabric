@@ -3828,3 +3828,24 @@ The root prompt/checkpoint hashes and final verification behavior are unchanged;
 intermediate prompt bytes increase and are included in admission accounting.
 No permissions or token ceilings expand. Live-model effect is not measured by
 scripted tests, and prior full graph results remain tied to their original source.
+
+### Fresh planning phase containment gate
+
+All 499 tests (445 library, 54 integration), formatting, workspace all-target
+check and Clippy passed with FLATC unset. Commands: `cargo fmt --all -- --check`,
+`cargo check --offline --workspace --all-targets`,
+`cargo test --offline --workspace --all-targets`, and
+`cargo clippy --offline --workspace --all-targets -- -D warnings`.
+Log: `/tmp/cogfabric-planning-phase-tests.log`. Paused-clock regressions prove
+whole-phase timeout, partial strategy discard, charged reservations, unknown usage,
+independent final checking and mandatory failure-audit persistence. Existing
+continuation, socket cancellation, scheduler and budget tests pass. An initial
+parallel run exposed a transient WouldBlock after test worker cancellation;
+recovery's live-lease denial was preserved and its test now bounds the wait for
+physical release while rejecting all other errors. Runtime recovery did not change.
+
+No tool permissions, token ceilings or original deadlines expand. The phase timer
+bounds async fresh planning only; trusted synchronous callbacks, saved phase
+recovery and separate research exploration retain their stated limitations.
+No current optimized installation or live-model benefit is claimed for this new
+runtime revision. Broader lifecycle, scheduling and independent evaluation remain.

@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Bound fresh planning and decomposition wall time
+
+- Share one advisory phase ceiling before the first whole-goal solver.
+- Discard timed-out partial strategy while retaining charges and unknown usage.
+- Keep non-timeout failures fatal and preserve original task budgets.
+
 ### Await physical lease release in recovery regression
 
 - Keep recovery denied while owned arithmetic/SQL sessions are live.

@@ -1038,3 +1038,30 @@ other fields are explicitly rejected rather than silently removed while flatteni
 text. These unsupported shapes return 400 before inference. Valid named choices
 and ordinary text arrays remain supported. No tool execution, permission, budget,
 conversation role or FlatBuffers schema is added.
+
+### Fresh planning/decomposition phase ceiling
+
+Fresh collective planning plus advisory subtask execution now share one phase
+ceiling: one-third of the remaining original task wall time, capped by the
+configured inference timeout. `planning_phase_budget` persists the ceiling before
+planner dispatch. No subtask resets it. A typed timeout drops pending local work,
+accounts elapsed inference, retains reservations, marks usage/queue totals unknown,
+marks unfinished subtasks skipped and records `planning_failure` before proceeding
+with the original objective and remaining budgets. Partial strategy is discarded;
+completed subtask audit results remain explicitly unverified. Policy, scheduler,
+provider and audit failures other than typed inference timeouts stay fatal.
+Cancellation remains distinct and follows existing terminal task handling.
+
+This leaves time for subsequent whole-goal work, not a guarantee of provider
+completion, remote inference termination or measured expected utility. Trusted
+synchronous callbacks cannot be preempted by this Tokio phase timeout. Saved graph
+continuation keeps its existing original-task ceilings; this new fresh-phase
+ceiling is not a general persistent phase-deadline recovery implementation.
+Research exploration has its existing separate admission and is not covered by
+this planning ceiling. General cost-calibrated scheduling remains Partial.
+
+Paused-clock regressions cover a stalled planner, a completed subtask followed by
+a stalled dependent step, retained calls/outputs, discarded partial strategy and
+fatal failure-audit denial. Final integer-sort answers still require compiled
+verification. Live quality/latency after this change is not yet measured; previous
+installed binaries and graph reports retain their original source scope.
