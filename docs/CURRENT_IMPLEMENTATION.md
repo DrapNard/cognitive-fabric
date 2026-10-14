@@ -42,10 +42,12 @@ Quality requires operator-attested held-out data. Promotion checks quality,
 cumulative approved-version retrieval regressions and unchanged versions transactionally.
 Rollback restores approved stored snapshots. Neural promotion stays disabled.
 
-Verification: 164 tests, formatting, all-target check and Clippy pass using exact
-flatc/Rust FlatBuffers 25.12.19. HTTP fixtures and socket tests ran locally; no
-compatible live model server was available at the default endpoint. No neural
-quality, GPU integration, hot-swap, energy or model-superiority result is claimed.
+Current verification (2026-10-14): 508 workspace tests, formatting, all-target
+checking and Clippy pass. Bundled generated protocol sources and the Rust runtime
+are pinned to FlatBuffers 25.12.19; default builds require no installed compiler.
+Current CLI/service arithmetic and real Qwen generation smokes pass. Public graph
+and Rust diagnostics measure particular workflows; no independent held-out quality,
+weight attestation, hot-swap, energy or model-superiority claim follows.
 See `IMPLEMENTATION_MATRIX.md` for every remaining engineering requirement and
 `QUALITY_REVIEW.md` for actual command evidence.
 

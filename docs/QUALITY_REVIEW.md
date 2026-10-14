@@ -1,12 +1,12 @@
 # Rust baseline quality review
 
-Current local runtime passes 492 Rust tests (441 library, 51 integration),
-formatting, workspace all-target compilation and Clippy with warnings denied.
-Before the residency-inspection addition, both core and HTTP server packages passed optimized host source installation,
-offline installed workflows and managed OpenCode/Qwen read/edit/read. Hosted CI
-for `a9933b3` passed, including the newly added offline HTTP workflow. Expanded
-clean-OS verification is tracked separately in INSTALLATION_VALIDATION.md and
-RELEASE_AUDIT.md. Earlier counts and paths below are historical milestones.
+Current local runtime passes 508 Rust tests (452 library including the server,
+56 integration), formatting, workspace all-target checking and Clippy with warnings
+denied. The separate Wasm experiment passes 24 tests with the optional Core audit
+bridge. Default builds use reviewed bundled FlatBuffers 25.12.19 sources without
+an installed compiler. `RELEASE_AUDIT.md` records the current acceptance review;
+installation and live reports identify their actual source revisions. Earlier
+counts and paths below are historical milestones, not current readiness claims.
 
 ## Historical verification milestones
 

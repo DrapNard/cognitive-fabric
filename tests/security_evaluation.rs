@@ -20,9 +20,26 @@ fn cli_reports_reproducible_offline_boundary_results() {
     };
     let first = run();
     assert_eq!(first, run());
-    assert_eq!(first["total"], 24);
-    assert_eq!(first["passed"], 24);
+    assert_eq!(first["total"], 31);
+    assert_eq!(first["passed"], 31);
     assert_eq!(first["success"], true);
+    assert_eq!(first["expected_denials"], 25);
+    let results = first["results"].as_array().unwrap();
+    for id in [
+        "policy.module_solver",
+        "policy.module_router",
+        "policy.module_interface",
+        "scope.module_operator",
+        "scope.module_solver",
+        "scope.module_router",
+    ] {
+        assert!(results.iter().any(|r| r["id"] == id
+            && r["expected_accept"] == false
+            && r["observed_accept"] == false));
+    }
+    assert!(results.iter().any(|r| r["id"] == "policy.module_operator"
+        && r["expected_accept"] == true
+        && r["observed_accept"] == true));
     assert_eq!(first["unexpected_accepts"], 0);
     assert_eq!(first["fixture_sha256"].as_str().unwrap().len(), 64);
     assert_eq!(first["neural_safety_evaluated"], false);

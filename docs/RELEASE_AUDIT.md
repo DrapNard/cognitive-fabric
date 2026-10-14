@@ -4,27 +4,28 @@ This checklist preserves the 18 acceptance criteria in the goal objective. It is
 an evidence inventory, not a release approval. The canonical French architecture
 and the broader implementation matrix remain authoritative. Earlier test counts
 in the quality review are historical milestones. Current local verification is
-503 Rust tests (447 library, 56 integration), formatting, all-target checking and
-Clippy with warnings denied, using FlatBuffers compiler/crate 25.12.19.
+508 Rust tests (452 library including the server, 56 integration), formatting, all-target checking and
+Clippy with warnings denied. Default builds use bundled generated sources and
+Rust FlatBuffers 25.12.19; no installed compiler was used in this current run.
 
 | Goal criterion | Evidence inspected | Assessment / remaining proof |
 |---|---|---|
 | 1. Workspace builds | `Cargo.toml`, all-target check | Passed locally; isolated optimized source installation also passed with cached dependencies. |
 | 2. Formatting and Clippy | Mandatory checks in `QUALITY_REVIEW.md` | Passed locally. |
-| 3. Mandatory tests | Workspace all-target test results, `tests/`, server integration tests | 503 passed; fixtures do not establish live model quality. |
+| 3. Mandatory tests | Workspace all-target test results, `tests/`, server integration tests | 508 passed; fixtures do not establish live model quality. |
 | 4. FlatBuffers IPC | `protocol/`, `src/wire.rs`, `src/fabric/`, malformed/compatibility/socket tests | Implemented for present transports; authenticated process event delivery/replay is now tested; broader module compatibility remains partial. |
 | 5. CLI/service communication | `src/service.rs`, socket tests, `tests/process_worker.rs`, `crates/cogfabric-server/tests/` | Tested typed local transport, progress, cancellation and optional HTTP client interoperability; native and collective ownership drains cover dropped request futures. No general independent plugin service is claimed. |
 | 6. Compatible local LLM | `src/backend.rs`, `tests/inference_auth.rs`, `LIVE_INFERENCE.md` | Passed for Ollama and LM Studio Qwen3 8B compatible endpoints, including managed verified sorting. Native LM Studio read-only inventory passed; authenticated native access and controlled load/unload remain unverified. |
 | 7. Jev+ routes real tasks | `src/engine.rs`, registry/routing tests, built-in SQL execution | Deterministic tools, registered advice routing and trusted replaceable dependency ordering work; general module/GPU scheduling and independently established expert usefulness remain incomplete. |
-| 8. Bounded Jev-R revision | `src/reasoning.rs`, scripted revision and budget tests | Enforced calls/cycles/tools/time; real-model effectiveness unverified. |
+| 8. Bounded Jev-R revision | `src/reasoning.rs`, scripted revision and budget tests | Enforced calls/cycles/tools/time and measured public Qwen graph/Rust workflows; broader independent effectiveness remains unverified. |
 | 9. Skill registration/discovery | `src/registry.rs`, `EXPERTS.md` | Versioned RAG/workflow/compiled-checker registrations work; arbitrary executable loading is absent. |
 | 10. Persistent memory | `src/store.rs`, migrations, retrieval/reopen/rollback tests | Implemented bounded persistence and fresh structured-answer checks; general fact verification and physical disk bounds remain partial. |
 | 11. Budgets/cancellation | Session/broker/worker tests, `RECOVERY.md` | Current execution ceilings and approved recovery of pinned custom dependency orders tested; exact tokenizer/GPU ceilings and general automatic/within-call interrupted execution remain incomplete. |
-| 12. Security regressions | `security-eval`, policy/transport/artifact tests, `THREAT_MODEL.md` | 24 fixed boundary probes plus regression tests. Live Qwen reference injection contaminated answers; quoted-reference mitigation resisted that attack once. Broader poisoning, sandbox escape and peer identity evaluation remain incomplete. |
+| 12. Security regressions | `security-eval`, policy/transport/artifact tests, `THREAT_MODEL.md` | 31 fixed boundary probes (25 expected denials) plus regression tests. Live Qwen reference injection contaminated answers; quoted-reference mitigation resisted that attack once. Broader poisoning, sandbox escape and peer identity evaluation remain incomplete. |
 | 13. RAG evaluation/promotion | `src/evaluation.rs`, `src/evolution.rs`, promotion/rollback tests | Transactional reviewed promotion with integrity/regression gates; dataset independence is operator-attested, not independently established. |
 | 14. Lifecycle documented | `MODELS.md`, `EXPERTS.md`, `WORKERS.md` | Metadata lifecycle documented; explicit native load/unload is fixture-tested; real native read-only inventory passed; lifecycle mutations and ownership-aware automatic scheduling remain incomplete. |
 | 15. Reproducible benchmarks | `src/benchmarking.rs`, `evaluation/`, `BENCHMARKING.md` | Six-arm runner and public live workflows exist for Ollama and Qwen3 8B; reviewed unseen dataset and held-out equal-budget model study missing. |
-| 16. Accurate matrix | `IMPLEMENTATION_MATRIX.md` | Partial statuses retained; historical paragraphs must be read with later explicit superseding entries. |
+| 16. Accurate matrix | `IMPLEMENTATION_MATRIX.md` | Current summary reconciled with 508-test evidence, present live endpoint and public graph/Rust diagnostics; historical paragraphs are explicitly labeled as a ledger. |
 | 17. Verified docs/installation | `README.md`, HTTP_API.md, CI workflow, INSTALLATION_VALIDATION.md | Host source installs and offline workflows passed for core and HTTP packages; installed managed OpenCode/Qwen read/edit/read passed. Expanded clean Arch setup, all checks and installed core/server workflows passed at `a9933b3`. CachyOS desktop/GPU setup remains unverified. |
 | 18. Honest experimental claims | `EVOLUTION.md`, `MODELS.md`, `THREAT_MODEL.md` | Neural adaptation remains experimental and neural promotion denied; no trained Jev or superiority claim. |
 
@@ -37,6 +38,46 @@ and its hashed summary. The full 16-case run has now completed all 96 tasks with
 scores: experts tied alone at 12/16 with 65 versus 16 charged calls, and no advice
 fallbacks. This completes a public workflow measurement, not the missing
 independent held-out study. See its `concise-advice-full-corpus` report.
+
+## Current acceptance reconciliation — 2026-10-14
+
+Source reviewed: `ee46e81f31de42662c0ab0b658b3c7c3967bc3ac` plus the current
+security-suite/documentation changes. The workspace test log reports 508 passing
+tests; optional `core-audit` reports 24. Mandatory fmt/check/test/clippy passed with
+`FLATC` unset. The bounded security command now tests operator module permission,
+inference-actor denials and denial of that capability under reasoning task scope.
+This adds diagnostic coverage, not a new production execution grant.
+
+Fresh debug CLI evidence at `/tmp/cogfabric-v1-audit.qM0zKR` verifies initialization,
+arithmetic self-test, FlatBuffers round-trip, schema 6 diagnostics, actual service
+status, socket arithmetic answer 36 with zero inference and one tool, and clean
+STOP. Real Qwen3 8B compatible inference returned a Rust explanation in 8309.62 ms
+with one call, 158 reported input tokens and 243 reported output tokens; status was
+correctly unverified. Endpoint advertisement is not weight attestation or native
+residency ownership. These temporary paths are local observations; existing smoke
+scripts provide portable reproduction. No optimized-install refresh is inferred
+from this debug smoke.
+
+The complete public RESEARCH graph report now covers all 96 tasks: expert arm
+16/16 versus alone 11/16, 69 versus 16 model calls, approximately 251 versus 34
+seconds of cumulative task latency. Twenty-four planning phases used typed timeout
+fallback. This is a single project-authored public study with different modes and
+runtime revisions from older reports; it establishes neither a causal/general
+advantage nor an independent equal-budget held-out result. The manifest still
+marks human review, held-out independence and independent study false. The
+100-case V1 manifest also lacks independent review/live completion; the inactive
+Rust reference candidate has only same-author draft retrieval cases.
+
+Scope reconciliation: the goal permits tool, reference, workflow, adapter or
+independent-model experts; it does not require Wasm as the universal expert ABI.
+Existing versioned registry/rollback should be reused rather than replaced.
+The optional Core/Wasm bridge is partial evidence toward executable modules,
+not proof of general provisioning, lifecycle or domain correctness. The canonical
+French roadmap remains unchanged; optional offline LoRA may stay experimental
+under the owner's engineering instructions. Native ownership-aware model
+switching, general module scheduling/provisioning, broader recovery, independent
+technical/security evaluation and final source-install validation remain open.
+No final release or tag is approved by this reconciliation.
 
 ## Next verifiable milestones
 

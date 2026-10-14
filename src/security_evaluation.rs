@@ -29,6 +29,30 @@ pub fn run() -> Result<Value> {
             false,
         ),
         ("policy.recovery", "jev-r", "task.recover", false),
+        (
+            "policy.module_operator",
+            "human-cli",
+            "expert.module.evaluate",
+            true,
+        ),
+        (
+            "policy.module_solver",
+            "jev-r",
+            "expert.module.evaluate",
+            false,
+        ),
+        (
+            "policy.module_router",
+            "jev-plus",
+            "expert.module.evaluate",
+            false,
+        ),
+        (
+            "policy.module_interface",
+            "interface",
+            "expert.module.evaluate",
+            false,
+        ),
         ("policy.shell", "jev-plus", "shell.execute", false),
         (
             "policy.filesystem",
@@ -76,6 +100,27 @@ pub fn run() -> Result<Value> {
             task,
             "jev-plus",
             "candidate.promote",
+            false,
+        ),
+        (
+            "scope.module_operator",
+            task,
+            "human-cli",
+            "expert.module.evaluate",
+            false,
+        ),
+        (
+            "scope.module_solver",
+            task,
+            "jev-r",
+            "expert.module.evaluate",
+            false,
+        ),
+        (
+            "scope.module_router",
+            task,
+            "jev-plus",
+            "expert.module.evaluate",
             false,
         ),
     ] {
@@ -173,7 +218,23 @@ mod tests {
         let second = run().unwrap();
         assert_eq!(first, second);
         assert_eq!(first["success"], true);
-        assert_eq!(first["total"], 24);
+        assert_eq!(first["total"], 31);
+        assert_eq!(first["expected_denials"], 25);
+        for id in [
+            "policy.module_operator",
+            "policy.module_solver",
+            "policy.module_router",
+            "policy.module_interface",
+            "scope.module_operator",
+            "scope.module_solver",
+            "scope.module_router",
+        ] {
+            assert!(first["results"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|r| r["id"] == id && r["passed"] == true));
+        }
         assert_eq!(first["unexpected_accepts"], 0);
         assert!(first["expected_denials"].as_u64().unwrap() < first["total"].as_u64().unwrap());
         assert_eq!(first["neural_safety_evaluated"], false);

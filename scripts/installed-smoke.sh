@@ -72,7 +72,9 @@ jq -e '.answer == "36" and .status == "completed" and .calls == 0' "$evidence/ar
 run sql ask 'sql:{"tables":[],"query":"SELECT 2 + 3 AS total"}' --mode fast
 jq -e '.status == "completed" and .calls == 0 and (.answer | fromjson | .rows == [[5]])' "$evidence/sql.json" >/dev/null
 run security security-eval
-jq -e '.success and .passed == 24 and .unexpected_accepts == 0 and (.neural_safety_evaluated | not)' "$evidence/security.json" >/dev/null
+jq -e '.success and .total == 31 and .passed == 31 and .expected_denials == 25 and .unexpected_accepts == 0 and (.neural_safety_evaluated | not) and
+    any(.results[]; .id == "policy.module_operator" and .expected_accept and .observed_accept) and
+    all(.results[] | select(.id | startswith("scope.module_")); (.observed_accept | not))' "$evidence/security.json" >/dev/null
 run checker-register skill-register "$repository/examples/checker_manifest.json"
 run checker-activate skill-activate data.sort.s1 1.0.0
 jq -e '.active and .id == "data.sort.s1" and .version == "1.0.0"' "$evidence/checker-activate.json" >/dev/null

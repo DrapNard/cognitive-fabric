@@ -70,9 +70,11 @@ It preserves task results, records unknown external-inference state, never kills
 stored PIDs and never replays inference. Audit/metadata failures roll back changes.
 
 Run `cogfabric --json security-eval` for the offline
-`deterministic_boundaries/v1` suite. Its 24 fixed probes include positive controls
+`deterministic_boundaries/v1` suite. Its 31 fixed probes include positive controls
 and expected denials for global permissions, task scope, malformed FlatBuffers
-and checker manifests requesting unsupported execution or permissions. Reports
+and checker manifests requesting unsupported execution or permissions. Module
+probes distinguish operator-only global policy from reasoning task grants: even
+an operator label does not add module authority to an existing reasoning task. Reports
 identify runtime version and a SHA-256 of fixture inputs and expectations,
 include each observed result, and exit unsuccessfully on any mismatch.
 The unexpected-accept rate uses only expected-denial fixtures as its denominator.

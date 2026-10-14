@@ -1415,3 +1415,9 @@ not part of this release. See `docs/IMPLEMENTATION_MATRIX.md`.
 - Bypass initialization and migrations for recovery preview; preserve workspace permissions and reject missing or legacy state.
 
 - Observe inference and tool inventory availability outside registry locks to avoid callback lock recursion.
+
+### Reconcile current V1 evidence and module security diagnostics
+
+- Extend deterministic security probes to cover operator-only module permissions and reasoning task-scope denials.
+- Require those controls in the reproducible offline smoke workflow.
+- Replace stale current test/endpoint claims with scoped release evidence and preserve historical records.

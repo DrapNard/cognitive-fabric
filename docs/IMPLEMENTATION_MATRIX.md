@@ -1,5 +1,22 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+Current evidence review (2026-10-14): **pre-release; V1 incomplete**. The current
+workspace passes 508 tests (452 library including the server, 56 integration),
+formatting, all-target checking and Clippy. See `RELEASE_AUDIT.md` for the 18 goal
+acceptance criteria and scoped evidence. Later narrative entries below are a
+historical implementation ledger; their old counts, unavailable endpoints and
+pending features are not current summary claims. The seven canonical subsystems
+remain preserved. Optional Wasm execution is experimental infrastructure, not a
+new mandatory V1 technology or a reason to delay existing skill functionality.
+
+Current release gaps include general module provisioning/routing and scheduling,
+ownership-aware live model residency, broader recovery, reviewed unseen technical
+and security studies, and final installation validation. Existing reference,
+workflow and compiled-tool experts already register and execute; they do not
+require the Wasm experiment. Qwen graph/Rust studies are public diagnostics, not
+independent held-out evidence. Optional offline LoRA remains experimental under
+the engineering instructions; canonical French roadmap targets are preserved.
+
 Implemented on Linux: managed inference, arithmetic and SQL workers launch from
 the running service image through `/proc/self/exe`, retaining version consistency
 after an upgrade replaces its original executable pathname. See
@@ -62,7 +79,7 @@ remains a pre-release. `QUALITY_REVIEW.md` preserves verification history.
 | 12, 14 | CLI/service | Partial | `src/main.rs`: initialization/configuration, ask, service controls, task-specific socket progress/cancellation, skill lifecycle, ingestion/search, task traces, candidates/rollback, benchmark, self-test; real socket fixtures | Live residency lifecycle |
 | 12, 13 | Hardware/performance claims | Partial | Optional whole-device GPU diagnostics sampled real host memory/utilization/power; no energy or large-model advantage claimed | Task-attributed telemetry, real model switching and equal-budget comparisons |
 
-All 355 current tests pass, including actual socket/loopback HTTP fixtures; formatting,
+Historical 355-test milestone: all then-current tests passed, including actual socket/loopback HTTP fixtures; formatting,
 all-target build checks and Clippy with denied warnings pass. Fixtures do not prove
 GPU integration, neural quality, immutable backend weights or live model switching.
 
@@ -93,8 +110,8 @@ this does not supply the remaining diverse held-out dataset or live-model result
 CLI diagnostics now checks storage/schema and registered selection, with optional
 operator-only bounded loopback model discovery and explicit failure exit codes.
 `src/diagnostics.rs` tests malformed discovery, redirects, bounds and missing IDs.
-The actual CLI probe still finds no server at 127.0.0.1:1234; live generation remains
-unverified and is a release gate.
+At that historical milestone the CLI probe found no server at 127.0.0.1:1234.
+Later live generation evidence supersedes that availability observation.
 
 `src/gaps.rs` and `src/evolution.rs::create_from_gap` now support bounded recorded-gap
 inspection and reviewed RAG preparation. Candidate/evidence links commit atomically;
