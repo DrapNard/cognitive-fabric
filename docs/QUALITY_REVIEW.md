@@ -3903,3 +3903,19 @@ no strategy/error content is exposed by the counters. No policy or model change.
 These additive report fields measure recorded attempts/fallbacks, not success,
 physical provider stop or expected utility. Historical reports remain unchanged;
 current optimized/live benchmark reporting refresh and broad release gates remain.
+
+### Latest hosted dual-generator gate
+
+Hosted run 38591572231 succeeded for exact source
+5a782a2e3a2fc8f7c0e933a9c2dfcb357c234166:
+https://github.com/DrapNard/cognitive-fabric/actions/runs/38591572231
+The rust job and every substantive step succeeded. Logs confirm 502 passing Rust
+tests, formatting, workspace all-target checking and Clippy, with the pinned
+25.12.19 compiler selected through FLATC. The build script requires native outputs
+to match reviewed bindings byte-for-byte. The separate env-u-FLATC locked check
+also passed. CLI workflow, authenticated offline HTTP/typed-worker workflow,
+offline security evaluation and training preflight steps all succeeded.
+Log snapshot: `/tmp/cogfabric-current-hosted-ci.log`.
+This strengthens protocol/build/reproducibility evidence for the current metadata
+runtime. It provides no GPU, real residency, independent quality or neural safety
+proof. The separately running RESEARCH study retains its own deadline/state.
