@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Select an affordable routed workflow after budget refusal
+
+- Distinguish pre-admission refusal from an admitted expert attempt.
+- Consider the next routed workflow when call or prompt reservations cannot fit.
+- Preserve the single admitted opportunity and fail closed on audit/provider errors.
+
 ### Verify an operator-controlled native model lifecycle
 
 - Add inspection-first load/unload validation with explicit approval and unrelated-instance checks.

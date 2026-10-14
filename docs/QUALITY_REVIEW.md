@@ -1,6 +1,6 @@
 # Rust baseline quality review
 
-Current local runtime passes 513 Rust tests (455 library including the server,
+Current local runtime passes 518 Rust tests (460 library including the server,
 58 integration), formatting, workspace all-target checking and Clippy with warnings
 denied. The separate Wasm experiment passes 24 tests with the optional Core audit
 bridge. Default builds use reviewed bundled FlatBuffers 25.12.19 sources without
@@ -4169,3 +4169,24 @@ drift stops before unload. Full mandatory formatting/check/test/clippy pass,
 `/tmp/cogfabric-native-cycle-check.log`, `/tmp/cogfabric-native-cycle-clippy.log`.
 Live temporary evidence: `/tmp/cogfabric-native-residency.aVh51I`; committed JSON
 preserves scoped evidence if that directory is removed.
+
+### Ranked workflow affordability gate
+
+`WorkflowAdvice` distinguishes NotAdmitted from Attempted, so Jev+ can consider
+another already-routed candidate after a durable budget refusal. The focused
+regressions prove a four-step workflow refused under a four-call ceiling does
+not hide a one-call workflow, and a legacy prompt-byte refusal can select shorter
+advice. The selected expert/planner/solver path uses three calls and 832 reserved
+output tokens; it does not waste a critic call when no revision cycle remains.
+An admitted timeout never triggers a second workflow and preserves unknown usage;
+provider errors produce failed outcomes, and refusal-audit failure makes zero
+backend calls. These are deterministic integration tests, not a utility study.
+
+All mandatory checks pass: formatting, offline workspace/all-target check,
+518 workspace tests, and Clippy with warnings denied. Logs:
+`/tmp/cogfabric-affordable-expert-all-tests.log`,
+`/tmp/cogfabric-affordable-expert-final-check.log`,
+`/tmp/cogfabric-affordable-expert-clippy.log`. The prior live native model cycle
+and optimized installation retain their exact earlier source scopes. No new live
+reasoning result, residency scheduler or independently calibrated utility claim is
+established by this change.

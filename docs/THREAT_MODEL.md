@@ -510,3 +510,12 @@ phases deny reconciliation. Advice remains untrusted and continuation needs a
 separate approved operation. No new actor capability or provider-stop claim is
 introduced. Recovery preserves typed kernel lease errors; tests distinguish
 transient lock contention from malformed history and live-owner denial.
+
+### Expert admission fallthrough
+
+Only a durable refusal before workflow admission permits trying another already
+routed, pinned candidate. Admission limits and task authorization remain enforced
+by Rust. An admitted timeout/partial answer does not grant retries; generic
+provider failures and failed refusal audits remain fatal. No new actors, shell,
+network or filesystem capabilities are granted. Budget-phase metadata is not
+proof of provider execution or model utility.

@@ -42,7 +42,7 @@ Quality requires operator-attested held-out data. Promotion checks quality,
 cumulative approved-version retrieval regressions and unchanged versions transactionally.
 Rollback restores approved stored snapshots. Neural promotion stays disabled.
 
-Current verification (2026-10-14): 513 workspace tests, formatting, all-target
+Current verification (2026-10-14): 518 workspace tests, formatting, all-target
 checking and Clippy pass. Bundled generated protocol sources and the Rust runtime
 are pinned to FlatBuffers 25.12.19; default builds require no installed compiler.
 Current CLI/service arithmetic and real Qwen generation smokes pass. Public graph
@@ -1111,3 +1111,9 @@ loaded and unloaded through Core, preserving the already-loaded Qwen instance an
 context. The script defaults to inspection and stops without cleanup on unrelated
 residency drift or uncertainty. This is not generative model switching or an
 ownership-aware automatic scheduler; see `MODELS.md` and the frozen native report.
+
+Expert scheduling now distinguishes refusal before admission from an attempted
+workflow. It can skip an unaffordable routed workflow in favor of the next routed
+candidate while admitting at most one workflow. An admitted timeout/failure never
+adds another expert attempt or resets budget. This addresses budget selection;
+calibrated usefulness and general model/module scheduling remain incomplete.

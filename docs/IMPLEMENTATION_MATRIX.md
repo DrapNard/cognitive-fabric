@@ -1,7 +1,7 @@
 # Implementation matrix — 1.1.0-alpha.1
 
 Current evidence review (2026-10-14): **pre-release; V1 incomplete**. The current
-workspace passes 513 tests (455 library including the server, 58 integration),
+workspace passes 518 tests (460 library including the server, 58 integration),
 formatting, all-target checking and Clippy. See `RELEASE_AUDIT.md` for the 18 goal
 acceptance criteria and scoped evidence. Later narrative entries below are a
 historical implementation ledger; their old counts, unavailable endpoints and
@@ -2747,3 +2747,14 @@ with requested/server-confirmed Core audits and the existing Qwen ID/context
 preserved. Frozen evidence: `evaluation/results/lmstudio-native-embedding-lifecycle-smoke.json`.
 Generative switching, exclusive ownership, attributed GPU metrics, native authenticated
 live mutation and automatic loading decisions are not established by this result.
+
+Ranked affordable expert admission: **Implemented / calibrated utility remains
+Partial**. `src/engine.rs` and `src/reasoning.rs` distinguish pre-admission refusal
+from an admitted attempt. A refused expensive workflow no longer hides a cheaper
+already-routed candidate. At most one workflow is admitted; timeout, partial
+advice and provider/audit failures do not buy another attempt. Five regressions
+in `src/engine/expert_admission_tests.rs` cover structured call-budget refusal,
+legacy prompt-budget refusal, one admitted timeout, fatal provider errors and
+refusal-audit failure. Candidate versions, permissions and cumulative task budgets
+remain pinned. General module/GPU scheduling and independently measured utility
+are not established by these deterministic tests.

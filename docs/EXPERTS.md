@@ -519,3 +519,22 @@ scope/dependency prompts, then requires the original final output contract and a
 compiled verified answer. It retains four calls and 1024 reserved output tokens.
 This addresses conflicting instructions; live-model cost/quality benefit after
 this change remains unmeasured. Earlier graph measurements remain frozen.
+
+## Ranked admission under shared budgets
+
+Jev+ can consider the next already-routed workflow when the first is refused
+before admission. For example, a four-step workflow needs six remaining calls
+(its four advice calls plus planner and final solver); under a four-call ceiling,
+a one-call workflow can still fit instead. Legacy workflows also fall through
+when their conservative prompt reservation exceeds the remaining budget.
+Candidates keep router order and task-pinned versions; no new registry search or
+permission expansion occurs. A durable refusal audit is required before proceeding.
+
+An admitted workflow consumes the task's single expert opportunity. A partial
+result, timeout, exhausted call or provider failure never triggers another expert
+attempt. Timeout fallback preserves unknown usage and spent reservations; other
+errors still fail the task. Main reasoning keeps its original budgets/deadline.
+This implements budget-aware selection, not a calibrated utility estimator or
+proof that advice improves answers. Phase-budget records declare ceilings and
+can include preflight assessment; use actual model-dispatch/resource records to
+measure inference rather than treating every rejected candidate as a model call.

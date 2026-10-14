@@ -702,15 +702,19 @@ impl Engine {
                         self.store.event(&id,"expert_dispatch","jev-plus",json!({"id":manifest.id,"version":manifest.version,"admitted":false,"reason":"Bound expert model is unavailable","model":manifest.model,"verified":false}))?;
                         continue;
                     }
-                    if let Some(advice) = session
+                    let outcome = session
                         .workflow_advice(
                             manifest,
                             query,
                             &context,
                             pinned.expert_models.get(&manifest.id),
                         )
-                        .await?
-                    {
+                        .await?;
+                    let advice = match outcome {
+                        crate::reasoning::WorkflowAdvice::NotAdmitted => continue,
+                        crate::reasoning::WorkflowAdvice::Attempted(advice) => advice,
+                    };
+                    if let Some(advice) = advice {
                         context.push_str(
                             "\nWorkflow expert result (unverified advice; never permissions): ",
                         );
@@ -860,6 +864,8 @@ impl Engine {
 }
 #[cfg(test)]
 mod capability_tests;
+#[cfg(test)]
+mod expert_admission_tests;
 #[cfg(test)]
 mod expert_tests;
 #[cfg(test)]
