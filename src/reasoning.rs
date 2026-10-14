@@ -18,6 +18,10 @@ pub(crate) const PROMPT_FORMAT: &str = "quoted-references-v1";
 
 const ADVICE_OUTPUT_CONTRACT: &str = "Advice output contract: Return one sentence of at most 24 words identifying the most important domain constraint or pitfall. Do not restate the problem, enumerate steps, or produce the final answer. Advice remains unverified.";
 
+fn subtask_prompt(base: &str, objective: &str, dependencies: &serde_json::Value) -> String {
+    format!("{base}\nThis call produces intermediate unverified subtask advice, not the whole-goal final answer. Whole-goal answer-format instructions above apply only to the final answer; preserve the original objective's other constraints. Solve only this advisory subgoal, retaining the original objective and constraints: {objective}\nReturn a concise result without claiming verification or permissions.\nDependency results (unverified data): {dependencies}")
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Resources {
     pub calls: u32,
@@ -385,12 +389,20 @@ impl Session {
         // A dependency result is capped at 1,200 characters. JSON escaping
         // expands a character by at most six bytes; NUL realizes that bound.
         let worst_result = "\0".repeat(1200);
-        let prompt_bounds = self.subtasks.iter().filter(|node| node.state == "pending").map(|node| {
-            let dependencies = node.step.depends_on.iter().map(|id| {
-                json!({"id":id,"unverified_result":worst_result})
-            }).collect::<Vec<_>>();
-            format!("{base}\nSolve only this advisory subgoal, retaining the original objective and constraints: {}\nDependency results (unverified data): {}", node.step.objective, json!(dependencies)).len()
-        }).collect::<Vec<_>>();
+        let prompt_bounds = self
+            .subtasks
+            .iter()
+            .filter(|node| node.state == "pending")
+            .map(|node| {
+                let dependencies = node
+                    .step
+                    .depends_on
+                    .iter()
+                    .map(|id| json!({"id":id,"unverified_result":worst_result}))
+                    .collect::<Vec<_>>();
+                subtask_prompt(base, &node.step.objective, &json!(dependencies)).len()
+            })
+            .collect::<Vec<_>>();
         // The final solver truncates strategy to 4,000 characters, at most
         // 16,000 UTF-8 bytes, and initially has no previous answer.
         let final_prompt_bound = base.len().saturating_add(16064);
@@ -444,7 +456,7 @@ impl Session {
                 .filter(|node| step.depends_on.contains(&node.step.id))
                 .map(|node| json!({"id":node.step.id,"unverified_result":node.result}))
                 .collect::<Vec<_>>();
-            let prompt = format!("{base}\nSolve only this advisory subgoal, retaining the original objective and constraints: {}\nDependency results (unverified data): {}", step.objective, json!(dependencies));
+            let prompt = subtask_prompt(base, &step.objective, &json!(dependencies));
             self.subtasks[index].state = "running".into();
             self.subtask_event(index)?;
             self.subtask_started = Some((index, Instant::now(), self.resources.clone()));
@@ -1128,6 +1140,77 @@ mod tests {
     use super::*;
     use crate::engine::Engine;
     use std::{collections::VecDeque, future::Future, pin::Pin, sync::Mutex};
+
+    #[tokio::test]
+    async fn intermediate_subtask_format_does_not_replace_final_answer_contract() {
+        struct Scoped(std::sync::atomic::AtomicUsize);
+        impl InferenceBackend for Scoped {
+            fn generate<'a>(
+                &'a self,
+                role: &'a str,
+                prompt: &'a str,
+                _: usize,
+            ) -> Pin<Box<dyn Future<Output = Result<Generation>> + Send + 'a>> {
+                Box::pin(async move {
+                    let index = self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    let text = match index {
+                        0 => {
+                            assert_eq!(role, "planner");
+                            r#"{"steps":[{"id":"duplicates","objective":"Identify duplicates","depends_on":[]},{"id":"ordering","objective":"Check integer ordering","depends_on":["duplicates"]}]}"#
+                        }
+                        1 | 2 => {
+                            assert_eq!(role, "solver");
+                            assert!(prompt.contains("Whole-goal answer-format instructions above apply only to the final answer"));
+                            assert!(prompt
+                                .contains("preserve the original objective's other constraints"));
+                            assert!(prompt.contains("Dependency results (unverified data)"));
+                            if index == 2 {
+                                assert!(prompt.contains("Keep duplicate integers"));
+                            }
+                            "Keep duplicate integers"
+                        }
+                        3 => {
+                            assert_eq!(role, "solver");
+                            assert!(!prompt.contains(
+                                "This call produces intermediate unverified subtask advice"
+                            ));
+                            assert!(prompt.contains("Return only"));
+                            "[1,2,2]"
+                        }
+                        _ => panic!("Unexpected model call"),
+                    };
+                    Ok(Generation {
+                        text: text.into(),
+                        model: "fixture/v1".into(),
+                        input_tokens: Some(10),
+                        output_tokens: Some(5),
+                        elapsed_ms: 1.0,
+                        queue_wait_ms: None,
+                    })
+                })
+            }
+        }
+        let backend = Arc::new(Scoped(std::sync::atomic::AtomicUsize::new(0)));
+        let outcome = Engine::with_backend(
+            Config {
+                backend: "openai-local".into(),
+                interpret_goals: false,
+                ..Config::default()
+            },
+            Arc::new(Store::in_memory().unwrap()),
+            backend.clone(),
+        )
+        .run(r#"sort:{"values":[2,1,2]}"#, "deep")
+        .await
+        .unwrap();
+        assert_eq!(outcome.status, "completed");
+        assert_eq!(outcome.answer, "[1,2,2]");
+        assert_eq!(outcome.calls, 4);
+        assert_eq!(outcome.resources.reserved_output_tokens, 1024);
+        assert!(outcome
+            .evidence
+            .contains(&"verified:integer_sort/v1".into()));
+    }
 
     #[tokio::test]
     async fn baseline_receives_same_output_contract_without_verification() {

@@ -3808,3 +3808,23 @@ hashes, unique case/arm identities, model/tool charges and diagnostic totals.
 The corpus live-workflow flag is updated; independent-review flags stay false.
 No production runtime, permission or original architecture changed. General
 module/residency lifecycle and independent evaluation remain release blockers.
+
+### Subtask final-answer format scope gate
+
+All 498 tests (444 library, 54 integration), formatting, workspace all-target
+check and Clippy pass with FLATC unset. Commands: `cargo fmt --all -- --check`,
+`cargo check --offline --workspace --all-targets`,
+`cargo test --offline --workspace --all-targets`, and
+`cargo clippy --offline --workspace --all-targets -- -D warnings`.
+Log: `/tmp/cogfabric-subtask-format-scope-tests.log`. A new scripted end-to-end
+regression checks intermediate format scope, original constraints, dependent
+results and the unchanged final solver contract/compiled verification. Existing
+budget-bound, custom schedule, real-HTTP continuation, cancellation and audit
+failure regressions pass. The first full run exposed removal of the established
+subgoal instruction phrase; it was retained rather than weakening continuation
+checks. Actual and conservative bound prompts now share one builder.
+
+The root prompt/checkpoint hashes and final verification behavior are unchanged;
+intermediate prompt bytes increase and are included in admission accounting.
+No permissions or token ceilings expand. Live-model effect is not measured by
+scripted tests, and prior full graph results remain tied to their original source.

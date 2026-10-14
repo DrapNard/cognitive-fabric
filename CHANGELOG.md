@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Scope final-answer formats during subtask reasoning
+
+- Distinguish intermediate advisory results from the whole-goal answer format.
+- Preserve original constraints, dependency boundaries and final verification.
+- Build admission bounds from the same prompt used for dispatch.
+
 ### Retain the complete live graph comparison
 
 - Record all 96 public Qwen workflow outcomes and independently verify scores and resources.

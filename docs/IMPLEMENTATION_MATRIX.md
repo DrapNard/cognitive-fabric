@@ -2465,3 +2465,20 @@ not controlled; no 1–3B or larger baseline, unseen technical evaluation or neu
 safety claim follows. The same existing Qwen load was reused; no automatic physical
 residency ownership is proven. All earlier reports remain unchanged. Broader
 module lifecycle, independent verifiers/evaluation and residency gates stay open.
+
+### Intermediate subtask output scope
+
+Subtask prompts now explicitly distinguish intermediate unverified results from
+the whole-goal final answer. The final-answer output format applies to the final
+solver; original non-format constraints remain applicable to each subtask. The
+existing subgoal instruction and untrusted dependency boundary remain present.
+A single prompt builder generates both dispatched prompts and admission bounds,
+so the added clarification is charged and cannot evade per-prompt/input quotas.
+Subtask calls still reserve 192 tokens; final calls and independent verification
+retain their existing behavior. No new tool or authority is granted.
+
+A scripted end-to-end regression plans two dependent sorting subgoals, checks the
+scope/dependency prompts, then requires the original final output contract and a
+compiled verified answer. It retains four calls and 1024 reserved output tokens.
+This addresses conflicting instructions; live-model cost/quality benefit after
+this change remains unmeasured. Earlier graph measurements remain frozen.
