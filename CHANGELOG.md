@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Exclude failed inference workers without retrying pinned tasks
+
+- Let closed local worker queues override optimistic backend availability.
+- Run availability callbacks outside registry locks and revalidate activation against retirement.
+- Preserve immutable task pins, explicit replacement and fail-closed dispatch without retries or refunds.
+
 ### Account for processing requests when selecting inference routes
 
 - Prefer idle equal-rank peers even when a busy module has no queued requests.

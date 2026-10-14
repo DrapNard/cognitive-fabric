@@ -534,3 +534,13 @@ uses sampled local load only after operator rank; existing pins and failure
 handling are unchanged. IPC accepts absent legacy observations as unknown and
 rejects counts above four or partial observation pairs. Remote inventory values
 do not overwrite the broker's internal counters or grant model/tool permissions.
+
+A failed local inference worker may leave its underlying backend object reporting
+healthy. Closed queue state now dominates that label for routing, inventory,
+activation and dispatch. No old-pin retry or resource refund follows. Availability
+callbacks execute outside registry locks, and activation rechecks retained identity
+and current constraints afterward; retirement cannot be undone by a stale health
+sample. Tests deliberately panic a trusted callback inside its Tokio worker and
+exercise metadata reentry/retirement races. This is not OS isolation: panic-abort
+builds, arbitrary native code, external provider execution and blocked callbacks
+remain outside that limited containment claim.

@@ -420,3 +420,21 @@ cross-client/provider scheduling guarantees.
 Inventory is per broker. A service's registered inference inventory does not
 aggregate separate task-scoped managed brokers or other applications' requests.
 Zero local work must not be interpreted as global provider/GPU idleness.
+
+### Closed local inference workers
+
+A closed initialized worker queue now overrides the backend's own availability
+label. Inventory reports Closed, new task pins skip that module, and activating
+the same failed version is rejected. Existing pins fail before queueing; they
+are never silently retried on a healthy alternative. A future task may select
+another already-approved available candidate. Replacement requires an explicit
+new immutable version. This observes a local worker failure, not provider/GPU
+termination, and performs no reconnect, weight operation or budget refund.
+
+Routing freezes bounded registry membership before running trusted availability
+callbacks outside registry locks. Activation likewise observes outside locks,
+then revalidates retained identity, current conflicts/capacity and shutdown before
+committing. A version retired during observation cannot be resurrected by that
+activation. Callbacks can inspect metadata without lock recursion; arbitrary
+blocking, recursion or panic in trusted native code is still not a sandboxed or
+preemptible operation. In-flight pins retain their documented immutable routes.

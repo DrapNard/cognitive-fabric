@@ -1112,6 +1112,11 @@ fn inventory_backend_observation_can_inspect_registry_without_lock_recursion() {
     assert_eq!(observed.len(), 1);
     assert!(observed[0].active);
     assert_eq!(observed[0].availability, Availability::Connected);
+    assert_eq!(
+        broker.snapshot().unwrap().routes["solver"].descriptor.id,
+        "observer"
+    );
+    broker.activate("observer", "1.0.0").unwrap();
 }
 
 #[tokio::test]
@@ -1231,4 +1236,130 @@ async fn processing_observation_clears_after_cancellation_and_shutdown() {
             assert_eq!(status[0].queued_requests, Some(0));
         }
     }
+}
+
+struct PanicsButAdvertisesConnected(AtomicUsize);
+impl InferenceBackend for PanicsButAdvertisesConnected {
+    fn availability(&self) -> Availability {
+        Availability::Connected
+    }
+    fn generate<'a>(
+        &'a self,
+        _: &'a str,
+        _: &'a str,
+        _: usize,
+    ) -> Pin<Box<dyn Future<Output = Result<Generation>> + Send + 'a>> {
+        Box::pin(async move {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            panic!("Expected trusted callback failure");
+        })
+    }
+}
+#[tokio::test]
+async fn closed_local_worker_overrides_backend_health_without_replaying_pins() {
+    let failing = Arc::new(PanicsButAdvertisesConnected(AtomicUsize::new(0)));
+    let healthy = Arc::new(Fixed("healthy", AtomicUsize::new(0)));
+    let broker = Broker::with_inference(Arc::new(Fixed("initial", AtomicUsize::new(0))));
+    broker.unregister("inference.local").unwrap();
+    let descriptor = |id: &str| ModuleDescriptor {
+        id: id.into(),
+        version: "1.0.0".into(),
+        roles: vec!["solver".into()],
+    };
+    broker
+        .register_candidate(descriptor("candidate.a"), failing.clone(), 10)
+        .unwrap();
+    broker
+        .register_candidate(descriptor("candidate.b"), healthy.clone(), 20)
+        .unwrap();
+    let original = broker.snapshot().unwrap();
+    assert!(original.generate("solver", "first", 128).await.is_err());
+    let status = broker
+        .statuses()
+        .unwrap()
+        .into_iter()
+        .find(|s| s.descriptor.id == "candidate.a")
+        .unwrap();
+    assert_eq!(status.availability, Availability::Closed);
+    assert_eq!(status.processing_request, Some(false));
+    assert!(broker.activate("candidate.a", "1.0.0").is_err());
+    assert!(original
+        .generate("solver", "no implicit retry", 128)
+        .await
+        .unwrap_err()
+        .to_string()
+        .contains("permanently closed"));
+    assert_eq!(healthy.1.load(Ordering::Acquire), 0);
+    let future = broker.snapshot().unwrap();
+    assert_eq!(future.routes["solver"].descriptor.id, "candidate.b");
+    assert_eq!(
+        future
+            .generate("solver", "new task", 128)
+            .await
+            .unwrap()
+            .text,
+        "healthy"
+    );
+    assert_eq!(failing.0.load(Ordering::Acquire), 1);
+    assert_eq!(healthy.1.load(Ordering::Acquire), 1);
+}
+
+struct RetireOnObservation {
+    broker: std::sync::Weak<Broker>,
+    calls: AtomicUsize,
+}
+impl InferenceBackend for RetireOnObservation {
+    fn availability(&self) -> Availability {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        self.broker
+            .upgrade()
+            .unwrap()
+            .retire("retiring", "1.0.0")
+            .unwrap();
+        Availability::Connected
+    }
+    fn generate<'a>(
+        &'a self,
+        _: &'a str,
+        _: &'a str,
+        _: usize,
+    ) -> Pin<Box<dyn Future<Output = Result<Generation>> + Send + 'a>> {
+        Box::pin(async { bail!("Retired fixture must never execute") })
+    }
+}
+#[test]
+fn activation_cannot_resurrect_a_version_retired_during_health_observation() {
+    let broker = Arc::new(Broker::with_inference(Arc::new(Fixed(
+        "initial",
+        AtomicUsize::new(0),
+    ))));
+    broker.unregister("inference.local").unwrap();
+    broker.retire("inference.local", "1.0.0").unwrap();
+    let backend = Arc::new(RetireOnObservation {
+        broker: Arc::downgrade(&broker),
+        calls: AtomicUsize::new(0),
+    });
+    let descriptor = ModuleDescriptor {
+        id: "retiring".into(),
+        version: "1.0.0".into(),
+        roles: vec!["solver".into()],
+    };
+    broker
+        .register(descriptor.clone(), backend.clone())
+        .unwrap();
+    broker.unregister("retiring").unwrap();
+    assert!(broker
+        .activate("retiring", "1.0.0")
+        .unwrap_err()
+        .to_string()
+        .contains("retired"));
+    assert_eq!(backend.calls.load(Ordering::Acquire), 1);
+    assert!(broker.versions().unwrap().is_empty());
+    assert!(broker.discover().unwrap().is_empty());
+    assert!(broker
+        .register(
+            descriptor,
+            Arc::new(Fixed("replacement", AtomicUsize::new(0)))
+        )
+        .is_err());
 }

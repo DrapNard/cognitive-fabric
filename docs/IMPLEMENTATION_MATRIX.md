@@ -1,7 +1,7 @@
 # Implementation matrix — 1.1.0-alpha.1
 
 Current evidence review (2026-10-14): **pre-release; V1 incomplete**. The current
-workspace passes 522 tests (464 library including the server, 58 integration),
+workspace passes 524 tests (466 library including the server, 58 integration),
 formatting, all-target checking and Clippy. See `RELEASE_AUDIT.md` for the 18 goal
 acceptance criteria and scoped evidence. Later narrative entries below are a
 historical implementation ledger; their old counts, unavailable endpoints and
@@ -2782,3 +2782,15 @@ retirement tests remain. `protocol/cognitive.fbs` and `src/wire.rs` add optional
 bounded load observations with legacy unknown preservation, round-trip and forged
 frame tests. Exact 25.12.19 bindings/manifest regenerated together. Observations
 are local samples, not GPU budgets, provider health or capacity reservations.
+
+Inference worker failure containment: **Implemented for local broker queues**.
+`src/fabric.rs` combines initialized queue closure with backend observations for
+inventory, routing, activation and pinned dispatch. New pins skip dead workers;
+old pins fail without hidden retries or budget refunds. Trusted availability
+callbacks now run outside registry locks; activation revalidates retained identity
+and role/capacity/shutdown invariants afterward. `src/fabric/tests.rs` injects a
+callback panic despite Connected advertisement, proves one failed invocation and
+future-only healthy selection, and prevents reactivation/retirement resurrection.
+The existing reentrant observer test now covers inventory, pinning and activation.
+No process sandbox, provider stop proof, automatic reconnect or model mutation
+is established. General independent executable isolation remains incomplete.

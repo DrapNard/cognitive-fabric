@@ -1,6 +1,6 @@
 # Rust baseline quality review
 
-Current local runtime passes 522 Rust tests (464 library including the server,
+Current local runtime passes 524 Rust tests (466 library including the server,
 58 integration), formatting, workspace all-target checking and Clippy with warnings
 denied. The separate Wasm experiment passes 24 tests with the optional Core audit
 bridge. Default builds use reviewed bundled FlatBuffers 25.12.19 sources without
@@ -4247,3 +4247,26 @@ The strengthened socket assertions also passed separately. Logs:
 These are per-broker samples, not provider/GPU load or reserved capacity. Managed
 task brokers may be separate from the service's registered broker inventory.
 No new live model switching, latency benchmark or ownership claim is made.
+
+### Failed worker exclusion and lock-safe health observation
+
+A closed initialized queue now overrides an optimistic backend availability label.
+A deliberately panicking trusted callback advertises Connected but runs only once;
+its old pin then fails before queueing, same-version activation is denied and a
+new pin selects the already-approved healthy alternative. The healthy backend
+receives no retry of the failed/pinned request. Processing state also clears.
+This tests Tokio worker failure containment, not OS isolation or provider stopping.
+
+Routing and activation observation callbacks run outside registry locks. The
+reentrant metadata observer now covers inventory, snapshot and activation. A
+second regression retires the inactive version during its availability callback;
+activation revalidates retained identity and refuses resurrection. Immutable
+history still denies redefining the retired version. Role conflict, capacity and
+shutdown checks remain under the final activation write lock.
+
+All mandatory checks pass: formatting, offline workspace/all-target check,
+524 workspace tests and Clippy with denied warnings. Logs:
+`/tmp/cogfabric-worker-health-all-tests.log`,
+`/tmp/cogfabric-worker-health-final-check.log`,
+`/tmp/cogfabric-worker-health-clippy.log`. No new provider mutation, automatic
+reconnect, permission grant, budget refund or live inference claim is introduced.

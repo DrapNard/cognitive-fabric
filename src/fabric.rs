@@ -126,6 +126,13 @@ fn same_header(left: &Header, right: &Header) -> bool {
 }
 
 impl Module {
+    fn availability(&self) -> Availability {
+        if self.queue.get().is_some_and(mpsc::Sender::is_closed) {
+            Availability::Closed
+        } else {
+            self.backend.availability()
+        }
+    }
     fn queued_requests(&self) -> usize {
         self.queue
             .get()
@@ -324,6 +331,25 @@ impl Broker {
         if id.len() > 64 || version.len() > 128 {
             bail!("Invalid inference module version selection")
         }
+        let module = {
+            let registry = self
+                .registry
+                .read()
+                .map_err(|_| anyhow!("Module registry poisoned"))?;
+            if *self.shutdown.borrow() {
+                bail!("Module broker shut down")
+            }
+            registry
+                .versions
+                .get(&(id.into(), version.into()))
+                .cloned()
+                .context("Unknown registered inference module version")?
+        };
+        // Trusted observation callbacks may inspect or mutate registry metadata.
+        // Never invoke one while holding the registry's lock.
+        if module.availability().unavailable() {
+            bail!("Registered inference module is permanently closed")
+        }
         let mut registry = self
             .registry
             .write()
@@ -331,13 +357,12 @@ impl Broker {
         if *self.shutdown.borrow() {
             bail!("Module broker shut down")
         }
-        let module = registry
+        let retained = registry
             .versions
             .get(&(id.into(), version.into()))
-            .cloned()
-            .context("Unknown registered inference module version")?;
-        if module.backend.availability().unavailable() {
-            bail!("Registered inference transport is permanently closed")
+            .context("Inference module was retired during availability observation")?;
+        if !Arc::ptr_eq(retained, &module) {
+            bail!("Inference module identity changed during availability observation")
         }
         if !registry.active.contains_key(id) && registry.active.len() >= 32 {
             bail!("Active module capacity exhausted")
@@ -426,7 +451,7 @@ impl Broker {
             .map(|(module, active)| ModuleStatus {
                 descriptor: module.descriptor.clone(),
                 active,
-                availability: module.backend.availability(),
+                availability: module.availability(),
                 routing_rank: module.routing_rank,
                 queued_requests: Some(module.queued_requests() as u32),
                 processing_request: Some(module.processing.load(Ordering::Acquire)),
@@ -472,15 +497,17 @@ impl Broker {
     }
 
     fn snapshot(&self) -> Result<Pinned> {
-        let registry = self
-            .registry
-            .read()
-            .map_err(|_| anyhow!("Module registry poisoned"))?;
-        if *self.shutdown.borrow() {
-            bail!("Module broker shut down")
-        }
+        let mut candidates = {
+            let registry = self
+                .registry
+                .read()
+                .map_err(|_| anyhow!("Module registry poisoned"))?;
+            if *self.shutdown.borrow() {
+                bail!("Module broker shut down")
+            }
+            registry.active.values().cloned().collect::<Vec<_>>()
+        };
         let mut routes = BTreeMap::new();
-        let mut candidates = registry.active.values().collect::<Vec<_>>();
         // Sample pressure once per candidate; concurrent queues may change while
         // sorting. Operator rank takes precedence over this local observation.
         candidates.sort_by_cached_key(|module| {
@@ -491,7 +518,7 @@ impl Broker {
             )
         });
         for module in candidates {
-            if module.backend.availability().unavailable() {
+            if module.availability().unavailable() {
                 continue;
             }
             for role in &module.descriptor.roles {
@@ -569,8 +596,8 @@ impl InferenceBackend for Pinned {
             if *module.shutdown.borrow() {
                 bail!("Module broker shut down")
             }
-            if module.backend.availability().unavailable() {
-                bail!("Pinned inference transport is permanently closed")
+            if module.availability().unavailable() {
+                bail!("Pinned inference module is permanently closed")
             }
             let sender = actor(role)?;
             TaskPolicy::reasoning(task)?.authorize(task, sender, "llm.generate")?;

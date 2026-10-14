@@ -42,7 +42,7 @@ Quality requires operator-attested held-out data. Promotion checks quality,
 cumulative approved-version retrieval regressions and unchanged versions transactionally.
 Rollback restores approved stored snapshots. Neural promotion stays disabled.
 
-Current verification (2026-10-14): 522 workspace tests, formatting, all-target
+Current verification (2026-10-14): 524 workspace tests, formatting, all-target
 checking and Clippy pass. Bundled generated protocol sources and the Rust runtime
 are pinned to FlatBuffers 25.12.19; default builds require no installed compiler.
 Current CLI/service arithmetic and real Qwen generation smokes pass. Public graph
@@ -1131,3 +1131,10 @@ preserved. Typed inventory carries optional queued/processing observations;
 legacy frames retain unknown values. Processing state is cleared on cancellation
 and shutdown. This is local broker scheduling, not GPU ownership or global
 provider scheduling.
+
+The inference broker now excludes a closed local worker queue even if the backend
+advertises Connected. Existing pins fail without rerouting, while future pins can
+select another approved candidate. Registry health callbacks run outside locks;
+activation revalidates retained identity so retirement during observation cannot
+restore a removed version. This is local failure containment, not a proof of
+external provider termination or isolated native execution.
