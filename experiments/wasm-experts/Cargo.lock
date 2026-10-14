@@ -19,6 +19,7 @@ name = "cogfabric-wasm-experts-experiment"
 version = "0.0.0"
 dependencies = [
  "wasmi",
+ "wasmparser 0.228.0",
  "wat",
 ]
 

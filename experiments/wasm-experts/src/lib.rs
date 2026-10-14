@@ -1,15 +1,19 @@
 //! Experimental import-free scalar expert executor; not wired into runtime authority.
+mod preflight;
+
 pub fn evaluate_i64(wasm: &[u8], input: i64) -> Result<i64, String> {
     if wasm.len() > 65536 {
         return Err("module byte limit".into());
     }
+    preflight::check(wasm)?;
     let mut config = wasmi::Config::default();
     config
         .consume_fuel(true)
         .floats(false)
         .wasm_multi_memory(false)
         .wasm_reference_types(false)
-        .wasm_tail_call(false);
+        .wasm_tail_call(false)
+        .wasm_extended_const(false);
     config
         .enforced_limits(wasmi::EnforcedLimits::strict())
         .set_max_recursion_depth(32)

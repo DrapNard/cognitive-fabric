@@ -13,22 +13,31 @@ function calls. Stack height is capped at 64 KiB and recursion depth at 32. Floa
 reference-type and tail-call proposals are disabled; SIMD and memory64 features
 are not compiled. Wasmi strict compilation limits are selected.
 
-Five tests cover execution, imports, nontermination including start functions,
+Nine tests cover execution, imports, nontermination including start functions,
 initial/growing memory and tables, malformed/oversized bytes and wrong signatures.
 Run cargo test --manifest-path experiments/wasm-experts/Cargo.toml --locked.
 The separate workspace prevents adding this interpreter to production builds.
 
 ## Limits of the evidence
 
-Fuel is not a wall-clock or parsing/compilation CPU deadline. Wasmi's strict limits
-are not our complete declaration/local-count admission policy: preflight must bound
-function/type/global/local/data counts before translation. Host heap consumption
+Fuel is not a wall-clock or parsing/compilation CPU deadline. A bounded preflight
+now runs before Wasmi translation: 32 flat integer function types, 64 functions,
+16 integer globals, 4 exports, at most 8 parameters/1 result per internal signature,
+32 local groups/128 locals per function, 8192 function-body operators and control
+nesting 32. Memory must declare at most one fixed-maximum 64 KiB page; tables,
+elements, imports, recursive/GC types and component encodings are rejected.
+One data segment is allowed. The exported evaluate interface is checked before
+start-function execution. Full Wasmi semantic validation remains mandatory.
+Tests reject a 48-byte module declaring u32::MAX locals before translation, test
+positive/negative shape boundaries and prove invalid typed bodies remain rejected.
+These structural limits do not prove a hard host-process heap or compilation-time
+quota. The parser/validator/interpreter are still trusted dependencies. Host heap consumption
 and concurrency need independent bounds and measurements. Interpreter/validator
 bugs remain part of the trusted computing base; this is not OS process isolation
 or a proof of general sandbox safety. No independent security audit is claimed.
 Execution of a scalar function is not verification of its domain correctness.
 
-Before runtime integration, implement bounded binary preflight, immutable version
+Before runtime integration, implement immutable version
 and artifact binding, deterministic per-task/actor permission and invocation
 budgets, audits before dispatch, cancellation ownership, held-out domain/security
 evaluation, lifecycle/rollback, and typed protocol integration where IPC is used.

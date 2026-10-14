@@ -2632,3 +2632,14 @@ Cargo dependencies/lockfile remain unchanged. Compilation declaration/local-coun
 preflight, task/actor grants, version/artifact pinning, cancellation/ownership,
 evaluation and rollback integration remain required before claiming executable
 expert provisioning. Interpreter bugs/host heap remain independent review risks.
+
+Wasm binary shape admission: **Implemented in the isolated experiment / Experimental
+for runtime integration**. `experiments/wasm-experts/src/preflight.rs` bounds flat
+integer types/functions/globals/exports, function parameters/results, locals,
+control depth, function-body operators, memory declarations and data-segment count
+before Wasmi translation. It rejects imports/tables/elements/GC/component shapes,
+duplicates and the wrong scalar ABI before start execution. Nine experiment tests
+include a tiny huge-local declaration and positive/negative boundaries; full
+semantic validation is retained. Production dependencies/authority remain unchanged.
+Host heap/time quotas, task grants, immutable artifact/version lifecycle, IPC and
+independent security evaluation remain incomplete; no general sandbox claim.

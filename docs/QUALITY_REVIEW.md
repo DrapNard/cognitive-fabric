@@ -3982,3 +3982,25 @@ No production dependency, permission, runtime actor, candidate or IPC changed.
 This is not OS isolation or an independently audited sandbox: fuel does not bound
 parsing/compilation, strict defaults are not complete declaration/local-count
 admission, and interpreter/host heap/cancellation/lifecycle remain to evaluate.
+
+### Wasm pretranslation shape admission gate
+
+Nine isolated experiment tests passed with formatting, locked all-target checking
+and Clippy. Commands: `cargo fmt --manifest-path experiments/wasm-experts/Cargo.toml -- --check`,
+`cargo check --offline --locked --manifest-path experiments/wasm-experts/Cargo.toml --all-targets`,
+`cargo test --offline --locked --manifest-path experiments/wasm-experts/Cargo.toml`,
+`cargo clippy --offline --locked --manifest-path experiments/wasm-experts/Cargo.toml --all-targets -- -D warnings`.
+Log: `/tmp/cogfabric-wasm-preflight-tests.log`. The direct parser is pinned to
+0.228.0, matching Wasmi's parser family. Flat function signatures are read with
+count checks before allocating vectors; recursive/GC groups are rejected early.
+Tests check count/local/operator/control boundaries, a 48-byte u32::MAX local
+amplification, finite memory declarations and wrong ABI before an infinite start.
+A structurally admitted but invalid typed body is still rejected by Wasmi; this
+preflight is not a substitute validator. Clippy's initial collapsible-if finding
+was corrected before all gates passed.
+
+Production retains 503 passing tests (447 library, 56 integration), mandatory
+fmt/check/test/Clippy with FLATC unset; log `/tmp/cogfabric-wasm-preflight-core-tests.log`.
+No production dependency, protocol, actor grant, registry entry or candidate changed.
+This reduces concrete translation amplification but does not prove hard host heap,
+wall-clock compilation deadlines, OS isolation or an independently audited sandbox.

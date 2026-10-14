@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Bound experimental Wasm shapes before translation
+
+- Admit only bounded scalar module declarations, locals, operators and nesting.
+- Reject imports, unsupported shapes and wrong interfaces before start execution.
+- Retain full semantic validation and test small encoded allocation amplification.
+
 ### Test an isolated import-free Wasm expert foundation
 
 - Add a non-publishable experimental Rust workspace with pinned interpreter and no host imports.
