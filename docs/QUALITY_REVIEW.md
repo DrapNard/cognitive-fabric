@@ -1,5 +1,22 @@
 # Rust baseline quality review
 
+Installed-source verification (2026-10-16): exact source
+`c31862da63d1942368c8e89895b0373b932b6cd3` installed both packages using
+`env -u FLATC cargo install --offline --locked --path ... --root ...` on Rust/Cargo
+1.97.1 with cached dependencies (CLI 1m06s; server 0.18s). Both
+`scripts/installed-smoke.sh` and `scripts/installed-http-smoke.sh` passed, covering
+31 security probes with 25 expected denials, typed arithmetic/SQL workers,
+authenticated discovery, origin denial and graceful shutdown. This is host-local
+installation evidence, not a clean-OS, live-inference or neural-safety result.
+Local evidence: `/tmp/cogfabric-installed-smoke.U0YhfW` and
+`/tmp/cogfabric-installed-http.txml5X`. Binary SHA-256: CLI
+`8a2df20464aa57587c15cf26ee653cf7209b6afdef24bdaf4e117b303d39a678`;
+HTTP server `5a3622404b7aba8c11155175da1ff85d0bf9a001e15a317fda1cc5abbd16814e`.
+Script SHA-256: CLI
+`986680949b8f901e6ac804cba15547daf33389e8eb1d989d47ea66b8960530ae`;
+HTTP `950ff16da845b970466e5af0b335dde9733e457760b4b81a65cc4dfc81976723`.
+Hosted CI run `38825885917` was still in progress when this evidence was recorded.
+
 License metadata regression repair (2026-10-16): the GPL-3.0-only update
 exposed a compatibility test that used a mutable current example as historical
 input. The original checker manifest is now frozen in `tests/fixtures/`; its
