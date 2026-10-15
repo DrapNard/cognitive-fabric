@@ -4,7 +4,10 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     future::Future,
     pin::Pin,
-    sync::{Arc, RwLock},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, RwLock,
+    },
     time::Duration,
 };
 use tokio::sync::{mpsc, oneshot, watch, OnceCell};
@@ -179,6 +182,7 @@ struct Module {
     descriptor: Descriptor,
     backend: Backend,
     queue: OnceCell<mpsc::Sender<Work>>,
+    processing: Arc<AtomicBool>,
     stop: Arc<watch::Sender<bool>>,
     routing_rank: Option<u32>,
 }
@@ -196,6 +200,7 @@ impl Module {
                 let (send, mut recv) = mpsc::channel::<Work>(4);
                 let descriptor = self.descriptor.clone();
                 let backend = self.backend.clone();
+                let processing = self.processing.clone();
                 let mut stop = self.stop.subscribe();
                 tokio::spawn(async move {
                     loop {
@@ -210,6 +215,7 @@ impl Module {
                         if work.reply.is_closed() {
                             continue;
                         }
+                        let _processing = super::Processing::new(processing.clone());
                         let execution = async {
                             let backend = match &backend {
                                 Backend::Sql(backend) => {
@@ -450,6 +456,7 @@ impl Broker {
             descriptor,
             backend,
             queue: OnceCell::new(),
+            processing: Arc::new(AtomicBool::new(false)),
             stop: self.stop.clone(),
             routing_rank,
         });
@@ -633,13 +640,15 @@ impl Broker {
             .filter(|module| {
                 module.descriptor.capability == capability && !module.availability().unavailable()
             })
+            // Sample each candidate once; rank remains the operator's first priority.
             .min_by_key(|module| {
                 (
                     module.routing_rank.unwrap_or(0),
                     module
                         .queue
                         .get()
-                        .map_or(0, |queue| queue.max_capacity() - queue.capacity()),
+                        .map_or(0, |queue| queue.max_capacity() - queue.capacity())
+                        + usize::from(module.processing.load(Ordering::Acquire)),
                     module.descriptor.id.clone(),
                 )
             })
@@ -1028,6 +1037,89 @@ mod tests {
             handle.evaluate(&task, "jev-plus", "6*7").await
         }
     }
+    #[tokio::test]
+    async fn executing_tools_affect_new_routes_and_clear_after_completion_or_cancellation() {
+        for sql in [false, true] {
+            for cancel in [false, true] {
+                let broker = Broker::default();
+                let capability = if sql { "sql.query" } else { "math.evaluate" };
+                broker
+                    .unregister(if sql { "sql.local" } else { "arithmetic.local" })
+                    .unwrap();
+                let gate = Arc::new(QueueGate {
+                    calls: std::sync::atomic::AtomicUsize::new(0),
+                    entered: tokio::sync::Notify::new(),
+                    release: tokio::sync::Notify::new(),
+                });
+                for id in ["candidate.a", "candidate.b"] {
+                    let descriptor = Descriptor {
+                        id: id.into(),
+                        version: "1.0.0".into(),
+                        capability: capability.into(),
+                    };
+                    if sql {
+                        broker
+                            .register_sql_candidate(descriptor, gate.clone(), 10)
+                            .unwrap();
+                    } else {
+                        broker
+                            .register_candidate(descriptor, gate.clone(), 10)
+                            .unwrap();
+                    }
+                }
+                let original = broker.pin_capability(capability).unwrap().unwrap();
+                assert_eq!(original.descriptor().id, "candidate.a");
+                let task = uuid::Uuid::new_v4().to_string();
+                let call = tokio::spawn(queued_tool_call(original.clone(), task.clone(), sql));
+                tokio::time::timeout(Duration::from_secs(1), gate.entered.notified())
+                    .await
+                    .unwrap();
+                assert_eq!(original.module.queue().await.capacity(), 4);
+                assert!(original.module.processing.load(Ordering::Acquire));
+                assert_eq!(
+                    broker
+                        .pin_capability(capability)
+                        .unwrap()
+                        .unwrap()
+                        .descriptor()
+                        .id,
+                    "candidate.b"
+                );
+                // Existing handles retain their original module throughout execution.
+                assert_eq!(original.descriptor().id, "candidate.a");
+                if cancel {
+                    call.abort();
+                    assert!(call.await.unwrap_err().is_cancelled());
+                } else {
+                    gate.release.notify_one();
+                    tokio::time::timeout(Duration::from_secs(1), call)
+                        .await
+                        .unwrap()
+                        .unwrap()
+                        .unwrap();
+                }
+                tokio::time::timeout(Duration::from_secs(1), async {
+                    while original.module.processing.load(Ordering::Acquire) {
+                        tokio::task::yield_now().await;
+                    }
+                })
+                .await
+                .unwrap();
+                assert_eq!(
+                    broker
+                        .pin_capability(capability)
+                        .unwrap()
+                        .unwrap()
+                        .descriptor()
+                        .id,
+                    "candidate.a"
+                );
+                queued_tool_call(original, task, sql).await.unwrap();
+                assert_eq!(gate.calls.load(Ordering::SeqCst), 2);
+            }
+        }
+    }
+
     #[tokio::test]
     async fn equal_rank_tools_use_queue_pressure_without_changing_pins_or_rank_priority() {
         for sql in [false, true] {
@@ -1591,6 +1683,7 @@ mod tests {
                     .availability,
                 super::super::Availability::Closed
             );
+            assert!(!original.module.processing.load(Ordering::Acquire));
             assert!(broker.activate("failed", "1.0.0").is_err());
             if sql {
                 assert!(original

@@ -446,3 +446,12 @@ and same-version activation is refused. Tool health callbacks run outside regist
 locks, with retained identity/capability/conflict/capacity/shutdown revalidated
 before activation. Retirement during observation cannot resurrect a version.
 This does not sandbox native code, prove external effects stopped or add retries.
+
+Arithmetic and SQL alternatives also count their currently executing request when
+comparing equal ranks, including when their buffered queue is empty. The same
+processing drop guard clears completion, cancellation, error, shutdown and unwind
+paths. Operator rank dominates local load; existing handles remain pinned and no
+retry, extra tool call or permission is introduced. Observations are per module,
+not global provider pressure or reserved execution slots. Tool inventory protocol
+fields are unchanged; inference's optional queue/processing fields remain scoped
+to inference inventory.

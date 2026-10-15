@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Account for executing work in tool routing
+
+- Prefer idle arithmetic/SQL peers at equal rank even with empty waiting queues.
+- Clear processing observations on every worker exit path using the shared guard.
+- Verify completion, cancellation, failure, original pins and rank precedence.
+
 ### Preserve historical manifest compatibility after license updates
 
 - Freeze the legacy checker manifest and retain its original canonical hash.

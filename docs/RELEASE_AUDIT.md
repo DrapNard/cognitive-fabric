@@ -1,5 +1,19 @@
 # v1.0 release acceptance audit
 
+### Include executing arithmetic and SQL work in routing — 2026-10-16
+
+Equal-rank tool candidates now compare buffered requests plus the one currently
+executing request before the deterministic ID tie-break. A drop guard clears the
+processing observation on completion, cancellation, errors, shutdown and worker
+unwinding. Both arithmetic and SQL regressions verify empty-buffer busy routing,
+unchanged old handles, cancellation/completion cleanup and return to the original
+tie-break; existing rank-priority/queued-load tests remain. Worker-panic tests also
+assert cleanup. All 527 workspace tests (469 library including server, 58
+integration), formatting, all-target checking and warnings-denied Clippy pass with
+`FLATC` unset. No protocol, permission or queue ceiling changed. This is local
+sampled scheduling, not reserved capacity, provider/GPU occupancy or a general
+module scheduler. Previous installed and live evidence remains source-scoped.
+
 Installed-source verification (2026-10-16): exact source
 `c31862da63d1942368c8e89895b0373b932b6cd3` installed both packages using
 `env -u FLATC cargo install --offline --locked --path ... --root ...` on Rust/Cargo
@@ -53,7 +67,7 @@ revalidated for the new optional load observations.
 | 14. Lifecycle documented | `MODELS.md`, `EXPERTS.md`, `WORKERS.md` | Metadata lifecycle documented; explicit native load/unload is fixture-tested; real native inventory and one approved embedding load/unload passed; generative switching and ownership-aware automatic scheduling remain incomplete. |
 | 15. Reproducible benchmarks | `src/benchmarking.rs`, `evaluation/`, `BENCHMARKING.md` | Six-arm runner and public live workflows exist for Ollama and Qwen3 8B; reviewed unseen dataset and held-out equal-budget model study missing. |
 | 16. Accurate matrix | `IMPLEMENTATION_MATRIX.md` | Current summary reconciled with 526-test evidence, present live endpoint and public graph/Rust diagnostics; historical paragraphs are explicitly labeled as a ledger. |
-| 17. Verified docs/installation | `README.md`, HTTP_API.md, CI workflow, INSTALLATION_VALIDATION.md | Optimized host installs and offline workflows passed at prior source `e1f3ffd` without flatc; the new recovery source needs a final install refresh; historical installed managed OpenCode/Qwen read/edit/read passed. Expanded clean Arch setup, all checks and installed core/server workflows passed at `a9933b3`. CachyOS desktop/GPU setup remains unverified. |
+| 17. Verified docs/installation | `README.md`, HTTP_API.md, CI workflow, INSTALLATION_VALIDATION.md | Optimized host installs and offline workflows passed at `c31862d` without flatc, including advisory-result recovery; subsequent routing changes require final-source refresh; historical installed managed OpenCode/Qwen read/edit/read passed. Expanded clean Arch setup, all checks and installed core/server workflows passed at `a9933b3`. CachyOS desktop/GPU setup remains unverified. |
 | 18. Honest experimental claims | `EVOLUTION.md`, `MODELS.md`, `THREAT_MODEL.md` | Neural adaptation remains experimental and neural promotion denied; no trained Jev or superiority claim. |
 
 The current concise-advice runtime has a complete four-case live Qwen workflow

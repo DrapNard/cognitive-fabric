@@ -1,5 +1,19 @@
 # Current Rust implementation
 
+### Include executing arithmetic and SQL work in routing — 2026-10-16
+
+Equal-rank tool candidates now compare buffered requests plus the one currently
+executing request before the deterministic ID tie-break. A drop guard clears the
+processing observation on completion, cancellation, errors, shutdown and worker
+unwinding. Both arithmetic and SQL regressions verify empty-buffer busy routing,
+unchanged old handles, cancellation/completion cleanup and return to the original
+tie-break; existing rank-priority/queued-load tests remain. Worker-panic tests also
+assert cleanup. All 527 workspace tests (469 library including server, 58
+integration), formatting, all-target checking and warnings-denied Clippy pass with
+`FLATC` unset. No protocol, permission or queue ceiling changed. This is local
+sampled scheduling, not reserved capacity, provider/GPU occupancy or a general
+module scheduler. Previous installed and live evidence remains source-scoped.
+
 This is the implementation snapshot, not the target specification. The complete
 French vision is preserved in `ARCHITECTURE.md`. The branch is `develop/v1.0`,
 package version `1.1.0-alpha.1`; it remains a pre-release despite its historical
