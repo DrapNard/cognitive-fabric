@@ -13,7 +13,7 @@ Example operator-reviewed manifest:
   "model": "your-server-model-id",
   "api_base": "http://127.0.0.1:1234/v1",
   "source": "operator-reviewed local installation",
-  "license": "Apache-2.0",
+  "license": "license-of-the-model",
   "context_tokens": 4096,
   "max_output_tokens": 1024,
   "weights_sha256": null

@@ -2,8 +2,8 @@
   "format_version": 1,
   "skill_id": "rust.s1",
   "artifact": "rust_ownership_reference.md",
-  "artifact_sha256": "92fe80b20d2b9c1e09cd2844c53a536adc2cfb2cc5c3ceb8258dea5d2d257303",
-  "artifact_license": "Apache-2.0",
+  "artifact_sha256": "146fa1f25504f672f552c93ca10cbe38a5641f7936e5e511ffe17b740358525a",
+  "artifact_license": "GPL-3.0-only",
   "source_pages": [
     "https://doc.rust-lang.org/book/ch04-01-what-is-ownership.html",
     "https://doc.rust-lang.org/book/ch04-02-references-and-borrowing.html",

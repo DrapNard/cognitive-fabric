@@ -1,6 +1,6 @@
 # Rust ownership reference candidate
 
-Original Cognitive Fabric explanatory text. License: Apache-2.0.
+Original Cognitive Fabric explanatory text. License: GPL-3.0-only.
 Reviewed source pages: The Rust Programming Language, accessed 2026-10-14.
 Scope: safe Rust ownership, borrowing and lifetime relationships; not unsafe-code
 soundness, concurrency correctness or arbitrary program verification.

@@ -6,6 +6,6 @@
   "tags": ["rust", "ownership", "borrowing"],
   "dependencies": [],
   "source": "Cognitive Fabric example authored for this repository",
-  "license": "Apache-2.0",
+  "license": "GPL-3.0-only",
   "workflow": "Identify each owner, move and borrow in the original objective. Separate compile-time constraints from runtime behavior. State missing evidence and provide advice to the final solver. Do not claim compilation, execute commands, or infer permissions."
 }

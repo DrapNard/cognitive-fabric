@@ -188,7 +188,7 @@ State/logs: `/tmp/cogfabric-rust-reference-candidate.gZbJKo`.
 No active document/version or permission was promoted.
 
 To prepare another isolated copy, use candidate create with skill rust.s1, kind
-rag, the Markdown artifact, its source description and Apache-2.0 license, then
+rag, the Markdown artifact, its source description and GPL-3.0-only license, then
 candidate evaluate with suite integrity. Obtain independently authored/reviewed
 retrieval cases before quality acceptance; never label these draft queries held
 out to bypass the gate. Runtime operator attestation does not itself establish

@@ -272,7 +272,8 @@ mandatory and unchanged. Reports identify `run_purpose: workflow_check`,
 `held_out_run: false` and `held_out_operator_attested: false`; a dataset pin in
 this mode does not become a reviewed-dataset attestation. Scores describe only
 these public cases and cannot support general quality or superiority claims.
-Repository examples use Apache-2.0 licensing. Held-out comparisons still require
+Project-authored framework examples use GPL-3.0-only; CC0-labelled datasets retain
+their separate license. Held-out comparisons still require
 `--held-out`; operator attestation does not prove independence.
 
 ### Structured output contract parity
