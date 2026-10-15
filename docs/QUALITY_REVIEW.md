@@ -1,5 +1,14 @@
 # Rust baseline quality review
 
+License metadata regression repair (2026-10-16): the GPL-3.0-only update
+exposed a compatibility test that used a mutable current example as historical
+input. The original checker manifest is now frozen in `tests/fixtures/`; its
+existing canonical SHA-256 assertion remains unchanged. Current examples validate
+against package license metadata, and the reference-candidate test verifies both
+manifest hashes while retaining quarantine and denied-promotion checks. All 526
+workspace tests, formatting, all-target checking and warnings-denied Clippy passed
+locally with `FLATC` unset. No runtime policy or release gate changed.
+
 Current local runtime passes 526 Rust tests (468 library including the server,
 58 integration), formatting, workspace all-target checking and Clippy with warnings
 denied. The separate Wasm experiment passes 24 tests with the optional Core audit

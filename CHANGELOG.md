@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Preserve historical manifest compatibility after license updates
+
+- Freeze the legacy checker manifest and retain its original canonical hash.
+- Validate current example licenses and reference artifact hashes against metadata.
+- Preserve reference quarantine and independent-review promotion requirements.
+
 ### Contain failed arithmetic and SQL workers
 
 - Exclude closed tool queues despite optimistic backend health and preserve no-retry handles.

@@ -18,6 +18,19 @@ fn rust_reference_stays_quarantined_without_independent_quality_review() {
     let artifact = root.join("reference.md");
     let dataset = root.join("draft.jsonl");
     let body = include_str!("../examples/rust_ownership_reference.md");
+    let manifest: serde_json::Value = serde_json::from_str(include_str!(
+        "../examples/rust_ownership_reference_manifest.json"
+    ))
+    .unwrap();
+    let license = manifest["artifact_license"].as_str().unwrap();
+    assert_eq!(license, env!("CARGO_PKG_LICENSE"));
+    assert_eq!(manifest["artifact_sha256"], store::sha256(body.as_bytes()));
+    assert_eq!(
+        manifest["quality_cases_sha256"],
+        store::sha256(include_bytes!(
+            "../examples/rust_ownership_retrieval_draft.jsonl"
+        ))
+    );
     std::fs::write(&artifact, body).unwrap();
     std::fs::write(
         &dataset,
@@ -39,7 +52,7 @@ fn rust_reference_stays_quarantined_without_independent_quality_review() {
         "rag",
         &artifact,
         "Original Rust reference fixture",
-        "Apache-2.0",
+        license,
     )
     .unwrap();
     assert_eq!(candidate.checksum, store::sha256(body.as_bytes()));
@@ -49,7 +62,7 @@ fn rust_reference_stays_quarantined_without_independent_quality_review() {
     );
     let review = evaluation::DatasetReview {
         source: "Same-author public draft".into(),
-        license: "Apache-2.0".into(),
+        license: license.into(),
         held_out: false,
     };
     assert!(evaluation::evaluate_reviewed(
@@ -79,7 +92,7 @@ fn rust_reference_stays_quarantined_without_independent_quality_review() {
             title: "Rust reference".into(),
             body: body.into(),
             source: "Original linked Rust guide".into(),
-            license: "Apache-2.0".into(),
+            license: license.into(),
         })
         .unwrap();
     for line in include_str!("../examples/rust_ownership_retrieval_draft.jsonl").lines() {

@@ -4,8 +4,16 @@ fn fixture() -> Manifest {
 }
 #[test]
 fn capability_validation_preserves_legacy_canonical_hashes() {
-    let legacy: Manifest =
+    let legacy: Manifest = serde_json::from_str(include_str!(
+        "../../tests/fixtures/legacy_checker_manifest.json"
+    ))
+    .unwrap();
+    assert_eq!(legacy.license, "Apache-2.0");
+    // Current project examples may evolve; compatibility evidence must stay frozen.
+    let current: Manifest =
         serde_json::from_str(include_str!("../../examples/checker_manifest.json")).unwrap();
+    current.validate().unwrap();
+    assert_eq!(current.license, env!("CARGO_PKG_LICENSE"));
     assert!(legacy.capabilities.is_empty());
     assert!(serde_json::to_value(&legacy)
         .unwrap()

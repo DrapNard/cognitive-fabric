@@ -1,0 +1,11 @@
+{
+  "id": "data.sort.s1",
+  "version": "1.0.0",
+  "kind": "checker",
+  "checker": "integer_sort/v1",
+  "description": "Independent bounded integer sorting and multiplicity checks",
+  "tags": ["sort", "integers"],
+  "dependencies": [],
+  "source": "compiled Cognitive Fabric checker",
+  "license": "Apache-2.0"
+}

@@ -1,5 +1,14 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+License metadata regression repair (2026-10-16): the GPL-3.0-only update
+exposed a compatibility test that used a mutable current example as historical
+input. The original checker manifest is now frozen in `tests/fixtures/`; its
+existing canonical SHA-256 assertion remains unchanged. Current examples validate
+against package license metadata, and the reference-candidate test verifies both
+manifest hashes while retaining quarantine and denied-promotion checks. All 526
+workspace tests, formatting, all-target checking and warnings-denied Clippy passed
+locally with `FLATC` unset. No runtime policy or release gate changed.
+
 Current evidence review (2026-10-14): **pre-release; V1 incomplete**. The current
 workspace passes 526 tests (468 library including the server, 58 integration),
 formatting, all-target checking and Clippy. See `RELEASE_AUDIT.md` for the 18 goal
