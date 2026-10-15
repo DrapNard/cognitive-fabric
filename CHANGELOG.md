@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Continue saved graphs after interrupted node initialization
+
+- Admit missing initial pending nodes only before advisory execution advances.
+- Record missing transitions atomically with approved continuation admission.
+- Preserve saved schedules, deadlines, charges and no-planner-replay behavior.
+
 ### Account for executing work in tool routing
 
 - Prefer idle arithmetic/SQL peers at equal rank even with empty waiting queues.

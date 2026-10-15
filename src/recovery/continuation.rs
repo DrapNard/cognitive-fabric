@@ -32,11 +32,22 @@ fn prepare(db: &rusqlite::Connection, task: &str) -> Result<Checkpoint> {
     if !matches!(status.as_str(), "running" | "interrupted") {
         bail!("Task is not abandoned or interrupted")
     }
-    if subtasks
-        .iter()
-        .any(|n| !matches!(n.state.as_str(), "pending" | "unverified" | "skipped"))
-    {
+    if subtasks.iter().any(|n| {
+        !matches!(
+            n.state.as_str(),
+            "not_recorded" | "pending" | "unverified" | "skipped"
+        )
+    }) {
         bail!("Continuation requires pending or recorded advisory nodes; running outcomes need reconciliation")
+    }
+    // Initial node writes precede all advisory execution. Missing state after
+    // any execution transition is not an initialization crash and stays refused.
+    if subtasks.iter().any(|n| n.state == "not_recorded")
+        && subtasks
+            .iter()
+            .any(|n| !matches!(n.state.as_str(), "not_recorded" | "pending"))
+    {
+        bail!("Missing initial nodes after advisory execution advanced")
     }
     let query: String = db.query_row(
         "SELECT CASE WHEN length(CAST(query AS BLOB))<=12000 THEN query END FROM tasks WHERE id=?1",
@@ -490,6 +501,7 @@ pub fn preview(store: &Store, task: &str) -> Result<Value> {
                 "tool_calls":checkpoint.state.resources.tool_calls,
                 "reserved_output_tokens":checkpoint.state.resources.reserved_output_tokens,
                 "prompt_bytes":checkpoint.state.resources.prompt_bytes},
+            "initial_nodes_to_record":checkpoint.subtasks.iter().filter(|n| n.state == "not_recorded").count(),
             "subtasks":checkpoint.subtasks.iter().map(|n|json!({"id":n.step.id,"state":n.state})).collect::<Vec<_>>(),
             "weights_attested":false}))
     })();
@@ -536,6 +548,14 @@ pub async fn resume(
                         .expect("Admission owns its lease")
                         .into_shared()?,
                 );
+            }
+            // Persist only missing initial transitions under the admission lease
+            // and transaction, before workers or inference can be constructed.
+            for node in &mut checkpoint.subtasks {
+                if node.state == "not_recorded" {
+                    node.state = "pending".into();
+                    tx.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'subtask','jev-plus',?2,unixepoch())",rusqlite::params![task,json!({"node":node,"origin":"operator_initial_graph_recovery"}).to_string()])?;
+                }
             }
             tx.execute(
                 "UPDATE tasks SET status='running',updated=unixepoch() WHERE id=?1",
@@ -796,6 +816,151 @@ mod tests {
         store.lock().unwrap().execute("DELETE FROM events WHERE task_id=?1 AND kind='subtask' AND json_extract(payload,'$.node.state')='unverified'",[&task]).unwrap();
         (store, task, root)
     }
+    fn truncate_initial_graph(store: &Store, task: &str, pending: usize) {
+        let db = store.lock().unwrap();
+        let cutoff: u64 = db.query_row("SELECT id FROM events WHERE task_id=?1 AND kind='subtask' ORDER BY id LIMIT 1 OFFSET ?2",rusqlite::params![task,pending],|r|r.get(0)).unwrap();
+        db.execute(
+            "DELETE FROM events WHERE task_id=?1 AND id>=?2",
+            rusqlite::params![task, cutoff],
+        )
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn initial_graph_preview_is_read_only_and_rejects_missing_state_after_execution() {
+        for pending in 0..2 {
+            let root =
+                std::env::temp_dir().join(format!("fabric-initial-{}", uuid::Uuid::new_v4()));
+            let (store, task) =
+                fixture_in(Arc::new(Store::open(&root.join("state.db")).unwrap())).await;
+            truncate_initial_graph(&store, &task, pending);
+            let before = store.task(&task).unwrap();
+            let report = preview(&store, &task).unwrap();
+            assert_eq!(report["initial_nodes_to_record"], 2 - pending);
+            assert_eq!(report["consumed"]["calls"], 1);
+            assert_eq!(store.task(&task).unwrap(), before);
+            assert!(resume(store.clone(), &task, false, std::future::pending())
+                .await
+                .is_err());
+            assert_eq!(store.task(&task).unwrap(), before);
+            store.lock().unwrap().execute_batch("CREATE TRIGGER reject_initial BEFORE INSERT ON events WHEN NEW.kind='subtask' AND json_extract(NEW.payload,'$.node.step.id')='b' BEGIN SELECT RAISE(ABORT,'fixture initial write failure'); END;").unwrap();
+            assert!(resume(store.clone(), &task, true, std::future::pending())
+                .await
+                .is_err());
+            assert_eq!(store.task(&task).unwrap(), before);
+            drop(store);
+            std::fs::remove_dir_all(root).unwrap();
+        }
+        let (store, task) = fixture().await;
+        store.lock().unwrap().execute("DELETE FROM events WHERE task_id=?1 AND kind='subtask' AND json_extract(payload,'$.node.step.id')='b'",[&task]).unwrap();
+        assert!(prepare(&store.lock().unwrap(), &task).is_err());
+    }
+
+    #[tokio::test]
+    async fn initial_graph_resume_records_missing_nodes_before_http_without_replanning() {
+        use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+        for pending in 0..2 {
+            let root =
+                std::env::temp_dir().join(format!("fabric-initial-http-{}", uuid::Uuid::new_v4()));
+            let (store, task) =
+                fixture_in_order(Arc::new(Store::open(&root.join("state.db")).unwrap()), true)
+                    .await;
+            truncate_initial_graph(&store, &task, pending);
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let endpoint = format!("http://{}/v1", listener.local_addr().unwrap());
+            store.lock().unwrap().execute("UPDATE events SET payload=json_set(payload,'$.configuration.api_base',?2) WHERE task_id=?1 AND kind='execution_settings'",rusqlite::params![task,endpoint]).unwrap();
+            let observed_store = store.clone();
+            let observed_task = task.clone();
+            let server = tokio::spawn(async move {
+                for (index, answer) in [
+                    "first recovered advice",
+                    "second recovered advice",
+                    "[1,2,3]",
+                ]
+                .into_iter()
+                .enumerate()
+                {
+                    let (socket, _) = listener.accept().await.unwrap();
+                    let mut socket = BufReader::new(socket);
+                    let mut length = None;
+                    let mut total = 0;
+                    loop {
+                        let mut line = String::new();
+                        assert!(socket.read_line(&mut line).await.unwrap() > 0);
+                        total += line.len();
+                        assert!(total < 8192);
+                        if line == "\r\n" {
+                            break;
+                        }
+                        if let Some(n) = line.to_ascii_lowercase().strip_prefix("content-length: ")
+                        {
+                            length = Some(n.trim().parse::<usize>().unwrap());
+                        }
+                    }
+                    let length = length.unwrap();
+                    assert!(length < 131072);
+                    let mut body = vec![0; length];
+                    socket.read_exact(&mut body).await.unwrap();
+                    let body: Value = serde_json::from_slice(&body).unwrap();
+                    let prompt = body["messages"].to_string();
+                    if index == 0 {
+                        assert!(prompt.contains("Independent advice"));
+                    }
+                    if index == 1 {
+                        assert!(prompt.contains("Inspect input"));
+                    }
+                    if index == 2 {
+                        assert!(prompt.contains("first recovered advice"));
+                        assert!(prompt.contains("second recovered advice"));
+                    }
+                    let (_, _, nodes) =
+                        graph::graph_from(&observed_store.lock().unwrap(), &observed_task).unwrap();
+                    assert!(nodes.iter().all(|n| n.state != "not_recorded"));
+                    let response = json!({"choices":[{"message":{"content":answer}}]}).to_string();
+                    socket.get_mut().write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",response.len(),response).as_bytes()).await.unwrap();
+                }
+            });
+            let report = tokio::time::timeout(
+                Duration::from_secs(10),
+                resume(store.clone(), &task, true, std::future::pending()),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            assert_eq!(report["status"], "completed");
+            assert_eq!(report["new_calls"], 3);
+            server.await.unwrap();
+            let audit = store.inference_audit(&task).unwrap();
+            assert_eq!(audit["reserved_calls"], 4);
+            assert_eq!(audit["reserved_output_tokens"], 1024);
+            assert_eq!(
+                audit["calls"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .filter(|c| c["role"] == "planner")
+                    .count(),
+                1
+            );
+            let trace = store.task(&task).unwrap();
+            assert_eq!(
+                trace["events"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .filter(|e| e["kind"] == "subtask"
+                        && e["payload"]["origin"] == "operator_initial_graph_recovery")
+                    .count(),
+                2 - pending
+            );
+            assert!(resume(store.clone(), &task, true, std::future::pending())
+                .await
+                .is_err());
+            drop(store);
+            std::fs::remove_dir_all(root).unwrap();
+        }
+    }
+
     #[tokio::test]
     async fn reconciles_recorded_advice_without_replay_and_preserves_custom_schedule() {
         for custom in [false, true] {

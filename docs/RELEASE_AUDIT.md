@@ -1,5 +1,28 @@
 # v1.0 release acceptance audit
 
+### Recover interrupted graph initialization — 2026-10-16
+
+Approved `resume-task` now initializes missing pending nodes after a saved planner
+result and graph, including a partially persisted initialization. Preview reports
+`initial_nodes_to_record` and leaves state untouched. Admission still validates
+original model/module/context/settings, charged planner identity, committed
+schedule, same-boot deadline and remaining budgets. Missing nodes alongside any
+advanced node state remain rejected. Missing transitions and the continuation
+start commit in one lease-protected transaction before worker/backend setup.
+
+Regression coverage includes no-approval refusal, read-only preview, write failure
+after an earlier initialization write (full rollback), missing state after prior
+execution, and actual local HTTP continuation of both crash windows with custom
+schedule. Exactly three new solver calls finish the task; the original planner is
+not replayed and total reservations stay four calls / 1024 output tokens. No
+permissions, deadline or resource allowance is renewed. Unknown provider outcomes,
+other-boot continuation and general consumed-cycle recovery remain incomplete.
+
+Verification: all 529 workspace tests (471 library including server, 58
+integration), `cargo fmt --all -- --check`, workspace all-target check and Clippy
+with warnings denied passed with `FLATC` unset. Checks used locked cached
+worktree dependencies; no new live-model or installed-binary result is claimed.
+
 ### Include executing arithmetic and SQL work in routing — 2026-10-16
 
 Equal-rank tool candidates now compare buffered requests plus the one currently
@@ -44,7 +67,7 @@ This checklist preserves the 18 acceptance criteria in the goal objective. It is
 an evidence inventory, not a release approval. The canonical French architecture
 and the broader implementation matrix remain authoritative. Earlier test counts
 in the quality review are historical milestones. Current local verification is
-526 Rust tests (468 library including the server, 58 integration), formatting, all-target checking and
+529 Rust tests (471 library including the server, 58 integration), formatting, all-target checking and
 Clippy with warnings denied. Default builds use bundled generated sources and
 Rust FlatBuffers 25.12.19. Exact native generation/byte comparison was also
 revalidated for the new optional load observations.
@@ -53,7 +76,7 @@ revalidated for the new optional load observations.
 |---|---|---|
 | 1. Workspace builds | `Cargo.toml`, all-target check | Passed locally; isolated optimized source installation also passed with cached dependencies. |
 | 2. Formatting and Clippy | Mandatory checks in `QUALITY_REVIEW.md` | Passed locally. |
-| 3. Mandatory tests | Workspace all-target test results, `tests/`, server integration tests | 526 passed; fixtures do not establish live model quality. |
+| 3. Mandatory tests | Workspace all-target test results, `tests/`, server integration tests | 529 passed; fixtures do not establish live model quality. |
 | 4. FlatBuffers IPC | `protocol/`, `src/wire.rs`, `src/fabric/`, malformed/compatibility/socket tests | Implemented for present transports; authenticated process event delivery/replay is now tested; broader module compatibility remains partial. |
 | 5. CLI/service communication | `src/service.rs`, socket tests, `tests/process_worker.rs`, `crates/cogfabric-server/tests/` | Tested typed local transport, progress, cancellation and optional HTTP client interoperability; native and collective ownership drains cover dropped request futures. No general independent plugin service is claimed. |
 | 6. Compatible local LLM | `src/backend.rs`, `tests/inference_auth.rs`, `LIVE_INFERENCE.md` | Passed for Ollama and LM Studio Qwen3 8B compatible endpoints, including managed verified sorting. Native inventory and one operator-approved embedding load/unload passed; authenticated native access and generative switching remain unverified. |

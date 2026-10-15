@@ -609,3 +609,19 @@ continuation still needs separate approval and revalidation. A repeated recovery
 finds no running node and fails without another transition. The report excludes
 advice text and includes its stored-result hash. This is not reconciliation of an
 unknown provider outcome or recovery inside a consumed solver cycle.
+
+## Saved graph with interrupted initialization
+
+`resume-preview` now admits a saved validated planner result and graph when none
+or only some initial pending nodes were persisted before interruption. It reports
+`initial_nodes_to_record`, preserving the observed `not_recorded` states and
+performing no writes. `resume-task --human-approve` revalidates the original
+snapshots, schedule, reservations and aging deadline, then records only missing
+pending transitions in the same transaction as continuation admission, before
+constructing any backend. A write failure rolls back the complete admission.
+The planner is never replayed. This requires all nodes to be either pending or
+not recorded; missing initial records after any advanced node state fail closed.
+Actual local HTTP regressions cover zero and partial initialization with a custom
+saved order and unchanged total charges. Earlier blanket refusal of initial
+missing node records is superseded by this narrowly validated path. General
+unknown-result or consumed-cycle continuation remains unsupported.

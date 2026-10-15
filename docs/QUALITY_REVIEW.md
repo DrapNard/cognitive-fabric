@@ -1,5 +1,28 @@
 # Rust baseline quality review
 
+### Recover interrupted graph initialization — 2026-10-16
+
+Approved `resume-task` now initializes missing pending nodes after a saved planner
+result and graph, including a partially persisted initialization. Preview reports
+`initial_nodes_to_record` and leaves state untouched. Admission still validates
+original model/module/context/settings, charged planner identity, committed
+schedule, same-boot deadline and remaining budgets. Missing nodes alongside any
+advanced node state remain rejected. Missing transitions and the continuation
+start commit in one lease-protected transaction before worker/backend setup.
+
+Regression coverage includes no-approval refusal, read-only preview, write failure
+after an earlier initialization write (full rollback), missing state after prior
+execution, and actual local HTTP continuation of both crash windows with custom
+schedule. Exactly three new solver calls finish the task; the original planner is
+not replayed and total reservations stay four calls / 1024 output tokens. No
+permissions, deadline or resource allowance is renewed. Unknown provider outcomes,
+other-boot continuation and general consumed-cycle recovery remain incomplete.
+
+Verification: all 529 workspace tests (471 library including server, 58
+integration), `cargo fmt --all -- --check`, workspace all-target check and Clippy
+with warnings denied passed with `FLATC` unset. Checks used locked cached
+worktree dependencies; no new live-model or installed-binary result is claimed.
+
 ### Include executing arithmetic and SQL work in routing — 2026-10-16
 
 Equal-rank tool candidates now compare buffered requests plus the one currently
@@ -40,7 +63,7 @@ manifest hashes while retaining quarantine and denied-promotion checks. All 526
 workspace tests, formatting, all-target checking and warnings-denied Clippy passed
 locally with `FLATC` unset. No runtime policy or release gate changed.
 
-Current local runtime passes 526 Rust tests (468 library including the server,
+Current local runtime passes 529 Rust tests (471 library including the server,
 58 integration), formatting, workspace all-target checking and Clippy with warnings
 denied. The separate Wasm experiment passes 24 tests with the optional Core audit
 bridge. Default builds use reviewed bundled FlatBuffers 25.12.19 sources without
