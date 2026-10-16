@@ -1,5 +1,28 @@
 # v1.0 release acceptance audit
 
+### Continue after a recorded critic — 2026-10-16
+
+`recover-revision-result --human-approve` now also reconciles a completed
+same-cycle solver/critic pair into `ready_reflector`. Strict critique content
+must match the checkpoint. Continuation revalidates that pair and reserves no
+new allowance: at least two original calls, 512 output tokens and bounded prompt
+capacity must remain for reflection plus a revised solver. Original settings,
+module/model pins, stopping hash, schedule and aging same-boot deadline still
+apply. Resume invokes only the missing reflector and solver; no prior inference
+is replayed and the outcome remains unverified.
+
+Tests cover actual HTTP (two new calls, five total / 1280 reserved outputs),
+insufficient call/output/input allowance, changed critique reason, and a second
+crash after recovered reflection. A recorded reflection can form `ready_solver`;
+a reserved reflection without its result still fails closed without writes.
+This extends the completed-reflection path; arbitrary within-cycle positions,
+unknown provider outcomes and other-boot recovery remain incomplete.
+
+Verification: 536 workspace tests (477 library including server, 59 integration),
+formatting, all-target workspace checking and warnings-denied Clippy passed with
+`FLATC` unset. The previous runtime's hosted run `38827055986` was still running
+when checked; no new hosted success, installation or live-model claim is made.
+
 ### Reconcile a recorded revision handoff — 2026-10-16
 
 `recover-revision-result TASK --human-approve` links a fully recorded same-cycle
@@ -95,7 +118,7 @@ This checklist preserves the 18 acceptance criteria in the goal objective. It is
 an evidence inventory, not a release approval. The canonical French architecture
 and the broader implementation matrix remain authoritative. Earlier test counts
 in the quality review are historical milestones. Current local verification is
-533 Rust tests (474 library including the server, 59 integration), formatting, all-target checking and
+536 Rust tests (477 library including the server, 59 integration), formatting, all-target checking and
 Clippy with warnings denied. Default builds use bundled generated sources and
 Rust FlatBuffers 25.12.19. Exact native generation/byte comparison was also
 revalidated for the new optional load observations.
@@ -104,7 +127,7 @@ revalidated for the new optional load observations.
 |---|---|---|
 | 1. Workspace builds | `Cargo.toml`, all-target check | Passed locally; isolated optimized source installation also passed with cached dependencies. |
 | 2. Formatting and Clippy | Mandatory checks in `QUALITY_REVIEW.md` | Passed locally. |
-| 3. Mandatory tests | Workspace all-target test results, `tests/`, server integration tests | 533 passed; fixtures do not establish live model quality. |
+| 3. Mandatory tests | Workspace all-target test results, `tests/`, server integration tests | 536 passed; fixtures do not establish live model quality. |
 | 4. FlatBuffers IPC | `protocol/`, `src/wire.rs`, `src/fabric/`, malformed/compatibility/socket tests | Implemented for present transports; authenticated process event delivery/replay is now tested; broader module compatibility remains partial. |
 | 5. CLI/service communication | `src/service.rs`, socket tests, `tests/process_worker.rs`, `crates/cogfabric-server/tests/` | Tested typed local transport, progress, cancellation and optional HTTP client interoperability; native and collective ownership drains cover dropped request futures. No general independent plugin service is claimed. |
 | 6. Compatible local LLM | `src/backend.rs`, `tests/inference_auth.rs`, `LIVE_INFERENCE.md` | Passed for Ollama and LM Studio Qwen3 8B compatible endpoints, including managed verified sorting. Native inventory and one operator-approved embedding load/unload passed; authenticated native access and generative switching remain unverified. |

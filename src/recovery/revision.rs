@@ -17,6 +17,51 @@ struct Critique {
     reason: String,
 }
 
+fn critique_reason(text: &str) -> Result<String> {
+    let critique = crate::structured::parse::<Critique>(text, 8192)?;
+    if !critique.revise || critique.reason.trim().is_empty() || critique.reason.len() > 1000 {
+        bail!("Critique does not admit a revision")
+    }
+    Ok(critique.reason)
+}
+
+pub(super) fn validate_reflector_boundary(
+    db: &rusqlite::Connection,
+    task: &str,
+    boundary: &Value,
+    audit: &Value,
+) -> Result<()> {
+    let mut stmt=db.prepare("SELECT CASE WHEN length(CAST(source AS BLOB))<=64 THEN source END,CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN payload END FROM events WHERE task_id=?1 AND kind='reasoning' ORDER BY id DESC LIMIT 2")?;
+    let rows = stmt.query_map([task], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+    })?;
+    let mut saved = Vec::new();
+    for row in rows {
+        let (source, raw) = row?;
+        if source != "jev-r" {
+            bail!("Invalid reflector boundary source")
+        };
+        saved.push(crate::strict_json::value(raw.as_bytes(), 262144)?);
+    }
+    let call = audit["reserved_calls"].as_u64().unwrap();
+    if saved.len() != 2
+        || call < 2
+        || saved[0]["node"]["role"] != "critic"
+        || saved[1]["node"]["role"] != "solver"
+        || saved[0]["call"] != call
+        || saved[1]["call"] != call - 1
+        || saved
+            .iter()
+            .any(|v| v["node"]["cycle"] != boundary["cycles_before"])
+        || saved[1]["text"] != boundary["previous_answer"]
+        || boundary["strategy"] != ""
+        || boundary["critique_reason"] != critique_reason(saved[0]["text"].as_str().unwrap())?
+    {
+        bail!("Reflector boundary differs from recorded solver/critic handoff")
+    }
+    Ok(())
+}
+
 impl Store {
     pub fn recover_revision_result(&self, task: &str, human_approve: bool) -> Result<Value> {
         security::authorize("human-cli", "task.recover")?;
@@ -65,57 +110,77 @@ impl Store {
                 results.push((id, crate::strict_json::value(raw.as_bytes(), 262144)?));
             }
             drop(stmt);
-            if results.len() != 3 {
+            let needs_reflector = results
+                .first()
+                .is_some_and(|(_, v)| v["node"]["role"] == "critic");
+            let required = if needs_reflector { 2 } else { 3 };
+            if results.len() < required {
                 bail!("No complete recorded revision handoff")
             }
+            results.truncate(required);
             results.reverse();
-            let (solver, critic, reflection) = (&results[0].1, &results[1].1, &results[2].1);
+            let (solver, critic) = (&results[0].1, &results[1].1);
             let cycles: u64 = tx.query_row(
                 "SELECT count(*) FROM events WHERE task_id=?1 AND kind='cycle_reservation'",
                 [task],
                 |r| r.get(0),
             )?;
             let last = audit["reserved_calls"].as_u64().unwrap();
-            if cycles == 0 || last < 3 {
+            if cycles == 0 || last < required as u64 {
                 bail!("Missing revision charges")
             }
             for (offset, (_, saved)) in results.iter().enumerate() {
                 if saved["node"]["role"] != ["solver", "critic", "reflector"][offset]
                     || saved["node"]["cycle"] != cycles
-                    || saved["call"] != last - 2 + offset as u64
+                    || saved["call"] != last - required as u64 + 1 + offset as u64
                 {
                     bail!("Latest calls are not a complete same-cycle revision")
                 }
             }
-            let critique =
-                crate::structured::parse::<Critique>(critic["text"].as_str().unwrap(), 8192)?;
-            if !critique.revise || critique.reason.trim().is_empty() || critique.reason.len() > 1000
-            {
-                bail!("Critique does not admit a revision")
-            }
+            let reason = critique_reason(critic["text"].as_str().unwrap())?;
             let previous = solver["text"].as_str().unwrap();
-            let strategy: String = reflection["text"]
-                .as_str()
-                .unwrap()
-                .chars()
-                .take(4000)
-                .collect();
+            let strategy: String = if needs_reflector {
+                String::new()
+            } else {
+                results[2].1["text"]
+                    .as_str()
+                    .unwrap()
+                    .chars()
+                    .take(4000)
+                    .collect()
+            };
             let (boundary_id,boundary_source,raw):(u64,String,String)=tx.query_row("SELECT id,CASE WHEN length(CAST(source AS BLOB))<=64 THEN source END,CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN payload END FROM events WHERE task_id=?1 AND kind='reasoning_boundary' ORDER BY id DESC LIMIT 1",[task],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)))?;
             let mut boundary = crate::strict_json::value(raw.as_bytes(), 262144)?;
+            let prior_reflector_boundary =
+                !needs_reflector && boundary["phase"] == "ready_reflector";
+            let prior_valid = if prior_reflector_boundary {
+                boundary["cycles_before"] == cycles
+                    && boundary["calls_before"] == last - 1
+                    && boundary["previous_answer"] == previous
+                    && boundary["last_answer_hash"] == sha256(previous.as_bytes())
+                    && boundary["critique_reason"] == reason
+            } else {
+                boundary["phase"] == "ready_solver"
+                    && boundary["cycles_before"] == cycles - 1
+                    && boundary["calls_before"] == last - required as u64
+                    && (if cycles == 1 {
+                        boundary["previous_answer"] == "" && boundary["last_answer_hash"].is_null()
+                    } else {
+                        boundary["previous_answer"].as_str().is_some_and(|answer| {
+                            boundary["last_answer_hash"] == sha256(answer.as_bytes())
+                        })
+                    })
+                    && boundary["last_answer_hash"] != sha256(previous.as_bytes())
+            };
+            let boundary_before_result = if prior_reflector_boundary {
+                boundary_id < results[2].0
+            } else {
+                boundary_id < results[0].0
+            };
             if boundary_source != "jev-r"
-                || boundary_id >= results[0].0
+                || !boundary_before_result
                 || boundary["format_version"] != 1
-                || boundary["phase"] != "ready_solver"
-                || boundary["cycles_before"] != cycles - 1
-                || boundary["calls_before"] != last - 3
-                || (cycles == 1
-                    && (boundary["previous_answer"] != ""
-                        || !boundary["last_answer_hash"].is_null()))
-                || (cycles > 1
-                    && boundary["previous_answer"].as_str().is_none_or(|answer| {
-                        boundary["last_answer_hash"] != sha256(answer.as_bytes())
-                    }))
-                || boundary["last_answer_hash"] == sha256(previous.as_bytes())
+                || !prior_valid
             {
                 bail!("Revision boundary is missing, consumed differently or already reconciled")
             }
@@ -124,6 +189,16 @@ impl Store {
                 [task],
                 |r| r.get(0),
             )?;
+            boundary["phase"] = json!(if needs_reflector {
+                "ready_reflector"
+            } else {
+                "ready_solver"
+            });
+            if needs_reflector {
+                boundary["critique_reason"] = json!(reason);
+            } else {
+                boundary.as_object_mut().unwrap().remove("critique_reason");
+            }
             boundary["strategy"] = json!(strategy);
             boundary["previous_answer"] = json!(previous);
             boundary["last_answer_hash"] = json!(sha256(previous.as_bytes()));
@@ -139,7 +214,7 @@ impl Store {
             }
             tx.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'reasoning_boundary','jev-r',?2,unixepoch())",params![task,encoded])?;
             continuation::validate_checkpoint(&tx, task)?;
-            let report = json!({"format_version":1,"task_id":task,"cycle":cycles,"call":last,"strategy_sha256":sha256(strategy.as_bytes()),"previous_answer_sha256":sha256(previous.as_bytes()),"revision_ready":true,"inference_replayed":false,"original_budget_preserved":true,"result_verified":false,"resume_authorized":false});
+            let report = json!({"format_version":1,"task_id":task,"cycle":cycles,"call":last,"strategy_sha256":sha256(strategy.as_bytes()),"previous_answer_sha256":sha256(previous.as_bytes()),"revision_ready":true,"phase":boundary["phase"],"inference_replayed":false,"original_budget_preserved":true,"result_verified":false,"resume_authorized":false});
             tx.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'revision_recovery','human-cli',?2,unixepoch())",params![task,report.to_string()])?;
             if started.elapsed() > Duration::from_secs(5) {
                 bail!("Revision recovery admission deadline exhausted")
@@ -290,8 +365,107 @@ mod tests {
 
     #[tokio::test]
     async fn recorded_reflection_resumes_through_http_without_replaying_the_cycle() {
+        http_revision(false).await;
+    }
+    #[tokio::test]
+    async fn recorded_critic_resumes_reflection_and_solver_without_replaying_prior_calls() {
+        http_revision(true).await;
+    }
+    fn truncate_after_critic(store: &Store, task: &str) {
+        let db = store.lock().unwrap();
+        let id:u64=db.query_row("SELECT id FROM events WHERE task_id=?1 AND kind='reasoning' AND json_extract(payload,'$.node.role')='critic'",[task],|r|r.get(0)).unwrap();
+        db.execute(
+            "DELETE FROM events WHERE task_id=?1 AND id>?2",
+            params![task, id],
+        )
+        .unwrap();
+    }
+    #[tokio::test]
+    async fn critic_recovery_rejects_insufficient_budget_and_changed_reason_without_writes() {
+        for mutation in 0..4 {
+            let (store, task, root) = fixture().await;
+            truncate_after_critic(&store, &task);
+            if mutation < 3 {
+                let expression=match mutation {
+                    0=>"json_set(payload,'$.configuration.max_calls',4,'$.call_limit',4)",
+                    1=>"json_set(payload,'$.configuration.max_tokens',1000)",
+                    _=>"json_set(payload,'$.configuration.max_input_bytes',json_extract(payload,'$.configuration.max_input_bytes')/2)",
+                };
+                // The input ceiling must fit past calls but fail the future pair.
+                if mutation == 2 {
+                    let bytes = store.inference_audit(&task).unwrap()["charged_prompt_bytes"]
+                        .as_u64()
+                        .unwrap();
+                    store.lock().unwrap().execute("UPDATE events SET payload=json_set(payload,'$.configuration.max_input_bytes',?1) WHERE kind='execution_settings'",[bytes+100]).unwrap();
+                } else {
+                    store.lock().unwrap().execute_batch(&format!("UPDATE events SET payload={expression} WHERE kind='execution_settings'")).unwrap();
+                }
+                let before = store.task(&task).unwrap();
+                assert!(store.recover_revision_result(&task, true).is_err());
+                assert_eq!(store.task(&task).unwrap(), before);
+            } else {
+                store.recover_revision_result(&task, true).unwrap();
+                store.lock().unwrap().execute("UPDATE events SET payload=json_set(payload,'$.critique_reason','Changed reason') WHERE kind='reasoning_boundary' AND json_extract(payload,'$.phase')='ready_reflector'",[]).unwrap();
+                let before = store.task(&task).unwrap();
+                assert!(continuation::preview(&store, &task).is_err());
+                assert_eq!(store.task(&task).unwrap(), before);
+            }
+            drop(store);
+            std::fs::remove_dir_all(root).unwrap();
+        }
+    }
+    #[tokio::test]
+    async fn interruption_after_recovered_reflection_requires_its_recorded_result() {
+        for result_recorded in [false, true] {
+            let (store, task, root) = fixture().await;
+            let records = {
+                let db = store.lock().unwrap();
+                let mut stmt=db.prepare("SELECT kind,source,payload FROM events WHERE task_id=?1 AND id>(SELECT id FROM events WHERE task_id=?1 AND kind='reasoning' AND json_extract(payload,'$.node.role')='critic') ORDER BY id").unwrap();
+                let rows = stmt
+                    .query_map([&task], |r| {
+                        Ok((
+                            r.get::<_, String>(0)?,
+                            r.get::<_, String>(1)?,
+                            r.get::<_, String>(2)?,
+                        ))
+                    })
+                    .unwrap();
+                rows.collect::<std::result::Result<Vec<_>, _>>().unwrap()
+            };
+            truncate_after_critic(&store, &task);
+            let report = store.recover_revision_result(&task, true).unwrap();
+            assert_eq!(report["phase"], "ready_reflector");
+            for (kind, source, raw) in records {
+                if kind != "reasoning" || result_recorded {
+                    store
+                        .event(&task, &kind, &source, serde_json::from_str(&raw).unwrap())
+                        .unwrap();
+                }
+            }
+            let before = store.task(&task).unwrap();
+            let result = store.recover_revision_result(&task, true);
+            if result_recorded {
+                assert_eq!(result.unwrap()["phase"], "ready_solver");
+                assert_eq!(
+                    continuation::preview(&store, &task).unwrap()["phase"],
+                    "ready_solver"
+                );
+                assert_eq!(store.inference_audit(&task).unwrap()["reserved_calls"], 4);
+            } else {
+                assert!(result.is_err());
+                assert_eq!(store.task(&task).unwrap(), before);
+            }
+            drop(store);
+            std::fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    async fn http_revision(needs_reflector: bool) {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let (store, task, root) = fixture().await;
+        if needs_reflector {
+            truncate_after_critic(&store, &task);
+        }
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let endpoint = format!("http://{}/v1", listener.local_addr().unwrap());
         store.lock().unwrap().execute("UPDATE events SET payload=json_set(payload,'$.configuration.api_base',?2) WHERE task_id=?1 AND kind='execution_settings'",params![task,endpoint]).unwrap();
@@ -310,36 +484,48 @@ mod tests {
         }
         assert!(store.recover_revision_result(&task, true).is_err());
         let server = tokio::spawn(async move {
-            let (mut socket, _) = listener.accept().await.unwrap();
-            let mut request = Vec::new();
-            loop {
-                let mut bytes = [0; 4096];
-                let n = socket.read(&mut bytes).await.unwrap();
-                assert!(n > 0);
-                request.extend_from_slice(&bytes[..n]);
-                assert!(request.len() < 131072);
-                if let Some(end) = request.windows(4).position(|w| w == b"\r\n\r\n") {
-                    let headers = String::from_utf8_lossy(&request[..end]);
-                    let length = headers
-                        .lines()
-                        .find_map(|l| {
-                            l.to_ascii_lowercase()
-                                .strip_prefix("content-length: ")
-                                .and_then(|n| n.parse::<usize>().ok())
-                        })
-                        .unwrap();
-                    if request.len() >= end + 4 + length {
-                        let body: Value =
-                            serde_json::from_slice(&request[end + 4..end + 4 + length]).unwrap();
-                        let text = body["messages"].to_string();
-                        assert!(text.contains("Explain lifetime constraints"));
-                        assert!(text.contains("first answer"));
-                        break;
+            let answers = if needs_reflector {
+                vec!["Explain lifetime constraints", "second answer"]
+            } else {
+                vec!["second answer"]
+            };
+            for (index, answer) in answers.into_iter().enumerate() {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut request = Vec::new();
+                loop {
+                    let mut bytes = [0; 4096];
+                    let n = socket.read(&mut bytes).await.unwrap();
+                    assert!(n > 0);
+                    request.extend_from_slice(&bytes[..n]);
+                    assert!(request.len() < 131072);
+                    if let Some(end) = request.windows(4).position(|w| w == b"\r\n\r\n") {
+                        let headers = String::from_utf8_lossy(&request[..end]);
+                        let length = headers
+                            .lines()
+                            .find_map(|l| {
+                                l.to_ascii_lowercase()
+                                    .strip_prefix("content-length: ")
+                                    .and_then(|n| n.parse::<usize>().ok())
+                            })
+                            .unwrap();
+                        if request.len() >= end + 4 + length {
+                            let body: Value =
+                                serde_json::from_slice(&request[end + 4..end + 4 + length])
+                                    .unwrap();
+                            let text = body["messages"].to_string();
+                            assert!(text.contains(if needs_reflector && index == 0 {
+                                "Add lifetime constraints"
+                            } else {
+                                "Explain lifetime constraints"
+                            }));
+                            assert!(text.contains("first answer"));
+                            break;
+                        }
                     }
                 }
+                let body = json!({"choices":[{"message":{"content":answer}}]}).to_string();
+                socket.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",body.len(),body).as_bytes()).await.unwrap();
             }
-            let body = json!({"choices":[{"message":{"content":"second answer"}}]}).to_string();
-            socket.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",body.len(),body).as_bytes()).await.unwrap();
         });
         let result = tokio::time::timeout(
             Duration::from_secs(10),
@@ -349,7 +535,7 @@ mod tests {
         .unwrap()
         .unwrap();
         assert_eq!(result["status"], "unverified");
-        assert_eq!(result["new_calls"], 1);
+        assert_eq!(result["new_calls"], if needs_reflector { 2 } else { 1 });
         server.await.unwrap();
         let audit = store.inference_audit(&task).unwrap();
         assert_eq!(audit["reserved_calls"], 5);

@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Resume recorded critiques before reflection
+
+- Reconcile solver/critic results into a validated reflector checkpoint.
+- Admit reflection only with budget for the revised solver under original ceilings.
+- Preserve no-replay behavior across a second interruption and reject unknown results.
+
 ### Recover recorded revision handoffs without inference replay
 
 - Add approved reconciliation of same-cycle solver, critic and reflector results.

@@ -364,14 +364,21 @@ impl Session {
             boundary["previous_answer"].as_str().unwrap().into(),
             boundary["last_answer_hash"].as_str().map(String::from),
         ));
-        self.solve_with_strategy(
-            query,
-            context,
-            mode,
-            true,
-            Some(boundary["strategy"].as_str().unwrap().into()),
-        )
-        .await
+        let strategy = if boundary["phase"] == "ready_reflector" {
+            let base = Self::prompt_base(query, context, true)?;
+            let prompt = format!(
+                "{base}\nCandidate flaw (unverified advice): {}\nCandidate: {}",
+                boundary["critique_reason"].as_str().unwrap(),
+                truncate(boundary["previous_answer"].as_str().unwrap(), 4000)
+            );
+            self.call("reflector", &prompt, 128)
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("Original reflection allowance exhausted"))?
+        } else {
+            boundary["strategy"].as_str().unwrap().into()
+        };
+        self.solve_with_strategy(query, context, mode, true, Some(strategy))
+            .await
     }
 
     pub(crate) async fn continue_graph(

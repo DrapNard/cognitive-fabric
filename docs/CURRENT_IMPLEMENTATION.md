@@ -1,5 +1,28 @@
 # Current Rust implementation
 
+### Continue after a recorded critic — 2026-10-16
+
+`recover-revision-result --human-approve` now also reconciles a completed
+same-cycle solver/critic pair into `ready_reflector`. Strict critique content
+must match the checkpoint. Continuation revalidates that pair and reserves no
+new allowance: at least two original calls, 512 output tokens and bounded prompt
+capacity must remain for reflection plus a revised solver. Original settings,
+module/model pins, stopping hash, schedule and aging same-boot deadline still
+apply. Resume invokes only the missing reflector and solver; no prior inference
+is replayed and the outcome remains unverified.
+
+Tests cover actual HTTP (two new calls, five total / 1280 reserved outputs),
+insufficient call/output/input allowance, changed critique reason, and a second
+crash after recovered reflection. A recorded reflection can form `ready_solver`;
+a reserved reflection without its result still fails closed without writes.
+This extends the completed-reflection path; arbitrary within-cycle positions,
+unknown provider outcomes and other-boot recovery remain incomplete.
+
+Verification: 536 workspace tests (477 library including server, 59 integration),
+formatting, all-target workspace checking and warnings-denied Clippy passed with
+`FLATC` unset. The previous runtime's hosted run `38827055986` was still running
+when checked; no new hosted success, installation or live-model claim is made.
+
 ### Reconcile a recorded revision handoff — 2026-10-16
 
 `recover-revision-result TASK --human-approve` links a fully recorded same-cycle

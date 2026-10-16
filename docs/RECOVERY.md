@@ -652,3 +652,21 @@ and completed tasks are rejected. Structured objectives use independently checke
 result recovery instead. Real local HTTP tests exercise the one-new-solver path,
 which remains unverified. This closes the completed-reflection crash window;
 it does not implement arbitrary within-cycle recovery or provider stop proof.
+
+### Recorded critic before reflection
+
+The same approved `recover-revision-result` command accepts a fully recorded
+solver/critic pair when reflection has not been dispatched. It records
+`ready_reflector`, preserving the exact validated critique reason and prior answer.
+`resume-preview` exposes that phase. Admission requires both reflection and revised
+solver to fit the remaining original call/output/prompt budgets and deadline.
+`resume-task --human-approve` invokes the missing reflector, then the revised
+solver without redoing the recorded calls. Strict critique identity is rechecked
+at resume; altering its reason invalidates the checkpoint.
+
+If another crash occurs after the recovered reflection is recorded, the command
+can reconcile that result into `ready_solver`. If reflection was dispatched but
+its result is absent, the ledger rejects recovery; no outcome is inferred, call
+refunded or inference retried. HTTP and second-interruption regressions cover
+these cases. Earlier statements excluding all critic-only recovery are superseded
+by this checked phase. Other arbitrary consumed-cycle positions remain unsupported.
