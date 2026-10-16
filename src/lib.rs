@@ -8,6 +8,7 @@ pub mod config;
 pub mod corpus;
 pub mod diagnostics;
 pub mod engine;
+pub mod escalation;
 pub mod evaluation;
 pub mod events;
 pub mod evolution;

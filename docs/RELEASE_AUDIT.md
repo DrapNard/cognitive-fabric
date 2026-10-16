@@ -1,5 +1,35 @@
 # v1.0 release acceptance audit
 
+### Replaceable executive escalation policy — 2026-10-16
+
+`src/escalation.rs` introduces a trusted versioned `EscalationPolicy` installed
+through `Engine::with_escalation_policy`. After hard resource admission, typed
+hash/metadata requests can allow or decline a revised solver or an unverified
+critic/reflection/solver sequence. A policy cannot grant tools, raise limits or
+change evidence. Future independent verification must fit the tool allowance
+before another rejected-answer solver is bought. No new model, external probe or
+always-resident inference backend is introduced.
+
+Reasoning snapshots identity and audits intent before callbacks and validated
+metadata decisions before extra inference. Store reentry is lock-free; failures
+and invalid decisions fail closed. Independent success, repeated-answer stopping
+and baseline profile isolation precede custom policy use. Recovery refuses
+unavailable custom or altered/spoofed policy snapshots; matching built-in and
+legacy built-in tasks remain eligible under normal admission. Native callbacks
+are trusted, nonblocking host code, not sandboxed or implementation-attested.
+See `docs/ESCALATION.md`, `src/engine.rs`, `src/reasoning.rs` and recovery tests.
+Jev+ remains Partial: measured utility, custom-policy restoration and general
+resource scheduling are not established by this interface.
+
+Verification: 551 workspace tests (490 library including server, 61 integration),
+formatting, workspace all-target check and warnings-denied Clippy passed with
+`FLATC` unset. Seven new regressions cover policy and recovery boundaries. Early
+test-fixture corrections supplied the proper Store search argument, used explicit
+non-demo inference status, and isolated checker budget from Full-profile retrieval.
+Production permission checks and acceptance thresholds were not weakened.
+Prior source `4974acb` and installation-evidence source `ad00a3e` passed hosted CI;
+this new feature is not yet hosted/optimized-install/live-model verified.
+
 ### Capacity-aware admission to module routes — 2026-10-16
 
 New inference and arithmetic/SQL pins exclude modules whose bounded queue is
@@ -213,7 +243,7 @@ This checklist preserves the 18 acceptance criteria in the goal objective. It is
 an evidence inventory, not a release approval. The canonical French architecture
 and the broader implementation matrix remain authoritative. Earlier test counts
 in the quality review are historical milestones. Current local verification is
-544 Rust tests (483 library including the server, 61 integration), formatting, all-target checking and
+551 Rust tests (490 library including the server, 61 integration), formatting, all-target checking and
 Clippy with warnings denied. Default builds use bundled generated sources and
 Rust FlatBuffers 25.12.19. Exact native generation/byte comparison was also
 revalidated for the new optional load observations.
@@ -222,11 +252,11 @@ revalidated for the new optional load observations.
 |---|---|---|
 | 1. Workspace builds | `Cargo.toml`, all-target check | Passed locally; isolated optimized source installation also passed with cached dependencies. |
 | 2. Formatting and Clippy | Mandatory checks in `QUALITY_REVIEW.md` | Passed locally. |
-| 3. Mandatory tests | Workspace all-target test results, `tests/`, server integration tests | 544 passed; fixtures do not establish live model quality. |
+| 3. Mandatory tests | Workspace all-target test results, `tests/`, server integration tests | 551 passed; fixtures do not establish live model quality. |
 | 4. FlatBuffers IPC | `protocol/`, `src/wire.rs`, `src/fabric/`, malformed/compatibility/socket tests | Implemented for present transports; authenticated process event delivery/replay is now tested; broader module compatibility remains partial. |
 | 5. CLI/service communication | `src/service.rs`, socket tests, `tests/process_worker.rs`, `crates/cogfabric-server/tests/` | Tested typed local transport, progress, cancellation and optional HTTP client interoperability; native and collective ownership drains cover dropped request futures. No general independent plugin service is claimed. |
 | 6. Compatible local LLM | `src/backend.rs`, `tests/inference_auth.rs`, `LIVE_INFERENCE.md` | Passed for Ollama and LM Studio Qwen3 8B compatible endpoints, including managed verified sorting. Native inventory and one operator-approved embedding load/unload passed; authenticated native access and generative switching remain unverified. |
-| 7. Jev+ routes real tasks | `src/engine.rs`, registry/routing tests, built-in SQL execution | Deterministic tools, registered advice routing and trusted replaceable dependency ordering work; general module/GPU scheduling and independently established expert usefulness remain incomplete. |
+| 7. Jev+ routes real tasks | `src/engine.rs`, registry/routing tests, built-in SQL execution | Deterministic tools, registered advice routing, versioned escalation decisions and trusted replaceable dependency ordering work; general module/GPU scheduling and independently established expert usefulness remain incomplete. |
 | 8. Bounded Jev-R revision | `src/reasoning.rs`, scripted revision and budget tests | Enforced calls/cycles/tools/time and measured public Qwen graph/Rust workflows; broader independent effectiveness remains unverified. |
 | 9. Skill registration/discovery | `src/registry.rs`, `EXPERTS.md` | Versioned RAG/workflow/compiled-checker registrations work; arbitrary executable loading is absent. |
 | 10. Persistent memory | `src/store.rs`, migrations, retrieval/reopen/rollback tests | Implemented bounded persistence and fresh structured-answer checks; general fact verification and physical disk bounds remain partial. |

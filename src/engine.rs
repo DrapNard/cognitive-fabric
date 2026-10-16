@@ -53,6 +53,7 @@ pub struct Engine {
     process_inference: bool,
     router: crate::routing::Handle,
     scheduler: crate::scheduling::Handle,
+    escalator: crate::escalation::Handle,
 }
 impl Engine {
     pub fn new(cfg: Config, store: Arc<Store>) -> Self {
@@ -78,6 +79,7 @@ impl Engine {
             process_inference: false,
             router: Default::default(),
             scheduler: Default::default(),
+            escalator: Default::default(),
         }
     }
     /// Install an operator-trusted policy for future tasks on this Engine value.
@@ -102,6 +104,17 @@ impl Engine {
     }
     pub fn subtask_scheduler_descriptor(&self) -> &crate::scheduling::Descriptor {
         self.scheduler.descriptor()
+    }
+    /// Install an operator-trusted, version-pinned escalation policy for future tasks.
+    pub fn with_escalation_policy(
+        mut self,
+        policy: Arc<dyn crate::escalation::EscalationPolicy>,
+    ) -> Result<Self> {
+        self.escalator = crate::escalation::Handle::new(policy)?;
+        Ok(self)
+    }
+    pub fn escalation_policy_descriptor(&self) -> &crate::escalation::Descriptor {
+        self.escalator.descriptor()
     }
     pub(crate) fn with_frozen_corpus(mut self, corpus: Arc<crate::corpus::FrozenCorpus>) -> Self {
         self.corpus = Some(corpus);
@@ -327,6 +340,13 @@ impl Engine {
             execution_start,
         )?;
         session.scheduler = self.scheduler.clone();
+        if !matches!(
+            profile,
+            ExecutionProfile::Alone | ExecutionProfile::Tools | ExecutionProfile::Recursive
+        ) {
+            session.escalator = self.escalator.clone();
+        }
+
         session.restrict_deadline(deadline);
         self.store.event(&id,"execution_options","runtime",json!({"format_version":1,
             "profile":profile,"explain":options.explain,"conversation_ref":options.conversation_ref}))?;

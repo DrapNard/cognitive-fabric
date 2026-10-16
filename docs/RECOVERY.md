@@ -708,3 +708,14 @@ This is a test-only override. The Rust integration harness is built from the
 checkout; CLI and child process use the selected executable. Record both source
 revisions when they differ. It does not remove the need for a toolchain to compile
 the harness or constitute a clean-OS installation study.
+
+## Executive escalation policy identity
+
+New reasoning tasks record the versioned escalation policy descriptor. Continuation
+accepts matching built-in budget-policy snapshots and rejects unavailable custom,
+changed-version or spoofed snapshots before any resumed inference. Repeated
+matching built-in snapshots do not reset budgets. Older records without this
+snapshot predate the replaceable-policy interface and use the built-in compatibility
+path with current hard admission. Recovery never loads policy code from metadata
+or silently replaces a pinned custom policy. Custom-policy reconstruction and
+implementation attestation remain unsupported; see `ESCALATION.md`.

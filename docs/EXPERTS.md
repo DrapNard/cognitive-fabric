@@ -540,3 +540,13 @@ actual dispatch. Refused candidates produce no backend/worker setup, model snaps
 or advice-phase allocation. Use model-dispatch/resource records for actual inference;
 an admitted phase alone still does not prove provider entry or successful output.
 Historical reports retain the event semantics of their recorded runtime.
+
+## Executive escalation after expert/reasoning work
+
+Trusted hosts can install a versioned `EscalationPolicy` through
+`Engine::with_escalation_policy`. The runtime admits original budgets first;
+the policy can decline further model work without changing verification evidence
+or permissions. It sees typed resource/hash metadata, not reference instructions.
+See `ESCALATION.md` for audited dispatch ordering, baseline exclusions, native-code
+limits and fail-closed recovery of unavailable policy versions. This is not a
+measured usefulness claim or general expert scheduler.

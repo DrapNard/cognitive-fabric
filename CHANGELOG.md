@@ -2,6 +2,13 @@
 
 All notable changes are documented here in English.
 
+### Add versioned executive escalation policies
+
+- Allow trusted policies to decline admitted revisions using typed resource/hash metadata.
+- Audit immutable identity, callback intent and decisions without changing permissions.
+- Preserve baseline profiles and reject unavailable policy versions during recovery.
+- Require future checker budget before buying another independently rejected solver.
+
 ### Route new pins around saturated module queues
 
 - Exclude observed full queues before applying approved ranks and sampled load.

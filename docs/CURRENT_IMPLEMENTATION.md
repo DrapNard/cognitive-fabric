@@ -1,5 +1,35 @@
 # Current Rust implementation
 
+### Replaceable executive escalation policy — 2026-10-16
+
+`src/escalation.rs` introduces a trusted versioned `EscalationPolicy` installed
+through `Engine::with_escalation_policy`. After hard resource admission, typed
+hash/metadata requests can allow or decline a revised solver or an unverified
+critic/reflection/solver sequence. A policy cannot grant tools, raise limits or
+change evidence. Future independent verification must fit the tool allowance
+before another rejected-answer solver is bought. No new model, external probe or
+always-resident inference backend is introduced.
+
+Reasoning snapshots identity and audits intent before callbacks and validated
+metadata decisions before extra inference. Store reentry is lock-free; failures
+and invalid decisions fail closed. Independent success, repeated-answer stopping
+and baseline profile isolation precede custom policy use. Recovery refuses
+unavailable custom or altered/spoofed policy snapshots; matching built-in and
+legacy built-in tasks remain eligible under normal admission. Native callbacks
+are trusted, nonblocking host code, not sandboxed or implementation-attested.
+See `docs/ESCALATION.md`, `src/engine.rs`, `src/reasoning.rs` and recovery tests.
+Jev+ remains Partial: measured utility, custom-policy restoration and general
+resource scheduling are not established by this interface.
+
+Verification: 551 workspace tests (490 library including server, 61 integration),
+formatting, workspace all-target check and warnings-denied Clippy passed with
+`FLATC` unset. Seven new regressions cover policy and recovery boundaries. Early
+test-fixture corrections supplied the proper Store search argument, used explicit
+non-demo inference status, and isolated checker budget from Full-profile retrieval.
+Production permission checks and acceptance thresholds were not weakened.
+Prior source `4974acb` and installation-evidence source `ad00a3e` passed hosted CI;
+this new feature is not yet hosted/optimized-install/live-model verified.
+
 ### Capacity-aware admission to module routes — 2026-10-16
 
 New inference and arithmetic/SQL pins exclude modules whose bounded queue is

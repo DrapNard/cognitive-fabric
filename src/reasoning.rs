@@ -82,6 +82,8 @@ pub struct Session {
     subtask_started: Option<(usize, Instant, Resources)>,
     resume_answer: Option<(String, Option<String>)>,
     pub(crate) scheduler: crate::scheduling::Handle,
+    pub(crate) escalator: crate::escalation::Handle,
+    escalation_snapshot: bool,
     pub(crate) checker_binding: Option<serde_json::Value>,
     cfg: Config,
     store: Arc<Store>,
@@ -235,6 +237,8 @@ impl Session {
             resume_answer: None,
             checker_binding: None,
             scheduler: Default::default(),
+            escalator: Default::default(),
+            escalation_snapshot: false,
             complete_usage: true,
             complete_queue_metrics: true,
             inference_started: None,
@@ -351,6 +355,75 @@ impl Session {
             self.subtask_event(index)?;
         }
         self.execute_remaining_plan(order, base).await
+    }
+
+    fn snapshot_escalator(&mut self) -> Result<()> {
+        if !self.escalation_snapshot {
+            self.store.event(&self.task,"escalation_policy","jev-plus",json!({"format_version":1,"policy":self.escalator.descriptor(),"permissions_granted":false,"implementation_attested":false}))?;
+            self.escalation_snapshot = true;
+        }
+        Ok(())
+    }
+    fn allow_escalation(
+        &mut self,
+        reason: crate::escalation::Reason,
+        mode: &str,
+        calls: usize,
+        outputs: usize,
+        prompt: usize,
+        answer: &str,
+    ) -> Result<bool> {
+        let request = crate::escalation::Request {
+            reason,
+            mode: mode.into(),
+            cycle: self.resources.cycles,
+            candidate_sha256: crate::store::sha256(answer.as_bytes()),
+            remaining_calls: self
+                .call_limit
+                .saturating_sub(self.resources.calls as usize),
+            remaining_output_tokens: self
+                .cfg
+                .max_tokens
+                .saturating_sub(self.resources.reserved_output_tokens),
+            remaining_prompt_bytes: self
+                .cfg
+                .max_input_bytes
+                .saturating_sub(self.resources.prompt_bytes),
+            remaining_ms: self
+                .deadline
+                .saturating_duration_since(Instant::now())
+                .as_millis()
+                .min(u64::MAX as u128) as u64,
+            remaining_tool_calls: self
+                .cfg
+                .max_tool_calls
+                .saturating_sub(self.resources.tool_calls),
+            required_tool_calls: u32::from(matches!(
+                reason,
+                crate::escalation::Reason::IndependentRejection
+            )),
+            required_calls: calls,
+            required_output_tokens: outputs,
+            required_prompt_bytes: prompt,
+        };
+        if Instant::now() >= self.deadline
+            || self.resources.cycles as usize >= self.cycle_limit
+            || request.remaining_tool_calls < request.required_tool_calls
+            || request.remaining_calls < calls
+            || request.remaining_output_tokens < outputs
+            || request.remaining_prompt_bytes < prompt
+        {
+            self.stop_reason = "insufficient_revision_budget".into();
+            return Ok(false);
+        }
+        self.snapshot_escalator()?;
+        self.store.event(&self.task,"escalation_intent","jev-plus",json!({"format_version":1,"policy":self.escalator.descriptor(),"request":request,"permissions_granted":false,"expected_utility_measured":false}))?;
+        let decision = self.escalator.decide(&request)?;
+        self.store.event(&self.task,"escalation_decision","jev-plus",json!({"format_version":1,"policy":self.escalator.descriptor(),"decision":decision,"cycle":self.resources.cycles,"candidate_sha256":request.candidate_sha256,"permissions_granted":false}))?;
+        if !decision.allow {
+            self.stop_reason = "escalation_declined".into();
+        }
+        Ok(decision.allow)
     }
 
     pub(crate) async fn continue_solver(
@@ -1031,6 +1104,7 @@ impl Session {
         if query.trim().is_empty() || query.len() > 12000 || context.len() > 96000 {
             bail!("Reasoning objective or context exceeds bounds")
         }
+        self.snapshot_escalator()?;
         let criterion = if self.verification_enabled {
             crate::verification::Criterion::from_query(query)?
         } else {
@@ -1168,6 +1242,21 @@ impl Session {
                     result.unwrap_err()
                 );
                 self.stop_reason = "criterion_failed".into();
+                let next_prompt = format!(
+                    "{base}\nUnverified strategy: {}\nPrevious unverified answer: {}",
+                    truncate(&strategy, 4000),
+                    truncate(&answer, 6000)
+                );
+                if !self.allow_escalation(
+                    crate::escalation::Reason::IndependentRejection,
+                    mode,
+                    1,
+                    384,
+                    next_prompt.len(),
+                    &answer,
+                )? {
+                    break;
+                }
                 continue;
             }
             // A model's assertions never qualify as independent success evidence.
@@ -1230,6 +1319,16 @@ impl Session {
             }))?;
             if !admitted {
                 self.stop_reason = "insufficient_revision_budget".into();
+                break;
+            }
+            if !self.allow_escalation(
+                crate::escalation::Reason::UnverifiedAnswer,
+                mode,
+                3,
+                640,
+                prompt_bound,
+                &answer,
+            )? {
                 break;
             }
             let Some(review) = self

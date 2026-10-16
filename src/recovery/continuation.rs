@@ -64,7 +64,7 @@ fn prepare(db: &rusqlite::Connection, task: &str) -> Result<Checkpoint> {
     let mut planner_texts = BTreeMap::new();
     let mut bytes = 0usize;
     let mut contexts = 0usize;
-    let mut stmt = db.prepare("SELECT kind,CASE WHEN length(CAST(source AS BLOB))<=64 THEN source END,CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN payload END,id FROM events WHERE task_id=?1 AND kind IN ('execution_settings','execution_options','model_registration','module_snapshot','reasoning_context','reasoning') ORDER BY id LIMIT 86")?;
+    let mut stmt = db.prepare("SELECT kind,CASE WHEN length(CAST(source AS BLOB))<=64 THEN source END,CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN payload END,id FROM events WHERE task_id=?1 AND kind IN ('execution_settings','execution_options','model_registration','module_snapshot','escalation_policy','reasoning_context','reasoning') ORDER BY id LIMIT 86")?;
     let mut rows = stmt.query([task])?;
     let mut count = 0;
     while let Some(row) = rows.next()? {
@@ -77,6 +77,14 @@ fn prepare(db: &rusqlite::Connection, task: &str) -> Result<Checkpoint> {
             bail!("Checkpoint exceeds bounded history")
         }
         let payload: Value = serde_json::from_str(&raw)?;
+        if kind == "escalation_policy" {
+            use crate::escalation::EscalationPolicy;
+            let expected = json!({"format_version":1,"policy":crate::escalation::BudgetPolicy.descriptor(),"permissions_granted":false,"implementation_attested":false});
+            if source != "jev-plus" || payload != expected {
+                bail!("Original escalation policy is unavailable or changed")
+            }
+            continue;
+        }
         if kind == "reasoning" {
             if source != "jev-r" {
                 bail!("Invalid saved reasoning source")
@@ -1137,6 +1145,37 @@ mod tests {
             0
         );
     }
+    #[tokio::test]
+    async fn checkpoint_rejects_unavailable_changed_or_spoofed_escalation_policies() {
+        use crate::escalation::EscalationPolicy;
+        for variant in 0..3 {
+            let (store, task) = fixture().await;
+            let mut payload = json!({"format_version":1,"policy":crate::escalation::BudgetPolicy.descriptor(),"permissions_granted":false,"implementation_attested":false});
+            store
+                .event(&task, "escalation_policy", "jev-plus", payload.clone())
+                .unwrap();
+            assert!(prepare(&store.lock().unwrap(), &task).is_ok());
+            if variant == 0 {
+                payload["policy"]["id"] = json!("fixture.custom");
+            }
+            if variant == 1 {
+                payload["policy"]["version"] = json!("2.0.0");
+            }
+            store
+                .event(
+                    &task,
+                    "escalation_policy",
+                    if variant == 2 { "foreign" } else { "jev-plus" },
+                    payload,
+                )
+                .unwrap();
+            let before = store.task(&task).unwrap();
+            let error = prepare(&store.lock().unwrap(), &task).err().unwrap();
+            assert!(error.to_string().contains("escalation policy"), "{error}");
+            assert_eq!(store.task(&task).unwrap(), before);
+        }
+    }
+
     #[tokio::test]
     async fn compatible_prompt_metadata_preserves_original_context_and_charges() {
         let (store, task) = fixture().await;
