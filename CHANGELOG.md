@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Verify revision recovery through CLI and managed workers
+
+- Cover all saved revision phases, original settings and no-replay call counts.
+- Verify cancellation, unknown charges, closed fixture connections and child reaping.
+- Allow an explicit installed binary in the integration harness for reproducible verification.
+
 ### Resume saved solver answers before critique
 
 - Add a validated critic checkpoint with the full original revision budget.

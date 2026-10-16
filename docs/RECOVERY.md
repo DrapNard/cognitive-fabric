@@ -689,3 +689,22 @@ reconciled to `ready_reflector`; an unresolved reservation is never replayed.
 Actual local HTTP, repeat-interruption and negative budget tests cover these paths.
 This supersedes the blanket exclusion of solver-before-critic recovery, while
 general unknown-outcome and other-boot continuation remain unsupported.
+
+### CLI and same-image process validation
+
+`tests/resume_worker.rs` covers approved revision reconciliation, preview and resume
+for saved solver, critic and reflector results through the real CLI and managed
+inference worker. Each success and SIGINT case checks original settings, durable
+calls, one worker launch and child reaping. Interrupted provider results remain
+unknown and charged. These use deterministic local HTTP fixtures, not live models.
+Run the same tests against an optimized installed CLI from this source:
+
+```sh
+COGFABRIC_TEST_INSTALLED_BINARY=/absolute/prefix/bin/cogfabric \
+  cargo test --offline --test resume_worker
+```
+
+This is a test-only override. The Rust integration harness is built from the
+checkout; CLI and child process use the selected executable. Record both source
+revisions when they differ. It does not remove the need for a toolchain to compile
+the harness or constitute a clean-OS installation study.

@@ -12,11 +12,22 @@ use std::{
     time::Duration,
 };
 
+fn test_binary() -> std::path::PathBuf {
+    let binary = std::env::var_os("COGFABRIC_TEST_INSTALLED_BINARY")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from(env!("CARGO_BIN_EXE_cogfabric")));
+    assert!(
+        binary.is_absolute() && binary.is_file(),
+        "Test binary must be an existing absolute path"
+    );
+    binary
+}
+
 #[test]
 fn advisory_recovery_without_approval_does_not_initialize_state() {
     let home =
         std::env::temp_dir().join(format!("fabric-advisory-denied-{}", uuid::Uuid::new_v4()));
-    let output = Command::new(env!("CARGO_BIN_EXE_cogfabric"))
+    let output = Command::new(test_binary())
         .arg("--home")
         .arg(&home)
         .args([
@@ -34,7 +45,7 @@ fn advisory_recovery_without_approval_does_not_initialize_state() {
 fn revision_recovery_without_approval_does_not_initialize_state() {
     let home =
         std::env::temp_dir().join(format!("fabric-revision-denied-{}", uuid::Uuid::new_v4()));
-    let output = Command::new(env!("CARGO_BIN_EXE_cogfabric"))
+    let output = Command::new(test_binary())
         .arg("--home")
         .arg(&home)
         .args([
@@ -139,7 +150,7 @@ fn run(cancel: bool) {
     if !cancel {
         // Simulate a crash after durable inference but before the graph result.
         let recover = |approved: bool| {
-            let mut cmd = Command::new(env!("CARGO_BIN_EXE_cogfabric"));
+            let mut cmd = Command::new(test_binary());
             cmd.arg("--home")
                 .arg(&home)
                 .args(["--json", "recover-advisory-result", &task]);
@@ -182,7 +193,7 @@ fn run(cancel: bool) {
     };
     let before = snapshot();
     let preview = || {
-        Command::new(env!("CARGO_BIN_EXE_cogfabric"))
+        Command::new(test_binary())
             .arg("--home")
             .arg(&home)
             .args(["--json", "resume-preview", &task])
@@ -268,7 +279,7 @@ fn run(cancel: bool) {
     current.reasoning_effort = Some("high".into());
     current.interface_tokens = 1024;
     current.save().unwrap();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_cogfabric"))
+    let mut child = Command::new(test_binary())
         .arg("--home")
         .arg(&home)
         .args(["--json", "resume-task", &task, "--human-approve"])
@@ -350,7 +361,7 @@ fn preview_does_not_initialize_missing_state_or_migrate_legacy_databases() {
         std::env::temp_dir().join(format!("fabric-preview-missing-{}", uuid::Uuid::new_v4()));
     let task = uuid::Uuid::new_v4().to_string();
     let preview = || {
-        Command::new(env!("CARGO_BIN_EXE_cogfabric"))
+        Command::new(test_binary())
             .arg("--home")
             .arg(&home)
             .args(["--json", "resume-preview", &task])
@@ -371,5 +382,279 @@ fn preview_does_not_initialize_missing_state_or_migrate_legacy_databases() {
     );
     assert!(!home.join("fabric.sqlite3.runtime.lock").exists());
     drop(db);
+    std::fs::remove_dir_all(home).unwrap();
+}
+
+#[test]
+fn cli_revision_phases_resume_through_bounded_workers_without_replay() {
+    for phase in ["solver", "critic", "reflector"] {
+        run_revision(phase, false);
+    }
+}
+#[test]
+fn cancelling_each_revision_phase_reaps_workers_and_keeps_unknown_charges() {
+    for phase in ["solver", "critic", "reflector"] {
+        run_revision(phase, true);
+    }
+}
+
+fn revision_server(
+    listener: std::net::TcpListener,
+    replies: Vec<(&'static str, &'static str)>,
+    cancel: Option<std::sync::mpsc::Sender<()>>,
+) -> std::thread::JoinHandle<()> {
+    std::thread::spawn(move || {
+        listener.set_nonblocking(true).unwrap();
+        for (expected, answer) in replies {
+            let deadline = std::time::Instant::now() + Duration::from_secs(15);
+            let mut stream = loop {
+                match listener.accept() {
+                    Ok((stream, _)) => break stream,
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        assert!(
+                            std::time::Instant::now() < deadline,
+                            "Missing expected {expected} request"
+                        );
+                        std::thread::sleep(Duration::from_millis(5));
+                    }
+                    Err(e) => panic!("Fixture accept failed: {e}"),
+                }
+            };
+            stream
+                .set_read_timeout(Some(Duration::from_secs(10)))
+                .unwrap();
+            let mut raw = Vec::new();
+            loop {
+                let mut buf = [0; 4096];
+                let n = stream.read(&mut buf).unwrap();
+                assert!(n > 0);
+                raw.extend_from_slice(&buf[..n]);
+                assert!(raw.len() < 131072);
+                if let Some(end) = raw.windows(4).position(|w| w == b"\r\n\r\n") {
+                    let headers = String::from_utf8_lossy(&raw[..end]);
+                    let len = headers
+                        .lines()
+                        .find_map(|l| {
+                            l.to_ascii_lowercase()
+                                .strip_prefix("content-length:")
+                                .map(|v| v.trim().parse::<usize>().unwrap())
+                        })
+                        .unwrap();
+                    if raw.len() >= end + 4 + len {
+                        let body: serde_json::Value =
+                            serde_json::from_slice(&raw[end + 4..end + 4 + len]).unwrap();
+                        assert_eq!(body["reasoning_effort"], "none");
+                        assert_eq!(body["model"], "local-model");
+                        assert!(body["messages"].to_string().contains(expected));
+                        break;
+                    }
+                }
+            }
+            if let Some(entered) = &cancel {
+                entered.send(()).unwrap();
+                let mut buf = [0; 1024];
+                loop {
+                    match stream.read(&mut buf) {
+                        Ok(0) => return,
+                        Ok(_) => (),
+                        Err(e) if e.kind() == std::io::ErrorKind::ConnectionReset => return,
+                        Err(e) => panic!("Cancelled revision remained connected: {e}"),
+                    }
+                }
+            }
+            let body=json!({"model":"fixture/v1","choices":[{"message":{"content":answer}}],"usage":{"prompt_tokens":20,"completion_tokens":10}}).to_string();
+            write!(stream,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",body.len(),body).unwrap();
+        }
+    })
+}
+
+fn run_revision(phase: &str, cancel: bool) {
+    let home = std::env::temp_dir().join(format!("fabric-cli-revision-{}", uuid::Uuid::new_v4()));
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let cfg = Config {
+        home: home.clone(),
+        backend: "openai-local".into(),
+        inference_process: true,
+        interpret_goals: false,
+        reasoning_effort: Some("none".into()),
+        max_calls: 6,
+        max_tokens: 2000,
+        api_base: format!("http://{}/v1", listener.local_addr().unwrap()),
+        ..Config::default()
+    };
+    cfg.save().unwrap();
+    let store = Arc::new(Store::open(&cfg.db()).unwrap());
+    let task = store.create_task("Explain ownership", "deep").unwrap();
+    store
+        .event(
+            &task,
+            "execution_options",
+            "runtime",
+            json!({"format_version":1,"profile":"full","explain":false,"conversation_ref":null}),
+        )
+        .unwrap();
+    store.event(&task,"module_snapshot","fabric",json!({"modules":[{"id":"inference.local","version":"1.0.0","roles":["interface","planner","solver","explorer","critic","reflector","synthesizer"]}]})).unwrap();
+    // Generate authentic Session records, then remove only the interrupted suffix.
+    let initial = revision_server(
+        listener.try_clone().unwrap(),
+        vec![
+            ("Explain ownership", "invalid plan"),
+            ("Unverified strategy", "first answer"),
+            (
+                "Critique your candidate",
+                r#"{"revise":true,"reason":"Add lifetime constraints"}"#,
+            ),
+            ("Candidate flaw", "Explain lifetime constraints"),
+            ("Unverified strategy", "second answer"),
+        ],
+        None,
+    );
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let mut session = Session::new(
+            cfg.clone(),
+            store.clone(),
+            Arc::new(LocalBackend(cfg.clone())),
+            task.clone(),
+            "deep",
+        )
+        .unwrap();
+        session
+            .solve("Explain ownership", "", "deep")
+            .await
+            .unwrap();
+    });
+    initial.join().unwrap();
+    let db = rusqlite::Connection::open(cfg.db()).unwrap();
+    let cutoff:u64=db.query_row("SELECT id FROM events WHERE task_id=?1 AND kind='reasoning' AND json_extract(payload,'$.node.role')=?2 AND json_extract(payload,'$.node.cycle')=1 ORDER BY id LIMIT 1",rusqlite::params![task,phase],|r|r.get(0)).unwrap();
+    db.execute(
+        "DELETE FROM events WHERE task_id=?1 AND id>?2",
+        rusqlite::params![task, cutoff],
+    )
+    .unwrap();
+    drop(db);
+    store.finish_task(&task, "interrupted", "").unwrap();
+    let prior = match phase {
+        "solver" => 2,
+        "critic" => 3,
+        _ => 4,
+    };
+    let command = |name: &str, approved: bool| {
+        let mut cmd = Command::new(test_binary());
+        cmd.arg("--home").arg(&home).args(["--json", name, &task]);
+        if approved {
+            cmd.arg("--human-approve");
+        }
+        cmd.output().unwrap()
+    };
+    let before = store.task(&task).unwrap();
+    assert!(!command("recover-revision-result", false).status.success());
+    assert_eq!(store.task(&task).unwrap(), before);
+    let recovered = command("recover-revision-result", true);
+    assert!(
+        recovered.status.success(),
+        "{}",
+        String::from_utf8_lossy(&recovered.stderr)
+    );
+    let recovered: serde_json::Value = serde_json::from_slice(&recovered.stdout).unwrap();
+    let expected_phase = match phase {
+        "solver" => "ready_critic",
+        "critic" => "ready_reflector",
+        _ => "ready_solver",
+    };
+    assert_eq!(recovered["phase"], expected_phase);
+    assert!(!command("recover-revision-result", true).status.success());
+    let before = store.task(&task).unwrap();
+    let preview = command("resume-preview", false);
+    assert!(
+        preview.status.success(),
+        "{}",
+        String::from_utf8_lossy(&preview.stderr)
+    );
+    let preview: serde_json::Value = serde_json::from_slice(&preview.stdout).unwrap();
+    assert_eq!(preview["phase"], expected_phase);
+    assert_eq!(preview["managed_worker"], true);
+    assert_eq!(preview["consumed"]["calls"], prior);
+    assert_eq!(store.task(&task).unwrap(), before);
+    let mut current = cfg.clone();
+    current.reasoning_effort = Some("high".into());
+    current.save().unwrap();
+    let (entered, received) = std::sync::mpsc::channel();
+    let mut replies = Vec::new();
+    if phase == "solver" {
+        replies.push((
+            "Critique your candidate",
+            r#"{"revise":true,"reason":"Add lifetime constraints"}"#,
+        ));
+    }
+    if phase != "reflector" {
+        replies.push(("Candidate flaw", "Explain lifetime constraints"));
+    }
+    replies.push(("Unverified strategy", "second answer"));
+    let server = revision_server(listener, replies, if cancel { Some(entered) } else { None });
+    let mut child = Command::new(test_binary())
+        .arg("--home")
+        .arg(&home)
+        .args(["--json", "resume-task", &task, "--human-approve"])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    if cancel {
+        received.recv_timeout(Duration::from_secs(10)).unwrap();
+        assert_eq!(unsafe { libc::kill(child.id() as i32, libc::SIGINT) }, 0);
+    }
+    let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    while child.try_wait().unwrap().is_none() {
+        if std::time::Instant::now() >= deadline {
+            child.kill().unwrap();
+            child.wait().unwrap();
+            panic!("Revision CLI did not finish");
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let output = child.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        report["status"],
+        if cancel { "interrupted" } else { "unverified" }
+    );
+    assert_eq!(report["new_calls"], if cancel { 1 } else { 5 - prior });
+    let audit = store.inference_audit(&task).unwrap();
+    assert_eq!(audit["reserved_calls"], if cancel { prior + 1 } else { 5 });
+    assert_eq!(audit["results_not_recorded"], if cancel { 1 } else { 0 });
+    if !cancel {
+        assert_eq!(audit["reserved_output_tokens"], 1280);
+    }
+    server.join().unwrap();
+    let trace = store.task(&task).unwrap();
+    let events = trace["events"].as_array().unwrap();
+    assert_eq!(
+        events
+            .iter()
+            .filter(|e| e["kind"] == "worker_process")
+            .count(),
+        1
+    );
+    assert_eq!(
+        events
+            .iter()
+            .filter(|e| e["kind"] == "worker_process_stopped" && e["payload"]["reaped"] == true)
+            .count(),
+        1
+    );
+    assert_eq!(
+        Config::load(Some(home.clone()), None)
+            .unwrap()
+            .reasoning_effort
+            .as_deref(),
+        Some("high")
+    );
+    assert!(store.recover_workers().unwrap().is_empty());
+    drop(store);
     std::fs::remove_dir_all(home).unwrap();
 }

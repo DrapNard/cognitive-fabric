@@ -1,5 +1,29 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+### CLI and managed-worker revision recovery — 2026-10-16
+
+`tests/resume_worker.rs` now exercises approved `recover-revision-result`, read-only
+preview and resume through actual CLI processes for saved solver, critic and
+reflector phases. Each phase starts exactly one bounded same-image inference
+worker, preserves original `reasoning_effort=none` despite changed current settings,
+performs only missing calls, and reaps its child. Successful outcomes remain
+unverified with five total calls / 1280 reserved outputs. Three SIGINT cases retain
+one unknown result and all charged reservations, close the fixture connection,
+reap the child and leave no unfinished worker audit session. No provider/GPU stop
+or live-model quality is established by a loopback fixture.
+
+The suite can target an explicitly installed executable via
+`COGFABRIC_TEST_INSTALLED_BINARY=/absolute/path/to/cogfabric cargo test --test resume_worker`.
+The override applies only to integration-test process launches, requires an
+existing absolute file, and adds no production setting or authority. Earlier
+Core-only revision evidence is now supplemented with real CLI/worker coverage.
+
+Verification: all 542 workspace tests (481 library including server, 61
+integration), formatting, all-target workspace checking and warnings-denied Clippy
+passed with `FLATC` unset. The first test build referenced a private role allowlist;
+the fixture was corrected to explicit known role names without changing visibility.
+Optimized installation verification is the next separate evidence step.
+
 ### Recover a recorded whole-goal solver before critique — 2026-10-16
 
 Approved `recover-revision-result` now reconciles a recorded cycle-positive solver
@@ -141,7 +165,7 @@ workspace tests, formatting, all-target checking and warnings-denied Clippy pass
 locally with `FLATC` unset. No runtime policy or release gate changed.
 
 Current evidence review (2026-10-16): **pre-release; V1 incomplete**. The current
-workspace passes 540 tests (481 library including the server, 59 integration),
+workspace passes 542 tests (481 library including the server, 61 integration),
 formatting, all-target checking and Clippy. See `RELEASE_AUDIT.md` for the 18 goal
 acceptance criteria and scoped evidence. Later narrative entries below are a
 historical implementation ledger; their old counts, unavailable endpoints and

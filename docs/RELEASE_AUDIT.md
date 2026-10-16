@@ -1,5 +1,29 @@
 # v1.0 release acceptance audit
 
+### CLI and managed-worker revision recovery — 2026-10-16
+
+`tests/resume_worker.rs` now exercises approved `recover-revision-result`, read-only
+preview and resume through actual CLI processes for saved solver, critic and
+reflector phases. Each phase starts exactly one bounded same-image inference
+worker, preserves original `reasoning_effort=none` despite changed current settings,
+performs only missing calls, and reaps its child. Successful outcomes remain
+unverified with five total calls / 1280 reserved outputs. Three SIGINT cases retain
+one unknown result and all charged reservations, close the fixture connection,
+reap the child and leave no unfinished worker audit session. No provider/GPU stop
+or live-model quality is established by a loopback fixture.
+
+The suite can target an explicitly installed executable via
+`COGFABRIC_TEST_INSTALLED_BINARY=/absolute/path/to/cogfabric cargo test --test resume_worker`.
+The override applies only to integration-test process launches, requires an
+existing absolute file, and adds no production setting or authority. Earlier
+Core-only revision evidence is now supplemented with real CLI/worker coverage.
+
+Verification: all 542 workspace tests (481 library including server, 61
+integration), formatting, all-target workspace checking and warnings-denied Clippy
+passed with `FLATC` unset. The first test build referenced a private role allowlist;
+the fixture was corrected to explicit known role names without changing visibility.
+Optimized installation verification is the next separate evidence step.
+
 ### Recover a recorded whole-goal solver before critique — 2026-10-16
 
 Approved `recover-revision-result` now reconciles a recorded cycle-positive solver
@@ -144,7 +168,7 @@ This checklist preserves the 18 acceptance criteria in the goal objective. It is
 an evidence inventory, not a release approval. The canonical French architecture
 and the broader implementation matrix remain authoritative. Earlier test counts
 in the quality review are historical milestones. Current local verification is
-540 Rust tests (481 library including the server, 59 integration), formatting, all-target checking and
+542 Rust tests (481 library including the server, 61 integration), formatting, all-target checking and
 Clippy with warnings denied. Default builds use bundled generated sources and
 Rust FlatBuffers 25.12.19. Exact native generation/byte comparison was also
 revalidated for the new optional load observations.
@@ -153,7 +177,7 @@ revalidated for the new optional load observations.
 |---|---|---|
 | 1. Workspace builds | `Cargo.toml`, all-target check | Passed locally; isolated optimized source installation also passed with cached dependencies. |
 | 2. Formatting and Clippy | Mandatory checks in `QUALITY_REVIEW.md` | Passed locally. |
-| 3. Mandatory tests | Workspace all-target test results, `tests/`, server integration tests | 540 passed; fixtures do not establish live model quality. |
+| 3. Mandatory tests | Workspace all-target test results, `tests/`, server integration tests | 542 passed; fixtures do not establish live model quality. |
 | 4. FlatBuffers IPC | `protocol/`, `src/wire.rs`, `src/fabric/`, malformed/compatibility/socket tests | Implemented for present transports; authenticated process event delivery/replay is now tested; broader module compatibility remains partial. |
 | 5. CLI/service communication | `src/service.rs`, socket tests, `tests/process_worker.rs`, `crates/cogfabric-server/tests/` | Tested typed local transport, progress, cancellation and optional HTTP client interoperability; native and collective ownership drains cover dropped request futures. No general independent plugin service is claimed. |
 | 6. Compatible local LLM | `src/backend.rs`, `tests/inference_auth.rs`, `LIVE_INFERENCE.md` | Passed for Ollama and LM Studio Qwen3 8B compatible endpoints, including managed verified sorting. Native inventory and one operator-approved embedding load/unload passed; authenticated native access and generative switching remain unverified. |
