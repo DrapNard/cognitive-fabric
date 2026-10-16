@@ -6,7 +6,7 @@ time across modules. `resource_scheduler::ResourcePool` implements operator-set
 share the same pool. The operator chooses capacities and working allocations from hardware/workload
 knowledge. The optional `Config.resource_admission` now enables a pool for normal
 CLI, Unix-service and HTTP-server inference, including native turns and bound
-experts. Physical GPU enforcement, resident/backbone accounting and general
+experts. Physical GPU enforcement, measured/dynamic residency and general
 cross-workspace arbitration remain Partial.
 
 ## Host integration
@@ -126,7 +126,7 @@ pool measurement. Backend-supplied waiting claims cannot overwrite it.
 
 The pool enforces declared arithmetic admission; it does not enforce cgroups,
 CUDA allocation, resident weight/KV-cache identity, total RSS/VRAM, GPU seconds,
-energy or isolation. Resident/shared-backbone accounting, hardware measurement,
+energy or isolation. Measured resident/shared-backbone accounting, hardware measurement,
 provider ownership, process-wide persistent recovery and policy tuning remain
 required for general GPU scheduling. It is not a model-quality benchmark.
 
@@ -198,3 +198,66 @@ Coverage now includes actual configure/ask/status/release CLI processes, configu
 managed inference and reaping, primary/bound-backend Session calls, Engine/native
 sharing, workspace-owner exclusion, tampered audit denial, retention protection,
 and real loopback HTTP native/collective contention. These remain fixture results.
+
+## Resident backbone declarations
+
+An optional `residents` array in the resource configuration reserves host/device
+memory for the pool's entire lifetime. This is useful when a backbone is kept
+available across many requests/roles. Declare shared consumers in one entry:
+
+```json
+{
+  "id": "backbone.small",
+  "version": "1.0.0",
+  "weights_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "host_memory_bytes": 1073741824,
+  "device_memory_bytes": 4294967296,
+  "consumers": [
+    {"api_base": "http://127.0.0.1:1234/v1", "model": "shared-solver"},
+    {"api_base": "http://127.0.0.1:1234/v1", "model": "shared-critic"}
+  ]
+}
+```
+
+The digest and sizes above are placeholders for the example. Operators must supply
+their reviewed declarations and a capacity large enough for both resident and
+working allocations. Each backbone entry is charged **once**, independently of its
+consumer count. Distinct IDs/versions are charged separately; duplicate identities
+are rejected rather than silently deduplicated. Consumer names are descriptive
+metadata, never model registrations, route selections or permission grants. The
+catalog does not attest completeness against the actual configured/routed models.
+
+Validation allows at most 128 backbone entries, 32 consumers per entry, 512
+consumers total and 16,000 canonical JSON bytes. Field lengths are bounded before
+cloning the catalog. IDs and semantic versions are canonical, weight digests use
+64 lowercase hexadecimal characters, memory uses checked addition and must fit
+capacity. Every entry needs a nonzero footprint and at least one consumer.
+Consumer endpoints use existing literal-loopback restrictions without sending any
+HTTP request. Canonical endpoints/order reject duplicate aliases and make catalog
+identity independent of list ordering. Unknown fields and duplicate decoded keys
+remain rejected by configuration parsing.
+
+A live pool pins its canonical catalog. Reordering entries/consumers does not
+change it; changing footprints, identity, digest or consumer contents cannot reset
+a live pool. The operator must restart under the existing startup ownership and
+uncertain-outcome checks to apply a changed catalog. Native hosts can explicitly
+construct `ResourcePool::with_residents` under `resources.configure`; their
+existing native lifecycle responsibilities still apply. Ordinary configured CLI,
+services, native agent and bound expert calls inherit the same resident charges.
+
+Snapshots expose `allocated` (resident + working), `resident_allocated`,
+`working_allocated`, the canonical catalog and its digest. Compute slots belong to
+working requests; static residents reserve only memory. Idle, completed, cancelled
+and quarantined request transitions leave the resident base intact. Releasing an
+uncertain request frees only that request's working allocation. Resource intent
+audits include the canonical digest and resident totals; configured execution
+settings preserve the original full catalog. Empty catalogs are omitted from
+serialized configuration, preserving old configuration fingerprints.
+
+All reports keep `residency_attested:false` and `physical_limits_enforced:false`.
+No weight file is opened, model loaded/unloaded, provider ownership established,
+GPU memory measured or shared-backbone implementation proved. Incorrect/incomplete
+operator declarations can undercount real memory. Actual resident-instance
+discovery/ownership, measured footprints, dynamic lifecycle scheduling and safe
+pool restoration remain engineering work. These tests do not demonstrate faster
+or better neural reasoning.

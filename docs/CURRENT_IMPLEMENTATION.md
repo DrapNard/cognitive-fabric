@@ -1,5 +1,46 @@
 # Current Rust implementation
 
+### Resident backbone memory admission — 2026-10-16
+
+**Implemented (operator-declared, pool-lifetime memory accounting); Partial (measured/dynamic residency).**
+Optional `resource_admission.residents` declares immutable backbone IDs/versions,
+weight digests, host/device footprints and consumer endpoints/model names. The pool
+reserves each unique declared backbone once before request admission; multiple
+consumers do not multiply its cost. Working requests must fit the capacity remaining
+after resident charges. Completion, cancellation, quarantine resolution and shutdown
+never refund resident memory. Snapshots separate total, resident and working charges.
+
+Bounded validation rejects duplicate/conflicting identities, consumer aliases,
+malformed versions/digests, oversized catalogs and impossible resident-plus-working
+allocations. Canonical catalog/consumer ordering makes pool identity insensitive to
+input order; live catalog changes are rejected. Existing empty/omitted catalogs keep
+legacy configuration bytes. Each resource intent records the canonical catalog hash
+and resident total with `residency_attested:false`; configured execution snapshots
+retain the declared catalog. No model load, grant, endpoint contact or weight read
+is performed by declaring a catalog.
+
+Implementation: `src/resource_scheduler/{resident,resident_tests}.rs`, pool/state
+initialization, configured pooling and admission metadata. Coverage includes shared
+consumer accounting, actual memory-constrained FIFO dispatch, cancellation/release,
+live-catalog pinning, invalid metadata, CLI validation/execution, primary/bound expert
+calls and mixed HTTP native/collective contention. The HTTP fixture now has two
+compute slots; the resident memory charge is what prevents simultaneous dispatch.
+
+This enforces declared arithmetic, not measured provider RSS/VRAM or actual weight
+sharing. Consumer declarations do not attest that every runtime backend/model is
+covered. Automatic load/unload, measured catalog completeness, provider ownership,
+physical isolation, task-pool restoration and independent real-model efficiency
+studies remain open. Jev+ and Jev-R remain Partial. Verification passed: `cargo fmt --all -- --check`,
+`cargo check --locked --workspace --all-targets`,
+`cargo test --locked --workspace --all-targets` (**603 tests across 29 targets**),
+and `cargo clippy --locked --workspace --all-targets -- -D warnings`. Focused
+resident tests also passed all four cases. Full tests required local TCP/Unix
+fixture access outside the restricted sandbox. Existing protocol pairing, malformed
+frames, migrations, denials, cancellation, recovery and candidate rollback gates
+remain green. `flatc` is unavailable; schemas/bindings were unchanged and fresh
+generation was not run. No live-model quality or GPU efficiency gain is established.
+
+
 ### Configure and operate Jev+ shared admission — 2026-10-16
 
 **Implemented (configured workspace and trusted-host scope); Partial (physical/global GPU scheduling).**

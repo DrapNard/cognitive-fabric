@@ -634,3 +634,23 @@ workspace admission guarantee. Resident weights, actual GPU allocation and host
 resource isolation are not enforced. An operator can rewrite local records or
 source; hashes and audit checks do not authenticate against that owner. Original
 configured task continuation remains denied without explicit pool restoration.
+
+
+### Declared resident-backbone charges
+
+Operator catalogs reserve static host/device memory in the pool before working
+inference admission. Each declared immutable backbone identity is counted once
+across its listed consumers. Canonical, bounded metadata validation rejects
+duplicates, malformed identities/digests/endpoints, impossible totals and live
+catalog changes. Request completion, cancellation and operator release cannot
+refund the resident base. Catalog hashes and totals accompany resource intents;
+configuration snapshots retain the declared catalog. Empty catalogs retain prior
+configuration serialization. No model actor gains configuration authority.
+
+These are operator declarations, not provider observations or proof of actual
+sharing/completeness. Consumer names do not constrain actual backend selection,
+load weights, grant inference or contact endpoints. A local owner can omit memory
+or misstate a digest; `residency_attested` and `physical_limits_enforced` remain
+false. Static accounting is not a substitute for measured instance ownership,
+physical limits or safe model load/unload. Existing cancellation/quarantine and
+restart gates remain unchanged.

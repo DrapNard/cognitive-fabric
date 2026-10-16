@@ -176,3 +176,69 @@ fn configured_cli_managed_inference_preserves_resource_and_worker_audits() {
     drop(store);
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn cli_resident_catalog_reserves_capacity_and_rejects_impossible_working_budget() {
+    let root = std::env::temp_dir().join(format!("fabric-cli-resident-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir(&root).unwrap();
+    let home = root.join("state");
+    let file = root.join("resources.json");
+    let mut value = configuration();
+    value["residents"] = json!([{"id":"backbone.fixture","version":"1.0.0","weights_sha256":"a".repeat(64),"host_memory_bytes":40,"device_memory_bytes":41,"consumers":[{"api_base":"http://localhost:1234/v1/","model":"local-model"}]}]);
+    std::fs::write(&file, value.to_string()).unwrap();
+    assert!(
+        !cli(&home, &["configure-resources", file.to_str().unwrap()])
+            .status
+            .success()
+    );
+    assert!(!home.exists());
+    value["residents"][0]["device_memory_bytes"] = json!(40);
+    std::fs::write(&file, value.to_string()).unwrap();
+    let configured = cli(&home, &["configure-resources", file.to_str().unwrap()]);
+    assert!(
+        configured.status.success(),
+        "{}",
+        String::from_utf8_lossy(&configured.stderr)
+    );
+    let mut cfg = Config::load(Some(home.clone()), None).unwrap();
+    cfg.interpret_goals = false;
+    cfg.save().unwrap();
+    let output = cli(
+        &home,
+        &["ask", "Describe a generic objective", "--mode", "fast"],
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let store = Store::open(&cfg.db()).unwrap();
+    let trace = store.task(result["task_id"].as_str().unwrap()).unwrap();
+    let intent = trace["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["kind"] == "resource_intent")
+        .unwrap();
+    assert_eq!(
+        intent["payload"]["resident_allocated"],
+        json!({"compute_slots":0,"host_memory_bytes":40,"device_memory_bytes":40})
+    );
+    assert_eq!(intent["payload"]["residency_attested"], false);
+    assert_eq!(
+        intent["payload"]["resident_catalog_sha256"]
+            .as_str()
+            .unwrap()
+            .len(),
+        64
+    );
+    assert!(cli(
+        &home,
+        &["ask", "Describe the next objective", "--mode", "fast"]
+    )
+    .status
+    .success());
+    drop(store);
+    std::fs::remove_dir_all(root).unwrap();
+}

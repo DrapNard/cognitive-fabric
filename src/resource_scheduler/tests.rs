@@ -618,6 +618,7 @@ async fn task_terminated_while_waiting_never_enters_the_provider() {
 
 fn configured() -> Configuration {
     Configuration {
+        residents: Vec::new(),
         settings: Settings {
             label: "gpu.configured".into(),
             capacity: allocation(1, 100, 100),

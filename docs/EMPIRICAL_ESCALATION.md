@@ -116,7 +116,7 @@ matching a criterion name does not establish domain generalization.
 | Jev+ component | Current behavior | Remaining work |
 |---|---|---|
 | Router | Versioned, audited skill selection with pinned snapshots and bounded routes | Cost-calibrated adaptive skill selection and independently measured routing quality |
-| Scheduler | Versioned dependency ordering, whole-goal budget reservation, capacity-aware selection and native shared FIFO compute/memory admission | Cross-workspace/device fairness, resident/backbone accounting, provider/GPU ownership and physical memory/energy enforcement |
+| Scheduler | Versioned dependency ordering, whole-goal budget reservation, capacity-aware selection and native shared FIFO compute/memory admission with declared resident bases | Cross-workspace/device fairness, measured residency/lifecycle, provider/GPU ownership and physical memory/energy enforcement |
 | Evaluator | Independent structured checkers; bounded retry-study aggregation and cost comparisons | Reviewed live retry studies, statistical calibration and general independent answer verification |
 | Escalator | Versioned allow/decline interface; optional immutable empirical retry gate | Automatic policy catalogs, general custom reconciliation and independently demonstrated cost/quality improvement |
 | Dependency Manager | Validated bounded DAGs, committed execution order and supported approved continuation | General concurrent graph execution and unsupported interruption boundaries |

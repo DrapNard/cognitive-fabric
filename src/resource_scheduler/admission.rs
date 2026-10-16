@@ -31,6 +31,7 @@ impl ResourcePool {
                 json!({
                     "format_version":1,"pool_id":self.id,"settings":self.settings,"reservation_id":reservation_id,
                     "allocation":allocation,"role":role,"permissions_granted":false,
+                    "resident_allocated":self.resident_allocated,"resident_catalog_sha256":self.resident_catalog_sha256,"residency_attested":false,
                     "physical_limits_enforced":false,
                 }),
             )?;

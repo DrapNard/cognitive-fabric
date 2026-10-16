@@ -54,10 +54,11 @@ async fn real_http_native_and_collective_requests_share_configured_capacity() {
         interpret_goals: false,
         max_calls: 1,
         resource_admission: Some(Configuration {
+            residents: serde_json::from_value(json!([{"id":"backbone.http_fixture","version":"1.0.0","weights_sha256":"a".repeat(64),"host_memory_bytes":65,"device_memory_bytes":65,"consumers":[{"api_base":format!("http://{address}/v1"),"model":"local-model"}]}])).unwrap(),
             settings: Settings {
                 label: "gpu.main".into(),
                 capacity: Allocation {
-                    compute_slots: 1,
+                    compute_slots: 2,
                     host_memory_bytes: 100,
                     device_memory_bytes: 100,
                 },
@@ -67,8 +68,8 @@ async fn real_http_native_and_collective_requests_share_configured_capacity() {
             },
             allocation: Allocation {
                 compute_slots: 1,
-                host_memory_bytes: 40,
-                device_memory_bytes: 60,
+                host_memory_bytes: 20,
+                device_memory_bytes: 20,
             },
         }),
         ..Config::default()
@@ -147,7 +148,17 @@ async fn real_http_native_and_collective_requests_share_configured_capacity() {
         "{}",
         second.text().await.unwrap()
     );
-    assert!(pool.snapshot().unwrap().reservations.is_empty());
+    let snapshot = pool.snapshot().unwrap();
+    assert!(snapshot.reservations.is_empty());
+    assert_eq!(
+        snapshot.allocated,
+        Allocation {
+            compute_slots: 0,
+            host_memory_bytes: 65,
+            device_memory_bytes: 65
+        }
+    );
+    assert_eq!(snapshot.working_allocated, Allocation::default());
     stop.send(()).unwrap();
     server.await.unwrap().unwrap();
     provider.abort();

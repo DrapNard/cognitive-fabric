@@ -14,6 +14,8 @@ use tokio::sync::Notify;
 mod adapter;
 mod admission;
 mod configured;
+mod resident;
+pub use resident::{ResidentAllocation, ResidentConsumer};
 #[cfg(test)]
 mod tests;
 
@@ -78,11 +80,18 @@ impl Settings {
 pub struct Configuration {
     pub settings: Settings,
     pub allocation: Allocation,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub residents: Vec<ResidentAllocation>,
 }
 impl Configuration {
     pub fn validate(&self) -> Result<()> {
         self.settings.validate()?;
-        if self.allocation.compute_slots == 0 || !self.allocation.fits(self.settings.capacity) {
+        let (_, resident) = resident::canonical(&self.residents, self.settings.capacity)?;
+        if self.allocation.compute_slots == 0
+            || !self
+                .allocation
+                .fits(self.settings.capacity.available(resident))
+        {
             bail!("Configured inference allocation cannot fit the pool")
         }
         Ok(())
@@ -123,6 +132,11 @@ pub struct Snapshot {
     pub pool_id: String,
     pub settings: Settings,
     pub allocated: Allocation,
+    pub resident_allocated: Allocation,
+    pub working_allocated: Allocation,
+    pub residents: Vec<ResidentAllocation>,
+    pub resident_catalog_sha256: String,
+    pub residency_attested: bool,
     pub closed: bool,
     pub reservations: Vec<ReservationStatus>,
     pub physical_limits_enforced: bool,
@@ -136,20 +150,44 @@ pub struct ResourcePool {
     settings: Settings,
     store: Arc<Store>,
     state: Mutex<State>,
+    residents: Vec<ResidentAllocation>,
+    resident_allocated: Allocation,
+    resident_catalog_sha256: String,
     _workspace_lease: Option<crate::recovery::ExecutionLease>,
 }
 impl ResourcePool {
     pub(crate) fn matches(&self, store: &Arc<Store>, configuration: &Configuration) -> bool {
-        Arc::ptr_eq(&self.store, store) && self.settings == configuration.settings
+        Arc::ptr_eq(&self.store, store)
+            && self.settings == configuration.settings
+            && resident::canonical(&configuration.residents, self.settings.capacity)
+                .is_ok_and(|(catalog, _)| catalog == self.residents)
     }
     pub fn new(actor: &str, store: Arc<Store>, settings: Settings) -> Result<Arc<Self>> {
+        Self::with_residents(actor, store, settings, Vec::new())
+    }
+    /// Reserve operator-declared resident memory once for the lifetime of a pool.
+    /// This neither loads weights nor proves provider residency or sharing.
+    pub fn with_residents(
+        actor: &str,
+        store: Arc<Store>,
+        settings: Settings,
+        residents: Vec<ResidentAllocation>,
+    ) -> Result<Arc<Self>> {
         security::authorize(actor, "resources.configure")?;
         settings.validate()?;
+        let (residents, resident_allocated) = resident::canonical(&residents, settings.capacity)?;
+        let resident_catalog_sha256 = crate::store::sha256(&serde_json::to_vec(&residents)?);
         Ok(Arc::new(Self {
             id: uuid::Uuid::new_v4().to_string(),
             settings,
             store,
-            state: Mutex::new(State::default()),
+            state: Mutex::new(State {
+                used: resident_allocated,
+                ..State::default()
+            }),
+            residents,
+            resident_allocated,
+            resident_catalog_sha256,
             _workspace_lease: None,
         }))
     }
@@ -165,6 +203,11 @@ impl ResourcePool {
             pool_id: self.id.clone(),
             settings: self.settings.clone(),
             allocated: state.used,
+            resident_allocated: self.resident_allocated,
+            working_allocated: state.used.available(self.resident_allocated),
+            residents: self.residents.clone(),
+            resident_catalog_sha256: self.resident_catalog_sha256.clone(),
+            residency_attested: false,
             closed: state.closed,
             reservations: state
                 .entries
@@ -189,7 +232,9 @@ impl ResourcePool {
         allocation: Allocation,
     ) -> Result<Arc<dyn InferenceBackend>> {
         security::authorize(actor, "resources.configure")?;
-        if allocation.compute_slots == 0 || !allocation.fits(self.settings.capacity) {
+        if allocation.compute_slots == 0
+            || !allocation.fits(self.settings.capacity.available(self.resident_allocated))
+        {
             bail!("Inference allocation cannot fit the resource pool")
         }
         if self.lock()?.closed {

@@ -3369,9 +3369,10 @@ mod configured_resource_tests {
         };
         let cfg = Config {
             resource_admission: Some(Configuration {
+                residents: serde_json::from_value(json!([{"id":"backbone.expert_fixture","version":"1.0.0","weights_sha256":"a".repeat(64),"host_memory_bytes":10,"device_memory_bytes":20,"consumers":[{"api_base":"http://127.0.0.1:1234/v1","model":"fixture"}]}])).unwrap(),
                 settings: Settings {
                     label: "gpu.experts".into(),
-                    capacity: allocation,
+                    capacity: Allocation { compute_slots:1, host_memory_bytes:20, device_memory_bytes:40 },
                     max_pending: 4,
                     max_wait_ms: 1000,
                     max_execution_ms: 1000,
