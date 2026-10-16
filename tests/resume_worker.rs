@@ -31,6 +31,24 @@ fn advisory_recovery_without_approval_does_not_initialize_state() {
 }
 
 #[test]
+fn revision_recovery_without_approval_does_not_initialize_state() {
+    let home =
+        std::env::temp_dir().join(format!("fabric-revision-denied-{}", uuid::Uuid::new_v4()));
+    let output = Command::new(env!("CARGO_BIN_EXE_cogfabric"))
+        .arg("--home")
+        .arg(&home)
+        .args([
+            "recover-revision-result",
+            "11111111-1111-4111-8111-111111111111",
+        ])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("explicit operator approval"));
+    assert!(!home.exists());
+}
+
+#[test]
 fn cli_resumes_advisory_graph_with_a_fresh_bounded_worker_and_reaps_it() {
     run(false);
 }

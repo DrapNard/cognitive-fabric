@@ -4,6 +4,7 @@ pub mod continuation;
 pub(crate) mod graph;
 mod inference;
 mod result;
+mod revision;
 pub mod worker_files;
 use crate::{security, store::Store};
 use anyhow::{bail, Result};

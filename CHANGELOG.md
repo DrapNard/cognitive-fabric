@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Recover recorded revision handoffs without inference replay
+
+- Add approved reconciliation of same-cycle solver, critic and reflector results.
+- Retain stopping state, original snapshots, charges, deadlines and separate resume approval.
+- Cover HTTP continuation, semantic critique denials, altered state and atomic rollback.
+
 ### Continue saved graphs after interrupted node initialization
 
 - Admit missing initial pending nodes only before advisory execution advances.

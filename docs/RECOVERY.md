@@ -625,3 +625,30 @@ Actual local HTTP regressions cover zero and partial initialization with a custo
 saved order and unchanged total charges. Earlier blanket refusal of initial
 missing node records is superseded by this narrowly validated path. General
 unknown-result or consumed-cycle continuation remains unsupported.
+
+## Recorded reflection before its next solver checkpoint
+
+After a crash following a fully persisted solver, critic and reflector sequence:
+
+```sh
+cogfabric --home STATE --json recover-revision-result TASK_UUID --human-approve
+cogfabric --home STATE --json resume-preview TASK_UUID
+cogfabric --home STATE resume-task TASK_UUID --human-approve
+```
+
+Reconciliation requires consecutive correlated calls in the current charged cycle,
+a strict critic request for useful revision, and the prior consumed solver boundary
+with consistent stopping state. It records the truncated reflection as next-solver
+strategy and the solver answer as previous unverified answer, preserving all
+charges. Existing full checkpoint admission validates context, model/module pins,
+role prompts, schedule, original same-boot deadline and remaining allowances.
+Boundary and metadata-only operator audit commit atomically under an exclusive
+runtime lease; any failure rolls both back. Repeating recovery fails after the
+boundary has been recorded. Resume remains separately approved and revalidated.
+
+No solver, critic or reflector inference is replayed. Missing/unknown outcomes,
+non-admitting or malformed critiques, changed records, expired state, live leases
+and completed tasks are rejected. Structured objectives use independently checked
+result recovery instead. Real local HTTP tests exercise the one-new-solver path,
+which remains unverified. This closes the completed-reflection crash window;
+it does not implement arbitrary within-cycle recovery or provider stop proof.

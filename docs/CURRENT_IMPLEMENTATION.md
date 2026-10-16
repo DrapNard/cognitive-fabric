@@ -1,5 +1,33 @@
 # Current Rust implementation
 
+### Reconcile a recorded revision handoff — 2026-10-16
+
+`recover-revision-result TASK --human-approve` links a fully recorded same-cycle
+solver/critic/reflector sequence to the next solver boundary without inference
+replay. The prior boundary, consecutive calls, strict admitting critique and
+original stopping-state hash are checked. Normal continuation admission validates
+all original snapshots, remaining budget and same-boot deadline before committing
+the new boundary and operator audit together. Missing, altered or unresolved
+results, non-admitting critiques, live leases and terminal tasks fail closed.
+Structured independently checkable objectives retain their separate result path.
+
+The report omits answer/strategy text and claims no verification or resume grant.
+Actual local HTTP continuation uses the recorded reflection with exactly one new
+solver call, five total calls and 1280 reserved outputs. The answer stays
+unverified. CLI denial precedes state initialization; audit-write failure rolls
+back the boundary. The first broad test pass exposed missing original stopping
+hash validation; that check was added before final verification. General unknown
+provider outcomes, recovery after only a critic, and other-boot/consumed-cycle
+positions remain unsupported. No permission, call, deadline or cycle is renewed.
+
+Verification: all 533 workspace tests (474 library including server, 59
+integration), formatting, workspace all-target checking and warnings-denied Clippy
+passed with `FLATC` unset. The preceding graph commit's hosted run `38826523808`
+failed the existing paused-clock idle-worker/socket test; test-only commit
+`5c41eed` resumes real time after simulated idle, preserving production limits.
+The focused idle test and full suite were rerun with that fix. Hosted verification
+of the new source remains pending; no fresh live-model or installation claim.
+
 ### Recover interrupted graph initialization — 2026-10-16
 
 Approved `resume-task` now initializes missing pending nodes after a saved planner

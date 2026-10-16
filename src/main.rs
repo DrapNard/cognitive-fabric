@@ -76,6 +76,11 @@ enum Command {
         #[arg(long)]
         human_approve: bool,
     },
+    RecoverRevisionResult {
+        id: String,
+        #[arg(long)]
+        human_approve: bool,
+    },
     RecoverAdvisoryResult {
         id: String,
         #[arg(long)]
@@ -474,6 +479,15 @@ async fn main() -> Result<()> {
     ) {
         bail!("Advisory recovery requires explicit operator approval")
     }
+    if matches!(
+        &cli.command,
+        Command::RecoverRevisionResult {
+            human_approve: false,
+            ..
+        }
+    ) {
+        bail!("Revision recovery requires explicit operator approval")
+    }
     let cfg = Config::load(cli.home, cli.backend)?;
     if let Command::ResidencyInspect {
         id,
@@ -622,6 +636,9 @@ async fn main() -> Result<()> {
         }
         Command::RecoverAdvisoryResult { id, human_approve } => {
             store.recover_advisory_result(&id, human_approve)?
+        }
+        Command::RecoverRevisionResult { id, human_approve } => {
+            store.recover_revision_result(&id, human_approve)?
         }
         Command::RecoverVerifiedResult { id } => store.recover_verified_result(&id)?,
         Command::RecoverTasks => {
