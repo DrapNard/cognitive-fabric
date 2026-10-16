@@ -51,7 +51,7 @@ pub(super) fn now_ms() -> u64 {
         .min(u64::MAX as u128) as u64
 }
 
-pub(super) fn actor(role: &str) -> Result<&'static str> {
+pub(crate) fn actor(role: &str) -> Result<&'static str> {
     match role {
         "interface" | "synthesizer" => Ok("interface"),
         "planner" | "solver" | "explorer" | "critic" | "reflector" => Ok("jev-r"),

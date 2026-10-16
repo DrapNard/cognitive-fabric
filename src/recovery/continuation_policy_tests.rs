@@ -683,3 +683,31 @@ async fn restored_unstructured_revision_validates_the_original_whole_chain_promp
     drop(store);
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[tokio::test]
+async fn continuation_never_silently_discards_an_original_shared_resource_pool() {
+    let (store, root) = persistent();
+    let (store, task) = super::tests::fixture_in_with_policy(store, false, None).await;
+    assert!(preview(&store, &task).is_ok());
+    store
+        .event(
+            &task,
+            "resource_intent",
+            "jev-plus",
+            json!({"format_version":1,"pool_id":uuid::Uuid::new_v4().to_string()}),
+        )
+        .unwrap();
+    let before = store.task(&task).unwrap();
+    assert!(preview(&store, &task)
+        .unwrap_err()
+        .to_string()
+        .contains("resource pool"));
+    assert!(resume(store.clone(), &task, true, std::future::pending())
+        .await
+        .unwrap_err()
+        .to_string()
+        .contains("resource pool"));
+    assert_eq!(store.task(&task).unwrap(), before);
+    drop(store);
+    std::fs::remove_dir_all(root).unwrap();
+}

@@ -737,3 +737,13 @@ current-schema Store writer, preserving the schema and avoiding bootstrap or
 new workspace creation. This supersedes the blanket exclusion of all explicitly
 restored custom handles above; general custom-policy reconciliation, code
 attestation and automatic provisioning remain unsupported.
+
+
+### Original shared resource pools
+
+Continuation now refuses any checkpoint with a recorded `resource_intent`. The
+native shared allocator retains uncertain dispatched reservations, and recovery
+cannot safely recreate that process-local ownership or silently omit its limits.
+Preview and approved resume reject before backend construction without changing
+task/event state. Explicit pool restoration and crash reconstruction remain
+incomplete; see [RESOURCE_SCHEDULING.md](RESOURCE_SCHEDULING.md).

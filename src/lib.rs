@@ -25,6 +25,7 @@ pub mod reasoning;
 pub mod recovery;
 pub mod registry;
 pub mod residency;
+pub mod resource_scheduler;
 pub mod restore;
 pub mod routing;
 pub mod scheduling;

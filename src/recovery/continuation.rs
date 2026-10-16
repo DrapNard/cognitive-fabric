@@ -39,6 +39,14 @@ fn prepare_with_policy(
     task: &str,
     escalator: &crate::escalation::Handle,
 ) -> Result<Checkpoint> {
+    let scheduled: bool = db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM events WHERE task_id=?1 AND kind='resource_intent')",
+        [task],
+        |row| row.get(0),
+    )?;
+    if scheduled {
+        bail!("Original shared resource pool requires explicit host restoration; continuation is unsupported")
+    }
     let (status, graph, subtasks) = graph::graph_from(db, task)?;
     if !matches!(status.as_str(), "running" | "interrupted") {
         bail!("Task is not abandoned or interrupted")

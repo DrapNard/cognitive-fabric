@@ -592,3 +592,24 @@ new inference reservations. CLI resume opens only a current existing database;
 no schema migration, bootstrap, model/tool capability or new budget is inferred.
 General custom-policy crash reconciliation and automatic policy catalogs remain
 outside this restoration path.
+
+
+### Shared inference allocation and uncertain provider work
+
+Native operator settings establish one process-local FIFO resource pool. Models
+cannot configure capacities or resolve retained allocations. Wrapped calls reserve
+all declared resource dimensions together under bounded queues and deadlines;
+original per-task authorization/budgets still precede actual inference. Mandatory
+metadata audits precede dispatch, and successful completion must be recorded before
+release. Audit/provider errors, timeouts and dropped dispatched futures retain
+capacity in quarantine; cancellation is not provider-stop evidence. Operator
+resolution requires explicit acknowledgement plus a committed audit outside pool
+locks. Pending/undispatched cancellation releases capacity and preserves fairness.
+
+These are declared allocations, not CUDA/cgroup/RSS limits or weight-residency
+attestation. Pools neither control other processes nor reconstruct ownership after
+a crash. All competing backends must be wrapped by the trusted host. Normal task
+continuation refuses original pool usage rather than bypassing unavailable limits.
+Explicit restoration, durable shared allocation and actual GPU scheduling remain
+incomplete. No default CLI/HTTP installation, automatic provider stop, new model
+capability or untrusted executable policy is introduced.

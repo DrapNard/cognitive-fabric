@@ -1,5 +1,45 @@
 # Current Rust implementation
 
+### Shared Jev+ inference resource admission — 2026-10-16
+
+**Implemented (trusted native, process-local scope); Partial (general GPU scheduler).**
+`src/resource_scheduler.rs` and `src/resource_scheduler/adapter.rs` add a shared
+FIFO pool across independently registered inference backends/brokers. Fixed
+operator allocations reserve compute slots, host bytes and device bytes together;
+queue and execution deadlines, bounded inventory and scoped cancellation prevent
+unbounded pending work. Backend pins retain original allocations and transport
+identity. Per-task kernel budgets and charges remain enforced independently.
+
+Intent/admission/dispatch audits precede provider work. Success requires a durable
+completion before freeing capacity; failed/timed-out/dropped dispatches quarantine
+the allocation. Only an explicit audited operator stop acknowledgement can release
+it. No prompt/answer/credential/error body is included in pool events. Native-only
+`resources.configure` and `resources.resolve` reject model actors. Default recovery
+rejects original pool usage instead of silently continuing without its limits.
+
+Tests in `src/resource_scheduler/tests.rs` and
+`src/recovery/continuation_policy_tests.rs` cover three-dimensional contention,
+FIFO fairness, cancellation races, queue overflow, deadlines/shutdown, audit
+failures, preserved transport pins, independent Engine brokers, original charges,
+and pool-bound recovery denial. Initial compilation identified a private role
+helper and a MutexGuard dereference; both were corrected using the existing role
+mapping without duplicating authority. See `docs/RESOURCE_SCHEDULING.md`.
+
+Settings and allocations are host declarations, not physical GPU/RSS enforcement.
+Default CLI/HTTP configuration, resident/backbone accounting, provider ownership,
+durable/cross-process allocation and pool restoration remain open. Jev+ and Jev-R
+remain Partial; no model training, quality gain or live GPU benchmark is claimed.
+Verification passed: `cargo fmt --all -- --check`,
+`cargo check --locked --workspace --all-targets`,
+`cargo test --locked --workspace --all-targets` (**589 tests across 27 targets**),
+and `cargo clippy --locked --workspace --all-targets -- -D warnings`. Full tests
+required elevated local TCP/Unix fixture access. Existing protocol pairing,
+migrations, malformed-frame, denial, cancellation and rollback regressions remain
+green. `flatc` is unavailable; schemas/bindings are unchanged and fresh generation
+was not run. The focused first pass also passed all 11 then-present pool tests;
+final tests include subsequent cancellation/state/recovery regressions.
+
+
 ### Restore pinned executive policies during continuation — 2026-10-16
 
 **Implemented (supported checkpoint and trusted-host scope).**

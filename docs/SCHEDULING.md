@@ -73,3 +73,13 @@ unchanged charges and no connection to the listening HTTP fixture. This extends
 custom-order execution/reconstruction coverage to actual public HTTP continuation.
 It does not prove arbitrary within-call recovery, backend weight identity or
 safety against an owner who rewrites every record consistently.
+
+## Shared resource admission
+
+`resource_scheduler::ResourcePool` now supplies a separate native shared FIFO
+allocator for inference compute slots and declared host/device working memory.
+It coordinates wrapped backends across brokers, with bounded queue/execution
+deadlines and quarantine of uncertain dispatched work. See
+[RESOURCE_SCHEDULING.md](RESOURCE_SCHEDULING.md) for host configuration, original
+budget preservation, audit gates and remaining physical/global scheduling gaps.
+Dependency ordering and shared allocation remain distinct responsibilities.
