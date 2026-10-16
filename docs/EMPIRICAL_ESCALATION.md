@@ -95,9 +95,13 @@ fn install_reviewed_policy(
 Study content plus thresholds are canonically hashed. All 256 digest bits appear
 across the bounded policy ID and semantic version, so changing either changes
 its task snapshot identity. Handles remain immutable for Engine clones and tasks.
-No serialized data installs executable policy code. The existing custom-policy
-recovery refusal remains in force: unavailable custom policies cannot silently
-resume with a default. Automatic policy catalogs, reload and promotion are absent.
+No serialized data installs executable policy code. Default recovery still refuses
+unavailable custom policies. Explicit restoration can receive the original native
+handle or reconstruct this compiled policy from its exact reviewed study and
+thresholds using the CLI options documented in [ESCALATION.md](ESCALATION.md).
+Revised cycles must retain their original durable allowance and matching source
+fingerprint. An unavailable policy cannot silently resume with a default.
+Automatic policy catalogs and promotion remain absent.
 
 The build-time source fingerprint includes Rust sources, schemas, generated
 bindings, build support, Cargo metadata and lockfile, ordered by relative path.
@@ -114,7 +118,7 @@ matching a criterion name does not establish domain generalization.
 | Router | Versioned, audited skill selection with pinned snapshots and bounded routes | Cost-calibrated adaptive skill selection and independently measured routing quality |
 | Scheduler | Versioned dependency ordering, whole-goal budget reservation and capacity-aware local module selection | Global fairness, provider/GPU ownership and physical memory/energy admission |
 | Evaluator | Independent structured checkers; bounded retry-study aggregation and cost comparisons | Reviewed live retry studies, statistical calibration and general independent answer verification |
-| Escalator | Versioned allow/decline interface; optional immutable empirical retry gate | Custom-policy restoration and independently demonstrated cost/quality improvement |
+| Escalator | Versioned allow/decline interface; optional immutable empirical retry gate | Automatic policy catalogs, general custom reconciliation and independently demonstrated cost/quality improvement |
 | Dependency Manager | Validated bounded DAGs, committed execution order and supported approved continuation | General concurrent graph execution and unsupported interruption boundaries |
 | Capability Manager | Versioned declarations, pinned provider bindings and explicit gaps | Safe executable provisioning and independently established capability health |
 

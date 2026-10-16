@@ -76,11 +76,19 @@ enum Command {
     },
     ResumePreview {
         id: String,
+        #[arg(long, requires = "retry_thresholds")]
+        retry_study: Option<PathBuf>,
+        #[arg(long, requires = "retry_study")]
+        retry_thresholds: Option<PathBuf>,
     },
     ResumeTask {
         id: String,
         #[arg(long)]
         human_approve: bool,
+        #[arg(long, requires = "retry_thresholds")]
+        retry_study: Option<PathBuf>,
+        #[arg(long, requires = "retry_study")]
+        retry_thresholds: Option<PathBuf>,
     },
     RecoverRevisionResult {
         id: String,
@@ -447,6 +455,31 @@ fn output<T: Serialize>(value: T, force_json: bool) -> Result<()> {
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
+    if matches!(
+        &cli.command,
+        Command::ResumeTask {
+            human_approve: false,
+            ..
+        }
+    ) {
+        bail!("Task continuation requires explicit operator approval")
+    }
+    let restored_policy: Option<Arc<dyn cogfabric::escalation::EscalationPolicy>> =
+        match &cli.command {
+            Command::ResumePreview {
+                retry_study: Some(study),
+                retry_thresholds: Some(thresholds),
+                ..
+            }
+            | Command::ResumeTask {
+                retry_study: Some(study),
+                retry_thresholds: Some(thresholds),
+                ..
+            } => Some(Arc::new(cogfabric::escalation::empirical::load_files(
+                study, thresholds,
+            )?)),
+            _ => None,
+        };
     if let Command::RetryStudyEvaluate { study, thresholds } = &cli.command {
         return output(
             cogfabric::escalation::empirical::evaluate_files(study, thresholds)?,
@@ -536,12 +569,44 @@ async fn main() -> Result<()> {
         )?;
         return Ok(());
     }
-    if let Command::ResumePreview { id } = &cli.command {
+    if let Command::ResumePreview { id, .. } = &cli.command {
         let store = Store::open_existing_read_only(&cfg.db())?;
-        output(
-            &cogfabric::recovery::continuation::preview(&store, id)?,
-            cli.json,
-        )?;
+        let report = match restored_policy {
+            Some(policy) => cogfabric::recovery::continuation::preview_with_escalation_policy(
+                &store, id, policy,
+            )?,
+            None => cogfabric::recovery::continuation::preview(&store, id)?,
+        };
+        output(&report, cli.json)?;
+        return Ok(());
+    }
+    if let Command::ResumeTask {
+        id, human_approve, ..
+    } = &cli.command
+    {
+        let store = Arc::new(Store::open_existing_with_limit(
+            &cfg.db(),
+            cfg.max_database_bytes,
+        )?);
+        let cancel = async {
+            let _ = tokio::signal::ctrl_c().await;
+        };
+        let report = match restored_policy {
+            Some(policy) => {
+                cogfabric::recovery::continuation::resume_with_escalation_policy(
+                    store,
+                    id,
+                    *human_approve,
+                    policy,
+                    cancel,
+                )
+                .await?
+            }
+            None => {
+                cogfabric::recovery::continuation::resume(store, id, *human_approve, cancel).await?
+            }
+        };
+        output(&report, cli.json)?;
         return Ok(());
     }
     cfg.prepare()?;
@@ -741,13 +806,8 @@ async fn main() -> Result<()> {
             changed.save()?;
             json!({"inference_process":enabled,"sandboxed":false})
         }
-        Command::ResumePreview { id } => cogfabric::recovery::continuation::preview(&store, &id)?,
-        Command::ResumeTask { id, human_approve } => {
-            cogfabric::recovery::continuation::resume(store.clone(), &id, human_approve, async {
-                let _ = tokio::signal::ctrl_c().await;
-            })
-            .await?
-        }
+        Command::ResumePreview { .. } => bail!("Preview must run before runtime initialization"),
+        Command::ResumeTask { .. } => bail!("Continuation must run before runtime initialization"),
         Command::ResidencyLoad {
             api_base,
             authenticate,

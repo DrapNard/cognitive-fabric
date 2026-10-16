@@ -1,5 +1,49 @@
 # Current Rust implementation
 
+### Restore pinned executive policies during continuation — 2026-10-16
+
+**Implemented (supported checkpoint and trusted-host scope).**
+`recovery::continuation::{preview_with_escalation_policy,resume_with_escalation_policy}`
+accept an explicitly restored native policy. Every saved descriptor must match;
+strict parsing rejects ambiguous policy snapshots. A supplied handle cannot claim
+legacy compatibility merely by using the built-in descriptor. For a revised
+solver, restoration additionally requires the original durable intent/allow pair
+bound to candidate, mode, cycle, checker, original configuration, compiled prompts,
+and current source fingerprint, with exact prompt-chain costs and sufficient
+recorded remaining resources. Missing/denied/altered allowances fail before
+backend construction. An existing allowance is validated, not invoked again.
+
+The restored handle is carried into the Session, so subsequent unresolved answers
+use the original policy under original budgets and independent checking. New
+CLI `--retry-study` and `--retry-thresholds` options on `resume-preview` and
+`resume-task` reconstruct only the compiled empirical policy from bounded
+operator-selected data; there is no executable loader, implicit policy swap or
+promotion. Resume approval is checked before file/configuration access. The CLI
+opens an existing current-schema database without creation, migration or bootstrap.
+Default/legacy recovery remains available through the existing built-in path.
+
+Sources: `src/recovery/continuation.rs`, `src/recovery/continuation_policy.rs`,
+`src/escalation.rs`, `src/escalation/empirical.rs`, `src/main.rs`, `src/store.rs`.
+Regressions in `src/recovery/continuation_policy_tests.rs` and
+`tests/policy_resume.rs` cover native and actual CLI/HTTP restoration, immutable
+study identity, reentrant callbacks, missing approvals, live leases, audit rollback,
+ready cancellation, original call/output charges, no replay, and legacy/schema/
+symlink/source-drift denials. The CLI fixture initially attempted a private Store
+method and was corrected to use its own SQLite connection; a lint correction
+made its test-lock scope explicit without weakening production checks.
+
+Jev+ and Jev-R remain Partial. General custom reconciliation, executable policy
+attestation/provisioning, automatic policy catalogs, global GPU scheduling and
+independent utility studies remain open. There is no new model grant or claimed
+quality improvement. Verification passed: `cargo fmt --all -- --check`,
+`cargo check --locked --workspace --all-targets`,
+`cargo test --locked --workspace --all-targets` (**574 tests across 27 targets**),
+and `cargo clippy --locked --workspace --all-targets -- -D warnings`. The full
+test run required local socket access outside the restricted sandbox. Tests use
+scripted/loopback backends; no fresh real-model quality or speed result is claimed.
+Schemas were unchanged; `flatc` remains unavailable, so fresh binding generation
+was not run.
+
 ### Empirical retry evaluation and executive cost gate — 2026-10-16
 
 **Implemented (bounded host API and operator inspection); Experimental (utility

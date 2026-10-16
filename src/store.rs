@@ -190,6 +190,27 @@ impl Store {
     pub fn open(path: &Path) -> Result<Self> {
         Self::open_with_limit(path, crate::storage::DEFAULT_DATABASE_BYTES)
     }
+    /// Open a current runtime database for mutation without creating or migrating it.
+    pub fn open_existing_with_limit(path: &Path, maximum_bytes: u64) -> Result<Self> {
+        let db = Connection::open_with_flags(
+            path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE | rusqlite::OpenFlags::SQLITE_OPEN_NOFOLLOW,
+        )?;
+        db.busy_timeout(std::time::Duration::from_secs(5))?;
+        let version: i64 = db.pragma_query_value(None, "user_version", |r| r.get(0))?;
+        if version != 6 {
+            bail!("Runtime continuation requires an existing current-schema database")
+        }
+        crate::storage::configure(&db, maximum_bytes)?;
+        db.pragma_update(None, "foreign_keys", "ON")?;
+        let mut lease = path.as_os_str().to_os_string();
+        lease.push(".runtime.lock");
+        Ok(Self {
+            db: Mutex::new(db),
+            runtime_lock: Some(lease.into()),
+            events: crate::events::Hub::default(),
+        })
+    }
     pub fn open_with_limit(path: &Path, maximum_bytes: u64) -> Result<Self> {
         if path.is_symlink() {
             bail!("Database path cannot be a symlink")

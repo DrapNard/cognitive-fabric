@@ -572,3 +572,23 @@ The host-installed policy is immutable and custom-policy recovery still refuses
 unavailable implementations. `retry-study-evaluate` is human-only bounded file
 inspection before state initialization, not policy installation or promotion.
 No new model actor capabilities, executable loader or external endpoint is added.
+
+### Explicit restoration of pinned executive policy
+
+Custom-policy continuation accepts only an operator-supplied native implementation
+whose cached descriptor matches every original snapshot. Empirical CLI restoration
+constructs only the existing compiled policy from bounded reviewed data. It never
+loads code or infers authority from a policy name. Legacy compatibility is a
+runtime-owned handle property, not a serialized ID. Revised custom checkpoints
+require original matching intent/allow records with unchanged candidate, resource
+chain, configuration, prompts and runtime-source fingerprints. Denial, ambiguity,
+missing records and source drift prevent new dispatch; committed choices are not
+reinvoked. This is owner-local consistency, not native executable attestation or
+proof that operator review or provider identity is correct.
+
+Store locks are released before callbacks; approval and execution leases remain
+mandatory. Audit failure rolls admission back, and ready cancellation makes no
+new inference reservations. CLI resume opens only a current existing database;
+no schema migration, bootstrap, model/tool capability or new budget is inferred.
+General custom-policy crash reconciliation and automatic policy catalogs remain
+outside this restoration path.

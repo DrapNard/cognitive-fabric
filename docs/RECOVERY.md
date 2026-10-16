@@ -719,3 +719,21 @@ snapshot predate the replaceable-policy interface and use the built-in compatibi
 path with current hard admission. Recovery never loads policy code from metadata
 or silently replaces a pinned custom policy. Custom-policy reconstruction and
 implementation attestation remain unsupported; see `ESCALATION.md`.
+
+### Explicit executive policy restoration
+
+The default API retains its unavailable-custom-policy denial. Trusted host callers
+can explicitly supply the original native policy through
+`continuation::preview_with_escalation_policy` and `resume_with_escalation_policy`.
+The CLI supports the compiled empirical policy with paired `--retry-study` and
+`--retry-thresholds` options on preview/resume. See [ESCALATION.md](ESCALATION.md)
+for exact identity, original-allowance, source and budget validation. Source drift,
+missing policy/decisions, mismatched thresholds and unavailable implementations
+remain denials. No previous inference, policy decision or resource reservation is
+replayed or refunded. Supplied native handles cannot claim legacy compatibility.
+
+`resume-task` checks approval before reading inputs and uses an existing-only
+current-schema Store writer, preserving the schema and avoiding bootstrap or
+new workspace creation. This supersedes the blanket exclusion of all explicitly
+restored custom handles above; general custom-policy reconciliation, code
+attestation and automatic provisioning remain unsupported.

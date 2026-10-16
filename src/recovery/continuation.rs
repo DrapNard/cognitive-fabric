@@ -16,6 +16,9 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[path = "continuation_policy.rs"]
+mod policy;
+
 struct Checkpoint {
     cfg: Config,
     query: String,
@@ -28,6 +31,14 @@ struct Checkpoint {
 }
 
 fn prepare(db: &rusqlite::Connection, task: &str) -> Result<Checkpoint> {
+    prepare_with_policy(db, task, &crate::escalation::Handle::default())
+}
+
+fn prepare_with_policy(
+    db: &rusqlite::Connection,
+    task: &str,
+    escalator: &crate::escalation::Handle,
+) -> Result<Checkpoint> {
     let (status, graph, subtasks) = graph::graph_from(db, task)?;
     if !matches!(status.as_str(), "running" | "interrupted") {
         bail!("Task is not abandoned or interrupted")
@@ -64,6 +75,7 @@ fn prepare(db: &rusqlite::Connection, task: &str) -> Result<Checkpoint> {
     let mut planner_texts = BTreeMap::new();
     let mut bytes = 0usize;
     let mut contexts = 0usize;
+    let mut policy_snapshots = 0usize;
     let mut stmt = db.prepare("SELECT kind,CASE WHEN length(CAST(source AS BLOB))<=64 THEN source END,CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN payload END,id FROM events WHERE task_id=?1 AND kind IN ('execution_settings','execution_options','model_registration','module_snapshot','escalation_policy','reasoning_context','reasoning') ORDER BY id LIMIT 86")?;
     let mut rows = stmt.query([task])?;
     let mut count = 0;
@@ -76,13 +88,17 @@ fn prepare(db: &rusqlite::Connection, task: &str) -> Result<Checkpoint> {
         if count > 85 || bytes > 8_000_000 {
             bail!("Checkpoint exceeds bounded history")
         }
-        let payload: Value = serde_json::from_str(&raw)?;
+        let payload: Value = if kind == "escalation_policy" {
+            crate::strict_json::value(raw.as_bytes(), 262144)?
+        } else {
+            serde_json::from_str(&raw)?
+        };
         if kind == "escalation_policy" {
-            use crate::escalation::EscalationPolicy;
-            let expected = json!({"format_version":1,"policy":crate::escalation::BudgetPolicy.descriptor(),"permissions_granted":false,"implementation_attested":false});
+            let expected = json!({"format_version":1,"policy":escalator.descriptor(),"permissions_granted":false,"implementation_attested":false});
             if source != "jev-plus" || payload != expected {
                 bail!("Original escalation policy is unavailable or changed")
             }
+            policy_snapshots += 1;
             continue;
         }
         if kind == "reasoning" {
@@ -154,6 +170,9 @@ fn prepare(db: &rusqlite::Connection, task: &str) -> Result<Checkpoint> {
                 bail!("Invalid or repeated checkpoint snapshot")
             }
         }
+    }
+    if policy_snapshots == 0 && !escalator.is_builtin() {
+        bail!("Legacy checkpoint has no original custom escalation policy")
     }
     let settings = snapshots
         .get("execution_settings")
@@ -265,6 +284,9 @@ fn prepare(db: &rusqlite::Connection, task: &str) -> Result<Checkpoint> {
                 || solver_texts.last_key_value().is_none_or(|(_,text)|text!=previous)))
             || subtasks.iter().any(|n|!matches!(n.state.as_str(),"unverified"|"skipped"))
         { bail!("Reasoning boundary is stale, inconsistent or unsupported") }
+        if cycles > 0 && !escalator.is_builtin() {
+            policy::validate_saved_decision(db, task, id, &v, escalator, &cfg, text)?;
+        }
         if matches!(v["phase"].as_str(),Some("ready_reflector"|"ready_critic")) {
             super::revision::validate_revision_boundary(db,task,&v,&audit)?;
             if !matches!(mode.as_str(),"deep"|"research") || crate::verification::Criterion::from_query(&query)?.is_some() {bail!("Unsupported revision recovery objective or mode")}
@@ -491,6 +513,26 @@ fn validate_worker_workspace(cfg: &mut Config, path: &std::path::Path) -> Result
 /// Inspect current continuation admission without changing task state or launching workers.
 /// Eligibility is sampled; an approved resume always validates again.
 pub fn preview(store: &Store, task: &str) -> Result<Value> {
+    preview_with_handle(store, task, crate::escalation::Handle::default())
+}
+
+/// Inspect a checkpoint against an explicitly restored trusted-native policy.
+/// The supplied descriptor must match every original snapshot; no decision callback runs.
+pub fn preview_with_escalation_policy(
+    store: &Store,
+    task: &str,
+    policy: Arc<dyn crate::escalation::EscalationPolicy>,
+) -> Result<Value> {
+    security::authorize("human-cli", "task.resume")?;
+    uuid::Uuid::parse_str(task)?;
+    preview_with_handle(store, task, crate::escalation::Handle::new(policy)?)
+}
+
+fn preview_with_handle(
+    store: &Store,
+    task: &str,
+    escalator: crate::escalation::Handle,
+) -> Result<Value> {
     security::authorize("human-cli", "task.resume")?;
     uuid::Uuid::parse_str(task)?;
     let path = store
@@ -507,7 +549,7 @@ pub fn preview(store: &Store, task: &str) -> Result<Value> {
     );
     let result = (|| -> Result<Value> {
         let tx = db.transaction()?;
-        let mut checkpoint = prepare(&tx, task)?;
+        let mut checkpoint = prepare_with_policy(&tx, task, &escalator)?;
         validate_worker_workspace(&mut checkpoint.cfg, path)?;
         if started.elapsed() > Duration::from_secs(5) {
             bail!("Continuation admission deadline exhausted")
@@ -517,6 +559,7 @@ pub fn preview(store: &Store, task: &str) -> Result<Value> {
             "human_approval_required":true,"resume_revalidates":true,
             "phase":checkpoint.boundary.as_ref().map(|b| b["phase"].clone()).unwrap_or(json!("pre_solver_graph")),
             "mode":checkpoint.mode,"model":checkpoint.cfg.model,
+            "escalation_policy":escalator.descriptor(),"policy_implementation_attested":false,
             "managed_worker":checkpoint.cfg.inference_process,
             "remaining_admission":checkpoint.admission,
             "consumed":{"calls":checkpoint.state.resources.calls,
@@ -536,6 +579,41 @@ pub async fn resume(
     store: Arc<Store>,
     task: &str,
     human_approve: bool,
+    cancel: impl std::future::Future<Output = ()>,
+) -> Result<Value> {
+    resume_with_handle(
+        store,
+        task,
+        human_approve,
+        crate::escalation::Handle::default(),
+        cancel,
+    )
+    .await
+}
+
+/// Resume using an operator-restored native implementation of the pinned policy.
+/// This never loads code or constructs authority from stored policy metadata.
+pub async fn resume_with_escalation_policy(
+    store: Arc<Store>,
+    task: &str,
+    human_approve: bool,
+    policy: Arc<dyn crate::escalation::EscalationPolicy>,
+    cancel: impl std::future::Future<Output = ()>,
+) -> Result<Value> {
+    security::authorize("human-cli", "task.resume")?;
+    if !human_approve {
+        bail!("Task continuation requires explicit operator approval")
+    }
+    uuid::Uuid::parse_str(task)?;
+    let escalator = crate::escalation::Handle::new(policy)?;
+    resume_with_handle(store, task, human_approve, escalator, cancel).await
+}
+
+async fn resume_with_handle(
+    store: Arc<Store>,
+    task: &str,
+    human_approve: bool,
+    escalator: crate::escalation::Handle,
     cancel: impl std::future::Future<Output = ()>,
 ) -> Result<Value> {
     security::authorize("human-cli", "task.resume")?;
@@ -560,7 +638,7 @@ pub async fn resume(
         );
         let prepared = (|| -> Result<Checkpoint> {
             let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-            let mut checkpoint = prepare(&tx, task)?;
+            let mut checkpoint = prepare_with_policy(&tx, task, &escalator)?;
             if checkpoint.cfg.inference_process {
                 validate_worker_workspace(&mut checkpoint.cfg, path)?;
                 // No inference has begun. A competing exclusive owner during conversion
@@ -584,7 +662,7 @@ pub async fn resume(
                 "UPDATE tasks SET status='running',updated=unixepoch() WHERE id=?1",
                 [task],
             )?;
-            tx.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'continuation','human-cli',?2,unixepoch())",rusqlite::params![task,json!({"state":"started","format_version":1,"original_budget_preserved":true,"prior_timing_complete":false,"subtask_results_verified":false}).to_string()])?;
+            tx.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'continuation','human-cli',?2,unixepoch())",rusqlite::params![task,json!({"state":"started","format_version":1,"original_budget_preserved":true,"prior_timing_complete":false,"subtask_results_verified":false,"escalation_policy":escalator.descriptor()}).to_string()])?;
             if started.elapsed() > Duration::from_secs(5) {
                 bail!("Continuation admission deadline exhausted")
             }
@@ -641,6 +719,7 @@ pub async fn resume(
         &checkpoint.mode,
         checkpoint.state,
     )?;
+    session.escalator = escalator;
     let execution = async {
         if let Some(boundary) = &checkpoint.boundary {
             session
@@ -689,6 +768,7 @@ pub async fn resume(
         status
     })?;
     let report = json!({"format_version":1,"task_id":task,"status":status,"answer":answer,
+        "escalation_policy":session.escalator.descriptor(),"policy_implementation_attested":false,
         "verified":session.verified,"criterion":session.verified_criterion,
         "new_calls":session.resources.calls-prior_calls,"charged_resources":session.resources,
         "timing_scope":"continuation_only","prior_timing_complete":false,"subtask_results_verified":false,"automatic_replay":false});
@@ -717,6 +797,10 @@ pub async fn resume(
     store.events.publish(&progress)?;
     Ok(report)
 }
+
+#[cfg(test)]
+#[path = "continuation_policy_tests.rs"]
+mod policy_tests;
 
 #[cfg(test)]
 mod tests {
@@ -759,6 +843,13 @@ mod tests {
         fixture_in_order(store, false).await
     }
     async fn fixture_in_order(store: Arc<Store>, custom_order: bool) -> (Arc<Store>, String) {
+        fixture_in_with_policy(store, custom_order, None).await
+    }
+    pub(super) async fn fixture_in_with_policy(
+        store: Arc<Store>,
+        custom_order: bool,
+        policy: Option<crate::escalation::Descriptor>,
+    ) -> (Arc<Store>, String) {
         const INDEPENDENT_PLAN: &str = r#"{"steps":[{"id":"a","objective":"Inspect input","depends_on":[]},{"id":"b","objective":"Independent advice","depends_on":[]}]}"#;
         let plan_text = if custom_order { INDEPENDENT_PLAN } else { PLAN };
         let first = if custom_order { 1 } else { 0 };
@@ -773,6 +864,9 @@ mod tests {
             vec![("planner", plan_text), ("solver", "original advice")].into(),
         )));
         let mut session = Session::new(cfg, store.clone(), backend, task.clone(), "deep").unwrap();
+        if let Some(policy) = policy {
+            store.event(&task, "escalation_policy", "jev-plus", json!({"format_version":1,"policy":policy,"permissions_granted":false,"implementation_attested":false})).unwrap();
+        }
         store.event(&task,"execution_options","runtime",json!({"format_version":1,"profile":"full","explain":false,"conversation_ref":null})).unwrap();
         store.event(&task,"module_snapshot","fabric",json!({"modules":[{"id":"inference.local","version":"1.0.0","roles":crate::fabric::protocol::ROLES}]})).unwrap();
         store.event(&task,"reasoning_context","jev-r",json!({"format_version":1,"objective":QUERY,"context":"","objective_hash":sha256(QUERY.as_bytes()),"context_hash":sha256(b""),"prompt_base_hash":sha256(Session::prompt_base(QUERY,"",true).unwrap().as_bytes()),"calls_before":0,"cycles_before":0,"untrusted_data":true,"permissions_restorable":false})).unwrap();

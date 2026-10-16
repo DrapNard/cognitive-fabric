@@ -60,12 +60,12 @@ Alone, Tools and Recursive comparison profiles retain the built-in policy, so
 installing a collective policy does not alter those baseline arms. This does not
 establish fair model/quality comparisons by itself; record configuration and source.
 
-Continuation accepts matching built-in snapshots and refuses unavailable custom,
-changed-version or spoofed snapshots before new dispatch. It never silently swaps
-an operator policy for the built-in one. Legacy tasks without snapshots predate
-this interface and use the built-in compatibility path under current admission
-checks. There is no custom-policy reload/attestation or automatic code loader.
-Starting a new reviewed task is required when its policy cannot be restored.
+Default continuation accepts matching built-in snapshots and refuses unavailable
+custom, changed-version or spoofed snapshots before new dispatch. Explicit native
+restoration and empirical data restoration are described below. Recovery never
+silently swaps an operator policy for the built-in one. Legacy tasks without
+snapshots retain only the runtime-owned built-in compatibility path. There is no
+automatic policy catalog, executable loader or implementation attestation.
 
 Tests in `src/escalation.rs` cover audited allow/deny, budget-before-callback,
 remaining checker budget, independent success, baseline isolation, descriptor and
@@ -79,3 +79,44 @@ global resource scheduling or independent reasoning-quality evaluation.
 See [empirical escalation](EMPIRICAL_ESCALATION.md) for reviewed-study aggregation,
 source/configuration/checker scope, immutable cost thresholds and operator-only
 inspection. It uses this interface without enlarging runtime authority.
+
+## Explicit policy restoration
+
+Trusted hosts can call `recovery::continuation::preview_with_escalation_policy`
+and `resume_with_escalation_policy`, passing the installed policy implementation
+as an `Arc<dyn EscalationPolicy>`. Descriptors are captured outside Store locks;
+every original snapshot must match. Preview never invokes a decision callback or
+writes a task. Approved resume validates again under an exclusive execution lease
+and uses the restored handle in its Session. No callback, grant or mutable budget
+is reconstructed from the descriptor. Native code remains operator-trusted and
+must use distinct descriptors for changed behavior.
+
+For a cycle-positive checkpoint, the original `escalation_intent` and allowed
+`escalation_decision` must also exist, occur before the saved boundary, and bind
+the exact candidate, cycle, mode, independent criterion and required chain. Their
+configuration, role-prompt and source fingerprints must match. Missing, duplicate,
+denied or changed records refuse continuation before dispatch. A prior allowance
+is not evaluated again, preventing a restored stateful policy from changing a
+committed choice. Subsequent unresolved candidates still invoke that same policy
+normally. This does not authorize reconciliation of missing results or create a
+new allowance; existing supported phase, model/module, deadline and budget checks
+still apply. Legacy records without snapshots are not eligible for a supplied
+native policy, even one declaring the built-in ID/version.
+
+The CLI can restore the compiled empirical policy from its original reviewed data:
+
+```sh
+cogfabric --home STATE resume-preview TASK_UUID \
+  --retry-study reviewed-retries.json --retry-thresholds retry-thresholds.json
+cogfabric --home STATE resume-task TASK_UUID --human-approve \
+  --retry-study reviewed-retries.json --retry-thresholds retry-thresholds.json
+```
+
+Both options must be supplied together. Exact validated study content and
+thresholds recreate the original descriptor; changed data cannot replace it.
+File reads retain their caps, duplicate-key and no-follow validation. Resume
+approval precedes input/configuration access. Continuation requires an existing
+current-schema database and never initializes or migrates a missing/old workspace.
+A database may open SQLite sidecar files and enforce its configured page limit;
+this writer path is not read-only inspection. General automatic policy loading,
+custom-policy crash reconciliation and cross-source migrations remain unsupported.

@@ -79,12 +79,14 @@ impl EscalationPolicy for BudgetPolicy {
 pub(crate) struct Handle {
     backend: Arc<dyn EscalationPolicy>,
     descriptor: Descriptor,
+    builtin: bool,
 }
 impl Default for Handle {
     fn default() -> Self {
         Self {
             backend: Arc::new(BudgetPolicy),
             descriptor: BudgetPolicy.descriptor(),
+            builtin: true,
         }
     }
 }
@@ -95,10 +97,14 @@ impl Handle {
         Ok(Self {
             backend,
             descriptor,
+            builtin: false,
         })
     }
     pub(crate) fn descriptor(&self) -> &Descriptor {
         &self.descriptor
+    }
+    pub(crate) fn is_builtin(&self) -> bool {
+        self.builtin
     }
     pub(crate) fn decide(&self, request: &Request) -> Result<Decision> {
         let decision = self.backend.decide(request)?;

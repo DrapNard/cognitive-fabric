@@ -17,16 +17,24 @@ pub fn evaluate_files(
     study: &std::path::Path,
     thresholds: &std::path::Path,
 ) -> Result<serde_json::Value> {
+    let policy = load_files(study, thresholds)?;
+    Ok(serde_json::json!({
+        "evaluation":policy.summary(),"policy":policy.descriptor(),"thresholds":policy.thresholds,
+        "installed":false,"permissions_granted":false,"provider_health_proven":false
+    }))
+}
+
+/// Read operator-selected immutable policy data; this does not install it.
+pub fn load_files(
+    study: &std::path::Path,
+    thresholds: &std::path::Path,
+) -> Result<EmpiricalPolicy> {
     crate::security::authorize("human-cli", "evaluation.retry")?;
     let thresholds = crate::security::read_regular_bytes(thresholds, 4096)?;
     let thresholds: Thresholds =
         serde_json::from_value(crate::strict_json::value(&thresholds, 4096)?)?;
     let bytes = crate::security::read_regular_bytes(study, MAX_STUDY_BYTES)?;
-    let policy = EmpiricalPolicy::from_json(&bytes, thresholds.clone())?;
-    Ok(serde_json::json!({
-        "evaluation":policy.summary(),"policy":policy.descriptor(),"thresholds":thresholds,
-        "installed":false,"permissions_granted":false,"provider_health_proven":false
-    }))
+    EmpiricalPolicy::from_json(&bytes, thresholds)
 }
 
 /// The complete effective configuration, excluding the nonserialized home path.
