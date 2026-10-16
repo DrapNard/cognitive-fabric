@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Resume saved solver answers before critique
+
+- Add a validated critic checkpoint with the full original revision budget.
+- Preserve unverified answers when resumed critique declines or cannot parse.
+- Cover HTTP continuation, stopping, repeated crashes and exact budget denials.
+
 ### Resume recorded critiques before reflection
 
 - Reconcile solver/critic results into a validated reflector checkpoint.

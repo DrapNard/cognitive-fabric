@@ -1,5 +1,31 @@
 # v1.0 release acceptance audit
 
+### Recover a recorded whole-goal solver before critique — 2026-10-16
+
+Approved `recover-revision-result` now reconciles a recorded cycle-positive solver
+answer into `ready_critic` for unstructured DEEP/RESEARCH tasks. Normal admission
+checks original snapshots, stopping hash, schedules, same-boot deadline and enough
+remaining capacity for critic/reflection/revised solver (three calls and 640
+reserved outputs, plus bounded prompts). No prior inference or cycle is replayed.
+The answer remains unverified; a non-admitting or invalid critic stops with the
+saved answer and only one new critic charge. An admitting critic proceeds through
+the missing reflection and solver under original limits.
+
+HTTP regressions cover the three-call path (five total / 1280 reserved outputs)
+and both critic stop cases (three total / 768 reserved outputs). Additional tests
+cover exact call/output/input budget refusals without writes, and another crash
+after a recovered critic: a recorded result can form `ready_reflector`, whereas
+an absent result retains unknown outcome and denies recovery. Other-boot,
+unknown inference outcomes, and arbitrary backend/subtask recovery remain partial.
+
+Verification: 540 workspace tests (481 library including server, 59 integration),
+formatting, all-target workspace check and warnings-denied Clippy passed with
+`FLATC` unset. Initial stop-test failure was an incorrect trace-field lookup;
+assertions now read the persisted nested task answer and pass for both stop cases.
+Hosted run `38827055986` passed for prior source `71f5e1f`; run `38827410095`
+for `44706cd` was still running when checked. New source is not yet hosted-proven;
+no new optimized installation or live-model claim is made.
+
 ### Continue after a recorded critic — 2026-10-16
 
 `recover-revision-result --human-approve` now also reconciles a completed
@@ -118,7 +144,7 @@ This checklist preserves the 18 acceptance criteria in the goal objective. It is
 an evidence inventory, not a release approval. The canonical French architecture
 and the broader implementation matrix remain authoritative. Earlier test counts
 in the quality review are historical milestones. Current local verification is
-536 Rust tests (477 library including the server, 59 integration), formatting, all-target checking and
+540 Rust tests (481 library including the server, 59 integration), formatting, all-target checking and
 Clippy with warnings denied. Default builds use bundled generated sources and
 Rust FlatBuffers 25.12.19. Exact native generation/byte comparison was also
 revalidated for the new optional load observations.
@@ -127,7 +153,7 @@ revalidated for the new optional load observations.
 |---|---|---|
 | 1. Workspace builds | `Cargo.toml`, all-target check | Passed locally; isolated optimized source installation also passed with cached dependencies. |
 | 2. Formatting and Clippy | Mandatory checks in `QUALITY_REVIEW.md` | Passed locally. |
-| 3. Mandatory tests | Workspace all-target test results, `tests/`, server integration tests | 536 passed; fixtures do not establish live model quality. |
+| 3. Mandatory tests | Workspace all-target test results, `tests/`, server integration tests | 540 passed; fixtures do not establish live model quality. |
 | 4. FlatBuffers IPC | `protocol/`, `src/wire.rs`, `src/fabric/`, malformed/compatibility/socket tests | Implemented for present transports; authenticated process event delivery/replay is now tested; broader module compatibility remains partial. |
 | 5. CLI/service communication | `src/service.rs`, socket tests, `tests/process_worker.rs`, `crates/cogfabric-server/tests/` | Tested typed local transport, progress, cancellation and optional HTTP client interoperability; native and collective ownership drains cover dropped request futures. No general independent plugin service is claimed. |
 | 6. Compatible local LLM | `src/backend.rs`, `tests/inference_auth.rs`, `LIVE_INFERENCE.md` | Passed for Ollama and LM Studio Qwen3 8B compatible endpoints, including managed verified sorting. Native inventory and one operator-approved embedding load/unload passed; authenticated native access and generative switching remain unverified. |

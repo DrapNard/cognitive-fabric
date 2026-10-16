@@ -670,3 +670,22 @@ its result is absent, the ledger rejects recovery; no outcome is inferred, call
 refunded or inference retried. HTTP and second-interruption regressions cover
 these cases. Earlier statements excluding all critic-only recovery are superseded
 by this checked phase. Other arbitrary consumed-cycle positions remain unsupported.
+
+### Recorded whole-goal solver before critique
+
+For an unstructured DEEP/RESEARCH task with a fully recorded solver result,
+`recover-revision-result TASK --human-approve` can now produce `ready_critic`.
+It requires a consistent consumed solver boundary, a new answer hash (rather than
+a repeated no-progress answer), the original validated snapshots/deadline, and
+sufficient original budget for critic, reflection and revised solver. Structured
+objectives retain their separate independent-checker recovery path.
+
+After separate resume approval, only missing calls execute. The critic uses the
+saved candidate. A valid admitting critique proceeds to reflection and solver;
+a non-admitting or invalid critique stops with the original answer unverified,
+without buying the two remaining calls. No independent verification is invented.
+If another interruption follows a recovered critic, its durable result can be
+reconciled to `ready_reflector`; an unresolved reservation is never replayed.
+Actual local HTTP, repeat-interruption and negative budget tests cover these paths.
+This supersedes the blanket exclusion of solver-before-critic recovery, while
+general unknown-outcome and other-boot continuation remain unsupported.

@@ -243,7 +243,7 @@ fn prepare(db: &rusqlite::Connection, task: &str) -> Result<Checkpoint> {
         let cycles=settings["cycle_limit"].as_u64().unwrap()-admission["cycles"].as_u64().unwrap();
         let previous=v["previous_answer"].as_str().ok_or_else(||anyhow::anyhow!("Missing prior answer"))?;
         let strategy=v["strategy"].as_str().ok_or_else(||anyhow::anyhow!("Missing revision strategy"))?;
-        if later != 0 || v["format_version"] != 1 || !matches!(v["phase"].as_str(),Some("ready_solver"|"ready_reflector"))
+        if later != 0 || v["format_version"] != 1 || !matches!(v["phase"].as_str(),Some("ready_solver"|"ready_reflector"|"ready_critic"))
             || v["mode"] != mode || v["objective_hash"] != context["objective_hash"]
             || v["context_hash"] != context["context_hash"] || v["prompt_base_hash"] != context["prompt_base_hash"]
             || v["calls_before"] != audit["reserved_calls"] || v["cycles_before"] != cycles
@@ -257,16 +257,20 @@ fn prepare(db: &rusqlite::Connection, task: &str) -> Result<Checkpoint> {
                 || solver_texts.last_key_value().is_none_or(|(_,text)|text!=previous)))
             || subtasks.iter().any(|n|!matches!(n.state.as_str(),"unverified"|"skipped"))
         { bail!("Reasoning boundary is stale, inconsistent or unsupported") }
-        if v["phase"]=="ready_reflector" {
-            super::revision::validate_reflector_boundary(db,task,&v,&audit)?;
-            if !matches!(mode.as_str(),"deep"|"research") || crate::verification::Criterion::from_query(&query)?.is_some() {bail!("Unsupported reflector recovery objective or mode")}
+        if matches!(v["phase"].as_str(),Some("ready_reflector"|"ready_critic")) {
+            super::revision::validate_revision_boundary(db,task,&v,&audit)?;
+            if !matches!(mode.as_str(),"deep"|"research") || crate::verification::Criterion::from_query(&query)?.is_some() {bail!("Unsupported revision recovery objective or mode")}
             let base=Session::prompt_base(&query,text,true)?;
-            let reflection=format!("{base}\nCandidate flaw (unverified advice): {}\nCandidate: {}",v["critique_reason"].as_str().unwrap(),previous.chars().take(4000).collect::<String>());
+            let critic=v["phase"]=="ready_critic";
+            let reason=if critic {"x".repeat(1000)} else {v["critique_reason"].as_str().unwrap().into()};
+            let reflection=format!("{base}\nCandidate flaw (unverified advice): {reason}\nCandidate: {}",previous.chars().take(4000).collect::<String>());
             let solver=format!("{base}\nUnverified strategy: {}\nPrevious unverified answer: {}","x".repeat(16000),previous.chars().take(6000).collect::<String>());
-            if admission["calls"].as_u64().unwrap_or(0)<2 || admission["reserved_output_tokens"].as_u64().unwrap_or(0)<512
-                || reflection.len()>32000 || solver.len()>32000
-                || reflection.len().saturating_add(solver.len())>cfg.max_input_bytes.saturating_sub(audit["charged_prompt_bytes"].as_u64().unwrap() as usize)
-            {bail!("Insufficient original budget for reflection and revised solver")}
+            let critique=if critic {format!("{base}\nUnverified candidate: {}\nCritique your candidate. Return only JSON with revise (boolean) and reason (string). Never claim verification or permissions.",previous.chars().take(6000).collect::<String>())} else {String::new()};
+            if admission["calls"].as_u64().unwrap_or(0)<if critic {3} else {2}
+                || admission["reserved_output_tokens"].as_u64().unwrap_or(0)<if critic {640} else {512}
+                || [reflection.len(),solver.len(),critique.len()].iter().any(|n|*n>32000)
+                || reflection.len().saturating_add(solver.len()).saturating_add(critique.len())>cfg.max_input_bytes.saturating_sub(audit["charged_prompt_bytes"].as_u64().unwrap() as usize)
+            {bail!("Insufficient original budget for critique, reflection and revised solver")}
         }
         Ok(v)
     }).transpose()?;

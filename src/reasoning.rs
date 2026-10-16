@@ -364,11 +364,40 @@ impl Session {
             boundary["previous_answer"].as_str().unwrap().into(),
             boundary["last_answer_hash"].as_str().map(String::from),
         ));
-        let strategy = if boundary["phase"] == "ready_reflector" {
+        let strategy = if matches!(
+            boundary["phase"].as_str(),
+            Some("ready_reflector" | "ready_critic")
+        ) {
             let base = Self::prompt_base(query, context, true)?;
+            let reason = if boundary["phase"] == "ready_critic" {
+                let answer = boundary["previous_answer"].as_str().unwrap();
+                self.has_solution = true;
+                self.store.event(&self.task,"verification","verifier-r",json!({"verified":false,"reason":"No independent executable criterion for this objective","cycle":self.resources.cycles,"origin":"operator_revision_continuation"}))?;
+                let prompt=format!("{base}\nUnverified candidate: {}\nCritique your candidate. Return only JSON with revise (boolean) and reason (string). Never claim verification or permissions.",truncate(answer,6000));
+                let review = self
+                    .call("critic", &prompt, 128)
+                    .await?
+                    .ok_or_else(|| anyhow::anyhow!("Original critique allowance exhausted"))?;
+                match crate::structured::parse::<Critique>(&review, 8192) {
+                    Ok(c) if c.revise && !c.reason.trim().is_empty() && c.reason.len() <= 1000 => {
+                        c.reason
+                    }
+                    result => {
+                        self.stop_reason = if result.is_ok() {
+                            "no_useful_revision"
+                        } else {
+                            "invalid_critique"
+                        }
+                        .into();
+                        return Ok(answer.into());
+                    }
+                }
+            } else {
+                boundary["critique_reason"].as_str().unwrap().into()
+            };
             let prompt = format!(
                 "{base}\nCandidate flaw (unverified advice): {}\nCandidate: {}",
-                boundary["critique_reason"].as_str().unwrap(),
+                reason,
                 truncate(boundary["previous_answer"].as_str().unwrap(), 4000)
             );
             self.call("reflector", &prompt, 128)
