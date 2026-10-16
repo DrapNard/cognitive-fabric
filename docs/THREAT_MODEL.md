@@ -552,3 +552,23 @@ alternative. Tool observation callbacks run outside registry locks; final activa
 rechecks retained identity and constraints. Deliberate trusted callback panic tests
 exercise this local Tokio-worker behavior without claiming process isolation,
 provider cancellation or permission expansion.
+
+### Reviewed empirical retry evidence
+
+The optional Jev+ retry policy accepts bounded operator-reviewed observations and
+immutable thresholds, not model confidence. It applies only to a matched compiled
+criterion, mode, cycle, configuration, role prompts and runtime-source digest.
+Failed attempts remain in cost and success-rate denominators. Unknown scope and
+unverified prose cannot use this evidence to buy inference. The original kernel
+still checks every call/tool reservation, deadline and actor grant; an empirical
+allow result cannot enlarge them or certify an answer. Only the existing
+independent checker may mark a revised answer verified.
+
+Held-out review, outcome independence, study completeness and model identity
+remain operator responsibilities. Source/content hashes detect drift, not forgery
+by a database/source owner or executable/provider substitution. Observed duration
+and success rates are not statistical predictions or future resource guarantees.
+The host-installed policy is immutable and custom-policy recovery still refuses
+unavailable implementations. `retry-study-evaluate` is human-only bounded file
+inspection before state initialization, not policy installation or promotion.
+No new model actor capabilities, executable loader or external endpoint is added.

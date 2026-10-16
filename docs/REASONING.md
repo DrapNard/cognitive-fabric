@@ -79,3 +79,15 @@ first whole-goal attempt; it does not reserve all future critique/revision stage
 or guarantee model quality. Wall time and cancellation can still stop any stage.
 Tests cover prompt-limited decomposition, call-limited and token-limited exploration,
 and combined low-budget fallback without expanding operator ceilings.
+
+## Reviewed empirical retry admission
+
+An operator-trusted host may install an immutable empirical policy that evaluates
+verified-retry rates and cost per success under fixed thresholds before buying
+another solver after checker rejection. Study scope includes configuration,
+compiled prompts, runtime-source bytes, mode, cycle and criterion. Failed samples
+remain counted and unverified prose cannot borrow structured-task evidence.
+Inspection is available through `retry-study-evaluate` without creating state.
+See [empirical escalation](EMPIRICAL_ESCALATION.md) for bounds, host installation,
+operator-attested provenance and the remaining Jev+ components. This does not
+establish calibrated expected utility or a live improvement in model quality.

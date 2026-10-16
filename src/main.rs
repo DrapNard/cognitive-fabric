@@ -60,6 +60,12 @@ enum Command {
     Status,
     SelfTest,
     SecurityEval,
+    /// Inspect reviewed retry evidence without initializing runtime state.
+    RetryStudyEvaluate {
+        study: PathBuf,
+        #[arg(long)]
+        thresholds: PathBuf,
+    },
     Diagnostics {
         #[arg(long)]
         probe_inference: bool,
@@ -441,6 +447,12 @@ fn output<T: Serialize>(value: T, force_json: bool) -> Result<()> {
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
+    if let Command::RetryStudyEvaluate { study, thresholds } = &cli.command {
+        return output(
+            cogfabric::escalation::empirical::evaluate_files(study, thresholds)?,
+            cli.json,
+        );
+    }
     if let Command::AgentWorker { socket, host_pid } = &cli.command {
         let home = cli
             .home
@@ -537,6 +549,9 @@ async fn main() -> Result<()> {
     store::bootstrap(&store)?;
     let engine = Engine::new(cfg.clone(), store.clone());
     let response: Value = match cli.command {
+        Command::RetryStudyEvaluate { .. } => {
+            bail!("Retry study evaluation must run before runtime initialization")
+        }
         Command::AgentWorker { .. }
         | Command::InferenceWorker { .. }
         | Command::ArithmeticWorker { .. }

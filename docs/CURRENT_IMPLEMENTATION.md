@@ -1,5 +1,41 @@
 # Current Rust implementation
 
+### Empirical retry evaluation and executive cost gate — 2026-10-16
+
+**Implemented (bounded host API and operator inspection); Experimental (utility
+policy).** `src/escalation/empirical.rs` aggregates reviewed single-retry outcomes,
+including failures, and uses exact success-rate/cost-per-success thresholds.
+Task requests bind mode, cycle, compiled criterion, effective configuration,
+role prompts and runtime-source fingerprint. Matching evidence can veto or admit
+one solver/checker retry under the existing deterministic kernel limits; unknown
+scope, unverified prose, higher cost or insufficient time decline further work.
+No model/task permissions, model loads, resource ceilings or recovery approvals
+are widened. `retry-study-evaluate` inspects bounded operator-selected files
+before any state initialization; only the operator receives `evaluation.retry`.
+
+Study/threshold content fixes the immutable policy identity. Build-time source
+hashing includes Rust, schemas/bindings and locked build inputs. Hashes establish
+local byte consistency, not executable/weight attestation. Review and inclusion
+of failures remain operator-attested. Public workflow reports stay frozen and
+are not relabeled as held-out studies. No real utility gain is established.
+Custom policy recovery still refuses unavailable policies rather than replacing
+them. Jev+ remains Partial: general GPU scheduling, independently measured
+routing/utility and safe executable provisioning remain open. See
+`docs/EMPIRICAL_ESCALATION.md` for all six component statuses and exact bounds.
+
+Regressions: `src/escalation/empirical/tests.rs`, `tests/retry_study.rs` and
+`tests/runtime_fingerprint.rs` cover exact threshold edges, all failure costs,
+scope and source drift, budget denial, ambiguous/unreviewed data, immutable
+identity, actual Engine admission with independent rechecking, CLI no-state
+inspection and symlink/actor denials. Formatting and workspace all-target check
+passed. All 562 tests across 26 targets passed with local TCP/Unix fixture access;
+the restricted-sandbox attempt first failed 99 socket tests with EPERM (397 passed).
+The reviewed FlatBuffers bundle/pin checks, migrations, malformed frames, policy
+denials, cancellation and rollback regressions are included. Native flatc is
+unavailable, so exact regeneration was not repeated; protocol files are unchanged.
+Warnings-denied workspace Clippy and final whitespace review passed. No fresh
+live-model study, neural training, GPU attribution or quality gain is claimed.
+
 ### Replaceable executive escalation policy — 2026-10-16
 
 `src/escalation.rs` introduces a trusted versioned `EscalationPolicy` installed

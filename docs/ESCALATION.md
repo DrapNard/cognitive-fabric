@@ -73,3 +73,9 @@ reason bounds, Store reentry, immutable Engine handles and audit failures.
 `src/recovery/continuation.rs` covers unavailable/changed/spoofed policy snapshots.
 This implements replaceable escalation decisions, not calibrated gain estimates,
 global resource scheduling or independent reasoning-quality evaluation.
+
+## Optional empirical retry evaluation
+
+See [empirical escalation](EMPIRICAL_ESCALATION.md) for reviewed-study aggregation,
+source/configuration/checker scope, immutable cost thresholds and operator-only
+inspection. It uses this interface without enlarging runtime authority.

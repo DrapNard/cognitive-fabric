@@ -3,6 +3,8 @@ use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
+pub mod empirical;
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Descriptor {
@@ -33,6 +35,10 @@ pub struct Request {
     pub mode: String,
     pub cycle: u32,
     pub candidate_sha256: String,
+    pub verification_criterion: Option<String>,
+    pub configuration_sha256: String,
+    pub role_prompts_sha256: String,
+    pub runtime_sources_sha256: String,
     pub remaining_calls: usize,
     pub remaining_output_tokens: usize,
     pub remaining_prompt_bytes: usize,

@@ -1,3 +1,5 @@
+#[path = "build_support/fingerprint.rs"]
+mod fingerprint;
 #[path = "build_support/protocol.rs"]
 mod protocol;
 use std::{env, fs, path::PathBuf, process::Command};
@@ -14,6 +16,13 @@ fn main() {
         );
     }
     let root = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").expect("Cargo manifest directory"));
+    for path in ["src", "build_support", "protocol", "Cargo.lock"] {
+        println!("cargo:rerun-if-changed={path}");
+    }
+    println!(
+        "cargo:rustc-env=COGFABRIC_RUNTIME_SOURCES_SHA256={}",
+        fingerprint::calculate(&root).expect("Fingerprint runtime sources")
+    );
     let manifest = fs::read_to_string(root.join("Cargo.toml")).expect("Read Cargo manifest");
     assert!(
         protocol::runtime_pinned(&manifest),

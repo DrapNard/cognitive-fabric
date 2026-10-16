@@ -76,6 +76,8 @@ The [GitHub Actions workflow](.github/workflows/ci.yml) also validates generated
 
 This repository is an actively developed alpha. Neural adaptation is optional and experimental; no trained Jev+ or Jev-R networks are included. General module lifecycle, model residency scheduling, independent held-out evaluation, and stronger isolation remain incomplete. The [implementation matrix](docs/IMPLEMENTATION_MATRIX.md) and [release audit](docs/RELEASE_AUDIT.md) track the current gaps.
 
+Optional [empirical Jev+ retry evaluation](docs/EMPIRICAL_ESCALATION.md) lets trusted hosts apply reviewed success/cost evidence within the existing runtime limits. It remains experimental and requires reviewed measurements.
+
 ## License
 
 Current project source is licensed under **GNU GPL version 3 only**. See [LICENSE](LICENSE). Project-authored evaluation datasets and some examples carry their own explicit license metadata; third-party models and imported data remain under their respective licenses.

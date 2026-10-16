@@ -84,6 +84,7 @@ pub struct Session {
     pub(crate) scheduler: crate::scheduling::Handle,
     pub(crate) escalator: crate::escalation::Handle,
     escalation_snapshot: bool,
+    escalation_criterion: Option<&'static str>,
     pub(crate) checker_binding: Option<serde_json::Value>,
     cfg: Config,
     store: Arc<Store>,
@@ -239,6 +240,7 @@ impl Session {
             scheduler: Default::default(),
             escalator: Default::default(),
             escalation_snapshot: false,
+            escalation_criterion: None,
             complete_usage: true,
             complete_queue_metrics: true,
             inference_started: None,
@@ -378,6 +380,13 @@ impl Session {
             mode: mode.into(),
             cycle: self.resources.cycles,
             candidate_sha256: crate::store::sha256(answer.as_bytes()),
+            verification_criterion: self.escalation_criterion.map(String::from),
+            configuration_sha256: crate::escalation::empirical::configuration_fingerprint(
+                &self.cfg,
+            )?,
+            role_prompts_sha256: crate::backend::runtime_role_prompts_sha256()?,
+            runtime_sources_sha256: crate::escalation::empirical::runtime_sources_fingerprint()
+                .into(),
             remaining_calls: self
                 .call_limit
                 .saturating_sub(self.resources.calls as usize),
@@ -1110,6 +1119,7 @@ impl Session {
         } else {
             None
         };
+        self.escalation_criterion = criterion.as_ref().map(|value| value.name());
         let base = Self::prompt_base(query, context, self.verification_enabled)?;
         self.store.event(
             &self.task,
