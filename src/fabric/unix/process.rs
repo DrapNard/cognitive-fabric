@@ -351,6 +351,9 @@ impl ProcessTask {
     }
 }
 impl InferenceBackend for ProcessTask {
+    fn inference_target(&self, role: &str) -> Result<Option<crate::backend::InferenceTarget>> {
+        crate::backend::configured_target(&self.cfg, Some(role))
+    }
     fn availability(&self) -> crate::fabric::Availability {
         if self.stopped.load(Ordering::Acquire) {
             return crate::fabric::Availability::Closed;

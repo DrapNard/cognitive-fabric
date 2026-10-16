@@ -2,12 +2,7 @@
 use super::*;
 use std::collections::BTreeSet;
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ResidentConsumer {
-    pub api_base: String,
-    pub model: String,
-}
+pub type ResidentConsumer = crate::backend::ModelTarget;
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ResidentAllocation {
@@ -86,23 +81,7 @@ pub(super) fn canonical(
             bail!("Resident allocations exceed pool capacity")
         }
         for consumer in &mut resident.consumers {
-            if consumer.api_base.len() > 1000
-                || consumer.model.trim().is_empty()
-                || consumer.model.len() > 256
-                || consumer.model.chars().any(char::is_control)
-            {
-                bail!("Invalid resident model consumer")
-            }
-            // Canonical literal-loopback base, without turning an observation into
-            // provider contact. A trailing slash/localhost alias cannot evade dedup.
-            let mut endpoint = crate::backend::local_endpoint(&consumer.api_base)?;
-            let path = endpoint
-                .path()
-                .strip_suffix("/chat/completions")
-                .unwrap()
-                .to_string();
-            endpoint.set_path(path.trim_end_matches('/'));
-            consumer.api_base = endpoint.to_string().trim_end_matches('/').to_string();
+            *consumer = consumer.canonical()?;
         }
         resident.consumers.sort();
         if resident.consumers.windows(2).any(|pair| pair[0] == pair[1]) {
@@ -119,3 +98,43 @@ pub(super) fn canonical(
 #[cfg(test)]
 #[path = "resident_tests.rs"]
 mod tests;
+
+#[derive(Serialize)]
+pub(super) struct ResidentCoverage {
+    target: crate::backend::InferenceTarget,
+    resident_identities: Vec<String>,
+    declared_consumer_matched: bool,
+}
+impl ResourcePool {
+    pub(super) fn resident_coverage(
+        &self,
+        target: Option<crate::backend::InferenceTarget>,
+    ) -> Result<ResidentCoverage> {
+        use crate::backend::InferenceTarget;
+        match target {
+            Some(InferenceTarget::Deterministic) => Ok(ResidentCoverage {
+                target: InferenceTarget::Deterministic,
+                resident_identities: vec![],
+                declared_consumer_matched: false,
+            }),
+            Some(InferenceTarget::LocalHttp(target)) => {
+                let target = target.canonical()?;
+                let matches = self
+                    .residents
+                    .iter()
+                    .filter(|resident| resident.consumers.binary_search(&target).is_ok())
+                    .map(|resident| format!("{}@{}", resident.id, resident.version))
+                    .collect::<Vec<_>>();
+                if matches.is_empty() {
+                    bail!("Inference target is absent from the resident catalog")
+                }
+                Ok(ResidentCoverage {
+                    target: InferenceTarget::LocalHttp(target),
+                    resident_identities: matches,
+                    declared_consumer_matched: true,
+                })
+            }
+            None => bail!("Inference target is unknown for the resident catalog"),
+        }
+    }
+}

@@ -4,6 +4,12 @@ use anyhow::{bail, Result};
 use serde_json::{json, Value};
 pub struct LocalChat(pub Config);
 impl ChatBackend for LocalChat {
+    fn inference_target(&self) -> Result<Option<crate::backend::InferenceTarget>> {
+        if self.0.backend != "openai-local" {
+            return Ok(None);
+        }
+        crate::backend::configured_target(&self.0, None)
+    }
     fn complete<'a>(
         &'a self,
         request: &'a Turn,

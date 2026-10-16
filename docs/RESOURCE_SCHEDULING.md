@@ -223,9 +223,10 @@ The digest and sizes above are placeholders for the example. Operators must supp
 their reviewed declarations and a capacity large enough for both resident and
 working allocations. Each backbone entry is charged **once**, independently of its
 consumer count. Distinct IDs/versions are charged separately; duplicate identities
-are rejected rather than silently deduplicated. Consumer names are descriptive
-metadata, never model registrations, route selections or permission grants. The
-catalog does not attest completeness against the actual configured/routed models.
+are rejected rather than silently deduplicated. Consumer names are declared coverage metadata, never model registrations,
+route selections or permission grants. With a nonempty catalog, dispatch now checks the selected adapter's configured
+endpoint/model against at least one declared consumer. This still does not attest
+actual loaded weights or the completeness of declared memory footprints.
 
 Validation allows at most 128 backbone entries, 32 consumers per entry, 512
 consumers total and 16,000 canonical JSON bytes. Field lengths are bounded before
@@ -261,3 +262,46 @@ operator declarations can undercount real memory. Actual resident-instance
 discovery/ownership, measured footprints, dynamic lifecycle scheduling and safe
 pool restoration remain engineering work. These tests do not demonstrate faster
 or better neural reasoning.
+
+## Selected-target coverage
+
+A nonempty catalog enables a required adapter-target check before queue admission.
+The canonical endpoint and selected role model must appear among its consumers.
+`LocalBackend` and managed inference derive this identity from the same immutable
+configuration used for generation; role-profile overrides are included. Native
+`LocalChat` and managed native turns report the native model they actually request.
+They do not apply role-profile selection. The demonstration adapter explicitly
+identifies deterministic computation and needs no resident model match. Its
+resident base, if configured, is still held.
+
+Trusted hosts implement `InferenceBackend::inference_target(role)` or
+`ChatBackend::inference_target()`. Defaults return unknown. Metadata callbacks must
+be short, nonblocking configuration queries; they must not perform inference/I/O
+or treat model output as identity. Unknown, malformed or unlisted targets cannot
+use a nonempty catalog. Existing empty catalogs skip these queries entirely. Raw
+Unix adapters currently report unknown because their transport identity alone
+does not establish a model target. Host-supplied code remains trusted rather than
+sandboxed or executable-attested. A native implementation can lie about its target.
+
+The scheduled adapter pins dynamic brokers before looking up target metadata.
+Pinned routes query their retained module, so replacement of registry entries
+between observation and dispatch does not redirect the checked request. Local and
+managed targets are fixed by construction; custom native adapters must preserve
+that property themselves. Bare metadata inspection of an unpinned Broker is a
+sample, not a promise of future route choice.
+
+`resource_target_intent` commits before the target callback; `resource_target`
+commits its coverage/denial before the resource intent and any backend dispatch.
+Allowed entries include canonical target kind/identity and matched backbone
+identities, bound to the canonical catalog hash. Deterministic entries have no
+matched resident consumer. Rejected entries omit raw invalid target/error bodies.
+Callbacks execute outside Store, pool and registry locks; an audit failure prevents
+the next action. Session's prior call/output/prompt reservation remains spent on
+denial. No fallback/retry, provider call, model load or new permission is inferred.
+
+Coverage establishes which declared consumer applies to the configured request.
+It cannot establish that an HTTP provider honored the requested model, loaded the
+declared digest, actually shares backbones, or stays inside the declared footprint.
+Provider-returned model labels cannot approve coverage. `weights_attested:false`,
+`residency_attested:false` and `physical_limits_enforced:false` remain explicit.
+Real ownership/measurement and dynamic load/unload remain separate requirements.

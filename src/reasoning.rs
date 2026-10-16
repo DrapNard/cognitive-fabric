@@ -3342,6 +3342,14 @@ mod configured_resource_tests {
     async fn primary_and_bound_expert_calls_use_the_same_configured_allocation() {
         struct Fixed(&'static str);
         impl InferenceBackend for Fixed {
+            fn inference_target(&self, _: &str) -> Result<Option<crate::backend::InferenceTarget>> {
+                Ok(Some(crate::backend::InferenceTarget::LocalHttp(
+                    crate::backend::ModelTarget {
+                        api_base: "http://127.0.0.1:1234/v1".into(),
+                        model: "fixture".into(),
+                    },
+                )))
+            }
             fn generate<'a>(
                 &'a self,
                 _: &'a str,

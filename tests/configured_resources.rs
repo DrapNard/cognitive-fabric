@@ -242,3 +242,63 @@ fn cli_resident_catalog_reserves_capacity_and_rejects_impossible_working_budget(
     drop(store);
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn unlisted_role_targets_fail_before_http_or_managed_worker_launch_and_keep_charges() {
+    for managed in [false, true] {
+        let root =
+            std::env::temp_dir().join(format!("fabric-unlisted-target-{}", uuid::Uuid::new_v4()));
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let base = format!("http://{}/v1", listener.local_addr().unwrap());
+        let mut resources = configuration();
+        resources["residents"] = json!([{"id":"backbone.listed","version":"1.0.0","weights_sha256":"a".repeat(64),"host_memory_bytes":40,"device_memory_bytes":40,"consumers":[{"api_base":base,"model":"listed"}]}]);
+        let mut cfg = Config {
+            home: root.clone(),
+            backend: "openai-local".into(),
+            model: "listed".into(),
+            api_base: base,
+            inference_process: managed,
+            interpret_goals: false,
+            resource_admission: Some(serde_json::from_value(resources).unwrap()),
+            ..Config::default()
+        };
+        cfg.role_profiles.insert(
+            "solver".into(),
+            cogfabric::config::RoleProfile {
+                model: "unlisted".into(),
+                temperature: 0.0,
+            },
+        );
+        cfg.save().unwrap();
+        let output = cli(
+            &root,
+            &["ask", "Describe a generic objective", "--mode", "fast"],
+        );
+        assert!(!output.status.success());
+        assert!(String::from_utf8_lossy(&output.stderr).contains("Task ended with status: failed"));
+        let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(result["status"], "failed");
+        assert_eq!(result["calls"], 1);
+        assert!(
+            result["resources"]["reserved_output_tokens"]
+                .as_u64()
+                .unwrap()
+                > 0
+        );
+        let store = Store::open(&cfg.db()).unwrap();
+        let trace = store.task(result["task_id"].as_str().unwrap()).unwrap();
+        let events = trace["events"].as_array().unwrap();
+        assert!(events
+            .iter()
+            .any(|e| e["kind"] == "resource_target" && e["payload"]["allowed"] == false));
+        assert!(!events
+            .iter()
+            .any(|e| e["kind"] == "resource_dispatch" || e["kind"] == "worker_process_launch"));
+        assert!(
+            matches!(listener.accept(),Err(error) if error.kind()==std::io::ErrorKind::WouldBlock)
+        );
+        drop(store);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+}

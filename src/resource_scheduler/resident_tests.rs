@@ -61,6 +61,14 @@ impl Gate {
     }
 }
 impl InferenceBackend for Gate {
+    fn inference_target(&self, _: &str) -> Result<Option<crate::backend::InferenceTarget>> {
+        Ok(Some(crate::backend::InferenceTarget::LocalHttp(
+            ResidentConsumer {
+                api_base: "http://localhost:1234/v1/".into(),
+                model: "shared-solver".into(),
+            },
+        )))
+    }
     fn generate<'a>(
         &'a self,
         _: &'a str,
@@ -280,4 +288,251 @@ fn catalog_and_consumer_permutations_keep_live_identity_but_changed_contents_do_
         .unwrap()
         .get("residents")
         .is_none());
+}
+
+#[tokio::test]
+async fn unknown_unlisted_and_invalid_targets_deny_before_inference_without_reservations() {
+    use crate::backend::{InferenceTarget, ModelTarget};
+    struct Classified {
+        target: Option<InferenceTarget>,
+        queries: AtomicUsize,
+        store: Arc<Store>,
+        pool: std::sync::Weak<ResourcePool>,
+    }
+    impl InferenceBackend for Classified {
+        fn inference_target(&self, _: &str) -> Result<Option<InferenceTarget>> {
+            self.queries.fetch_add(1, Ordering::SeqCst);
+            self.store.search("fixture", None, 1)?;
+            self.pool.upgrade().unwrap().snapshot()?;
+            Ok(self.target.clone())
+        }
+        fn generate<'a>(
+            &'a self,
+            _: &'a str,
+            _: &'a str,
+            _: usize,
+        ) -> Pin<Box<dyn Future<Output = Result<Generation>> + Send + 'a>> {
+            Box::pin(async { panic!("Uncovered target reached inference") })
+        }
+    }
+    for target in [
+        None,
+        Some(InferenceTarget::LocalHttp(ModelTarget {
+            api_base: "http://localhost:1234/v1".into(),
+            model: "unlisted".into(),
+        })),
+        Some(InferenceTarget::LocalHttp(ModelTarget {
+            api_base: "http://user:secret@example.com/v1".into(),
+            model: "shared-solver".into(),
+        })),
+    ] {
+        let pool = ResourcePool::with_residents(
+            "human-cli",
+            Arc::new(Store::in_memory().unwrap()),
+            settings(),
+            vec![resident()],
+        )
+        .unwrap();
+        let t = task(&pool);
+        let backend = Arc::new(Classified {
+            target,
+            queries: AtomicUsize::new(0),
+            store: pool.store.clone(),
+            pool: Arc::downgrade(&pool),
+        });
+        let wrapped = pool
+            .wrap_backend("human-cli", backend.clone(), allocation(1, 20, 20))
+            .unwrap();
+        assert!(wrapped
+            .generate_for(&t, "solver", "fixture", 16)
+            .await
+            .is_err());
+        assert_eq!(backend.queries.load(Ordering::SeqCst), 1);
+        let snapshot = pool.snapshot().unwrap();
+        assert!(snapshot.reservations.is_empty());
+        assert_eq!(snapshot.allocated, allocation(0, 60, 65));
+        let trace = pool.store.task(&t).unwrap();
+        let events = trace["events"].as_array().unwrap();
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| e["kind"] == "resource_target")
+                .count(),
+            1
+        );
+        assert!(events
+            .iter()
+            .any(|e| e["kind"] == "resource_target" && e["payload"]["allowed"] == false));
+        assert!(!events
+            .iter()
+            .any(|e| e["kind"] == "resource_dispatch" || e["kind"] == "resource_intent"));
+        assert!(!trace.to_string().contains("secret"));
+    }
+}
+#[tokio::test]
+async fn target_audit_failure_blocks_queries_or_execution_and_empty_catalog_preserves_legacy_callbacks(
+) {
+    use crate::backend::InferenceTarget;
+    struct Classified(AtomicUsize);
+    impl InferenceBackend for Classified {
+        fn inference_target(&self, _: &str) -> Result<Option<InferenceTarget>> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(Some(InferenceTarget::Deterministic))
+        }
+        fn generate<'a>(
+            &'a self,
+            _: &'a str,
+            _: &'a str,
+            _: usize,
+        ) -> Pin<Box<dyn Future<Output = Result<Generation>> + Send + 'a>> {
+            Box::pin(async {
+                Ok(Generation {
+                    text: "fixture".into(),
+                    model: "fixture/v1".into(),
+                    input_tokens: None,
+                    output_tokens: None,
+                    elapsed_ms: 0.0,
+                    queue_wait_ms: None,
+                })
+            })
+        }
+    }
+    for (kind, expected) in [("resource_target_intent", 0), ("resource_target", 1)] {
+        let pool = ResourcePool::with_residents(
+            "human-cli",
+            Arc::new(Store::in_memory().unwrap()),
+            settings(),
+            vec![resident()],
+        )
+        .unwrap();
+        let t = task(&pool);
+        pool.store.lock().unwrap().execute_batch(&format!("CREATE TRIGGER refuse_target BEFORE INSERT ON events WHEN NEW.kind='{kind}' BEGIN SELECT RAISE(ABORT,'audit unavailable'); END;")).unwrap();
+        let backend = Arc::new(Classified(AtomicUsize::new(0)));
+        let wrapped = pool
+            .wrap_backend("human-cli", backend.clone(), allocation(1, 20, 20))
+            .unwrap();
+        assert!(wrapped
+            .generate_for(&t, "solver", "fixture", 16)
+            .await
+            .is_err());
+        assert_eq!(backend.0.load(Ordering::SeqCst), expected);
+        assert!(pool.snapshot().unwrap().reservations.is_empty());
+        assert!(!pool.store.task(&t).unwrap()["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["kind"] == "resource_dispatch"));
+    }
+    let pool = ResourcePool::new(
+        "human-cli",
+        Arc::new(Store::in_memory().unwrap()),
+        settings(),
+    )
+    .unwrap();
+    let backend = Arc::new(Classified(AtomicUsize::new(0)));
+    pool.wrap_backend("human-cli", backend.clone(), allocation(1, 20, 20))
+        .unwrap()
+        .generate_for(&task(&pool), "solver", "fixture", 16)
+        .await
+        .unwrap();
+    assert_eq!(backend.0.load(Ordering::SeqCst), 0);
+}
+#[tokio::test]
+async fn replacing_routes_during_target_observation_cannot_substitute_the_checked_backend() {
+    use crate::backend::{InferenceTarget, ModelTarget};
+    use crate::fabric::{Broker, ModuleDescriptor};
+    struct Replace {
+        broker: Mutex<Option<std::sync::Weak<Broker>>>,
+        generated: AtomicUsize,
+    }
+    struct Unlisted(AtomicUsize);
+    impl InferenceBackend for Unlisted {
+        fn inference_target(&self, _: &str) -> Result<Option<InferenceTarget>> {
+            Ok(Some(InferenceTarget::LocalHttp(ModelTarget {
+                api_base: "http://127.0.0.1:1234/v1".into(),
+                model: "unlisted".into(),
+            })))
+        }
+        fn generate<'a>(
+            &'a self,
+            _: &'a str,
+            _: &'a str,
+            _: usize,
+        ) -> Pin<Box<dyn Future<Output = Result<Generation>> + Send + 'a>> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async { panic!("Replaced unlisted backend ran") })
+        }
+    }
+    impl InferenceBackend for Replace {
+        fn inference_target(&self, _: &str) -> Result<Option<InferenceTarget>> {
+            let broker = self
+                .broker
+                .lock()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .upgrade()
+                .unwrap();
+            broker.register(
+                ModuleDescriptor {
+                    id: "inference.local".into(),
+                    version: "2.0.0".into(),
+                    roles: crate::fabric::protocol::ROLES
+                        .iter()
+                        .map(|r| r.to_string())
+                        .collect(),
+                },
+                Arc::new(Unlisted(AtomicUsize::new(0))),
+            )?;
+            Ok(Some(InferenceTarget::LocalHttp(ModelTarget {
+                api_base: "http://localhost:1234/v1".into(),
+                model: "shared-solver".into(),
+            })))
+        }
+        fn generate<'a>(
+            &'a self,
+            _: &'a str,
+            _: &'a str,
+            _: usize,
+        ) -> Pin<Box<dyn Future<Output = Result<Generation>> + Send + 'a>> {
+            self.generated.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async {
+                Ok(Generation {
+                    text: "original backend".into(),
+                    model: "fixture/v1".into(),
+                    input_tokens: None,
+                    output_tokens: None,
+                    elapsed_ms: 0.0,
+                    queue_wait_ms: None,
+                })
+            })
+        }
+    }
+    let pool = ResourcePool::with_residents(
+        "human-cli",
+        Arc::new(Store::in_memory().unwrap()),
+        settings(),
+        vec![resident()],
+    )
+    .unwrap();
+    let backend = Arc::new(Replace {
+        broker: Mutex::new(None),
+        generated: AtomicUsize::new(0),
+    });
+    let broker = Arc::new(Broker::with_inference(backend.clone()));
+    *backend.broker.lock().unwrap() = Some(Arc::downgrade(&broker));
+    let wrapped = pool
+        .wrap_backend("human-cli", broker.clone(), allocation(1, 20, 20))
+        .unwrap();
+    let result = wrapped
+        .generate_for(&task(&pool), "solver", "fixture", 16)
+        .await
+        .unwrap();
+    assert_eq!(result.text, "original backend");
+    assert_eq!(backend.generated.load(Ordering::SeqCst), 1);
+    assert_eq!(broker.modules().unwrap()[0].version, "2.0.0");
+    assert!(wrapped
+        .generate_for(&task(&pool), "solver", "fixture", 16)
+        .await
+        .is_err());
 }

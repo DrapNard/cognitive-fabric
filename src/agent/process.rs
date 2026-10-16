@@ -250,6 +250,12 @@ impl Drop for ProcessTask {
     }
 }
 impl ChatBackend for ProcessTask {
+    fn inference_target(&self) -> Result<Option<crate::backend::InferenceTarget>> {
+        if self.cfg.backend != "openai-local" {
+            return Ok(None);
+        }
+        crate::backend::configured_target(&self.cfg, None)
+    }
     fn complete_for<'a>(
         &'a self,
         task: &'a str,

@@ -654,3 +654,23 @@ or misstate a digest; `residency_attested` and `physical_limits_enforced` remain
 false. Static accounting is not a substitute for measured instance ownership,
 physical limits or safe model load/unload. Existing cancellation/quarantine and
 restart gates remain unchanged.
+
+
+### Resident consumer coverage at inference dispatch
+
+Nonempty catalogs now require a canonical selected-adapter endpoint/model match
+or a trusted deterministic-backend classification. Defaults are unknown, not an
+inferred target from task configuration or provider text. Local/managed adapters
+report their actual immutable role/native configuration; pinned brokers retain
+the same module through observation and dispatch. Target audit failures and
+unknown/unlisted/invalid identities stop before provider entry or child launch.
+Session charges are retained, and raw invalid metadata/error bodies are not written
+to coverage events. Callback reentry tests exercise Store/pool/registry access
+without held locks. Empty catalogs retain their prior behavior.
+
+This narrows accidental memory-declaration omissions; it does not authenticate
+provider execution, weight hashes, physical usage or native host honesty. Raw Unix
+adapters remain unknown until a host supplies a proper identity contract. Metadata
+callbacks are trusted nonblocking code, not an isolated model or protocol grant.
+No model output may classify its own backend or expand resident coverage. Dynamic
+provider ownership, measured residency and physical enforcement remain incomplete.

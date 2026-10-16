@@ -23,6 +23,10 @@ use std::{
 pub use types::*;
 
 pub trait ChatBackend: Send + Sync {
+    /// Trusted local adapter metadata; unknown does not attest resident coverage.
+    fn inference_target(&self) -> Result<Option<crate::backend::InferenceTarget>> {
+        Ok(None)
+    }
     fn complete_for<'a>(
         &'a self,
         _task: &'a str,
@@ -199,7 +203,7 @@ impl AgentRuntime {
                 _ = cancel => { self.store.finish_task(&task,"cancelled","")?; guard.finished=true; bail!("Agent turn cancelled") },
                 result = tokio::time::timeout_at(tokio::time::Instant::from_std(start + Duration::from_secs(self.cfg.max_wall_seconds)),async {
                     if let (Some(configuration), Some(pool)) = (&self.cfg.resource_admission, &self.resource_pool) {
-                        let (completion, _) = pool.execute(&task,"solver",configuration.allocation,
+                        let (completion, _) = pool.execute(&task,"solver",configuration.allocation, || backend.inference_target(),
                             || backend.complete_for(&task,&request,tokens)).await?;
                         Ok(completion)
                     } else {

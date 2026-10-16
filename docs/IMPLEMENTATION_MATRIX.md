@@ -1,5 +1,54 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+### Bind resident declarations to selected inference targets — 2026-10-16
+
+**Implemented (trusted adapter/configuration coverage); Partial (provider/weight attestation).**
+Nonempty resident catalogs now require the selected adapter to identify its actual
+configured endpoint/model (including role overrides), or explicitly identify a
+compiled deterministic backend. Unknown, malformed and unlisted targets fail before
+pool queueing, provider contact or managed worker launch. Empty catalogs retain
+legacy behavior without invoking new metadata callbacks.
+
+`InferenceBackend::inference_target` and `ChatBackend::inference_target` default to
+unknown. Local and same-image managed adapters derive metadata from their immutable
+configuration; native conversations use the actual native model rather than role
+profiles. Pinned Fabric routes and scheduled wrappers forward the selected module's
+metadata. Scheduled dispatch pins a dynamic broker before checking coverage, so a
+registry replacement during observation/waiting cannot substitute another backend.
+Resident consumers now share the bounded canonical `backend::ModelTarget` type.
+
+Target intent precedes the trusted metadata callback. Coverage/denial audit must
+commit before resource reservation or execution. Accepted records bind the canonical
+target, resident identities and catalog digest with no weights/permission attestation;
+rejected records exclude raw invalid target/error data. Metadata callbacks run
+outside Store/pool/registry locks. Task charges already committed by Session remain
+charged on denial; there is no retry, alternate route, budget refund or extra grant.
+
+Tests cover reentrant callbacks, unknown/unlisted/invalid targets, audit failures,
+unchanged empty-catalog behavior, role selection/canonical endpoints, route mutation
+without target substitution, and actual CLI refusal before HTTP/worker launch.
+Existing native/collective HTTP and bound-expert coverage exercise listed targets.
+The existing resident-test doubles now explicitly declare their synthetic target.
+
+This checks declared configured-target coverage, not provider-returned model labels,
+actual loaded weights, catalog memory completeness or real backbone sharing. Native
+operators can misdeclare metadata; raw Unix/custom adapters remain unknown unless
+the host implements the contract. Dynamic catalog/lifecycle integration, measured
+residency, physical limits and independent real-model studies remain open. Jev+
+and Jev-R remain Partial. Verification passed: `cargo fmt --all -- --check`,
+`cargo check --locked --workspace --all-targets`,
+`cargo test --locked --workspace --all-targets` (**610 tests across 29 targets**),
+and `cargo clippy --locked --workspace --all-targets -- -D warnings`. Full tests
+required elevated local TCP/Unix fixture access. An initial new CLI fixture wrongly
+expected exit success for a failed task; corrected to assert the existing nonzero
+exit and retained charges. New native error assertions were also corrected for the
+existing non-Debug TurnResult type without changing production types. Final protocol
+compatibility/malformed frames, migrations, mock inference, denial, cancellation,
+recovery and candidate rollback regressions passed. `flatc` is unavailable;
+schemas/bindings were unchanged and fresh generation was not run. No real-model
+quality, physical memory or GPU-efficiency result is claimed.
+
+
 ### Resident backbone memory admission — 2026-10-16
 
 **Implemented (operator-declared, pool-lifetime memory accounting); Partial (measured/dynamic residency).**

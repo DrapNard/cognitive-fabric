@@ -24,6 +24,11 @@ pub struct Generation {
 }
 
 pub trait InferenceBackend: Send + Sync {
+    /// Trusted adapter metadata, never provider output or weight attestation.
+    /// Unknown targets cannot use a nonempty resident-memory catalog.
+    fn inference_target(&self, _role: &str) -> Result<Option<InferenceTarget>> {
+        Ok(None)
+    }
     /// Local adapter state only; this never probes a provider or attests weights.
     fn availability(&self) -> crate::fabric::Availability {
         crate::fabric::Availability::Unknown
@@ -58,6 +63,9 @@ pub trait InferenceBackend: Send + Sync {
 
 pub struct LocalBackend(pub Config);
 impl InferenceBackend for LocalBackend {
+    fn inference_target(&self, role: &str) -> Result<Option<InferenceTarget>> {
+        configured_target(&self.0, Some(role))
+    }
     fn generate<'a>(
         &'a self,
         role: &'a str,
@@ -65,6 +73,67 @@ impl InferenceBackend for LocalBackend {
         max_tokens: usize,
     ) -> Pin<Box<dyn Future<Output = Result<Generation>> + Send + 'a>> {
         Box::pin(generate_report(&self.0, role, prompt, max_tokens))
+    }
+}
+
+/// The configured endpoint/model a trusted adapter will address.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ModelTarget {
+    pub api_base: String,
+    pub model: String,
+}
+impl ModelTarget {
+    pub fn canonical(&self) -> Result<Self> {
+        if self.api_base.len() > 1000
+            || self.model.trim().is_empty()
+            || self.model.len() > 256
+            || self.model.chars().any(char::is_control)
+        {
+            bail!("Invalid inference model target")
+        }
+        let mut endpoint = local_endpoint(&self.api_base)?;
+        let path = endpoint
+            .path()
+            .strip_suffix("/chat/completions")
+            .unwrap()
+            .to_string();
+        endpoint.set_path(path.trim_end_matches('/'));
+        Ok(Self {
+            api_base: endpoint.to_string().trim_end_matches('/').to_string(),
+            model: self.model.clone(),
+        })
+    }
+}
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "kind", content = "target", rename_all = "snake_case")]
+pub enum InferenceTarget {
+    LocalHttp(ModelTarget),
+    Deterministic,
+}
+pub(crate) fn configured_target(
+    cfg: &Config,
+    role: Option<&str>,
+) -> Result<Option<InferenceTarget>> {
+    if let Some(role) = role {
+        crate::fabric::protocol::actor(role)?;
+    }
+    match cfg.backend.as_str() {
+        "demo" => Ok(Some(InferenceTarget::Deterministic)),
+        "openai-local" => {
+            let model = role
+                .and_then(|r| cfg.role_profiles.get(r))
+                .map(|p| p.model.as_str())
+                .unwrap_or(&cfg.model);
+            Ok(Some(InferenceTarget::LocalHttp(
+                ModelTarget {
+                    api_base: cfg.api_base.clone(),
+                    model: model.into(),
+                }
+                .canonical()?,
+            )))
+        }
+        _ => bail!("Unsupported target inference backend"),
     }
 }
 
@@ -429,5 +498,63 @@ mod tests {
             .await
             .unwrap()
             .contains("No generative"));
+    }
+}
+
+#[cfg(test)]
+mod target_tests {
+    use super::*;
+    #[test]
+    fn target_metadata_canonicalizes_endpoints_and_honors_actual_role_selection_without_io() {
+        let mut cfg = Config {
+            backend: "openai-local".into(),
+            api_base: "http://localhost:1234/v1/".into(),
+            model: "base-model".into(),
+            ..Config::default()
+        };
+        cfg.role_profiles.insert(
+            "solver".into(),
+            crate::config::RoleProfile {
+                model: "solver-model".into(),
+                temperature: 0.0,
+            },
+        );
+        let backend = LocalBackend(cfg.clone());
+        assert_eq!(
+            backend.inference_target("solver").unwrap(),
+            Some(InferenceTarget::LocalHttp(ModelTarget {
+                api_base: "http://127.0.0.1:1234/v1".into(),
+                model: "solver-model".into()
+            }))
+        );
+        assert_eq!(
+            backend.inference_target("critic").unwrap(),
+            configured_target(&cfg, None).unwrap()
+        );
+        assert!(backend.inference_target("invalid-role").is_err());
+        // Native conversation HTTP does not select role-profile models.
+        let native = crate::agent::LocalChat(cfg.clone());
+        assert_eq!(
+            crate::agent::ChatBackend::inference_target(&native).unwrap(),
+            configured_target(&cfg, None).unwrap()
+        );
+        assert_eq!(
+            LocalBackend(Config::default())
+                .inference_target("solver")
+                .unwrap(),
+            Some(InferenceTarget::Deterministic)
+        );
+        for (base, model) in [
+            ("http://remote.example/v1", "model"),
+            ("http://127.0.0.1/v1?secret=1", "model"),
+            ("http://127.0.0.1/v1", "bad\nmodel"),
+        ] {
+            assert!(ModelTarget {
+                api_base: base.into(),
+                model: model.into()
+            }
+            .canonical()
+            .is_err());
+        }
     }
 }

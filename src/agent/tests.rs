@@ -374,3 +374,71 @@ async fn oversized_native_frame_is_rejected_before_task_or_child_admission() {
     drop(store);
     std::fs::remove_dir_all(home).unwrap();
 }
+
+fn resident_configuration(base: &str, model: &str) -> crate::resource_scheduler::Configuration {
+    serde_json::from_value(json!({"settings":{"label":"gpu.native","capacity":{"compute_slots":1,"host_memory_bytes":100,"device_memory_bytes":100},"max_pending":4,"max_wait_ms":1000,"max_execution_ms":1000},"allocation":{"compute_slots":1,"host_memory_bytes":20,"device_memory_bytes":20},"residents":[{"id":"backbone.native","version":"1.0.0","weights_sha256":"a".repeat(64),"host_memory_bytes":60,"device_memory_bytes":60,"consumers":[{"api_base":base,"model":model}]}]})).unwrap()
+}
+#[tokio::test]
+async fn native_unknown_target_fails_before_completion_callback_and_retains_admission() {
+    let store = Arc::new(Store::in_memory().unwrap());
+    let backend = Arc::new(Fixed(AtomicUsize::new(0)));
+    let cfg = Config {
+        resource_admission: Some(resident_configuration("http://127.0.0.1:1234/v1", "listed")),
+        ..Config::default()
+    };
+    let runtime = AgentRuntime::with_backend(cfg, store.clone(), backend.clone()).unwrap();
+    assert!(runtime
+        .run_until(turn(), std::future::pending())
+        .await
+        .err()
+        .unwrap()
+        .to_string()
+        .contains("target is unknown"));
+    assert_eq!(backend.0.load(Ordering::SeqCst), 0);
+    let id: String = store
+        .lock()
+        .unwrap()
+        .query_row("SELECT id FROM tasks", [], |row| row.get(0))
+        .unwrap();
+    let trace = store.task(&id).unwrap();
+    let events = trace["events"].as_array().unwrap();
+    assert_eq!(
+        events
+            .iter()
+            .filter(|e| e["kind"] == "agent_admission" && e["payload"]["calls"] == 1)
+            .count(),
+        1
+    );
+    assert!(events
+        .iter()
+        .any(|e| e["kind"] == "resource_target" && e["payload"]["allowed"] == false));
+    assert!(!events
+        .iter()
+        .any(|e| e["kind"] == "resource_dispatch" || e["kind"] == "agent_result"));
+}
+#[tokio::test]
+async fn native_local_unlisted_target_cannot_contact_the_provider() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}/v1", listener.local_addr().unwrap());
+    let store = Arc::new(Store::in_memory().unwrap());
+    let cfg = Config {
+        backend: "openai-local".into(),
+        model: "unlisted".into(),
+        api_base: base.clone(),
+        resource_admission: Some(resident_configuration(&base, "listed")),
+        ..Config::default()
+    };
+    let runtime = AgentRuntime::local(cfg, store).unwrap();
+    assert!(runtime
+        .run_until(turn(), std::future::pending())
+        .await
+        .err()
+        .unwrap()
+        .to_string()
+        .contains("absent from the resident catalog"));
+    assert!(
+        tokio::time::timeout(Duration::from_millis(20), listener.accept())
+            .await
+            .is_err()
+    );
+}

@@ -1,7 +1,7 @@
 use super::*;
 use std::future::Future;
 impl ResourcePool {
-    fn require_running(&self, task: &str) -> Result<()> {
+    pub(super) fn require_running(&self, task: &str) -> Result<()> {
         let db = self.store.lock()?;
         let running: bool = db.query_row(
             "SELECT EXISTS(SELECT 1 FROM tasks WHERE id=?1 AND status='running')",
@@ -18,12 +18,27 @@ impl ResourcePool {
         task: &str,
         role: &str,
         allocation: Allocation,
+        resolve_target: impl FnOnce() -> Result<Option<crate::backend::InferenceTarget>>,
         invoke: impl FnOnce() -> F,
     ) -> Result<(T, f64)> {
         let actor = crate::fabric::protocol::actor(role)?;
         security::TaskPolicy::reasoning(task)?.authorize(task, actor, "llm.generate")?;
         self.require_running(task)?;
         let reservation_id = uuid::Uuid::new_v4().to_string();
+        if !self.residents.is_empty() {
+            self.store.event(task,"resource_target_intent","jev-plus",json!({
+                "format_version":1,"pool_id":self.id,"reservation_id":reservation_id,"role":role,
+                "resident_catalog_sha256":self.resident_catalog_sha256,"permissions_granted":false,
+            }))?;
+            let coverage = resolve_target().and_then(|target| self.resident_coverage(target));
+            self.store.event(task,"resource_target","jev-plus",json!({
+                "format_version":1,"pool_id":self.id,"reservation_id":reservation_id,"role":role,
+                "resident_catalog_sha256":self.resident_catalog_sha256,"allowed":coverage.is_ok(),
+                "coverage":coverage.as_ref().ok(),"reason_code":if coverage.is_ok(){"configured_target_covered"}else{"unavailable_or_unlisted_target"},
+                "permissions_granted":false,"weights_attested":false,
+            }))?;
+            coverage?;
+        }
         self.store.event(
                 task,
                 "resource_intent",

@@ -553,6 +553,9 @@ struct Pinned {
     routes: BTreeMap<String, Arc<Module>>,
 }
 impl InferenceBackend for Broker {
+    fn inference_target(&self, role: &str) -> Result<Option<crate::backend::InferenceTarget>> {
+        self.snapshot()?.inference_target(role)
+    }
     fn generate_for<'a>(
         &'a self,
         task: &'a str,
@@ -582,6 +585,13 @@ impl InferenceBackend for Broker {
     }
 }
 impl InferenceBackend for Pinned {
+    fn inference_target(&self, role: &str) -> Result<Option<crate::backend::InferenceTarget>> {
+        let module = self
+            .routes
+            .get(role)
+            .context("No registered module for inference role")?;
+        module.backend.inference_target(role)
+    }
     fn modules(&self) -> Result<Vec<ModuleDescriptor>> {
         let modules = self
             .routes
