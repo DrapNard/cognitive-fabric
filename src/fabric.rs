@@ -116,6 +116,16 @@ impl Drop for Processing {
     }
 }
 
+// Routing samples available queue capacity once. This is not a slot reservation:
+// submissions can change it immediately after a new task chooses its route.
+fn routing_pressure<T>(queue: Option<&mpsc::Sender<T>>, processing: bool) -> (bool, usize) {
+    let (full, queued) = queue.map_or((false, 0), |queue| {
+        let available = queue.capacity();
+        (available == 0, queue.max_capacity() - available)
+    });
+    (full, queued + usize::from(processing))
+}
+
 fn same_header(left: &Header, right: &Header) -> bool {
     left.correlation == right.correlation
         && left.task == right.task
@@ -497,7 +507,7 @@ impl Broker {
     }
 
     fn snapshot(&self) -> Result<Pinned> {
-        let mut candidates = {
+        let candidates = {
             let registry = self
                 .registry
                 .read()
@@ -508,16 +518,26 @@ impl Broker {
             registry.active.values().cloned().collect::<Vec<_>>()
         };
         let mut routes = BTreeMap::new();
-        // Sample pressure once per candidate; concurrent queues may change while
-        // sorting. Operator rank takes precedence over this local observation.
-        candidates.sort_by_cached_key(|module| {
+        // Full queues are ineligible for new pins. Operator rank still dominates
+        // load among candidates observed to have room; old pins never migrate.
+        let mut candidates = candidates
+            .into_iter()
+            .filter_map(|module| {
+                let (full, load) = routing_pressure(
+                    module.queue.get(),
+                    module.processing.load(Ordering::Acquire),
+                );
+                (!full).then_some((load, module))
+            })
+            .collect::<Vec<_>>();
+        candidates.sort_by_cached_key(|(load, module)| {
             (
                 module.routing_rank.unwrap_or(0),
-                module.queued_requests() + usize::from(module.processing.load(Ordering::Acquire)),
+                *load,
                 module.descriptor.id.clone(),
             )
         });
-        for module in candidates {
+        for (_, module) in candidates {
             if module.availability().unavailable() {
                 continue;
             }

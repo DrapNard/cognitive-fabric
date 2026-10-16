@@ -1,5 +1,30 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+### Capacity-aware admission to module routes — 2026-10-16
+
+New inference and arithmetic/SQL pins exclude modules whose bounded queue is
+observed full. Among candidates with room, operator rank still dominates sampled
+queued/processing load and ID breaks ties. A shared queue-pressure sampler reads
+available slots once per candidate; selection never reserves a slot. Existing
+pins retain their exact module/version: inference still rejects a full queue,
+while tools retain deadline-bounded waiting. No dispatch is replayed or refunded.
+
+Regressions fill four buffered slots behind a gated active call, select an approved
+higher-rank alternative for new pins, refuse selection when all available routes
+are full, and restore preferred routing after draining. Both arithmetic and SQL
+are exercised, including cancelled waiting on an old handle. Existing rank,
+pin, failure, permission and callback-lock tests remain. This advances local
+scheduling; it does not establish global provider/GPU capacity, fairness or a
+general module scheduler. The first tool test incorrectly waited for the full
+30-second dispatch deadline; it was corrected to observe/cancel the existing wait
+without changing production backpressure or limits.
+
+Verification: 544 workspace tests (483 library including server, 61 integration),
+formatting, all-target workspace check and warnings-denied Clippy passed with
+`FLATC` unset. Sources: `src/fabric.rs`, `src/fabric/tools.rs`; regressions:
+`src/fabric/tests.rs` and tool tests. Previously installed `df4cf05` evidence remains
+source-scoped; this new routing source is not installed/live-model proven yet.
+
 Installed verification (2026-10-16): exact source
 `df4cf052d0b8724a59225712153e4e92999f5ac1` installed optimized CLI and HTTP
 packages offline with locked cached dependencies, `FLATC` unset and Rust/Cargo
@@ -185,7 +210,7 @@ workspace tests, formatting, all-target checking and warnings-denied Clippy pass
 locally with `FLATC` unset. No runtime policy or release gate changed.
 
 Current evidence review (2026-10-16): **pre-release; V1 incomplete**. The current
-workspace passes 542 tests (481 library including the server, 61 integration),
+workspace passes 544 tests (483 library including the server, 61 integration),
 formatting, all-target checking and Clippy. See `RELEASE_AUDIT.md` for the 18 goal
 acceptance criteria and scoped evidence. Later narrative entries below are a
 historical implementation ledger; their old counts, unavailable endpoints and

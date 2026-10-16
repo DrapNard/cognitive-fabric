@@ -1,5 +1,30 @@
 # v1.0 release acceptance audit
 
+### Capacity-aware admission to module routes — 2026-10-16
+
+New inference and arithmetic/SQL pins exclude modules whose bounded queue is
+observed full. Among candidates with room, operator rank still dominates sampled
+queued/processing load and ID breaks ties. A shared queue-pressure sampler reads
+available slots once per candidate; selection never reserves a slot. Existing
+pins retain their exact module/version: inference still rejects a full queue,
+while tools retain deadline-bounded waiting. No dispatch is replayed or refunded.
+
+Regressions fill four buffered slots behind a gated active call, select an approved
+higher-rank alternative for new pins, refuse selection when all available routes
+are full, and restore preferred routing after draining. Both arithmetic and SQL
+are exercised, including cancelled waiting on an old handle. Existing rank,
+pin, failure, permission and callback-lock tests remain. This advances local
+scheduling; it does not establish global provider/GPU capacity, fairness or a
+general module scheduler. The first tool test incorrectly waited for the full
+30-second dispatch deadline; it was corrected to observe/cancel the existing wait
+without changing production backpressure or limits.
+
+Verification: 544 workspace tests (483 library including server, 61 integration),
+formatting, all-target workspace check and warnings-denied Clippy passed with
+`FLATC` unset. Sources: `src/fabric.rs`, `src/fabric/tools.rs`; regressions:
+`src/fabric/tests.rs` and tool tests. Previously installed `df4cf05` evidence remains
+source-scoped; this new routing source is not installed/live-model proven yet.
+
 Installed verification (2026-10-16): exact source
 `df4cf052d0b8724a59225712153e4e92999f5ac1` installed optimized CLI and HTTP
 packages offline with locked cached dependencies, `FLATC` unset and Rust/Cargo
@@ -188,7 +213,7 @@ This checklist preserves the 18 acceptance criteria in the goal objective. It is
 an evidence inventory, not a release approval. The canonical French architecture
 and the broader implementation matrix remain authoritative. Earlier test counts
 in the quality review are historical milestones. Current local verification is
-542 Rust tests (481 library including the server, 61 integration), formatting, all-target checking and
+544 Rust tests (483 library including the server, 61 integration), formatting, all-target checking and
 Clippy with warnings denied. Default builds use bundled generated sources and
 Rust FlatBuffers 25.12.19. Exact native generation/byte comparison was also
 revalidated for the new optional load observations.
@@ -197,7 +222,7 @@ revalidated for the new optional load observations.
 |---|---|---|
 | 1. Workspace builds | `Cargo.toml`, all-target check | Passed locally; isolated optimized source installation also passed with cached dependencies. |
 | 2. Formatting and Clippy | Mandatory checks in `QUALITY_REVIEW.md` | Passed locally. |
-| 3. Mandatory tests | Workspace all-target test results, `tests/`, server integration tests | 542 passed; fixtures do not establish live model quality. |
+| 3. Mandatory tests | Workspace all-target test results, `tests/`, server integration tests | 544 passed; fixtures do not establish live model quality. |
 | 4. FlatBuffers IPC | `protocol/`, `src/wire.rs`, `src/fabric/`, malformed/compatibility/socket tests | Implemented for present transports; authenticated process event delivery/replay is now tested; broader module compatibility remains partial. |
 | 5. CLI/service communication | `src/service.rs`, socket tests, `tests/process_worker.rs`, `crates/cogfabric-server/tests/` | Tested typed local transport, progress, cancellation and optional HTTP client interoperability; native and collective ownership drains cover dropped request futures. No general independent plugin service is claimed. |
 | 6. Compatible local LLM | `src/backend.rs`, `tests/inference_auth.rs`, `LIVE_INFERENCE.md` | Passed for Ollama and LM Studio Qwen3 8B compatible endpoints, including managed verified sorting. Native inventory and one operator-approved embedding load/unload passed; authenticated native access and generative switching remain unverified. |

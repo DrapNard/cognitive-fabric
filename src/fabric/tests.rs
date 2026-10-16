@@ -1363,3 +1363,96 @@ fn activation_cannot_resurrect_a_version_retired_during_health_observation() {
         )
         .is_err());
 }
+
+#[tokio::test]
+async fn saturated_inference_routes_skip_only_new_pins_and_never_retry_old_handles() {
+    let busy = Arc::new(Gated {
+        calls: AtomicUsize::new(0),
+        entered: tokio::sync::Notify::new(),
+        release: tokio::sync::Notify::new(),
+    });
+    let fallback = Arc::new(Fixed("fallback", AtomicUsize::new(0)));
+    let broker = Broker::with_inference(Arc::new(Fixed("initial", AtomicUsize::new(0))));
+    broker.unregister("inference.local").unwrap();
+    let descriptor = |id: &str| ModuleDescriptor {
+        id: id.into(),
+        version: "1.0.0".into(),
+        roles: vec!["solver".into()],
+    };
+    broker
+        .register_candidate(descriptor("preferred"), busy.clone(), 10)
+        .unwrap();
+    broker
+        .register_candidate(descriptor("fallback"), fallback.clone(), 20)
+        .unwrap();
+    let pinned = Arc::new(broker.snapshot().unwrap());
+    assert_eq!(pinned.routes["solver"].descriptor.id, "preferred");
+    let first = pinned.clone();
+    let mut calls = vec![tokio::spawn(async move {
+        first.generate("solver", "running", 128).await
+    })];
+    tokio::time::timeout(Duration::from_secs(1), busy.entered.notified())
+        .await
+        .unwrap();
+    for _ in 0..4 {
+        let waiting = pinned.clone();
+        calls.push(tokio::spawn(async move {
+            waiting.generate("solver", "buffered", 128).await
+        }));
+    }
+    let queue = pinned.routes["solver"].queue().await;
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while queue.capacity() != 0 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(busy.calls.load(Ordering::Acquire), 1);
+    assert!(pinned
+        .generate("solver", "must not retry", 128)
+        .await
+        .is_err());
+    assert_eq!(fallback.1.load(Ordering::Acquire), 0);
+    let next = broker.snapshot().unwrap();
+    assert_eq!(next.routes["solver"].descriptor.id, "fallback");
+    assert_eq!(
+        next.generate("solver", "new task", 128).await.unwrap().text,
+        "fallback"
+    );
+    assert_eq!(fallback.1.load(Ordering::Acquire), 1);
+    broker.unregister("fallback").unwrap();
+    assert!(!broker.snapshot().unwrap().routes.contains_key("solver"));
+    broker.activate("fallback", "1.0.0").unwrap();
+    assert_eq!(
+        broker.snapshot().unwrap().routes["solver"].descriptor.id,
+        "fallback"
+    );
+    assert_eq!(pinned.routes["solver"].descriptor.id, "preferred");
+    busy.release.notify_one();
+    for call in calls {
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(1), call)
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap()
+                .text,
+            "answer"
+        );
+    }
+    assert_eq!(busy.calls.load(Ordering::Acquire), 5);
+    assert_eq!(
+        broker.snapshot().unwrap().routes["solver"].descriptor.id,
+        "preferred"
+    );
+    assert_eq!(
+        pinned
+            .generate("solver", "original pin after drain", 128)
+            .await
+            .unwrap()
+            .text,
+        "answer"
+    );
+    assert_eq!(busy.calls.load(Ordering::Acquire), 6);
+}

@@ -2,6 +2,12 @@
 
 All notable changes are documented here in English.
 
+### Route new pins around saturated module queues
+
+- Exclude observed full queues before applying approved ranks and sampled load.
+- Preserve old inference rejection, tool waiting, immutable pins and no-retry behavior.
+- Verify real buffered saturation, all-full refusal and preferred-route recovery.
+
 ### Verify revision recovery through CLI and managed workers
 
 - Cover all saved revision phases, original settings and no-replay call counts.

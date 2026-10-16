@@ -240,8 +240,9 @@ implicit reconnect, retry or budget refund.
 ### Explicit alternative inference routes
 
 Trusted Rust hosts may use `Broker::register_candidate(descriptor, backend, rank)`
-to approve alternative inference modules for the same role. Lower ranks are
-preferred; equally ranked candidates prefer fewer combined queued and processing requests,
+to approve alternative inference modules for the same role. New pins exclude
+observed full queues; among candidates with room, lower ranks are preferred.
+Equally ranked candidates prefer fewer combined queued and processing requests,
 then lexicographic module IDs break ties. Rank is bounded to
 0..=1,000,000 and immutable per registered version. Overlap is permitted only
 between ranked registrations. Ordinary `register` and the initial local module
@@ -313,7 +314,10 @@ includes local validation/dispatch and does not attest remote execution, GPU
 residency or expected latency. Concurrent submissions can change observations
 immediately after selection; routing
 does not reserve a slot or guarantee load balancing. Existing pins and failure
-handling are unchanged. A lower-priority rank cannot win through lower queue load.
+handling are unchanged. Among queues with room, a lower-priority rank cannot win through lower load.
+A fully occupied queue is ineligible for a new pin, allowing an explicitly approved
+alternative at another rank. All-full selection returns no route. It adds no
+scheduler queue.
 No probe, extra model call, grant, retry or provider load/unload is introduced.
 
 ## Inspect an uncertain residency operation
@@ -455,3 +459,11 @@ retry, extra tool call or permission is introduced. Observations are per module,
 not global provider pressure or reserved execution slots. Tool inventory protocol
 fields are unchanged; inference's optional queue/processing fields remain scoped
 to inference inventory.
+
+New inference and tool pins share one bounded-capacity observation rule. Four
+occupied buffered slots make a candidate ineligible for a new pin, even when it
+has the best rank. Once it has room, its configured rank applies again. Samples
+can age immediately; selection does not reserve space. Old inference pins retain
+immediate queue-full errors, and old tool handles retain their original bounded
+waiting. Neither migrates or retries. No protocol fields, capabilities, grants,
+queue limits or external model-residency operations change.

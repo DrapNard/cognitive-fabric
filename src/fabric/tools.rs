@@ -637,22 +637,26 @@ impl Broker {
         };
         Ok(candidates
             .into_iter()
-            .filter(|module| {
-                module.descriptor.capability == capability && !module.availability().unavailable()
+            .filter(|module| module.descriptor.capability == capability)
+            .filter_map(|module| {
+                let (full, load) = super::routing_pressure(
+                    module.queue.get(),
+                    module.processing.load(Ordering::Acquire),
+                );
+                if full || module.availability().unavailable() {
+                    None
+                } else {
+                    Some((load, module))
+                }
             })
-            // Sample each candidate once; rank remains the operator's first priority.
-            .min_by_key(|module| {
+            .min_by_key(|(load, module)| {
                 (
                     module.routing_rank.unwrap_or(0),
-                    module
-                        .queue
-                        .get()
-                        .map_or(0, |queue| queue.max_capacity() - queue.capacity())
-                        + usize::from(module.processing.load(Ordering::Acquire)),
+                    *load,
                     module.descriptor.id.clone(),
                 )
             })
-            .map(|module| Handle { module }))
+            .map(|(_, module)| Handle { module }))
     }
 
     pub fn shutdown(&self) -> Result<()> {
@@ -1117,6 +1121,118 @@ mod tests {
                 queued_tool_call(original, task, sql).await.unwrap();
                 assert_eq!(gate.calls.load(Ordering::SeqCst), 2);
             }
+        }
+    }
+
+    #[tokio::test]
+    async fn saturated_tools_skip_new_pins_without_replaying_existing_handles() {
+        for sql in [false, true] {
+            let broker = Broker::default();
+            let capability = if sql { "sql.query" } else { "math.evaluate" };
+            broker
+                .unregister(if sql { "sql.local" } else { "arithmetic.local" })
+                .unwrap();
+            let busy = Arc::new(QueueGate {
+                calls: std::sync::atomic::AtomicUsize::new(0),
+                entered: tokio::sync::Notify::new(),
+                release: tokio::sync::Notify::new(),
+            });
+            let descriptor = |id: &str| Descriptor {
+                id: id.into(),
+                version: "1.0.0".into(),
+                capability: capability.into(),
+            };
+            if sql {
+                broker
+                    .register_sql_candidate(descriptor("preferred"), busy.clone(), 10)
+                    .unwrap();
+                broker
+                    .register_sql_candidate(descriptor("fallback"), Arc::new(sql::LocalSql), 20)
+                    .unwrap();
+            } else {
+                broker
+                    .register_candidate(descriptor("preferred"), busy.clone(), 10)
+                    .unwrap();
+                broker
+                    .register_candidate(descriptor("fallback"), Arc::new(LocalMath), 20)
+                    .unwrap();
+            }
+            let original = broker.pin_capability(capability).unwrap().unwrap();
+            assert_eq!(original.descriptor().id, "preferred");
+            let task = uuid::Uuid::new_v4().to_string();
+            let mut calls = vec![tokio::spawn(queued_tool_call(
+                original.clone(),
+                task.clone(),
+                sql,
+            ))];
+            tokio::time::timeout(Duration::from_secs(1), busy.entered.notified())
+                .await
+                .unwrap();
+            for _ in 0..4 {
+                calls.push(tokio::spawn(queued_tool_call(
+                    original.clone(),
+                    task.clone(),
+                    sql,
+                )));
+            }
+            let queue = original.module.queue().await;
+            tokio::time::timeout(Duration::from_secs(1), async {
+                while queue.capacity() != 0 {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .unwrap();
+            // Tool dispatch retains bounded waiting on its original queue.
+            assert!(tokio::time::timeout(
+                Duration::from_millis(20),
+                queued_tool_call(original.clone(), task.clone(), sql)
+            )
+            .await
+            .is_err());
+            assert_eq!(busy.calls.load(Ordering::Acquire), 1);
+            let next = broker.pin_capability(capability).unwrap().unwrap();
+            assert_eq!(next.descriptor().id, "fallback");
+            let expected = queued_tool_call(next, task.clone(), sql).await.unwrap();
+            broker.unregister("fallback").unwrap();
+            assert!(broker.pin_capability(capability).unwrap().is_none());
+            broker.activate("fallback", "1.0.0").unwrap();
+            assert_eq!(
+                broker
+                    .pin_capability(capability)
+                    .unwrap()
+                    .unwrap()
+                    .descriptor()
+                    .id,
+                "fallback"
+            );
+            assert_eq!(original.descriptor().id, "preferred");
+            busy.release.notify_one();
+            for call in calls {
+                assert_eq!(
+                    serde_json::from_str::<serde_json::Value>(
+                        &tokio::time::timeout(Duration::from_secs(1), call)
+                            .await
+                            .unwrap()
+                            .unwrap()
+                            .unwrap()
+                    )
+                    .unwrap(),
+                    serde_json::from_str::<serde_json::Value>(&expected).unwrap()
+                );
+            }
+            assert_eq!(busy.calls.load(Ordering::Acquire), 5);
+            assert_eq!(
+                broker
+                    .pin_capability(capability)
+                    .unwrap()
+                    .unwrap()
+                    .descriptor()
+                    .id,
+                "preferred"
+            );
+            queued_tool_call(original, task, sql).await.unwrap();
+            assert_eq!(busy.calls.load(Ordering::Acquire), 6);
         }
     }
 
