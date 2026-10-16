@@ -281,6 +281,9 @@ mod tests {
         tokio::task::yield_now().await;
         tokio::time::advance(Duration::from_secs(11)).await;
         assert!(!handle.is_finished());
+        // Real socket readiness must not race the paused clock's automatic
+        // advance to session expiry when the executor is idle on a busy runner.
+        tokio::time::resume();
         write(&mut host, &packet(&task)).await.unwrap();
         assert!(matches!(
             read(&mut host).await.unwrap().payload,
