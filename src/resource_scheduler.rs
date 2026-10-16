@@ -12,10 +12,13 @@ use std::{
 use tokio::sync::Notify;
 
 mod adapter;
+mod admission;
+mod configured;
 #[cfg(test)]
 mod tests;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Allocation {
     pub compute_slots: u32,
     pub host_memory_bytes: u64,
@@ -44,7 +47,8 @@ impl Allocation {
     }
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Settings {
     pub label: String,
     pub capacity: Allocation,
@@ -53,7 +57,7 @@ pub struct Settings {
     pub max_execution_ms: u64,
 }
 impl Settings {
-    fn validate(&self) -> Result<()> {
+    pub(crate) fn validate(&self) -> Result<()> {
         if self.label.len() > 64
             || !crate::registry::identifier(&self.label)
             || !(1..=256).contains(&self.capacity.compute_slots)
@@ -64,6 +68,22 @@ impl Settings {
             || !(1..=600_000).contains(&self.max_execution_ms)
         {
             bail!("Invalid resource pool bounds")
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Configuration {
+    pub settings: Settings,
+    pub allocation: Allocation,
+}
+impl Configuration {
+    pub fn validate(&self) -> Result<()> {
+        self.settings.validate()?;
+        if self.allocation.compute_slots == 0 || !self.allocation.fits(self.settings.capacity) {
+            bail!("Configured inference allocation cannot fit the pool")
         }
         Ok(())
     }
@@ -116,8 +136,12 @@ pub struct ResourcePool {
     settings: Settings,
     store: Arc<Store>,
     state: Mutex<State>,
+    _workspace_lease: Option<crate::recovery::ExecutionLease>,
 }
 impl ResourcePool {
+    pub(crate) fn matches(&self, store: &Arc<Store>, configuration: &Configuration) -> bool {
+        Arc::ptr_eq(&self.store, store) && self.settings == configuration.settings
+    }
     pub fn new(actor: &str, store: Arc<Store>, settings: Settings) -> Result<Arc<Self>> {
         security::authorize(actor, "resources.configure")?;
         settings.validate()?;
@@ -126,6 +150,7 @@ impl ResourcePool {
             settings,
             store,
             state: Mutex::new(State::default()),
+            _workspace_lease: None,
         }))
     }
     fn lock(&self) -> Result<MutexGuard<'_, State>> {

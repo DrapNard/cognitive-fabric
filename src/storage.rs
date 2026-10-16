@@ -108,6 +108,12 @@ fn preview(db: &Connection, before: u64, limit: u32) -> Result<RetentionPlan> {
     plan.validate()?;
     plan.task_ids=db.prepare("SELECT t.id FROM tasks t WHERE t.updated<?1 AND t.status IN ('completed','unverified','demo','failed','rejected','cancelled','exhausted','needs_clarification','interrupted') AND NOT EXISTS(SELECT 1 FROM events ge WHERE ge.task_id=t.id AND ge.kind='gap_candidate') AND NOT EXISTS(SELECT 1 FROM memories m WHERE m.task_id=t.id) AND NOT EXISTS(SELECT 1 FROM events e WHERE e.kind='conversation_reference' AND json_valid(e.payload) AND json_extract(e.payload,'$.task_id')=t.id) ORDER BY t.updated,t.id LIMIT ?2")?
         .query_map(params![before,limit],|row|row.get(0))?.collect::<rusqlite::Result<Vec<String>>>()?;
+    let candidates = std::mem::take(&mut plan.task_ids);
+    for id in candidates {
+        if crate::resource_scheduler::ResourcePool::retention_safe(db, &id)? {
+            plan.task_ids.push(id);
+        }
+    }
     for id in &plan.task_ids {
         plan.event_count += db.query_row(
             "SELECT count(*) FROM events WHERE task_id=?1",
@@ -156,6 +162,15 @@ impl Store {
         if !human_approve {
             bail!("Retention requires explicit --human-approve")
         }
+        let _resource_lease = self
+            .runtime_lock
+            .as_ref()
+            .map(|path| {
+                let mut resource_path = path.as_os_str().to_os_string();
+                resource_path.push(".resources");
+                crate::recovery::ExecutionLease::acquire(std::path::Path::new(&resource_path), true)
+            })
+            .transpose()?;
         plan.validate()?;
         if plan.task_ids.is_empty() {
             bail!("Retention plan is empty")

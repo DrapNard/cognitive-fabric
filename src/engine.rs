@@ -54,6 +54,7 @@ pub struct Engine {
     router: crate::routing::Handle,
     scheduler: crate::scheduling::Handle,
     escalator: crate::escalation::Handle,
+    resource_pool: Arc<std::sync::Mutex<Option<Arc<crate::resource_scheduler::ResourcePool>>>>,
 }
 impl Engine {
     pub fn new(cfg: Config, store: Arc<Store>) -> Self {
@@ -80,6 +81,7 @@ impl Engine {
             router: Default::default(),
             scheduler: Default::default(),
             escalator: Default::default(),
+            resource_pool: Default::default(),
         }
     }
     /// Install an operator-trusted policy for future tasks on this Engine value.
@@ -93,6 +95,33 @@ impl Engine {
     }
     pub fn expert_router_descriptor(&self) -> &crate::routing::Descriptor {
         self.router.descriptor()
+    }
+    /// One configured pool is retained by every clone of this Engine.
+    /// Changing a live pool's settings requires a new Engine, never fresh counters.
+    pub fn configured_resource_pool(
+        &self,
+    ) -> Result<Option<Arc<crate::resource_scheduler::ResourcePool>>> {
+        let mut retained = self
+            .resource_pool
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Engine resource pool poisoned"))?;
+        let Some(configuration) = &self.cfg.resource_admission else {
+            if retained.is_some() {
+                bail!("Cannot remove a live Engine resource configuration")
+            }
+            return Ok(None);
+        };
+        configuration.validate()?;
+        if let Some(pool) = retained.as_ref() {
+            if !pool.matches(&self.store, configuration) {
+                bail!("Cannot change a live Engine resource pool")
+            }
+            return Ok(Some(pool.clone()));
+        }
+        let pool =
+            crate::resource_scheduler::ResourcePool::configured(self.store.clone(), configuration)?;
+        *retained = Some(pool.clone());
+        Ok(Some(pool))
     }
     /// Install a trusted scheduler for future tasks; cloned engines retain theirs.
     pub fn with_subtask_scheduler(
@@ -218,6 +247,7 @@ impl Engine {
     {
         let (options, task_id) = execution_options;
         self.cfg.validate()?;
+        let resource_pool = self.configured_resource_pool()?;
         if query.trim().is_empty() || query.len() > 12_000 {
             bail!("Query is empty or exceeds 12,000 bytes")
         }
@@ -340,6 +370,7 @@ impl Engine {
             execution_start,
         )?;
         session.scheduler = self.scheduler.clone();
+        session.resource_pool = resource_pool;
         if !matches!(
             profile,
             ExecutionProfile::Alone | ExecutionProfile::Tools | ExecutionProfile::Recursive

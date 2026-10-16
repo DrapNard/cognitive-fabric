@@ -747,3 +747,13 @@ cannot safely recreate that process-local ownership or silently omit its limits.
 Preview and approved resume reject before backend construction without changing
 task/event state. Explicit pool restoration and crash reconstruction remain
 incomplete; see [RESOURCE_SCHEDULING.md](RESOURCE_SCHEDULING.md).
+
+
+Configured resource admission is now also an original execution-setting boundary:
+continuation rejects it even if no `resource_intent` was recorded before a crash.
+This prevents a pre-inference checkpoint from omitting its configured pool.
+Separate `resource-status` / `resource-release ID --human-approve` commands inspect
+and reconcile abandoned reservation metadata under exclusive leases; they neither
+resume reasoning nor recreate a task budget. Configured startup refuses unresolved
+dispatches, and reviewed retention preserves that evidence until completion/release.
+See RESOURCE_SCHEDULING.md for the exact bounded operator workflow and limitations.

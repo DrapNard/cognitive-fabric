@@ -252,6 +252,19 @@ enum Command {
         enabled: bool,
     },
     ConfigShow,
+    ResourceStatus,
+    ResourceRelease {
+        id: String,
+        #[arg(long)]
+        human_approve: bool,
+    },
+    /// Set a reviewed shared inference budget; restart running services to apply it.
+    ConfigureResources {
+        #[arg(required_unless_present = "disable", conflicts_with = "disable")]
+        configuration: Option<PathBuf>,
+        #[arg(long)]
+        disable: bool,
+    },
     ConfigureToolWorker {
         #[arg(long, action = clap::ArgAction::Set)]
         enabled: bool,
@@ -457,6 +470,15 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
     if matches!(
         &cli.command,
+        Command::ResourceRelease {
+            human_approve: false,
+            ..
+        }
+    ) {
+        bail!("Resource reconciliation requires explicit provider-stop acknowledgement")
+    }
+    if matches!(
+        &cli.command,
         Command::ResumeTask {
             human_approve: false,
             ..
@@ -534,6 +556,55 @@ async fn main() -> Result<()> {
         bail!("Revision recovery requires explicit operator approval")
     }
     let cfg = Config::load(cli.home, cli.backend)?;
+    if matches!(
+        &cli.command,
+        Command::ResourceStatus | Command::ResourceRelease { .. }
+    ) {
+        if let Command::ResourceRelease { id, human_approve } = &cli.command {
+            let store = Store::open_existing_with_limit(&cfg.db(), cfg.max_database_bytes)?;
+            cogfabric::resource_scheduler::ResourcePool::release_abandoned(
+                "human-cli",
+                &store,
+                id,
+                *human_approve,
+            )?;
+            return output(
+                json!({"released":id,"operator_acknowledged_stop":true,"provider_stop_proven":false}),
+                cli.json,
+            );
+        }
+        let store = Store::open_existing_read_only(&cfg.db())?;
+        return output(
+            cogfabric::resource_scheduler::ResourcePool::abandoned_status("human-cli", &store)?,
+            cli.json,
+        );
+    }
+    if let Command::ConfigureResources {
+        configuration,
+        disable,
+    } = &cli.command
+    {
+        security::authorize("human-cli", "resources.configure")?;
+        let mut changed = cfg.clone();
+        changed.resource_admission = if *disable {
+            None
+        } else {
+            let path = configuration
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("Resource configuration file required"))?;
+            let bytes = security::read_regular_bytes(path, 16_384)?;
+            let value = cogfabric::strict_json::value(&bytes, 16_384)?;
+            let configuration: cogfabric::resource_scheduler::Configuration =
+                serde_json::from_value(value)?;
+            configuration.validate()?;
+            Some(configuration)
+        };
+        changed.save()?;
+        return output(
+            json!({"resource_admission":changed.resource_admission,"running_services_require_restart":true,"physical_limits_enforced":false}),
+            cli.json,
+        );
+    }
     if let Command::ResidencyInspect {
         id,
         api_base,
@@ -744,7 +815,11 @@ async fn main() -> Result<()> {
         }
         Command::Status => {
             json!({"home":cfg.home,"backend":cfg.backend,"model":cfg.model,"inference_process":cfg.inference_process,
+            "resource_admission":cfg.resource_admission,
             "skills":store.skills()?.len(),"candidates":store.candidates()?.len()})
+        }
+        Command::ConfigureResources { .. } => {
+            bail!("Resource configuration must run before initialization")
         }
         Command::ConfigureLocal {
             model,
@@ -785,6 +860,9 @@ async fn main() -> Result<()> {
             json!({"saved":true,"inference_auth_scope":settings.inference_auth_scope,"credential_environment_variable":cogfabric::credentials::ENVIRONMENT_VARIABLE,"credential_stored":false})
         }
         Command::ConfigShow => serde_json::to_value(&cfg)?,
+        Command::ResourceStatus | Command::ResourceRelease { .. } => {
+            bail!("Resource reconciliation must run before initialization")
+        }
         Command::ConfigureToolWorker { enabled } => {
             security::authorize("human-cli", "tool.worker.configure")?;
             let mut changed = cfg.clone();

@@ -45,6 +45,7 @@ pub struct AgentRuntime {
     store: Arc<Store>,
     backend: Arc<dyn ChatBackend>,
     managed: bool,
+    resource_pool: Option<Arc<crate::resource_scheduler::ResourcePool>>,
 }
 impl AgentRuntime {
     pub fn local(cfg: Config, store: Arc<Store>) -> Result<Self> {
@@ -77,14 +78,43 @@ impl AgentRuntime {
         backend: Arc<dyn ChatBackend>,
     ) -> Result<Self> {
         cfg.validate()?;
+        let resource_pool = cfg
+            .resource_admission
+            .as_ref()
+            .map(|configuration| {
+                crate::resource_scheduler::ResourcePool::configured(store.clone(), configuration)
+            })
+            .transpose()?;
         Ok(Self {
             cfg,
             store,
             backend,
             managed: false,
+            resource_pool,
         })
     }
+    /// Bind native turns to the same configured budget as collective requests.
+    /// Existing cloned runtimes keep their pool. Only trusted host setup calls this.
+    pub fn with_resource_pool(
+        mut self,
+        actor: &str,
+        pool: Option<Arc<crate::resource_scheduler::ResourcePool>>,
+    ) -> Result<Self> {
+        crate::security::authorize(actor, "resources.configure")?;
+        match (&self.cfg.resource_admission, &pool) {
+            (None, None) => (),
+            (Some(configuration), Some(pool)) if pool.matches(&self.store, configuration) => (),
+            _ => bail!("Agent resource pool differs from its operator configuration"),
+        }
+        self.resource_pool = pool;
+        Ok(self)
+    }
     pub fn validate(&self, request: &Turn) -> Result<usize> {
+        match (&self.cfg.resource_admission, &self.resource_pool) {
+            (None, None) => (),
+            (Some(configuration), Some(pool)) if pool.matches(&self.store, configuration) => (),
+            _ => bail!("Configured agent resource pool is missing or changed"),
+        }
         request.validate()?;
         let bytes = serde_json::to_vec(request)?.len();
         if bytes > self.cfg.max_input_bytes || self.cfg.max_calls == 0 || self.cfg.max_cycles == 0 {
@@ -167,7 +197,15 @@ impl AgentRuntime {
             let completion = tokio::select! {
                 biased;
                 _ = cancel => { self.store.finish_task(&task,"cancelled","")?; guard.finished=true; bail!("Agent turn cancelled") },
-                result = tokio::time::timeout_at(tokio::time::Instant::from_std(start + Duration::from_secs(self.cfg.max_wall_seconds)),async { backend.complete_for(&task,&request,tokens).await }) => match result {
+                result = tokio::time::timeout_at(tokio::time::Instant::from_std(start + Duration::from_secs(self.cfg.max_wall_seconds)),async {
+                    if let (Some(configuration), Some(pool)) = (&self.cfg.resource_admission, &self.resource_pool) {
+                        let (completion, _) = pool.execute(&task,"solver",configuration.allocation,
+                            || backend.complete_for(&task,&request,tokens)).await?;
+                        Ok(completion)
+                    } else {
+                        backend.complete_for(&task,&request,tokens).await
+                    }
+                }) => match result {
                     Ok(result) => result?,
                     Err(_) => {self.store.finish_task(&task,"exhausted","")?; guard.finished=true; bail!("Agent turn deadline exhausted")},
                 },

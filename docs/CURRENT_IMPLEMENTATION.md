@@ -1,5 +1,47 @@
 # Current Rust implementation
 
+### Configure and operate Jev+ shared admission — 2026-10-16
+
+**Implemented (configured workspace and trusted-host scope); Partial (physical/global GPU scheduling).**
+Optional `Config.resource_admission` validates fixed working allocations and bounded
+pool settings. `configure-resources FILE` / `--disable` updates operator config
+without database bootstrap. Engine clones share one retained pool; Session applies
+it to every role and bound-expert call, including managed inference. Native agent
+turns use the same executor, and HTTP Server construction shares the Engine pool
+across both request types. Original task budgets/charges/deadlines remain in force.
+
+Configured pools hold a private exclusive workspace resource lease. Another
+configured host cannot start fresh counters while the owner is live. Bounded strict
+lifecycle validation rejects unresolved prior dispatches at startup. Human-only
+`resource-status` reads an existing database; `resource-release ID --human-approve`
+takes resource/runtime leases, validates exact identity and records an operator
+stop acknowledgement before removing the restart gate. No provider stop is inferred.
+Retention preserves unresolved resource audits and excludes live configured owners
+when applying deletion. Original configured-task continuation still requires explicit
+restoration and is denied, even before a first resource intent exists.
+
+Implementation: `src/resource_scheduler/{configured,admission,adapter}.rs`, Config,
+Engine, Session, AgentRuntime, CLI, HTTP Server, retention and continuation guards.
+Tests cover real CLI configuration/reconciliation, managed process ordering/reaping,
+primary/bound calls, shared native/collective requests over actual loopback HTTP,
+workspace ownership, audit tampering and retention. The first new HTTP fixture
+compile exposed a missing `IntoFuture` import; fixed in the test. Historical config
+bytes retain the omitted optional field. See `docs/RESOURCE_SCHEDULING.md`.
+
+General cross-workspace/device arbitration, resident/backbone accounting, physical
+VRAM/RSS enforcement, task-pool restoration and independent reasoning/efficiency
+studies remain open. Jev+ and Jev-R remain Partial. Verification passed: `cargo fmt --all -- --check`,
+`cargo check --locked --workspace --all-targets`,
+`cargo test --locked --workspace --all-targets` (**598 tests across 29 targets**),
+and `cargo clippy --locked --workspace --all-targets -- -D warnings`. Socket
+fixtures required elevated local TCP/Unix access. Both ordinary mock and managed
+inference, protocol compatibility/malformed frames, migrations, denials, cancellation
+and candidate rollback regressions are included. `flatc` remains unavailable;
+schemas/bindings were unchanged and fresh generation was not run. No real-model
+quality/latency improvement, GPU enforcement or general reasoning superiority is
+established by these fixture runs.
+
+
 ### Shared Jev+ inference resource admission — 2026-10-16
 
 **Implemented (trusted native, process-local scope); Partial (general GPU scheduler).**

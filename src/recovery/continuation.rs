@@ -190,6 +190,9 @@ fn prepare_with_policy(
     }
     let cfg: Config = serde_json::from_value(settings["configuration"].clone())?;
     cfg.validate()?;
+    if cfg.resource_admission.is_some() {
+        bail!("Configured resource pool continuation requires explicit host restoration")
+    }
     if let Some(selection) = &cfg.model_registration {
         let registered = crate::models::registered_from(db, selection)?
             .ok_or_else(|| anyhow::anyhow!("Original registered model is missing"))?;

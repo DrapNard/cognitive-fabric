@@ -613,3 +613,24 @@ continuation refuses original pool usage rather than bypassing unavailable limit
 Explicit restoration, durable shared allocation and actual GPU scheduling remain
 incomplete. No default CLI/HTTP installation, automatic provider stop, new model
 capability or untrusted executable policy is introduced.
+
+
+### Configured resource ownership and restart reconciliation
+
+Operator resource config now covers collective roles, bound experts, managed
+inference and native HTTP turns through one shared configured pool. Engine clones
+retain pool identity; settings cannot silently reset on a live Engine. A separate
+private resource lease excludes a second configured owner in the same workspace.
+Strict bounded lifecycle validation rejects unresolved or inconsistent prior
+dispatches at startup. Read-only status gives sampled identities, not health.
+Offline release requires explicit operator stop acknowledgement, exclusive resource
+and runtime leases, exact audit matching and a committed release. It kills no PID
+and provides no measured provider-stop proof. Retention validates task ledgers
+and preserves unresolved resource evidence; deletion excludes live configured hosts.
+
+Configuration changes require service restart. Different workspaces, explicit
+native/unwrapped backends and operator removal of config remain outside this
+workspace admission guarantee. Resident weights, actual GPU allocation and host
+resource isolation are not enforced. An operator can rewrite local records or
+source; hashes and audit checks do not authenticate against that owner. Original
+configured task continuation remains denied without explicit pool restoration.

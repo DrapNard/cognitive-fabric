@@ -3,10 +3,11 @@
 Architecture sections 4, 9 and 12 require Jev+ to coordinate compute, memory and
 time across modules. `resource_scheduler::ResourcePool` implements operator-set
 **logical admission within one Rust process**. Different backends and brokers can
-share the same pool. The default CLI does not create a pool automatically: the
-operator must choose capacities and per-backend allocations from their hardware
-and workload knowledge. Native installation is implemented; physical GPU memory
-admission, residency accounting and cross-process arbitration remain Partial.
+share the same pool. The operator chooses capacities and working allocations from hardware/workload
+knowledge. The optional `Config.resource_admission` now enables a pool for normal
+CLI, Unix-service and HTTP-server inference, including native turns and bound
+experts. Physical GPU enforcement, resident/backbone accounting and general
+cross-workspace arbitration remain Partial.
 
 ## Host integration
 
@@ -48,8 +49,11 @@ additional inference modules, or pass them to `Engine::with_backend` as above.
 Use the **same Arc** for every competing backend. Clones and backend pins retain
 that pool and allocation; fixed transport descriptors pass through unchanged.
 Independent pools, unwrapped backends and other OS processes do not share limits.
-A host must wrap additional expert/managed backends explicitly. Automatic managed
-worker provisioning and default CLI/HTTP configuration are not yet integrated.
+Native hosts using explicit wrappers remain responsible for their additional
+backends. With configured admission, Session wraps every primary/expert call and
+the native agent wraps each turn, including managed worker dispatch. Do not also
+wrap those paths manually with the same pool: nested reservations can deadlock
+until their deadlines. The existing managed lifecycle still owns process reaping.
 
 ## Admission and time
 
@@ -105,10 +109,13 @@ the native operator context; actor strings are not remote authentication.
 
 Normal task continuation currently rejects any recorded `resource_intent` before
 backend construction. It cannot replace a missing original pool with unrestricted
-inference. Explicit pool restoration and durable reconstruction after host death
-remain incomplete. Pool UUIDs distinguish runtimes; counters are process-local,
-not an OS-wide lock or a durable global allocator. Restarting/reconfiguring a
-trusted host is not automatically safe while external provider work is uncertain.
+inference. Explicit in-flight pool restoration remains incomplete. Configured hosts now
+hold an exclusive private workspace resource lease; a second configured owner
+is rejected. One pool is shared per Store across Engine clones and native turns,
+and HTTP Server construction checks/reuses that pool. Different workspaces and
+explicit native pools are not a global hardware allocator. Startup validates
+bounded dispatch/completion/release history and refuses unresolved outcomes rather
+than silently resetting their capacity. See the operator workflow below.
 
 ## Measurements and limits
 
@@ -134,3 +141,60 @@ prove a valid checkpoint becomes ineligible when original pool usage is recorded
 with task/event state unchanged on preview and resume denial. Backends are
 scripted; these tests establish orchestration behavior rather than physical GPU
 limits, real-model quality or speed improvement.
+
+## Configure ordinary CLI and services
+
+Save an operator-reviewed JSON file such as:
+
+```json
+{
+  "settings": {
+    "label": "gpu.main",
+    "capacity": {"compute_slots": 1, "host_memory_bytes": 1073741824, "device_memory_bytes": 536870912},
+    "max_pending": 8, "max_wait_ms": 5000, "max_execution_ms": 60000
+  },
+  "allocation": {"compute_slots": 1, "host_memory_bytes": 268435456, "device_memory_bytes": 268435456}
+}
+```
+
+```bash
+cogfabric configure-resources ./resources.json
+cogfabric config-show
+cogfabric ask "Explain Rust ownership" --mode fast
+cogfabric resource-status
+# After independently stopping/checking the provider, stop the old service first:
+cogfabric resource-release RESERVATION_UUID --human-approve
+```
+
+The sizes are examples, not measured model requirements. A uniform allocation is
+used for every configured call, so it must cover the largest admitted role/expert
+working set. Resident weights are not included automatically. Configuration uses
+a bounded regular file, strict JSON and validated settings/demand; malformed input
+fails before state creation. Absent `resource_admission` retains old config bytes
+and behavior. `configure-resources --disable` explicitly removes it. Existing
+services retain their immutable settings until restarted; configuration output
+reports that restart is required. Active Engine clones cannot reset/remove a live
+pool by mutating their public Config. Different allocations must still fit the
+unchanged pool ceiling.
+
+`resource-status` opens only an existing database read-only and exposes sampled
+unresolved reservation/task/pool identities. It does not inspect provider health
+or modify task state. `resource-release` requires approval before config access,
+opens an existing current-schema database without bootstrap, takes exclusive
+resource and runtime leases, revalidates history, and audits an exact operator stop
+acknowledgement. It does not kill a provider or fabricate stop proof. Audit failure
+retains the unresolved reservation. Unknown, duplicate, mismatched or ambiguous
+lifecycle records deny startup/reconciliation.
+
+Startup/inspection reads at most 4,096 lifecycle records, at most 4,096 bytes each,
+under a SQLite instruction budget (30,000 callbacks every 1,000 instructions).
+An oversized history requires reviewed retention before restart. Retention now
+validates per-task lifecycle history and preserves tasks with unresolved dispatches;
+it cannot erase their conservative startup gate. Applying retention excludes a live
+configured host through the resource lease. Fully completed or explicitly released
+terminal tasks remain eligible under the existing reviewed retention rules.
+
+Coverage now includes actual configure/ask/status/release CLI processes, configured
+managed inference and reaping, primary/bound-backend Session calls, Engine/native
+sharing, workspace-owner exclusion, tampered audit denial, retention protection,
+and real loopback HTTP native/collective contention. These remain fixture results.

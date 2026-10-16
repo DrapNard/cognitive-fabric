@@ -40,6 +40,7 @@ pub struct Server {
 }
 impl Server {
     pub fn new(agent: AgentRuntime, engine: Engine, token: &str) -> anyhow::Result<Self> {
+        let agent = agent.with_resource_pool("human-cli", engine.configured_resource_pool()?)?;
         if !(32..=256).contains(&token.len())
             || !token
                 .bytes()

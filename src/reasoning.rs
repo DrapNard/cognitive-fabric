@@ -98,6 +98,7 @@ pub struct Session {
     inference_started: Option<Instant>,
     policy: security::TaskPolicy,
     expert_processes: Vec<Arc<crate::fabric::unix::process::ProcessTask>>,
+    pub(crate) resource_pool: Option<Arc<crate::resource_scheduler::ResourcePool>>,
 }
 
 #[derive(Debug)]
@@ -246,6 +247,7 @@ impl Session {
             inference_started: None,
             policy,
             expert_processes: Vec::new(),
+            resource_pool: None,
         })
     }
 
@@ -623,6 +625,14 @@ impl Session {
         allocation: usize,
         backend: Arc<dyn InferenceBackend>,
     ) -> Result<Option<String>> {
+        let backend = match (&self.cfg.resource_admission, &self.resource_pool) {
+            (Some(configuration), Some(pool)) if pool.matches(&self.store, configuration) => {
+                pool.wrap_backend("human-cli", backend, configuration.allocation)?
+            }
+            (Some(_), _) => bail!("Configured inference resource pool is missing or changed"),
+            (None, Some(_)) => bail!("Unexpected inference resource pool"),
+            (None, None) => backend,
+        };
         let remaining = self
             .cfg
             .max_tokens
@@ -3322,5 +3332,112 @@ mod tests {
         assert_eq!(outcome.calls, 3);
         assert_eq!(outcome.stop_reason, "invalid_critique");
         }
+    }
+}
+
+#[cfg(test)]
+mod configured_resource_tests {
+    use super::*;
+    #[tokio::test]
+    async fn primary_and_bound_expert_calls_use_the_same_configured_allocation() {
+        struct Fixed(&'static str);
+        impl InferenceBackend for Fixed {
+            fn generate<'a>(
+                &'a self,
+                _: &'a str,
+                _: &'a str,
+                _: usize,
+            ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Generation>> + Send + 'a>>
+            {
+                Box::pin(async move {
+                    Ok(Generation {
+                        text: self.0.into(),
+                        model: "fixture/v1".into(),
+                        input_tokens: Some(1),
+                        output_tokens: Some(1),
+                        elapsed_ms: 0.0,
+                        queue_wait_ms: None,
+                    })
+                })
+            }
+        }
+        use crate::resource_scheduler::{Allocation, Configuration, ResourcePool, Settings};
+        let allocation = Allocation {
+            compute_slots: 1,
+            host_memory_bytes: 10,
+            device_memory_bytes: 20,
+        };
+        let cfg = Config {
+            resource_admission: Some(Configuration {
+                settings: Settings {
+                    label: "gpu.experts".into(),
+                    capacity: allocation,
+                    max_pending: 4,
+                    max_wait_ms: 1000,
+                    max_execution_ms: 1000,
+                },
+                allocation,
+            }),
+            ..Config::default()
+        };
+        let store = Arc::new(Store::in_memory().unwrap());
+        let task = store
+            .create_task("Fixture expert objective", "deep")
+            .unwrap();
+        let pool =
+            ResourcePool::configured(store.clone(), cfg.resource_admission.as_ref().unwrap())
+                .unwrap();
+        let mut session = Session::new(
+            cfg,
+            store.clone(),
+            Arc::new(Fixed("primary")),
+            task.clone(),
+            "deep",
+        )
+        .unwrap();
+        session.resource_pool = Some(pool.clone());
+        assert_eq!(
+            session
+                .call("solver", "Primary objective", 16)
+                .await
+                .unwrap()
+                .unwrap(),
+            "primary"
+        );
+        assert_eq!(
+            session
+                .call_with_backend(
+                    "solver",
+                    "Bound expert advice",
+                    16,
+                    Arc::new(Fixed("expert"))
+                )
+                .await
+                .unwrap()
+                .unwrap(),
+            "expert"
+        );
+        assert_eq!(session.resources.calls, 2);
+        assert_eq!(session.resources.reserved_output_tokens, 32);
+        let trace = store.task(&task).unwrap();
+        let events = trace["events"].as_array().unwrap();
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| e["kind"] == "resource_admitted")
+                .count(),
+            2
+        );
+        for event in events.iter().filter(|e| e["kind"] == "resource_admitted") {
+            assert_eq!(
+                event["payload"]["pool_id"],
+                pool.snapshot().unwrap().pool_id
+            );
+            assert_eq!(
+                event["payload"]["allocation"],
+                serde_json::to_value(allocation).unwrap()
+            );
+        }
+        assert!(pool.snapshot().unwrap().reservations.is_empty());
     }
 }

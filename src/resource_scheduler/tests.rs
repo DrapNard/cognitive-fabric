@@ -615,3 +615,218 @@ async fn task_terminated_while_waiting_never_enters_the_provider() {
         .iter()
         .any(|e| e["kind"] == "resource_dispatch"));
 }
+
+fn configured() -> Configuration {
+    Configuration {
+        settings: Settings {
+            label: "gpu.configured".into(),
+            capacity: allocation(1, 100, 100),
+            max_pending: 4,
+            max_wait_ms: 1000,
+            max_execution_ms: 1000,
+        },
+        allocation: allocation(1, 40, 60),
+    }
+}
+#[tokio::test]
+async fn configured_engine_clones_and_native_agent_share_one_pool_and_keep_original_budgets() {
+    struct Chat(Arc<Gate>);
+    impl crate::agent::ChatBackend for Chat {
+        fn complete<'a>(
+            &'a self,
+            _: &'a crate::agent::Turn,
+            _: usize,
+        ) -> Pin<Box<dyn Future<Output = Result<crate::agent::Completion>> + Send + 'a>> {
+            Box::pin(async move {
+                let report = self.0.generate("solver", "fixture", 16).await?;
+                Ok(crate::agent::Completion {
+                    content: Some(report.text),
+                    tool_calls: vec![],
+                    model: report.model,
+                    finish_reason: "stop".into(),
+                    input_tokens: Some(1),
+                    output_tokens: Some(1),
+                })
+            })
+        }
+    }
+    let store = Arc::new(Store::in_memory().unwrap());
+    let gate = Gate::new(false);
+    let cfg = Config {
+        resource_admission: Some(configured()),
+        backend: "openai-local".into(),
+        interpret_goals: false,
+        max_calls: 1,
+        ..Config::default()
+    };
+    let engine = Engine::with_backend(cfg.clone(), store.clone(), gate.clone());
+    let pool = engine.configured_resource_pool().unwrap().unwrap();
+    let clone = engine.clone();
+    assert!(Arc::ptr_eq(
+        &pool,
+        &clone.configured_resource_pool().unwrap().unwrap()
+    ));
+    let agent =
+        crate::agent::AgentRuntime::with_backend(cfg, store.clone(), Arc::new(Chat(gate.clone())))
+            .unwrap();
+    let agent = agent
+        .with_resource_pool("human-cli", Some(pool.clone()))
+        .unwrap();
+    let first = tokio::spawn(async move { engine.run("First collective objective", "fast").await });
+    gate.entered(1).await;
+    let second = tokio::spawn(async move {
+        agent.run_until(serde_json::from_value(json!({"messages":[{"role":"user","content":"Native objective"}],"max_tokens":16})).unwrap(),std::future::pending()).await
+    });
+    pending(&pool, 1).await;
+    assert_eq!(gate.entered.load(Ordering::SeqCst), 1);
+    gate.complete.add_permits(1);
+    let result = first.await.unwrap().unwrap();
+    assert_eq!(result.calls, 1);
+    gate.entered(2).await;
+    gate.complete.add_permits(1);
+    let native = second.await.unwrap().unwrap();
+    for id in [&result.task_id, &native.task_id] {
+        let trace = store.task(id).unwrap();
+        let events = trace["events"].as_array().unwrap();
+        let admission = events
+            .iter()
+            .find(|e| e["kind"] == "resource_admitted")
+            .unwrap();
+        assert_eq!(admission["payload"]["pool_id"], pool.id);
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| e["kind"] == "resource_dispatch")
+                .count(),
+            1
+        );
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| e["kind"] == "resource_completed")
+                .count(),
+            1
+        );
+    }
+    let mut changed = clone;
+    changed
+        .cfg
+        .resource_admission
+        .as_mut()
+        .unwrap()
+        .settings
+        .capacity
+        .compute_slots = 2;
+    assert!(changed.configured_resource_pool().is_err());
+    changed.cfg.resource_admission = None;
+    assert!(changed.configured_resource_pool().is_err());
+}
+#[test]
+fn configured_pool_excludes_other_workspace_owners_and_releases_the_lease_on_drop() {
+    let root = std::env::temp_dir().join(format!(
+        "fabric-configured-resources-{}",
+        uuid::Uuid::new_v4()
+    ));
+    let store = Arc::new(Store::open(&root.join("state.db")).unwrap());
+    let pool = ResourcePool::configured(store.clone(), &configured()).unwrap();
+    let other = Arc::new(Store::open(&root.join("state.db")).unwrap());
+    assert!(ResourcePool::configured(other.clone(), &configured()).is_err());
+    drop(pool);
+    assert!(ResourcePool::configured(other, &configured()).is_ok());
+    drop(store);
+    std::fs::remove_dir_all(root).unwrap();
+}
+#[test]
+fn configured_startup_and_offline_reconciliation_validate_original_audit_identity() {
+    for mutation in 0..6 {
+        let root = std::env::temp_dir().join(format!(
+            "fabric-resource-reconciliation-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let store = Arc::new(Store::open(&root.join("state.db")).unwrap());
+        let task = task_for_store(&store);
+        let id = uuid::Uuid::new_v4().to_string();
+        let pool = uuid::Uuid::new_v4().to_string();
+        let dispatch = json!({"format_version":1,"pool_id":pool,"reservation_id":id,"provider_stop_proven":false});
+        store
+            .event(&task, "resource_dispatch", "jev-plus", dispatch.clone())
+            .unwrap();
+        assert!(ResourcePool::configured(store.clone(), &configured()).is_err());
+        let before = store.task(&task).unwrap();
+        assert!(ResourcePool::release_abandoned("jev-plus", &store, &id, true).is_err());
+        assert!(ResourcePool::release_abandoned("human-cli", &store, &id, false).is_err());
+        assert_eq!(store.task(&task).unwrap(), before);
+        match mutation {
+            0 => {
+                ResourcePool::release_abandoned("human-cli", &store, &id, true).unwrap();
+                assert!(ResourcePool::configured(store.clone(), &configured()).is_ok());
+                assert!(ResourcePool::release_abandoned("human-cli", &store, &id, true).is_err());
+            }
+            1 => {
+                let mut complete = dispatch.clone();
+                complete["provider_request_completed"] = json!(true);
+                complete["pool_id"] = json!(uuid::Uuid::new_v4().to_string());
+                store
+                    .event(&task, "resource_completed", "jev-plus", complete)
+                    .unwrap();
+                assert!(ResourcePool::abandoned_status("human-cli", &store).is_err());
+            }
+            2 => {
+                store
+                    .event(&task, "resource_dispatch", "jev-plus", dispatch.clone())
+                    .unwrap();
+                assert!(ResourcePool::abandoned_status("human-cli", &store).is_err());
+            }
+            3 => {
+                store.lock().unwrap().execute_batch("CREATE TRIGGER refuse BEFORE INSERT ON events WHEN NEW.kind='resource_release' BEGIN SELECT RAISE(ABORT,'audit unavailable'); END;").unwrap();
+                assert!(ResourcePool::release_abandoned("human-cli", &store, &id, true).is_err());
+                assert_eq!(store.task(&task).unwrap(), before);
+            }
+            4 => {
+                let held =
+                    ResourcePool::new("human-cli", store.clone(), configured().settings).unwrap();
+                let mut lock = store
+                    .runtime_lock
+                    .as_ref()
+                    .unwrap()
+                    .as_os_str()
+                    .to_os_string();
+                lock.push(".resources");
+                let _lease =
+                    crate::recovery::ExecutionLease::acquire(std::path::Path::new(&lock), true)
+                        .unwrap();
+                assert!(ResourcePool::release_abandoned("human-cli", &store, &id, true).is_err());
+                drop(held);
+            }
+            _ => {
+                store.lock().unwrap().execute("UPDATE events SET payload=?1 WHERE kind='resource_dispatch'",[format!("{{\"format_version\":1,\"pool_id\":\"{pool}\",\"reservation_id\":\"{id}\",\"provider_stop_proven\":false,\"provider_stop_proven\":true}}")]).unwrap();
+                assert!(ResourcePool::abandoned_status("human-cli", &store).is_err());
+            }
+        }
+        drop(store);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+}
+fn task_for_store(store: &Store) -> String {
+    store.create_task("Resource audit fixture", "fast").unwrap()
+}
+
+#[test]
+fn retention_preserves_uncertain_resources_until_reviewed_release() {
+    let store = Store::in_memory().unwrap();
+    let task = task_for_store(&store);
+    let id = uuid::Uuid::new_v4().to_string();
+    let pool = uuid::Uuid::new_v4().to_string();
+    store.event(&task,"resource_dispatch","jev-plus",json!({"format_version":1,"reservation_id":id,"pool_id":pool,"provider_stop_proven":false})).unwrap();
+    store.finish_task(&task, "failed", "").unwrap();
+    store
+        .lock()
+        .unwrap()
+        .execute("UPDATE tasks SET updated=0 WHERE id=?1", [&task])
+        .unwrap();
+    assert!(store.retention_preview(1, 100).unwrap().task_ids.is_empty());
+    store.event(&task,"resource_release","human-cli",json!({"format_version":1,"reservation_id":id,"pool_id":pool,"operator_acknowledged_stop":true,"provider_stop_proven":false})).unwrap();
+    let plan = store.retention_preview(1, 100).unwrap();
+    assert_eq!(plan.task_ids, vec![task]);
+    store.apply_retention(&plan, true).unwrap();
+}

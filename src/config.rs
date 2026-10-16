@@ -24,6 +24,8 @@ pub struct Config {
     pub inference_process: bool,
     pub arithmetic_process: bool,
     pub sql_process: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resource_admission: Option<crate::resource_scheduler::Configuration>,
     pub inference_auth_scope: Option<String>,
     pub model: String,
     pub model_registration: Option<crate::models::Selection>,
@@ -56,6 +58,7 @@ impl Default for Config {
             inference_process: false,
             arithmetic_process: false,
             sql_process: false,
+            resource_admission: None,
             inference_auth_scope: None,
             model: "local-model".into(),
             model_registration: None,
@@ -119,6 +122,9 @@ impl Config {
     }
 
     pub fn validate(&self) -> Result<()> {
+        if let Some(configuration) = &self.resource_admission {
+            configuration.validate()?;
+        }
         if self
             .reasoning_effort
             .as_deref()
