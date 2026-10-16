@@ -1,5 +1,25 @@
 # v1.0 release acceptance audit
 
+Installed verification (2026-10-16): exact source
+`df4cf052d0b8724a59225712153e4e92999f5ac1` installed optimized CLI and HTTP
+packages offline with locked cached dependencies, `FLATC` unset and Rust/Cargo
+1.97.1. Cargo reported 1m16s and 56.03s builds. Both installed smoke scripts passed;
+all seven recovery integration tests also passed against the installed CLI and
+its same-image workers, including the three revision phases and their SIGINT
+cases. The harness was compiled from the same source. Source/binary/script/test
+hashes, log hashes and scope are frozen in
+`evaluation/results/installed-revision-recovery-smoke.json`. Local CLI evidence:
+`/tmp/cogfabric-installed-smoke.Bs2Evu`; HTTP:
+`/tmp/cogfabric-installed-http.EAG94w`.
+
+CLI SHA-256: `a2739bc85fb27f3900c1e81d8a63b40bc410f05c69b650344584428ebae01ab8`;
+HTTP: `ca5b88d19413dce8b314e8afd79bdb7ee16c8fd3b02dfc2ae28e277d4e817b51`.
+Prior runtime `72c439c` passed hosted run `38827787867`; exact installed source's
+run `38828049329` was still running when checked. This is cached current-host,
+fixture-inference installation evidence, not clean-OS/GPU/model-quality proof or
+release approval. Mandatory checks and 542 tests passed before installation;
+only evidence/documentation changed afterward.
+
 ### CLI and managed-worker revision recovery — 2026-10-16
 
 `tests/resume_worker.rs` now exercises approved `recover-revision-result`, read-only
@@ -191,7 +211,7 @@ revalidated for the new optional load observations.
 | 14. Lifecycle documented | `MODELS.md`, `EXPERTS.md`, `WORKERS.md` | Metadata lifecycle documented; explicit native load/unload is fixture-tested; real native inventory and one approved embedding load/unload passed; generative switching and ownership-aware automatic scheduling remain incomplete. |
 | 15. Reproducible benchmarks | `src/benchmarking.rs`, `evaluation/`, `BENCHMARKING.md` | Six-arm runner and public live workflows exist for Ollama and Qwen3 8B; reviewed unseen dataset and held-out equal-budget model study missing. |
 | 16. Accurate matrix | `IMPLEMENTATION_MATRIX.md` | Current summary reconciled with 526-test evidence, present live endpoint and public graph/Rust diagnostics; historical paragraphs are explicitly labeled as a ledger. |
-| 17. Verified docs/installation | `README.md`, HTTP_API.md, CI workflow, INSTALLATION_VALIDATION.md | Optimized host installs and offline workflows passed at `c31862d` without flatc, including advisory-result recovery; subsequent routing changes require final-source refresh; historical installed managed OpenCode/Qwen read/edit/read passed. Expanded clean Arch setup, all checks and installed core/server workflows passed at `a9933b3`. CachyOS desktop/GPU setup remains unverified. |
+| 17. Verified docs/installation | `README.md`, HTTP_API.md, CI workflow, INSTALLATION_VALIDATION.md | Optimized host installs, offline CLI/HTTP smokes and all seven recovery integration tests passed at `df4cf05` without flatc, including all recorded revision phases and cancellation; historical installed managed OpenCode/Qwen read/edit/read passed. Expanded clean Arch setup, all checks and installed core/server workflows passed at `a9933b3`. CachyOS desktop/GPU setup remains unverified. |
 | 18. Honest experimental claims | `EVOLUTION.md`, `MODELS.md`, `THREAT_MODEL.md` | Neural adaptation remains experimental and neural promotion denied; no trained Jev or superiority claim. |
 
 The current concise-advice runtime has a complete four-case live Qwen workflow

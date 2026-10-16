@@ -1,5 +1,25 @@
 # Rust baseline quality review
 
+Installed verification (2026-10-16): exact source
+`df4cf052d0b8724a59225712153e4e92999f5ac1` installed optimized CLI and HTTP
+packages offline with locked cached dependencies, `FLATC` unset and Rust/Cargo
+1.97.1. Cargo reported 1m16s and 56.03s builds. Both installed smoke scripts passed;
+all seven recovery integration tests also passed against the installed CLI and
+its same-image workers, including the three revision phases and their SIGINT
+cases. The harness was compiled from the same source. Source/binary/script/test
+hashes, log hashes and scope are frozen in
+`evaluation/results/installed-revision-recovery-smoke.json`. Local CLI evidence:
+`/tmp/cogfabric-installed-smoke.Bs2Evu`; HTTP:
+`/tmp/cogfabric-installed-http.EAG94w`.
+
+CLI SHA-256: `a2739bc85fb27f3900c1e81d8a63b40bc410f05c69b650344584428ebae01ab8`;
+HTTP: `ca5b88d19413dce8b314e8afd79bdb7ee16c8fd3b02dfc2ae28e277d4e817b51`.
+Prior runtime `72c439c` passed hosted run `38827787867`; exact installed source's
+run `38828049329` was still running when checked. This is cached current-host,
+fixture-inference installation evidence, not clean-OS/GPU/model-quality proof or
+release approval. Mandatory checks and 542 tests passed before installation;
+only evidence/documentation changed afterward.
+
 ### CLI and managed-worker revision recovery — 2026-10-16
 
 `tests/resume_worker.rs` now exercises approved `recover-revision-result`, read-only

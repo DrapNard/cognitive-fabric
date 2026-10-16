@@ -1,0 +1,78 @@
+{
+  "format_version": 1,
+  "kind": "installed_revision_recovery_smoke",
+  "observed_date": "2026-10-16",
+  "source_revision": "df4cf052d0b8724a59225712153e4e92999f5ac1",
+  "host": "current Linux host with cached dependencies; not a clean OS",
+  "rustc": "1.97.1",
+  "cargo": "1.97.1",
+  "flatc_environment": "unset; bundled paired sources",
+  "install": {
+    "offline": true,
+    "locked": true,
+    "core_build_duration_cargo": "1m 16s",
+    "server_build_duration_cargo": "56.03s"
+  },
+  "binary_sha256": {
+    "cogfabric": "a2739bc85fb27f3900c1e81d8a63b40bc410f05c69b650344584428ebae01ab8",
+    "cogfabric-server": "ca5b88d19413dce8b314e8afd79bdb7ee16c8fd3b02dfc2ae28e277d4e817b51"
+  },
+  "harness": {
+    "path": "tests/resume_worker.rs",
+    "sha256": "b39d2283a7bd5eb63126614f6ac2fd01fffb1967fbe870078be34fd8a0b0a674",
+    "tests_passed": 7,
+    "tests_failed": 0,
+    "same_source_as_installed_binary": true
+  },
+  "scripts": {
+    "scripts/installed-smoke.sh": {
+      "sha256": "986680949b8f901e6ac804cba15547daf33389e8eb1d989d47ea66b8960530ae",
+      "passed": true
+    },
+    "scripts/installed-http-smoke.sh": {
+      "sha256": "950ff16da845b970466e5af0b335dde9733e457760b4b81a65cc4dfc81976723",
+      "passed": true
+    }
+  },
+  "revision_phases_tested": [
+    "ready_critic",
+    "ready_reflector",
+    "ready_solver"
+  ],
+  "checks": [
+    "approved CLI reconciliation and separately approved resume",
+    "read-only CLI preview",
+    "original reasoning effort despite changed current configuration",
+    "only missing inference calls; five total calls and 1280 reserved outputs on success",
+    "unverified successful revision outcomes",
+    "SIGINT at each phase; one unknown result and retained charges",
+    "one same-image worker launch and reaped child per resumed phase",
+    "fixture HTTP connection closure after cancellation",
+    "no unfinished worker audit sessions"
+  ],
+  "local_evidence": {
+    "cli_smoke": "/tmp/cogfabric-installed-smoke.Bs2Evu",
+    "http_smoke": "/tmp/cogfabric-installed-http.EAG94w",
+    "install_prefix": "/tmp/cogfabric-revision-install.QVRlHL"
+  },
+  "log_sha256": {
+    "/tmp/cogfabric-revision-install-core.log": "626a10a3c12bb0b0192c6d0f8450647eb2e48b474810cb4dbfa27bf27d41f896",
+    "/tmp/cogfabric-revision-install-server.log": "f4ebf20d7d07d21b050acf4f57547ebaad203a532fb3278937fda981ac941b8c",
+    "/tmp/cogfabric-revision-installed-cli-smoke.log": "ffcb33e49ae9014b4060c1d71aca0af3f28e43f0be4ec753ec56038d4e3366e3",
+    "/tmp/cogfabric-revision-installed-http-smoke.log": "89096767afe09212a646cd0f231601343636826942a6d749dc0baf4f195ce16a",
+    "/tmp/cogfabric-revision-installed-worker-tests.log": "b0d87bceac7040a63829cf9f2d34ca5fe90d2f2bfe18890090ce7c59ec84b3a8"
+  },
+  "live_model_tested": false,
+  "gpu_stop_verified": false,
+  "independent_security_evaluation": false,
+  "release_ready": false,
+  "prior_hosted_source": {
+    "revision": "72c439c1a880d170c407d9211c3f205f185f85a1",
+    "run": 38827787867,
+    "conclusion": "success"
+  },
+  "current_hosted_run_at_observation": {
+    "run": 38828049329,
+    "status": "in_progress"
+  }
+}
