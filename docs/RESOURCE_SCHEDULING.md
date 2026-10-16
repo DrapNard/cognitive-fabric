@@ -107,15 +107,14 @@ twice. This acknowledgement is operator testimony, not measured stop proof.
 `resources.configure` similarly restricts construction, wrapping and shutdown to
 the native operator context; actor strings are not remote authentication.
 
-Normal task continuation currently rejects any recorded `resource_intent` before
-backend construction. It cannot replace a missing original pool with unrestricted
-inference. Explicit in-flight pool restoration remains incomplete. Configured hosts now
-hold an exclusive private workspace resource lease; a second configured owner
-is rejected. One pool is shared per Store across Engine clones and native turns,
-and HTTP Server construction checks/reuses that pool. Different workspaces and
-explicit native pools are not a global hardware allocator. Startup validates
-bounded dispatch/completion/release history and refuses unresolved outcomes rather
-than silently resetting their capacity. See the operator workflow below.
+Normal task continuation can now restore compiled configured pools at supported
+ready checkpoints, under operator approval and strict original-history validation.
+Native custom pools absent from original execution settings remain unavailable.
+See the restoration section below. Configured hosts hold an exclusive private
+workspace resource lease; a second configured owner is rejected. One pool is shared
+per Store across Engine clones and native turns. Different workspaces and explicit
+native pools are not a global hardware allocator. Startup still refuses unresolved
+workspace dispatches rather than resetting their capacity.
 
 ## Measurements and limits
 
@@ -305,3 +304,54 @@ declared digest, actually shares backbones, or stays inside the declared footpri
 Provider-returned model labels cannot approve coverage. `weights_attested:false`,
 `residency_attested:false` and `physical_limits_enforced:false` remain explicit.
 Real ownership/measurement and dynamic load/unload remain separate requirements.
+
+## Restore an interrupted configured task
+
+Use the existing operator workflow:
+
+```bash
+cogfabric resume-preview TASK_UUID
+cogfabric resume-task TASK_UUID --human-approve
+```
+
+The saved execution settings govern restoration. Changing current CLI config cannot
+enlarge the original task's pool, working allocation or resident catalog. The pool
+may have a new runtime UUID, but it retains the original settings/binding. A matching
+live pool on the same Store can be reused without resetting its counters. A closed
+pool, a live reservation for the task, an incompatible catalog or another workspace
+owner denies restoration. Preview samples eligibility without constructing a backend
+or changing database state; resume always revalidates.
+
+The strict original-history validator reads at most 768 bounded records (16,384
+bytes each) and requires each charged call to have the correct resource chain.
+Pool/reservation UUIDs, source/version, role, settings, working allocation, resident
+footprint/digest, target intent/coverage, admission and successful completion must
+match in order. Duplicate, missing, ambiguous, denied, released-as-uncertain or
+changed records cannot buy new inference. Current nonempty catalogs require target
+audits. Old empty catalogs can omit all three resident metadata fields together;
+partial omission is rejected. Any original native pool with no configured settings
+remains unsupported rather than being replaced.
+
+Calls after the immutable reasoning context must have the pinned local/role target.
+Earlier completed expert advice can have its own declared covered target; that
+advice remains untrusted and is never replayed. Global bounded lifecycle validation
+checks unresolved workspace dispatches under the caller's original admission SQL
+deadline, without replacing its progress handler. Resource release/reconciliation
+does not reconstruct missing model answers or certify uncertain inference.
+
+Approved restoration holds runtime ownership, validates a read-only preflight,
+constructs/reuses the compiled configured pool outside Store locks, then revalidates
+the complete original configuration/history in an immediate admission transaction.
+The phases share a five-second deadline. Audit failure rolls admission back before
+backend construction or worker launch. Managed continuation keeps its existing
+lease conversion, reduced worker grants and reaping lifecycle. Task clocks and
+resource charges are reconstructed from original records; they are not restarted.
+
+Reports disclose prior pool IDs, completed resource-call count, canonical resident
+binding and the restored pool identity with physical limits still false. Direct
+HTTP and actual CLI tests resume only the missing solver; graph tests resume only
+a pending advisory node and final solver. Initial-solver, legacy-empty, cancelled,
+corrupt, audit-failing and contended-ownership cases are covered. Test prefixes are
+scripted Engine runs truncated at real recorded checkpoints, not crash/GPU or
+neural-quality evidence. Full within-call recovery, arbitrary native pool code,
+provider ownership/stop proof and physical memory enforcement remain incomplete.

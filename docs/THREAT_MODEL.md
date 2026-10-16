@@ -674,3 +674,24 @@ adapters remain unknown until a host supplies a proper identity contract. Metada
 callbacks are trusted nonblocking code, not an isolated model or protocol grant.
 No model output may classify its own backend or expand resident coverage. Dynamic
 provider ownership, measured residency and physical enforcement remain incomplete.
+
+
+### Restoring configured resource pools at ready checkpoints
+
+Continuation now validates a bounded strict resource-call ledger against original
+execution settings and canonical resident coverage. Charged calls require ordered
+matching admission/dispatch/successful completion; denial, missing outcomes,
+identity/source drift, ambiguous keys and unresolved workspace dispatches prevent
+restoration. Post-context role targets bind to the saved default/role configuration.
+Read-only preview probes ownership; approved resume prepares the compiled pool
+outside Store locks and revalidates all settings/history in the write transaction.
+The original task clock and budgets remain in force, with one bounded admission
+window across both validation phases. Audit failure prevents backend/worker entry.
+
+Only the configured Rust pool is reconstructed; arbitrary native policy code and
+unconfigured pools are never inferred from stored names. A release acknowledgement
+is not proof of a completed model answer. Catalog/ledger consistency remains an
+owner-local claim, not provider-stop, weight identity or physical resource proof.
+Current CLI configuration cannot enlarge a saved task's allocation. Dynamic load/
+unload, general within-call recovery and cross-workspace physical control remain
+incomplete.

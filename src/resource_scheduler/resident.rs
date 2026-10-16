@@ -110,31 +110,36 @@ impl ResourcePool {
         &self,
         target: Option<crate::backend::InferenceTarget>,
     ) -> Result<ResidentCoverage> {
-        use crate::backend::InferenceTarget;
-        match target {
-            Some(InferenceTarget::Deterministic) => Ok(ResidentCoverage {
-                target: InferenceTarget::Deterministic,
-                resident_identities: vec![],
-                declared_consumer_matched: false,
-            }),
-            Some(InferenceTarget::LocalHttp(target)) => {
-                let target = target.canonical()?;
-                let matches = self
-                    .residents
-                    .iter()
-                    .filter(|resident| resident.consumers.binary_search(&target).is_ok())
-                    .map(|resident| format!("{}@{}", resident.id, resident.version))
-                    .collect::<Vec<_>>();
-                if matches.is_empty() {
-                    bail!("Inference target is absent from the resident catalog")
-                }
-                Ok(ResidentCoverage {
-                    target: InferenceTarget::LocalHttp(target),
-                    resident_identities: matches,
-                    declared_consumer_matched: true,
-                })
+        coverage(&self.residents, target)
+    }
+}
+pub(super) fn coverage(
+    residents: &[ResidentAllocation],
+    target: Option<crate::backend::InferenceTarget>,
+) -> Result<ResidentCoverage> {
+    use crate::backend::InferenceTarget;
+    match target {
+        Some(InferenceTarget::Deterministic) => Ok(ResidentCoverage {
+            target: InferenceTarget::Deterministic,
+            resident_identities: vec![],
+            declared_consumer_matched: false,
+        }),
+        Some(InferenceTarget::LocalHttp(target)) => {
+            let target = target.canonical()?;
+            let matches = residents
+                .iter()
+                .filter(|resident| resident.consumers.binary_search(&target).is_ok())
+                .map(|resident| format!("{}@{}", resident.id, resident.version))
+                .collect::<Vec<_>>();
+            if matches.is_empty() {
+                bail!("Inference target is absent from the resident catalog")
             }
-            None => bail!("Inference target is unknown for the resident catalog"),
+            Ok(ResidentCoverage {
+                target: InferenceTarget::LocalHttp(target),
+                resident_identities: matches,
+                declared_consumer_matched: true,
+            })
         }
+        None => bail!("Inference target is unknown for the resident catalog"),
     }
 }

@@ -3,7 +3,7 @@
 use crate::{backend::InferenceBackend, security, store::Store};
 use anyhow::{anyhow, bail, Result};
 use serde::Serialize;
-use serde_json::json;
+use serde_json::{json, Value};
 use std::{
     collections::{BTreeMap, VecDeque},
     sync::{Arc, Mutex, MutexGuard},
@@ -157,10 +157,30 @@ pub struct ResourcePool {
 }
 impl ResourcePool {
     pub(crate) fn matches(&self, store: &Arc<Store>, configuration: &Configuration) -> bool {
-        Arc::ptr_eq(&self.store, store)
+        self.matches_ref(store, configuration)
+    }
+    pub(crate) fn matches_ref(&self, store: &Store, configuration: &Configuration) -> bool {
+        std::ptr::eq(self.store.as_ref(), store)
             && self.settings == configuration.settings
             && resident::canonical(&configuration.residents, self.settings.capacity)
                 .is_ok_and(|(catalog, _)| catalog == self.residents)
+    }
+    pub(crate) fn configuration_binding(configuration: &Configuration) -> Result<Value> {
+        let (residents, allocated) =
+            resident::canonical(&configuration.residents, configuration.settings.capacity)?;
+        Ok(
+            json!({"resident_catalog_sha256":crate::store::sha256(&serde_json::to_vec(&residents)?),"resident_allocated":allocated,"residency_attested":false}),
+        )
+    }
+    pub(crate) fn configuration_coverage(
+        configuration: &Configuration,
+        target: Option<crate::backend::InferenceTarget>,
+    ) -> Result<Value> {
+        let (residents, _) =
+            resident::canonical(&configuration.residents, configuration.settings.capacity)?;
+        Ok(serde_json::to_value(resident::coverage(
+            &residents, target,
+        )?)?)
     }
     pub fn new(actor: &str, store: Arc<Store>, settings: Settings) -> Result<Arc<Self>> {
         Self::with_residents(actor, store, settings, Vec::new())

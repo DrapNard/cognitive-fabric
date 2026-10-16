@@ -18,6 +18,8 @@ use std::{
 
 #[path = "continuation_policy.rs"]
 mod policy;
+#[path = "continuation_resources.rs"]
+mod resource_history;
 
 struct Checkpoint {
     cfg: Config,
@@ -28,6 +30,7 @@ struct Checkpoint {
     boundary: Option<Value>,
     state: RestoredState,
     admission: Value,
+    resource_history: Value,
 }
 
 fn prepare(db: &rusqlite::Connection, task: &str) -> Result<Checkpoint> {
@@ -39,14 +42,6 @@ fn prepare_with_policy(
     task: &str,
     escalator: &crate::escalation::Handle,
 ) -> Result<Checkpoint> {
-    let scheduled: bool = db.query_row(
-        "SELECT EXISTS(SELECT 1 FROM events WHERE task_id=?1 AND kind='resource_intent')",
-        [task],
-        |row| row.get(0),
-    )?;
-    if scheduled {
-        bail!("Original shared resource pool requires explicit host restoration; continuation is unsupported")
-    }
     let (status, graph, subtasks) = graph::graph_from(db, task)?;
     if !matches!(status.as_str(), "running" | "interrupted") {
         bail!("Task is not abandoned or interrupted")
@@ -96,11 +91,7 @@ fn prepare_with_policy(
         if count > 85 || bytes > 8_000_000 {
             bail!("Checkpoint exceeds bounded history")
         }
-        let payload: Value = if kind == "escalation_policy" {
-            crate::strict_json::value(raw.as_bytes(), 262144)?
-        } else {
-            serde_json::from_str(&raw)?
-        };
+        let payload = crate::strict_json::value(raw.as_bytes(), 262144)?;
         if kind == "escalation_policy" {
             let expected = json!({"format_version":1,"policy":escalator.descriptor(),"permissions_granted":false,"implementation_attested":false});
             if source != "jev-plus" || payload != expected {
@@ -190,9 +181,7 @@ fn prepare_with_policy(
     }
     let cfg: Config = serde_json::from_value(settings["configuration"].clone())?;
     cfg.validate()?;
-    if cfg.resource_admission.is_some() {
-        bail!("Configured resource pool continuation requires explicit host restoration")
-    }
+
     if let Some(selection) = &cfg.model_registration {
         let registered = crate::models::registered_from(db, selection)?
             .ok_or_else(|| anyhow::anyhow!("Original registered model is missing"))?;
@@ -415,7 +404,9 @@ fn prepare_with_policy(
         output_tokens: audit["output_tokens"].as_u64(),
         ..Default::default()
     };
+    let resource_history = resource_history::validate(db, task, &cfg)?;
     Ok(Checkpoint {
+        resource_history,
         admission: admission.clone(),
         cfg,
         query,
@@ -558,20 +549,34 @@ fn preview_with_handle(
         1000,
         Some(move || started.elapsed() > Duration::from_secs(5)),
     );
-    let result = (|| -> Result<Value> {
+    let result = (|| -> Result<Checkpoint> {
         let tx = db.transaction()?;
         let mut checkpoint = prepare_with_policy(&tx, task, &escalator)?;
         validate_worker_workspace(&mut checkpoint.cfg, path)?;
         if started.elapsed() > Duration::from_secs(5) {
             bail!("Continuation admission deadline exhausted")
         }
-        Ok(json!({"format_version":1,"task_id":task,
+        Ok(checkpoint)
+    })();
+    db.progress_handler(0, None::<fn() -> bool>);
+    drop(db);
+    let checkpoint = result?;
+    let _resource_probe = checkpoint
+        .cfg
+        .resource_admission
+        .as_ref()
+        .map(|configuration| {
+            crate::resource_scheduler::ResourcePool::probe_restoration(store, task, configuration)
+        })
+        .transpose()?;
+    Ok(json!({"format_version":1,"task_id":task,
             "checkpoint_eligible":true,"resume_authorized":false,
             "human_approval_required":true,"resume_revalidates":true,
             "phase":checkpoint.boundary.as_ref().map(|b| b["phase"].clone()).unwrap_or(json!("pre_solver_graph")),
             "mode":checkpoint.mode,"model":checkpoint.cfg.model,
             "escalation_policy":escalator.descriptor(),"policy_implementation_attested":false,
             "managed_worker":checkpoint.cfg.inference_process,
+            "resource_history":checkpoint.resource_history,
             "remaining_admission":checkpoint.admission,
             "consumed":{"calls":checkpoint.state.resources.calls,
                 "cycles":checkpoint.state.resources.cycles,
@@ -581,9 +586,6 @@ fn preview_with_handle(
             "initial_nodes_to_record":checkpoint.subtasks.iter().filter(|n| n.state == "not_recorded").count(),
             "subtasks":checkpoint.subtasks.iter().map(|n|json!({"id":n.step.id,"state":n.state})).collect::<Vec<_>>(),
             "weights_attested":false}))
-    })();
-    db.progress_handler(0, None::<fn() -> bool>);
-    result
 }
 
 pub async fn resume(
@@ -640,9 +642,46 @@ async fn resume_with_handle(
         ExecutionLease::acquire(path, true)
             .map_err(|_| anyhow::anyhow!("Cannot continue while runtime leases are held"))?,
     );
+    let admission_started = Instant::now();
+    let original_configuration = {
+        let mut db = store.lock()?;
+        db.progress_handler(
+            1000,
+            Some(move || admission_started.elapsed() > Duration::from_secs(5)),
+        );
+        let prepared = (|| -> Result<Config> {
+            let tx = db.transaction()?;
+            Ok(prepare_with_policy(&tx, task, &escalator)?.cfg)
+        })();
+        db.progress_handler(0, None::<fn() -> bool>);
+        prepared?
+    };
+    let resource_pool = original_configuration
+        .resource_admission
+        .as_ref()
+        .map(|configuration| {
+            crate::resource_scheduler::ResourcePool::configured(store.clone(), configuration)
+        })
+        .transpose()?;
+    if let Some(pool) = &resource_pool {
+        let snapshot = pool.snapshot()?;
+        if snapshot.closed
+            || snapshot
+                .reservations
+                .iter()
+                .any(|entry| entry.task_id == task)
+        {
+            bail!("Original task resource pool remains closed or unresolved")
+        }
+    }
+    if admission_started.elapsed() > Duration::from_secs(5) {
+        bail!("Continuation admission deadline exhausted")
+    }
+    let restored_pool = resource_pool.as_ref().map(|pool| pool.snapshot().map(|s|
+        json!({"pool_id":s.pool_id,"resident_catalog_sha256":s.resident_catalog_sha256,"resident_allocated":s.resident_allocated,"original_configuration_preserved":true,"physical_limits_enforced":false}))).transpose()?;
     let checkpoint = {
         let mut db = store.lock()?;
-        let started = Instant::now();
+        let started = admission_started;
         db.progress_handler(
             1000,
             Some(move || started.elapsed() > Duration::from_secs(5)),
@@ -650,6 +689,11 @@ async fn resume_with_handle(
         let prepared = (|| -> Result<Checkpoint> {
             let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
             let mut checkpoint = prepare_with_policy(&tx, task, &escalator)?;
+            if serde_json::to_value(&checkpoint.cfg)?
+                != serde_json::to_value(&original_configuration)?
+            {
+                bail!("Original continuation configuration changed during resource admission")
+            }
             if checkpoint.cfg.inference_process {
                 validate_worker_workspace(&mut checkpoint.cfg, path)?;
                 // No inference has begun. A competing exclusive owner during conversion
@@ -673,7 +717,7 @@ async fn resume_with_handle(
                 "UPDATE tasks SET status='running',updated=unixepoch() WHERE id=?1",
                 [task],
             )?;
-            tx.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'continuation','human-cli',?2,unixepoch())",rusqlite::params![task,json!({"state":"started","format_version":1,"original_budget_preserved":true,"prior_timing_complete":false,"subtask_results_verified":false,"escalation_policy":escalator.descriptor()}).to_string()])?;
+            tx.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'continuation','human-cli',?2,unixepoch())",rusqlite::params![task,json!({"state":"started","format_version":1,"original_budget_preserved":true,"prior_timing_complete":false,"subtask_results_verified":false,"escalation_policy":escalator.descriptor(),"restored_resource_pool":restored_pool,"resource_history":checkpoint.resource_history}).to_string()])?;
             if started.elapsed() > Duration::from_secs(5) {
                 bail!("Continuation admission deadline exhausted")
             }
@@ -731,6 +775,7 @@ async fn resume_with_handle(
         checkpoint.state,
     )?;
     session.escalator = escalator;
+    session.resource_pool = resource_pool;
     let execution = async {
         if let Some(boundary) = &checkpoint.boundary {
             session
@@ -781,6 +826,7 @@ async fn resume_with_handle(
     let report = json!({"format_version":1,"task_id":task,"status":status,"answer":answer,
         "escalation_policy":session.escalator.descriptor(),"policy_implementation_attested":false,
         "verified":session.verified,"criterion":session.verified_criterion,
+        "restored_resource_pool":restored_pool,"resource_history":checkpoint.resource_history,
         "new_calls":session.resources.calls-prior_calls,"charged_resources":session.resources,
         "timing_scope":"continuation_only","prior_timing_complete":false,"subtask_results_verified":false,"automatic_replay":false});
     let mut db = store.lock()?;

@@ -757,3 +757,18 @@ and reconcile abandoned reservation metadata under exclusive leases; they neithe
 resume reasoning nor recreate a task budget. Configured startup refuses unresolved
 dispatches, and reviewed retention preserves that evidence until completion/release.
 See RESOURCE_SCHEDULING.md for the exact bounded operator workflow and limitations.
+
+
+### Configured resource-pool restoration
+
+The earlier blanket configured-pool refusal is superseded for supported ready
+checkpoints. Preview and approved resume now validate original resource call chains
+and resident coverage, preserve the original configuration/charges/deadline, and
+restore or reuse the matching compiled pool under runtime/resource ownership.
+Restoration occurs outside Store locks; admission revalidates in a transaction
+before any provider or worker is constructed. Unresolved calls, malformed/missing
+records, changed bindings, closed/live conflicting pools and unavailable native
+configurations fail closed. No executable, new task budget, model load or provider
+stop proof is inferred. A separately approved resource release cannot reconstruct
+an uncertain answer. See RESOURCE_SCHEDULING.md and tests/resource_resume.rs for
+exact ordering, legacy-empty handling and direct/managed/graph integration scope.

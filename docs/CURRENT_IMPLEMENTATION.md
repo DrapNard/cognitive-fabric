@@ -1,5 +1,52 @@
 # Current Rust implementation
 
+### Restore original configured resource admission during continuation — 2026-10-16
+
+**Implemented (supported ready checkpoints and compiled configured pools); Partial (general recovery).**
+Continuation now restores original `resource_admission` settings, working allocation,
+resident catalog and target checks instead of refusing every configured task. A
+bounded strict validator requires complete per-call intent/admission/dispatch/
+completion chains, matching roles, identities, capacities, resident binding and
+coverage. After reasoning context, targets must also match the pinned default/role
+configuration. Earlier completed advisory targets must match declared coverage;
+their untrusted results are not replayed. Unresolved workspace dispatches block
+restoration. Native pools absent from execution settings remain unavailable.
+
+Read-only preview validates history and probes resource ownership outside Store
+locks. Approved resume performs a read-only preflight, restores/reuses a matching
+compiled pool outside Store locks, then revalidates configuration and checkpoint
+in the write admission transaction. Both preparation phases share one five-second
+admission deadline. Original task deadlines, calls, output/prompt/tool/cycle charges
+and model/skill snapshots remain in force. No fresh task budget or executable is
+loaded from metadata. Resource admission and its original history are included
+in continuation reports and start audits; the restored pool is attached to Session
+before any missing graph/solver work.
+
+Sources: `src/recovery/continuation_resources.rs`, continuation orchestration,
+`src/resource_scheduler/{configured,resident}.rs` and shared binding helpers.
+`tests/resource_resume.rs` exercises actual HTTP, actual direct/managed CLI resume,
+current-config drift, ready cancellation, admission rollback, initial solver,
+partial advisory graph, legacy empty catalogs, ownership/approval denial and 13
+corruption/unresolved-history mutations. The seven focused tests pass. The expanded
+fixture initially missed a `mut` binding; corrected without production changes.
+
+Only fully recorded ready checkpoints are supported. Old empty-catalog records may
+omit all resident metadata fields; partial metadata is rejected. Nonempty catalogs
+require durable target checks. Uncertain in-flight calls cannot be refunded or
+approved by a resource-release acknowledgement alone. General custom executable
+pool recovery, provider stop/weight attestation, physical limits, dynamic lifecycle
+and independent model-efficiency evidence remain open. Jev+ and Jev-R remain
+Partial. Verification passed: `cargo fmt --all -- --check`,
+`cargo check --locked --workspace --all-targets`,
+`cargo test --locked --workspace --all-targets` (**617 tests across 30 targets**),
+and `cargo clippy --locked --workspace --all-targets -- -D warnings`. Local
+TCP/Unix fixtures required elevated socket access. Existing protocol pairing,
+malformed frames, migrations, mock inference, denials, cancellation and candidate
+rollback regressions remain green. `flatc` is unavailable; schema/binding files
+were unchanged and fresh generation was not run. These fixture runs do not
+establish real-model quality, GPU efficiency or provider-stop guarantees.
+
+
 ### Bind resident declarations to selected inference targets — 2026-10-16
 
 **Implemented (trusted adapter/configuration coverage); Partial (provider/weight attestation).**
