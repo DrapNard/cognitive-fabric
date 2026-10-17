@@ -480,6 +480,14 @@ impl Engine {
                     }
                 }
             }
+            let workflow_evidence = if experts
+                && mode != "fast"
+                && pinned.manifests.iter().any(|m| m.kind == "workflow")
+            {
+                Some(crate::routing::workflow_evidence_fingerprint(&pinned)?)
+            } else {
+                None
+            };
             let refs = pinned
                 .documents
                 .into_iter()
@@ -738,8 +746,7 @@ impl Engine {
                 mode
             };
             if experts && mode != "fast" {
-                // Preserve router score order rather than registry ID order. An
-                // unavailable model must not hide another already routed workflow.
+                let mut candidates = Vec::new();
                 for skill in &skills {
                     let Some(manifest) = pinned
                         .manifests
@@ -753,6 +760,30 @@ impl Engine {
                         self.store.event(&id,"expert_dispatch","jev-plus",json!({"id":manifest.id,"version":manifest.version,"admitted":false,"reason":"Bound expert model is unavailable","model":manifest.model,"verified":false}))?;
                         continue;
                     }
+                    candidates.push(crate::routing::WorkflowCandidate::from_pinned(
+                        manifest,
+                        pinned.expert_models.get(&manifest.id),
+                    )?);
+                }
+                let workflow_order = if candidates.is_empty() {
+                    Vec::new()
+                } else {
+                    let evidence = workflow_evidence.clone().expect("Pinned workflow evidence");
+                    let request = session
+                        .workflow_routing_request(query, &context, mode, candidates, evidence)?;
+                    self.store.event(&id,"workflow_routing_intent","jev-plus",json!({"router":self.router.descriptor(),"request":request,"permissions_granted":false,"implementation_attested":false}))?;
+                    let order = self.router.rank_workflows(&request)?;
+                    self.store.event(&id,"workflow_routing","jev-plus",json!({"router":self.router.descriptor(),"order":order,"permissions_granted":false,"verified":false}))?;
+                    order
+                };
+                // Apply the policy after capability refinement too: advisory language
+                // output cannot reintroduce a workflow that cost evidence declined.
+                for skill in &workflow_order {
+                    let manifest = pinned
+                        .manifests
+                        .iter()
+                        .find(|manifest| &manifest.id == skill)
+                        .expect("Validated pinned workflow");
                     let outcome = session
                         .workflow_advice(
                             manifest,

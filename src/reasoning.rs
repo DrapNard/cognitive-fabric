@@ -111,6 +111,49 @@ impl std::fmt::Display for InferenceTimeout {
 impl std::error::Error for InferenceTimeout {}
 
 impl Session {
+    pub(crate) fn workflow_routing_request(
+        &self,
+        query: &str,
+        context: &str,
+        mode: &str,
+        candidates: Vec<crate::routing::WorkflowCandidate>,
+        evidence_sha256: String,
+    ) -> Result<crate::routing::WorkflowRequest> {
+        Ok(crate::routing::WorkflowRequest {
+            mode: mode.into(),
+            criterion: crate::verification::Criterion::from_query(query)?
+                .map(|criterion| criterion.name().into()),
+            configuration_sha256: crate::escalation::empirical::configuration_fingerprint(
+                &self.cfg,
+            )?,
+            role_prompts_sha256: crate::backend::runtime_role_prompts_sha256()?,
+            runtime_sources_sha256: crate::escalation::empirical::runtime_sources_fingerprint()
+                .into(),
+            evidence_sha256,
+            remaining_calls: self
+                .call_limit
+                .saturating_sub(self.resources.calls as usize),
+            remaining_output_tokens: self
+                .cfg
+                .max_tokens
+                .saturating_sub(self.resources.reserved_output_tokens),
+            remaining_prompt_bytes: self
+                .cfg
+                .max_input_bytes
+                .saturating_sub(self.resources.prompt_bytes),
+            remaining_tool_calls: self
+                .cfg
+                .max_tool_calls
+                .saturating_sub(self.resources.tool_calls),
+            remaining_ms: self
+                .deadline
+                .saturating_duration_since(Instant::now())
+                .as_millis()
+                .min(u64::MAX as u128) as u64,
+            main_prompt_bytes: Self::prompt_base(query, context, true)?.len(),
+            candidates,
+        })
+    }
     pub(crate) fn restrict_deadline(&mut self, deadline: Instant) {
         self.deadline = self.deadline.min(deadline);
     }

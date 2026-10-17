@@ -85,3 +85,6 @@ Trusted Rust hosts can share [inference resource pools](docs/RESOURCE_SCHEDULING
 Current project source is licensed under **GNU GPL version 3 only**. See [LICENSE](LICENSE). Project-authored evaluation datasets and some examples carry their own explicit license metadata; third-party models and imported data remain under their respective licenses.
 
 This license change applies to the current source tree. Earlier commits and tags retain the license terms recorded at those revisions; this change does not withdraw permissions already granted for them.
+
+Optional [reviewed workflow routing](docs/EMPIRICAL_WORKFLOW_ROUTING.md) ranks
+expert workflows using bounded paired evidence; no real quality gain is claimed.

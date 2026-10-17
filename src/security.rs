@@ -118,6 +118,7 @@ pub fn authorize(principal: &str, capability: &str) -> Result<()> {
                 | "candidate.evaluate"
                 | "evaluation.security"
                 | "evaluation.retry"
+                | "evaluation.routing"
                 | "resources.configure"
                 | "resources.resolve"
                 | "model.residency.inspect"

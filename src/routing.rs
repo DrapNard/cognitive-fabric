@@ -3,8 +3,12 @@ use crate::store::{self, Skill};
 use anyhow::{bail, Result};
 use serde::Serialize;
 use std::{collections::BTreeSet, sync::Arc};
+pub mod empirical;
 #[cfg(test)]
 mod tests;
+mod workflow;
+pub(crate) use workflow::workflow_evidence_fingerprint;
+pub use workflow::{WorkflowCandidate, WorkflowRequest};
 pub const MAX_ROUTES: usize = 2;
 pub const MAX_ROUTING_SKILLS: usize = store::MAX_SKILLS;
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -35,6 +39,14 @@ pub struct Request<'a> {
 pub trait ExpertRouter: Send + Sync {
     fn descriptor(&self) -> Descriptor;
     fn select(&self, request: Request<'_>) -> Result<Vec<String>>;
+    /// Rank only already routed, pinned workflows. This never grants execution.
+    fn rank_workflows(&self, request: &WorkflowRequest) -> Result<Vec<String>> {
+        Ok(request
+            .candidates
+            .iter()
+            .map(|candidate| candidate.id.clone())
+            .collect())
+    }
 }
 pub struct TagRouter;
 impl ExpertRouter for TagRouter {
@@ -64,6 +76,23 @@ impl Default for Handle {
     }
 }
 impl Handle {
+    pub(crate) fn rank_workflows(&self, request: &WorkflowRequest) -> Result<Vec<String>> {
+        request.validate()?;
+        let order = self.backend.rank_workflows(request)?;
+        let mut seen = BTreeSet::new();
+        if order.len() > request.candidates.len()
+            || order.iter().any(|id| {
+                !seen.insert(id)
+                    || !request
+                        .candidates
+                        .iter()
+                        .any(|candidate| &candidate.id == id)
+            })
+        {
+            bail!("Workflow router selected unknown, duplicate or excessive candidates")
+        }
+        Ok(order)
+    }
     pub(crate) fn new(backend: Arc<dyn ExpertRouter>) -> Result<Self> {
         let descriptor = backend.descriptor();
         descriptor.validate()?;

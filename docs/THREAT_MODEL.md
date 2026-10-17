@@ -716,3 +716,13 @@ uncertain POST and requested/running audits; inspection is not resolution or pro
 stop proof. Native Rust callers are trusted, and model actors gain no API/grant.
 Receipt retirement, autonomous owned residency, physical control and independent
 model quality/safety evaluation remain incomplete.
+
+## Reviewed optional workflow routing (2026-10-17)
+
+Optional native workflow ranking now runs after capability refinement, with
+strict paired evidence, immutable scope identities, explicit cost/benefit
+thresholds and main-solver reserves. Audit failures and invalid returned orders
+stop before expert admission. Native callbacks remain trusted host code; operator
+attestations do not prove independent outcomes. The inspection CLI does not
+install policies. No capabilities or model quality claims are added. See
+[empirical workflow routing](EMPIRICAL_WORKFLOW_ROUTING.md).

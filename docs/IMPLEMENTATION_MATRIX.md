@@ -1,5 +1,35 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+### Rank optional workflows using reviewed utility evidence — 2026-10-17
+
+**Implemented (optional native policy); Partial (independent empirical deployment).**
+`src/routing/{workflow,empirical}.rs` supplies pinned candidate fingerprints,
+strict bounded paired studies, explicit operator thresholds and deterministic
+net-benefit/cost ranking. Failures/regressions count, configuration/source/knowledge
+and model drift decline work, and main-solver resources remain reserved.
+`src/engine.rs` applies ranking after capability refinement and audits before the
+callback and before expert admission; invalid orders/audit failures fail closed.
+The existing kernel retains authority. Default routers preserve existing order.
+`workflow-study-evaluate` inspects files without state creation or installation;
+trusted hosts install immutable policies using `with_expert_router`.
+
+Tests in `src/routing/empirical/tests.rs` and `tests/workflow_router.rs` cover
+threshold edges, complete costs, deterministic identities, scope drift, resource
+reserves, actual engine admission/decline, capability refinement, rejected audit
+writes, invalid output and CLI inspection. See
+[empirical workflow routing](EMPIRICAL_WORKFLOW_ROUTING.md).
+No real paired study, calibrated probability or intelligence/performance gain is
+claimed. General routing utility, automatic safe installation and broader
+independent evaluations remain incomplete. Jev+ and Jev-R remain **Partial**.
+
+Verification passed: formatting, locked workspace/all-target check and tests
+(**637 tests across 32 targets**), and Clippy with warnings denied. Local TCP/Unix
+fixtures ran with elevated socket access. Existing migration, mock inference,
+malformed protocol, policy denial, cancellation and rollback tests remain green.
+`flatc` was unavailable; unchanged bundled schema/runtime pairing checks passed,
+but fresh binding generation was not run. No real-backend quality benchmark ran.
+
+
 ### Plan reviewed resident-model reconciliation — 2026-10-17
 
 **Implemented (bounded operator planning/application); Partial (autonomous/physical lifecycle).**

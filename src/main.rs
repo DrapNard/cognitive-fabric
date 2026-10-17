@@ -66,6 +66,11 @@ enum Command {
         #[arg(long)]
         thresholds: PathBuf,
     },
+    WorkflowStudyEvaluate {
+        study: PathBuf,
+        #[arg(long)]
+        thresholds: PathBuf,
+    },
     Diagnostics {
         #[arg(long)]
         probe_inference: bool,
@@ -486,6 +491,12 @@ fn output<T: Serialize>(value: T, force_json: bool) -> Result<()> {
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
+    if let Command::WorkflowStudyEvaluate { study, thresholds } = &cli.command {
+        return output(
+            cogfabric::routing::empirical::evaluate_files(study, thresholds)?,
+            cli.json,
+        );
+    }
     if matches!(
         &cli.command,
         Command::ResidencyApply {
@@ -931,6 +942,9 @@ async fn main() -> Result<()> {
             json!({"saved":true,"inference_auth_scope":settings.inference_auth_scope,"credential_environment_variable":cogfabric::credentials::ENVIRONMENT_VARIABLE,"credential_stored":false})
         }
         Command::ConfigShow => serde_json::to_value(&cfg)?,
+        Command::WorkflowStudyEvaluate { .. } => {
+            bail!("Workflow study inspection must precede state initialization")
+        }
         Command::ResidencyPlan { .. } | Command::ResidencyApply { .. } => {
             bail!("Residency plans must run before runtime initialization")
         }
