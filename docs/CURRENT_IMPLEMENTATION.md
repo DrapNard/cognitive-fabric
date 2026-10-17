@@ -1710,3 +1710,13 @@ revision, checked-answer preservation and published-memory rechecking apply.
 Benchmark scoring accepts alternate satisfying assignments without a fixed expected
 answer. This proves only declared constraint satisfaction, not optimality,
 unsatisfiability or model quality. See [verification](VERIFICATION.md#finite-domain-assignments).
+
+## Recovery lease diagnostics and fork-sensitive tests (2026-10-17)
+
+All seven recovery entry points now retain the actual acquisition error chain.
+Contention, refused symlink opens and unsafe lease metadata remain distinguishable
+and stop before state writes. A controlled fork regression proves inherited
+close-on-exec descriptors keep ownership until child exit, and resource-resume
+fixtures exclude CLI fork/exec from concurrent immediate-acquisition assertions.
+Production lock behavior and budgets remain unchanged; no provider-stop guarantee
+is inferred. See [recovery details](RECOVERY.md#lease-acquisition-diagnostics-and-fork-inheritance).

@@ -79,8 +79,9 @@ impl Store {
             .runtime_lock
             .as_deref()
             .ok_or_else(|| anyhow::anyhow!("Revision recovery requires a persistent store"))?;
-        let _lease = ExecutionLease::acquire(path, true)
-            .map_err(|e| anyhow::anyhow!("Cannot reconcile while runtime leases are held: {e}"))?;
+        let _lease = ExecutionLease::acquire(path, true).map_err(|e| {
+            e.context("Cannot acquire exclusive runtime lease for revision reconciliation")
+        })?;
         let mut db = self.lock()?;
         let started = Instant::now();
         db.progress_handler(

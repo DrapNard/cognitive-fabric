@@ -772,3 +772,34 @@ configurations fail closed. No executable, new task budget, model load or provid
 stop proof is inferred. A separately approved resource release cannot reconstruct
 an uncertain answer. See RESOURCE_SCHEDULING.md and tests/resource_resume.rs for
 exact ordering, legacy-empty handling and direct/managed/graph integration scope.
+
+## Lease-acquisition diagnostics and fork inheritance
+
+Every recovery entry point retains the original acquisition error under an
+operation-specific context. Callers can inspect the underlying `std::io::Error`
+for actual contention (`WouldBlock`), an OS failure such as a refused symlink, or
+the deterministic private-file validation failure. A failed open or unsafe lease
+file must not be diagnosed as proof that an engine is running. All such failures
+still stop before recovery writes, backend construction or inference replay.
+
+Close-on-exec descriptors are inherited by `fork` until the child executes another
+image or exits. A forked child can therefore briefly retain a shared lease after
+the parent closes its copy. Preview is not an ownership reservation: a later resume
+must acquire its own exclusive lock and may independently refuse. Do not unlink
+the lease, explicitly unlock a surviving shared description, bypass the refusal or
+infer provider termination from it.
+
+`tests/lease_inheritance.rs` deterministically holds a forked child's inherited
+close-on-exec lease. Recovery must refuse without changing the task, then succeed
+only after the child exits and is reaped. The child uses only async-signal-safe
+syscalls after fork; the test has its own integration process to avoid inheriting
+other parallel fixtures' descriptors. The test does not prove external inference
+has stopped.
+
+Resource-resume tests exclude their CLI-launch case from concurrent in-process
+fixtures asserting immediate acquisition. Those fixtures remain parallel with each
+other. This test-only launch gate removes cross-fixture fork inheritance without
+changing production locking or adding retries to assertions. A prior intermittent
+failure was captured as `EWOULDBLOCK` with no holder visible by the time descriptors
+were inspected. The controlled test establishes the inheritance mechanism; the
+historical child PID was not established.

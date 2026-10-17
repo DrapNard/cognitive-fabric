@@ -541,8 +541,9 @@ fn preview_with_handle(
         .runtime_lock
         .as_deref()
         .ok_or_else(|| anyhow::anyhow!("Continuation requires a persistent store"))?;
-    let _lease = ExecutionLease::acquire(path, true)
-        .map_err(|_| anyhow::anyhow!("Cannot preview while runtime leases are held"))?;
+    let _lease = ExecutionLease::acquire(path, true).map_err(|error| {
+        error.context("Cannot acquire exclusive runtime lease for continuation preview")
+    })?;
     let mut db = store.lock()?;
     let started = Instant::now();
     db.progress_handler(
@@ -638,10 +639,9 @@ async fn resume_with_handle(
         .runtime_lock
         .as_deref()
         .ok_or_else(|| anyhow::anyhow!("Continuation requires a persistent store"))?;
-    let mut lease = Some(
-        ExecutionLease::acquire(path, true)
-            .map_err(|_| anyhow::anyhow!("Cannot continue while runtime leases are held"))?,
-    );
+    let mut lease = Some(ExecutionLease::acquire(path, true).map_err(|error| {
+        error.context("Cannot acquire exclusive runtime lease for task continuation")
+    })?);
     let admission_started = Instant::now();
     let original_configuration = {
         let mut db = store.lock()?;

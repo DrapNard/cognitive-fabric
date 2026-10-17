@@ -22,8 +22,9 @@ impl Store {
             .runtime_lock
             .as_deref()
             .ok_or_else(|| anyhow::anyhow!("Advisory recovery requires a persistent store"))?;
-        let _lease = ExecutionLease::acquire(path, true)
-            .map_err(|_| anyhow::anyhow!("Cannot reconcile while runtime leases are held"))?;
+        let _lease = ExecutionLease::acquire(path, true).map_err(|error| {
+            error.context("Cannot acquire exclusive runtime lease for advisory reconciliation")
+        })?;
         let mut db = self.lock()?;
         let started = Instant::now();
         db.progress_handler(

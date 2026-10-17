@@ -69,7 +69,7 @@ impl Store {
             .as_deref()
             .ok_or_else(|| anyhow::anyhow!("Worker recovery requires a persistent store"))?;
         let _exclusive = ExecutionLease::acquire(path, true).map_err(|error| {
-            error.context("Cannot recover workers while a runtime lease is held")
+            error.context("Cannot acquire exclusive runtime lease for worker recovery")
         })?;
         let mut db = self.lock()?;
         let started = std::time::Instant::now();
@@ -181,7 +181,7 @@ impl Store {
             .as_deref()
             .ok_or_else(|| anyhow::anyhow!("Recovery requires a persistent store"))?;
         let _exclusive = ExecutionLease::acquire(path, true).map_err(|error| {
-            anyhow::anyhow!("Cannot recover while an engine holds a lease: {error}")
+            error.context("Cannot acquire exclusive runtime lease for task recovery")
         })?;
         let mut db = self.lock()?;
         let started = std::time::Instant::now();
@@ -669,3 +669,7 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 }
+
+#[cfg(test)]
+#[path = "recovery/lease_tests.rs"]
+mod lease_tests;

@@ -1,5 +1,45 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+### Preserve recovery ownership diagnostics and isolate fork-sensitive fixtures — 2026-10-17
+
+**Implemented (supported local recovery ownership and regression evidence).**
+All seven recovery/preview/continuation entry points retain the original error
+chain with operation-specific lease context. Native callers can distinguish actual
+WouldBlock from unsafe-file validation and OS open errors; no failure is converted
+to ownership evidence or allowed to reach recovery writes. Kernel lease acquisition,
+close-on-exec flags, scope, budgets and no-replay behavior remain unchanged.
+
+`src/recovery/lease_tests.rs` checks contention, final symlink rejection and invalid
+file permissions across all seven entry points, with unchanged tasks/audits/target
+bytes and preserved error types. `tests/lease_inheritance.rs` deterministically
+proves that a forked child's inherited close-on-exec descriptor blocks recovery
+after the parent drops its copy, and only child exit/reap permits recovery.
+It executes in a separate integration image and uses only async-signal-safe child
+syscalls. `tests/resource_resume.rs` gates CLI launch against in-process immediate
+acquisition assertions, while keeping the six in-process cases parallel.
+
+Two pre-fix parallel stress series failed in their second iteration; diagnostic
+capture established EWOULDBLOCK but the holder had disappeared by descriptor scan.
+Controlled inheritance establishes the mechanism, without claiming the historical
+holder PID was identified. No production retry, forced unlock, lease deletion or
+resource-budget relaxation was introduced. See
+[recovery ownership](RECOVERY.md#lease-acquisition-diagnostics-and-fork-inheritance).
+General checkpoint recovery, provider-stop proof, physical scheduling and independent
+effectiveness remain incomplete. Jev+ and Jev-R remain **Partial**.
+
+Verification: all **100 consecutive** parallel resource-resume target runs passed
+(7 tests each, none ignored), and the final full workspace run passed **650 tests
+across 33 targets**, none ignored. Formatting, locked workspace/all-target check
+and Clippy with warnings denied passed. The first inheritance run needed elevated
+socket-pair access; the elevated regression and full suite passed. Clippy initially
+required `expect_err` in the new helper; corrected without reducing coverage.
+Existing protocol pairing/malformed frames, migrations, mock inference, denials,
+cancellation and rollback remain green. `flatc` is unavailable and unchanged bundled
+bindings were validated without fresh generation. This run establishes no physical
+GPU enforcement, provider-stop proof or live-model quality/performance advantage.
+
+
+
 ### Independently verify finite-domain reasoning witnesses — 2026-10-17
 
 **Implemented (bounded integer constraint satisfaction); Partial (general verification).**

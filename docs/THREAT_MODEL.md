@@ -748,3 +748,14 @@ reasoning-task Jev+ grant; generation-only agents and model roles cannot invoke 
 Per-check audit and budget rules, original-query memory rechecks and immutable
 criterion identity remain required. Passing means only satisfaction of the supplied
 finite specification, not external truth, optimality or general neural safety.
+
+### Recovery errors and inherited lease ownership
+
+Recovery preserves OS error types and unsafe-file validation causes beneath
+operation-specific context. Failure to acquire ownership still prevents all
+recovery mutation; an error alone is not proof of a live engine. Forked children
+can retain close-on-exec descriptors until exec or exit. Runtime acquisition remains
+nonblocking and never forcibly unlocks a surviving description or removes the lease
+file. Controlled inheritance/no-write tests cover the boundary; a test-only process
+launch gate isolates unrelated fixture descriptor inheritance. This provides no
+external provider-stop or malicious-owner guarantee.

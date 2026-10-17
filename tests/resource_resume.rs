@@ -15,6 +15,10 @@ use std::{
     time::Duration,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+// A fork can temporarily inherit another thread's CLOEXEC lease until exec.
+// Keep in-process recovery fixtures parallel, but exclude child launch while
+// they assert immediate exclusive acquisition. Production locking stays strict.
+static PROCESS_LAUNCH: tokio::sync::RwLock<()> = tokio::sync::RwLock::const_new(());
 struct Script {
     cfg: Config,
     answers: Mutex<VecDeque<&'static str>>,
@@ -180,6 +184,7 @@ async fn cli(cfg: &Config, task: &str, action: &str, approve: bool) -> std::proc
 }
 #[tokio::test]
 async fn configured_pool_preview_and_resume_restore_original_admission_without_replay() {
+    let _launch = PROCESS_LAUNCH.read().await;
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}/v1", listener.local_addr().unwrap());
     let (cfg, store, task, original_pool) = fixture(&base, false).await;
@@ -220,6 +225,7 @@ async fn configured_pool_preview_and_resume_restore_original_admission_without_r
 }
 #[tokio::test]
 async fn actual_cli_restores_original_pool_for_direct_and_managed_inference() {
+    let _launch = PROCESS_LAUNCH.write().await;
     for managed in [false, true] {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let base = format!("http://{}/v1", listener.local_addr().unwrap());
@@ -279,6 +285,7 @@ async fn actual_cli_restores_original_pool_for_direct_and_managed_inference() {
 }
 #[tokio::test]
 async fn corrupt_missing_or_unresolved_resource_evidence_denies_before_state_or_http() {
+    let _launch = PROCESS_LAUNCH.read().await;
     for mutation in 0..13 {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let base = format!("http://{}/v1", listener.local_addr().unwrap());
@@ -369,6 +376,7 @@ async fn corrupt_missing_or_unresolved_resource_evidence_denies_before_state_or_
 }
 #[tokio::test]
 async fn ready_cancellation_and_admission_audit_failure_preserve_original_resource_history() {
+    let _launch = PROCESS_LAUNCH.read().await;
     for failure in [false, true] {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let base = format!("http://{}/v1", listener.local_addr().unwrap());
@@ -408,6 +416,7 @@ async fn ready_cancellation_and_admission_audit_failure_preserve_original_resour
 
 #[tokio::test]
 async fn initial_solver_and_legacy_empty_catalog_checkpoints_keep_resource_configuration() {
+    let _launch = PROCESS_LAUNCH.read().await;
     for (mode, with_residents, legacy) in [
         ("fast", true, false),
         ("deep", false, false),
@@ -447,6 +456,7 @@ async fn initial_solver_and_legacy_empty_catalog_checkpoints_keep_resource_confi
 }
 #[tokio::test]
 async fn live_resource_owner_and_missing_approval_block_restore_without_mutation() {
+    let _launch = PROCESS_LAUNCH.read().await;
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}/v1", listener.local_addr().unwrap());
     let (cfg, store, task, _) = fixture(&base, false).await;
@@ -486,6 +496,7 @@ async fn live_resource_owner_and_missing_approval_block_restore_without_mutation
 
 #[tokio::test]
 async fn partial_advisory_graph_restores_pool_and_only_runs_pending_node_and_final_solver() {
+    let _launch = PROCESS_LAUNCH.read().await;
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}/v1", listener.local_addr().unwrap());
     let (cfg, store, task, _) = fixture_mode(&base, false, "graph", true).await;
