@@ -367,3 +367,60 @@ prevents those commands from replacing a live pool's declared model set. Plannin
 and inspection remain read-only. This workflow does not prove provider ownership,
 synchronize the resident catalog automatically, measure footprints or grant models
 authority to load/unload themselves.
+
+## Optional role priority with bounded bypass
+
+FIFO remains the default. An operator may add the following `scheduling` object
+to the existing resource configuration's `settings`:
+
+```json
+{
+  "scheduling": {
+    "role_priorities": {"solver": 15, "interface": 8, "critic": 2},
+    "max_bypasses": 4
+  }
+}
+```
+
+Apply the complete reviewed configuration using the existing
+`configure-resources FILE` command. The fragment above is not a complete resource
+configuration. Native Rust `Settings` constructors now specify `scheduling: None`
+for FIFO or `Some(PriorityScheduling { ... })`. Omitted JSON fields preserve old
+serialized settings and FIFO audit/status shapes. No model actor gains configuration
+permission; a live policy change requires a new host under existing workspace
+ownership rules. Immutable pool identity includes the policy.
+
+Priorities are integers 0–15 for the seven existing inference roles: interface,
+planner, solver, explorer, critic, reflector and synthesizer. Unlisted roles get
+priority zero. The map must contain 1–7 known roles, and `max_bypasses` is 1–64.
+Priority comes from trusted runtime role classification and fixed operator settings,
+not prompt text, model confidence or client-supplied urgency. All solver-role calls
+share the same configured priority, including advisory subtask/expert solver calls.
+
+Among waiting requests, higher priority wins and equal priority is FIFO. When a
+later request reserves capacity, each earlier waiting request gains one bypass.
+After reaching its ceiling, an older protected request wins ahead of later arrivals;
+the oldest protected request wins ties. Counts apply to capacity reservations,
+even if a later audit fails or a reserved request is cancelled. Cancelling a request
+while it is still waiting does not increment other requests' counts.
+
+Running work is never preempted. If the selected/protected request cannot fit its
+complete allocation, smaller newcomers wait even if they could fit. This prevents
+small requests from bypassing protected large ones indefinitely. The policy bounds
+bypasses, not wall latency: waiting deadlines, quarantine, shutdown and real capacity
+still determine whether any request can run. It is not a globally optimal or
+work-conserving scheduler, and no throughput/quality gain is established.
+
+Optional policies add `queue_priority` to intent/admission audits and
+`queue_bypasses` to admission audits; current reservation snapshots expose both.
+Audits must commit before provider work. Recovery requires the exact original
+settings, role-derived priority and a recorded bypass count within the original
+ceiling. FIFO history rejects forged priority fields. This validates the saved
+local record, not a retrospective proof of every cross-task ordering decision.
+Supported continuation restores the original compiled policy under original budgets;
+metadata cannot load executable policy code or release uncertain provider work.
+
+Declared compute/host/device allocations, resident memory accounting, bounded queues,
+timeouts, task authorization, cancellation and unknown-outcome quarantine remain
+independent of priority. The feature provides no physical GPU/RSS enforcement,
+provider-stop proof, cross-workspace arbitration or learned expected utility.

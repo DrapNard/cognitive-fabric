@@ -39,19 +39,28 @@ impl ResourcePool {
             }))?;
             coverage?;
         }
-        self.store.event(
-                task,
-                "resource_intent",
-                "jev-plus",
-                json!({
-                    "format_version":1,"pool_id":self.id,"settings":self.settings,"reservation_id":reservation_id,
-                    "allocation":allocation,"role":role,"permissions_granted":false,
-                    "resident_allocated":self.resident_allocated,"resident_catalog_sha256":self.resident_catalog_sha256,"residency_attested":false,
-                    "physical_limits_enforced":false,
-                }),
-            )?;
+        let priority = self.settings.scheduling.as_ref().map(|p| p.priority(role));
+        let mut intent = json!({
+            "format_version":1,"pool_id":self.id,"settings":self.settings,"reservation_id":reservation_id,
+            "allocation":allocation,"role":role,"permissions_granted":false,
+            "resident_allocated":self.resident_allocated,"resident_catalog_sha256":self.resident_catalog_sha256,"residency_attested":false,
+            "physical_limits_enforced":false,
+        });
+        if let Some(priority) = priority {
+            intent["queue_priority"] = json!(priority);
+        }
+        self.store
+            .event(task, "resource_intent", "jev-plus", intent)?;
         let start = Instant::now();
-        let lease = match self.acquire(task, allocation, reservation_id.clone()).await {
+        let lease = match self
+            .acquire_priority(
+                task,
+                allocation,
+                reservation_id.clone(),
+                priority.unwrap_or(0),
+            )
+            .await
+        {
             Ok(lease) => lease,
             Err(error) => {
                 self.store.event(task,"resource_refused","jev-plus",json!({
@@ -65,16 +74,18 @@ impl ResourcePool {
         // Queue waiting may outlive a task's terminal transition even when a
         // trusted direct caller retained its generation future.
         self.require_running(task)?;
-        self.store.event(
-            task,
-            "resource_admitted",
-            "jev-plus",
-            json!({
-                "format_version":1,"pool_id":self.id,"reservation_id":lease.id,
-                "allocation":allocation,"role":role,"wait_ms":wait_ms,
-                "provider_dispatched":false,
-            }),
-        )?;
+        let mut admitted = json!({
+            "format_version":1,"pool_id":self.id,"reservation_id":lease.id,
+            "allocation":allocation,"role":role,"wait_ms":wait_ms,
+            "provider_dispatched":false,
+        });
+        if let Some(priority) = priority {
+            let bypasses = self.lock()?.entries[&lease.id].bypasses;
+            admitted["queue_priority"] = json!(priority);
+            admitted["queue_bypasses"] = json!(bypasses);
+        }
+        self.store
+            .event(task, "resource_admitted", "jev-plus", admitted)?;
         self.store.event(
             task,
             "resource_dispatch",

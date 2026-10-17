@@ -55,11 +55,29 @@ async fn fixture_mode(
     mode: &str,
     with_residents: bool,
 ) -> (Config, Arc<Store>, String, String) {
+    fixture_mode_policy(base, managed, mode, with_residents, false).await
+}
+async fn fixture_mode_policy(
+    base: &str,
+    managed: bool,
+    mode: &str,
+    with_residents: bool,
+    priority: bool,
+) -> (Config, Arc<Store>, String, String) {
     let root =
         std::env::temp_dir().join(format!("fabric-resource-resume-{}", uuid::Uuid::new_v4()));
     let mut resources:Configuration=serde_json::from_value(json!({"settings":{"label":"gpu.original","capacity":{"compute_slots":1,"host_memory_bytes":100,"device_memory_bytes":100},"max_pending":4,"max_wait_ms":5000,"max_execution_ms":5000},"allocation":{"compute_slots":1,"host_memory_bytes":20,"device_memory_bytes":20},"residents":[{"id":"backbone.original","version":"1.0.0","weights_sha256":"a".repeat(64),"host_memory_bytes":30,"device_memory_bytes":30,"consumers":[{"api_base":base,"model":"fixture-model"}]}]})).unwrap();
     if !with_residents {
         resources.residents.clear();
+    }
+    if priority {
+        resources.settings.scheduling = Some(cogfabric::resource_scheduler::PriorityScheduling {
+            role_priorities: std::collections::BTreeMap::from([
+                ("solver".into(), 15),
+                ("planner".into(), 2),
+            ]),
+            max_bypasses: 2,
+        });
     }
     let cfg = Config {
         home: root,
@@ -529,6 +547,73 @@ async fn partial_advisory_graph_restores_pool_and_only_runs_pending_node_and_fin
             .count(),
         4
     );
+    drop(store);
+    std::fs::remove_dir_all(cfg.home).unwrap();
+}
+
+#[tokio::test]
+async fn priority_policy_restores_from_original_history_and_rejects_changed_queue_metadata() {
+    let _launch = PROCESS_LAUNCH.read().await;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}/v1", listener.local_addr().unwrap());
+    let (cfg, store, task, _) = fixture_mode_policy(&base, false, "deep", true, true).await;
+    assert!(cogfabric::recovery::continuation::preview(&store, &task).is_ok());
+    let db = rusqlite::Connection::open(cfg.db()).unwrap();
+    for kind in ["resource_intent", "resource_admitted"] {
+        let (id, raw): (u64, String) = db
+            .query_row(
+                "SELECT id,payload FROM events WHERE task_id=?1 AND kind=?2 ORDER BY id LIMIT 1",
+                rusqlite::params![task, kind],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        for variant in 0..3 {
+            let mut changed: Value = serde_json::from_str(&raw).unwrap();
+            match variant {
+                0 => changed["queue_priority"] = json!(15),
+                1 => {
+                    changed.as_object_mut().unwrap().remove("queue_priority");
+                }
+                _ => changed["queue_bypasses"] = json!(3),
+            };
+            db.execute(
+                "UPDATE events SET payload=?1 WHERE id=?2",
+                rusqlite::params![changed.to_string(), id],
+            )
+            .unwrap();
+            assert!(
+                cogfabric::recovery::continuation::preview(&store, &task).is_err(),
+                "{kind} mutation {variant}"
+            );
+            db.execute(
+                "UPDATE events SET payload=?1 WHERE id=?2",
+                rusqlite::params![raw, id],
+            )
+            .unwrap();
+        }
+    }
+    drop(db);
+    let provider = tokio::spawn(http_once(listener));
+    let report = cogfabric::recovery::continuation::resume(
+        store.clone(),
+        &task,
+        true,
+        std::future::pending(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(report["status"], "completed");
+    assert_eq!(report["new_calls"], 1);
+    provider.await.unwrap();
+    let trace = store.task(&task).unwrap();
+    assert!(trace["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|e| e["kind"] == "resource_admitted"
+            && e["payload"]["role"] == "solver"
+            && e["payload"]["queue_priority"] == 15
+            && e["payload"]["queue_bypasses"] == 0));
     drop(store);
     std::fs::remove_dir_all(cfg.home).unwrap();
 }

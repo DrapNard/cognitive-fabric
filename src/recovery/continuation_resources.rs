@@ -133,6 +133,9 @@ pub(super) fn validate(db: &rusqlite::Connection, task: &str, cfg: &Config) -> R
                 stage = Some(2);
             }
             "resource_intent" if stage == Some(if nonempty { 2 } else { 0 }) => {
+                cfg_resources
+                    .settings
+                    .validate_queue_audit(&role, &value, false)?;
                 if value["settings"] != serde_json::to_value(&cfg_resources.settings)?
                     || value["allocation"] != serde_json::to_value(cfg_resources.allocation)?
                     || value["role"] != role
@@ -163,6 +166,9 @@ pub(super) fn validate(db: &rusqlite::Connection, task: &str, cfg: &Config) -> R
                 stage = Some(3);
             }
             "resource_admitted" if stage == Some(3) => {
+                cfg_resources
+                    .settings
+                    .validate_queue_audit(&role, &value, true)?;
                 if value["role"] != role
                     || value["allocation"] != serde_json::to_value(cfg_resources.allocation)?
                     || value["provider_dispatched"] != false

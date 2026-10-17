@@ -1,5 +1,44 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+### Schedule inference roles with priority and bounded bypass — 2026-10-17
+
+**Implemented (optional local resource policy); Partial (general/physical scheduling).**
+`Settings.scheduling` accepts an operator role-priority map and hard bypass ceiling.
+`src/resource_scheduler/queue.rs` selects higher-priority waiting work, FIFO ties
+and oldest protected requests. Once bypassed the configured number of times, an
+older request cannot be displaced again; a protected large request can block smaller
+newcomers until its allocation fits. Running requests are never preempted. Default
+FIFO serialization/audits remain unchanged. Native Settings constructors explicitly
+use None for legacy behavior; existing CLI resource configuration supports the policy.
+
+Role priorities and reservation bypass counts are recorded before provider entry
+and exposed in pool status. Existing task/resource/resident/quarantine bounds retain
+authority. Original configured continuation validates policy, role-derived priority
+and recorded bypass bounds, rejects altered/missing fields and restores the compiled
+policy without loading code. Live pool identity includes policy settings.
+
+Seven focused tests in `src/resource_scheduler/priority_tests.rs` cover actual role
+contention, priority/FIFO ties, bounded bypass, protected large allocations,
+waiting cancellation, operator-only configuration, legacy bytes, audit denials and
+live identity drift. `tests/resource_resume.rs` adds actual HTTP restoration and
+six queue-metadata corruption cases while retaining existing tests and launch
+isolation. See [resource priorities](RESOURCE_SCHEDULING.md#optional-role-priority-with-bounded-bypass).
+No global fairness/latency, work-conserving optimality, physical memory control or
+measured utility is claimed. Jev+ and Jev-R remain **Partial**.
+
+Verification: formatting, locked workspace/all-target check, final full tests
+(**675 passed across 33 targets**, none ignored), and Clippy with warnings denied
+pass. The seven focused priority cases and actual HTTP policy-restoration fixture
+pass. Native Settings fixtures were updated with explicit None after the compiler
+identified the added field; legacy serialized settings remain unchanged. Local
+TCP/Unix fixtures required elevated access. Existing protocol pairing/malformed
+frames, migrations, mock inference, denials, cancellation and rollback remain green.
+`flatc` is unavailable; schemas/bindings were unchanged and fresh generation was
+not run. Discovery at 127.0.0.1:1234 refused connections; no live-model throughput,
+quality or physical GPU performance gain is claimed.
+
+
+
 ### Preserve first-solver resources during interpretation — 2026-10-17
 
 **Implemented (bounded optional interpretation); Partial (measured utility).**

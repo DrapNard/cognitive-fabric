@@ -65,6 +65,7 @@ async fn real_http_native_and_collective_requests_share_configured_capacity() {
                 max_pending: 4,
                 max_wait_ms: 3000,
                 max_execution_ms: 3000,
+                scheduling: None,
             },
             allocation: Allocation {
                 compute_slots: 1,

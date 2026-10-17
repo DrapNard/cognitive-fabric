@@ -3457,6 +3457,7 @@ mod configured_resource_tests {
                     max_pending: 4,
                     max_wait_ms: 1000,
                     max_execution_ms: 1000,
+                    scheduling: None,
                 },
                 allocation,
             }),

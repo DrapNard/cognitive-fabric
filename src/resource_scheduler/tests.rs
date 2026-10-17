@@ -24,6 +24,7 @@ fn pool(capacity: Allocation) -> Arc<ResourcePool> {
             max_pending: 4,
             max_wait_ms: 1000,
             max_execution_ms: 1000,
+            scheduling: None,
         },
     )
     .unwrap()
@@ -112,6 +113,7 @@ fn configuration_is_bounded_and_never_model_authority() {
         max_pending: 4,
         max_wait_ms: 1000,
         max_execution_ms: 1000,
+        scheduling: None,
     };
     for actor in ["jev-plus", "jev-r", "interface", "unknown"] {
         assert!(ResourcePool::new(actor, store.clone(), settings.clone()).is_err());
@@ -294,6 +296,7 @@ async fn queue_limit_timeout_and_shutdown_release_only_undispatched_requests() {
             max_pending: 1,
             max_wait_ms: 50,
             max_execution_ms: 1000,
+            scheduling: None,
         },
     )
     .unwrap();
@@ -625,6 +628,7 @@ fn configured() -> Configuration {
             max_pending: 4,
             max_wait_ms: 1000,
             max_execution_ms: 1000,
+            scheduling: None,
         },
         allocation: allocation(1, 40, 60),
     }

@@ -794,3 +794,15 @@ interpretation text is admitted before changing solver context. No model asserti
 can create a timeout allowance, refund resources or expand capabilities. Provider
 termination and physical resource release remain unproven; configured quarantine
 still governs subsequent dispatch. See [interpretation budgets](INTERPRETATION_BUDGETS.md).
+
+### Operator role priority under existing resource ownership
+
+Only reviewed native/operator resource configuration selects role priorities and
+bypass limits. Runtime roles determine priority; model text does not create urgency
+or permissions. Queue selection changes no allocation or resident budget, never
+preempts dispatched work and never releases quarantine. Bypass protection limits
+later reservations overtaking older work, not wall latency or provider execution.
+Original policy and bounded recorded queue metadata are required for continuation;
+FIFO rejects injected priority fields. Existing workspace ownership prevents a new
+policy host from silently resetting live counters. No cross-workspace or physical
+GPU/RSS enforcement, retrospective global fairness proof or neural safety is added.

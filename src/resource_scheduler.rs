@@ -1,4 +1,4 @@
-//! Host-configured, process-local FIFO admission across inference modules.
+//! Host-configured, process-local bounded admission across inference modules.
 //! Declared allocations are not physical memory limits or provider-stop proof.
 use crate::{backend::InferenceBackend, security, store::Store};
 use anyhow::{anyhow, bail, Result};
@@ -14,7 +14,9 @@ use tokio::sync::Notify;
 mod adapter;
 mod admission;
 mod configured;
+mod queue;
 mod resident;
+pub use queue::PriorityScheduling;
 pub use resident::{ResidentAllocation, ResidentConsumer};
 #[cfg(test)]
 mod tests;
@@ -57,6 +59,8 @@ pub struct Settings {
     pub max_pending: usize,
     pub max_wait_ms: u64,
     pub max_execution_ms: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scheduling: Option<PriorityScheduling>,
 }
 impl Settings {
     pub(crate) fn validate(&self) -> Result<()> {
@@ -70,6 +74,9 @@ impl Settings {
             || !(1..=600_000).contains(&self.max_execution_ms)
         {
             bail!("Invalid resource pool bounds")
+        }
+        if let Some(policy) = &self.scheduling {
+            policy.validate()?;
         }
         Ok(())
     }
@@ -111,6 +118,8 @@ struct Entry {
     allocation: Allocation,
     phase: Phase,
     notify: Arc<Notify>,
+    priority: u8,
+    bypasses: u16,
 }
 #[derive(Default)]
 struct State {
@@ -125,6 +134,10 @@ pub struct ReservationStatus {
     pub task_id: String,
     pub allocation: Allocation,
     pub phase: Phase,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub queue_priority: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub queue_bypasses: Option<u16>,
 }
 #[derive(Debug, Serialize)]
 pub struct Snapshot {
@@ -237,6 +250,8 @@ impl ResourcePool {
                     task_id: entry.task.clone(),
                     allocation: entry.allocation,
                     phase: entry.phase,
+                    queue_priority: self.settings.scheduling.as_ref().map(|_| entry.priority),
+                    queue_bypasses: self.settings.scheduling.as_ref().map(|_| entry.bypasses),
                 })
                 .collect(),
             physical_limits_enforced: false,
@@ -270,11 +285,11 @@ impl ResourcePool {
         if state.closed {
             return;
         }
-        // Strict FIFO: a smaller newcomer cannot starve an older large request.
-        while let Some(id) = state.queue.front() {
+        while let Some(index) = self.queue_index(state) {
+            let id = state.queue[index].clone();
             let entry = state
                 .entries
-                .get_mut(id)
+                .get(&id)
                 .expect("Queued resource entry exists");
             if !entry
                 .allocation
@@ -282,12 +297,26 @@ impl ResourcePool {
             {
                 break;
             }
+            if self.settings.scheduling.is_some() {
+                for earlier in state.queue.iter().take(index) {
+                    let entry = state
+                        .entries
+                        .get_mut(earlier)
+                        .expect("Earlier queued entry exists");
+                    entry.bypasses = entry.bypasses.saturating_add(1);
+                }
+            }
+            let entry = state
+                .entries
+                .get_mut(&id)
+                .expect("Selected resource entry exists");
             state.used.add(entry.allocation);
             entry.phase = Phase::Reserved;
             entry.notify.notify_one();
-            state.queue.pop_front();
+            state.queue.remove(index);
         }
     }
+
     fn remove(&self, state: &mut State, id: &str) {
         if let Some(entry) = state.entries.remove(id) {
             if entry.phase == Phase::Waiting {
@@ -298,11 +327,21 @@ impl ResourcePool {
             self.pump(state);
         }
     }
+    #[cfg(test)]
     async fn acquire(
         self: &Arc<Self>,
         task: &str,
         allocation: Allocation,
         id: String,
+    ) -> Result<Lease> {
+        self.acquire_priority(task, allocation, id, 0).await
+    }
+    async fn acquire_priority(
+        self: &Arc<Self>,
+        task: &str,
+        allocation: Allocation,
+        id: String,
+        priority: u8,
     ) -> Result<Lease> {
         let notify = Arc::new(Notify::new());
         {
@@ -322,6 +361,8 @@ impl ResourcePool {
                     allocation,
                     phase: Phase::Waiting,
                     notify: notify.clone(),
+                    priority,
+                    bypasses: 0,
                 },
             );
             state.queue.push_back(id.clone());
@@ -449,3 +490,6 @@ impl Drop for Lease {
         }
     }
 }
+
+#[cfg(test)]
+mod priority_tests;

@@ -1750,3 +1750,14 @@ advisory text is separately admitted against actual encoded solver prompt bytes.
 Policy/provider/audit errors remain fatal and cancellation starts no fallback.
 See [interpretation admission](INTERPRETATION_BUDGETS.md). No real-model utility
 or provider-stop guarantee is claimed.
+
+## Role-priority resource admission (2026-10-17)
+
+Optional operator `settings.scheduling` prioritizes waiting inference roles with
+FIFO ties and a bounded number of later reservations bypassing older work.
+Protected large requests block smaller newcomers until capacity fits; active work
+is not preempted. Default FIFO bytes remain compatible. Priority/bypass audit and
+status metadata are validated during original-policy continuation, without changing
+resource budgets, resident checks or quarantine. This remains local declared
+scheduling, not physical/global control or a measured efficiency gain. See
+[resource policy](RESOURCE_SCHEDULING.md#optional-role-priority-with-bounded-bypass).
