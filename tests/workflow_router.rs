@@ -357,3 +357,209 @@ async fn rejected_policy_audits_or_invalid_orders_never_admit_or_invoke_experts(
             .any(|e| e["kind"] == "expert_phase_budget"));
     }
 }
+
+#[tokio::test]
+async fn cli_direct_and_service_pin_reviewed_policy_before_inference() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let directory =
+        std::env::temp_dir().join(format!("fabric-routing-host-{}", uuid::Uuid::new_v4()));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let (mut cfg, _) = fixture();
+    cfg.home = directory.join("state");
+    cfg.api_base = format!("http://{}/v1", listener.local_addr().unwrap());
+    cfg.save().unwrap();
+    let store = Arc::new(Store::open(&cfg.db()).unwrap());
+    cogfabric::store::bootstrap(&store).unwrap();
+    let manifest: Manifest = serde_json::from_value(json!({"id":"sort.advice","version":"1.0.0","kind":"workflow","description":"Sorting workflow fixture","tags":["sort"],"capabilities":[{"id":"sorting.help","version":"1.0.0"}],"source":"Synthetic test fixture","license":"CC0-1.0","workflow":"Suggest an ascending sorting strategy"})).unwrap();
+    cogfabric::registry::register(&store, &manifest).unwrap();
+    cogfabric::registry::activate(&store, &manifest.id, &manifest.version).unwrap();
+    let capture = Capture::new(store.clone());
+    let engine = Engine::with_backend(
+        cfg.clone(),
+        store.clone(),
+        Script::new(vec![
+            ("solver", "Advice"),
+            ("planner", "invalid plan"),
+            ("solver", "[1,2,3]"),
+        ]),
+    )
+    .with_expert_router(capture.clone())
+    .unwrap();
+    let captured = engine.run(QUERY, "deep").await.unwrap();
+    assert_eq!(captured.status, "completed");
+    let evidence = data(capture.request.lock().unwrap().as_ref().unwrap());
+    let study = directory.join("study.json");
+    let limits = directory.join("thresholds.json");
+    std::fs::write(&study, serde_json::to_vec(&evidence).unwrap()).unwrap();
+    std::fs::write(&limits, serde_json::to_vec(&thresholds(384)).unwrap()).unwrap();
+    let expected =
+        EvidenceRouter::from_json(&serde_json::to_vec(&evidence).unwrap(), thresholds(384))
+            .unwrap()
+            .descriptor();
+    let server = tokio::spawn(async move {
+        // Direct accepted, direct declined, service accepted: no extra requests.
+        for answer in [
+            "Advice",
+            "invalid plan",
+            "[1,2,3]",
+            "invalid plan",
+            "[1,2,3]",
+            "Advice",
+            "invalid plan",
+            "[1,2,3]",
+        ] {
+            let (mut stream, _) =
+                tokio::time::timeout(std::time::Duration::from_secs(10), listener.accept())
+                    .await
+                    .unwrap()
+                    .unwrap();
+            let mut bytes = Vec::new();
+            loop {
+                let mut chunk = [0u8; 2048];
+                let n = stream.read(&mut chunk).await.unwrap();
+                assert!(n > 0);
+                bytes.extend_from_slice(&chunk[..n]);
+                assert!(bytes.len() < 64_000);
+                if let Some(end) = bytes.windows(4).position(|w| w == b"\r\n\r\n") {
+                    let headers = String::from_utf8_lossy(&bytes[..end]).to_lowercase();
+                    let length = headers
+                        .lines()
+                        .find_map(|l| l.strip_prefix("content-length:"))
+                        .unwrap()
+                        .trim()
+                        .parse::<usize>()
+                        .unwrap();
+                    if bytes.len() >= end + 4 + length {
+                        break;
+                    }
+                }
+            }
+            let body = json!({"choices":[{"message":{"content":answer}}],"usage":{"prompt_tokens":1,"completion_tokens":1}}).to_string();
+            stream.write_all(format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{}", body.len(), body).as_bytes()).await.unwrap();
+        }
+    });
+    for allow in [true, false] {
+        std::fs::write(
+            &limits,
+            serde_json::to_vec(&thresholds(if allow { 384 } else { 383 })).unwrap(),
+        )
+        .unwrap();
+        let output = tokio::process::Command::new(env!("CARGO_BIN_EXE_cogfabric"))
+            .arg("--home")
+            .arg(&cfg.home)
+            .arg("--json")
+            .arg("ask")
+            .arg(QUERY)
+            .args(["--mode", "deep", "--workflow-study"])
+            .arg(&study)
+            .arg("--workflow-thresholds")
+            .arg(&limits)
+            .env_clear()
+            .output()
+            .await
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let outcome: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(outcome["calls"], if allow { 3 } else { 2 });
+        assert_eq!(outcome["status"], "completed");
+    }
+    std::fs::write(&limits, serde_json::to_vec(&thresholds(384)).unwrap()).unwrap();
+    let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_cogfabric"))
+        .arg("--home")
+        .arg(&cfg.home)
+        .arg("serve")
+        .arg("--workflow-study")
+        .arg(&study)
+        .arg("--workflow-thresholds")
+        .arg(&limits)
+        .env_clear()
+        .kill_on_drop(true)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            assert!(
+                child.try_wait().unwrap().is_none(),
+                "Service exited during startup"
+            );
+            if cogfabric::service::status(&cfg).await.is_ok() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .unwrap();
+    // File mutation cannot replace a running host's pinned policy.
+    std::fs::write(&study, "invalid replacement").unwrap();
+    std::fs::write(&limits, "invalid replacement").unwrap();
+    let outcome = cogfabric::service::request(&cfg, QUERY.into(), "deep".into())
+        .await
+        .unwrap();
+    assert_eq!(outcome.status, "completed");
+    assert_eq!(outcome.calls, 3);
+    let trace = store.task(&outcome.task_id).unwrap();
+    let routing = trace["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["kind"] == "workflow_routing")
+        .unwrap();
+    assert_eq!(
+        routing["payload"]["router"],
+        serde_json::to_value(expected).unwrap()
+    );
+    child.kill().await.unwrap();
+    child.wait().await.unwrap();
+    server.await.unwrap();
+    drop(engine);
+    drop(capture);
+    drop(store);
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn cli_rejects_invalid_or_partial_policy_before_creating_state() {
+    let directory =
+        std::env::temp_dir().join(format!("fabric-routing-invalid-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir(&directory).unwrap();
+    let home = directory.join("absent");
+    let study = directory.join("study.json");
+    let limits = directory.join("limits.json");
+    std::fs::write(&study, "{}").unwrap();
+    std::fs::write(&limits, serde_json::to_vec(&thresholds(384)).unwrap()).unwrap();
+    for command in ["ask", "serve"] {
+        for partial in [true, false] {
+            let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_cogfabric"));
+            cmd.arg("--home").arg(&home).arg(command);
+            if command == "ask" {
+                cmd.arg(QUERY);
+            }
+            cmd.arg("--workflow-study").arg(&study);
+            if !partial {
+                cmd.arg("--workflow-thresholds").arg(&limits);
+            }
+            assert!(!cmd.env_clear().output().unwrap().status.success());
+            assert!(!home.exists());
+        }
+    }
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_cogfabric"))
+        .arg("--home")
+        .arg(&home)
+        .args(["ask", QUERY, "--socket", "--workflow-study"])
+        .arg(&study)
+        .arg("--workflow-thresholds")
+        .arg(&limits)
+        .env_clear()
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(!home.exists());
+    std::fs::remove_dir_all(directory).unwrap();
+}

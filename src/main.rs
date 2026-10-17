@@ -310,8 +310,19 @@ enum Command {
         conversation: Option<String>,
         #[arg(long)]
         explain: bool,
+        /// Use reviewed workflow utility evidence for this direct task.
+        #[arg(long, requires = "workflow_thresholds", conflicts_with = "socket")]
+        workflow_study: Option<PathBuf>,
+        #[arg(long, requires = "workflow_study", conflicts_with = "socket")]
+        workflow_thresholds: Option<PathBuf>,
     },
-    Serve,
+    Serve {
+        /// Pin reviewed workflow utility evidence for this service lifetime.
+        #[arg(long, requires = "workflow_thresholds")]
+        workflow_study: Option<PathBuf>,
+        #[arg(long, requires = "workflow_study")]
+        workflow_thresholds: Option<PathBuf>,
+    },
     ServiceStatus,
     Modules {
         #[arg(long)]
@@ -615,6 +626,22 @@ async fn main() -> Result<()> {
     ) {
         bail!("Revision recovery requires explicit operator approval")
     }
+    // Resolve explicit policy data before creating state or constructing any backend.
+    // These immutable bytes are never read again while this host accepts tasks.
+    let workflow_router: Option<Arc<dyn cogfabric::routing::ExpertRouter>> = match &cli.command {
+        Command::Ask {
+            workflow_study: Some(study),
+            workflow_thresholds: Some(thresholds),
+            ..
+        }
+        | Command::Serve {
+            workflow_study: Some(study),
+            workflow_thresholds: Some(thresholds),
+        } => Some(Arc::new(cogfabric::routing::empirical::load_files(
+            study, thresholds,
+        )?)),
+        _ => None,
+    };
     let cfg = Config::load(cli.home, cli.backend)?;
     if let Command::ResidencyApply {
         api_base,
@@ -766,6 +793,10 @@ async fn main() -> Result<()> {
     let store = Arc::new(Store::open_with_limit(&cfg.db(), cfg.max_database_bytes)?);
     store::bootstrap(&store)?;
     let engine = Engine::new(cfg.clone(), store.clone());
+    let engine = match workflow_router {
+        Some(router) => engine.with_expert_router(router)?,
+        None => engine,
+    };
     let response: Value = match cli.command {
         Command::RetryStudyEvaluate { .. } => {
             bail!("Retry study evaluation must run before runtime initialization")
@@ -1039,6 +1070,7 @@ async fn main() -> Result<()> {
             socket,
             conversation,
             explain,
+            ..
         } => {
             let options = cogfabric::language::TaskOptions {
                 conversation_ref: conversation,
@@ -1075,7 +1107,7 @@ async fn main() -> Result<()> {
                 json!(outcome.answer)
             }
         }
-        Command::Serve => {
+        Command::Serve { .. } => {
             service::serve(engine).await?;
             return Ok(());
         }

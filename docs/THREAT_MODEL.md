@@ -726,3 +726,13 @@ stop before expert admission. Native callbacks remain trusted host code; operato
 attestations do not prove independent outcomes. The inspection CLI does not
 install policies. No capabilities or model quality claims are added. See
 [empirical workflow routing](EMPIRICAL_WORKFLOW_ROUTING.md).
+
+### Explicit CLI workflow-policy deployment
+
+Direct `ask` and Unix `serve` accept paired `--workflow-study` and
+`--workflow-thresholds`. Files are validated once before state/backend initialization
+and the resulting policy is immutable for that host. Later file replacement does
+not alter tasks. Socket clients cannot override the service policy. This does not
+change persistent configuration, install executables or grant model capabilities.
+HTTP-server policy options and pre-routing checkpoint continuation remain incomplete.
+See [workflow-policy deployment](EMPIRICAL_WORKFLOW_ROUTING.md#direct-cli-and-local-service-deployment).

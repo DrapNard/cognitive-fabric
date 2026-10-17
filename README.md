@@ -88,3 +88,6 @@ This license change applies to the current source tree. Earlier commits and tags
 
 Optional [reviewed workflow routing](docs/EMPIRICAL_WORKFLOW_ROUTING.md) ranks
 expert workflows using bounded paired evidence; no real quality gain is claimed.
+
+Use `ask` or `serve` with `--workflow-study STUDY --workflow-thresholds LIMITS`
+to explicitly pin a reviewed workflow policy for that host.

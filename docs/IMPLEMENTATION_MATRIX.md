@@ -1,5 +1,31 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+### Deploy reviewed workflow policy in direct CLI and Unix service — 2026-10-17
+
+**Implemented (explicit per-host deployment); Partial (general policy lifecycle).**
+`src/main.rs` accepts paired `--workflow-study`/`--workflow-thresholds` options
+for direct `ask` and `serve`. Bounded no-follow strict parsing happens before
+configuration/state/backend initialization. Each host retains one immutable native
+policy, so file replacement cannot change running service decisions. Socket clients
+cannot override the host policy. Omitted options preserve tag routing, and no
+configuration, executable installation or model grant changes.
+
+`tests/workflow_router.rs` covers actual direct CLI accept/decline over HTTP, actual
+Unix service inference after policy-file replacement, recorded policy identity,
+missing/invalid options before home creation and socket override denial. See
+[deployment instructions](EMPIRICAL_WORKFLOW_ROUTING.md#direct-cli-and-local-service-deployment).
+HTTP-server policy options, pre-routing checkpoint continuation, independent held-out
+studies and calibrated utility remain incomplete. Jev+ and Jev-R remain **Partial**.
+
+Verification: `cargo fmt --all -- --check`, locked workspace/all-target check,
+full tests (**639 passed across 32 targets**, none ignored) and Clippy with warnings
+denied all passed. Socket fixtures needed elevated local network access. Existing
+protocol pairing/malformed-frame, migration, mock, policy denial, cancellation
+and rollback cases remain green. `flatc` is unavailable; schemas/bindings were
+unchanged and fresh generation was not run. No live-model effectiveness or physical
+GPU performance result is claimed.
+
+
 ### Rank optional workflows using reviewed utility evidence — 2026-10-17
 
 **Implemented (optional native policy); Partial (independent empirical deployment).**

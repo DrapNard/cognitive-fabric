@@ -63,3 +63,36 @@ use regular-file reads that reject symlinks. At most 32 studies and 1,024 paired
 cases are admitted. Policy identities cover canonical evidence and thresholds.
 This feature grants no capabilities, proves no provider health, and supplies no
 real-model speed, GPU efficiency or quality benchmark.
+
+## Direct CLI and local service deployment
+
+Explicitly install a reviewed policy for one direct task:
+
+```sh
+cogfabric ask 'sort:{"values":[3,1,2]}' --mode deep \
+  --workflow-study study.json --workflow-thresholds thresholds.json
+```
+
+Or pin it for the local Unix service lifetime:
+
+```sh
+cogfabric serve --workflow-study study.json --workflow-thresholds thresholds.json
+```
+
+Both options are required together. Invalid/ambiguous/oversized files and symlinks
+are rejected before workspace state or backends are initialized. `ask --socket`
+rejects these options: the service operator chooses the service's policy, and a
+socket client cannot replace it. Omitted options retain the default tag router.
+
+A host reads and validates the files exactly once at startup. Replacing either
+file does not alter its policy or admitted tasks. A new process must explicitly
+load the revised policy. No configuration file is changed, no executable plugin
+is loaded, and no model capabilities are granted. Every task records the policy
+identity. This CLI deployment applies to direct Core tasks and the Unix service;
+the separate HTTP server binary has no equivalent options yet. Continuation supports only its existing post-routing ready checkpoints. It does
+not rerun a missing routing phase or reconstruct a router from stored metadata;
+policy metadata alone cannot restore code or establish utility.
+
+The end-to-end fixture covers accepted and declined direct tasks, actual HTTP
+inference, Unix service tasks, and file replacement after service startup. These
+are synthetic functional checks, not a held-out effectiveness study.
