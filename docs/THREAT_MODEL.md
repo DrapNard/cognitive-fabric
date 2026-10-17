@@ -695,3 +695,24 @@ owner-local claim, not provider-stop, weight identity or physical resource proof
 Current CLI configuration cannot enlarge a saved task's allocation. Dynamic load/
 unload, general within-call recovery and cross-workspace physical control remain
 incomplete.
+
+
+### Reviewed residency-plan application
+
+The deterministic planner may reuse known exact contexts and propose only explicit
+release IDs and missing installed model loads. Application is human-only, requires
+explicit approval, verifies the explicit native endpoint and fresh projected
+inventory, and atomically records a one-attempt receipt before effects. Each bounded
+step checks operator policy, audits its child operation and verifies the expected
+projected inventory change. Failures/drift/timeouts stop later steps without retry
+or rollback claims. Receipt and linked task retention prevent deletion from silently
+resetting the gate; receipt capacity/SQL work and mutation duration are bounded.
+
+All native residency mutations now hold both resource ownership and runtime leases;
+an idle configured pool also prevents mutation. Other applications/providers need
+not respect these workspace leases. Inventory hashes cover known key/type/instance/
+context fields, not weights or unknown metadata. A cancelled process may leave an
+uncertain POST and requested/running audits; inspection is not resolution or provider
+stop proof. Native Rust callers are trusted, and model actors gain no API/grant.
+Receipt retirement, autonomous owned residency, physical control and independent
+model quality/safety evaluation remain incomplete.

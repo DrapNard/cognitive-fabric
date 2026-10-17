@@ -7,19 +7,20 @@ use std::{
     collections::BTreeSet,
     time::{Duration, Instant},
 };
+pub mod planning;
 
 pub const CREDENTIAL_ENV: &str = "COGFABRIC_RESIDENCY_API_KEY";
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Instance {
     pub id: String,
     pub config: InstanceConfig,
 }
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct InstanceConfig {
     pub context_length: u64,
 }
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Model {
     pub key: String,
     #[serde(rename = "type")]
@@ -243,7 +244,7 @@ mod tests {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Mutation {
     Load { model: String, context_length: u32 },
@@ -358,15 +359,56 @@ pub async fn mutate(
     }
     endpoint(base)?;
     validate_action(&action)?;
-    let lease_path = store
+    let _leases = mutation_leases(store)?;
+    mutate_owned(store, base, authenticate, action, None).await
+}
+
+struct MutationContext<'a> {
+    inventory_sha256: &'a str,
+    plan_task: &'a str,
+    step: usize,
+}
+fn mutation_leases(
+    store: &crate::store::Store,
+) -> Result<(
+    crate::recovery::ExecutionLease,
+    crate::recovery::ExecutionLease,
+)> {
+    let path = store
         .runtime_lock
-        .as_deref()
+        .as_ref()
         .ok_or_else(|| anyhow::anyhow!("Residency changes require a persistent store"))?;
-    let _lease = crate::recovery::ExecutionLease::acquire(lease_path, true).map_err(|_| {
+    let mut resource_path = path.as_os_str().to_os_string();
+    resource_path.push(".resources");
+    let resource =
+        crate::recovery::ExecutionLease::acquire(std::path::Path::new(&resource_path), true)
+            .map_err(|_| {
+                anyhow::anyhow!(
+                    "Residency change refused while configured resource ownership is active"
+                )
+            })?;
+    let runtime = crate::recovery::ExecutionLease::acquire(path, true).map_err(|_| {
         anyhow::anyhow!("Residency change refused while runtime execution is active")
     })?;
+    Ok((resource, runtime))
+}
+async fn mutate_owned(
+    store: &crate::store::Store,
+    base: &str,
+    authenticate: bool,
+    action: Mutation,
+    context: Option<MutationContext<'_>>,
+) -> Result<Value> {
+    security::authorize("human-cli", "model.residency.change")?;
+    endpoint(base)?;
+    validate_action(&action)?;
     let before = status(base, authenticate).await?;
     let models = parse(&serde_json::to_vec(&before)?)?;
+    if let Some(context) = &context {
+        if planning::fingerprint(&models)? != context.inventory_sha256 {
+            bail!("Residency plan inventory changed before mutation")
+        }
+    }
     let (operation, body) = match &action {
         Mutation::Load {
             model,
@@ -394,6 +436,9 @@ pub async fn mutate(
         }
     };
     let task = store.create_task("Operator native model residency change", "fast")?;
+    if let Some(context) = &context {
+        store.event(context.plan_task,"residency_plan_step","human-cli",json!({"format_version":1,"step":context.step,"operation_task_id":task,"permissions_granted":false}))?;
+    }
     // Persist exact bounded operator intent before the external effect.
     store.event(&task, "model_residency", "human-cli", json!({"state":"requested","adapter":"lmstudio-native-v1","endpoint":endpoint(base)?.as_str(),"action":action,"external_outcome":"unknown"}))?;
     let started = Instant::now();
@@ -421,7 +466,9 @@ pub async fn mutate(
             Mutation::Unload { instance_id } => !observed.iter().any(|m| m.loaded_instances.iter().any(|i| &i.id == instance_id)),
         };
         if !confirmed { bail!("Native residency change was not confirmed by fresh inventory") }
+        if context.is_some() { planning::validate_transition(&models,&observed,&action,instance)?; }
         Ok::<_, anyhow::Error>(json!({"task_id":task,"operation":operation,"instance_id":instance,"server_confirmed":true,
+            "after_inventory_sha256":planning::fingerprint(&observed)?,
             "elapsed_ms":started.elapsed().as_secs_f64()*1000.0,"provider_load_seconds":response.get("load_time_seconds"),
             "ownership_established":false,"weights_attested":false,"generation_tested":false,"automatic_cleanup_performed":false}))
     }.await;

@@ -467,3 +467,14 @@ can age immediately; selection does not reserve space. Old inference pins retain
 immediate queue-full errors, and old tool handles retain their original bounded
 waiting. Neither migrates or retries. No protocol fields, capabilities, grants,
 queue limits or external model-residency operations change.
+
+
+### Reviewed residency-set planning
+
+Use `residency-plan` to propose reuse, explicitly permitted releases and missing
+loads for a bounded installed-model/context request; use `residency-apply` only after
+review with `--human-approve`. See [RESIDENCY_PLANS.md](RESIDENCY_PLANS.md) for
+commands, freshness, one-attempt receipts, unknown outcomes and current limits.
+All residency changes now refuse a live configured resource owner, including an
+idle host; stop that host before changing its model set. No automatic model actor
+capability or provider/weight attestation is introduced.

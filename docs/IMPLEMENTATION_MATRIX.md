@@ -1,5 +1,49 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+### Plan reviewed resident-model reconciliation — 2026-10-17
+
+**Implemented (bounded operator planning/application); Partial (autonomous/physical lifecycle).**
+`src/residency/planning.rs` plans a desired installed model/context set, reuses exact
+loaded matches, loads only missing models and releases only explicitly selected
+instance IDs. Canonical ordering and projected inventory hashes make decisions
+reproducible. Invalid targets, incompatible unreleased contexts, expired/tampered
+plans and stale inventories fail before mutation. Requests/actions are bounded to
+eight; a 300-second review lifetime and 120-second mutation phase bound execution.
+
+`residency-plan REQUEST --api-base ...` reads native inventory without initializing
+state. `residency-apply PLAN --api-base ... --human-approve` uses an existing store,
+rechecks explicit endpoint/inventory and persists an atomic one-attempt receipt.
+Each step rechecks operator policy and expected inventory, audits its child operation,
+and requires only the expected projected transition. Drift/uncertainty stops later
+operations without retry or claimed rollback. Parent reports preserve confirmed
+steps and explicit non-attestation flags. Existing credential/response/endpoint
+limits remain; no new provider API or model actor grant is added.
+
+All residency mutations now acquire configured-resource ownership before runtime
+ownership, blocking changes under an idle live pool as well as active inference.
+Retention protects plan receipts and linked operation tasks against replay-gate
+removal. Receipt inspection is bounded to 1,024 records/32 KiB each under a five-second
+SQL deadline. Retirement/compaction remains unimplemented and this quota is explicit.
+
+Sources include residency/planning, existing mutation refactoring, CLI and retention.
+Unit and actual HTTP/CLI fixtures cover reuse, exact unload/load, independent next-step
+checks, expiry/content changes, corrupt/replayed receipts, no-state preview, approval,
+audit rollback, unknown outcomes, idle ownership and retention. Native provider/weight
+ownership, real load/inference cost, automatic per-task residency and physical GPU
+limits remain unproven/incomplete. Jev+ and Jev-R remain Partial. Verification
+passed: `cargo fmt --all -- --check`,
+`cargo check --locked --workspace --all-targets`,
+`cargo test --locked --workspace --all-targets` (**629 tests across 31 targets**),
+and `cargo clippy --locked --workspace --all-targets -- -D warnings`. The first
+five focused integration cases passed before adding two more CLI/drift cases and
+expiry/receipt regressions; the final full suite includes all of them. Local
+TCP/Unix fixtures required elevated socket access. Existing protocol pairing,
+malformed frames, migrations, mock inference, denial, cancellation, recovery and
+candidate rollback gates remain green. `flatc` is unavailable; schemas/bindings
+were unchanged and fresh generation was not run. No real native load/GPU/quality
+performance gain is claimed.
+
+
 ### Restore original configured resource admission during continuation — 2026-10-16
 
 **Implemented (supported ready checkpoints and compiled configured pools); Partial (general recovery).**

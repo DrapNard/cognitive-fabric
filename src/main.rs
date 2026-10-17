@@ -188,6 +188,24 @@ enum Command {
         #[arg(long)]
         authenticate: bool,
     },
+    /// Propose model reuse/load/release without mutating the provider.
+    ResidencyPlan {
+        request: PathBuf,
+        #[arg(long)]
+        api_base: String,
+        #[arg(long)]
+        authenticate: bool,
+    },
+    /// Apply one reviewed residency plan under explicit operator approval.
+    ResidencyApply {
+        plan: PathBuf,
+        #[arg(long)]
+        api_base: String,
+        #[arg(long)]
+        authenticate: bool,
+        #[arg(long)]
+        human_approve: bool,
+    },
     ResidencyInspect {
         id: String,
         #[arg(long)]
@@ -470,6 +488,37 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
     if matches!(
         &cli.command,
+        Command::ResidencyApply {
+            human_approve: false,
+            ..
+        }
+    ) {
+        bail!("Residency plan application requires explicit operator approval")
+    }
+    if let Command::ResidencyPlan {
+        request,
+        api_base,
+        authenticate,
+    } = &cli.command
+    {
+        let bytes = security::read_regular_bytes(request, 16384)?;
+        let request = serde_json::from_value(cogfabric::strict_json::value(&bytes, 16384)?)?;
+        return output(
+            cogfabric::residency::planning::preview(api_base, *authenticate, &request).await?,
+            cli.json,
+        );
+    }
+    let residency_plan = if let Command::ResidencyApply { plan, .. } = &cli.command {
+        let bytes = security::read_regular_bytes(plan, 32768)?;
+        let plan: cogfabric::residency::planning::Plan =
+            serde_json::from_value(cogfabric::strict_json::value(&bytes, 32768)?)?;
+        plan.validate()?;
+        Some(plan)
+    } else {
+        None
+    };
+    if matches!(
+        &cli.command,
         Command::ResourceRelease {
             human_approve: false,
             ..
@@ -556,6 +605,28 @@ async fn main() -> Result<()> {
         bail!("Revision recovery requires explicit operator approval")
     }
     let cfg = Config::load(cli.home, cli.backend)?;
+    if let Command::ResidencyApply {
+        api_base,
+        authenticate,
+        human_approve,
+        ..
+    } = &cli.command
+    {
+        let store = Store::open_existing_with_limit(&cfg.db(), cfg.max_database_bytes)?;
+        let report = cogfabric::residency::planning::apply(
+            &store,
+            api_base,
+            *authenticate,
+            residency_plan.as_ref().expect("Validated plan"),
+            *human_approve,
+        )
+        .await?;
+        output(&report, cli.json)?;
+        if report["state"] != "completed" {
+            bail!("Residency plan interrupted; inspect confirmed and uncertain operations")
+        }
+        return Ok(());
+    }
     if matches!(
         &cli.command,
         Command::ResourceStatus | Command::ResourceRelease { .. }
@@ -860,6 +931,9 @@ async fn main() -> Result<()> {
             json!({"saved":true,"inference_auth_scope":settings.inference_auth_scope,"credential_environment_variable":cogfabric::credentials::ENVIRONMENT_VARIABLE,"credential_stored":false})
         }
         Command::ConfigShow => serde_json::to_value(&cfg)?,
+        Command::ResidencyPlan { .. } | Command::ResidencyApply { .. } => {
+            bail!("Residency plans must run before runtime initialization")
+        }
         Command::ResourceStatus | Command::ResourceRelease { .. } => {
             bail!("Resource reconciliation must run before initialization")
         }

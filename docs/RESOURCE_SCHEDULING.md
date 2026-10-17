@@ -355,3 +355,15 @@ corrupt, audit-failing and contended-ownership cases are covered. Test prefixes 
 scripted Engine runs truncated at real recorded checkpoints, not crash/GPU or
 neural-quality evidence. Full within-call recovery, arbitrary native pool code,
 provider ownership/stop proof and physical memory enforcement remain incomplete.
+
+
+## Reviewed provider reconciliation
+
+[RESIDENCY_PLANS.md](RESIDENCY_PLANS.md) describes the separate operator planner
+for exact loaded-context reuse, explicit release and missing installed model loads.
+Both batch application and the existing individual residency mutations now refuse
+while a configured pool owns this workspace, even if no inference is active. This
+prevents those commands from replacing a live pool's declared model set. Planning
+and inspection remain read-only. This workflow does not prove provider ownership,
+synchronize the resident catalog automatically, measure footprints or grant models
+authority to load/unload themselves.
