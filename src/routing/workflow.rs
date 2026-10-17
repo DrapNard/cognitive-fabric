@@ -61,7 +61,7 @@ impl WorkflowRequest {
         if self.criterion.as_deref().is_some_and(|criterion| {
             !matches!(
                 criterion,
-                "integer_sort/v1" | "dependency_order/v1" | "shortest_path/v1"
+                "integer_sort/v1" | "dependency_order/v1" | "shortest_path/v1" | "finite_domain/v1"
             )
         }) {
             bail!("Unsupported workflow verification criterion")

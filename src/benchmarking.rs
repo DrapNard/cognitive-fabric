@@ -27,6 +27,7 @@ enum Criterion {
     DependencyOrderV1,
     IntegerSortV1,
     ShortestPathV1,
+    FiniteDomainV1,
     SqlResultJsonV1,
 }
 
@@ -81,7 +82,10 @@ impl Case {
                 })?)?;
                 Ok(None)
             }
-            Criterion::DependencyOrderV1 | Criterion::IntegerSortV1 | Criterion::ShortestPathV1 => {
+            Criterion::DependencyOrderV1
+            | Criterion::IntegerSortV1
+            | Criterion::ShortestPathV1
+            | Criterion::FiniteDomainV1 => {
                 if self.expected.is_some() {
                     bail!("Structured criterion must omit expected output")
                 }
@@ -97,6 +101,9 @@ impl Case {
                     ) | (
                         Criterion::ShortestPathV1,
                         Some(crate::verification::Criterion::ShortestPath(_))
+                    ) | (
+                        Criterion::FiniteDomainV1,
+                        Some(crate::verification::Criterion::FiniteDomain(_))
                     )
                 );
                 if !matching {
@@ -526,6 +533,30 @@ mod tests {
             assert!(case.score(criterion.as_ref(), "completed", &answer));
             assert!(!case.score(criterion.as_ref(), "rejected", &answer));
             assert!(!case.score(criterion.as_ref(), "completed", r#"{"verified":true}"#));
+        }
+    }
+
+    #[test]
+    fn finite_domain_scoring_checks_constraints_instead_of_an_expected_assignment() {
+        let input = r#"csp:{"variables":[{"id":"a","domain":[1,2]},{"id":"b","domain":[1,2]}],"constraints":[{"kind":"all_different","variables":["a","b"]}]}"#;
+        let case: Case =
+            serde_json::from_value(json!({"input":input,"verification":"finite_domain_v1"}))
+                .unwrap();
+        let criterion = case.prepare().unwrap();
+        for answer in [r#"{"a":1,"b":2}"#, r#"{"a":2,"b":1}"#] {
+            assert!(case.score(criterion.as_ref(), "unverified", answer));
+            assert!(!case.score(criterion.as_ref(), "failed", answer));
+        }
+        assert!(!case.score(criterion.as_ref(), "completed", r#"{"a":1,"b":1}"#));
+        for bad in [
+            json!({"input":input,"verification":"finite_domain_v1","expected":"{}"}),
+            json!({"input":"plain objective","verification":"finite_domain_v1"}),
+            json!({"input":input,"verification":"integer_sort_v1"}),
+        ] {
+            assert!(serde_json::from_value::<Case>(bad)
+                .unwrap()
+                .prepare()
+                .is_err());
         }
     }
 

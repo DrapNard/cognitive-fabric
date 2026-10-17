@@ -28,7 +28,8 @@ bundled; test studies are synthetic.
 ## Scope and decisions
 
 Evidence must match the mode, compiled verification criterion (integer sorting,
-dependency ordering or shortest path), configuration, role prompts, compiled
+dependency ordering, shortest path or finite-domain constraint satisfaction),
+configuration, role prompts, compiled
 runtime sources, pinned knowledge cohort, workflow manifest and bound model
 metadata. Knowledge identity includes selected documents and memories and pinned
 skill/manifest metadata. It is not a guarantee about an entire external corpus.

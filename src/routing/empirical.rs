@@ -108,7 +108,7 @@ impl EvidenceRouter {
             || !matches!(evidence.mode.as_str(), "standard" | "deep" | "research")
             || !matches!(
                 evidence.criterion.as_str(),
-                "integer_sort/v1" | "dependency_order/v1" | "shortest_path/v1"
+                "integer_sort/v1" | "dependency_order/v1" | "shortest_path/v1" | "finite_domain/v1"
             )
             || [
                 &evidence.configuration_sha256,

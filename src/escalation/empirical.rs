@@ -144,7 +144,7 @@ impl EmpiricalPolicy {
             || !matches!(study.mode.as_str(), "deep" | "research")
             || !matches!(
                 study.criterion.as_str(),
-                "integer_sort/v1" | "dependency_order/v1" | "shortest_path/v1"
+                "integer_sort/v1" | "dependency_order/v1" | "shortest_path/v1" | "finite_domain/v1"
             )
             || !(1..=15).contains(&study.cycle)
             || !hash(&study.configuration_sha256)

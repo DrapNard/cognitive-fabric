@@ -1,5 +1,44 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+### Independently verify finite-domain reasoning witnesses — 2026-10-17
+
+**Implemented (bounded integer constraint satisfaction); Partial (general verification).**
+`src/verification/finite.rs` adds explicit `csp:` goals with finite integer domains,
+all-different and exact linear eq/ne/le/ge constraints. Strict bounded JSON rejects
+ambiguous keys and unsupported fields. A candidate must assign every declared
+variable within its domain and satisfy every constraint; no generated code or
+exponential search runs. Bounded coefficients and i128 sums avoid i64 overflow.
+No unsatisfiability, optimality or real-world completeness proof is claimed.
+
+`constraints.verify` is task/actor scoped and individually charged. Existing Jev-R
+independent rejection/revision, no-progress stopping, checked-output preservation,
+published-memory rechecking and durable inference accounting support the criterion.
+Checker manifests bind `finite_domain/v1`; workflow/retry policies require the
+usual matching evidence. Comparison JSONL supports `finite_domain_v1` without an
+expected witness, allowing independently checked alternate solutions.
+
+Sources: verification, security, registry, reasoning constraint tests, benchmark
+scoring, routing/escalation scope and recovery accounting. Tests cover brute-force
+small-domain comparisons, wide arithmetic, bounds/order invariance, malformed
+criteria/answers, alternate witnesses, contradiction/forged success, revision,
+stagnation, tool/audit denial, recorded charges and exact-memory reuse. See
+[finite-domain verification](VERIFICATION.md#finite-domain-assignments).
+General executable verifiers, broader scheduling and independent effectiveness
+measurements remain incomplete. Jev+ and Jev-R remain **Partial**.
+
+Verification: formatting, locked workspace/all-target check, full rerun (**648
+passed across 32 targets**, none ignored), and Clippy with warnings denied pass.
+The first full run failed one existing resource-resume test on exclusive runtime
+lease contention; the exact case passed in isolation and the full unchanged suite
+passed on rerun. Its transient cause was not established and lease enforcement was
+not weakened. Socket fixtures required elevated access. Protocol pairing/malformed
+frames, migrations, mocks, denials, cancellation and rollback remain covered.
+`flatc` is unavailable; unchanged bundled bindings were validated without fresh
+generation. The default local endpoint at 127.0.0.1:1234 refused discovery both
+inside and outside the sandbox; no real-backend inference or quality gain is claimed.
+
+
+
 ### Deploy reviewed workflow policy in direct CLI and Unix service — 2026-10-17
 
 **Implemented (explicit per-host deployment); Partial (general policy lifecycle).**

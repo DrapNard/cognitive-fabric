@@ -91,3 +91,6 @@ expert workflows using bounded paired evidence; no real quality gain is claimed.
 
 Use `ask` or `serve` with `--workflow-study STUDY --workflow-thresholds LIMITS`
 to explicitly pin a reviewed workflow policy for that host.
+
+Verifier-R supports [finite-domain constraint assignments](docs/VERIFICATION.md#finite-domain-assignments)
+through explicit `csp:` objectives, alongside sorting, ordering and path checks.

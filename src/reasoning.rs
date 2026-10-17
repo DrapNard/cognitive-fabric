@@ -3493,3 +3493,7 @@ mod configured_resource_tests {
         assert!(pool.snapshot().unwrap().reservations.is_empty());
     }
 }
+
+#[cfg(test)]
+#[path = "reasoning/constraint_tests.rs"]
+mod constraint_tests;

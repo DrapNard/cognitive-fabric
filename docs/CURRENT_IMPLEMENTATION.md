@@ -1700,3 +1700,13 @@ not alter tasks. Socket clients cannot override the service policy. This does no
 change persistent configuration, install executables or grant model capabilities.
 HTTP-server policy options and pre-routing checkpoint continuation remain incomplete.
 See [workflow-policy deployment](EMPIRICAL_WORKFLOW_ROUTING.md#direct-cli-and-local-service-deployment).
+
+## Finite-domain Verifier-R witnesses (2026-10-17)
+
+Explicit `csp:` tasks now support bounded finite integer domains, all-different
+and exact linear eq/ne/le/ge constraints under `finite_domain/v1`. Every check
+is individually authorized/charged as `constraints.verify`, and existing bounded
+revision, checked-answer preservation and published-memory rechecking apply.
+Benchmark scoring accepts alternate satisfying assignments without a fixed expected
+answer. This proves only declared constraint satisfaction, not optimality,
+unsatisfiability or model quality. See [verification](VERIFICATION.md#finite-domain-assignments).

@@ -1,3 +1,4 @@
+mod finite;
 mod path;
 // Independent bounded checks of operator-supplied structured constraints.
 use anyhow::{bail, Result};
@@ -120,9 +121,13 @@ pub(crate) enum Criterion {
     Ordering(Ordering),
     Sorting(Sorting),
     ShortestPath(path::ShortestPath),
+    FiniteDomain(finite::FiniteDomain),
 }
 impl Criterion {
     pub(crate) fn from_query(query: &str) -> Result<Option<Self>> {
+        if let Some(raw) = query.strip_prefix("csp:") {
+            return Ok(Some(Self::FiniteDomain(finite::FiniteDomain::parse(raw)?)));
+        }
         if let Some(raw) = query.strip_prefix("path:") {
             return Ok(Some(Self::ShortestPath(path::ShortestPath::parse(raw)?)));
         }
@@ -136,6 +141,7 @@ impl Criterion {
             Self::Ordering(_) => "ordering.verify",
             Self::Sorting(_) => "sorting.verify",
             Self::ShortestPath(_) => "path.verify",
+            Self::FiniteDomain(_) => "constraints.verify",
         }
     }
     pub(crate) fn name(&self) -> &'static str {
@@ -143,10 +149,12 @@ impl Criterion {
             Self::Ordering(_) => "dependency_order/v1",
             Self::Sorting(_) => "integer_sort/v1",
             Self::ShortestPath(_) => "shortest_path/v1",
+            Self::FiniteDomain(_) => "finite_domain/v1",
         }
     }
     pub(crate) fn instruction(&self) -> &'static str {
         match self {
+            Self::FiniteDomain(_) => "Return only one JSON object mapping every declared variable identifier to a signed integer from its declared domain. Satisfy every linear relation and all_different constraint. No extra keys, prose, confidence or claim of impossibility. A valid assignment is the required witness.",
             Self::ShortestPath(_) => "Return only a JSON array of node identifiers forming any shortest directed path from start to goal. Edges are unweighted and directed. Return [] exactly when the goal is unreachable; when start equals goal return [start]. No prose or extra fields.",
             Self::Ordering(_) => "Return only a JSON array containing every declared node exactly once, respecting every before pair.",
             Self::Sorting(_) => "Return only a JSON array of all supplied integers in the requested order (ascending by default), preserving duplicates. No prose or extra fields.",
@@ -157,6 +165,7 @@ impl Criterion {
             Self::Ordering(c) => c.check(answer),
             Self::Sorting(c) => c.check(answer),
             Self::ShortestPath(c) => c.check(answer),
+            Self::FiniteDomain(c) => c.check(answer),
         }
     }
 }

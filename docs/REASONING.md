@@ -91,3 +91,9 @@ Inspection is available through `retry-study-evaluate` without creating state.
 See [empirical escalation](EMPIRICAL_ESCALATION.md) for bounds, host installation,
 operator-attested provenance and the remaining Jev+ components. This does not
 establish calibrated expected utility or a live improvement in model quality.
+
+Verifier-R also checks explicit `csp:` finite-domain assignments with bounded
+linear and all-different constraints. Alternative witnesses are accepted; failed
+checks revise through the original bounded loop. See
+[finite-domain verification](VERIFICATION.md#finite-domain-assignments) for grammar
+and the limits of its satisfaction-only evidence.

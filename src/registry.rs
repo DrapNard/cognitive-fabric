@@ -94,7 +94,12 @@ impl Manifest {
         if self.kind == "checker" {
             if !matches!(
                 self.checker.as_deref(),
-                Some("dependency_order/v1" | "integer_sort/v1" | "shortest_path/v1")
+                Some(
+                    "dependency_order/v1"
+                        | "integer_sort/v1"
+                        | "shortest_path/v1"
+                        | "finite_domain/v1"
+                )
             ) {
                 bail!("Checker experts require a supported compiled checker identity")
             }

@@ -24,6 +24,7 @@ impl TaskPolicy {
                 ("jev-plus", "ordering.verify"),
                 ("jev-plus", "sorting.verify"),
                 ("jev-plus", "path.verify"),
+                ("jev-plus", "constraints.verify"),
                 ("jev-plus", "sql.query"),
             ],
         )
@@ -87,6 +88,7 @@ pub fn authorize(principal: &str, capability: &str) -> Result<()> {
                 | "ordering.verify"
                 | "sorting.verify"
                 | "path.verify"
+                | "constraints.verify"
                 | "sql.query"
         ),
         "human-cli" => matches!(
@@ -232,5 +234,19 @@ mod path_policy_tests {
             .authorize(task, "jev-plus", "path.verify")
             .is_err());
         assert!(authorize("interface", "path.verify").is_err());
+        policy
+            .authorize(task, "jev-plus", "constraints.verify")
+            .unwrap();
+        assert!(policy
+            .authorize(other, "jev-plus", "constraints.verify")
+            .is_err());
+        assert!(policy
+            .authorize(task, "jev-r", "constraints.verify")
+            .is_err());
+        assert!(TaskPolicy::agent(task)
+            .unwrap()
+            .authorize(task, "jev-plus", "constraints.verify")
+            .is_err());
+        assert!(authorize("interface", "constraints.verify").is_err());
     }
 }

@@ -74,3 +74,56 @@ permissions. Checker manifests may bind the built-in implementation as
 same criterion and original durable tool accounting. Agent HTTP turns have no
 checker grant. This verifies only the supplied finite graph, not external map
 accuracy, weighted routing, real-world feasibility or general reasoning quality.
+
+## Finite-domain assignments
+
+Explicit `csp:` objectives ask for an integer assignment satisfying all declared
+finite domains and constraints. `finite_domain/v1` checks a proposed witness;
+it neither searches for a solution nor executes generated code.
+
+```text
+csp:{"variables":[{"id":"a","domain":[1,2,3]},{"id":"b","domain":[1,2,3]}],"constraints":[{"kind":"all_different","variables":["a","b"]},{"kind":"linear","terms":[{"variable":"a","coefficient":1},{"variable":"b","coefficient":1}],"relation":"eq","rhs":4}]}
+```
+
+Both `{"a":1,"b":3}` and `{"a":3,"b":1}` pass. `{"a":2,"b":2}` fails the
+all-different constraint. Answers must be one JSON object containing every
+variable exactly once, with signed 64-bit integer values from its domain.
+Extra/missing keys, duplicate JSON keys, floats, booleans and claimed verification
+objects fail. Object and variable declaration order do not determine acceptance.
+
+### Grammar and bounds
+
+- `variables`: 1–32 records with `id` and `domain`. IDs contain 1–32 ASCII letters,
+  digits or underscores; domains contain 1–64 distinct signed 64-bit integers.
+- `constraints`: 1–128 records. Every constraint must pass.
+- `all_different`: `variables` names 2–32 distinct declared variables whose assigned
+  values must all differ.
+- `linear`: `terms` contains 1–16 distinct declared variables, each with a nonzero
+  integer `coefficient` between -1,000,000 and 1,000,000. `relation` is `eq`, `ne`,
+  `le` or `ge`; `rhs` is a signed 64-bit integer. The weighted sum is evaluated
+  exactly with 128-bit intermediates, including negative values and `i64::MIN`.
+- Criteria are capped at 10,000 bytes; assignments at 8,192 bytes. Unknown fields,
+  duplicate keys at any depth, unknown variables, duplicate terms and invalid
+  numeric values fail closed. Work is bounded by the declared structures rather
+  than the number of possible assignments.
+
+Each check requires the original task's Jev+ `constraints.verify` grant and costs
+one tool invocation. Interface, Jev-R and generation-only agent actors have no
+such task grant. Rejections feed the existing capped revision loop; stagnation,
+original resource ceilings, audit failure and cancellation rules are unchanged.
+Accepted answers retain their exact bytes and hashes; optional synthesis cannot
+rewrite them. Operator-published matching episodes are independently rechecked
+before reuse. Checker manifests can bind `finite_domain/v1`, but cannot install
+code, change the criterion or grant permissions.
+
+The criterion proves satisfaction of the supplied constraints only. It does not
+prove optimality, the truth/completeness of a real-world specification, general
+model quality, or unsatisfiability. Contradictory criteria may be valid inputs;
+no assignment or model declaration of impossibility is accepted for them.
+
+Comparison JSONL can use `"verification":"finite_domain_v1"` with the explicit
+`csp:` input and no `expected` field. Scoring independently checks each arm's
+assignment, so alternative solutions are valid; failed/rejected/cancelled arms
+cannot count as successes. Paired workflow/retry evidence can name
+`finite_domain/v1` under the existing exact scope and operator review rules.
+Synthetic tests are not a held-out effectiveness study.

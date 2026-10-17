@@ -736,3 +736,15 @@ not alter tasks. Socket clients cannot override the service policy. This does no
 change persistent configuration, install executables or grant model capabilities.
 HTTP-server policy options and pre-routing checkpoint continuation remain incomplete.
 See [workflow-policy deployment](EMPIRICAL_WORKFLOW_ROUTING.md#direct-cli-and-local-service-deployment).
+
+### Bounded finite-domain evidence
+
+`finite_domain/v1` checks explicit user-supplied domains and linear/all-different
+constraints using deterministic Rust and bounded i128 arithmetic. It executes no
+expression language, solver executable or generated program, and accepts no model
+claim of impossibility. Strict JSON, byte/structure ceilings and exact declared-key
+matching prevent ambiguous criteria and assignments. `constraints.verify` is a
+reasoning-task Jev+ grant; generation-only agents and model roles cannot invoke it.
+Per-check audit and budget rules, original-query memory rechecks and immutable
+criterion identity remain required. Passing means only satisfaction of the supplied
+finite specification, not external truth, optimality or general neural safety.
