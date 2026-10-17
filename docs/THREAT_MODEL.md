@@ -759,3 +759,14 @@ nonblocking and never forcibly unlocks a surviving description or removes the le
 file. Controlled inheritance/no-write tests cover the boundary; a test-only process
 launch gate isolates unrelated fixture descriptor inheritance. This provides no
 external provider-stop or malicious-owner guarantee.
+
+### Joint capability metadata resolution
+
+The bounded greedy resolver uses only pinned enabled declaration metadata and
+existing model-registration availability. It grants no tools, loads no executable
+and performs no provider contact. Recorded availability is a prerequisite check,
+not endpoint health or weight attestation. Selection cannot exceed four routes or
+override profile exclusions; original workflow/call/tool/resource gates still apply.
+Audit failure stops before refinement and expert admission. Later registry changes
+affect future snapshots. Missing, unavailable and unselected requests remain
+separately observable without automatically creating a candidate or new permission.

@@ -680,48 +680,23 @@ impl Engine {
                 if let Some(raw) = interpretation {
                     match crate::language::Interpretation::parse(&raw) {
                         Ok(intent) => {
-                            let missing = intent
-                                .required_capabilities
-                                .iter()
-                                .filter(|capability| {
-                                    crate::registry::provider(
-                                        &pinned.skills,
-                                        &pinned.manifests,
-                                        capability,
-                                    )
-                                    .is_none()
-                                })
-                                .collect::<Vec<_>>();
-                            for capability in &intent.required_capabilities {
-                                if matches!(
+                            let resolution = crate::capabilities::resolve(
+                                &pinned.skills,
+                                &pinned.manifests,
+                                &pinned.expert_models,
+                                &intent.required_capabilities,
+                                &skills,
+                                matches!(
                                     profile,
                                     ExecutionProfile::Full
                                         | ExecutionProfile::Collective
                                         | ExecutionProfile::Experts
-                                ) && skills.len() < 4
-                                {
-                                    if let Some(provider) = crate::registry::provider(
-                                        &pinned.skills,
-                                        &pinned.manifests,
-                                        capability,
-                                    ) {
-                                        if !skills.contains(&provider) {
-                                            skills.push(provider);
-                                        }
-                                    }
-                                }
-                            }
-                            let bindings = intent.required_capabilities.iter().map(|capability| {
-                                let provider=crate::registry::provider(&pinned.skills,&pinned.manifests,capability);
-                                let manifest=provider.as_ref().and_then(|id|pinned.manifests.iter().find(|manifest|&manifest.id==id));
-                                let capability_version=manifest.and_then(|manifest| {
-                                    if &manifest.id==capability {Some(manifest.version.as_str())}
-                                    else {manifest.capabilities.iter().find(|entry|&entry.id==capability).map(|entry|entry.version.as_str())}
-                                });
-                                let selected=provider.as_ref().is_some_and(|id|skills.contains(id));
-                                json!({"requested":capability,"provider":provider,"provider_version":manifest.map(|manifest|manifest.version.as_str()),"capability_version":capability_version,"selected":selected,"declaration_only":true,"permissions_granted":false})
-                            }).collect::<Vec<_>>();
-                            self.store.event(&id,"route_refined","jev-plus",json!({"skills":skills,"versions":pinned.skills.iter().filter(|skill|skills.contains(&skill.id)).collect::<Vec<_>>(),"capability_bindings":bindings}))?;
+                                ),
+                            )?;
+                            let missing = &resolution.missing;
+                            self.store.event(&id,"capability_resolution","jev-plus",json!({"format_version":1,"algorithm":"greedy-cover/v1","resolution":resolution,"provider_health_proven":false,"permissions_granted":false}))?;
+                            skills = resolution.skills;
+                            self.store.event(&id,"route_refined","jev-plus",json!({"skills":skills,"versions":pinned.skills.iter().filter(|skill|skills.contains(&skill.id)).collect::<Vec<_>>(),"capability_bindings":resolution.bindings}))?;
                             self.store.event(&id,"structured_goal","interface",json!({"original":query,"interpretation":intent,"missing_capabilities":missing,"trusted_permissions":false}))?;
                             if !missing.is_empty() {
                                 self.store.event(&id,"capability_gap","jev-plus",json!({"missing":missing,"action":"Use existing references; no permissions granted"}))?;
@@ -1887,3 +1862,7 @@ mod execution_settings_tests {
         assert_eq!(dispatches, 0);
     }
 }
+
+#[cfg(test)]
+#[path = "engine/joint_capability_tests.rs"]
+mod capability_selection_tests;

@@ -1720,3 +1720,12 @@ close-on-exec descriptors keep ownership until child exit, and resource-resume
 fixtures exclude CLI fork/exec from concurrent immediate-acquisition assertions.
 Production lock behavior and budgets remain unchanged; no provider-stop guarantee
 is inferred. See [recovery details](RECOVERY.md#lease-acquisition-diagnostics-and-fork-inheritance).
+
+## Joint capability coverage (2026-10-17)
+
+Jev+ now resolves interpreted capabilities jointly over the pinned enabled registry
+and model metadata. Existing routes are reused; bounded greedy coverage adds at
+most four total providers with deterministic ties, excluding model-bound workflows
+whose registration is unavailable. Audits distinguish missing declarations,
+unavailable bindings and route-capacity/profile exclusions. No grant, provider
+probe, model load or utility claim is added. See [capability resolution](CAPABILITIES.md).

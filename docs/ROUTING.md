@@ -68,3 +68,8 @@ The 4,096-record input ceiling now shares `store::MAX_SKILLS` with persistent
 legacy/manifest admission. Storage reads cap rows and field bytes before copying
 metadata into routing snapshots; malformed tags are rejected rather than treated
 as empty. See EXPERTS.md for retained-ID and legacy compatibility rules.
+
+Optional interpreted capability requirements now use
+[joint pinned-provider coverage](CAPABILITIES.md) after initial routing. Existing
+route order is preserved; greedy additions reuse providers and retain the four-route
+refinement ceiling. Required metadata never grants execution or measured usefulness.

@@ -4,6 +4,7 @@ pub mod agent;
 pub mod backend;
 pub mod backups;
 pub mod benchmarking;
+mod capabilities;
 pub mod config;
 pub mod corpus;
 pub mod diagnostics;

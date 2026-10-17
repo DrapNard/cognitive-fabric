@@ -1,5 +1,39 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+### Resolve capability requirements jointly over pinned providers — 2026-10-17
+
+**Implemented (bounded deterministic declaration coverage); Partial (general capability utility).**
+`src/capabilities.rs` replaces independent first-provider additions with joint
+`greedy-cover/v1` selection over enabled pinned skills/manifests/models. Existing
+routes are preserved/reused; new candidates maximize uncovered requirements, then
+prefer direct identity and stable lexical ties. A shared provider can cover many
+requirements within the unchanged four-route ceiling. Missing bound workflow
+models are excluded from additions so an available alias provider can be selected.
+The bounded metadata algorithm adds no inference, network probe or permission.
+
+`capability_resolution` distinguishes absent declarations, unavailable model
+bindings and available-but-unselected requirements. An audit failure prevents route
+refinement/expert admission. Existing gap semantics and refined version bindings
+remain. Interpretation uses canonical registry IDs and falls back on invalid IDs.
+Tests in `src/capabilities/tests.rs` and `src/engine/joint_capability_tests.rs`
+cover overlap/order/ties/reuse, capacity and exclusions, malformed metadata,
+six-capability actual workflow selection, pinned disable, unavailable-provider
+fallback and audit denial. Existing capability tests are preserved. See
+[joint capability resolution](CAPABILITIES.md).
+This is not globally optimal set cover, calibrated usefulness, provider health or
+weight attestation. Additional capability-driven retrieval, general scheduling, interpreted semver
+negotiation and independent effectiveness studies remain incomplete. Jev+ and Jev-R remain **Partial**.
+
+Verification: formatting, locked workspace/all-target check, full tests (**657
+passed across 33 targets**, none ignored), and Clippy with warnings denied pass.
+Existing capability tests remain unchanged and pass with the new joint-resolution
+cases. TCP/Unix fixtures required elevated access; protocol pairing/malformed frames,
+migrations, mock inference, policy denials, cancellation and rollback remain green.
+`flatc` is unavailable; schemas/bindings were unchanged and fresh generation was
+not run. No real-backend usefulness, quality, memory or latency gain is claimed.
+
+
+
 ### Preserve recovery ownership diagnostics and isolate fork-sensitive fixtures — 2026-10-17
 
 **Implemented (supported local recovery ownership and regression evidence).**
