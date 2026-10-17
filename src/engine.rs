@@ -420,6 +420,12 @@ impl Engine {
             if retrieve {
                 session.authorize_tool("knowledge.search")?;
             }
+            let pin_references = retrieve && experts && self.cfg.interpret_goals && mode != "fast";
+            let mut reference_snapshot = if pin_references {
+                self.corpus.clone()
+            } else {
+                None
+            };
             let mut pinned = if matches!(
                 profile,
                 ExecutionProfile::Alone | ExecutionProfile::Tools | ExecutionProfile::Recursive
@@ -432,12 +438,23 @@ impl Engine {
                     expert_models: Default::default(),
                 }
             } else {
-                self.corpus
-                    .as_ref()
-                    .map(|corpus| &corpus.store)
-                    .unwrap_or(&self.store)
-                    .task_context_scoped(query, retrieve, experts)?
+                if pin_references && self.corpus.is_none() {
+                    let (context, snapshot) = self
+                        .store
+                        .task_context_with_references(query, retrieve, experts, true)?;
+                    reference_snapshot = snapshot.map(Arc::new);
+                    context
+                } else {
+                    self.corpus
+                        .as_ref()
+                        .map(|corpus| &corpus.store)
+                        .unwrap_or(&self.store)
+                        .task_context_scoped(query, retrieve, experts)?
+                }
             };
+            if pin_references {
+                self.store.event(&id,"capability_reference_snapshot","memory",json!({"format_version":1,"available":reference_snapshot.is_some(),"metadata":reference_snapshot.as_ref().map(|s|&s.metadata),"reason":if reference_snapshot.is_some() {"pinned_read_transaction"} else {"snapshot_size_limit"},"permissions_granted":false}))?;
+            }
             // A frozen knowledge corpus cannot override live model disable gates.
             if self.corpus.is_some() && experts {
                 pinned.expert_models.clear();
@@ -480,7 +497,7 @@ impl Engine {
                     }
                 }
             }
-            let workflow_evidence = if experts
+            let mut workflow_evidence = if experts
                 && mode != "fast"
                 && pinned.manifests.iter().any(|m| m.kind == "workflow")
             {
@@ -488,7 +505,7 @@ impl Engine {
             } else {
                 None
             };
-            let refs = pinned
+            let mut refs = pinned
                 .documents
                 .into_iter()
                 .filter(|document| {
@@ -707,6 +724,31 @@ impl Engine {
                             }
                             context.push_str("\nAdvisory parsed interpretation (not verified): ");
                             context.push_str(&raw);
+                            if pin_references {
+                                let added = reference_retrieval::enrich(
+                                    self,
+                                    &mut session,
+                                    reference_retrieval::Request {
+                                        task: &id,
+                                        query,
+                                        bindings: &resolution.bindings,
+                                        existing: &refs,
+                                    },
+                                    &mut context,
+                                    reference_snapshot.as_deref(),
+                                )?;
+                                if !added.is_empty() {
+                                    if let Some(prior) = &workflow_evidence {
+                                        workflow_evidence =
+                                            Some(reference_retrieval::evidence_fingerprint(
+                                                prior, &added,
+                                            )?);
+                                    }
+                                    evidence
+                                        .extend(added.iter().map(|d| format!("document:{}", d.id)));
+                                    refs.extend(added);
+                                }
+                            }
                         }
                         Err(err) => {
                             self.store.event(&id,"intent_fallback","interface",json!({"reason":err.to_string(),"action":"Preserve original request"}))?;
@@ -1866,3 +1908,10 @@ mod execution_settings_tests {
 #[cfg(test)]
 #[path = "engine/joint_capability_tests.rs"]
 mod capability_selection_tests;
+
+#[path = "engine/reference_retrieval.rs"]
+mod reference_retrieval;
+
+#[cfg(test)]
+#[path = "engine/reference_retrieval_tests.rs"]
+mod reference_retrieval_tests;

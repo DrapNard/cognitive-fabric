@@ -1,5 +1,43 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+### Retrieve selected capability references from the original read view — 2026-10-17
+
+**Implemented (bounded Full/Experts reference refinement); Partial (general retrieval).**
+`Store::task_context_with_references` and `corpus::snapshot_from` create a detached
+read-only snapshot in the same transaction as pinned task metadata, with the
+existing 64 MB ceiling. Evaluation tasks reuse their frozen corpus. No live Store
+lock/WAL transaction spans inference. Oversized snapshots refuse optional retrieval;
+backup/integrity failures remain fatal. Copy/hash CPU/memory costs are explicit.
+
+`src/engine/reference_retrieval.rs` performs one charged/audited batch over at most
+four selected providers, one scoped FTS result each, respecting approval/version
+filters and body hashes. Original-query misses can be resolved through capability
+terms. Added snippets remain untrusted, IDs are deduplicated, and actual extended
+prompt bytes/main-solver/verifier reserves govern admission. Audit failure stops
+before solver input; searches performed remain charged. Admitted documents extend
+workflow evidence identities with canonical content/provenance so old cohort studies
+do not silently cover new references. No capabilities or models are installed.
+
+Tests in `src/engine/reference_retrieval_tests.rs` and the retrieval helper cover
+Full/Experts execution, aliases, live disable/insertion, quota and verifier reserves,
+corrupt content, intent/outcome audit failure and canonical evidence binding.
+Existing corpus/registry/routing/ablation tests remain. See
+[pinned capability retrieval](CAPABILITY_RETRIEVAL.md). Large-corpus snapshot
+efficiency, broader retrieval/reranking, pre-interpretation snapshot recovery and
+independent usefulness measurements remain incomplete. Jev+ and Jev-R remain **Partial**.
+
+Verification: formatting, locked workspace/all-target check, full tests (**662
+passed across 33 targets**, none ignored) and Clippy with warnings denied pass.
+The five focused retrieval cases pass. A broad earlier text filter also selected
+an unrelated SQL Unix fixture that the restricted sandbox denied; final full socket
+fixtures ran with elevated access and passed. Existing protocol pairing/malformed
+frames, migrations, mocks, policy denials, cancellation, recovery and rollback
+remain green. `flatc` is unavailable; unchanged bundled bindings were validated
+without fresh generation. Discovery at the default local endpoint 127.0.0.1:1234
+refused connections; no real-model relevance/quality or performance gain is claimed.
+
+
+
 ### Resolve capability requirements jointly over pinned providers — 2026-10-17
 
 **Implemented (bounded deterministic declaration coverage); Partial (general capability utility).**

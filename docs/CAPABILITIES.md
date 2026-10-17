@@ -62,6 +62,7 @@ Tests cover overlapping requirements, order invariance, stable ties, legacy IDs,
 disabled candidates, unavailable models, capacity/exclusion distinctions, malformed
 inputs, actual workflow execution, pinned disable, fallback providers and audit
 failure before further inference. These synthetic checks establish behavior, not
-live-model quality, VRAM savings or superiority over a baseline. Additional capability-driven document retrieval is not implemented by this resolver.
+live-model quality, VRAM savings or superiority over a baseline. Full and Experts tasks can use [pinned capability-directed retrieval](CAPABILITY_RETRIEVAL.md)
+after resolution; its separate snapshot, authorization, budget and audit gates apply.
 Semver requirement negotiation in interpreted requests, calibrated provider utility and broader
 module scheduling remain incomplete; operator versioned lookup is separate.

@@ -568,6 +568,18 @@ impl Store {
         retrieve: bool,
         experts: bool,
     ) -> Result<TaskContext> {
+        Ok(self
+            .task_context_with_references(query, retrieve, experts, false)?
+            .0)
+    }
+
+    pub(crate) fn task_context_with_references(
+        &self,
+        query: &str,
+        retrieve: bool,
+        experts: bool,
+        snapshot: bool,
+    ) -> Result<(TaskContext, Option<crate::corpus::FrozenCorpus>)> {
         let mut db = self.lock()?;
         let tx = db.transaction()?;
         let manifests = crate::registry::snapshot_from(&tx)?;
@@ -598,8 +610,13 @@ impl Store {
             manifests,
             expert_models,
         };
+        let snapshot = if snapshot {
+            crate::corpus::snapshot_from(&tx)?
+        } else {
+            None
+        };
         tx.commit()?;
-        Ok(context)
+        Ok((context, snapshot))
     }
 
     fn search_from(

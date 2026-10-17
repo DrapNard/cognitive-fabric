@@ -111,6 +111,36 @@ impl std::fmt::Display for InferenceTimeout {
 impl std::error::Error for InferenceTimeout {}
 
 impl Session {
+    pub(crate) fn reference_search_admitted(&self, query: &str) -> Result<bool> {
+        let reserve = u32::from(crate::verification::Criterion::from_query(query)?.is_some());
+        Ok(Instant::now() < self.deadline
+            && self
+                .cfg
+                .max_tool_calls
+                .saturating_sub(self.resources.tool_calls)
+                > reserve
+            && self.call_limit > self.resources.calls as usize
+            && self
+                .cfg
+                .max_tokens
+                .saturating_sub(self.resources.reserved_output_tokens)
+                >= 384)
+    }
+    pub(crate) fn reference_context_admitted(&self, query: &str, context: &str) -> Result<bool> {
+        if context.len() > 96000 {
+            return Ok(false);
+        }
+        let bytes = Self::prompt_base(query, context, self.verification_enabled)?
+            .len()
+            .saturating_add(64);
+        Ok(Instant::now() < self.deadline
+            && bytes <= 32000
+            && self
+                .cfg
+                .max_input_bytes
+                .saturating_sub(self.resources.prompt_bytes)
+                >= bytes)
+    }
     pub(crate) fn workflow_routing_request(
         &self,
         query: &str,

@@ -22,39 +22,48 @@ impl Store {
     pub(crate) fn freeze_corpus(&self) -> Result<FrozenCorpus> {
         let mut source = self.lock()?;
         let transaction = source.transaction()?;
-        // Establish one read snapshot before measuring/copying; concurrent WAL writers
-        // cannot change its contents or repeatedly restart the backup.
-        transaction.query_row("SELECT count(*) FROM sqlite_schema", [], |row| {
-            row.get::<_, u64>(0)
-        })?;
-        let pages: u64 = transaction.pragma_query_value(None, "page_count", |row| row.get(0))?;
-        let size: u64 = transaction.pragma_query_value(None, "page_size", |row| row.get(0))?;
-        if pages.saturating_mul(size) > MAX_SNAPSHOT_BYTES {
-            bail!("Evaluation snapshot exceeds 64 MB; use a smaller evaluation store before comparison")
-        }
-        let mut destination = Connection::open_in_memory()?;
-        {
-            let backup = Backup::new(&transaction, &mut destination)?;
-            match backup.step(-1)? {
-                StepResult::Done => {}
-                _ => bail!("Evaluation snapshot could not acquire a consistent database view"),
-            }
-        }
+        let snapshot = snapshot_from(&transaction)?.ok_or_else(|| anyhow::anyhow!("Evaluation snapshot exceeds 64 MB; use a smaller evaluation store before comparison"))?;
         transaction.commit()?;
-        let metadata = {
-            let bytes = destination.serialize(DatabaseName::Main)?;
-            if bytes.len() as u64 > MAX_SNAPSHOT_BYTES {
-                bail!("Evaluation snapshot exceeds byte limit")
-            }
-            Metadata {
-                database_snapshot_checksum: sha256(&bytes),
-                database_snapshot_bytes: bytes.len() as u64,
-                frozen: true,
-            }
-        };
-        let store = Store::from_frozen_connection(destination)?;
-        Ok(FrozenCorpus { store, metadata })
+        Ok(snapshot)
     }
+}
+
+/// Copy the caller's established read transaction, never a later live view.
+/// A size refusal is optional admission; integrity/backup errors remain fatal.
+pub(crate) fn snapshot_from(
+    transaction: &rusqlite::Transaction<'_>,
+) -> Result<Option<FrozenCorpus>> {
+    transaction.query_row("SELECT count(*) FROM sqlite_schema", [], |row| {
+        row.get::<_, u64>(0)
+    })?;
+    let pages: u64 = transaction.pragma_query_value(None, "page_count", |row| row.get(0))?;
+    let size: u64 = transaction.pragma_query_value(None, "page_size", |row| row.get(0))?;
+    if pages.saturating_mul(size) > MAX_SNAPSHOT_BYTES {
+        return Ok(None);
+    }
+    let mut destination = Connection::open_in_memory()?;
+    {
+        let backup = Backup::new(transaction, &mut destination)?;
+        match backup.step(-1)? {
+            StepResult::Done => {}
+            _ => bail!("Snapshot could not acquire a consistent database view"),
+        }
+    }
+    let metadata = {
+        let bytes = destination.serialize(DatabaseName::Main)?;
+        if bytes.len() as u64 > MAX_SNAPSHOT_BYTES {
+            return Ok(None);
+        }
+        Metadata {
+            database_snapshot_checksum: sha256(&bytes),
+            database_snapshot_bytes: bytes.len() as u64,
+            frozen: true,
+        }
+    };
+    Ok(Some(FrozenCorpus {
+        store: Store::from_frozen_connection(destination)?,
+        metadata,
+    }))
 }
 
 #[cfg(test)]

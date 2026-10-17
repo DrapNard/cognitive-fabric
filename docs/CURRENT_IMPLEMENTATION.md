@@ -1729,3 +1729,14 @@ most four total providers with deterministic ties, excluding model-bound workflo
 whose registration is unavailable. Audits distinguish missing declarations,
 unavailable bindings and route-capacity/profile exclusions. No grant, provider
 probe, model load or utility claim is added. See [capability resolution](CAPABILITIES.md).
+
+## Pinned capability reference refinement (2026-10-17)
+
+Full/Experts interpreted tasks can now retrieve selected-provider references from
+a bounded detached snapshot made with the original task metadata. One charged,
+audited scoped batch adds at most four untrusted snippets if main-solver/prompt/
+verifier reserves fit. Oversized snapshots skip optional refinement; corrupted
+content/audit failures stop. Existing evaluation corpora are reused and admitted
+reference identities extend workflow study scope. See
+[retrieval limits and evidence](CAPABILITY_RETRIEVAL.md). No relevance or quality
+gain, physical memory bound or broader snapshot recovery is claimed.

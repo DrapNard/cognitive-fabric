@@ -97,3 +97,7 @@ policy metadata alone cannot restore code or establish utility.
 The end-to-end fixture covers accepted and declined direct tasks, actual HTTP
 inference, Unix service tasks, and file replacement after service startup. These
 are synthetic functional checks, not a held-out effectiveness study.
+
+Admitted [capability-directed references](CAPABILITY_RETRIEVAL.md) extend the
+pinned evidence fingerprint with canonical document content/provenance identities.
+Prior studies do not automatically cover that enlarged knowledge cohort.

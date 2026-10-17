@@ -770,3 +770,16 @@ override profile exclusions; original workflow/call/tool/resource gates still ap
 Audit failure stops before refinement and expert admission. Later registry changes
 affect future snapshots. Missing, unavailable and unselected requests remain
 separately observable without automatically creating a candidate or new permission.
+
+### Capability-directed pinned references
+
+A detached read-only SQLite snapshot is created in the initial task-metadata
+transaction and never handed to a model. Source locks end before inference. Scoped
+search preserves enabled/approved-version filters and content integrity; later live
+changes cannot replace its documents. One task-authorized search charge, bounded
+providers/snippets, main-solver/verifier reserves and pre-context audits govern
+refinement. Added data stays untrusted and extends empirical workflow evidence
+scope. No capability/weight promotion occurs. The 64 MB snapshot ceiling and prompt
+bounds are logical admission limits, not physical memory or hard I/O timing proofs;
+large stores skip optional refinement. Pre-interpretation snapshots are not crash
+restoration authority. No external fact, relevance or neural-safety claim follows.
