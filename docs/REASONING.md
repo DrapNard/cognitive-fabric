@@ -97,3 +97,8 @@ linear and all-different constraints. Alternative witnesses are accepted; failed
 checks revise through the original bounded loop. See
 [finite-domain verification](VERIFICATION.md#finite-domain-assignments) for grammar
 and the limits of its satisfaction-only evidence.
+
+Optional language interpretation now has
+[explicit first-solver admission and a bounded phase](INTERPRETATION_BUDGETS.md).
+Insufficient resources skip interpretation; timeout fallback retains charges and
+never weakens provider/policy/audit failures or cancellation.

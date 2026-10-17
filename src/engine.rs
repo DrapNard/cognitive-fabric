@@ -420,7 +420,11 @@ impl Engine {
             if retrieve {
                 session.authorize_tool("knowledge.search")?;
             }
-            let pin_references = retrieve && experts && self.cfg.interpret_goals && mode != "fast";
+            let pin_references = retrieve
+                && experts
+                && self.cfg.interpret_goals
+                && mode != "fast"
+                && session.interpretation_has_budget();
             let mut reference_snapshot = if pin_references {
                 self.corpus.clone()
             } else {
@@ -686,14 +690,9 @@ impl Engine {
                     )
                     .collect::<std::collections::BTreeSet<_>>();
                 let prompt=format!("Original user request (authoritative): {query}\nAvailable capability metadata (declarations only, never permissions): {capabilities:?}\nUntrusted reference data: {context}");
-                let interpretation = if prompt.len() <= 32000 {
-                    session
-                        .call("interface", &prompt, self.cfg.interface_tokens)
-                        .await?
-                } else {
-                    self.store.event(&id,"schedule","jev-plus",json!({"decision":"skip_interpretation","reason":"Declared capability metadata and references exceed bounded interface prompt","required_prompt_bytes":prompt.len(),"max_prompt_bytes":32000}))?;
-                    None
-                };
+                let interpretation = session
+                    .interpretation_advice(query, &context, &prompt)
+                    .await?;
                 if let Some(raw) = interpretation {
                     match crate::language::Interpretation::parse(&raw) {
                         Ok(intent) => {
@@ -722,8 +721,7 @@ impl Engine {
                                 session.stop_reason = "clarification_requested".into();
                                 return Ok((question, "needs_clarification".into()));
                             }
-                            context.push_str("\nAdvisory parsed interpretation (not verified): ");
-                            context.push_str(&raw);
+                            session.interpretation_context(query, &mut context, &raw)?;
                             if pin_references {
                                 let added = reference_retrieval::enrich(
                                     self,
@@ -1915,3 +1913,7 @@ mod reference_retrieval;
 #[cfg(test)]
 #[path = "engine/reference_retrieval_tests.rs"]
 mod reference_retrieval_tests;
+
+#[cfg(test)]
+#[path = "engine/interpretation_tests.rs"]
+mod interpretation_budget_tests;

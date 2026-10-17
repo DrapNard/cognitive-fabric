@@ -783,3 +783,14 @@ scope. No capability/weight promotion occurs. The 64 MB snapshot ceiling and pro
 bounds are logical admission limits, not physical memory or hard I/O timing proofs;
 large stores skip optional refinement. Pre-interpretation snapshots are not crash
 restoration authority. No external fact, relevance or neural-safety claim follows.
+
+### Optional interpretation cannot consume the last solver reservation
+
+Independent Rust preflight requires interface-plus-solver calls, outputs and prompt
+bytes. The original deadline is retained under an audited optional phase ceiling.
+Only a typed inference timeout permits fallback with charges retained and unknown
+usage; policy/provider/audit failures and cancellation remain fatal. Additional
+interpretation text is admitted before changing solver context. No model assertion
+can create a timeout allowance, refund resources or expand capabilities. Provider
+termination and physical resource release remain unproven; configured quarantine
+still governs subsequent dispatch. See [interpretation budgets](INTERPRETATION_BUDGETS.md).

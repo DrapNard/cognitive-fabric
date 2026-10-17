@@ -1740,3 +1740,13 @@ content/audit failures stop. Existing evaluation corpora are reused and admitted
 reference identities extend workflow study scope. See
 [retrieval limits and evidence](CAPABILITY_RETRIEVAL.md). No relevance or quality
 gain, physical memory bound or broader snapshot recovery is claimed.
+
+## Solver-preserving optional interpretation (2026-10-17)
+
+Interpretation now requires call/output/prompt room for itself and the first
+whole-goal solver. Its phase is capped to one-third of remaining original time;
+only typed timeout can fall back with charges retained and usage unknown. Parsed
+advisory text is separately admitted against actual encoded solver prompt bytes.
+Policy/provider/audit errors remain fatal and cancellation starts no fallback.
+See [interpretation admission](INTERPRETATION_BUDGETS.md). No real-model utility
+or provider-stop guarantee is claimed.

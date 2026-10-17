@@ -126,7 +126,7 @@ impl Session {
                 .saturating_sub(self.resources.reserved_output_tokens)
                 >= 384)
     }
-    pub(crate) fn reference_context_admitted(&self, query: &str, context: &str) -> Result<bool> {
+    pub(crate) fn advisory_context_admitted(&self, query: &str, context: &str) -> Result<bool> {
         if context.len() > 96000 {
             return Ok(false);
         }
@@ -3527,3 +3527,6 @@ mod configured_resource_tests {
 #[cfg(test)]
 #[path = "reasoning/constraint_tests.rs"]
 mod constraint_tests;
+
+#[path = "reasoning/interpretation.rs"]
+mod interpretation;

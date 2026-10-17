@@ -1,5 +1,40 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+### Preserve first-solver resources during interpretation — 2026-10-17
+
+**Implemented (bounded optional interpretation); Partial (measured utility).**
+`src/reasoning/interpretation.rs` admits interface inference only when two calls,
+configured interface output plus 384 solver tokens and both prompts' cumulative
+bytes fit original ceilings. Cheap refusals avoid reference snapshot copying.
+A one-third remaining-wall-time phase ceiling preserves the original task deadline;
+only typed inference timeout may fall back. Calls/output/prompt charges remain and
+interrupted usage/queue metrics become unknown. Provider/policy/audit failures and
+cancellation never become permissive fallback.
+
+Parsed advisory text enters context only when the actual encoded first-solver
+prompt still fits. Admission, phase, timeout and context audits precede their
+respective effects. Existing schedule overflow records remain compatible.
+`src/engine/interpretation_tests.rs` checks exact call/token/prompt edges, context
+refusal, honest timeout costs, textual timeout rejection, all audit stages and
+cancellation without further inference. See
+[interpretation budgets](INTERPRETATION_BUDGETS.md). No new permission, budget refund,
+provider-stop proof or calibrated usefulness is introduced. General executive
+scheduling and independent real-model effectiveness remain incomplete. Jev+ and
+Jev-R remain **Partial**.
+
+Verification: formatting, locked workspace/all-target check, full final tests
+(**667 passed across 33 targets**, none ignored), and Clippy with warnings denied
+pass. The first full run exposed the old test expecting a 384-token interpreter
+to consume the whole 384-token task ceiling; that test was retained and expanded
+to cover 128/384/768-token admission plus solver fallback, then the full suite passed.
+Local TCP/Unix fixtures ran with elevated access. Existing protocol pairing/malformed
+frames, migrations, mock inference, denials, cancellation, recovery and rollback
+remain green. `flatc` is unavailable; unchanged bundled bindings were validated
+without fresh generation. The default local endpoint 127.0.0.1:1234 refused
+discovery, so no live-model quality or efficiency gain is claimed.
+
+
+
 ### Retrieve selected capability references from the original read view — 2026-10-17
 
 **Implemented (bounded Full/Experts reference refinement); Partial (general retrieval).**

@@ -168,16 +168,29 @@ mod integration_tests {
 
     #[tokio::test]
     async fn configured_interface_reservation_is_charged_and_cannot_exceed_task_ceiling() {
-        for ceiling in [128, 384] {
-            let (path, mut engine, script) = setup(vec![(
-                "interface",
-                r#"{"objective":"Change a setting","constraints":[],"required_capabilities":[],"clarification":"Which setting?"}"#,
-            )]);
+        for ceiling in [128, 384, 768] {
+            let script = if ceiling == 768 {
+                vec![(
+                    "interface",
+                    r#"{"objective":"Change a setting","constraints":[],"required_capabilities":[],"clarification":"Which setting?"}"#,
+                )]
+            } else if ceiling == 384 {
+                vec![("solver", "Whole goal answer")]
+            } else {
+                Vec::new()
+            };
+            let (path, mut engine, script) = setup(script);
             engine.cfg.interface_tokens = 384;
             engine.cfg.max_tokens = ceiling;
             let result = engine.run("Change it", "standard").await.unwrap();
-            if ceiling == 384 {
+            if ceiling == 768 {
                 assert_eq!(result.status, "needs_clarification");
+                assert_eq!(result.calls, 1);
+                assert_eq!(result.resources.reserved_output_tokens, 384);
+                assert_eq!(*script.allocations.lock().unwrap(), vec![384]);
+            } else if ceiling == 384 {
+                assert_eq!(result.status, "unverified");
+                assert_eq!(result.answer, "Whole goal answer");
                 assert_eq!(result.calls, 1);
                 assert_eq!(result.resources.reserved_output_tokens, 384);
                 assert_eq!(*script.allocations.lock().unwrap(), vec![384]);
@@ -186,6 +199,7 @@ mod integration_tests {
                 assert_eq!(result.resources.reserved_output_tokens, 0);
                 assert!(script.allocations.lock().unwrap().is_empty());
             }
+            assert!(script.queue.lock().unwrap().is_empty());
             drop(engine);
             std::fs::remove_file(path).unwrap();
         }
