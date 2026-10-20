@@ -1761,3 +1761,14 @@ status metadata are validated during original-policy continuation, without chang
 resource budgets, resident checks or quarantine. This remains local declared
 scheduling, not physical/global control or a measured efficiency gain. See
 [resource policy](RESOURCE_SCHEDULING.md#optional-role-priority-with-bounded-bypass).
+
+## Interpreted capability version requirements (2026-10-20)
+
+Optional `capability_versions` narrows declared capability coverage with bounded
+SemVer requirements. IDs must already be requested; direct IDs use manifest
+versions and aliases use capability versions. Resolution distinguishes incompatible
+declarations and excludes wholly mismatched initial routes before optional workflow
+admission. Mixed routes receive only compatible credit. Legacy JSON stays unchanged;
+no activation, grants or success proofs follow from a metadata match. Role-prompt
+fingerprints change and existing mismatched-checkpoint refusal remains in force.
+See [capability versions](CAPABILITIES.md#optional-declared-version-requirements).

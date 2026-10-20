@@ -806,3 +806,14 @@ Original policy and bounded recorded queue metadata are required for continuatio
 FIFO rejects injected priority fields. Existing workspace ownership prevents a new
 policy host from silently resetting live counters. No cross-workspace or physical
 GPU/RSS enforcement, retrospective global fairness proof or neural safety is added.
+
+### Advisory capability version filtering
+
+The optional version map can only narrow already requested capability IDs. Strict
+bounded parsing rejects unknown keys, invalid ranges and ambiguous JSON. Version
+matches use immutable pinned declarations, not model confidence or live activation;
+wholly incompatible routes cannot regain optional workflow admission through tag
+selection. Reference refinement checks compatible bindings. Compatibility labels
+remain declaration-only and confer no executable/API/weight attestation, activation
+or permission. The original task criteria and budgets retain authority, and the
+changed interface prompt remains subject to existing checkpoint fingerprint gates.

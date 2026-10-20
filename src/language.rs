@@ -1,7 +1,7 @@
 //! Structured language interpretation is advisory; the original request remains authoritative.
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -9,6 +9,8 @@ pub struct Interpretation {
     pub objective: String,
     pub constraints: Vec<String>,
     pub required_capabilities: Vec<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub capability_versions: BTreeMap<String, String>,
     pub clarification: Option<String>,
 }
 
@@ -36,6 +38,10 @@ impl Interpretation {
                 bail!("Invalid capability request")
             }
         }
+        crate::capabilities::version_requirements(
+            &value.required_capabilities,
+            &value.capability_versions,
+        )?;
         Ok(value)
     }
 }
@@ -94,6 +100,39 @@ mod tests {
             value["required_capabilities"] = serde_json::json!([invalid]);
             assert!(Interpretation::parse(&value.to_string()).is_err());
         }
+    }
+}
+
+#[cfg(test)]
+mod version_tests {
+    use super::*;
+    use serde_json::json;
+    const LEGACY: &str = r#"{"objective":"Explain borrowing","constraints":[],"required_capabilities":["rust.s1"],"clarification":null}"#;
+    #[test]
+    fn optional_version_map_preserves_legacy_shape_and_rejects_unbounded_or_hidden_requests() {
+        assert_eq!(
+            serde_json::to_string(&Interpretation::parse(LEGACY).unwrap()).unwrap(),
+            LEGACY
+        );
+        let mut valid: serde_json::Value = serde_json::from_str(LEGACY).unwrap();
+        valid["capability_versions"] = json!({"rust.s1":"^2.1"});
+        assert!(Interpretation::parse(&valid.to_string()).is_ok());
+        for versions in [
+            json!({"shell.execute":"*"}),
+            json!({"rust.s1":""}),
+            json!({"rust.s1":"invalid range"}),
+            json!({"rust.s1":"x".repeat(65)}),
+            json!({"rust.s1":true}),
+        ] {
+            let mut value = valid.clone();
+            value["capability_versions"] = versions;
+            assert!(Interpretation::parse(&value.to_string()).is_err());
+        }
+        let duplicate = LEGACY.replace(
+            "\"clarification\":null",
+            r#""capability_versions":{"rust.s1":"^1","rust.s1":"^2"},"clarification":null"#,
+        );
+        assert!(Interpretation::parse(&duplicate).is_err());
     }
 }
 

@@ -36,7 +36,7 @@ pub(super) fn enrich(
     for binding in request
         .bindings
         .iter()
-        .filter(|b| b.selected && b.available)
+        .filter(|b| b.selected && b.available && b.version_compatible)
     {
         if let Some(provider) = &binding.provider {
             providers

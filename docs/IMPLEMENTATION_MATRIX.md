@@ -1,5 +1,45 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+### Negotiate declared capability versions during interpretation — 2026-10-20
+
+**Implemented (bounded advisory SemVer selection); Partial (implementation/quality proof).**
+`Interpretation.capability_versions` is an optional map tied to existing requested
+IDs, capped at 16 entries and 64 bytes per requirement. Strict parsing rejects
+hidden requests, ambiguous keys and invalid ranges while preserving legacy JSON.
+The interface prompt requests versions only when specified by the original user.
+Native Rust literals initialize the added map explicitly.
+
+`greedy-cover/v2` in `src/capabilities.rs` matches direct IDs against pinned manifest versions and aliases
+against pinned capability versions. Unknown legacy versions do not satisfy explicit
+ranges. Joint coverage excludes incompatible credit, removes exclusively mismatched
+initial routes, preserves valid mixed/unrelated routes and distinguishes incompatible
+from missing, unavailable and unselected requirements. Audit bindings record the
+requirement and compatibility result. Reference refinement requires matching bindings;
+no model/skill activation, grant or original-goal criterion change occurs.
+
+Tests cover alias vs provider versions, legacy unknowns, prereleases, order invariance,
+mixed coverage, incompatible-vs-unavailable classification, parser bounds/duplicates,
+actual workflow selection and in-flight version replacement. An unsatisfied range
+cannot silently fall back to the incompatible tagged expert. See
+[version requirements](CAPABILITIES.md#optional-declared-version-requirements).
+Role-prompt fingerprints change, so existing recovery refuses differing old prompt
+hashes rather than silently migrating checkpoints. Declared compatibility is not
+API/weight attestation or measured extraction/usefulness. General execution and
+independent effectiveness remain incomplete. Jev+ and Jev-R remain **Partial**.
+
+Verification: formatting, locked workspace/all-target check, final full tests
+(**681 passed across 33 targets**, none ignored), and Clippy with warnings denied
+pass. The earlier full-suite request was not executed because automatic approval
+review hit a usage limit; the current approved retry and final suite passed.
+Temporary prior logs were absent after environment restart, so verification was
+rerun from the current worktree. Existing protocol pairing/malformed frames,
+migrations, mock inference, denials, cancellation, recovery and rollback remain
+green under elevated local socket access. `flatc` is unavailable; schemas/bindings
+were unchanged and fresh generation was not run. Discovery at 127.0.0.1:1234 refused
+connections; no live interpretation accuracy, quality or performance gain is claimed.
+
+
+
 ### Schedule inference roles with priority and bounded bypass — 2026-10-17
 
 **Implemented (optional local resource policy); Partial (general/physical scheduling).**

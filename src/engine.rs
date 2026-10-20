@@ -701,6 +701,7 @@ impl Engine {
                                 &pinned.manifests,
                                 &pinned.expert_models,
                                 &intent.required_capabilities,
+                                &intent.capability_versions,
                                 &skills,
                                 matches!(
                                     profile,
@@ -710,7 +711,7 @@ impl Engine {
                                 ),
                             )?;
                             let missing = &resolution.missing;
-                            self.store.event(&id,"capability_resolution","jev-plus",json!({"format_version":1,"algorithm":"greedy-cover/v1","resolution":resolution,"provider_health_proven":false,"permissions_granted":false}))?;
+                            self.store.event(&id,"capability_resolution","jev-plus",json!({"format_version":1,"algorithm":"greedy-cover/v2","resolution":resolution,"provider_health_proven":false,"permissions_granted":false}))?;
                             skills = resolution.skills;
                             self.store.event(&id,"route_refined","jev-plus",json!({"skills":skills,"versions":pinned.skills.iter().filter(|skill|skills.contains(&skill.id)).collect::<Vec<_>>(),"capability_bindings":resolution.bindings}))?;
                             self.store.event(&id,"structured_goal","interface",json!({"original":query,"interpretation":intent,"missing_capabilities":missing,"trusted_permissions":false}))?;
@@ -1917,3 +1918,7 @@ mod reference_retrieval_tests;
 #[cfg(test)]
 #[path = "engine/interpretation_tests.rs"]
 mod interpretation_budget_tests;
+
+#[cfg(test)]
+#[path = "engine/version_capability_tests.rs"]
+mod version_capability_tests;

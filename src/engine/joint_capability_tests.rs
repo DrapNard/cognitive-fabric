@@ -110,6 +110,7 @@ async fn joint_selection_executes_one_workflow_and_pins_declarations_across_disa
                 &next.manifests,
                 &next.expert_models,
                 &aliases,
+                &std::collections::BTreeMap::new(),
                 &[],
                 true,
             )
