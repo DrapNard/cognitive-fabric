@@ -131,7 +131,7 @@ where
         calls += out.calls;
         let identities = model_metadata::read(&engine.store, &out.task_id)?;
         details.push(json!({"task_id":out.task_id,"passed":ok,"input":case.input,
-            "planning_advice":identities.planning_advice,"exploration_advice":identities.exploration_advice,"expert_advice":identities.expert_advice,"reported_models":identities.reported_models,"bound_expert_models":identities.bound_expert_models,"primary_model_snapshot":identities.primary_model_snapshot,
+            "hypothesis_diagnostics":identities.hypothesis_diagnostics,"planning_advice":identities.planning_advice,"exploration_advice":identities.exploration_advice,"expert_advice":identities.expert_advice,"reported_models":identities.reported_models,"bound_expert_models":identities.bound_expert_models,"primary_model_snapshot":identities.primary_model_snapshot,
             "expected":case.expected,"answer":out.answer,"latency_ms":out.elapsed_ms,"model_calls":out.calls,
             "verification":"expected_output_exact_match","runtime_status":out.status,"resources":out.resources,"stop_reason":out.stop_reason}));
         if stop_reason != "completed" {
@@ -145,7 +145,7 @@ where
     Ok(
         json!({"format_version":1,"dataset_sha256":store::sha256(raw.as_bytes()),"mode":mode,
          "package_version":env!("CARGO_PKG_VERSION"),"configuration":configuration,"configuration_sha256":configuration_sha256,
-         "compiled_role_prompts_sha256":compiled_role_prompts_sha256,"backend_configuration_attested":false,"weights_attested":false,
+         "runtime_sources_sha256":crate::escalation::empirical::runtime_sources_fingerprint(),"compiled_role_prompts_sha256":compiled_role_prompts_sha256,"backend_configuration_attested":false,"weights_attested":false,
          "expert_router":engine.expert_router_descriptor(),"router_implementation_attested":false,"subtask_scheduler":engine.subtask_scheduler_descriptor(),"scheduler_implementation_attested":false,
          "total":cases.len(),"executed":details.len(),"unexecuted":cases.len()-details.len(),
          "complete":stop_reason=="completed","stop_reason":stop_reason,"max_run_seconds":max_run_seconds,

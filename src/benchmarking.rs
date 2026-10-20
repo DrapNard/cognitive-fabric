@@ -202,6 +202,7 @@ struct Totals {
     expert_advice: crate::evaluation::model_metadata::AdviceDiagnostics,
     planning_advice: crate::evaluation::model_metadata::AdviceDiagnostics,
     exploration_advice: crate::evaluation::model_metadata::AdviceDiagnostics,
+    hypothesis_diagnostics: crate::evaluation::model_metadata::HypothesisDiagnostics,
 }
 
 impl Totals {
@@ -427,8 +428,11 @@ where
             totals[arm_index]
                 .exploration_advice
                 .add(&identities.exploration_advice);
+            totals[arm_index]
+                .hypothesis_diagnostics
+                .add(&identities.hypothesis_diagnostics);
             details.push(json!({"case_index":case_index,"arm_index":arm_index,"execution_position":position,"profile":profile,"configured_model":model,
-                "planning_advice":identities.planning_advice,"exploration_advice":identities.exploration_advice,"expert_advice":identities.expert_advice,"reported_models":identities.reported_models,"bound_expert_models":identities.bound_expert_models,"primary_model_snapshot":identities.primary_model_snapshot,"passed":passed,"expected":case.expected,"input":case.input,"outcome":outcome,"verification":case.verification}));
+                "hypothesis_diagnostics":identities.hypothesis_diagnostics,"planning_advice":identities.planning_advice,"exploration_advice":identities.exploration_advice,"expert_advice":identities.expert_advice,"reported_models":identities.reported_models,"bound_expert_models":identities.bound_expert_models,"primary_model_snapshot":identities.primary_model_snapshot,"passed":passed,"expected":case.expected,"input":case.input,"outcome":outcome,"verification":case.verification}));
             if cancelled || tokio::time::Instant::now() >= deadline {
                 stopped = true;
                 break 'cases;
@@ -438,7 +442,7 @@ where
     Ok(
         json!({"format_version":1,"dataset_checksum":dataset_checksum,"reviewed_dataset_checksum_operator_attested":if review.held_out {review.expected_dataset_sha256.as_ref()} else {None},"dataset_checksum_operator_pinned":review.expected_dataset_sha256.is_some(),"dataset_source":review.source,"dataset_license":review.license,"held_out_operator_attested":review.held_out,
         "run_purpose":if review.workflow_check {"workflow_check"} else {"held_out_comparison"},"held_out_run":review.held_out,
-        "code_revision_operator_attested":review.code_revision,"package_version":env!("CARGO_PKG_VERSION"),"configuration":common,"mode":mode,"corpus_snapshot":corpus.metadata,"snapshot_elapsed_ms":snapshot_ms,
+        "runtime_sources_sha256":crate::escalation::empirical::runtime_sources_fingerprint(),"compiled_role_prompts_sha256":crate::backend::runtime_role_prompts_sha256()?,"code_revision_operator_attested":review.code_revision,"package_version":env!("CARGO_PKG_VERSION"),"configuration":common,"mode":mode,"corpus_snapshot":corpus.metadata,"snapshot_elapsed_ms":snapshot_ms,
         "expert_router":arms[0].2.expert_router_descriptor(),"router_implementation_attested":false,"subtask_scheduler":arms[0].2.subtask_scheduler_descriptor(),"scheduler_implementation_attested":false,
         "small_model_ablation_configuration_controlled":!details.iter().any(|detail| detail["bound_expert_models"].as_array().is_some_and(|models| !models.is_empty())),
         "case_count":cases.len(),"complete":!stopped,"stop_reason":if cancelled {"cancelled"} else if stopped {"run_deadline"} else {"completed"},"elapsed_ms":started.elapsed().as_secs_f64()*1000.0,"larger_baseline_configured":larger.is_some(),
@@ -484,6 +488,14 @@ mod tests {
         let report = compare(&cfg, store.clone(), &dataset, "deep", None, &review)
             .await
             .unwrap();
+        assert_eq!(
+            report["runtime_sources_sha256"],
+            crate::escalation::empirical::runtime_sources_fingerprint()
+        );
+        assert_eq!(
+            report["compiled_role_prompts_sha256"],
+            crate::backend::runtime_role_prompts_sha256().unwrap()
+        );
         assert_eq!(report["run_purpose"], "workflow_check");
         assert_eq!(report["held_out_operator_attested"], false);
         assert_eq!(report["held_out_run"], false);
@@ -509,6 +521,26 @@ mod tests {
                         .sum();
                     assert_eq!(arm["resources"][stage][metric], total);
                 }
+            }
+        }
+
+        for arm in report["arms"].as_array().unwrap() {
+            for metric in [
+                "accepted_portfolio_events",
+                "legacy_advice_events",
+                "invalid_portfolio_events",
+                "selected_hypothesis_events",
+                "exhausted_selection_events",
+                "unclassified_events",
+            ] {
+                let total: u64 = report["details"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .filter(|d| d["arm_index"] == arm["index"])
+                    .map(|d| d["hypothesis_diagnostics"][metric].as_u64().unwrap())
+                    .sum();
+                assert_eq!(arm["resources"]["hypothesis_diagnostics"][metric], total);
             }
         }
         review.held_out = true;

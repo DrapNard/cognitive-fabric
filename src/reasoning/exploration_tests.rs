@@ -153,6 +153,11 @@ async fn structured_rejections_try_each_alternative_once_without_new_calls_or_gr
         .unwrap();
     assert_eq!(outcome.status, "completed");
     assert_eq!(outcome.calls, 5);
+    let metadata = crate::evaluation::model_metadata::read(&store, &outcome.task_id).unwrap();
+    assert_eq!(
+        serde_json::to_value(metadata.hypothesis_diagnostics).unwrap(),
+        json!({"accepted_portfolio_events":1,"legacy_advice_events":0,"invalid_portfolio_events":0,"selected_hypothesis_events":2,"exhausted_selection_events":1,"unclassified_events":0})
+    );
     assert_eq!(outcome.cycles, 3);
     assert!(backend.0.lock().unwrap().is_empty());
     let trace = store.task(&outcome.task_id).unwrap();

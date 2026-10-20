@@ -1853,3 +1853,28 @@ unavailable and fresh generation was not run. Discovery at 127.0.0.1:1234 refuse
 connections. No real-model portfolio effectiveness, calibrated ranking or quality/
 performance improvement is claimed. Those measurements and broader independent
 reasoning remain incomplete; Jev+ and Jev-R remain Partial.
+
+## Bounded hypothesis evaluation diagnostics (2026-10-20)
+
+`bench`/`compare` now report per-task hypothesis audit counters; comparison arm
+resources sum executed rows. The fixed-label SQLite reader distinguishes accepted,
+legacy, invalid, selected, exhausted and unknown metadata, under event/payload
+bounds. It copies no strategy, identifier, hash, prompt or provider-error text.
+Unknown sources/versions/policies/authority flags/shapes remain unclassified;
+malformed/oversized/excessive audit fails reporting. Selection counts are not
+unique executed calls or quality evidence. Both report headers bind compiled
+runtime-source bytes, and comparison also binds compiled role prompts. Historical
+reports remain unchanged. See [diagnostics](EXPLORATION.md#diagnostic-reporting).
+
+Verification: formatting, locked workspace/all-target check, **708 tests across 36
+targets** (none ignored), and Clippy with warnings denied pass. Existing socket,
+migration, mock inference, malformed-frame, denial, cancellation, recovery and
+rollback tests remain green under approved local socket access. Protocol/bindings
+are unchanged; bundled pairing/integrity checks pass, while `flatc` remains absent
+and fresh generation was not run. Approved host-level discovery found the existing
+LM Studio server ON with Qwen3 8B loaded; earlier sandbox-only refusal observations
+must not be interpreted as proof that the host server was unavailable. One live
+portfolio smoke and a 24-task public comparison at preceding source 5041478
+completed; their exact source/evidence scope is separate from this reporting change.
+Independent held-out quality, calibrated utility and physical resource proof remain
+incomplete. Jev+ and Jev-R remain Partial.

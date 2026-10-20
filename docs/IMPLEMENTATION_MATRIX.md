@@ -1,5 +1,37 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+### Report bounded hypothesis observations — 2026-10-20
+
+**Implemented (event diagnostics and compiled scope); Partial (quality/utility evidence).**
+`src/evaluation/hypothesis_diagnostics.rs` projects only fixed labels from at most
+128 matching task events, with a sentinel and 16 KiB per-record ceiling. Known
+source/version/non-authority/policy/shape gates distinguish accepted portfolios,
+legacy advice, invalid portfolios, selected/exhausted hypotheses and unknown
+metadata. Unknowns stay unclassified; oversized, malformed or excessive audit
+fails reporting. No strategy/ID/hash/prompt/error text leaves this projection.
+
+`bench`/`compare` detail rows include these counters; comparison resources sum only
+executed rows. Headers bind runtime-source bytes; comparison also binds compiled
+role prompts separately from operator-attested revision. Counts describe audit
+observations, not unique dispatches, verification, utility or provider stopping.
+Three reader tests cover known/scoped/private/additive counts, unknown variants and
+bounds; existing scripted portfolio/comparison tests now verify actual projection
+and per-arm sums. See [diagnostics](EXPLORATION.md#diagnostic-reporting). No budgets,
+permissions, model calls or execution policy changes. Jev+ and Jev-R remain Partial.
+
+Verification: formatting, locked workspace/all-target check, **708 tests across 36
+targets** (none ignored), and Clippy with warnings denied pass. Existing socket,
+migration, mock inference, malformed-frame, denial, cancellation, recovery and
+rollback tests remain green under approved local socket access. Protocol/bindings
+are unchanged; bundled pairing/integrity checks pass, while `flatc` remains absent
+and fresh generation was not run. Approved host-level discovery found the existing
+LM Studio server ON with Qwen3 8B loaded; earlier sandbox-only refusal observations
+must not be interpreted as proof that the host server was unavailable. One live
+portfolio smoke and a 24-task public comparison at preceding source 5041478
+completed; their exact source/evidence scope is separate from this reporting change.
+Independent held-out quality, calibrated utility and physical resource proof remain
+incomplete. Jev+ and Jev-R remain Partial.
+
 ### Explore bounded alternative strategies — 2026-10-20
 
 **Implemented (structured bounded hypotheses); Partial (semantic diversity/utility).**

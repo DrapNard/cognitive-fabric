@@ -1,5 +1,8 @@
 //! Content-minimized model identity disclosure from bounded task audit records.
 use super::*;
+#[path = "hypothesis_diagnostics.rs"]
+mod hypotheses;
+pub(crate) use hypotheses::HypothesisDiagnostics;
 #[derive(Default)]
 pub(crate) struct ModelMetadata {
     pub reported_models: Vec<String>,
@@ -8,6 +11,7 @@ pub(crate) struct ModelMetadata {
     pub expert_advice: AdviceDiagnostics,
     pub planning_advice: AdviceDiagnostics,
     pub exploration_advice: AdviceDiagnostics,
+    pub hypothesis_diagnostics: HypothesisDiagnostics,
 }
 /// Audit counts describe attempted advice, never its usefulness or provider stop.
 #[derive(Clone, Default, serde::Serialize)]
@@ -109,6 +113,7 @@ pub(crate) fn read(store: &Store, task: &str) -> Result<ModelMetadata> {
         advice_diagnostics(&db, task, "planning_phase_budget", "planning_failure")?;
     result.exploration_advice =
         advice_diagnostics(&db, task, "exploration_phase_budget", "exploration_failure")?;
+    result.hypothesis_diagnostics = hypotheses::read(&db, task)?;
     Ok(result)
 }
 

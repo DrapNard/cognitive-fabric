@@ -98,3 +98,37 @@ not train a Jev-R neural model, guarantee genuinely different approaches, prove
 semantic progress, establish calibrated utility, or demonstrate a quality/latency
 improvement. Real-model effectiveness and comparisons under equal budgets remain
 separate evaluation work. Native backend callbacks remain trusted host code.
+
+## Diagnostic reporting
+
+Current `bench` details and `compare` details/arm resources include
+`hypothesis_diagnostics` with six event counters:
+
+- `accepted_portfolio_events`
+- `legacy_advice_events`
+- `invalid_portfolio_events`
+- `selected_hypothesis_events`
+- `exhausted_selection_events`
+- `unclassified_events`
+
+These count observed audit records, not executed hypotheses, correctness, success
+probabilities or saved inference cost. Selection is audited before dispatch and can
+be followed by cancellation/admission failure. Recovery can repeat a selection audit
+for an unconsumed boundary. Counts must not be presented as unique model attempts.
+No events is zero observations, not evidence that a historical task had no strategy.
+
+`src/evaluation/hypothesis_diagnostics.rs` projects fixed type labels inside SQLite:
+at most 128 matching events plus an overflow sentinel, 16 KiB per input record.
+Only fixed labels enter report memory. Strategies, IDs, hashes, prompts, errors and
+extra/future payload content are not copied by this reader. Oversized/malformed
+records or excess counts fail reporting. Known counts require the expected local
+source, version, non-authority flags and bounded metadata shape; unknown policy,
+source, flags, versions or shapes remain `unclassified_events`. This diagnostic
+classification is not a replay validator, signature or security proof.
+
+Arm totals sum the per-case counters only over executed cases. Frozen historical
+reports remain unchanged and may lack the fields. Both benchmark/comparison headers
+now include the compiled runtime-source fingerprint; comparison also includes the
+compiled role-prompt fingerprint already provided by benchmark headers. These bind
+source/prompt bytes, not the executable/compiler or provider's loaded weights;
+`code_revision_operator_attested` remains a separate operator claim.

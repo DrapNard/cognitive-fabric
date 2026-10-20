@@ -714,3 +714,18 @@ controlled. Different mode/revision from the earlier DEEP run prevents treating
 its score change as a controlled before/after effect. All historical reports
 remain unchanged. General lifecycle, phase recovery, calibrated scheduling and
 independent quality gates stay open.
+
+## Hypothesis diagnostics and compiled scope
+
+Benchmark and comparison detail rows expose bounded
+[hypothesis diagnostics](EXPLORATION.md#diagnostic-reporting), distinguishing
+accepted portfolios, plain legacy advice, rejected shapes, selected/exhausted
+selection events and unknown metadata. Comparison arms sum these event counters
+across executed rows. A selected event can precede failed/cancelled dispatch and
+can repeat during recovery: it is not proof of a unique executed attempt or
+quality improvement. Old reports may omit this additive metadata.
+
+Both report headers include `runtime_sources_sha256`; comparison headers also
+include `compiled_role_prompts_sha256`. These identify compiled source/prompt
+scope separately from the operator-attested Git revision. They do not attest
+executables, a compiler, native callback implementations or provider weights.

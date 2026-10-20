@@ -854,3 +854,14 @@ custom escalation prompt-byte coverage and rejects ambiguous explorer histories.
 The changed compiled role prompt is subject to existing checkpoint/evidence
 fingerprint gates. No model call, grant, neural promotion, external action or
 provider-stop proof is introduced. Native callbacks are still trusted host code.
+
+## Hypothesis diagnostic boundary (2026-10-20)
+
+Evaluation copies fixed labels from bounded SQLite projections rather than
+portfolio/selection payloads. Recognition requires expected local source/version,
+non-authority flags, policy and bounded metadata shape; unknown observations are
+unclassified and excess/malformed records fail the report. These counters do not
+validate replay, grant authority or prove execution/quality. Repeated recovery
+selection audits remain repeated observations. Compiled source/prompt fingerprints
+identify scope without attesting an executable, callback or provider weights.
+No task budgets, permissions, data retrieval or execution policy changes.
