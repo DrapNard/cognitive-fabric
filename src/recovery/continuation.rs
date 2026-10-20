@@ -76,6 +76,8 @@ fn prepare_with_policy(
     let mut nodes = Vec::new();
     let mut solver_texts = BTreeMap::new();
     let mut planner_texts = BTreeMap::new();
+    let mut exploration = None;
+    let mut explorer_seen = false;
     let mut bytes = 0usize;
     let mut contexts = 0usize;
     let mut policy_snapshots = 0usize;
@@ -111,6 +113,16 @@ fn prepare_with_policy(
                 || nodes.last().is_some_and(|n: &Node| n.cycle > node.cycle)
             {
                 bail!("Saved reasoning nodes are not contiguous")
+            }
+            if node.role == "explorer" {
+                if explorer_seen || node.cycle != 0 {
+                    bail!("Ambiguous exploration portfolio history")
+                }
+                explorer_seen = true;
+                exploration = crate::reasoning::exploration::Portfolio::parse(
+                    payload["text"].as_str().unwrap_or(""),
+                )
+                .ok();
             }
             if node.role == "planner" {
                 planner_texts.insert(
@@ -419,6 +431,7 @@ fn prepare_with_policy(
         state: RestoredState {
             resources,
             nodes,
+            exploration,
             deadline: observed + Duration::from_nanos(remaining),
         },
     })

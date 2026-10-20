@@ -124,3 +124,13 @@ and different wording can evade it. It proves neither unsatisfiability nor model
 quality. No latency or accuracy improvement has been measured on real models.
 See [recovery](RECOVERY.md#candidate-recurrence-and-rejected-continuations) for
 checkpoint admission and rejection status.
+
+## Explore several bounded hypotheses
+
+RESEARCH Explorer-R now requests two or three structured alternatives. Strict
+bounded parsing, canonical ID selection and once-per-cycle use retain independent
+verification, critique/reflection and original budgets. Selected advice stays
+within the existing strategy cap; recovery reconstructs the portfolio from the
+original charged explorer result without replay. See
+[strategy portfolios](EXPLORATION.md) for schema, audit gates, legacy fallback,
+custom escalation budgets and the absence of measured quality/utility claims.

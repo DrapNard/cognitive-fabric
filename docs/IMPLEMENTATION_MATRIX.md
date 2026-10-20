@@ -1,5 +1,48 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+### Explore bounded alternative strategies — 2026-10-20
+
+**Implemented (structured bounded hypotheses); Partial (semantic diversity/utility).**
+`src/reasoning/exploration.rs` accepts two/three strictly bounded distinct approach
+records. Canonical IDs select one unused approach per whole-goal cycle. JSON-framed
+selected advice has priority within the unchanged strategy cap; checker feedback
+and prose reflection remain available. Acceptance/selection audits fail closed.
+Malformed structured responses are discarded; bounded legacy prose remains single
+unverified advice. The explorer still reserves 128 outputs and no extra inference,
+cycle, tool, deadline or permission allowance is added.
+
+`RestoredState` and continuation reconstruct the portfolio from one original
+validated cycle-zero explorer result. New advisory acceptance metadata is not
+required for restoration, while ambiguous/misplaced explorer history is refused.
+Saved next-solver strategy composition is idempotent, and custom escalation
+admission/recovery retain matching actual prompt-byte coverage. Original prompts,
+resources, contexts and independent verification retain authority. The changed
+explorer prompt fingerprint intentionally refuses incompatible old checkpoints
+and empirical scopes rather than silently migrating them.
+
+Eight unit/engine tests and two actual local HTTP continuation tests cover strict
+bounds/duplicates/unknown authority fields, canonical/once-only selection, worst
+escaping/caps/idempotence, both revision paths, audit failure, invalid structured
+output, original custom-policy allowance and no explorer replay. See
+[exploration](EXPLORATION.md). Text normalization does not prove semantic diversity;
+canonical order is not expected utility. Real-model effectiveness and novel neural
+architectures remain unverified/incomplete. Jev+ and Jev-R remain **Partial**.
+
+Verification: `cargo fmt --all -- --check`,
+`cargo check --locked --workspace --all-targets`,
+`cargo test --locked --workspace --all-targets` (**705 passed across 36 targets**,
+none ignored), and `cargo clippy --locked --workspace --all-targets -- -D warnings`
+pass. The initial seven focused tests, two HTTP continuation cases and first full
+suite passed; review then tightened legacy fallback and added wrapped-JSON coverage,
+and all final checks were rerun successfully. Existing socket, migration, mock
+inference, malformed-frame, policy-denial, cancellation, recovery and rollback
+checks remain green with approved local socket access. Protocol/schema bindings
+are unchanged; bundled generator/runtime integrity checks pass, but `flatc` is
+unavailable and fresh generation was not run. Discovery at 127.0.0.1:1234 refused
+connections. No real-model portfolio effectiveness, calibrated ranking or quality/
+performance improvement is claimed. Those measurements and broader independent
+reasoning remain incomplete; Jev+ and Jev-R remain Partial.
+
 ### Configure dependency-chain priority — 2026-10-20
 
 **Implemented (bounded built-in ordering); Partial (general calibrated scheduling).**

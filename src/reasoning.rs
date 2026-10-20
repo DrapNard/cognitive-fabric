@@ -67,6 +67,7 @@ pub(crate) struct RestoredState {
     pub(crate) resources: Resources,
     pub(crate) nodes: Vec<Node>,
     pub(crate) deadline: Instant,
+    pub(crate) exploration: Option<exploration::Portfolio>,
 }
 
 pub struct Session {
@@ -81,6 +82,7 @@ pub struct Session {
     pub subtasks: Vec<Subtask>,
     subtask_started: Option<(usize, Instant, Resources)>,
     resume_answer: Option<(String, Option<String>)>,
+    exploration: Option<exploration::Portfolio>,
     pub(crate) scheduler: crate::scheduling::Handle,
     pub(crate) escalator: crate::escalation::Handle,
     escalation_snapshot: bool,
@@ -311,6 +313,7 @@ impl Session {
             subtasks: Vec::new(),
             subtask_started: None,
             resume_answer: None,
+            exploration: None,
             checker_binding: None,
             scheduler,
             escalator: Default::default(),
@@ -341,6 +344,7 @@ impl Session {
             session.resources.input_tokens.is_some() && session.resources.output_tokens.is_some();
         session.complete_queue_metrics = false;
         session.nodes = state.nodes;
+        session.exploration = state.exploration;
         Ok(session)
     }
 
@@ -1262,8 +1266,7 @@ impl Session {
             self.store.event(&self.task,"schedule","jev-plus",json!({"decision":if admitted {"admit_exploration"} else {"skip_exploration"},"reason":"Preserve first whole-goal solver call, output and prompt budget","reserved_prompt_bytes":prompt_reserve}))?;
             if admitted {
                 if let Some(exploration) = self.exploration_advice(&base).await? {
-                    strategy.push_str("\nAlternative: ");
-                    strategy.push_str(&exploration);
+                    self.accept_exploration(&exploration, &mut strategy)?;
                 }
             }
         }
@@ -1283,6 +1286,7 @@ impl Session {
                 self.stop_reason = "budget_exhausted".into();
                 break;
             }
+            strategy = self.select_hypothesis(&strategy, self.resources.cycles + 1)?;
             // A durable boundary describes the exact next solver input and the
             // stopping state. It grants no permission and reserves no fresh budget.
             let boundary = json!({
@@ -1341,6 +1345,9 @@ impl Session {
                     "Independent checker rejected the candidate: {}",
                     result.unwrap_err()
                 );
+                if let Some(portfolio) = &self.exploration {
+                    strategy = portfolio.strategy(&strategy, self.resources.cycles + 1)?;
+                }
                 self.stop_reason = "criterion_failed".into();
                 let next_prompt = format!(
                     "{base}\nUnverified strategy: {}\nPrevious unverified answer: {}",
@@ -3541,3 +3548,6 @@ mod interpretation;
 
 #[path = "reasoning/convergence.rs"]
 pub(crate) mod convergence;
+
+#[path = "reasoning/exploration.rs"]
+pub(crate) mod exploration;

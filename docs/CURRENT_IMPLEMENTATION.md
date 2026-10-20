@@ -1823,3 +1823,33 @@ was not run, while build-time bundled pairing/integrity checks pass. Discovery a
 claimed. Broader calibrated scheduling and physical resource/lifecycle verification
 remain incomplete; Jev+ and Jev-R remain Partial. The next reasoning milestone is
 structured exploration of multiple alternative strategies under original budgets.
+
+## Structured alternative-strategy exploration (2026-10-20)
+
+Explorer-R can now produce a strictly bounded two/three-approach portfolio in its
+existing RESEARCH call. Canonical IDs determine reproducible once-per-cycle use;
+selected JSON advice precedes other strategy within the existing total cap.
+Structured rejection, prose critique/reflection, exact custom escalation prompt
+admission and recurrence stopping remain intact. Required acceptance/selection
+audits fail closed. Recovery rebuilds the pinned portfolio from the original
+validated cycle-zero explorer result, retaining the next unused approach without
+another explorer/planner call. Malformed structured output is discarded; bounded
+legacy prose remains single unverified advice. See [exploration](EXPLORATION.md).
+The explorer prompt fingerprint changes; mismatched old checkpoints/evidence are
+not silently migrated. No extra calls, tokens, deadlines, permissions or neural
+weights are introduced. Canonical order is not calibrated utility or quality proof.
+
+Verification: `cargo fmt --all -- --check`,
+`cargo check --locked --workspace --all-targets`,
+`cargo test --locked --workspace --all-targets` (**705 passed across 36 targets**,
+none ignored), and `cargo clippy --locked --workspace --all-targets -- -D warnings`
+pass. The initial seven focused tests, two HTTP continuation cases and first full
+suite passed; review then tightened legacy fallback and added wrapped-JSON coverage,
+and all final checks were rerun successfully. Existing socket, migration, mock
+inference, malformed-frame, policy-denial, cancellation, recovery and rollback
+checks remain green with approved local socket access. Protocol/schema bindings
+are unchanged; bundled generator/runtime integrity checks pass, but `flatc` is
+unavailable and fresh generation was not run. Discovery at 127.0.0.1:1234 refused
+connections. No real-model portfolio effectiveness, calibrated ranking or quality/
+performance improvement is claimed. Those measurements and broader independent
+reasoning remain incomplete; Jev+ and Jev-R remain Partial.

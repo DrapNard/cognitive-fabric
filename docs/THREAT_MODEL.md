@@ -839,3 +839,18 @@ audit failures prevent subtask dispatch. Saved orders remain authoritative on
 continuation; a current config change cannot reorder admitted work. Default
 serialization remains compatible and explicit policies bind configuration scope.
 This does not expand arbitrary callback loading or imply optimal/physical scheduling.
+
+## Bounded alternative strategies (2026-10-20)
+
+Explorer portfolios are strictly parsed untrusted data, not instructions or model
+permissions. Unique bounded IDs and normalized distinct text only establish
+mechanical shape, not semantic diversity, utility or safety. Malformed structured
+responses cannot downgrade to legacy plain-text advice. JSON-framed selection
+stays inside the original total strategy cap; acceptance/selection audit failure
+prevents subsequent solver work. Independent checks and original budgets retain
+authority. Restoration uses one validated original cycle-zero explorer result,
+not a model-selected new policy or advisory audit status. It preserves original
+custom escalation prompt-byte coverage and rejects ambiguous explorer histories.
+The changed compiled role prompt is subject to existing checkpoint/evidence
+fingerprint gates. No model call, grant, neural promotion, external action or
+provider-stop proof is introduced. Native callbacks are still trusted host code.
