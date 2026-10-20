@@ -26,6 +26,8 @@ pub struct Config {
     pub sql_process: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resource_admission: Option<crate::resource_scheduler::Configuration>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subtask_scheduling: Option<crate::scheduling::Policy>,
     pub inference_auth_scope: Option<String>,
     pub model: String,
     pub model_registration: Option<crate::models::Selection>,
@@ -59,6 +61,7 @@ impl Default for Config {
             arithmetic_process: false,
             sql_process: false,
             resource_admission: None,
+            subtask_scheduling: None,
             inference_auth_scope: None,
             model: "local-model".into(),
             model_registration: None,

@@ -288,6 +288,7 @@ impl Session {
             "security-kernel",
             policy.snapshot(),
         )?;
+        let scheduler = crate::scheduling::Handle::configured(cfg.subtask_scheduling);
         Ok(Self {
             deadline,
             call_limit: calls.min(cfg.max_calls),
@@ -311,7 +312,7 @@ impl Session {
             subtask_started: None,
             resume_answer: None,
             checker_binding: None,
-            scheduler: Default::default(),
+            scheduler,
             escalator: Default::default(),
             escalation_snapshot: false,
             escalation_criterion: None,

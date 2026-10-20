@@ -1,5 +1,39 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+### Configure dependency-chain priority — 2026-10-20
+
+**Implemented (bounded built-in ordering); Partial (general calibrated scheduling).**
+`Config.subtask_scheduling` optionally selects `critical_path`; omitted/null/stable
+preserves legacy stable topological order and default serialization. Explicit
+selection binds configuration snapshots/fingerprints. `src/scheduling.rs` validates
+the four-node graph, computes unit-cost downstream heights, selects longest ready
+chains first and ties by canonical ID. Engine and direct Session construction share
+installation; trusted native Engine overrides remain supported.
+
+Existing admission and intent/validated-order commits precede all execution.
+Recovery retains the committed order after current configuration changes. No extra
+inference, permission, budget or protocol field is introduced. Six unit tests cover
+all 64 four-node edge subsets in every input permutation, chain priority, public
+invalid plans, strict/default config/fingerprints, persisted execution, direct
+Session construction and both intent/decision audit failures. One actual CLI/local
+HTTP regression covers fresh execution and original-prefix continuation without
+replaying planning or completed work. See [scheduling](SCHEDULING.md#configured-critical-path-ordering).
+This sequential graph heuristic is not calibrated cost/utility or proof of better
+latency, quality or physical resource allocation. Jev+ and Jev-R remain **Partial**.
+
+Verification: formatting, `cargo check --locked --workspace --all-targets`,
+`cargo test --locked --workspace --all-targets` (**695 passed across 35 targets**,
+none ignored), and `cargo clippy --locked --workspace --all-targets -- -D warnings`
+pass. Focused ordering tests and actual CLI/HTTP fresh/resumed execution also pass;
+existing socket, migration, mock inference, malformed-frame, denial, cancellation,
+recovery and rollback checks remain green under approved local socket access.
+Protocol/schema bindings are unchanged. `flatc` is unavailable; fresh generation
+was not run, while build-time bundled pairing/integrity checks pass. Discovery at
+127.0.0.1:1234 refused connections, so no real-model performance/quality result is
+claimed. Broader calibrated scheduling and physical resource/lifecycle verification
+remain incomplete; Jev+ and Jev-R remain Partial. The next reasoning milestone is
+structured exploration of multiple alternative strategies under original budgets.
+
 ### Stop nonadjacent whole-goal candidate recurrence — 2026-10-20
 
 **Implemented (bounded exact-content stopping); Partial (general reasoning quality).**

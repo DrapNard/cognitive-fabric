@@ -828,3 +828,14 @@ from validated original nodes and refuses recurrence; revision reconciliation
 rolls back its prospective checkpoint on refusal. No budgets or capabilities are
 granted. Hash equality is only an exact-content stopping heuristic, not proof of
 unsatisfiability, semantic progress, answer quality or external provider stopping.
+
+## Configured graph priority (2026-10-20)
+
+The optional critical-path scheduler operates only on the validated bounded
+planner DAG. Unit chain heights are advice-derived priorities, not authority or
+verified cost/utility. Ties use canonical IDs; models can suggest identifiers and
+edges but cannot add budgets, permissions or executions. Existing intent/decision
+audit failures prevent subtask dispatch. Saved orders remain authoritative on
+continuation; a current config change cannot reorder admitted work. Default
+serialization remains compatible and explicit policies bind configuration scope.
+This does not expand arbitrary callback loading or imply optimal/physical scheduling.

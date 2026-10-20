@@ -27,6 +27,58 @@ pub trait SubtaskScheduler: Send + Sync {
     fn descriptor(&self) -> Descriptor;
     fn order(&self, plan: &Plan) -> Result<Vec<usize>>;
 }
+/// Operator-selected built-in ordering. Omission preserves legacy stable order.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Policy {
+    Stable,
+    CriticalPath,
+}
+
+/// Prioritize ready steps by longest downstream chain, then canonical step ID.
+/// Unit edge costs are a graph heuristic, not inferred runtime or utility.
+pub struct CriticalPathScheduler;
+impl SubtaskScheduler for CriticalPathScheduler {
+    fn descriptor(&self) -> Descriptor {
+        Descriptor {
+            id: "jev-plus.critical-path".into(),
+            version: "1.0.0".into(),
+        }
+    }
+    fn order(&self, plan: &Plan) -> Result<Vec<usize>> {
+        Plan::parse(&serde_json::to_string(plan)?)?;
+        let topological = plan.order()?;
+        let mut height = vec![1usize; plan.steps.len()];
+        for &index in topological.iter().rev() {
+            for (child, step) in plan.steps.iter().enumerate() {
+                if step.depends_on.contains(&plan.steps[index].id) {
+                    height[index] = height[index].max(1 + height[child]);
+                }
+            }
+        }
+        let mut completed = BTreeSet::new();
+        let mut order = Vec::with_capacity(plan.steps.len());
+        while order.len() < plan.steps.len() {
+            let (index, step) = plan
+                .steps
+                .iter()
+                .enumerate()
+                .filter(|(_, step)| {
+                    !completed.contains(&step.id)
+                        && step.depends_on.iter().all(|id| completed.contains(id))
+                })
+                .min_by(|(a, sa), (b, sb)| {
+                    height[*b].cmp(&height[*a]).then_with(|| sa.id.cmp(&sb.id))
+                })
+                .ok_or_else(|| anyhow::anyhow!("Subtask dependency cycle"))?;
+            completed.insert(step.id.clone());
+            order.push(index);
+        }
+        validate_order(plan, &order)?;
+        Ok(order)
+    }
+}
+
 pub struct StableScheduler;
 impl SubtaskScheduler for StableScheduler {
     fn descriptor(&self) -> Descriptor {
@@ -73,6 +125,15 @@ impl Default for Handle {
     }
 }
 impl Handle {
+    pub(crate) fn configured(policy: Option<Policy>) -> Self {
+        match policy {
+            None | Some(Policy::Stable) => Self::default(),
+            Some(Policy::CriticalPath) => Self {
+                backend: Arc::new(CriticalPathScheduler),
+                descriptor: CriticalPathScheduler.descriptor(),
+            },
+        }
+    }
     pub(crate) fn new(backend: Arc<dyn SubtaskScheduler>) -> Result<Self> {
         let descriptor = backend.descriptor();
         descriptor.validate()?;
@@ -289,3 +350,7 @@ mod tests {
         assert!(backend.0.lock().unwrap().is_empty());
     }
 }
+
+#[cfg(test)]
+#[path = "scheduling/critical_path_tests.rs"]
+mod critical_path_tests;

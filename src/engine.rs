@@ -70,6 +70,7 @@ impl Engine {
         backend: Arc<dyn InferenceBackend>,
     ) -> Self {
         let broker = Arc::new(crate::fabric::Broker::with_inference(backend));
+        let scheduler = crate::scheduling::Handle::configured(cfg.subtask_scheduling);
         Self {
             cfg,
             store,
@@ -79,7 +80,7 @@ impl Engine {
             corpus: None,
             process_inference: false,
             router: Default::default(),
-            scheduler: Default::default(),
+            scheduler,
             escalator: Default::default(),
             resource_pool: Default::default(),
         }

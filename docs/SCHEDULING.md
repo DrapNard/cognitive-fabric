@@ -18,7 +18,7 @@ tool grants, bypass admission, allocate fresh budgets or label results verified.
 Every actual inference/tool operation still crosses the existing kernel checks.
 A malformed order fails the task before subtask dispatch. The callback is used
 only when a planner result is accepted as a graph; profiles without planning do
-not invoke it. There is no CLI/model/socket policy loader.
+not invoke it. Arbitrary callback loading is not exposed to CLI/model/socket callers.
 
 ## Durable decisions and recovery
 
@@ -83,3 +83,39 @@ deadlines and quarantine of uncertain dispatched work. See
 [RESOURCE_SCHEDULING.md](RESOURCE_SCHEDULING.md) for host configuration, original
 budget preservation, audit gates and remaining physical/global scheduling gaps.
 Dependency ordering and shared allocation remain distinct responsibilities.
+
+## Configured critical-path ordering
+
+Set the optional `subtask_scheduling` field in the owner-controlled `config.json`
+to `"critical_path"`. Omission, null or `"stable"` retains original-order stable
+topological scheduling; unknown names are rejected. Default serialization omits
+the field, preserving legacy configuration fingerprints. An explicit selection
+is included in execution-settings snapshots and empirical configuration scope.
+
+`CriticalPathScheduler` validates the original four-node plan before computing
+unit-cost downstream heights. Among currently ready nodes, the longest remaining
+dependency chain runs first; equal heights use ascending step IDs. Step indices
+and dependency-array order do not determine ties. A chain `a → b → c` therefore
+runs before an independent `zz` even if `zz` appeared first in the planner JSON.
+This is a deterministic graph heuristic: step names/dependencies are untrusted
+suggestions, and heights are not estimated GPU durations or utility scores.
+
+Engine and direct Session construction install this configured built-in policy,
+covering their CLI/service callers. A trusted host may still explicitly replace
+the Engine handle with `with_subtask_scheduler`; already cloned engines retain
+their own handle. Accepted graph execution persists the existing intent and
+validated decision before any subtask. The original call/token/prompt/tool/time
+ceilings and first-final-solver admission are unchanged. No model call is added.
+
+Recovery uses the saved order, never a new policy computation or the current
+configuration file. `tests/critical_path_scheduling.rs` exercises actual CLI/local
+HTTP execution and resumes a saved prefix after changing current config to stable:
+completed work and planning are not replayed. Unit tests cover every permutation
+of all 64 edge subsets of a four-node labelled topological DAG, malformed public
+plans, configuration fingerprints, direct Session installation and audit denial.
+
+Execution is still sequential. Reordering cannot establish lower total compute,
+faster completion, better answers or optimal scheduling; no real-model improvement
+has been measured. Dynamic costs, physical GPU/memory allocation and calibrated
+utility remain separate incomplete work. Protocol schemas and permissions do not
+change.

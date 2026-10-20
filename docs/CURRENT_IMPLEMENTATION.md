@@ -1797,3 +1797,29 @@ migration, mock inference, malformed-frame, policy-denial, cancellation and roll
 checks remain green with elevated local socket access. Protocol/schema bindings
 are unchanged; `flatc` is unavailable, so fresh generation was not run. Discovery
 at 127.0.0.1:1234 refused connections; real-backend quality/performance is untested.
+
+## Configured dependency-chain priority (2026-10-20)
+
+Optional owner `subtask_scheduling: "critical_path"` selects ready planner steps by
+longest downstream dependency chain, then canonical step ID. Stable original order
+remains the default; explicit selections enter configuration fingerprints. Engine
+and direct Session construction share installation, and native Engine overrides
+remain available. Validated decisions use existing durable intent/order gates;
+continuation retains the original recorded decision after current config changes.
+No new inference, resource ceiling or capability is introduced. Tests include
+all four-node edge subsets/input permutations and real CLI/local HTTP recovery.
+See [scheduling](SCHEDULING.md#configured-critical-path-ordering). This is bounded
+sequential graph ordering, not measured runtime/quality or physical GPU scheduling.
+
+Verification: formatting, `cargo check --locked --workspace --all-targets`,
+`cargo test --locked --workspace --all-targets` (**695 passed across 35 targets**,
+none ignored), and `cargo clippy --locked --workspace --all-targets -- -D warnings`
+pass. Focused ordering tests and actual CLI/HTTP fresh/resumed execution also pass;
+existing socket, migration, mock inference, malformed-frame, denial, cancellation,
+recovery and rollback checks remain green under approved local socket access.
+Protocol/schema bindings are unchanged. `flatc` is unavailable; fresh generation
+was not run, while build-time bundled pairing/integrity checks pass. Discovery at
+127.0.0.1:1234 refused connections, so no real-model performance/quality result is
+claimed. Broader calibrated scheduling and physical resource/lifecycle verification
+remain incomplete; Jev+ and Jev-R remain Partial. The next reasoning milestone is
+structured exploration of multiple alternative strategies under original budgets.
