@@ -250,9 +250,10 @@ async fn public_custom_policy_continuation_preserves_decisions_original_charges_
         assert_eq!(report["new_calls"], if allow { 3 } else { 2 });
         assert_eq!(
             report["status"],
-            if allow { "completed" } else { "unverified" }
+            if allow { "completed" } else { "rejected" }
         );
         assert_eq!(report["verified"], allow);
+        assert_eq!(report["verification_attempted"], true);
         assert_eq!(
             report["escalation_policy"],
             serde_json::to_value(&descriptor).unwrap()

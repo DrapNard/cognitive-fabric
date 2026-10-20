@@ -22,7 +22,7 @@ Reported output exceeding the reserved request limit fails the task.
 
 Critic JSON contains exactly `revise` and `reason`. A specific bounded reason
 can justify a reflector and another solver. Invalid critique, no useful revision,
-identical candidate hashes, cycle/call/token/byte ceilings, timeouts or
+recurring whole-goal candidate hashes, cycle/call/token/byte ceilings, timeouts or
 cancellation stop execution. A missing budget never fabricates a successful answer.
 
 Verifier-R is deterministic and independent of model assertions. Current
@@ -102,3 +102,25 @@ Optional language interpretation now has
 [explicit first-solver admission and a bounded phase](INTERPRETATION_BUDGETS.md).
 Insufficient resources skip interpretation; timeout fallback retains charges and
 never weakens provider/policy/audit failures or cancellation.
+
+## Stop nonadjacent candidate recurrence
+
+`src/reasoning/convergence.rs` tracks the first whole-goal solver hash in each
+reserved cycle, including nonadjacent repeats such as A → B → A. Cycle-zero
+planning/workflow advice and later same-cycle calls are excluded, including
+critic/reflector calls labelled `solver` by recursive ablations. History is bounded
+to 16 cycles and reconstructed from at most 64 durable role nodes on continuation.
+Missing, malformed, gapped or future-cycle history fails closed.
+
+Independent executable verification runs first. A verified answer completes even
+if its hash was previously seen. Otherwise a repeated candidate preserves the
+latest answer and charges, sets `no_progress`, and buys no further revision calls.
+Each unverified/rejected candidate requires a `candidate_progress` audit with the
+policy version, objective/answer hashes and previous matching cycles before any
+escalation. Audit failure fails the task. No additional inference is required.
+
+This exact-content heuristic is conservative: a later attempt might have improved,
+and different wording can evade it. It proves neither unsatisfiability nor model
+quality. No latency or accuracy improvement has been measured on real models.
+See [recovery](RECOVERY.md#candidate-recurrence-and-rejected-continuations) for
+checkpoint admission and rejection status.

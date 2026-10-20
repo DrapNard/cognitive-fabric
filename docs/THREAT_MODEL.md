@@ -817,3 +817,14 @@ selection. Reference refinement checks compatible bindings. Compatibility labels
 remain declaration-only and confer no executable/API/weight attestation, activation
 or permission. The original task criteria and budgets retain authority, and the
 changed interface prompt remains subject to existing checkpoint fingerprint gates.
+
+## Bounded candidate recurrence (2026-10-20)
+
+Jev-R requires a durable progress audit before escalating a rejected/unverified
+whole-goal candidate. First-per-cycle hashes detect nonadjacent recurrence without
+trusting critic assertions or counting recursive-ablation advice as new answers.
+Independent verification precedes this heuristic. Continuation rebuilds history
+from validated original nodes and refuses recurrence; revision reconciliation
+rolls back its prospective checkpoint on refusal. No budgets or capabilities are
+granted. Hash equality is only an exact-content stopping heuristic, not proof of
+unsatisfiability, semantic progress, answer quality or external provider stopping.

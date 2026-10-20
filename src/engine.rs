@@ -1922,3 +1922,7 @@ mod interpretation_budget_tests;
 #[cfg(test)]
 #[path = "engine/version_capability_tests.rs"]
 mod version_capability_tests;
+
+#[cfg(test)]
+#[path = "engine/convergence_tests.rs"]
+mod convergence_tests;

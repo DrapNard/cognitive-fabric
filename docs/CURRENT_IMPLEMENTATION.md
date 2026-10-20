@@ -1772,3 +1772,28 @@ admission. Mixed routes receive only compatible credit. Legacy JSON stays unchan
 no activation, grants or success proofs follow from a metadata match. Role-prompt
 fingerprints change and existing mismatched-checkpoint refusal remains in force.
 See [capability versions](CAPABILITIES.md#optional-declared-version-requirements).
+
+## Whole-goal candidate recurrence (2026-10-20)
+
+Jev-R now stops nonadjacent repeated whole-goal answers, such as A → B → A,
+before buying another revision. Independent verification runs first; successful
+checks still complete. First-per-cycle hashes exclude planning and recursive
+critic/reflector advice. Required progress audits fail closed. Continuation rebuilds
+bounded history from existing validated nodes; an already recurrent checkpoint
+cannot restart the search, including through revision-result reconciliation.
+Resumed independent rejection is reported as `rejected`, with verification-attempt
+and stop-reason fields. No extra model call, budget or permission is introduced.
+See [reasoning](REASONING.md#stop-nonadjacent-candidate-recurrence). This remains an
+exact-content heuristic, not proof of intelligence, quality or impossibility.
+
+Verification: `cargo fmt --all -- --check`,
+`cargo check --locked --workspace --all-targets`,
+`cargo test --locked --workspace --all-targets` (**688 passed across 34 targets**,
+none ignored), and `cargo clippy --locked --workspace --all-targets -- -D warnings`
+pass. The first full run exposed an old custom-policy continuation assertion
+expecting `unverified` after independent rejection; it now requires `rejected`
+and an attempted verification, and the final full suite passes. Existing socket,
+migration, mock inference, malformed-frame, policy-denial, cancellation and rollback
+checks remain green with elevated local socket access. Protocol/schema bindings
+are unchanged; `flatc` is unavailable, so fresh generation was not run. Discovery
+at 127.0.0.1:1234 refused connections; real-backend quality/performance is untested.

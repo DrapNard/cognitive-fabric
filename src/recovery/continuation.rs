@@ -284,6 +284,8 @@ fn prepare_with_policy(
                 || solver_texts.last_key_value().is_none_or(|(_,text)|text!=previous)))
             || subtasks.iter().any(|n|!matches!(n.state.as_str(),"unverified"|"skipped"))
         { bail!("Reasoning boundary is stale, inconsistent or unsupported") }
+        let history=crate::reasoning::convergence::History::from_nodes(&nodes,cycles as u32)?;
+        if history.has_recurrence() {bail!("Recorded whole-goal candidates already recur; continuation cannot repeat a no-progress search")}
         if cycles > 0 && !escalator.is_builtin() {
             policy::validate_saved_decision(db, task, id, &v, escalator, &cfg, text)?;
         }
@@ -811,6 +813,7 @@ async fn resume_with_handle(
     session.finish_metrics();
     let (answer, status) = match outcome {
         Ok(answer) if session.verified => (answer, "completed"),
+        Ok(answer) if session.verification_attempted => (answer, "rejected"),
         Ok(answer) if session.has_solution => (answer, "unverified"),
         Ok(answer) => (answer, "exhausted"),
         Err(_) => (
@@ -826,6 +829,7 @@ async fn resume_with_handle(
     let report = json!({"format_version":1,"task_id":task,"status":status,"answer":answer,
         "escalation_policy":session.escalator.descriptor(),"policy_implementation_attested":false,
         "verified":session.verified,"criterion":session.verified_criterion,
+        "verification_attempted":session.verification_attempted,"stop_reason":session.stop_reason,
         "restored_resource_pool":restored_pool,"resource_history":checkpoint.resource_history,
         "new_calls":session.resources.calls-prior_calls,"charged_resources":session.resources,
         "timing_scope":"continuation_only","prior_timing_complete":false,"subtask_results_verified":false,"automatic_replay":false});

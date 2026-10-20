@@ -1267,6 +1267,12 @@ impl Session {
             }
         }
         let (mut answer, mut last_hash) = self.resume_answer.take().unwrap_or_default();
+        let mut candidate_history =
+            convergence::History::from_nodes(&self.nodes, self.resources.cycles)?;
+        if candidate_history.has_recurrence() {
+            bail!("Recorded whole-goal candidates already recur")
+        }
+
         self.has_solution = self.resources.cycles > 0 || !answer.is_empty();
         for _ in 0..self
             .cycle_limit
@@ -1325,7 +1331,7 @@ impl Session {
                     self.stop_reason = "verified".into();
                     break;
                 }
-                if last_hash.as_ref() == Some(&hash) {
+                if !self.candidate_progress(&mut candidate_history, query, &hash, true)? {
                     self.stop_reason = "no_progress".into();
                     break;
                 }
@@ -1354,7 +1360,7 @@ impl Session {
             }
             // A model's assertions never qualify as independent success evidence.
             self.store.event(&self.task,"verification","verifier-r",json!({"verified":false,"reason":"No independent executable criterion for this objective","cycle":self.resources.cycles}))?;
-            if last_hash.as_ref() == Some(&hash) {
+            if !self.candidate_progress(&mut candidate_history, query, &hash, false)? {
                 self.stop_reason = "no_progress".into();
                 break;
             }
@@ -3531,3 +3537,6 @@ mod constraint_tests;
 
 #[path = "reasoning/interpretation.rs"]
 mod interpretation;
+
+#[path = "reasoning/convergence.rs"]
+pub(crate) mod convergence;

@@ -1,5 +1,41 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+### Stop nonadjacent whole-goal candidate recurrence — 2026-10-20
+
+**Implemented (bounded exact-content stopping); Partial (general reasoning quality).**
+`src/reasoning/convergence.rs` records the first whole-goal solver hash per reserved
+cycle. A → B → A now stops before further escalation, retaining the latest answer
+and all charges. Independent checker success takes precedence. Cycle-zero advice
+and same-cycle recursive-ablation critique/reflection do not count as candidates.
+A required versioned `candidate_progress` audit records prior matching cycles;
+audit failure prevents further inference. History is bounded by 16 cycles/64 nodes.
+
+`src/recovery/continuation.rs` reconstructs this history from validated original
+nodes, including legacy records without progress events. Already recurrent
+checkpoints are refused; revision-result reconciliation rolls back its prospective
+boundary on refusal. Independently rejected resumed answers now remain `rejected`,
+with `verification_attempted` and `stop_reason` in the report.
+
+Two history unit tests, three engine tests and two integration tests cover bounded
+invalid histories, nonadjacent structured/prose repeats, successful checker
+precedence, recursive role aliases, audit failure, actual local HTTP continuation
+and atomic reconciliation refusal. See [reasoning](REASONING.md#stop-nonadjacent-candidate-recurrence)
+and [recovery](RECOVERY.md#candidate-recurrence-and-rejected-continuations).
+This heuristic does not establish semantic progress, unsatisfiability or real-model
+quality/performance. Jev+ and Jev-R remain **Partial**.
+
+Verification: `cargo fmt --all -- --check`,
+`cargo check --locked --workspace --all-targets`,
+`cargo test --locked --workspace --all-targets` (**688 passed across 34 targets**,
+none ignored), and `cargo clippy --locked --workspace --all-targets -- -D warnings`
+pass. The first full run exposed an old custom-policy continuation assertion
+expecting `unverified` after independent rejection; it now requires `rejected`
+and an attempted verification, and the final full suite passes. Existing socket,
+migration, mock inference, malformed-frame, policy-denial, cancellation and rollback
+checks remain green with elevated local socket access. Protocol/schema bindings
+are unchanged; `flatc` is unavailable, so fresh generation was not run. Discovery
+at 127.0.0.1:1234 refused connections; real-backend quality/performance is untested.
+
 ### Negotiate declared capability versions during interpretation — 2026-10-20
 
 **Implemented (bounded advisory SemVer selection); Partial (implementation/quality proof).**

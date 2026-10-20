@@ -803,3 +803,23 @@ changing production locking or adding retries to assertions. A prior intermitten
 failure was captured as `EWOULDBLOCK` with no holder visible by the time descriptors
 were inspected. The controlled test establishes the inheritance mechanism; the
 historical child PID was not established.
+
+## Candidate recurrence and rejected continuations
+
+Continuation reconstructs first-per-cycle whole-goal candidate history from the
+already validated durable nodes. No new checkpoint field or migration is needed;
+records lacking the new `candidate_progress` event remain usable if their original
+history and all other admission checks pass. An already recurrent history cannot
+restart a no-progress search. Revision-result reconciliation runs this same guard
+inside its transaction; refusal rolls back the prospective boundary and audit.
+
+Successful resumed independent verification remains `completed`. A failed
+independent criterion now remains `rejected`, rather than becoming `unverified`;
+continuation reports expose `verification_attempted` and `stop_reason`. General
+prose remains unverified. Original deadlines, resource charges, model/context pins
+and permissions still apply. Unknown outcomes and unsupported crash windows are
+not automatically finalized or replayed. These checks do not prove provider stop.
+
+`tests/candidate_convergence.rs` covers actual local HTTP continuation across a
+nonadjacent recurrence and transactional refusal to restart a recurrent prose
+search, including legacy records without progress events.
