@@ -127,3 +127,14 @@ assignment, so alternative solutions are valid; failed/rejected/cancelled arms
 cannot count as successes. Paired workflow/retry evidence can name
 `finite_domain/v1` under the existing exact scope and operator review rules.
 Synthetic tests are not a held-out effectiveness study.
+
+### Optional constraint-violation diagnostics
+
+The same compiled finite-domain parsing and relation checks can count violated
+constraints for a complete, in-domain assignment. Malformed/incomplete/out-of-domain
+answers are incomparable, not assigned a fabricated worst score. Zero violations
+agrees with full satisfaction, but only the full authorized checker establishes
+verified evidence. Optional [progress stopping](PROGRESS_STOPPING.md) uses nonzero
+counts to decline further revisions after a bounded plateau. Counts express no
+distance-to-solution or unsatisfiability proof; all original grants and tool/call
+charges remain authoritative.

@@ -68,6 +68,7 @@ pub(crate) struct RestoredState {
     pub(crate) nodes: Vec<Node>,
     pub(crate) deadline: Instant,
     pub(crate) exploration: Option<exploration::Portfolio>,
+    pub(crate) progress: progress::History,
 }
 
 pub struct Session {
@@ -83,6 +84,7 @@ pub struct Session {
     subtask_started: Option<(usize, Instant, Resources)>,
     resume_answer: Option<(String, Option<String>)>,
     exploration: Option<exploration::Portfolio>,
+    progress: progress::History,
     pub(crate) advice_profile: Option<crate::engine::ExecutionProfile>,
     pub(crate) scheduler: crate::scheduling::Handle,
     pub(crate) escalator: crate::escalation::Handle,
@@ -315,6 +317,7 @@ impl Session {
             subtask_started: None,
             resume_answer: None,
             exploration: None,
+            progress: Default::default(),
             advice_profile: None,
             checker_binding: None,
             scheduler,
@@ -347,6 +350,7 @@ impl Session {
         session.complete_queue_metrics = false;
         session.nodes = state.nodes;
         session.exploration = state.exploration;
+        session.progress = state.progress;
         Ok(session)
     }
 
@@ -1335,7 +1339,7 @@ impl Session {
             strategy = self.select_hypothesis(&strategy, self.resources.cycles + 1)?;
             // A durable boundary describes the exact next solver input and the
             // stopping state. It grants no permission and reserves no fresh budget.
-            let boundary = json!({
+            let mut boundary = json!({
                 "format_version":1,"phase":"ready_solver","mode":mode,
                 "objective_hash":crate::store::sha256(query.as_bytes()),
                 "context_hash":crate::store::sha256(context.as_bytes()),
@@ -1347,6 +1351,13 @@ impl Session {
                 "charged_prompt_bytes":self.resources.prompt_bytes,
                 "permissions_restorable":false,"subtask_results_verified":false
             });
+            if self.cfg.progress_stopping.is_some()
+                && criterion
+                    .as_ref()
+                    .is_some_and(|c| c.name() == "finite_domain/v1")
+            {
+                boundary["progress_state"] = serde_json::to_value(&self.progress)?;
+            }
             if serde_json::to_vec(&boundary)?.len() > 262144 {
                 bail!("Reasoning boundary exceeds durable checkpoint limit")
             }
@@ -1382,7 +1393,30 @@ impl Session {
                     self.stop_reason = "verified".into();
                     break;
                 }
-                if !self.candidate_progress(&mut candidate_history, query, &hash, true)? {
+                let plateau = if let Some(settings) = &self.cfg.progress_stopping {
+                    if criterion.name() == "finite_domain/v1" {
+                        let assessment = self.progress.observe(
+                            query,
+                            self.resources.cycles,
+                            &answer,
+                            settings,
+                        )?;
+                        let stop = assessment["stop"] == true;
+                        self.store.event(
+                            &self.task,
+                            "reasoning_progress",
+                            "verifier-r",
+                            assessment,
+                        )?;
+                        stop
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                };
+                if !self.candidate_progress(&mut candidate_history, query, &hash, true)? || plateau
+                {
                     self.stop_reason = "no_progress".into();
                     break;
                 }
@@ -3600,3 +3634,8 @@ pub(crate) mod exploration;
 
 #[path = "reasoning/advice_guard.rs"]
 pub mod advice_guard;
+
+pub mod progress;
+
+#[cfg(test)]
+mod progress_tests;

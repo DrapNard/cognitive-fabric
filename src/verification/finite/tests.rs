@@ -127,3 +127,69 @@ fn accepts_exact_structural_bounds_and_is_invariant_to_input_order() {
         .check(&format!("{}{}", r#"{"a":1,"b":3}"#, " ".repeat(8192)))
         .is_err());
 }
+
+#[test]
+fn progress_score_counts_violated_constraints_for_complete_assignments() {
+    let c = FiniteDomain::parse(&sample().to_string()).unwrap();
+    let mut observed = 0;
+    for a in 1..=3 {
+        for b in 1..=3 {
+            let answer = json!({"a":a,"b":b}).to_string();
+            let expected = (if a == b { 1 } else { 0 }) + (if a + b != 4 { 1 } else { 0 });
+            assert_eq!(c.progress_score(&answer), Some(expected as u32));
+            assert_eq!(c.check(&answer).is_ok(), expected == 0);
+            observed += 1;
+        }
+    }
+    assert_eq!(observed, 9);
+
+    let impossible = json!({
+        "variables":[{"id":"x","domain":[0,1]},{"id":"y","domain":[0,1]}],
+        "constraints":[
+            {"kind":"linear","terms":[{"variable":"x","coefficient":1}],"relation":"eq","rhs":0},
+            {"kind":"linear","terms":[{"variable":"x","coefficient":1}],"relation":"eq","rhs":1},
+            {"kind":"all_different","variables":["x","y"]}
+        ]
+    });
+    let c = FiniteDomain::parse(&impossible.to_string()).unwrap();
+    assert_eq!(c.progress_score(r#"{"x":0,"y":1}"#), Some(1));
+    assert_eq!(c.progress_score(r#"{"y":0,"x":0}"#), Some(2));
+}
+
+#[test]
+fn progress_score_is_order_invariant_and_only_scores_comparable_assignments() {
+    let mut criterion = sample();
+    let original = FiniteDomain::parse(&criterion.to_string()).unwrap();
+    let score = original.progress_score(r#"{"a":2,"b":2}"#);
+    criterion["variables"].as_array_mut().unwrap().reverse();
+    criterion["constraints"].as_array_mut().unwrap().reverse();
+    let reordered = FiniteDomain::parse(&criterion.to_string()).unwrap();
+    assert_eq!(score, Some(1));
+    assert_eq!(reordered.progress_score(r#"{"b":2,"a":2}"#), score);
+
+    for incomparable in [
+        r#"{"a":1}"#,
+        r#"{"a":1,"b":3,"extra":0}"#,
+        r#"{"a":0,"b":3}"#,
+        r#"{"a":1,"b":3.0}"#,
+        r#"{"a":1,"a":2,"b":3}"#,
+        r#"{"a":true,"b":3}"#,
+        r#"{"a":1,"b":null}"#,
+        "[]",
+        "null",
+        "not json",
+    ] {
+        assert_eq!(
+            original.progress_score(incomparable),
+            None,
+            "{incomparable}"
+        );
+    }
+    assert_eq!(original.progress_score(&" ".repeat(8193)), None);
+
+    use crate::verification::Criterion;
+    let sorting = Criterion::from_query(r#"sort:{"values":[1]}"#)
+        .unwrap()
+        .unwrap();
+    assert_eq!(sorting.progress_score("[1]"), None);
+}

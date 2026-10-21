@@ -18,6 +18,11 @@ use std::{
 
 #[path = "continuation_policy.rs"]
 mod policy;
+#[path = "continuation_progress.rs"]
+mod progress_history;
+#[cfg(test)]
+#[path = "continuation_progress_tests.rs"]
+mod progress_tests;
 #[path = "continuation_resources.rs"]
 mod resource_history;
 
@@ -274,9 +279,10 @@ fn prepare_with_policy(
     }
     use rusqlite::OptionalExtension;
     let boundary_row: Option<(u64,String,String)> = db.query_row("SELECT id,CASE WHEN length(CAST(source AS BLOB))<=64 THEN source END,CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN payload END FROM events WHERE task_id=?1 AND kind='reasoning_boundary' ORDER BY id DESC LIMIT 1",[task],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?;
+    let boundary_id = boundary_row.as_ref().map(|(id, _, _)| *id as i64);
     let boundary = boundary_row.map(|(id,source,raw)| -> Result<Value> {
         if source != "jev-r" { bail!("Invalid reasoning boundary source") }
-        let v: Value = serde_json::from_str(&raw)?;
+        let v: Value = crate::strict_json::value(raw.as_bytes(), 262144)?;
         let later: u64 = db.query_row("SELECT count(*) FROM events WHERE task_id=?1 AND id>?2 AND kind IN ('model_dispatch','cycle_reservation','tool_reservation')",rusqlite::params![task,id],|r|r.get(0))?;
         let admission=&audit["remaining_inference_admission"];
         let cycles=settings["cycle_limit"].as_u64().unwrap()-admission["cycles"].as_u64().unwrap();
@@ -318,6 +324,15 @@ fn prepare_with_policy(
         }
         Ok(v)
     }).transpose()?;
+    let progress = progress_history::validate_before(
+        db,
+        task,
+        &query,
+        &cfg,
+        boundary.as_ref(),
+        None,
+        boundary_id,
+    )?;
     let tail = audit["calls"]
         .as_array()
         .unwrap()
@@ -432,6 +447,7 @@ fn prepare_with_policy(
             resources,
             nodes,
             exploration,
+            progress,
             deadline: observed + Duration::from_nanos(remaining),
         },
     })
@@ -467,6 +483,90 @@ pub(super) fn record_failed_revision(
     {
         return Ok(false);
     }
+    let query: String = db.query_row(
+        "SELECT CASE WHEN length(CAST(query AS BLOB))<=12000 THEN query END FROM tasks WHERE id=?1",
+        [task],
+        |row| row.get(0),
+    )?;
+    let criterion = crate::verification::Criterion::from_query(&query)?;
+    let settings_raw: Option<String> = db.query_row(
+        "SELECT CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN json_extract(payload,'$.configuration') END FROM events WHERE task_id=?1 AND kind='execution_settings' ORDER BY id LIMIT 1",
+        [task],
+        |row| row.get(0),
+    ).optional()?;
+    let progress_active = if let (Some(criterion), Some(raw)) = (criterion, settings_raw) {
+        let cfg: Config = serde_json::from_str(&raw)?;
+        cfg.validate()?;
+        cfg.progress_stopping.is_some() && criterion.name() == "finite_domain/v1"
+    } else {
+        false
+    };
+    let mut progress_state = None;
+    if progress_active {
+        let raw: String = db.query_row(
+            "SELECT CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN payload END FROM events WHERE task_id=?1 AND kind='execution_settings' ORDER BY id LIMIT 1",
+            [task],
+            |row| row.get(0),
+        )?;
+        let settings_payload: Value = crate::strict_json::value(raw.as_bytes(), 262144)?;
+        let cfg: Config = serde_json::from_value(settings_payload["configuration"].clone())?;
+        let settings = cfg.progress_stopping.as_ref().unwrap();
+        let current_call = saved["call"]
+            .as_u64()
+            .ok_or_else(|| anyhow::anyhow!("Missing recovered solver call"))?;
+        let current_solver_id: i64 = db.query_row(
+            "SELECT id FROM events WHERE task_id=?1 AND kind='reasoning' AND json_extract(payload,'$.call')=?2 AND json_extract(payload,'$.node.role')='solver' ORDER BY id DESC LIMIT 1",
+            rusqlite::params![task, current_call],
+            |row| row.get(0),
+        )?;
+        let answer = saved["text"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("Missing recovered answer text"))?;
+        if saved["node"]["content_hash"] != sha256(answer.as_bytes()) {
+            bail!("Recovered solver answer hash is invalid")
+        }
+        let criterion = crate::verification::Criterion::from_query(&query)?.unwrap();
+        if criterion.check(answer).is_ok() {
+            bail!("Recovered result is not an independently rejected candidate")
+        }
+        let existing_current: bool = db.query_row(
+            "SELECT EXISTS(SELECT 1 FROM events WHERE task_id=?1 AND kind='reasoning_progress' AND json_extract(payload,'$.cycle')=?2)",
+            rusqlite::params![task, cycles],
+            |row| row.get(0),
+        )?;
+        let (next, assessment) = if existing_current {
+            let history = progress_history::validate(db, task, &query, &cfg, None)?;
+            let raw: String = db.query_row(
+                "SELECT CASE WHEN length(CAST(payload AS BLOB))<=16384 THEN payload END FROM events WHERE task_id=?1 AND kind='reasoning_progress' AND json_extract(payload,'$.cycle')=?2",
+                rusqlite::params![task, cycles],
+                |row| row.get(0),
+            )?;
+            (history, crate::strict_json::value(raw.as_bytes(), 16384)?)
+        } else {
+            let history = progress_history::validate_until(
+                db,
+                task,
+                &query,
+                &cfg,
+                None,
+                Some(current_solver_id),
+            )?;
+            if history.observed_cycles().saturating_add(1) != cycles as u32 {
+                bail!("Recovered finite-domain progress history is gapped or stale")
+            }
+            let mut next = history;
+            let assessment = next.observe(&query, cycles as u32, answer, settings)?;
+            db.execute(
+                "INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'reasoning_progress','verifier-r',?2,unixepoch())",
+                rusqlite::params![task, assessment.to_string()],
+            )?;
+            (next, assessment)
+        };
+        progress_state = Some(serde_json::to_value(next)?);
+        if assessment["stop"] == true {
+            return Ok(false);
+        }
+    }
     let previous:Option<String>=db.query_row("SELECT json_extract(payload,'$.node.content_hash') FROM events WHERE task_id=?1 AND kind='reasoning' AND json_extract(payload,'$.node.role')='solver' AND json_extract(payload,'$.node.cycle')>0 ORDER BY id DESC LIMIT 1 OFFSET 1",[task],|r|r.get(0)).optional()?;
     if previous
         .as_ref()
@@ -487,12 +587,15 @@ pub(super) fn record_failed_revision(
         [task],
         |r| r.get(0),
     )?;
-    let boundary = json!({"format_version":1,"phase":"ready_solver","mode":mode,
+    let mut boundary = json!({"format_version":1,"phase":"ready_solver","mode":mode,
         "objective_hash":context["objective_hash"],"context_hash":context["context_hash"],"prompt_base_hash":context["prompt_base_hash"],
         "strategy":format!("Independent checker rejected the candidate: {reason}"),"previous_answer":saved["text"],
         "last_answer_hash":saved["node"]["content_hash"],"calls_before":audit["reserved_calls"],"cycles_before":cycles,
         "tool_calls_before":tools,"reserved_output_tokens":audit["reserved_output_tokens"],"charged_prompt_bytes":audit["charged_prompt_bytes"],
         "permissions_restorable":false,"subtask_results_verified":false,"origin":"operator_failed_result_recovery"});
+    if let Some(state) = progress_state {
+        boundary["progress_state"] = state;
+    }
     let raw = serde_json::to_string(&boundary)?;
     if raw.len() > 262144 {
         bail!("Recovered revision checkpoint exceeds bounds")

@@ -823,3 +823,16 @@ not automatically finalized or replayed. These checks do not prove provider stop
 `tests/candidate_convergence.rs` covers actual local HTTP continuation across a
 nonadjacent recurrence and transactional refusal to restart a recurrent prose
 search, including legacy records without progress events.
+
+## Finite-domain progress checkpoints
+
+Enabled [progress stopping](PROGRESS_STOPPING.md) adds a compact `progress_state`
+to finite-domain ready checkpoints. Restoration recomputes every rejected cycle's
+constraint-violation assessment from durable solver text and matching independent
+checks. Scores, hashes, objective, cycle ordering, streak and saved state must
+agree before backend construction or inference. An already stopped history cannot
+restart with an empty streak. Fresh operator result verification retains its tool
+charge and cannot replay the solver or bypass the same stopping rule. Legacy
+configurations without the option retain their existing format and recurrence
+guard. This remains supported-boundary continuation, not arbitrary in-flight
+recovery or provider-stop evidence.

@@ -168,6 +168,15 @@ impl Criterion {
             Self::FiniteDomain(c) => c.check(answer),
         }
     }
+
+    /// Counts declared finite-domain constraints that the complete assignment violates.
+    /// Other criterion types and assignments that cannot be compared return `None`.
+    pub(crate) fn progress_score(&self, answer: &str) -> Option<u32> {
+        match self {
+            Self::FiniteDomain(c) => c.progress_score(answer),
+            _ => None,
+        }
+    }
 }
 
 #[cfg(test)]

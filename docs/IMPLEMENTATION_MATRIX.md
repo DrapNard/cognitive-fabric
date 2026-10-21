@@ -1,5 +1,54 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+### Stop finite-domain revisions using independent progress evidence — 2026-10-21
+
+**Implemented (opt-in finite-domain plateau stopping); Partial (general progress/utility).**
+Architecture sections 5 and 9 require bounded evidence-aware revision and marginal
+improvement stopping. Optional `Config.progress_stopping.plateau_cycles` (2–4)
+tracks the number of violated declared constraints for complete, in-domain `csp:`
+assignments. Shared strict parsing and bounded i128 checks preserve full acceptance.
+Malformed/incomplete/out-of-domain output is incomparable. Improvements reset the
+streak; equal/worse scores increment it; incomparable outputs reset only the streak.
+Full independent verification runs first, and valid witnesses complete immediately.
+A plateau retains the latest rejected answer/charges and stops before another
+solver reservation; default absence retains legacy behavior and serialization.
+
+Required fixed-metadata `reasoning_progress` audits precede escalation. Supported
+continuation recomputes progress from recorded solver answers and matching failed
+checks, validates audit ordering/content and the saved compact state, and refuses
+missing/altered/gapped/future or already stopped histories. Operator result recovery
+retains fresh-check accounting without inference replay. No new capability, model,
+weight, tool allowance, migration or protocol schema is introduced.
+
+Sources include `src/reasoning/progress.rs`, Session/configuration, shared finite
+verification, `src/recovery/continuation_progress.rs` and result reconciliation.
+Unit/scripted regressions and `tests/progress_stopping.rs` cover score correctness,
+optional configuration, plateau/improvement/incomparable behavior, witness precedence,
+audit failure and continuation with one new actual HTTP solver call. See
+[progress stopping](PROGRESS_STOPPING.md) for bounds and limitations. Constraint
+counts are not distance-to-solution, impossibility or calibrated marginal utility.
+Real-model quality/latency gains and unrestricted reasoning progress remain
+unproven; Jev+ and Jev-R remain Partial.
+
+Verification: `cargo fmt --all -- --check`,
+`cargo check --locked --workspace --all-targets`,
+`cargo test --locked --workspace --all-targets` (**737 passed across 39 targets**,
+none ignored), and `cargo clippy --locked --workspace --all-targets -- -D warnings`
+pass on final unchanged sources. The focused progress selection passed 21 tests;
+the two actual HTTP continuation tests also passed, including both operator
+recheck crash windows. Existing socket, database migration, mock inference,
+malformed-frame, denial, cancellation, continuation and rollback tests remain green.
+Protocol/generated bindings are unchanged; reviewed exact generator/runtime pairing
+and integrity tests passed. `flatc` is unavailable; fresh generation was not run.
+
+An initial restricted test selection could not bind a service socket. Approved
+host-socket runs passed after repairing new test fixture ordering/identity errors
+and a missing import/helper attribute. The first full test pass was followed by a
+Clippy match-style warning; its suggested simplification was applied and all gates
+rerun successfully. Tests, limits and acceptance thresholds were retained. No live
+model-quality, speed, GPU-use or held-out effectiveness result is claimed.
+
+
 ### Deploy reviewed workflow policies through the HTTP host — 2026-10-21
 
 **Implemented (explicit host deployment); Partial (general policy lifecycle).**

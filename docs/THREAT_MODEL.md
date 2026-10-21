@@ -888,3 +888,16 @@ new probes; same-user tampering and blocking trusted callbacks remain threats.
 Comparison arms have separate profiles, but their own adaptive history is not
 frozen by corpus capture and is explicitly disclosed. No schema/IPC replacement,
 provider lifecycle action or neural promotion is added.
+
+## Finite-domain progress stopping
+
+The optional policy derives bounded violation counts from the same compiled finite
+specification, never from model confidence. Complete in-domain assignments alone
+receive comparable scores; invalid output cannot fabricate progress or verified
+success. Full task-authorized independent checking precedes stopping, and progress
+audit failures prevent later inference. Checkpoint counters are recomputed from
+recorded solver outputs and matched failed checks under the original configuration,
+leases, deadlines and charges. Models cannot change the threshold or reset history.
+This search heuristic can stop potentially useful future work; it establishes
+neither impossibility, general reasoning quality nor external provider stopping.
+No new capability, generated execution or neural promotion is introduced.

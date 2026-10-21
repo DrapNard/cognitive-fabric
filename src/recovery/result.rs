@@ -6,7 +6,7 @@ use crate::{
     verification::Criterion,
 };
 use anyhow::{bail, Result};
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension};
 use serde_json::{json, Value};
 impl Store {
     pub fn recover_verified_result(&self, task: &str) -> Result<Value> {
@@ -65,8 +65,49 @@ impl Store {
             let checked = criterion.check(answer);
             let verified = checked.is_ok();
             let rejection = checked.as_ref().err().map(ToString::to_string);
-            let proof = json!({"criterion":criterion.name(),"verified":verified,"origin":"saved_solver_recovery","objective_hash":sha256(query.as_bytes()),"answer_hash":sha256(answer.as_bytes()),"reason":rejection});
-            tx.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'verification','verifier-r',?2,unixepoch())",params![task,proof.to_string()])?;
+            let current_cycle = saved["node"]["cycle"].as_u64();
+            let progress_dedup_enabled = if criterion.name() == "finite_domain/v1" {
+                let settings: Option<String> = tx
+                    .query_row(
+                        "SELECT CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN json_extract(payload,'$.configuration') END FROM events WHERE task_id=?1 AND kind='execution_settings' ORDER BY id LIMIT 1",
+                        [task],
+                        |row| row.get(0),
+                    )
+                    .optional()?;
+                if let Some(settings) = settings {
+                    let cfg: crate::config::Config = serde_json::from_str(&settings)?;
+                    cfg.validate()?;
+                    cfg.progress_stopping.is_some()
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+            if progress_dedup_enabled && current_cycle.is_none() {
+                bail!("Finite-domain progress recovery requires the saved solver cycle")
+            }
+            let mut proof = json!({"criterion":criterion.name(),"verified":verified,"origin":"saved_solver_recovery","objective_hash":sha256(query.as_bytes()),"answer_hash":sha256(answer.as_bytes()),"reason":rejection});
+            if let Some(cycle) = current_cycle {
+                proof["cycle"] = json!(cycle);
+            }
+            let existing: Vec<Value> = if progress_dedup_enabled {
+                let cycle = current_cycle.unwrap();
+                let mut statement = tx.prepare("SELECT CASE WHEN length(CAST(payload AS BLOB))<=16384 THEN payload END FROM events WHERE task_id=?1 AND kind='verification' AND source='verifier-r' AND json_extract(payload,'$.criterion')=?2 AND json_extract(payload,'$.cycle')=?3 AND json_extract(payload,'$.origin')='saved_solver_recovery' ORDER BY id LIMIT 3")?;
+                let rows = statement.query_map(params![task, criterion.name(), cycle], |row| {
+                    row.get::<_, String>(0)
+                })?;
+                rows.map(|row| crate::strict_json::value(row?.as_bytes(), 16384))
+                    .collect::<Result<Vec<_>>>()?
+            } else {
+                Vec::new()
+            };
+            if existing.len() > 1 || existing.first().is_some_and(|saved| saved != &proof) {
+                bail!("Conflicting or duplicate saved-result recovery verification")
+            }
+            if existing.is_empty() {
+                tx.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'verification','verifier-r',?2,unixepoch())",params![task,proof.to_string()])?;
+            }
             if verified {
                 tx.execute(
                     "UPDATE tasks SET status='completed',answer=?2,updated=unixepoch() WHERE id=?1",
@@ -210,6 +251,45 @@ mod tests {
             drop(store);
             std::fs::remove_dir_all(root).unwrap();
         }
+    }
+
+    #[test]
+    fn repeated_legacy_failed_saved_result_checks_preserve_existing_audit_behavior() {
+        let (root, store, task) = fixture(
+            r#"csp:{"variables":[{"id":"x","domain":[1,2]}],"constraints":[{"kind":"linear","terms":[{"variable":"x","coefficient":1}],"relation":"eq","rhs":2}]}"#,
+            r#"{"x":1}"#,
+            4,
+        );
+        store.lock().unwrap().execute(
+            "UPDATE events SET payload=json_set(payload,'$.node.cycle',1) WHERE task_id=?1 AND kind='reasoning'",
+            [&task],
+        ).unwrap();
+        assert_eq!(
+            store.recover_verified_result(&task).unwrap()["verified"],
+            false
+        );
+        assert_eq!(
+            store.recover_verified_result(&task).unwrap()["verified"],
+            false
+        );
+        let db = store.lock().unwrap();
+        let proofs: u64 = db.query_row(
+            "SELECT count(*) FROM events WHERE task_id=?1 AND kind='verification' AND json_extract(payload,'$.origin')='saved_solver_recovery'",
+            [&task],
+            |row| row.get(0),
+        ).unwrap();
+        let tool_charges: u64 = db
+            .query_row(
+                "SELECT count(*) FROM events WHERE task_id=?1 AND kind='tool_reservation'",
+                [&task],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(proofs, 2);
+        assert_eq!(tool_charges, 2);
+        drop(db);
+        drop(store);
+        std::fs::remove_dir_all(root).unwrap();
     }
     #[test]
     fn failed_audit_write_rolls_back_result_and_tool_charge() {

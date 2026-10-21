@@ -97,7 +97,7 @@ impl FiniteDomain {
         }
         Ok(criterion)
     }
-    pub(super) fn check(&self, answer: &str) -> Result<()> {
+    fn assignment(&self, answer: &str) -> Result<BTreeMap<String, i64>> {
         let values: BTreeMap<String, i64> =
             serde_json::from_value(crate::strict_json::value(answer.as_bytes(), 8192)?)?;
         if values.len() != self.variables.len() {
@@ -111,40 +111,60 @@ impl FiniteDomain {
                 bail!("Assignment value is outside its declared domain")
             }
         }
+        Ok(values)
+    }
+
+    fn constraint_accepts(constraint: &Constraint, values: &BTreeMap<String, i64>) -> bool {
+        match constraint {
+            Constraint::Linear {
+                terms,
+                relation,
+                rhs,
+            } => {
+                // 16 terms × i64 × bounded coefficient fits i128, including i64::MIN.
+                let sum: i128 = terms
+                    .iter()
+                    .map(|t| i128::from(values[&t.variable]) * i128::from(t.coefficient))
+                    .sum();
+                let rhs = i128::from(*rhs);
+                match relation {
+                    Relation::Eq => sum == rhs,
+                    Relation::Ne => sum != rhs,
+                    Relation::Le => sum <= rhs,
+                    Relation::Ge => sum >= rhs,
+                }
+            }
+            Constraint::AllDifferent { variables } => {
+                variables
+                    .iter()
+                    .map(|v| values[v])
+                    .collect::<BTreeSet<_>>()
+                    .len()
+                    == variables.len()
+            }
+        }
+    }
+
+    fn violation_count(&self, values: &BTreeMap<String, i64>) -> usize {
+        self.constraints
+            .iter()
+            .filter(|constraint| !Self::constraint_accepts(constraint, values))
+            .count()
+    }
+
+    pub(super) fn check(&self, answer: &str) -> Result<()> {
+        let values = self.assignment(answer)?;
         for (index, constraint) in self.constraints.iter().enumerate() {
-            let accepted = match constraint {
-                Constraint::Linear {
-                    terms,
-                    relation,
-                    rhs,
-                } => {
-                    // 16 terms × i64 × bounded coefficient fits i128, including i64::MIN.
-                    let sum: i128 = terms
-                        .iter()
-                        .map(|t| i128::from(values[&t.variable]) * i128::from(t.coefficient))
-                        .sum();
-                    let rhs = i128::from(*rhs);
-                    match relation {
-                        Relation::Eq => sum == rhs,
-                        Relation::Ne => sum != rhs,
-                        Relation::Le => sum <= rhs,
-                        Relation::Ge => sum >= rhs,
-                    }
-                }
-                Constraint::AllDifferent { variables } => {
-                    variables
-                        .iter()
-                        .map(|v| values[v])
-                        .collect::<BTreeSet<_>>()
-                        .len()
-                        == variables.len()
-                }
-            };
-            if !accepted {
+            if !Self::constraint_accepts(constraint, &values) {
                 bail!("Assignment violates declared constraint {index}")
             }
         }
         Ok(())
+    }
+
+    pub(super) fn progress_score(&self, answer: &str) -> Option<u32> {
+        let values = self.assignment(answer).ok()?;
+        u32::try_from(self.violation_count(&values)).ok()
     }
 }
 

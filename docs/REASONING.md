@@ -142,3 +142,14 @@ exploration after repeated scoped failures or observed cost above the current
 phase allowance. It reads bounded same-boot metadata, preserves first-solver
 resources, records decisions/outcomes and keeps comparison profiles separate.
 Default behavior is unchanged; this heuristic is not calibrated expected utility.
+
+## Stop independently measured finite-domain plateaus
+
+Owner-configured [progress stopping](PROGRESS_STOPPING.md) counts violated declared
+constraints for complete, in-domain `csp:` assignments. Consecutive equal/worse
+scores can stop a rejected search before another solver call. Incomparable output
+resets the streak, improvements reset it, and a valid witness always wins the full
+independent check first. Default absence preserves existing behavior. Durable
+assessments and checkpoint recomputation retain the original history on supported
+continuation. Counts are a bounded search heuristic, not proof of impossibility
+or measured marginal utility; no broader prose progress score is claimed.
