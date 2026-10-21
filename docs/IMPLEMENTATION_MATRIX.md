@@ -1,5 +1,43 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Retain and independently check public portfolio evidence — 2026-10-21
+
+**Measured public integration / general quality remains Partial.** Two complete
+24-task Qwen3 8B runs now have immutable raw reports, hashed provenance/settings,
+public audit projections and a fixed four-case subset. The new regression checks
+all 48 scores through independent exhaustive simple-path enumeration and
+reconciles calls, latency and diagnostic event sums. Existing suites/labels and
+historical reports are unchanged. See [results](../evaluation/results/README.md).
+
+At source 5041478, all six profiles solved 4/4, with 12 accepted portfolios and
+14 selection events. At b20d736, alone solved 3/4 and every other profile 4/4;
+collective modes required more calls/time than tools/recursive. All 12 planning
+and 12 exploration phases timed out, with zero accepted/selected portfolios in
+that second run. Diagnostics therefore distinguish attempted phases from usable
+strategy output. Original budgets remained enforced and failed usage stayed unknown.
+
+The October 21 run used different manual provider load/offload/parallel settings;
+no causal before/after claim is valid. The initially off/unloaded localhost server
+was temporarily started with existing weights, then restored and checked. No
+weights were downloaded or neural/capability promotion performed. Public/authored
+cases, missing independent review/larger baseline, unknown weight/device identity
+and unmeasured physical resources prevent general quality/efficiency claims.
+Cost-aware optional planning/exploration admission is the next verifiable target;
+Jev+ and Jev-R remain Partial.
+
+Verification: `cargo fmt --all -- --check`,
+`cargo check --locked --workspace --all-targets`,
+`cargo test --locked --workspace --all-targets` (**709 passed across 36 targets**,
+none ignored) and `cargo clippy --locked --workspace --all-targets -- -D warnings`
+pass. The focused frozen-report regression also passes. Existing protocol pairing,
+malformed frames, socket integration, migrations, mock inference, denials,
+cancellation, recovery and candidate rollback remain green with approved local
+socket access. Protocol/generated bindings are unchanged; `flatc` is absent, so
+fresh generation was not run. Real-provider validation is explicitly separate
+from mocks; all outcomes and provider-setting differences are retained. The
+previous automatic-review quota failure did not execute the pending comparison;
+this date's approved retry is the recorded b20d736 run, not a silent restart.
+
 ### Report bounded hypothesis observations — 2026-10-20
 
 **Implemented (event diagnostics and compiled scope); Partial (quality/utility evidence).**

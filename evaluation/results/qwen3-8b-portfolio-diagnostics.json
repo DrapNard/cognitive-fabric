@@ -1,0 +1,2152 @@
+{
+  "arms": [
+    {
+      "accuracy": 0.75,
+      "executed": 4,
+      "index": 0,
+      "model": "qwen/qwen3-8b",
+      "passed": 3,
+      "profile": "alone",
+      "resources": {
+        "expert_advice": {
+          "fallback_events": 0,
+          "inference_timeout_fallbacks": 0,
+          "phases_started": 0,
+          "unclassified_fallbacks": 0
+        },
+        "exploration_advice": {
+          "fallback_events": 0,
+          "inference_timeout_fallbacks": 0,
+          "phases_started": 0,
+          "unclassified_fallbacks": 0
+        },
+        "failed_tasks": 0,
+        "hypothesis_diagnostics": {
+          "accepted_portfolio_events": 0,
+          "exhausted_selection_events": 0,
+          "invalid_portfolio_events": 0,
+          "legacy_advice_events": 0,
+          "selected_hypothesis_events": 0,
+          "unclassified_events": 0
+        },
+        "inference_ms": 14118.051975000002,
+        "input_tokens": 984,
+        "latency_ms": 14135.493261,
+        "max_sampled_process_rss_bytes": 27611136,
+        "model_calls": 4,
+        "output_tokens": 34,
+        "planning_advice": {
+          "fallback_events": 0,
+          "inference_timeout_fallbacks": 0,
+          "phases_started": 0,
+          "unclassified_fallbacks": 0
+        },
+        "process_lifetime_peak_rss_bytes": 27611136,
+        "prompt_bytes": 1980,
+        "queue_wait_ms": 0.5442830000000001,
+        "reserved_output_tokens": 1536,
+        "tool_calls": 0
+      }
+    },
+    {
+      "accuracy": 1.0,
+      "executed": 4,
+      "index": 1,
+      "model": "qwen/qwen3-8b",
+      "passed": 4,
+      "profile": "tools",
+      "resources": {
+        "expert_advice": {
+          "fallback_events": 0,
+          "inference_timeout_fallbacks": 0,
+          "phases_started": 0,
+          "unclassified_fallbacks": 0
+        },
+        "exploration_advice": {
+          "fallback_events": 0,
+          "inference_timeout_fallbacks": 0,
+          "phases_started": 0,
+          "unclassified_fallbacks": 0
+        },
+        "failed_tasks": 0,
+        "hypothesis_diagnostics": {
+          "accepted_portfolio_events": 0,
+          "exhausted_selection_events": 0,
+          "invalid_portfolio_events": 0,
+          "legacy_advice_events": 0,
+          "selected_hypothesis_events": 0,
+          "unclassified_events": 0
+        },
+        "inference_ms": 17751.316371,
+        "input_tokens": 1250,
+        "latency_ms": 17773.690317,
+        "max_sampled_process_rss_bytes": 27648000,
+        "model_calls": 5,
+        "output_tokens": 44,
+        "planning_advice": {
+          "fallback_events": 0,
+          "inference_timeout_fallbacks": 0,
+          "phases_started": 0,
+          "unclassified_fallbacks": 0
+        },
+        "process_lifetime_peak_rss_bytes": 27648000,
+        "prompt_bytes": 2583,
+        "queue_wait_ms": 0.516049,
+        "reserved_output_tokens": 1920,
+        "tool_calls": 5
+      }
+    },
+    {
+      "accuracy": 1.0,
+      "executed": 4,
+      "index": 2,
+      "model": "qwen/qwen3-8b",
+      "passed": 4,
+      "profile": "recursive",
+      "resources": {
+        "expert_advice": {
+          "fallback_events": 0,
+          "inference_timeout_fallbacks": 0,
+          "phases_started": 0,
+          "unclassified_fallbacks": 0
+        },
+        "exploration_advice": {
+          "fallback_events": 0,
+          "inference_timeout_fallbacks": 0,
+          "phases_started": 0,
+          "unclassified_fallbacks": 0
+        },
+        "failed_tasks": 0,
+        "hypothesis_diagnostics": {
+          "accepted_portfolio_events": 0,
+          "exhausted_selection_events": 0,
+          "invalid_portfolio_events": 0,
+          "legacy_advice_events": 0,
+          "selected_hypothesis_events": 0,
+          "unclassified_events": 0
+        },
+        "inference_ms": 19479.378838,
+        "input_tokens": 1250,
+        "latency_ms": 19500.875686,
+        "max_sampled_process_rss_bytes": 27684864,
+        "model_calls": 5,
+        "output_tokens": 44,
+        "planning_advice": {
+          "fallback_events": 0,
+          "inference_timeout_fallbacks": 0,
+          "phases_started": 0,
+          "unclassified_fallbacks": 0
+        },
+        "process_lifetime_peak_rss_bytes": 27684864,
+        "prompt_bytes": 2583,
+        "queue_wait_ms": 0.635336,
+        "reserved_output_tokens": 1920,
+        "tool_calls": 5
+      }
+    },
+    {
+      "accuracy": 1.0,
+      "executed": 4,
+      "index": 3,
+      "model": "qwen/qwen3-8b",
+      "passed": 4,
+      "profile": "collective",
+      "resources": {
+        "expert_advice": {
+          "fallback_events": 0,
+          "inference_timeout_fallbacks": 0,
+          "phases_started": 0,
+          "unclassified_fallbacks": 0
+        },
+        "exploration_advice": {
+          "fallback_events": 4,
+          "inference_timeout_fallbacks": 4,
+          "phases_started": 4,
+          "unclassified_fallbacks": 0
+        },
+        "failed_tasks": 0,
+        "hypothesis_diagnostics": {
+          "accepted_portfolio_events": 0,
+          "exhausted_selection_events": 0,
+          "invalid_portfolio_events": 0,
+          "legacy_advice_events": 0,
+          "selected_hypothesis_events": 0,
+          "unclassified_events": 0
+        },
+        "inference_ms": 88187.77471299999,
+        "input_tokens": null,
+        "latency_ms": 88251.858486,
+        "max_sampled_process_rss_bytes": 27521024,
+        "model_calls": 13,
+        "output_tokens": null,
+        "planning_advice": {
+          "fallback_events": 4,
+          "inference_timeout_fallbacks": 4,
+          "phases_started": 4,
+          "unclassified_fallbacks": 0
+        },
+        "process_lifetime_peak_rss_bytes": 27521024,
+        "prompt_bytes": 6135,
+        "queue_wait_ms": null,
+        "reserved_output_tokens": 3456,
+        "tool_calls": 5
+      }
+    },
+    {
+      "accuracy": 1.0,
+      "executed": 4,
+      "index": 4,
+      "model": "qwen/qwen3-8b",
+      "passed": 4,
+      "profile": "memory",
+      "resources": {
+        "expert_advice": {
+          "fallback_events": 0,
+          "inference_timeout_fallbacks": 0,
+          "phases_started": 0,
+          "unclassified_fallbacks": 0
+        },
+        "exploration_advice": {
+          "fallback_events": 4,
+          "inference_timeout_fallbacks": 4,
+          "phases_started": 4,
+          "unclassified_fallbacks": 0
+        },
+        "failed_tasks": 0,
+        "hypothesis_diagnostics": {
+          "accepted_portfolio_events": 0,
+          "exhausted_selection_events": 0,
+          "invalid_portfolio_events": 0,
+          "legacy_advice_events": 0,
+          "selected_hypothesis_events": 0,
+          "unclassified_events": 0
+        },
+        "inference_ms": 85301.58499999999,
+        "input_tokens": null,
+        "latency_ms": 85351.439856,
+        "max_sampled_process_rss_bytes": 27553792,
+        "model_calls": 13,
+        "output_tokens": null,
+        "planning_advice": {
+          "fallback_events": 4,
+          "inference_timeout_fallbacks": 4,
+          "phases_started": 4,
+          "unclassified_fallbacks": 0
+        },
+        "process_lifetime_peak_rss_bytes": 27553792,
+        "prompt_bytes": 6135,
+        "queue_wait_ms": null,
+        "reserved_output_tokens": 3456,
+        "tool_calls": 9
+      }
+    },
+    {
+      "accuracy": 1.0,
+      "executed": 4,
+      "index": 5,
+      "model": "qwen/qwen3-8b",
+      "passed": 4,
+      "profile": "experts",
+      "resources": {
+        "expert_advice": {
+          "fallback_events": 0,
+          "inference_timeout_fallbacks": 0,
+          "phases_started": 0,
+          "unclassified_fallbacks": 0
+        },
+        "exploration_advice": {
+          "fallback_events": 4,
+          "inference_timeout_fallbacks": 4,
+          "phases_started": 4,
+          "unclassified_fallbacks": 0
+        },
+        "failed_tasks": 0,
+        "hypothesis_diagnostics": {
+          "accepted_portfolio_events": 0,
+          "exhausted_selection_events": 0,
+          "invalid_portfolio_events": 0,
+          "legacy_advice_events": 0,
+          "selected_hypothesis_events": 0,
+          "unclassified_events": 0
+        },
+        "inference_ms": 86939.622355,
+        "input_tokens": null,
+        "latency_ms": 86993.284935,
+        "max_sampled_process_rss_bytes": 27582464,
+        "model_calls": 13,
+        "output_tokens": null,
+        "planning_advice": {
+          "fallback_events": 4,
+          "inference_timeout_fallbacks": 4,
+          "phases_started": 4,
+          "unclassified_fallbacks": 0
+        },
+        "process_lifetime_peak_rss_bytes": 27582464,
+        "prompt_bytes": 6135,
+        "queue_wait_ms": null,
+        "reserved_output_tokens": 3456,
+        "tool_calls": 9
+      }
+    }
+  ],
+  "case_count": 4,
+  "code_revision_operator_attested": "b20d736e9b9a1564ae50758a5eb4560549b23765",
+  "compiled_role_prompts_sha256": "7d6f0ee781c8dc9d2d05c834e2c9e3d5850d0395403f8aecc9ae26f48f69bf4c",
+  "complete": true,
+  "configuration": {
+    "api_base": "http://127.0.0.1:1234/v1",
+    "arithmetic_process": false,
+    "backend": "openai-local",
+    "format_version": 1,
+    "inference_auth_scope": null,
+    "inference_process": false,
+    "interpret_goals": false,
+    "max_artifact_bytes": 256000000,
+    "max_calls": 10,
+    "max_cycles": 4,
+    "max_database_bytes": 256000000,
+    "max_input_bytes": 128000,
+    "max_tokens": 3000,
+    "max_tool_calls": 8,
+    "max_wall_seconds": 30,
+    "model": "qwen/qwen3-8b",
+    "model_registration": null,
+    "reasoning_effort": "none",
+    "role_profiles": {},
+    "sql_process": false,
+    "subtask_scheduling": "critical_path",
+    "synthesize_results": false,
+    "temperature": 0.0,
+    "timeout_seconds": 20
+  },
+  "corpus_snapshot": {
+    "database_snapshot_bytes": 188416,
+    "database_snapshot_checksum": "b73bcb694cddd20b60178903cd1dd2011c15f0936d967d0aa79753e2934d17f0",
+    "frozen": true
+  },
+  "dataset_checksum": "fc37dfbf101b184c0a44f1ae9eb0edd4779fcc3f8f7068840fcbf158a4a814c3",
+  "dataset_checksum_operator_pinned": true,
+  "dataset_license": "CC0-1.0",
+  "dataset_source": "Four existing public graph diagnostics: shortcut, cycle_exit, long_route_first, branch_merge",
+  "details": [
+    {
+      "arm_index": 0,
+      "bound_expert_models": [],
+      "case_index": 0,
+      "configured_model": "qwen/qwen3-8b",
+      "execution_position": 0,
+      "expected": null,
+      "expert_advice": {
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "phases_started": 0,
+        "unclassified_fallbacks": 0
+      },
+      "exploration_advice": {
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "phases_started": 0,
+        "unclassified_fallbacks": 0
+      },
+      "hypothesis_diagnostics": {
+        "accepted_portfolio_events": 0,
+        "exhausted_selection_events": 0,
+        "invalid_portfolio_events": 0,
+        "legacy_advice_events": 0,
+        "selected_hypothesis_events": 0,
+        "unclassified_events": 0
+      },
+      "input": "path:{\"nodes\":[\"a\",\"b\",\"c\"],\"edges\":[[\"a\",\"b\"],[\"b\",\"c\"],[\"a\",\"c\"]],\"start\":\"a\",\"goal\":\"c\"}",
+      "outcome": {
+        "answer": "[\"a\",\"c\"]",
+        "calls": 1,
+        "cycles": 1,
+        "elapsed_ms": 3005.4070199999996,
+        "evidence": [],
+        "resources": {
+          "calls": 1,
+          "cycles": 1,
+          "inference_ms": 3002.112322,
+          "input_tokens": 237,
+          "output_tokens": 6,
+          "process_lifetime_peak_rss_bytes": 26374144,
+          "process_rss_bytes": 26374144,
+          "prompt_bytes": 474,
+          "queue_wait_ms": 0.04239,
+          "reserved_output_tokens": 384,
+          "tool_calls": 0
+        },
+        "skills": [],
+        "status": "unverified",
+        "stop_reason": "unverified",
+        "task_id": "be5397cf-4551-4134-b7fc-93d74d8a2d8a"
+      },
+      "passed": true,
+      "planning_advice": {
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "phases_started": 0,
+        "unclassified_fallbacks": 0
+      },
+      "primary_model_snapshot": {
+        "registration": null,
+        "weight_identity_verified": false
+      },
+      "profile": "alone",
+      "reported_models": [
+        "qwen/qwen3-8b"
+      ],
+      "verification": "shortest_path_v1"
+    },
+    {
+      "arm_index": 1,
+      "bound_expert_models": [],
+      "case_index": 0,
+      "configured_model": "qwen/qwen3-8b",
+      "execution_position": 1,
+      "expected": null,
+      "expert_advice": {
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "phases_started": 0,
+        "unclassified_fallbacks": 0
+      },
+      "exploration_advice": {
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "phases_started": 0,
+        "unclassified_fallbacks": 0
+      },
+      "hypothesis_diagnostics": {
+        "accepted_portfolio_events": 0,
+        "exhausted_selection_events": 0,
+        "invalid_portfolio_events": 0,
+        "legacy_advice_events": 0,
+        "selected_hypothesis_events": 0,
+        "unclassified_events": 0
+      },
+      "input": "path:{\"nodes\":[\"a\",\"b\",\"c\"],\"edges\":[[\"a\",\"b\"],[\"b\",\"c\"],[\"a\",\"c\"]],\"start\":\"a\",\"goal\":\"c\"}",
+      "outcome": {
+        "answer": "[\"a\",\"c\"]",
+        "calls": 1,
+        "cycles": 1,
+        "elapsed_ms": 2298.572216,
+        "evidence": [
+          "verified:shortest_path/v1"
+        ],
+        "resources": {
+          "calls": 1,
+          "cycles": 1,
+          "inference_ms": 2294.4374820000003,
+          "input_tokens": 237,
+          "output_tokens": 6,
+          "process_lifetime_peak_rss_bytes": 26599424,
+          "process_rss_bytes": 26599424,
+          "prompt_bytes": 474,
+          "queue_wait_ms": 0.06423200000000001,
+          "reserved_output_tokens": 384,
+          "tool_calls": 1
+        },
+        "skills": [],
+        "status": "completed",
+        "stop_reason": "verified",
+        "task_id": "eaf4eb62-7bbc-4c40-bbdc-18b29fe64231"
+      },
+      "passed": true,
+      "planning_advice": {
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "phases_started": 0,
+        "unclassified_fallbacks": 0
+      },
+      "primary_model_snapshot": {
+        "registration": null,
+        "weight_identity_verified": false
+      },
+      "profile": "tools",
+      "reported_models": [
+        "qwen/qwen3-8b"
+      ],
+      "verification": "shortest_path_v1"
+    },
+    {
+      "arm_index": 2,
+      "bound_expert_models": [],
+      "case_index": 0,
+      "configured_model": "qwen/qwen3-8b",
+      "execution_position": 2,
+      "expected": null,
+      "expert_advice": {
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "phases_started": 0,
+        "unclassified_fallbacks": 0
+      },
+      "exploration_advice": {
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "phases_started": 0,
+        "unclassified_fallbacks": 0
+      },
+      "hypothesis_diagnostics": {
+        "accepted_portfolio_events": 0,
+        "exhausted_selection_events": 0,
+        "invalid_portfolio_events": 0,
+        "legacy_advice_events": 0,
+        "selected_hypothesis_events": 0,
+        "unclassified_events": 0
+      },
+      "input": "path:{\"nodes\":[\"a\",\"b\",\"c\"],\"edges\":[[\"a\",\"b\"],[\"b\",\"c\"],[\"a\",\"c\"]],\"start\":\"a\",\"goal\":\"c\"}",
+      "outcome": {
+        "answer": "[\"a\",\"c\"]",
+        "calls": 1,
+        "cycles": 1,
+        "elapsed_ms": 2157.0598849999997,
+        "evidence": [
+          "verified:shortest_path/v1"
+        ],
+        "resources": {
+          "calls": 1,
+          "cycles": 1,
+          "inference_ms": 2152.852303,
+          "input_tokens": 237,
+          "output_tokens": 6,
+          "process_lifetime_peak_rss_bytes": 26664960,
+          "process_rss_bytes": 26664960,
+          "prompt_bytes": 474,
+          "queue_wait_ms": 0.109447,
+          "reserved_output_tokens": 384,
+          "tool_calls": 1
+        },
+        "skills": [],
+        "status": "completed",
+        "stop_reason": "verified",
+        "task_id": "dc1bf91c-876f-4dcb-b4a8-f542900bda64"
+      },
+      "passed": true,
+      "planning_advice": {
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "phases_started": 0,
+        "unclassified_fallbacks": 0
+      },
+      "primary_model_snapshot": {
+        "registration": null,
+        "weight_identity_verified": false
+      },
+      "profile": "recursive",
+      "reported_models": [
+        "qwen/qwen3-8b"
+      ],
+      "verification": "shortest_path_v1"
+    },
+    {
+      "arm_index": 3,
+      "bound_expert_models": [],
+      "case_index": 0,
+      "configured_model": "qwen/qwen3-8b",
+      "execution_position": 3,
+      "expected": null,
+      "expert_advice": {
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "phases_started": 0,
+        "unclassified_fallbacks": 0
+      },
+      "exploration_advice": {
+        "fallback_events": 1,
+        "inference_timeout_fallbacks": 1,
+        "phases_started": 1,
+        "unclassified_fallbacks": 0
+      },
+      "hypothesis_diagnostics": {
+        "accepted_portfolio_events": 0,
+        "exhausted_selection_events": 0,
+        "invalid_portfolio_events": 0,
+        "legacy_advice_events": 0,
+        "selected_hypothesis_events": 0,
+        "unclassified_events": 0
+      },
+      "input": "path:{\"nodes\":[\"a\",\"b\",\"c\"],\"edges\":[[\"a\",\"b\"],[\"b\",\"c\"],[\"a\",\"c\"]],\"start\":\"a\",\"goal\":\"c\"}",
+      "outcome": {
+        "answer": "[\"a\",\"c\"]",
+        "calls": 3,
+        "cycles": 1,
+        "elapsed_ms": 18930.032025,
+        "evidence": [
+          "verified:shortest_path/v1"
+        ],
+        "resources": {
+          "calls": 3,
+          "cycles": 1,
+          "inference_ms": 18917.391246,
+          "input_tokens": null,
+          "output_tokens": null,
+          "process_lifetime_peak_rss_bytes": 26828800,
+          "process_rss_bytes": 26828800,
+          "prompt_bytes": 1320,
+          "queue_wait_ms": null,
+          "reserved_output_tokens": 768,
+          "tool_calls": 1
+        },
+        "skills": [],
+        "status": "completed",
+        "stop_reason": "verified",
+        "task_id": "1b44e073-c872-4cf0-aeaf-189531c909c7"
+      },
+      "passed": true,
+      "planning_advice": {
+        "fallback_events": 1,
+        "inference_timeout_fallbacks": 1,
+        "phases_started": 1,
+        "unclassified_fallbacks": 0
+      },
+      "primary_model_snapshot": {
+        "registration": null,
+        "weight_identity_verified": false
+      },
+      "profile": "collective",
+      "reported_models": [
+        "qwen/qwen3-8b"
+      ],
+      "verification": "shortest_path_v1"
+    },
+    {
+      "arm_index": 4,
+      "bound_expert_models": [],
+      "case_index": 0,
+      "configured_model": "qwen/qwen3-8b",
+      "execution_position": 4,
+      "expected": null,
+      "expert_advice": {
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "phases_started": 0,
+        "unclassified_fallbacks": 0
+      },
+      "exploration_advice": {
+        "fallback_events": 1,
+        "inference_timeout_fallbacks": 1,
+        "phases_started": 1,
+        "unclassified_fallbacks": 0
+      },
+      "hypothesis_diagnostics": {
+        "accepted_portfolio_events": 0,
+        "exhausted_selection_events": 0,
+        "invalid_portfolio_events": 0,
+        "legacy_advice_events": 0,
+        "selected_hypothesis_events": 0,
+        "unclassified_events": 0
+      },
+      "input": "path:{\"nodes\":[\"a\",\"b\",\"c\"],\"edges\":[[\"a\",\"b\"],[\"b\",\"c\"],[\"a\",\"c\"]],\"start\":\"a\",\"goal\":\"c\"}",
+      "outcome": {
+        "answer": "[\"a\",\"c\"]",
+        "calls": 3,
+        "cycles": 1,
+        "elapsed_ms": 19258.160705000002,
+        "evidence": [
+          "verified:shortest_path/v1"
+        ],
+        "resources": {
+          "calls": 3,
+          "cycles": 1,
+          "inference_ms": 19242.895663,
+          "input_tokens": null,
+          "output_tokens": null,
+          "process_lifetime_peak_rss_bytes": 26914816,
+          "process_rss_bytes": 26914816,
+          "prompt_bytes": 1320,
+          "queue_wait_ms": null,
+          "reserved_output_tokens": 768,
+          "tool_calls": 2
+        },
+        "skills": [],
+        "status": "completed",
+        "stop_reason": "verified",
+        "task_id": "0be10e7f-efe4-42f2-a0e2-2b5b7c9407fe"
+      },
+      "passed": true,
+      "planning_advice": {
+        "fallback_events": 1,
+        "inference_timeout_fallbacks": 1,
+        "phases_started": 1,
+        "unclassified_fallbacks": 0
+      },
+      "primary_model_snapshot": {
+        "registration": null,
+        "weight_identity_verified": false
+      },
+      "profile": "memory",
+      "reported_models": [
+        "qwen/qwen3-8b"
+      ],
+      "verification": "shortest_path_v1"
+    },
+    {
+      "arm_index": 5,
+      "bound_expert_models": [],
+      "case_index": 0,
+      "configured_model": "qwen/qwen3-8b",
+      "execution_position": 5,
+      "expected": null,
+      "expert_advice": {
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "phases_started": 0,
+        "unclassified_fallbacks": 0
+      },
+      "exploration_advice": {
+        "fallback_events": 1,
+        "inference_timeout_fallbacks": 1,
+        "phases_started": 1,
+        "unclassified_fallbacks": 0
+      },
+      "hypothesis_diagnostics": {
+        "accepted_portfolio_events": 0,
+        "exhausted_selection_events": 0,
+        "invalid_portfolio_events": 0,
+        "legacy_advice_events": 0,
+        "selected_hypothesis_events": 0,
+        "unclassified_events": 0
+      },
+      "input": "path:{\"nodes\":[\"a\",\"b\",\"c\"],\"edges\":[[\"a\",\"b\"],[\"b\",\"c\"],[\"a\",\"c\"]],\"start\":\"a\",\"goal\":\"c\"}",
+      "outcome": {
+        "answer": "[\"a\",\"c\"]",
+        "calls": 3,
+        "cycles": 1,
+        "elapsed_ms": 19492.761386000002,
+        "evidence": [
+          "verified:shortest_path/v1"
+        ],
+        "resources": {
+          "calls": 3,
+          "cycles": 1,
+          "inference_ms": 19478.35236,
+          "input_tokens": null,
+          "output_tokens": null,
+          "process_lifetime_peak_rss_bytes": 26972160,
+          "process_rss_bytes": 26972160,
+          "prompt_bytes": 1320,
+          "queue_wait_ms": null,
+          "reserved_output_tokens": 768,
+          "tool_calls": 2
+        },
+        "skills": [],
+        "status": "completed",
+        "stop_reason": "verified",
+        "task_id": "f8d5943f-8d84-4d4e-9c0f-9b5c50e2bdc8"
+      },
+      "passed": true,
+      "planning_advice": {
+        "fallback_events": 1,
+        "inference_timeout_fallbacks": 1,
+        "phases_started": 1,
+        "unclassified_fallbacks": 0
+      },
+      "primary_model_snapshot": {
+        "registration": null,
+        "weight_identity_verified": false
+      },
+      "profile": "experts",
+      "reported_models": [
+        "qwen/qwen3-8b"
+      ],
+      "verification": "shortest_path_v1"
+    },
+    {
+      "arm_index": 1,
+      "bound_expert_models": [],
+      "case_index": 1,
+      "configured_model": "qwen/qwen3-8b",
+      "execution_position": 0,
+      "expected": null,
+      "expert_advice": {
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "phases_started": 0,
+        "unclassified_fallbacks": 0
+      },
+      "exploration_advice": {
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "phases_started": 0,
+        "unclassified_fallbacks": 0
+      },
+      "hypothesis_diagnostics": {
+        "accepted_portfolio_events": 0,
+        "exhausted_selection_events": 0,
+        "invalid_portfolio_events": 0,
+        "legacy_advice_events": 0,
+        "selected_hypothesis_events": 0,
+        "unclassified_events": 0
+      },
+      "input": "path:{\"nodes\":[\"a\",\"b\",\"c\",\"d\"],\"edges\":[[\"a\",\"b\"],[\"b\",\"c\"],[\"c\",\"a\"],[\"c\",\"d\"]],\"start\":\"a\",\"goal\":\"d\"}",
+      "outcome": {
+        "answer": "[\"a\",\"b\",\"c\",\"d\"]",
+        "calls": 2,
+        "cycles": 2,
+        "elapsed_ms": 8452.05147,
+        "evidence": [
+          "verified:shortest_path/v1"
+        ],
+        "resources": {
+          "calls": 2,
+          "cycles": 2,
+          "inference_ms": 8445.182624000001,
+          "input_tokens": 509,
+          "output_tokens": 18,
+          "process_lifetime_peak_rss_bytes": 27025408,
+          "process_rss_bytes": 27025408,
+          "prompt_bytes": 1091,
+          "queue_wait_ms": 0.18543199999999999,
+          "reserved_output_tokens": 768,
+          "tool_calls": 2
+        },
+        "skills": [],
+        "status": "completed",
+        "stop_reason": "verified",
+        "task_id": "3ff9a5e7-0585-46d7-a281-a3648d7818da"
+      },
+      "passed": true,
+      "planning_advice": {
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "phases_started": 0,
+        "unclassified_fallbacks": 0
+      },
+      "primary_model_snapshot": {
+        "registration": null,
+        "weight_identity_verified": false
+      },
+      "profile": "tools",
+      "reported_models": [
+        "qwen/qwen3-8b",
+        "qwen/qwen3-8b"
+      ],
+      "verification": "shortest_path_v1"
+    },
+    {
+      "arm_index": 2,
+      "bound_expert_models": [],
+      "case_index": 1,
+      "configured_model": "qwen/qwen3-8b",
+      "execution_position": 1,
+      "expected": null,
+      "expert_advice": {
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "phases_started": 0,
+        "unclassified_fallbacks": 0
+      },
+      "exploration_advice": {
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "phases_started": 0,
+        "unclassified_fallbacks": 0
+      },
+      "hypothesis_diagnostics": {
+        "accepted_portfolio_events": 0,
+        "exhausted_selection_events": 0,
+        "invalid_portfolio_events": 0,
+        "legacy_advice_events": 0,
+        "selected_hypothesis_events": 0,
+        "unclassified_events": 0
+      },
+      "input": "path:{\"nodes\":[\"a\",\"b\",\"c\",\"d\"],\"edges\":[[\"a\",\"b\"],[\"b\",\"c\"],[\"c\",\"a\"],[\"c\",\"d\"]],\"start\":\"a\",\"goal\":\"d\"}",
+      "outcome": {
+        "answer": "[\"a\",\"b\",\"c\",\"d\"]",
+        "calls": 2,
+        "cycles": 2,
+        "elapsed_ms": 9307.454047000001,
+        "evidence": [
+          "verified:shortest_path/v1"
+        ],
+        "resources": {
+          "calls": 2,
+          "cycles": 2,
+          "inference_ms": 9299.279351,
+          "input_tokens": 509,
+          "output_tokens": 18,
+          "process_lifetime_peak_rss_bytes": 27078656,
+          "process_rss_bytes": 27078656,
+          "prompt_bytes": 1091,
+          "queue_wait_ms": 0.304738,
+          "reserved_output_tokens": 768,
+          "tool_calls": 2
+        },
+        "skills": [],
+        "status": "completed",
+        "stop_reason": "verified",
+        "task_id": "3bb81e1b-7075-4c1d-9432-e54cbf891d6c"
+      },
+      "passed": true,
+      "planning_advice": {
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "phases_started": 0,
+        "unclassified_fallbacks": 0
+      },
+      "primary_model_snapshot": {
+        "registration": null,
+        "weight_identity_verified": false
+      },
+      "profile": "recursive",
+      "reported_models": [
+        "qwen/qwen3-8b",
+        "qwen/qwen3-8b"
+      ],
+      "verification": "shortest_path_v1"
+    },
+    {
+      "arm_index": 3,
+      "bound_expert_models": [],
+      "case_index": 1,
+      "configured_model": "qwen/qwen3-8b",
+      "execution_position": 2,
+      "expected": null,
+      "expert_advice": {
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "phases_started": 0,
+        "unclassified_fallbacks": 0
+      },
+      "exploration_advice": {
+        "fallback_events": 1,
+        "inference_timeout_fallbacks": 1,
+        "phases_started": 1,
+        "unclassified_fallbacks": 0
+      },
+      "hypothesis_diagnostics": {
+        "accepted_portfolio_events": 0,
+        "exhausted_selection_events": 0,
+        "invalid_portfolio_events": 0,
+        "legacy_advice_events": 0,
+        "selected_hypothesis_events": 0,
+        "unclassified_events": 0
+      },
+      "input": "path:{\"nodes\":[\"a\",\"b\",\"c\",\"d\"],\"edges\":[[\"a\",\"b\"],[\"b\",\"c\"],[\"c\",\"a\"],[\"c\",\"d\"]],\"start\":\"a\",\"goal\":\"d\"}",
+      "outcome": {
+        "answer": "[\"a\",\"b\",\"c\",\"d\"]",
+        "calls": 4,
+        "cycles": 2,
+        "elapsed_ms": 26603.48107,
+        "evidence": [
+          "verified:shortest_path/v1"
+        ],
+        "resources": {
+          "calls": 4,
+          "cycles": 2,
+          "inference_ms": 26579.924308999998,
+          "input_tokens": null,
+          "output_tokens": null,
+          "process_lifetime_peak_rss_bytes": 27156480,
+          "process_rss_bytes": 27156480,
+          "prompt_bytes": 1965,
+          "queue_wait_ms": null,
+          "reserved_output_tokens": 1152,
+          "tool_calls": 2
+        },
+        "skills": [],
+        "status": "completed",
+        "stop_reason": "verified",
+        "task_id": "76eaf60d-eda4-44de-962b-8adde431ca26"
+      },
+      "passed": true,
+      "planning_advice": {
+        "fallback_events": 1,
+        "inference_timeout_fallbacks": 1,
+        "phases_started": 1,
+        "unclassified_fallbacks": 0
+      },
+      "primary_model_snapshot": {
+        "registration": null,
+        "weight_identity_verified": false
+      },
+      "profile": "collective",
+      "reported_models": [
+        "qwen/qwen3-8b",
+        "qwen/qwen3-8b"
+      ],
+      "verification": "shortest_path_v1"
+    },
+    {
+      "arm_index": 4,
+      "bound_expert_models": [],
+      "case_index": 1,
+      "configured_model": "qwen/qwen3-8b",
+      "execution_position": 3,
+      "expected": null,
+      "expert_advice": {
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "phases_started": 0,
+        "unclassified_fallbacks": 0
+      },
+      "exploration_advice": {
+        "fallback_events": 1,
+        "inference_timeout_fallbacks": 1,
+        "phases_started": 1,
+        "unclassified_fallbacks": 0
+      },
+      "hypothesis_diagnostics": {
+        "accepted_portfolio_events": 0,
+        "exhausted_selection_events": 0,
+        "invalid_portfolio_events": 0,
+        "legacy_advice_events": 0,
+        "selected_hypothesis_events": 0,
+        "unclassified_events": 0
+      },
+      "input": "path:{\"nodes\":[\"a\",\"b\",\"c\",\"d\"],\"edges\":[[\"a\",\"b\"],[\"b\",\"c\"],[\"c\",\"a\"],[\"c\",\"d\"]],\"start\":\"a\",\"goal\":\"d\"}",
+      "outcome": {
+        "answer": "[\"a\",\"b\",\"c\",\"d\"]",
+        "calls": 4,
+        "cycles": 2,
+        "elapsed_ms": 24872.516798,
+        "evidence": [
+          "verified:shortest_path/v1"
+        ],
+        "resources": {
+          "calls": 4,
+          "cycles": 2,
+          "inference_ms": 24853.128174999998,
+          "input_tokens": null,
+          "output_tokens": null,
+          "process_lifetime_peak_rss_bytes": 27213824,
+          "process_rss_bytes": 27213824,
+          "prompt_bytes": 1965,
+          "queue_wait_ms": null,
+          "reserved_output_tokens": 1152,
+          "tool_calls": 3
+        },
+        "skills": [],
+        "status": "completed",
+        "stop_reason": "verified",
+        "task_id": "43378e5b-95fa-4778-8f88-30b1c597482c"
+      },
+      "passed": true,
+      "planning_advice": {
+        "fallback_events": 1,
+        "inference_timeout_fallbacks": 1,
+        "phases_started": 1,
+        "unclassified_fallbacks": 0
+      },
+      "primary_model_snapshot": {
+        "registration": null,
+        "weight_identity_verified": false
+      },
+      "profile": "memory",
+      "reported_models": [
+        "qwen/qwen3-8b",
+        "qwen/qwen3-8b"
+      ],
+      "verification": "shortest_path_v1"
+    },
+    {
+      "arm_index": 5,
+      "bound_expert_models": [],
+      "case_index": 1,
+      "configured_model": "qwen/qwen3-8b",
+      "execution_position": 4,
+      "expected": null,
+      "expert_advice": {
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "phases_started": 0,
+        "unclassified_fallbacks": 0
+      },
+      "exploration_advice": {
+        "fallback_events": 1,
+        "inference_timeout_fallbacks": 1,
+        "phases_started": 1,
+        "unclassified_fallbacks": 0
+      },
+      "hypothesis_diagnostics": {
+        "accepted_portfolio_events": 0,
+        "exhausted_selection_events": 0,
+        "invalid_portfolio_events": 0,
+        "legacy_advice_events": 0,
+        "selected_hypothesis_events": 0,
+        "unclassified_events": 0
+      },
+      "input": "path:{\"nodes\":[\"a\",\"b\",\"c\",\"d\"],\"edges\":[[\"a\",\"b\"],[\"b\",\"c\"],[\"c\",\"a\"],[\"c\",\"d\"]],\"start\":\"a\",\"goal\":\"d\"}",
+      "outcome": {
+        "answer": "[\"a\",\"b\",\"c\",\"d\"]",
+        "calls": 4,
+        "cycles": 2,
+        "elapsed_ms": 25463.327578,
+        "evidence": [
+          "verified:shortest_path/v1"
+        ],
+        "resources": {
+          "calls": 4,
+          "cycles": 2,
+          "inference_ms": 25448.946523999995,
+          "input_tokens": null,
+          "output_tokens": null,
+          "process_lifetime_peak_rss_bytes": 27271168,
+          "process_rss_bytes": 27271168,
+          "prompt_bytes": 1965,
+          "queue_wait_ms": null,
+          "reserved_output_tokens": 1152,
+          "tool_calls": 3
+        },
+        "skills": [],
+        "status": "completed",
+        "stop_reason": "verified",
+        "task_id": "d9410119-f24a-4201-89d9-d06b7403c880"
+      },
+      "passed": true,
+      "planning_advice": {
+        "fallback_events": 1,
+        "inference_timeout_fallbacks": 1,
+        "phases_started": 1,
+        "unclassified_fallbacks": 0
+      },
+      "primary_model_snapshot": {
+        "registration": null,
+        "weight_identity_verified": false
+      },
+      "profile": "experts",
+      "reported_models": [
+        "qwen/qwen3-8b",
+        "qwen/qwen3-8b"
+      ],
+      "verification": "shortest_path_v1"
+    },
+    {
+      "arm_index": 0,
+      "bound_expert_models": [],
+      "case_index": 1,
+      "configured_model": "qwen/qwen3-8b",
+      "execution_position": 5,
+      "expected": null,
+      "expert_advice": {
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "phases_started": 0,
+        "unclassified_fallbacks": 0
+      },
+      "exploration_advice": {
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "phases_started": 0,
+        "unclassified_fallbacks": 0
+      },
+      "hypothesis_diagnostics": {
+        "accepted_portfolio_events": 0,
+        "exhausted_selection_events": 0,
+        "invalid_portfolio_events": 0,
+        "legacy_advice_events": 0,
+        "selected_hypothesis_events": 0,
+        "unclassified_events": 0
+      },
+      "input": "path:{\"nodes\":[\"a\",\"b\",\"c\",\"d\"],\"edges\":[[\"a\",\"b\"],[\"b\",\"c\"],[\"c\",\"a\"],[\"c\",\"d\"]],\"start\":\"a\",\"goal\":\"d\"}",
+      "outcome": {
+        "answer": "[\"a\",\"c\",\"d\"]",
+        "calls": 1,
+        "cycles": 1,
+        "elapsed_ms": 3629.376325,
+        "evidence": [],
+        "resources": {
+          "calls": 1,
+          "cycles": 1,
+          "inference_ms": 3624.459627,
+          "input_tokens": 243,
+          "output_tokens": 8,
+          "process_lifetime_peak_rss_bytes": 27303936,
+          "process_rss_bytes": 27303936,
+          "prompt_bytes": 488,
+          "queue_wait_ms": 0.166376,
+          "reserved_output_tokens": 384,
+          "tool_calls": 0
+        },
+        "skills": [],
+        "status": "unverified",
+        "stop_reason": "unverified",
+        "task_id": "cd1ebe65-e5ea-40ce-bdda-96f5f97bea31"
+      },
+      "passed": false,
+      "planning_advice": {
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "phases_started": 0,
+        "unclassified_fallbacks": 0
+      },
+      "primary_model_snapshot": {
+        "registration": null,
+        "weight_identity_verified": false
+      },
+      "profile": "alone",
+      "reported_models": [
+        "qwen/qwen3-8b"
+      ],
+      "verification": "shortest_path_v1"
+    },
+    {
+      "arm_index": 2,
+      "bound_expert_models": [],
+      "case_index": 2,
+      "configured_model": "qwen/qwen3-8b",
+      "execution_position": 0,
+      "expected": null,
+      "expert_advice": {
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "phases_started": 0,
+        "unclassified_fallbacks": 0
+      },
+      "exploration_advice": {
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "phases_started": 0,
+        "unclassified_fallbacks": 0
+      },
+      "hypothesis_diagnostics": {
+        "accepted_portfolio_events": 0,
+        "exhausted_selection_events": 0,
+        "invalid_portfolio_events": 0,
+        "legacy_advice_events": 0,
+        "selected_hypothesis_events": 0,
+        "unclassified_events": 0
+      },
+      "input": "path:{\"nodes\":[\"s\",\"a\",\"b\",\"c\",\"g\"],\"edges\":[[\"s\",\"a\"],[\"a\",\"b\"],[\"b\",\"c\"],[\"c\",\"g\"],[\"s\",\"c\"]],\"start\":\"s\",\"goal\":\"g\"}",
+      "outcome": {
+        "answer": "[\"s\",\"c\",\"g\"]",
+        "calls": 1,
+        "cycles": 1,
+        "elapsed_ms": 3667.7558980000003,
+        "evidence": [
+          "verified:shortest_path/v1"
+        ],
+        "resources": {
+          "calls": 1,
+          "cycles": 1,
+          "inference_ms": 3662.967103,
+          "input_tokens": 249,
+          "output_tokens": 8,
+          "process_lifetime_peak_rss_bytes": 27324416,
+          "process_rss_bytes": 27324416,
+          "prompt_bytes": 502,
+          "queue_wait_ms": 0.151338,
+          "reserved_output_tokens": 384,
+          "tool_calls": 1
+        },
+        "skills": [],
+        "status": "completed",
+        "stop_reason": "verified",
+        "task_id": "672833f7-edb4-401d-9a7c-6fd36dae2b73"
+      },
+      "passed": true,
+      "planning_advice": {
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "phases_started": 0,
+        "unclassified_fallbacks": 0
+      },
+      "primary_model_snapshot": {
+        "registration": null,
+        "weight_identity_verified": false
+      },
+      "profile": "recursive",
+      "reported_models": [
+        "qwen/qwen3-8b"
+      ],
+      "verification": "shortest_path_v1"
+    },
+    {
+      "arm_index": 3,
+      "bound_expert_models": [],
+      "case_index": 2,
+      "configured_model": "qwen/qwen3-8b",
+      "execution_position": 1,
+      "expected": null,
+      "expert_advice": {
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "phases_started": 0,
+        "unclassified_fallbacks": 0
+      },
+      "exploration_advice": {
+        "fallback_events": 1,
+        "inference_timeout_fallbacks": 1,
+        "phases_started": 1,
+        "unclassified_fallbacks": 0
+      },
+      "hypothesis_diagnostics": {
+        "accepted_portfolio_events": 0,
+        "exhausted_selection_events": 0,
+        "invalid_portfolio_events": 0,
+        "legacy_advice_events": 0,
+        "selected_hypothesis_events": 0,
+        "unclassified_events": 0
+      },
+      "input": "path:{\"nodes\":[\"s\",\"a\",\"b\",\"c\",\"g\"],\"edges\":[[\"s\",\"a\"],[\"a\",\"b\"],[\"b\",\"c\"],[\"c\",\"g\"],[\"s\",\"c\"]],\"start\":\"s\",\"goal\":\"g\"}",
+      "outcome": {
+        "answer": "[\"s\",\"c\",\"g\"]",
+        "calls": 3,
+        "cycles": 1,
+        "elapsed_ms": 19748.636661,
+        "evidence": [
+          "verified:shortest_path/v1"
+        ],
+        "resources": {
+          "calls": 3,
+          "cycles": 1,
+          "inference_ms": 19736.21043,
+          "input_tokens": null,
+          "output_tokens": null,
+          "process_lifetime_peak_rss_bytes": 27353088,
+          "process_rss_bytes": 27353088,
+          "prompt_bytes": 1404,
+          "queue_wait_ms": null,
+          "reserved_output_tokens": 768,
+          "tool_calls": 1
+        },
+        "skills": [],
+        "status": "completed",
+        "stop_reason": "verified",
+        "task_id": "fbfe6fad-af33-4614-beed-8fb7fc94c2cb"
+      },
+      "passed": true,
+      "planning_advice": {
+        "fallback_events": 1,
+        "inference_timeout_fallbacks": 1,
+        "phases_started": 1,
+        "unclassified_fallbacks": 0
+      },
+      "primary_model_snapshot": {
+        "registration": null,
+        "weight_identity_verified": false
+      },
+      "profile": "collective",
+      "reported_models": [
+        "qwen/qwen3-8b"
+      ],
+      "verification": "shortest_path_v1"
+    },
+    {
+      "arm_index": 4,
+      "bound_expert_models": [],
+      "case_index": 2,
+      "configured_model": "qwen/qwen3-8b",
+      "execution_position": 2,
+      "expected": null,
+      "expert_advice": {
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "phases_started": 0,
+        "unclassified_fallbacks": 0
+      },
+      "exploration_advice": {
+        "fallback_events": 1,
+        "inference_timeout_fallbacks": 1,
+        "phases_started": 1,
+        "unclassified_fallbacks": 0
+      },
+      "hypothesis_diagnostics": {
+        "accepted_portfolio_events": 0,
+        "exhausted_selection_events": 0,
+        "invalid_portfolio_events": 0,
+        "legacy_advice_events": 0,
+        "selected_hypothesis_events": 0,
+        "unclassified_events": 0
+      },
+      "input": "path:{\"nodes\":[\"s\",\"a\",\"b\",\"c\",\"g\"],\"edges\":[[\"s\",\"a\"],[\"a\",\"b\"],[\"b\",\"c\"],[\"c\",\"g\"],[\"s\",\"c\"]],\"start\":\"s\",\"goal\":\"g\"}",
+      "outcome": {
+        "answer": "[\"s\",\"c\",\"g\"]",
+        "calls": 3,
+        "cycles": 1,
+        "elapsed_ms": 19825.101278,
+        "evidence": [
+          "verified:shortest_path/v1"
+        ],
+        "resources": {
+          "calls": 3,
+          "cycles": 1,
+          "inference_ms": 19816.996575,
+          "input_tokens": null,
+          "output_tokens": null,
+          "process_lifetime_peak_rss_bytes": 27398144,
+          "process_rss_bytes": 27398144,
+          "prompt_bytes": 1404,
+          "queue_wait_ms": null,
+          "reserved_output_tokens": 768,
+          "tool_calls": 2
+        },
+        "skills": [],
+        "status": "completed",
+        "stop_reason": "verified",
+        "task_id": "8e140b00-f269-478c-97f1-9efa1febb760"
+      },
+      "passed": true,
+      "planning_advice": {
+        "fallback_events": 1,
+        "inference_timeout_fallbacks": 1,
+        "phases_started": 1,
+        "unclassified_fallbacks": 0
+      },
+      "primary_model_snapshot": {
+        "registration": null,
+        "weight_identity_verified": false
+      },
+      "profile": "memory",
+      "reported_models": [
+        "qwen/qwen3-8b"
+      ],
+      "verification": "shortest_path_v1"
+    },
+    {
+      "arm_index": 5,
+      "bound_expert_models": [],
+      "case_index": 2,
+      "configured_model": "qwen/qwen3-8b",
+      "execution_position": 3,
+      "expected": null,
+      "expert_advice": {
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "phases_started": 0,
+        "unclassified_fallbacks": 0
+      },
+      "exploration_advice": {
+        "fallback_events": 1,
+        "inference_timeout_fallbacks": 1,
+        "phases_started": 1,
+        "unclassified_fallbacks": 0
+      },
+      "hypothesis_diagnostics": {
+        "accepted_portfolio_events": 0,
+        "exhausted_selection_events": 0,
+        "invalid_portfolio_events": 0,
+        "legacy_advice_events": 0,
+        "selected_hypothesis_events": 0,
+        "unclassified_events": 0
+      },
+      "input": "path:{\"nodes\":[\"s\",\"a\",\"b\",\"c\",\"g\"],\"edges\":[[\"s\",\"a\"],[\"a\",\"b\"],[\"b\",\"c\"],[\"c\",\"g\"],[\"s\",\"c\"]],\"start\":\"s\",\"goal\":\"g\"}",
+      "outcome": {
+        "answer": "[\"s\",\"c\",\"g\"]",
+        "calls": 3,
+        "cycles": 1,
+        "elapsed_ms": 19909.522033999998,
+        "evidence": [
+          "verified:shortest_path/v1"
+        ],
+        "resources": {
+          "calls": 3,
+          "cycles": 1,
+          "inference_ms": 19896.279573000003,
+          "input_tokens": null,
+          "output_tokens": null,
+          "process_lifetime_peak_rss_bytes": 27430912,
+          "process_rss_bytes": 27430912,
+          "prompt_bytes": 1404,
+          "queue_wait_ms": null,
+          "reserved_output_tokens": 768,
+          "tool_calls": 2
+        },
+        "skills": [],
+        "status": "completed",
+        "stop_reason": "verified",
+        "task_id": "7dba47f0-993c-4b94-b80d-9809d909c408"
+      },
+      "passed": true,
+      "planning_advice": {
+        "fallback_events": 1,
+        "inference_timeout_fallbacks": 1,
+        "phases_started": 1,
+        "unclassified_fallbacks": 0
+      },
+      "primary_model_snapshot": {
+        "registration": null,
+        "weight_identity_verified": false
+      },
+      "profile": "experts",
+      "reported_models": [
+        "qwen/qwen3-8b"
+      ],
+      "verification": "shortest_path_v1"
+    },
+    {
+      "arm_index": 0,
+      "bound_expert_models": [],
+      "case_index": 2,
+      "configured_model": "qwen/qwen3-8b",
+      "execution_position": 4,
+      "expected": null,
+      "expert_advice": {
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "phases_started": 0,
+        "unclassified_fallbacks": 0
+      },
+      "exploration_advice": {
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "phases_started": 0,
+        "unclassified_fallbacks": 0
+      },
+      "hypothesis_diagnostics": {
+        "accepted_portfolio_events": 0,
+        "exhausted_selection_events": 0,
+        "invalid_portfolio_events": 0,
+        "legacy_advice_events": 0,
+        "selected_hypothesis_events": 0,
+        "unclassified_events": 0
+      },
+      "input": "path:{\"nodes\":[\"s\",\"a\",\"b\",\"c\",\"g\"],\"edges\":[[\"s\",\"a\"],[\"a\",\"b\"],[\"b\",\"c\"],[\"c\",\"g\"],[\"s\",\"c\"]],\"start\":\"s\",\"goal\":\"g\"}",
+      "outcome": {
+        "answer": "[\"s\",\"c\",\"g\"]",
+        "calls": 1,
+        "cycles": 1,
+        "elapsed_ms": 3247.105188,
+        "evidence": [],
+        "resources": {
+          "calls": 1,
+          "cycles": 1,
+          "inference_ms": 3241.1886010000003,
+          "input_tokens": 249,
+          "output_tokens": 8,
+          "process_lifetime_peak_rss_bytes": 27463680,
+          "process_rss_bytes": 27463680,
+          "prompt_bytes": 502,
+          "queue_wait_ms": 0.230237,
+          "reserved_output_tokens": 384,
+          "tool_calls": 0
+        },
+        "skills": [],
+        "status": "unverified",
+        "stop_reason": "unverified",
+        "task_id": "822b96cc-7915-4195-bc07-be4bc5aa09be"
+      },
+      "passed": true,
+      "planning_advice": {
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "phases_started": 0,
+        "unclassified_fallbacks": 0
+      },
+      "primary_model_snapshot": {
+        "registration": null,
+        "weight_identity_verified": false
+      },
+      "profile": "alone",
+      "reported_models": [
+        "qwen/qwen3-8b"
+      ],
+      "verification": "shortest_path_v1"
+    },
+    {
+      "arm_index": 1,
+      "bound_expert_models": [],
+      "case_index": 2,
+      "configured_model": "qwen/qwen3-8b",
+      "execution_position": 5,
+      "expected": null,
+      "expert_advice": {
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "phases_started": 0,
+        "unclassified_fallbacks": 0
+      },
+      "exploration_advice": {
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "phases_started": 0,
+        "unclassified_fallbacks": 0
+      },
+      "hypothesis_diagnostics": {
+        "accepted_portfolio_events": 0,
+        "exhausted_selection_events": 0,
+        "invalid_portfolio_events": 0,
+        "legacy_advice_events": 0,
+        "selected_hypothesis_events": 0,
+        "unclassified_events": 0
+      },
+      "input": "path:{\"nodes\":[\"s\",\"a\",\"b\",\"c\",\"g\"],\"edges\":[[\"s\",\"a\"],[\"a\",\"b\"],[\"b\",\"c\"],[\"c\",\"g\"],[\"s\",\"c\"]],\"start\":\"s\",\"goal\":\"g\"}",
+      "outcome": {
+        "answer": "[\"s\",\"c\",\"g\"]",
+        "calls": 1,
+        "cycles": 1,
+        "elapsed_ms": 2910.306249,
+        "evidence": [
+          "verified:shortest_path/v1"
+        ],
+        "resources": {
+          "calls": 1,
+          "cycles": 1,
+          "inference_ms": 2902.915662,
+          "input_tokens": 249,
+          "output_tokens": 8,
+          "process_lifetime_peak_rss_bytes": 27496448,
+          "process_rss_bytes": 27496448,
+          "prompt_bytes": 502,
+          "queue_wait_ms": 0.206021,
+          "reserved_output_tokens": 384,
+          "tool_calls": 1
+        },
+        "skills": [],
+        "status": "completed",
+        "stop_reason": "verified",
+        "task_id": "b8605e13-4f5a-49e5-9257-f8146caa3efd"
+      },
+      "passed": true,
+      "planning_advice": {
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "phases_started": 0,
+        "unclassified_fallbacks": 0
+      },
+      "primary_model_snapshot": {
+        "registration": null,
+        "weight_identity_verified": false
+      },
+      "profile": "tools",
+      "reported_models": [
+        "qwen/qwen3-8b"
+      ],
+      "verification": "shortest_path_v1"
+    },
+    {
+      "arm_index": 3,
+      "bound_expert_models": [],
+      "case_index": 3,
+      "configured_model": "qwen/qwen3-8b",
+      "execution_position": 0,
+      "expected": null,
+      "expert_advice": {
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "phases_started": 0,
+        "unclassified_fallbacks": 0
+      },
+      "exploration_advice": {
+        "fallback_events": 1,
+        "inference_timeout_fallbacks": 1,
+        "phases_started": 1,
+        "unclassified_fallbacks": 0
+      },
+      "hypothesis_diagnostics": {
+        "accepted_portfolio_events": 0,
+        "exhausted_selection_events": 0,
+        "invalid_portfolio_events": 0,
+        "legacy_advice_events": 0,
+        "selected_hypothesis_events": 0,
+        "unclassified_events": 0
+      },
+      "input": "path:{\"nodes\":[\"s\",\"a\",\"b\",\"c\",\"d\",\"g\"],\"edges\":[[\"s\",\"a\"],[\"s\",\"b\"],[\"a\",\"c\"],[\"b\",\"c\"],[\"c\",\"d\"],[\"d\",\"g\"]],\"start\":\"s\",\"goal\":\"g\"}",
+      "outcome": {
+        "answer": "[\"s\",\"a\",\"c\",\"d\",\"g\"]",
+        "calls": 3,
+        "cycles": 1,
+        "elapsed_ms": 22969.708730000002,
+        "evidence": [
+          "verified:shortest_path/v1"
+        ],
+        "resources": {
+          "calls": 3,
+          "cycles": 1,
+          "inference_ms": 22954.248728000002,
+          "input_tokens": null,
+          "output_tokens": null,
+          "process_lifetime_peak_rss_bytes": 27521024,
+          "process_rss_bytes": 27521024,
+          "prompt_bytes": 1446,
+          "queue_wait_ms": null,
+          "reserved_output_tokens": 768,
+          "tool_calls": 1
+        },
+        "skills": [],
+        "status": "completed",
+        "stop_reason": "verified",
+        "task_id": "2db9f7a8-80a5-4961-83d6-9c15f0d10d8c"
+      },
+      "passed": true,
+      "planning_advice": {
+        "fallback_events": 1,
+        "inference_timeout_fallbacks": 1,
+        "phases_started": 1,
+        "unclassified_fallbacks": 0
+      },
+      "primary_model_snapshot": {
+        "registration": null,
+        "weight_identity_verified": false
+      },
+      "profile": "collective",
+      "reported_models": [
+        "qwen/qwen3-8b"
+      ],
+      "verification": "shortest_path_v1"
+    },
+    {
+      "arm_index": 4,
+      "bound_expert_models": [],
+      "case_index": 3,
+      "configured_model": "qwen/qwen3-8b",
+      "execution_position": 1,
+      "expected": null,
+      "expert_advice": {
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "phases_started": 0,
+        "unclassified_fallbacks": 0
+      },
+      "exploration_advice": {
+        "fallback_events": 1,
+        "inference_timeout_fallbacks": 1,
+        "phases_started": 1,
+        "unclassified_fallbacks": 0
+      },
+      "hypothesis_diagnostics": {
+        "accepted_portfolio_events": 0,
+        "exhausted_selection_events": 0,
+        "invalid_portfolio_events": 0,
+        "legacy_advice_events": 0,
+        "selected_hypothesis_events": 0,
+        "unclassified_events": 0
+      },
+      "input": "path:{\"nodes\":[\"s\",\"a\",\"b\",\"c\",\"d\",\"g\"],\"edges\":[[\"s\",\"a\"],[\"s\",\"b\"],[\"a\",\"c\"],[\"b\",\"c\"],[\"c\",\"d\"],[\"d\",\"g\"]],\"start\":\"s\",\"goal\":\"g\"}",
+      "outcome": {
+        "answer": "[\"s\",\"a\",\"c\",\"d\",\"g\"]",
+        "calls": 3,
+        "cycles": 1,
+        "elapsed_ms": 21395.661075,
+        "evidence": [
+          "verified:shortest_path/v1"
+        ],
+        "resources": {
+          "calls": 3,
+          "cycles": 1,
+          "inference_ms": 21388.564587,
+          "input_tokens": null,
+          "output_tokens": null,
+          "process_lifetime_peak_rss_bytes": 27553792,
+          "process_rss_bytes": 27553792,
+          "prompt_bytes": 1446,
+          "queue_wait_ms": null,
+          "reserved_output_tokens": 768,
+          "tool_calls": 2
+        },
+        "skills": [],
+        "status": "completed",
+        "stop_reason": "verified",
+        "task_id": "4a856722-15bf-4270-a75f-776bcf801f1d"
+      },
+      "passed": true,
+      "planning_advice": {
+        "fallback_events": 1,
+        "inference_timeout_fallbacks": 1,
+        "phases_started": 1,
+        "unclassified_fallbacks": 0
+      },
+      "primary_model_snapshot": {
+        "registration": null,
+        "weight_identity_verified": false
+      },
+      "profile": "memory",
+      "reported_models": [
+        "qwen/qwen3-8b"
+      ],
+      "verification": "shortest_path_v1"
+    },
+    {
+      "arm_index": 5,
+      "bound_expert_models": [],
+      "case_index": 3,
+      "configured_model": "qwen/qwen3-8b",
+      "execution_position": 2,
+      "expected": null,
+      "expert_advice": {
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "phases_started": 0,
+        "unclassified_fallbacks": 0
+      },
+      "exploration_advice": {
+        "fallback_events": 1,
+        "inference_timeout_fallbacks": 1,
+        "phases_started": 1,
+        "unclassified_fallbacks": 0
+      },
+      "hypothesis_diagnostics": {
+        "accepted_portfolio_events": 0,
+        "exhausted_selection_events": 0,
+        "invalid_portfolio_events": 0,
+        "legacy_advice_events": 0,
+        "selected_hypothesis_events": 0,
+        "unclassified_events": 0
+      },
+      "input": "path:{\"nodes\":[\"s\",\"a\",\"b\",\"c\",\"d\",\"g\"],\"edges\":[[\"s\",\"a\"],[\"s\",\"b\"],[\"a\",\"c\"],[\"b\",\"c\"],[\"c\",\"d\"],[\"d\",\"g\"]],\"start\":\"s\",\"goal\":\"g\"}",
+      "outcome": {
+        "answer": "[\"s\",\"a\",\"c\",\"d\",\"g\"]",
+        "calls": 3,
+        "cycles": 1,
+        "elapsed_ms": 22127.673937,
+        "evidence": [
+          "verified:shortest_path/v1"
+        ],
+        "resources": {
+          "calls": 3,
+          "cycles": 1,
+          "inference_ms": 22116.043898,
+          "input_tokens": null,
+          "output_tokens": null,
+          "process_lifetime_peak_rss_bytes": 27582464,
+          "process_rss_bytes": 27582464,
+          "prompt_bytes": 1446,
+          "queue_wait_ms": null,
+          "reserved_output_tokens": 768,
+          "tool_calls": 2
+        },
+        "skills": [],
+        "status": "completed",
+        "stop_reason": "verified",
+        "task_id": "763ac61c-5b9b-457d-8bb4-ff933e98b1e4"
+      },
+      "passed": true,
+      "planning_advice": {
+        "fallback_events": 1,
+        "inference_timeout_fallbacks": 1,
+        "phases_started": 1,
+        "unclassified_fallbacks": 0
+      },
+      "primary_model_snapshot": {
+        "registration": null,
+        "weight_identity_verified": false
+      },
+      "profile": "experts",
+      "reported_models": [
+        "qwen/qwen3-8b"
+      ],
+      "verification": "shortest_path_v1"
+    },
+    {
+      "arm_index": 0,
+      "bound_expert_models": [],
+      "case_index": 3,
+      "configured_model": "qwen/qwen3-8b",
+      "execution_position": 3,
+      "expected": null,
+      "expert_advice": {
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "phases_started": 0,
+        "unclassified_fallbacks": 0
+      },
+      "exploration_advice": {
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "phases_started": 0,
+        "unclassified_fallbacks": 0
+      },
+      "hypothesis_diagnostics": {
+        "accepted_portfolio_events": 0,
+        "exhausted_selection_events": 0,
+        "invalid_portfolio_events": 0,
+        "legacy_advice_events": 0,
+        "selected_hypothesis_events": 0,
+        "unclassified_events": 0
+      },
+      "input": "path:{\"nodes\":[\"s\",\"a\",\"b\",\"c\",\"d\",\"g\"],\"edges\":[[\"s\",\"a\"],[\"s\",\"b\"],[\"a\",\"c\"],[\"b\",\"c\"],[\"c\",\"d\"],[\"d\",\"g\"]],\"start\":\"s\",\"goal\":\"g\"}",
+      "outcome": {
+        "answer": "[\"s\",\"a\",\"c\",\"d\",\"g\"]",
+        "calls": 1,
+        "cycles": 1,
+        "elapsed_ms": 4253.604728,
+        "evidence": [],
+        "resources": {
+          "calls": 1,
+          "cycles": 1,
+          "inference_ms": 4250.291425,
+          "input_tokens": 255,
+          "output_tokens": 12,
+          "process_lifetime_peak_rss_bytes": 27611136,
+          "process_rss_bytes": 27611136,
+          "prompt_bytes": 516,
+          "queue_wait_ms": 0.10528,
+          "reserved_output_tokens": 384,
+          "tool_calls": 0
+        },
+        "skills": [],
+        "status": "unverified",
+        "stop_reason": "unverified",
+        "task_id": "fdd03f5e-0406-44a9-87a2-a6af196e3b08"
+      },
+      "passed": true,
+      "planning_advice": {
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "phases_started": 0,
+        "unclassified_fallbacks": 0
+      },
+      "primary_model_snapshot": {
+        "registration": null,
+        "weight_identity_verified": false
+      },
+      "profile": "alone",
+      "reported_models": [
+        "qwen/qwen3-8b"
+      ],
+      "verification": "shortest_path_v1"
+    },
+    {
+      "arm_index": 1,
+      "bound_expert_models": [],
+      "case_index": 3,
+      "configured_model": "qwen/qwen3-8b",
+      "execution_position": 4,
+      "expected": null,
+      "expert_advice": {
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "phases_started": 0,
+        "unclassified_fallbacks": 0
+      },
+      "exploration_advice": {
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "phases_started": 0,
+        "unclassified_fallbacks": 0
+      },
+      "hypothesis_diagnostics": {
+        "accepted_portfolio_events": 0,
+        "exhausted_selection_events": 0,
+        "invalid_portfolio_events": 0,
+        "legacy_advice_events": 0,
+        "selected_hypothesis_events": 0,
+        "unclassified_events": 0
+      },
+      "input": "path:{\"nodes\":[\"s\",\"a\",\"b\",\"c\",\"d\",\"g\"],\"edges\":[[\"s\",\"a\"],[\"s\",\"b\"],[\"a\",\"c\"],[\"b\",\"c\"],[\"c\",\"d\"],[\"d\",\"g\"]],\"start\":\"s\",\"goal\":\"g\"}",
+      "outcome": {
+        "answer": "[\"s\",\"a\",\"c\",\"d\",\"g\"]",
+        "calls": 1,
+        "cycles": 1,
+        "elapsed_ms": 4112.760382,
+        "evidence": [
+          "verified:shortest_path/v1"
+        ],
+        "resources": {
+          "calls": 1,
+          "cycles": 1,
+          "inference_ms": 4108.780602999999,
+          "input_tokens": 255,
+          "output_tokens": 12,
+          "process_lifetime_peak_rss_bytes": 27648000,
+          "process_rss_bytes": 27648000,
+          "prompt_bytes": 516,
+          "queue_wait_ms": 0.060364,
+          "reserved_output_tokens": 384,
+          "tool_calls": 1
+        },
+        "skills": [],
+        "status": "completed",
+        "stop_reason": "verified",
+        "task_id": "eabe86d9-65f5-4a8c-8b59-6dff50886403"
+      },
+      "passed": true,
+      "planning_advice": {
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "phases_started": 0,
+        "unclassified_fallbacks": 0
+      },
+      "primary_model_snapshot": {
+        "registration": null,
+        "weight_identity_verified": false
+      },
+      "profile": "tools",
+      "reported_models": [
+        "qwen/qwen3-8b"
+      ],
+      "verification": "shortest_path_v1"
+    },
+    {
+      "arm_index": 2,
+      "bound_expert_models": [],
+      "case_index": 3,
+      "configured_model": "qwen/qwen3-8b",
+      "execution_position": 5,
+      "expected": null,
+      "expert_advice": {
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "phases_started": 0,
+        "unclassified_fallbacks": 0
+      },
+      "exploration_advice": {
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "phases_started": 0,
+        "unclassified_fallbacks": 0
+      },
+      "hypothesis_diagnostics": {
+        "accepted_portfolio_events": 0,
+        "exhausted_selection_events": 0,
+        "invalid_portfolio_events": 0,
+        "legacy_advice_events": 0,
+        "selected_hypothesis_events": 0,
+        "unclassified_events": 0
+      },
+      "input": "path:{\"nodes\":[\"s\",\"a\",\"b\",\"c\",\"d\",\"g\"],\"edges\":[[\"s\",\"a\"],[\"s\",\"b\"],[\"a\",\"c\"],[\"b\",\"c\"],[\"c\",\"d\"],[\"d\",\"g\"]],\"start\":\"s\",\"goal\":\"g\"}",
+      "outcome": {
+        "answer": "[\"s\",\"a\",\"c\",\"d\",\"g\"]",
+        "calls": 1,
+        "cycles": 1,
+        "elapsed_ms": 4368.605856,
+        "evidence": [
+          "verified:shortest_path/v1"
+        ],
+        "resources": {
+          "calls": 1,
+          "cycles": 1,
+          "inference_ms": 4364.280081000001,
+          "input_tokens": 255,
+          "output_tokens": 12,
+          "process_lifetime_peak_rss_bytes": 27684864,
+          "process_rss_bytes": 27684864,
+          "prompt_bytes": 516,
+          "queue_wait_ms": 0.069813,
+          "reserved_output_tokens": 384,
+          "tool_calls": 1
+        },
+        "skills": [],
+        "status": "completed",
+        "stop_reason": "verified",
+        "task_id": "a2901e90-8fab-46e1-97c0-ed4e0f972dee"
+      },
+      "passed": true,
+      "planning_advice": {
+        "fallback_events": 0,
+        "inference_timeout_fallbacks": 0,
+        "phases_started": 0,
+        "unclassified_fallbacks": 0
+      },
+      "primary_model_snapshot": {
+        "registration": null,
+        "weight_identity_verified": false
+      },
+      "profile": "recursive",
+      "reported_models": [
+        "qwen/qwen3-8b"
+      ],
+      "verification": "shortest_path_v1"
+    }
+  ],
+  "elapsed_ms": 312047.173375,
+  "expert_router": {
+    "id": "jev-plus.tags",
+    "version": "1.0.0"
+  },
+  "format_version": 1,
+  "held_out_operator_attested": false,
+  "held_out_run": false,
+  "larger_baseline_configured": false,
+  "limitations": [
+    "Public workflow check only; no held-out review or benchmark quality claim",
+    "Backend model labels do not attest immutable weights",
+    "A bound expert model configuration invalidates the same-model ablation control, even if advice is refused or fails; inspect per-case bound_expert_models",
+    "Exact-match, dependency-order, integer-sort and SQL criteria do not establish broad reasoning quality",
+    "Structured comparison recomputes checks without trusting runtime status; ordering/sorting share the runtime compiled verifier implementation",
+    "Retrieval uses one read-only SQLite snapshot; checksum includes unrelated stored history",
+    "Snapshot bounds are 64 MB and temporarily require an additional serialization buffer",
+    "Live model availability, weight identity and server state are not frozen",
+    "Different arms consume different amounts within the same operator ceilings; inspect actual usage"
+  ],
+  "mode": "research",
+  "package_version": "1.1.0-alpha.1",
+  "paired_changes_against_small_model_alone": [
+    {
+      "arm_index": 1,
+      "baseline_arm_index": 0,
+      "both_failed": 0,
+      "both_passed": 3,
+      "improved_cases": [
+        1
+      ],
+      "paired_accuracy_delta": 0.25,
+      "paired_cases": 4,
+      "regressed_cases": [],
+      "regression_fraction_of_baseline_passes": 0.0,
+      "regression_fraction_of_paired_cases": 0.0,
+      "unpaired_cases": 0
+    },
+    {
+      "arm_index": 2,
+      "baseline_arm_index": 0,
+      "both_failed": 0,
+      "both_passed": 3,
+      "improved_cases": [
+        1
+      ],
+      "paired_accuracy_delta": 0.25,
+      "paired_cases": 4,
+      "regressed_cases": [],
+      "regression_fraction_of_baseline_passes": 0.0,
+      "regression_fraction_of_paired_cases": 0.0,
+      "unpaired_cases": 0
+    },
+    {
+      "arm_index": 3,
+      "baseline_arm_index": 0,
+      "both_failed": 0,
+      "both_passed": 3,
+      "improved_cases": [
+        1
+      ],
+      "paired_accuracy_delta": 0.25,
+      "paired_cases": 4,
+      "regressed_cases": [],
+      "regression_fraction_of_baseline_passes": 0.0,
+      "regression_fraction_of_paired_cases": 0.0,
+      "unpaired_cases": 0
+    },
+    {
+      "arm_index": 4,
+      "baseline_arm_index": 0,
+      "both_failed": 0,
+      "both_passed": 3,
+      "improved_cases": [
+        1
+      ],
+      "paired_accuracy_delta": 0.25,
+      "paired_cases": 4,
+      "regressed_cases": [],
+      "regression_fraction_of_baseline_passes": 0.0,
+      "regression_fraction_of_paired_cases": 0.0,
+      "unpaired_cases": 0
+    },
+    {
+      "arm_index": 5,
+      "baseline_arm_index": 0,
+      "both_failed": 0,
+      "both_passed": 3,
+      "improved_cases": [
+        1
+      ],
+      "paired_accuracy_delta": 0.25,
+      "paired_cases": 4,
+      "regressed_cases": [],
+      "regression_fraction_of_baseline_passes": 0.0,
+      "regression_fraction_of_paired_cases": 0.0,
+      "unpaired_cases": 0
+    }
+  ],
+  "reviewed_dataset_checksum_operator_attested": null,
+  "router_implementation_attested": false,
+  "run_purpose": "workflow_check",
+  "runtime_sources_sha256": "2b1d22881bb415f3b76193252135c008a3eca0af6c77e06ad08b88f3e8e1a3b8",
+  "scheduler_implementation_attested": false,
+  "small_model_ablation_configuration_controlled": true,
+  "snapshot_elapsed_ms": 5.851754,
+  "stop_reason": "completed",
+  "subtask_scheduler": {
+    "id": "jev-plus.critical-path",
+    "version": "1.0.0"
+  },
+  "unavailable_metrics": [
+    "peak_memory",
+    "gpu_memory",
+    "energy",
+    "model_load_cost",
+    "general_security_failure_rate"
+  ]
+}

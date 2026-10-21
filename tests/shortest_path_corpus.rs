@@ -402,3 +402,170 @@ fn check_advice_report(raw: &str, summary_raw: &str, case_count: usize) {
         }
     }
 }
+
+#[test]
+fn portfolio_public_runs_match_independent_scores_hashes_and_diagnostic_audits() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let dataset = std::fs::read(root.join("evaluation/portfolio_cases.jsonl")).unwrap();
+    let original = include_str!("../evaluation/shortest_path_cases.jsonl")
+        .lines()
+        .collect::<Vec<_>>();
+    let expected = [0, 5, 11, 15]
+        .iter()
+        .map(|i| format!("{}\n", original[*i]))
+        .collect::<String>();
+    assert_eq!(dataset, expected.as_bytes());
+    let summary: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(root.join("evaluation/results/qwen3-8b-portfolio-public-summary.json"))
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        summary["dataset_sha256"],
+        cogfabric::store::sha256(&dataset)
+    );
+    for flag in [
+        "held_out",
+        "independent_human_review",
+        "weights_attested",
+        "physical_provider_stop_proven",
+        "causal_before_after_comparison",
+    ] {
+        assert_eq!(summary[flag], false);
+    }
+    let metrics = [
+        "accepted_portfolio_events",
+        "legacy_advice_events",
+        "invalid_portfolio_events",
+        "selected_hypothesis_events",
+        "exhausted_selection_events",
+        "unclassified_events",
+    ];
+    for run in summary["runs"].as_array().unwrap() {
+        let raw = std::fs::read(
+            root.join("evaluation/results")
+                .join(run["report_file"].as_str().unwrap()),
+        )
+        .unwrap();
+        assert_eq!(run["report_sha256"], cogfabric::store::sha256(&raw));
+        let report: serde_json::Value = serde_json::from_slice(&raw).unwrap();
+        assert_eq!(
+            report["code_revision_operator_attested"],
+            run["runtime_source_revision"]
+        );
+        assert_eq!(report["dataset_checksum"], summary["dataset_sha256"]);
+        assert_eq!(report["held_out_run"], false);
+        assert_eq!(report["complete"], true);
+        assert_eq!(report["case_count"], 4);
+        let rows = report["details"].as_array().unwrap();
+        assert_eq!(rows.len(), 24);
+        let mut seen = BTreeSet::new();
+        for row in rows {
+            assert!(seen.insert((
+                row["case_index"].as_u64().unwrap(),
+                row["arm_index"].as_u64().unwrap()
+            )));
+            let graph: Graph = serde_json::from_str(
+                row["input"]
+                    .as_str()
+                    .unwrap()
+                    .strip_prefix("path:")
+                    .unwrap(),
+            )
+            .unwrap();
+            let outcome = &row["outcome"];
+            let eligible = matches!(outcome["status"].as_str(), Some("completed" | "unverified"));
+            assert_eq!(
+                row["passed"],
+                eligible && oracle_accepts(&graph, outcome["answer"].as_str().unwrap())
+            );
+            assert!(outcome["calls"].as_u64().unwrap() <= 10);
+            assert!(
+                outcome["resources"]["reserved_output_tokens"]
+                    .as_u64()
+                    .unwrap()
+                    <= 3000
+            );
+            let audit = run["hypothesis_audits"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|a| a["task_id"] == outcome["task_id"])
+                .unwrap();
+            let mut counts = metrics
+                .iter()
+                .map(|m| ((*m).to_string(), 0u64))
+                .collect::<std::collections::BTreeMap<_, _>>();
+            for event in audit["events"].as_array().unwrap() {
+                assert_eq!(event["source"], "jev-r");
+                let v = &event["payload"];
+                assert_eq!(v["verified"], false);
+                assert_eq!(v["permissions_granted"], false);
+                let key = match event["kind"].as_str().unwrap() {
+                    "exploration_portfolio" => match v["status"].as_str() {
+                        Some("legacy_advice") => "legacy_advice_events",
+                        Some("invalid_portfolio") => "invalid_portfolio_events",
+                        None => {
+                            assert_eq!(v["policy"], "canonical-alternatives/v1");
+                            "accepted_portfolio_events"
+                        }
+                        _ => "unclassified_events",
+                    },
+                    "hypothesis_selection" => {
+                        assert_eq!(v["policy"], "canonical-alternatives/v1");
+                        if v["portfolio_exhausted"] == true {
+                            "exhausted_selection_events"
+                        } else {
+                            "selected_hypothesis_events"
+                        }
+                    }
+                    _ => panic!("Unexpected exported audit kind"),
+                };
+                *counts.get_mut(key).unwrap() += 1;
+            }
+            if let Some(diagnostics) = row.get("hypothesis_diagnostics") {
+                for (key, value) in counts {
+                    assert_eq!(diagnostics[key], value);
+                }
+            }
+        }
+        for (index, arm) in report["arms"].as_array().unwrap().iter().enumerate() {
+            let selected = rows
+                .iter()
+                .filter(|r| r["arm_index"] == index)
+                .collect::<Vec<_>>();
+            let saved = &run["arms"][index];
+            assert_eq!(selected.len(), 4);
+            assert_eq!(
+                arm["passed"],
+                selected.iter().filter(|r| r["passed"] == true).count()
+            );
+            assert_eq!(saved["passed"], arm["passed"]);
+            assert_eq!(saved["model_calls"], arm["resources"]["model_calls"]);
+            let calls: u64 = selected
+                .iter()
+                .map(|r| r["outcome"]["calls"].as_u64().unwrap())
+                .sum();
+            assert_eq!(arm["resources"]["model_calls"], calls);
+            let latency: f64 = selected
+                .iter()
+                .map(|r| r["outcome"]["elapsed_ms"].as_f64().unwrap())
+                .sum();
+            assert!((latency - arm["resources"]["latency_ms"].as_f64().unwrap()).abs() < 0.001);
+            assert!((latency - saved["latency_ms"].as_f64().unwrap()).abs() < 0.001);
+            if arm["resources"].get("hypothesis_diagnostics").is_some() {
+                for metric in metrics {
+                    let total: u64 = selected
+                        .iter()
+                        .map(|r| r["hypothesis_diagnostics"][metric].as_u64().unwrap())
+                        .sum();
+                    assert_eq!(arm["resources"]["hypothesis_diagnostics"][metric], total);
+                }
+                for key in ["runtime_sources_sha256", "compiled_role_prompts_sha256"] {
+                    assert_eq!(report[key], run[key]);
+                    assert_eq!(report[key].as_str().unwrap().len(), 64);
+                }
+            }
+        }
+    }
+}

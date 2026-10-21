@@ -597,3 +597,33 @@ above used the debug binary. This is a current-host refresh, not new clean-OS
 proof. All 500 mandatory tests/checks remain tied to the preceding runtime gate;
 no runtime source changed in this evidence-only update. General phase recovery,
 module/residency lifecycle and independent quality evaluation remain incomplete.
+
+### Strategy portfolio and diagnostic reporting validation — 2026-10-21
+
+The previously approval-blocked comparison at source `b20d736` was not executed
+until the current approved retry. It completed all 24 public tasks from four
+existing graph cases using the frozen binary SHA256
+`d866c785ebb83355b290d87829d9b7c3380a665d5b7aa798d59f812d3215ef97`.
+The original common task/resource limits were unchanged. Alone solved 3/4;
+tools, recursive, collective, memory and experts each solved 4/4. Collective
+profiles took 85–88 seconds total task latency each versus 14–20 seconds for the
+three cheaper profiles. All 12 planning and 12 exploration phases hit typed
+timeouts; zero portfolio selection events were reported. This validates bounded
+fallback and truthful diagnostics, not effective exploration under these settings.
+
+The preceding source `5041478` run is also retained: all six profiles solved 4/4,
+with 12 accepted portfolios and 14 selection events, including alternative use.
+Both runs, all 48 outcomes, exact configuration/source/binary/report hashes,
+provider-setting differences and independent score reconciliation are described
+in [public portfolio evidence](../evaluation/results/README.md).
+Raw reports and summary are in `evaluation/results/qwen3-8b-portfolio-*.json`;
+the fixed subset is `evaluation/portfolio_cases.jsonl`.
+
+Earlier sandbox connection refusals did not prove host-server unavailability.
+Host-level discovery on October 20 found an existing loaded model. On October 21
+the host server was genuinely off and no model was loaded; validation temporarily
+started localhost-only inference, loaded existing Qwen weights, and restored the
+confirmed off/unloaded state afterward. No other models were loaded or downloaded.
+These operator CLI actions do not establish autonomous/physical residency control.
+Differences in provider state preclude a causal comparison between the two runs.
+The cases remain public/authored, without independent human or held-out review.

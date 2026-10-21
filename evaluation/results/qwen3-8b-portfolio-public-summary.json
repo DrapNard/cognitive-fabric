@@ -1,0 +1,1000 @@
+{
+  "format_version": 1,
+  "purpose": "Two public integration diagnostics; no controlled before/after or held-out quality claim",
+  "dataset_sha256": "fc37dfbf101b184c0a44f1ae9eb0edd4779fcc3f8f7068840fcbf158a4a814c3",
+  "parent_dataset_sha256": "0fedaaf6bef27f45ae0a13debcd5c6e391a32637c84891b0f38a19d9cba93edc",
+  "parent_lines": [
+    1,
+    6,
+    12,
+    16
+  ],
+  "case_ids": [
+    "graph.path.direct_edge",
+    "graph.path.cycle_exit",
+    "graph.path.long_route_first",
+    "graph.path.branch_merge"
+  ],
+  "dataset_license": "CC0-1.0",
+  "held_out": false,
+  "independent_human_review": false,
+  "weights_attested": false,
+  "physical_provider_stop_proven": false,
+  "causal_before_after_comparison": false,
+  "separate_exhaustive_path_check": true,
+  "larger_model_baseline": false,
+  "runs": [
+    {
+      "tag": "pre_diagnostics",
+      "date": "2026-10-20",
+      "report_file": "qwen3-8b-portfolio-pre-diagnostics.json",
+      "report_sha256": "92c0641d74d154267ef47b7bf12ed1fba8c68098cce1516d020ba00e3d4d0926",
+      "runtime_source_revision": "504147865225d1a8326fa94282f0e78c927aa299",
+      "runtime_binary_sha256": "855657626ec336912cccfb4f10b56e74cc5b00f126bf2d3750252c0916332180",
+      "elapsed_ms": 50924.465933,
+      "complete": true,
+      "stop_reason": "completed",
+      "executed_tasks": 24,
+      "provider_settings": {
+        "preexisting_loaded": true,
+        "context_tokens": 4096,
+        "parallel_predictions": 4,
+        "requested_gpu_offload_ratio": null
+      },
+      "arms": [
+        {
+          "profile": "alone",
+          "executed": 4,
+          "passed": 4,
+          "model_calls": 4,
+          "tool_calls": 0,
+          "latency_ms": 1392.665655,
+          "planning_advice": {
+            "fallback_events": 0,
+            "inference_timeout_fallbacks": 0,
+            "phases_started": 0,
+            "unclassified_fallbacks": 0
+          },
+          "exploration_advice": {
+            "fallback_events": 0,
+            "inference_timeout_fallbacks": 0,
+            "phases_started": 0,
+            "unclassified_fallbacks": 0
+          }
+        },
+        {
+          "profile": "tools",
+          "executed": 4,
+          "passed": 4,
+          "model_calls": 5,
+          "tool_calls": 5,
+          "latency_ms": 1594.777629,
+          "planning_advice": {
+            "fallback_events": 0,
+            "inference_timeout_fallbacks": 0,
+            "phases_started": 0,
+            "unclassified_fallbacks": 0
+          },
+          "exploration_advice": {
+            "fallback_events": 0,
+            "inference_timeout_fallbacks": 0,
+            "phases_started": 0,
+            "unclassified_fallbacks": 0
+          }
+        },
+        {
+          "profile": "recursive",
+          "executed": 4,
+          "passed": 4,
+          "model_calls": 4,
+          "tool_calls": 4,
+          "latency_ms": 1318.879215,
+          "planning_advice": {
+            "fallback_events": 0,
+            "inference_timeout_fallbacks": 0,
+            "phases_started": 0,
+            "unclassified_fallbacks": 0
+          },
+          "exploration_advice": {
+            "fallback_events": 0,
+            "inference_timeout_fallbacks": 0,
+            "phases_started": 0,
+            "unclassified_fallbacks": 0
+          }
+        },
+        {
+          "profile": "collective",
+          "executed": 4,
+          "passed": 4,
+          "model_calls": 20,
+          "tool_calls": 4,
+          "latency_ms": 15842.086935,
+          "planning_advice": {
+            "fallback_events": 0,
+            "inference_timeout_fallbacks": 0,
+            "phases_started": 4,
+            "unclassified_fallbacks": 0
+          },
+          "exploration_advice": {
+            "fallback_events": 0,
+            "inference_timeout_fallbacks": 0,
+            "phases_started": 4,
+            "unclassified_fallbacks": 0
+          }
+        },
+        {
+          "profile": "memory",
+          "executed": 4,
+          "passed": 4,
+          "model_calls": 21,
+          "tool_calls": 9,
+          "latency_ms": 14908.141935,
+          "planning_advice": {
+            "fallback_events": 0,
+            "inference_timeout_fallbacks": 0,
+            "phases_started": 4,
+            "unclassified_fallbacks": 0
+          },
+          "exploration_advice": {
+            "fallback_events": 0,
+            "inference_timeout_fallbacks": 0,
+            "phases_started": 4,
+            "unclassified_fallbacks": 0
+          }
+        },
+        {
+          "profile": "experts",
+          "executed": 4,
+          "passed": 4,
+          "model_calls": 21,
+          "tool_calls": 9,
+          "latency_ms": 15818.046231999999,
+          "planning_advice": {
+            "fallback_events": 0,
+            "inference_timeout_fallbacks": 0,
+            "phases_started": 4,
+            "unclassified_fallbacks": 0
+          },
+          "exploration_advice": {
+            "fallback_events": 0,
+            "inference_timeout_fallbacks": 0,
+            "phases_started": 4,
+            "unclassified_fallbacks": 0
+          }
+        }
+      ],
+      "hypothesis_audits": [
+        {
+          "task_id": "b08ab2f1-7403-4a3b-9774-3a8e6375cab8",
+          "events": []
+        },
+        {
+          "task_id": "b1634e9a-f25c-48b0-9379-7c74229823b0",
+          "events": []
+        },
+        {
+          "task_id": "cf3c672f-bacd-4413-800b-0e92a72f75f0",
+          "events": []
+        },
+        {
+          "task_id": "2c46e912-af6f-4d9c-b47a-8430c257deea",
+          "events": [
+            {
+              "kind": "exploration_portfolio",
+              "source": "jev-r",
+              "payload": {
+                "alternative_ids": [
+                  "a",
+                  "b"
+                ],
+                "format_version": 1,
+                "permissions_granted": false,
+                "policy": "canonical-alternatives/v1",
+                "source_sha256": "cd49f418726ed85e37b13b8ffe68cd4dad5ad6fa24661fe1a12213b2f19d3ca2",
+                "utility_calibrated": false,
+                "verified": false
+              }
+            },
+            {
+              "kind": "hypothesis_selection",
+              "source": "jev-r",
+              "payload": {
+                "cycle": 1,
+                "format_version": 1,
+                "permissions_granted": false,
+                "policy": "canonical-alternatives/v1",
+                "portfolio_exhausted": false,
+                "selected_id": "a",
+                "source_sha256": "cd49f418726ed85e37b13b8ffe68cd4dad5ad6fa24661fe1a12213b2f19d3ca2",
+                "strategy_sha256": "51f865e3fc45bd44da367d01f47a6256af24d7b19161ee68d654e0c0868d6e9c",
+                "utility_calibrated": false,
+                "verified": false
+              }
+            }
+          ]
+        },
+        {
+          "task_id": "a278d321-45e6-432a-82e9-c692110a2109",
+          "events": [
+            {
+              "kind": "exploration_portfolio",
+              "source": "jev-r",
+              "payload": {
+                "alternative_ids": [
+                  "a",
+                  "b"
+                ],
+                "format_version": 1,
+                "permissions_granted": false,
+                "policy": "canonical-alternatives/v1",
+                "source_sha256": "dc69a181a2ece1cf977aaa7ba227848b181d10f36d5cbc319d11953aa08fae47",
+                "utility_calibrated": false,
+                "verified": false
+              }
+            },
+            {
+              "kind": "hypothesis_selection",
+              "source": "jev-r",
+              "payload": {
+                "cycle": 1,
+                "format_version": 1,
+                "permissions_granted": false,
+                "policy": "canonical-alternatives/v1",
+                "portfolio_exhausted": false,
+                "selected_id": "a",
+                "source_sha256": "dc69a181a2ece1cf977aaa7ba227848b181d10f36d5cbc319d11953aa08fae47",
+                "strategy_sha256": "51f865e3fc45bd44da367d01f47a6256af24d7b19161ee68d654e0c0868d6e9c",
+                "utility_calibrated": false,
+                "verified": false
+              }
+            }
+          ]
+        },
+        {
+          "task_id": "45a1bdb5-a41f-4673-9856-bd81517d293c",
+          "events": [
+            {
+              "kind": "exploration_portfolio",
+              "source": "jev-r",
+              "payload": {
+                "alternative_ids": [
+                  "a",
+                  "b"
+                ],
+                "format_version": 1,
+                "permissions_granted": false,
+                "policy": "canonical-alternatives/v1",
+                "source_sha256": "dc69a181a2ece1cf977aaa7ba227848b181d10f36d5cbc319d11953aa08fae47",
+                "utility_calibrated": false,
+                "verified": false
+              }
+            },
+            {
+              "kind": "hypothesis_selection",
+              "source": "jev-r",
+              "payload": {
+                "cycle": 1,
+                "format_version": 1,
+                "permissions_granted": false,
+                "policy": "canonical-alternatives/v1",
+                "portfolio_exhausted": false,
+                "selected_id": "a",
+                "source_sha256": "dc69a181a2ece1cf977aaa7ba227848b181d10f36d5cbc319d11953aa08fae47",
+                "strategy_sha256": "51f865e3fc45bd44da367d01f47a6256af24d7b19161ee68d654e0c0868d6e9c",
+                "utility_calibrated": false,
+                "verified": false
+              }
+            }
+          ]
+        },
+        {
+          "task_id": "66c0b281-4ea3-4906-930c-017c817b3e0b",
+          "events": []
+        },
+        {
+          "task_id": "378d9468-7284-4889-8832-8a8556155846",
+          "events": []
+        },
+        {
+          "task_id": "a47957d3-64e2-4b58-9feb-18528506ab1a",
+          "events": [
+            {
+              "kind": "exploration_portfolio",
+              "source": "jev-r",
+              "payload": {
+                "alternative_ids": [
+                  "a",
+                  "b"
+                ],
+                "format_version": 1,
+                "permissions_granted": false,
+                "policy": "canonical-alternatives/v1",
+                "source_sha256": "8235fbc9e2ac731e93b2a18a11d5dc896baaf3157403e8cc476e9ae76f1d0ee8",
+                "utility_calibrated": false,
+                "verified": false
+              }
+            },
+            {
+              "kind": "hypothesis_selection",
+              "source": "jev-r",
+              "payload": {
+                "cycle": 1,
+                "format_version": 1,
+                "permissions_granted": false,
+                "policy": "canonical-alternatives/v1",
+                "portfolio_exhausted": false,
+                "selected_id": "a",
+                "source_sha256": "8235fbc9e2ac731e93b2a18a11d5dc896baaf3157403e8cc476e9ae76f1d0ee8",
+                "strategy_sha256": "68d3ae5e1fbb5c404ba9450970812ba89c1061fbf347845c894c0b9b31729a95",
+                "utility_calibrated": false,
+                "verified": false
+              }
+            }
+          ]
+        },
+        {
+          "task_id": "f6423817-9b66-4a04-b2f9-67ef959051ea",
+          "events": [
+            {
+              "kind": "exploration_portfolio",
+              "source": "jev-r",
+              "payload": {
+                "alternative_ids": [
+                  "a",
+                  "b"
+                ],
+                "format_version": 1,
+                "permissions_granted": false,
+                "policy": "canonical-alternatives/v1",
+                "source_sha256": "8235fbc9e2ac731e93b2a18a11d5dc896baaf3157403e8cc476e9ae76f1d0ee8",
+                "utility_calibrated": false,
+                "verified": false
+              }
+            },
+            {
+              "kind": "hypothesis_selection",
+              "source": "jev-r",
+              "payload": {
+                "cycle": 1,
+                "format_version": 1,
+                "permissions_granted": false,
+                "policy": "canonical-alternatives/v1",
+                "portfolio_exhausted": false,
+                "selected_id": "a",
+                "source_sha256": "8235fbc9e2ac731e93b2a18a11d5dc896baaf3157403e8cc476e9ae76f1d0ee8",
+                "strategy_sha256": "68d3ae5e1fbb5c404ba9450970812ba89c1061fbf347845c894c0b9b31729a95",
+                "utility_calibrated": false,
+                "verified": false
+              }
+            },
+            {
+              "kind": "hypothesis_selection",
+              "source": "jev-r",
+              "payload": {
+                "cycle": 2,
+                "format_version": 1,
+                "permissions_granted": false,
+                "policy": "canonical-alternatives/v1",
+                "portfolio_exhausted": false,
+                "selected_id": "b",
+                "source_sha256": "8235fbc9e2ac731e93b2a18a11d5dc896baaf3157403e8cc476e9ae76f1d0ee8",
+                "strategy_sha256": "a4f1d4f0d204f2d46a54cb8af2b5e88a5218768bf2baa13b825f0eb6d7ea1046",
+                "utility_calibrated": false,
+                "verified": false
+              }
+            }
+          ]
+        },
+        {
+          "task_id": "72f308b2-6433-4cf0-a6dc-29be3c9e4b03",
+          "events": [
+            {
+              "kind": "exploration_portfolio",
+              "source": "jev-r",
+              "payload": {
+                "alternative_ids": [
+                  "a",
+                  "b"
+                ],
+                "format_version": 1,
+                "permissions_granted": false,
+                "policy": "canonical-alternatives/v1",
+                "source_sha256": "8235fbc9e2ac731e93b2a18a11d5dc896baaf3157403e8cc476e9ae76f1d0ee8",
+                "utility_calibrated": false,
+                "verified": false
+              }
+            },
+            {
+              "kind": "hypothesis_selection",
+              "source": "jev-r",
+              "payload": {
+                "cycle": 1,
+                "format_version": 1,
+                "permissions_granted": false,
+                "policy": "canonical-alternatives/v1",
+                "portfolio_exhausted": false,
+                "selected_id": "a",
+                "source_sha256": "8235fbc9e2ac731e93b2a18a11d5dc896baaf3157403e8cc476e9ae76f1d0ee8",
+                "strategy_sha256": "68d3ae5e1fbb5c404ba9450970812ba89c1061fbf347845c894c0b9b31729a95",
+                "utility_calibrated": false,
+                "verified": false
+              }
+            },
+            {
+              "kind": "hypothesis_selection",
+              "source": "jev-r",
+              "payload": {
+                "cycle": 2,
+                "format_version": 1,
+                "permissions_granted": false,
+                "policy": "canonical-alternatives/v1",
+                "portfolio_exhausted": false,
+                "selected_id": "b",
+                "source_sha256": "8235fbc9e2ac731e93b2a18a11d5dc896baaf3157403e8cc476e9ae76f1d0ee8",
+                "strategy_sha256": "a4f1d4f0d204f2d46a54cb8af2b5e88a5218768bf2baa13b825f0eb6d7ea1046",
+                "utility_calibrated": false,
+                "verified": false
+              }
+            }
+          ]
+        },
+        {
+          "task_id": "a1354e5f-dbcb-45c3-b37d-1341cb91eae1",
+          "events": []
+        },
+        {
+          "task_id": "66748e82-ef1b-4c81-a1b9-7ed634b3ad1a",
+          "events": []
+        },
+        {
+          "task_id": "a60cbfd8-fa7c-414c-aaaf-430f14e52985",
+          "events": [
+            {
+              "kind": "exploration_portfolio",
+              "source": "jev-r",
+              "payload": {
+                "alternative_ids": [
+                  "a",
+                  "b"
+                ],
+                "format_version": 1,
+                "permissions_granted": false,
+                "policy": "canonical-alternatives/v1",
+                "source_sha256": "7476bc7932e72c360ae7d783471e3a1994c2b9657543e77c28fb7502d28eaecd",
+                "utility_calibrated": false,
+                "verified": false
+              }
+            },
+            {
+              "kind": "hypothesis_selection",
+              "source": "jev-r",
+              "payload": {
+                "cycle": 1,
+                "format_version": 1,
+                "permissions_granted": false,
+                "policy": "canonical-alternatives/v1",
+                "portfolio_exhausted": false,
+                "selected_id": "a",
+                "source_sha256": "7476bc7932e72c360ae7d783471e3a1994c2b9657543e77c28fb7502d28eaecd",
+                "strategy_sha256": "1dcbb514152172a220023328102573cd5ffbc731a55dd450d565024c45c98154",
+                "utility_calibrated": false,
+                "verified": false
+              }
+            }
+          ]
+        },
+        {
+          "task_id": "e1dff389-ad9f-418a-a836-493dabc7a3cd",
+          "events": [
+            {
+              "kind": "exploration_portfolio",
+              "source": "jev-r",
+              "payload": {
+                "alternative_ids": [
+                  "a",
+                  "b"
+                ],
+                "format_version": 1,
+                "permissions_granted": false,
+                "policy": "canonical-alternatives/v1",
+                "source_sha256": "7476bc7932e72c360ae7d783471e3a1994c2b9657543e77c28fb7502d28eaecd",
+                "utility_calibrated": false,
+                "verified": false
+              }
+            },
+            {
+              "kind": "hypothesis_selection",
+              "source": "jev-r",
+              "payload": {
+                "cycle": 1,
+                "format_version": 1,
+                "permissions_granted": false,
+                "policy": "canonical-alternatives/v1",
+                "portfolio_exhausted": false,
+                "selected_id": "a",
+                "source_sha256": "7476bc7932e72c360ae7d783471e3a1994c2b9657543e77c28fb7502d28eaecd",
+                "strategy_sha256": "1dcbb514152172a220023328102573cd5ffbc731a55dd450d565024c45c98154",
+                "utility_calibrated": false,
+                "verified": false
+              }
+            }
+          ]
+        },
+        {
+          "task_id": "47956975-e206-4bad-8e73-0b1c8cfcfe66",
+          "events": [
+            {
+              "kind": "exploration_portfolio",
+              "source": "jev-r",
+              "payload": {
+                "alternative_ids": [
+                  "a",
+                  "b"
+                ],
+                "format_version": 1,
+                "permissions_granted": false,
+                "policy": "canonical-alternatives/v1",
+                "source_sha256": "7476bc7932e72c360ae7d783471e3a1994c2b9657543e77c28fb7502d28eaecd",
+                "utility_calibrated": false,
+                "verified": false
+              }
+            },
+            {
+              "kind": "hypothesis_selection",
+              "source": "jev-r",
+              "payload": {
+                "cycle": 1,
+                "format_version": 1,
+                "permissions_granted": false,
+                "policy": "canonical-alternatives/v1",
+                "portfolio_exhausted": false,
+                "selected_id": "a",
+                "source_sha256": "7476bc7932e72c360ae7d783471e3a1994c2b9657543e77c28fb7502d28eaecd",
+                "strategy_sha256": "1dcbb514152172a220023328102573cd5ffbc731a55dd450d565024c45c98154",
+                "utility_calibrated": false,
+                "verified": false
+              }
+            }
+          ]
+        },
+        {
+          "task_id": "e2ff9dcc-c9aa-4175-b740-2c2d740f4119",
+          "events": []
+        },
+        {
+          "task_id": "a9627cf8-aede-42d7-8202-253acb636343",
+          "events": []
+        },
+        {
+          "task_id": "154ac67b-fa0f-40c5-af7a-afd619a9bad2",
+          "events": [
+            {
+              "kind": "exploration_portfolio",
+              "source": "jev-r",
+              "payload": {
+                "alternative_ids": [
+                  "a",
+                  "b"
+                ],
+                "format_version": 1,
+                "permissions_granted": false,
+                "policy": "canonical-alternatives/v1",
+                "source_sha256": "a90f6efc3c6c7bbe1702cbe299face28acd125705abe1dc3d48c430e6ea49486",
+                "utility_calibrated": false,
+                "verified": false
+              }
+            },
+            {
+              "kind": "hypothesis_selection",
+              "source": "jev-r",
+              "payload": {
+                "cycle": 1,
+                "format_version": 1,
+                "permissions_granted": false,
+                "policy": "canonical-alternatives/v1",
+                "portfolio_exhausted": false,
+                "selected_id": "a",
+                "source_sha256": "a90f6efc3c6c7bbe1702cbe299face28acd125705abe1dc3d48c430e6ea49486",
+                "strategy_sha256": "2c12e4186c2ac7269691f8ffbf0297e120ca5db2543d81f9734f07eb4c18660b",
+                "utility_calibrated": false,
+                "verified": false
+              }
+            }
+          ]
+        },
+        {
+          "task_id": "593cb600-2620-48b7-8f1b-506d8422ad82",
+          "events": [
+            {
+              "kind": "exploration_portfolio",
+              "source": "jev-r",
+              "payload": {
+                "alternative_ids": [
+                  "a",
+                  "b"
+                ],
+                "format_version": 1,
+                "permissions_granted": false,
+                "policy": "canonical-alternatives/v1",
+                "source_sha256": "a90f6efc3c6c7bbe1702cbe299face28acd125705abe1dc3d48c430e6ea49486",
+                "utility_calibrated": false,
+                "verified": false
+              }
+            },
+            {
+              "kind": "hypothesis_selection",
+              "source": "jev-r",
+              "payload": {
+                "cycle": 1,
+                "format_version": 1,
+                "permissions_granted": false,
+                "policy": "canonical-alternatives/v1",
+                "portfolio_exhausted": false,
+                "selected_id": "a",
+                "source_sha256": "a90f6efc3c6c7bbe1702cbe299face28acd125705abe1dc3d48c430e6ea49486",
+                "strategy_sha256": "2c12e4186c2ac7269691f8ffbf0297e120ca5db2543d81f9734f07eb4c18660b",
+                "utility_calibrated": false,
+                "verified": false
+              }
+            }
+          ]
+        },
+        {
+          "task_id": "05659640-89d5-4c77-9dba-2066849c286e",
+          "events": [
+            {
+              "kind": "exploration_portfolio",
+              "source": "jev-r",
+              "payload": {
+                "alternative_ids": [
+                  "a",
+                  "b"
+                ],
+                "format_version": 1,
+                "permissions_granted": false,
+                "policy": "canonical-alternatives/v1",
+                "source_sha256": "a90f6efc3c6c7bbe1702cbe299face28acd125705abe1dc3d48c430e6ea49486",
+                "utility_calibrated": false,
+                "verified": false
+              }
+            },
+            {
+              "kind": "hypothesis_selection",
+              "source": "jev-r",
+              "payload": {
+                "cycle": 1,
+                "format_version": 1,
+                "permissions_granted": false,
+                "policy": "canonical-alternatives/v1",
+                "portfolio_exhausted": false,
+                "selected_id": "a",
+                "source_sha256": "a90f6efc3c6c7bbe1702cbe299face28acd125705abe1dc3d48c430e6ea49486",
+                "strategy_sha256": "2c12e4186c2ac7269691f8ffbf0297e120ca5db2543d81f9734f07eb4c18660b",
+                "utility_calibrated": false,
+                "verified": false
+              }
+            }
+          ]
+        },
+        {
+          "task_id": "e2ae4a45-c080-490c-974c-0c6379641285",
+          "events": []
+        },
+        {
+          "task_id": "a3bf1c72-c812-4e93-a285-7e53d4b06c6d",
+          "events": []
+        },
+        {
+          "task_id": "7b0f507a-a099-4edb-9d50-3ee2c7c8f830",
+          "events": []
+        }
+      ]
+    },
+    {
+      "tag": "diagnostics",
+      "date": "2026-10-21",
+      "report_file": "qwen3-8b-portfolio-diagnostics.json",
+      "report_sha256": "c7541196e3568cb6452c555c87b0b6864b62a112c841324d6c22ac5f758a2122",
+      "runtime_source_revision": "b20d736e9b9a1564ae50758a5eb4560549b23765",
+      "runtime_binary_sha256": "d866c785ebb83355b290d87829d9b7c3380a665d5b7aa798d59f812d3215ef97",
+      "elapsed_ms": 312047.173375,
+      "complete": true,
+      "stop_reason": "completed",
+      "executed_tasks": 24,
+      "provider_settings": {
+        "preexisting_loaded": false,
+        "context_tokens": 4096,
+        "parallel_predictions": 1,
+        "requested_gpu_offload_ratio": 0.35,
+        "idle_ttl_seconds": 600,
+        "reported_load_seconds": 7.99,
+        "operator_cli_loaded": true,
+        "framework_owned_residency": false,
+        "initial_server_on": false,
+        "final_server_on": false,
+        "initial_models_loaded": 0,
+        "final_models_loaded": 0
+      },
+      "arms": [
+        {
+          "profile": "alone",
+          "executed": 4,
+          "passed": 3,
+          "model_calls": 4,
+          "tool_calls": 0,
+          "latency_ms": 14135.493261,
+          "planning_advice": {
+            "fallback_events": 0,
+            "inference_timeout_fallbacks": 0,
+            "phases_started": 0,
+            "unclassified_fallbacks": 0
+          },
+          "exploration_advice": {
+            "fallback_events": 0,
+            "inference_timeout_fallbacks": 0,
+            "phases_started": 0,
+            "unclassified_fallbacks": 0
+          },
+          "hypothesis_diagnostics": {
+            "accepted_portfolio_events": 0,
+            "exhausted_selection_events": 0,
+            "invalid_portfolio_events": 0,
+            "legacy_advice_events": 0,
+            "selected_hypothesis_events": 0,
+            "unclassified_events": 0
+          }
+        },
+        {
+          "profile": "tools",
+          "executed": 4,
+          "passed": 4,
+          "model_calls": 5,
+          "tool_calls": 5,
+          "latency_ms": 17773.690317,
+          "planning_advice": {
+            "fallback_events": 0,
+            "inference_timeout_fallbacks": 0,
+            "phases_started": 0,
+            "unclassified_fallbacks": 0
+          },
+          "exploration_advice": {
+            "fallback_events": 0,
+            "inference_timeout_fallbacks": 0,
+            "phases_started": 0,
+            "unclassified_fallbacks": 0
+          },
+          "hypothesis_diagnostics": {
+            "accepted_portfolio_events": 0,
+            "exhausted_selection_events": 0,
+            "invalid_portfolio_events": 0,
+            "legacy_advice_events": 0,
+            "selected_hypothesis_events": 0,
+            "unclassified_events": 0
+          }
+        },
+        {
+          "profile": "recursive",
+          "executed": 4,
+          "passed": 4,
+          "model_calls": 5,
+          "tool_calls": 5,
+          "latency_ms": 19500.875686,
+          "planning_advice": {
+            "fallback_events": 0,
+            "inference_timeout_fallbacks": 0,
+            "phases_started": 0,
+            "unclassified_fallbacks": 0
+          },
+          "exploration_advice": {
+            "fallback_events": 0,
+            "inference_timeout_fallbacks": 0,
+            "phases_started": 0,
+            "unclassified_fallbacks": 0
+          },
+          "hypothesis_diagnostics": {
+            "accepted_portfolio_events": 0,
+            "exhausted_selection_events": 0,
+            "invalid_portfolio_events": 0,
+            "legacy_advice_events": 0,
+            "selected_hypothesis_events": 0,
+            "unclassified_events": 0
+          }
+        },
+        {
+          "profile": "collective",
+          "executed": 4,
+          "passed": 4,
+          "model_calls": 13,
+          "tool_calls": 5,
+          "latency_ms": 88251.858486,
+          "planning_advice": {
+            "fallback_events": 4,
+            "inference_timeout_fallbacks": 4,
+            "phases_started": 4,
+            "unclassified_fallbacks": 0
+          },
+          "exploration_advice": {
+            "fallback_events": 4,
+            "inference_timeout_fallbacks": 4,
+            "phases_started": 4,
+            "unclassified_fallbacks": 0
+          },
+          "hypothesis_diagnostics": {
+            "accepted_portfolio_events": 0,
+            "exhausted_selection_events": 0,
+            "invalid_portfolio_events": 0,
+            "legacy_advice_events": 0,
+            "selected_hypothesis_events": 0,
+            "unclassified_events": 0
+          }
+        },
+        {
+          "profile": "memory",
+          "executed": 4,
+          "passed": 4,
+          "model_calls": 13,
+          "tool_calls": 9,
+          "latency_ms": 85351.439856,
+          "planning_advice": {
+            "fallback_events": 4,
+            "inference_timeout_fallbacks": 4,
+            "phases_started": 4,
+            "unclassified_fallbacks": 0
+          },
+          "exploration_advice": {
+            "fallback_events": 4,
+            "inference_timeout_fallbacks": 4,
+            "phases_started": 4,
+            "unclassified_fallbacks": 0
+          },
+          "hypothesis_diagnostics": {
+            "accepted_portfolio_events": 0,
+            "exhausted_selection_events": 0,
+            "invalid_portfolio_events": 0,
+            "legacy_advice_events": 0,
+            "selected_hypothesis_events": 0,
+            "unclassified_events": 0
+          }
+        },
+        {
+          "profile": "experts",
+          "executed": 4,
+          "passed": 4,
+          "model_calls": 13,
+          "tool_calls": 9,
+          "latency_ms": 86993.284935,
+          "planning_advice": {
+            "fallback_events": 4,
+            "inference_timeout_fallbacks": 4,
+            "phases_started": 4,
+            "unclassified_fallbacks": 0
+          },
+          "exploration_advice": {
+            "fallback_events": 4,
+            "inference_timeout_fallbacks": 4,
+            "phases_started": 4,
+            "unclassified_fallbacks": 0
+          },
+          "hypothesis_diagnostics": {
+            "accepted_portfolio_events": 0,
+            "exhausted_selection_events": 0,
+            "invalid_portfolio_events": 0,
+            "legacy_advice_events": 0,
+            "selected_hypothesis_events": 0,
+            "unclassified_events": 0
+          }
+        }
+      ],
+      "hypothesis_audits": [
+        {
+          "task_id": "be5397cf-4551-4134-b7fc-93d74d8a2d8a",
+          "events": []
+        },
+        {
+          "task_id": "eaf4eb62-7bbc-4c40-bbdc-18b29fe64231",
+          "events": []
+        },
+        {
+          "task_id": "dc1bf91c-876f-4dcb-b4a8-f542900bda64",
+          "events": []
+        },
+        {
+          "task_id": "1b44e073-c872-4cf0-aeaf-189531c909c7",
+          "events": []
+        },
+        {
+          "task_id": "0be10e7f-efe4-42f2-a0e2-2b5b7c9407fe",
+          "events": []
+        },
+        {
+          "task_id": "f8d5943f-8d84-4d4e-9c0f-9b5c50e2bdc8",
+          "events": []
+        },
+        {
+          "task_id": "3ff9a5e7-0585-46d7-a281-a3648d7818da",
+          "events": []
+        },
+        {
+          "task_id": "3bb81e1b-7075-4c1d-9432-e54cbf891d6c",
+          "events": []
+        },
+        {
+          "task_id": "76eaf60d-eda4-44de-962b-8adde431ca26",
+          "events": []
+        },
+        {
+          "task_id": "43378e5b-95fa-4778-8f88-30b1c597482c",
+          "events": []
+        },
+        {
+          "task_id": "d9410119-f24a-4201-89d9-d06b7403c880",
+          "events": []
+        },
+        {
+          "task_id": "cd1ebe65-e5ea-40ce-bdda-96f5f97bea31",
+          "events": []
+        },
+        {
+          "task_id": "672833f7-edb4-401d-9a7c-6fd36dae2b73",
+          "events": []
+        },
+        {
+          "task_id": "fbfe6fad-af33-4614-beed-8fb7fc94c2cb",
+          "events": []
+        },
+        {
+          "task_id": "8e140b00-f269-478c-97f1-9efa1febb760",
+          "events": []
+        },
+        {
+          "task_id": "7dba47f0-993c-4b94-b80d-9809d909c408",
+          "events": []
+        },
+        {
+          "task_id": "822b96cc-7915-4195-bc07-be4bc5aa09be",
+          "events": []
+        },
+        {
+          "task_id": "b8605e13-4f5a-49e5-9257-f8146caa3efd",
+          "events": []
+        },
+        {
+          "task_id": "2db9f7a8-80a5-4961-83d6-9c15f0d10d8c",
+          "events": []
+        },
+        {
+          "task_id": "4a856722-15bf-4270-a75f-776bcf801f1d",
+          "events": []
+        },
+        {
+          "task_id": "763ac61c-5b9b-457d-8bb4-ff933e98b1e4",
+          "events": []
+        },
+        {
+          "task_id": "fdd03f5e-0406-44a9-87a2-a6af196e3b08",
+          "events": []
+        },
+        {
+          "task_id": "eabe86d9-65f5-4a8c-8b59-6dff50886403",
+          "events": []
+        },
+        {
+          "task_id": "a2901e90-8fab-46e1-97c0-ed4e0f972dee",
+          "events": []
+        }
+      ],
+      "runtime_sources_sha256": "2b1d22881bb415f3b76193252135c008a3eca0af6c77e06ad08b88f3e8e1a3b8",
+      "compiled_role_prompts_sha256": "7d6f0ee781c8dc9d2d05c834e2c9e3d5850d0395403f8aecc9ae26f48f69bf4c"
+    }
+  ],
+  "limitations": [
+    "Four selected existing public graph cases, authored alongside the framework; no unseen or independently curated set.",
+    "Both runs and all outcomes retained; neither is a statistical or causal performance study.",
+    "Provider loading/offload/parallelism/cache/host conditions differ between runs; latencies are not a software before/after comparison.",
+    "Within each run, profiles share operator ceilings, not forced identical actual costs.",
+    "Semantic document memory is empty; experts use the existing public BFS advice workflow, not newly trained weights.",
+    "Audit selection events do not prove unique executed hypotheses or useful strategies.",
+    "No GPU-attributed timing/energy, physical memory enforcement or immutable weight attestation.",
+    "The diagnostics run records 12 planning and 12 exploration typed timeout fallbacks; it does not demonstrate accepted portfolio execution."
+  ]
+}

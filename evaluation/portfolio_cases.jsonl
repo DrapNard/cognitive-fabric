@@ -1,0 +1,4 @@
+{"input":"path:{\"nodes\":[\"a\",\"b\",\"c\"],\"edges\":[[\"a\",\"b\"],[\"b\",\"c\"],[\"a\",\"c\"]],\"start\":\"a\",\"goal\":\"c\"}","verification":"shortest_path_v1"}
+{"input":"path:{\"nodes\":[\"a\",\"b\",\"c\",\"d\"],\"edges\":[[\"a\",\"b\"],[\"b\",\"c\"],[\"c\",\"a\"],[\"c\",\"d\"]],\"start\":\"a\",\"goal\":\"d\"}","verification":"shortest_path_v1"}
+{"input":"path:{\"nodes\":[\"s\",\"a\",\"b\",\"c\",\"g\"],\"edges\":[[\"s\",\"a\"],[\"a\",\"b\"],[\"b\",\"c\"],[\"c\",\"g\"],[\"s\",\"c\"]],\"start\":\"s\",\"goal\":\"g\"}","verification":"shortest_path_v1"}
+{"input":"path:{\"nodes\":[\"s\",\"a\",\"b\",\"c\",\"d\",\"g\"],\"edges\":[[\"s\",\"a\"],[\"s\",\"b\"],[\"a\",\"c\"],[\"b\",\"c\"],[\"c\",\"d\"],[\"d\",\"g\"]],\"start\":\"s\",\"goal\":\"g\"}","verification":"shortest_path_v1"}

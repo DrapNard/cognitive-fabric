@@ -110,3 +110,59 @@ Nomic embedding load/unload completed and the existing Qwen instance/context wer
 preserved. Generation, generative switching, ownership and weight attestation are
 explicitly untested. Report SHA-256:
 `c69857287d9e95207ca6f2eeb7e6d86d75504aa8458815580a65a96742175f26`.
+
+## Strategy portfolio public diagnostics — October 20–21, 2026
+
+Two complete 24-task runs retain all outcomes on the same four existing graph
+cases, copied without label changes into `../portfolio_cases.jsonl` (parent lines
+1, 6, 12 and 16). Each run uses six profiles, Qwen3 8B, RESEARCH mode, common
+10-call/4-cycle/3,000-output/8-tool ceilings, 30-second task and 20-second request
+limits. Interpretation is disabled, temperature zero and reasoning effort none.
+Experts use the existing public BFS advisory workflow; semantic document memory
+is empty. These are selected public integration cases, not unseen/held-out data.
+
+Raw reports: [portfolio source](qwen3-8b-portfolio-pre-diagnostics.json) at
+`5041478`, and [diagnostic reporting source](qwen3-8b-portfolio-diagnostics.json)
+at `b20d736`. The [hashed summary](qwen3-8b-portfolio-public-summary.json) records
+source/binary/dataset/report identities, provider settings, arm totals and
+content-minimized task-scoped portfolio/selection audits.
+
+| Profile | October 20 solved | Calls | Task latency (s) | October 21 solved | Calls | Task latency (s) |
+|---|---:|---:|---:|---:|---:|---:|
+| Alone | 4/4 | 4 | 1.39 | 3/4 | 4 | 14.14 |
+| Tools | 4/4 | 5 | 1.59 | 4/4 | 5 | 17.77 |
+| Recursive | 4/4 | 4 | 1.32 | 4/4 | 5 | 19.50 |
+| Collective | 4/4 | 20 | 15.84 | 4/4 | 13 | 88.25 |
+| Memory | 4/4 | 21 | 14.91 | 4/4 | 13 | 85.35 |
+| Experts | 4/4 | 21 | 15.82 | 4/4 | 13 | 86.99 |
+
+The first run completed in 50.92 seconds and observed 12 accepted portfolios and
+14 selection events, including second-hypothesis use. The second completed in
+312.05 seconds with 12 typed planning timeouts and 12 typed exploration timeouts.
+It recorded zero accepted/selected portfolio events; original-budget fallback
+solving completed all collective tasks. A phase attempt is not successful
+portfolio execution. Unknown provider token usage after timeout stays unavailable.
+
+The first run used an already loaded model with 4,096 context and four parallel
+predictions; its offload configuration is unknown. Before the second run, the
+server was off with no loaded model. The operator CLI temporarily started a
+localhost-only server and loaded existing weights with context 4,096, one parallel
+prediction, requested offload 0.35 and a 600-second idle TTL (7.99 seconds reported
+load, outside comparison task latency). The model was then unloaded and the server
+stopped, confirmed by status/inventory. This is manual validation setup, not proof
+of framework-owned residency or physical GPU accounting. No weights were downloaded.
+
+**Do not interpret the two runs as a software speedup/regression experiment.**
+Provider loading/offload/parallelism/cache and host conditions differ. Neither
+run proves a general reasoning advantage; the cheaper tools/recursive profiles
+matched collective accuracy on the second run. There is no larger baseline,
+independent human review, weight attestation or attributed energy/VRAM measurement.
+The next useful engineering target is cost-aware optional-stage admission that
+avoids repeatedly buying planning/exploration phases that time out.
+
+`portfolio_public_runs_match_independent_scores_hashes_and_diagnostic_audits`
+in `tests/shortest_path_corpus.rs` checks all 48 scores by exhaustive simple-path
+enumeration separately from runtime BFS. It pins the subset/report hashes,
+reconciles charged calls, task latency and per-arm diagnostic sums, and compares
+new counters with the exported public audit observations. This protects evidence
+consistency, not independent dataset curation or neural safety.
