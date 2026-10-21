@@ -56,13 +56,33 @@ stops execution. The separate original-criterion verification event is the
 success authority for witnesses. Search introduces no protocol change, SQLite
 migration, model loading or active-weight mutation.
 
-Continuation and saved-result recovery for finite-domain tasks with this option
-enabled are currently refused: pre-model search receipts and incomplete traversal state do not yet have
-a validated recovery format. Recovery must not replay search, refund its charge
-or infer traversal completion from model text. Default-off continuation remains
-supported. The progress-policy ablation refuses enabled finite search so it
-cannot silently compare two arms that bypass the policy under study. General
-checkpoint recovery is a subsequent engineering milestone.
+### Continuation after an incomplete search
+
+Ready solver and supported advisory-graph checkpoints may continue after a
+recorded `limit_reached` search. Admission strictly validates the original
+configuration, objective hash and first reasoning context, one authorized search
+reservation and its ordered receipt. The receipt must record exactly the original
+node ceiling, no verification/permission authority, and exhaustion of that ceiling.
+It must precede the following reasoning work and the checkpoint being restored.
+Missing, duplicate, oversized, malformed, altered or out-of-order records refuse
+continuation before new inference or budget changes.
+
+Preview and continuation audits expose `finite_search_history`: bounded receipt
+identities and original charges, without query or answer bodies. The resumed
+session retains original tool/call/token/cycle charges, model/context pins and
+deadline. It continues the saved reasoning strategy and never reruns search.
+Revalidating or continuing again does not create another search allowance.
+
+A search reservation without a complete receipt, completed witness/contradiction,
+deadline interruption, or a budget-skipped search remains unsupported for this
+continuation path. Saved-result reconciliation is still refused for search-enabled
+finite tasks. No incomplete traversal is reconstructed, rerun or refunded. These
+owner-local consistency checks do not authenticate against a malicious database
+owner or establish provider termination.
+
+The progress-policy ablation refuses enabled finite search so it cannot silently
+compare two arms that bypass the policy under study. Broader search-phase recovery
+and independent utility evaluation remain subsequent milestones.
 
 ## Evidence and limits
 
@@ -79,3 +99,19 @@ targets (none ignored), and Clippy with warnings denied. The public-corpus runti
 regression finds 14 checked witnesses and proves three contradictions with no
 model calls. This fixed authored corpus establishes functional behavior only; it
 is not a live-model speed comparison or independently curated held-out study.
+
+### Recovery verification
+
+Eight validator unit tests cover exact receipt matching, reserved verifier budget,
+configuration mismatch, disabled/unsupported histories, strict JSON and event/byte
+ceilings. Three integration tests use the public continuation API: repeated ready
+solver recovery with original pins, a partially executed advisory graph over
+loopback HTTP, and 18 independent tampering cases. Invalid admission leaves the
+task trace unchanged. Successful continuation retains one original search receipt
+and reservation and charges only new inference/verification work. These tests use
+a scripted provider; they do not establish real-model efficiency or GPU behavior.
+
+Final recovery workspace verification: formatting, all-target build, **774 passing
+tests across 44 targets** (none ignored), and Clippy with warnings denied. The
+compiled protocol pair/integrity checks pass; no schema or generated binding was
+changed, and unavailable `flatc` prevented fresh generation.

@@ -36,6 +36,7 @@ struct Checkpoint {
     state: RestoredState,
     admission: Value,
     resource_history: Value,
+    finite_search_history: Option<super::finite_search::Receipt>,
 }
 
 fn prepare(db: &rusqlite::Connection, task: &str) -> Result<Checkpoint> {
@@ -198,14 +199,6 @@ fn prepare_with_policy(
     }
     let cfg: Config = serde_json::from_value(settings["configuration"].clone())?;
     cfg.validate()?;
-    let search_charged: bool = db.query_row(
-        "SELECT EXISTS(SELECT 1 FROM events WHERE task_id=?1 AND kind='tool_reservation' AND json_extract(payload,'$.capability')='constraints.solve')",
-        [task],
-        |row| row.get(0),
-    )?;
-    if search_charged || (cfg.finite_search.is_some() && query.starts_with("csp:")) {
-        bail!("Finite-domain search tasks cannot be continued until search-phase recovery validates its durable receipt")
-    }
 
     if let Some(selection) = &cfg.model_registration {
         let registered = crate::models::registered_from(db, selection)?
@@ -332,6 +325,13 @@ fn prepare_with_policy(
         }
         Ok(v)
     }).transpose()?;
+    let original_context_id: i64 = db.query_row(
+        "SELECT min(id) FROM events WHERE task_id=?1 AND kind='reasoning_context'",
+        [task],
+        |row| row.get(0),
+    )?;
+    let finite_search_history =
+        super::finite_search::validate(db, task, &query, &cfg, original_context_id, boundary_id)?;
     let progress = progress_history::validate_before(
         db,
         task,
@@ -443,6 +443,7 @@ fn prepare_with_policy(
     };
     let resource_history = resource_history::validate(db, task, &cfg)?;
     Ok(Checkpoint {
+        finite_search_history,
         resource_history,
         admission: admission.clone(),
         cfg,
@@ -715,6 +716,7 @@ fn preview_with_handle(
             "escalation_policy":escalator.descriptor(),"policy_implementation_attested":false,
             "managed_worker":checkpoint.cfg.inference_process,
             "resource_history":checkpoint.resource_history,
+            "finite_search_history":checkpoint.finite_search_history,
             "remaining_admission":checkpoint.admission,
             "consumed":{"calls":checkpoint.state.resources.calls,
                 "cycles":checkpoint.state.resources.cycles,
@@ -854,7 +856,7 @@ async fn resume_with_handle(
                 "UPDATE tasks SET status='running',updated=unixepoch() WHERE id=?1",
                 [task],
             )?;
-            tx.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'continuation','human-cli',?2,unixepoch())",rusqlite::params![task,json!({"state":"started","format_version":1,"original_budget_preserved":true,"prior_timing_complete":false,"subtask_results_verified":false,"escalation_policy":escalator.descriptor(),"restored_resource_pool":restored_pool,"resource_history":checkpoint.resource_history}).to_string()])?;
+            tx.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'continuation','human-cli',?2,unixepoch())",rusqlite::params![task,json!({"state":"started","format_version":1,"original_budget_preserved":true,"prior_timing_complete":false,"subtask_results_verified":false,"escalation_policy":escalator.descriptor(),"restored_resource_pool":restored_pool,"resource_history":checkpoint.resource_history,"finite_search_history":checkpoint.finite_search_history}).to_string()])?;
             if started.elapsed() > Duration::from_secs(5) {
                 bail!("Continuation admission deadline exhausted")
             }
@@ -966,6 +968,7 @@ async fn resume_with_handle(
         "verified":session.verified,"criterion":session.verified_criterion,
         "verification_attempted":session.verification_attempted,"stop_reason":session.stop_reason,
         "restored_resource_pool":restored_pool,"resource_history":checkpoint.resource_history,
+        "finite_search_history":checkpoint.finite_search_history,
         "new_calls":session.resources.calls-prior_calls,"charged_resources":session.resources,
         "timing_scope":"continuation_only","prior_timing_complete":false,"subtask_results_verified":false,"automatic_replay":false});
     let mut db = store.lock()?;

@@ -927,3 +927,15 @@ audit failure prevents subsequent dispatch. Enabled saved finite-domain tasks ca
 until traversal receipts have a validated recovery format. No external solver,
 generated code, new network access, active-weight change or neural promotion is
 introduced. See [bounded search](FINITE_SEARCH.md).
+
+### Restoring completed search-limit receipts
+
+Continuation may inspect a bounded strict original search authorization/charge/
+receipt chain for a `limit_reached` result only. Metadata must match the original
+finite objective/configuration, unique charge, exhausted cap and event chronology
+before the checkpoint. Receipt flags cannot confer verification or permissions.
+The resumed Rust session uses a saved strategy and retained accounting; no search
+code is replayed and no prior charge is refunded. Audit/admission failure prevents
+new dispatch. Enabled-but-skipped, incomplete and terminal search phases remain
+refused, as does saved-result reconciliation. This is local consistency checking
+under cooperative ownership, not a signature or proof against same-owner edits.

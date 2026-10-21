@@ -1,5 +1,49 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+### Continue model reasoning after a recorded search limit — 2026-10-21
+
+**Implemented (validated limit-receipt continuation); Partial (general search recovery).**
+Architecture sections 5, 7, 9 and 10 require persistent reasoning progress under
+original budgets and independent permission checks. `src/recovery/finite_search.rs`
+strictly validates a bounded original-context → policy → search reservation →
+`limit_reached` receipt chain before restoring an existing reasoning checkpoint.
+The exact objective hash, configured node ceiling, exhausted node count, event
+sources/order, unique charge and non-authority flags must agree. Search history
+cannot appear in a configuration/objective that did not enable it.
+
+Supported ready solver/advisory-graph continuation retains all original tool,
+call, cycle, token and prompt charges, context/model pins and deadline. It resumes
+the saved strategy and never traverses the search tree again. Preview and durable
+continuation reports expose bounded `finite_search_history` metadata. Repeated
+admission revalidates the same receipt; it cannot create a new search budget.
+Missing, duplicate, altered, oversized, post-boundary or incomplete search history
+fails before new dispatch. No external solver, permission, migration, protocol or
+neural promotion is added.
+
+Search-phase crashes, terminal search witnesses/contradictions/deadlines,
+budget-skipped searches and saved-result reconciliation remain unsupported.
+Metadata consistency does not authenticate a malicious owner or prove physical
+provider stopping. Jev+ and Jev-R remain Partial. Sources also include continuation
+admission/reporting and `tests/finite_search_resume.rs`; see [search recovery](FINITE_SEARCH.md#continuation-after-an-incomplete-search).
+The next search milestone is receipt-bound saved-result reconciliation and broader
+phase recovery, followed by independently curated budget-matched quality studies.
+
+Verification: `cargo fmt --all -- --check`,
+`cargo check --locked --workspace --all-targets`,
+`cargo test --locked --workspace --all-targets` (**774 passed across 44 targets**,
+none ignored), and `cargo clippy --locked --workspace --all-targets -- -D warnings`
+pass on frozen sources. Eight helper unit tests validate receipt/cap/permission
+shape, preserved verifier reserve, unknown/duplicate JSON and bounded histories.
+Three integration tests exercise repeated actual HTTP solver continuation,
+partially executed graph continuation, original model/configuration pins and 18
+independent tampering cases with no admission writes. The focused helper and HTTP
+suites also pass. Existing socket, database migration, mock inference, malformed
+frame, permission denial, cancellation, continuation and candidate rollback checks
+remain green. Exact bundled FlatBuffers generator/runtime pairing and integrity
+checks pass; `flatc` is unavailable and fresh generation was not run. No real-model,
+GPU performance or provider-stop measurement was made for this change.
+
+
 ### Search explicit finite-domain tasks under independent limits — 2026-10-21
 
 **Implemented (opt-in bounded deterministic search); Partial (general solving and recovery).**

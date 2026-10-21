@@ -836,3 +836,19 @@ charge and cannot replay the solver or bypass the same stopping rule. Legacy
 configurations without the option retain their existing format and recurrence
 guard. This remains supported-boundary continuation, not arbitrary in-flight
 recovery or provider-stop evidence.
+
+## Finite search followed by model reasoning
+
+A completed bounded search with `limit_reached` can precede supported ready solver
+or advisory graph continuation. A bounded strict validator checks its original
+context, objective/configuration, ordered policy decision, unique tool reservation
+and exact receipt before admission. A search receipt grants no success or new
+permission. Preview/start/final reports include `finite_search_history`; all
+original budgets and deadline remain authoritative. Continuation skips search
+and resumes only recorded model work.
+
+Incomplete search reservations, altered/missing/duplicate receipts, terminal
+witness/contradiction/deadline results and budget-skipped searches are refused.
+Saved-result reconciliation remains unsupported for search-enabled CSPs. No search
+is replayed or refunded, and local hashes do not authenticate a hostile owner.
+See [finite search](FINITE_SEARCH.md#continuation-after-an-incomplete-search).
