@@ -414,6 +414,28 @@ enum Command {
         #[arg(long, default_value = "1800")]
         max_run_seconds: u64,
     },
+    /// Compare optional finite-domain stopping against the same collective without it.
+    CompareProgress {
+        file: PathBuf,
+        #[arg(long, default_value = "research")]
+        mode: String,
+        #[arg(long, default_value_t = 2)]
+        plateau_cycles: u32,
+        #[arg(long)]
+        source: String,
+        #[arg(long)]
+        license: String,
+        #[arg(long)]
+        code_revision: String,
+        #[arg(long)]
+        dataset_sha256: Option<String>,
+        #[arg(long, conflicts_with = "workflow_check")]
+        held_out: bool,
+        #[arg(long, conflicts_with = "held_out")]
+        workflow_check: bool,
+        #[arg(long, default_value_t = 1800)]
+        max_run_seconds: u64,
+    },
     Candidate {
         #[command(subcommand)]
         action: CandidateAction,
@@ -1274,6 +1296,44 @@ async fn main() -> Result<()> {
             if report["complete"] != true {
                 output(&report, cli.json)?;
                 bail!("Comparison interrupted before all arms completed")
+            }
+            report
+        }
+        Command::CompareProgress {
+            file,
+            mode,
+            plateau_cycles,
+            source,
+            license,
+            code_revision,
+            dataset_sha256,
+            held_out,
+            workflow_check,
+            max_run_seconds,
+        } => {
+            let report = cogfabric::benchmarking::compare_progress_until(
+                &cfg,
+                store.clone(),
+                &file,
+                &mode,
+                cogfabric::reasoning::progress::Settings { plateau_cycles },
+                &cogfabric::benchmarking::Review {
+                    source,
+                    license,
+                    code_revision,
+                    expected_dataset_sha256: dataset_sha256,
+                    held_out,
+                    workflow_check,
+                    max_run_seconds,
+                },
+                async {
+                    let _ = tokio::signal::ctrl_c().await;
+                },
+            )
+            .await?;
+            if report["complete"] != true {
+                output(&report, cli.json)?;
+                bail!("Progress comparison interrupted before all arms completed")
             }
             report
         }

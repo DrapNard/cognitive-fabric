@@ -901,3 +901,14 @@ leases, deadlines and charges. Models cannot change the threshold or reset histo
 This search heuristic can stop potentially useful future work; it establishes
 neither impossibility, general reasoning quality nor external provider stopping.
 No new capability, generated execution or neural promotion is introduced.
+
+### Explicit progress-policy evaluation
+
+The ablation runner toggles only the optional stopping setting between two
+collective arms under the same original ceilings. Its output grants no permission,
+changes no persistent policy and promotes no model. Expected assignments and
+satisfiability labels remain outside model contexts; success requires an actual
+checked witness. An enabled adaptive advice guard is refused rather than borrowing
+unfrozen history. The shared resource pool retains uncertain reservations; the
+experiment cannot release them or claim provider termination. Provider weights,
+physical resource use, cache state and independent curation remain unproven.

@@ -1,5 +1,53 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+### Measure progress stopping with paired collective runs — 2026-10-21
+
+**Implemented (explicit controlled workflow comparison); Partial (independent utility evidence).**
+Architecture sections 5, 9 and 13 require measurable reasoning under comparable
+budgets. `compare-progress` and `src/benchmarking/progress.rs` run the same collective
+with the stopping option absent/present, using the same backend, frozen corpus,
+configured resource ownership and original ceilings. Cases alternate which arm
+executes first. Effective configuration, scope fingerprints, task identities,
+paired quality changes and actual costs are reported; unmatched cases cannot
+contribute paired benefit. Cancellation and the overall deadline preserve partial
+reports. An enabled adaptive advice guard is refused to avoid live-history bias.
+
+Only strict bounded explicit finite-domain cases are accepted, with no supplied
+expected assignments. Scoring requires an actual independently checked witness;
+model impossibility claims never pass. Public workflow reports retain bounded
+content for external checking; held-out reports omit objective/answer bodies.
+No report installs a policy, changes persistent configuration, promotes a model
+or expands permissions. Provider/cache/thermal state and physical resource use
+remain outside the comparison's control.
+
+The new 17-case CC0 public corpus covers linear relations, signed/wide arithmetic,
+all-different, alternative witnesses and contradictions. Its manifest binds hashes
+and exact solution counts. `tests/finite_domain_corpus.rs` independently enumerates
+at most 256 assignments per case without invoking the production checker. This is
+an independent computational oracle, not independent human curation or held-out
+quality evidence. Scripted loopback tests expose both saved calls and a missed
+later witness; the actual CLI is exercised with the deterministic demo adapter.
+Sources also include `tests/progress_ablation.rs`, `tests/progress_ablation_cli.rs`,
+main command wiring and [benchmark instructions](BENCHMARKING.md#controlled-progress-stopping-ablation).
+General utility calibration and real-model benefit remain unproven; Jev+ and
+Jev-R remain Partial.
+
+Verification: `cargo fmt --all -- --check`,
+`cargo check --locked --workspace --all-targets`,
+`cargo test --locked --workspace --all-targets` (**744 passed across 42 targets**,
+none ignored) and `cargo clippy --locked --workspace --all-targets -- -D warnings`
+pass on the final unchanged source. Seven focused tests cover the exhaustive
+corpus oracle, scripted paired tradeoff, strict preflight, held-out body omission,
+pre-dispatch cancellation, partial deadline accounting and actual CLI deployment.
+Initial compilation/fixture failures (JSON macro/report assembly, test borrowing
+and private store access) were corrected; no tests or limits were removed.
+Existing socket, migration, mock inference, malformed-frame, denial, cancellation,
+continuation and rollback regressions remain green under approved local socket
+access. Protocol/bindings are unchanged; exact bundled pairing/integrity checks
+passed. `flatc` is unavailable and fresh generation was not run. These checks
+establish runner behavior, not a real-model efficiency or quality improvement.
+
+
 ### Stop finite-domain revisions using independent progress evidence — 2026-10-21
 
 **Implemented (opt-in finite-domain plateau stopping); Partial (general progress/utility).**

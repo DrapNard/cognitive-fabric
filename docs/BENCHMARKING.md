@@ -738,3 +738,54 @@ corpus does not freeze this operational history. `adaptive_advice_history_frozen
 is false when enabled (true when disabled), with a corresponding report limitation.
 Use the recorded task decisions when reviewing adaptive results; do not imply
 that timing history, provider state or expected utility was independently controlled.
+
+## Controlled progress-stopping ablation
+
+`compare-progress` measures the optional finite-domain stopping rule against the
+same collective without it. It accepts only explicit `finite_domain_v1` CSP cases,
+without expected assignments; the compiled independent checker scores witnesses.
+Model assertions of impossibility never receive success credit, including public
+cases labelled unsatisfiable by an external oracle. Runner scoring reuses the
+runtime compiled `Criterion` implementation: it is independent of model claims,
+not an independently implemented checker. The separate exhaustive corpus test
+checks fixture labels with its own implementation.
+
+```bash
+cogfabric --home STATE --json compare-progress evaluation/finite_domain_cases.jsonl \
+  --mode research --plateau-cycles 2 \
+  --source 'Original public finite-domain diagnostics' --license CC0-1.0 \
+  --workflow-check --code-revision FULL_GIT_SHA \
+  --dataset-sha256 f90202843b55e26397f376a7d7d628e69f7ee35cbb26dc38a5fe730895f5bd1f \
+  --max-run-seconds 1800
+```
+
+This is an explicit run, not persistent policy installation. The two arms share
+one Engine/backend, frozen corpus and configured resource pool. Effective settings
+match except that the baseline disables `progress_stopping` and the candidate
+uses the requested threshold. As in the existing comparison, role overrides are
+cleared and synthesis is disabled; these effective settings are reported. Cases
+rotate which arm executes first. Original mode/call/cycle/token/prompt/tool/time
+ceilings apply to both arms; actual spending can differ. No additional model,
+capability, weight change or deployment is authorized by a report.
+
+An enabled recent-advice guard is refused because its live cross-task history
+would confound this policy-only comparison. Provider caches, hardware, load,
+thermal state and other applications remain outside experimental control.
+Configured resource ownership and uncertain-call quarantine remain shared; a
+failure can influence later availability and must not be reset to improve a score.
+A task's individual progress history starts fresh in each arm.
+
+Public workflow reports include bounded objective/answer text for independent
+checking. Held-out reports omit those bodies and retain hashes, scores and resources;
+original owner-local task traces still exist. This minimizes report exposure, but
+does not attest independent curation or forbid later operator disclosure.
+
+Reports retain effective configurations/fingerprints, dataset provenance and hash,
+compiled source/prompts, task IDs, execution order, actual resources, paired
+successes/regressions and incomplete pairs. A run deadline or Ctrl-C returns a
+partial report and unsuccessful CLI exit. Unmatched cases cannot support a paired
+benefit/cost claim. Lower usage on a pair that also loses a valid witness is a
+quality/cost tradeoff, not an efficiency win. Neither frozen inputs nor an
+operator-attested held-out flag establish independent study quality. Real-model
+policy utility requires repeated controlled runs and independently reviewed tasks;
+synthetic scripted regressions only validate runner behavior.

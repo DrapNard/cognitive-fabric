@@ -88,3 +88,25 @@ remain false. Public diagnostics may use `bench`
 or `compare --workflow-check`; never attest held-out status just because labels
 compile as expected. Runtime tasks see source questions, not labels or compiler
 diagnostics. The runtime itself receives no compiler tool capability.
+
+## Public finite-domain diagnostics
+
+`finite_domain_cases.jsonl` contains 17 original small CSP objectives covering
+linear equality/inequality, signed coefficients, all-different constraints,
+multiple witnesses, wide integers and contradictory constraints. It supplies
+`verification: finite_domain_v1` and no expected answer. The CC0 manifest pins
+hashes, categories, satisfiability, exact solution counts and sample witnesses.
+
+`tests/finite_domain_corpus.rs` uses its own data types and exhaustive enumeration,
+without the production verifier, to check every label with bounded i128 arithmetic.
+Each case has at most four variables and four values per domain (at most 256
+assignments). This is a separate computational oracle, not independent human
+curation or a neural safety evaluator. The authored public suite is not held out,
+contamination-reviewed, training data or a demonstrated policy-performance result.
+
+Use `compare-progress` as described in [benchmarking](../docs/BENCHMARKING.md#controlled-progress-stopping-ablation)
+to compare the same collective with and without the optional stopping policy.
+An unsatisfiable case intentionally has no valid witness; a model claiming
+impossibility still fails witness scoring. Inspect satisfiable/unsatisfiable
+strata when interpreting raw success fractions. Manifest solutions and labels
+never enter inference contexts.

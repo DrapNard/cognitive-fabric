@@ -1,4 +1,5 @@
 //! Controlled runtime ablations with independently supplied expected outputs.
+pub mod progress;
 use crate::{
     config::Config,
     engine::{Engine, ExecutionProfile},
@@ -6,6 +7,7 @@ use crate::{
     store::{self, Store},
 };
 use anyhow::{bail, Result};
+pub use progress::compare_progress_until;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::{path::Path, sync::Arc, time::Duration};

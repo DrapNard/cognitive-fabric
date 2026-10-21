@@ -92,3 +92,14 @@ valid-witness precedence and audit failure. Recovery tests exercise evidence
 recomputation and tampering; loopback HTTP continuation checks that only the next
 solver runs under the original charges. These are functional regressions, not an
 independent held-out study or a measured real-model speed/quality gain.
+
+## Compare quality and cost before deployment
+
+The explicit [controlled ablation](BENCHMARKING.md#controlled-progress-stopping-ablation)
+runs the same collective twice per finite-domain case, disabling the policy in
+one arm and enabling the selected threshold in the other. It reports paired
+quality changes and actual resources instead of inferring utility from lower
+call counts. It does not install its winner or change persistent configuration.
+Public [diagnostic cases](../evaluation/README.md#public-finite-domain-diagnostics)
+have a separate exhaustive oracle; their authored provenance does not establish
+held-out independence or general quality.

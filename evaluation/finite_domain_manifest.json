@@ -1,0 +1,392 @@
+{
+  "format_version": 1,
+  "dataset": "finite_domain_cases.jsonl",
+  "dataset_sha256": "f90202843b55e26397f376a7d7d628e69f7ee35cbb26dc38a5fe730895f5bd1f",
+  "case_count": 17,
+  "license": "CC0-1.0",
+  "source": "Original synthetic finite-domain constraint diagnostics authored alongside Cognitive Fabric",
+  "oracle": "Independent exhaustive Cartesian-product enumeration with i128 linear arithmetic and explicit all-different checks; independent of production verifier implementation",
+  "author_bias": "Authored by the project implementer; task selection and labels may reflect author expectations.",
+  "independent_human_review": false,
+  "held_out": false,
+  "training_contamination_checked": false,
+  "model_training_use": false,
+  "live_model_evaluated": false,
+  "independent_live_study_completed": false,
+  "oracle_scope": "Small-domain satisfiability and exact solution counts for public diagnostic tasks; does not measure Jev-R progress-policy benefit or general reasoning quality.",
+  "cases": [
+    {
+      "id": "csp.linear_eq_pair",
+      "line": 1,
+      "objective_sha256": "e8b4d031fc814b42aa265ef6776d8991d3e888126cc57a59426aa1e68437f10a",
+      "categories": [
+        "linear_eq"
+      ],
+      "satisfiable": true,
+      "solution_count": 4,
+      "sample_witnesses": [
+        {
+          "x": 0,
+          "y": 3
+        },
+        {
+          "x": 1,
+          "y": 2
+        },
+        {
+          "x": 2,
+          "y": 1
+        }
+      ]
+    },
+    {
+      "id": "csp.linear_ne_distinct",
+      "line": 2,
+      "objective_sha256": "a04335b8e63fef22d563e56bee1bf594990df914088ac0734d313d3840ac9939",
+      "categories": [
+        "linear_ne",
+        "multiple_witnesses"
+      ],
+      "satisfiable": true,
+      "solution_count": 6,
+      "sample_witnesses": [
+        {
+          "a": 1,
+          "b": 2
+        },
+        {
+          "a": 1,
+          "b": 3
+        },
+        {
+          "a": 2,
+          "b": 1
+        }
+      ]
+    },
+    {
+      "id": "csp.linear_le_weighted",
+      "line": 3,
+      "objective_sha256": "a0cf2cf5afe293d58ac426f1e6f1fd63d6781d3907f63f51236d314978d39409",
+      "categories": [
+        "linear_le"
+      ],
+      "satisfiable": true,
+      "solution_count": 5,
+      "sample_witnesses": [
+        {
+          "x": 0,
+          "y": 0
+        },
+        {
+          "x": 0,
+          "y": 1
+        },
+        {
+          "x": 1,
+          "y": 0
+        }
+      ]
+    },
+    {
+      "id": "csp.linear_ge_weighted",
+      "line": 4,
+      "objective_sha256": "0681505b2fc9896de8a309e8887a0c80c53e9309f15033e045252c69bce29046",
+      "categories": [
+        "linear_ge"
+      ],
+      "satisfiable": true,
+      "solution_count": 7,
+      "sample_witnesses": [
+        {
+          "x": 0,
+          "y": 0
+        },
+        {
+          "x": 1,
+          "y": 0
+        },
+        {
+          "x": 1,
+          "y": 1
+        }
+      ]
+    },
+    {
+      "id": "csp.linear_negative_coefficient",
+      "line": 5,
+      "objective_sha256": "ae3ac592226966441223a71aa5dcc9e00c935ebc3a0cb29ff98a3e8ab219b3bb",
+      "categories": [
+        "linear_eq",
+        "negative_coefficient"
+      ],
+      "satisfiable": true,
+      "solution_count": 2,
+      "sample_witnesses": [
+        {
+          "x": 0,
+          "y": 0
+        },
+        {
+          "x": 1,
+          "y": 2
+        }
+      ]
+    },
+    {
+      "id": "csp.all_different_permutation",
+      "line": 6,
+      "objective_sha256": "060f9e61707c9291acff31eb37d7f3b98ac2897e096298d64dc2ab497dc33e26",
+      "categories": [
+        "all_different",
+        "multiple_witnesses"
+      ],
+      "satisfiable": true,
+      "solution_count": 6,
+      "sample_witnesses": [
+        {
+          "a": 0,
+          "b": 1,
+          "c": 2
+        },
+        {
+          "a": 0,
+          "b": 2,
+          "c": 1
+        },
+        {
+          "a": 1,
+          "b": 0,
+          "c": 2
+        }
+      ]
+    },
+    {
+      "id": "csp.eq_and_all_different",
+      "line": 7,
+      "objective_sha256": "ee310d2e1f5c47502ec119409e8c3f896eb13e80fef17e903aa307ef2c8e93c8",
+      "categories": [
+        "linear_eq",
+        "all_different"
+      ],
+      "satisfiable": true,
+      "solution_count": 6,
+      "sample_witnesses": [
+        {
+          "a": 0,
+          "b": 1,
+          "c": 3
+        },
+        {
+          "a": 0,
+          "b": 3,
+          "c": 1
+        },
+        {
+          "a": 1,
+          "b": 0,
+          "c": 3
+        }
+      ]
+    },
+    {
+      "id": "csp.i64_extreme_sum",
+      "line": 8,
+      "objective_sha256": "29ab2c370cf4de413c49711b9b3606b954885adbded98f37ba2608a9b9597607",
+      "categories": [
+        "i64_boundary",
+        "linear_eq"
+      ],
+      "satisfiable": true,
+      "solution_count": 1,
+      "sample_witnesses": [
+        {
+          "high": 9223372036854775807,
+          "low": -9223372036854775808
+        }
+      ]
+    },
+    {
+      "id": "csp.i64_extreme_negative_sum",
+      "line": 9,
+      "objective_sha256": "e6d34e2d15a36c47947c76d5eaf79bb70e0c10adcd42a9cf9e40c2fbe4a63a4c",
+      "categories": [
+        "i64_boundary",
+        "negative_coefficient",
+        "linear_eq"
+      ],
+      "satisfiable": true,
+      "solution_count": 1,
+      "sample_witnesses": [
+        {
+          "high": 9223372036854775807,
+          "low": -9223372036854775808
+        }
+      ]
+    },
+    {
+      "id": "csp.unsatisfiable_contradiction",
+      "line": 10,
+      "objective_sha256": "be4ff0b01f34f958ad91ea5b14531db2c6e6732b1bd6519cfef46c9d8ad8523a",
+      "categories": [
+        "unsatisfiable",
+        "linear_eq"
+      ],
+      "satisfiable": false,
+      "solution_count": 0,
+      "sample_witnesses": []
+    },
+    {
+      "id": "csp.unsatisfiable_all_different",
+      "line": 11,
+      "objective_sha256": "a6c0e40fc6cf70e63ab11e6802a77af9af4f50c1f1c780f759e881a126243e23",
+      "categories": [
+        "unsatisfiable",
+        "all_different"
+      ],
+      "satisfiable": false,
+      "solution_count": 0,
+      "sample_witnesses": []
+    },
+    {
+      "id": "csp.multiple_sum_witnesses",
+      "line": 12,
+      "objective_sha256": "c8df973480f87dad385b60d4f23694e9111b163064086ef3f833f7404f1a49c9",
+      "categories": [
+        "linear_eq",
+        "multiple_witnesses"
+      ],
+      "satisfiable": true,
+      "solution_count": 3,
+      "sample_witnesses": [
+        {
+          "x": 0,
+          "y": 2
+        },
+        {
+          "x": 1,
+          "y": 1
+        },
+        {
+          "x": 2,
+          "y": 0
+        }
+      ]
+    },
+    {
+      "id": "csp.linear_ne_offset",
+      "line": 13,
+      "objective_sha256": "54118070321ff3f8b1951c385039d7bd5a909356ef88c5bf79f8468481a1eed9",
+      "categories": [
+        "linear_ne",
+        "negative_coefficient"
+      ],
+      "satisfiable": true,
+      "solution_count": 6,
+      "sample_witnesses": [
+        {
+          "x": -1,
+          "y": 0
+        },
+        {
+          "x": -1,
+          "y": 1
+        },
+        {
+          "x": 0,
+          "y": -1
+        }
+      ]
+    },
+    {
+      "id": "csp.linear_le_three_terms",
+      "line": 14,
+      "objective_sha256": "73cd49e50bec3fa1d47f97b17255fa537eab76a945a01624f5df55f4b1d8eefd",
+      "categories": [
+        "linear_le",
+        "negative_coefficient"
+      ],
+      "satisfiable": true,
+      "solution_count": 16,
+      "sample_witnesses": [
+        {
+          "a": 0,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "a": 0,
+          "b": 0,
+          "c": 1
+        },
+        {
+          "a": 0,
+          "b": 0,
+          "c": 2
+        }
+      ]
+    },
+    {
+      "id": "csp.linear_ge_negative_rhs",
+      "line": 15,
+      "objective_sha256": "fffa0ffad7ea4799aacc4760d5a4e0d90813d2355830b8e585f1049e8fe793c9",
+      "categories": [
+        "linear_ge",
+        "negative_coefficient"
+      ],
+      "satisfiable": true,
+      "solution_count": 15,
+      "sample_witnesses": [
+        {
+          "x": -2,
+          "y": -2
+        },
+        {
+          "x": -2,
+          "y": -1
+        },
+        {
+          "x": -2,
+          "y": 0
+        }
+      ]
+    },
+    {
+      "id": "csp.combined_pairwise_constraints",
+      "line": 16,
+      "objective_sha256": "c897f7974afc1db3f28d5b26ce52310e42c9a6a8aa473e7a538a8b08c4f3f8e2",
+      "categories": [
+        "linear_eq",
+        "linear_ne",
+        "all_different"
+      ],
+      "satisfiable": true,
+      "solution_count": 2,
+      "sample_witnesses": [
+        {
+          "a": 0,
+          "b": 2,
+          "c": 1
+        },
+        {
+          "a": 2,
+          "b": 0,
+          "c": 1
+        }
+      ]
+    },
+    {
+      "id": "csp.unsatisfiable_negative_bound",
+      "line": 17,
+      "objective_sha256": "6cec555d3da4344758e1f984d161f1498ad4c796c9628b7cc8975445fb1413ca",
+      "categories": [
+        "unsatisfiable",
+        "linear_ge",
+        "negative_coefficient"
+      ],
+      "satisfiable": false,
+      "solution_count": 0,
+      "sample_witnesses": []
+    }
+  ]
+}
