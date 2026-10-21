@@ -33,6 +33,30 @@ impl Store {
             let criterion = Criterion::from_query(&query)?.ok_or_else(|| {
                 anyhow::anyhow!("No independent structured checker for this task")
             })?;
+            if criterion.name() == "finite_domain/v1" {
+                let settings: Option<String> = tx
+                    .query_row(
+                        "SELECT CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN json_extract(payload,'$.configuration') END FROM events WHERE task_id=?1 AND kind='execution_settings' ORDER BY id LIMIT 1",
+                        [task],
+                        |row| row.get(0),
+                    )
+                    .optional()?;
+                let search_charged: bool = tx.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM events WHERE task_id=?1 AND kind='tool_reservation' AND json_extract(payload,'$.capability')='constraints.solve')",
+                    [task],
+                    |row| row.get(0),
+                )?;
+                let search_configured = if let Some(settings) = settings {
+                    let cfg: crate::config::Config = serde_json::from_str(&settings)?;
+                    cfg.validate()?;
+                    cfg.finite_search.is_some()
+                } else {
+                    false
+                };
+                if search_charged || search_configured {
+                    bail!("Finite-domain result recovery is disabled while finite search lacks a validated durable receipt")
+                }
+            }
             security::TaskPolicy::reasoning(task)?.authorize(
                 task,
                 "jev-plus",
@@ -287,6 +311,75 @@ mod tests {
             .unwrap();
         assert_eq!(proofs, 2);
         assert_eq!(tool_charges, 2);
+        drop(db);
+        drop(store);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn configured_finite_search_refuses_saved_result_recovery_before_charging() {
+        let (root, store, task) = fixture(
+            r#"csp:{"variables":[{"id":"x","domain":[1,2]}],"constraints":[{"kind":"linear","terms":[{"variable":"x","coefficient":1}],"relation":"eq","rhs":2}]}"#,
+            r#"{"x":1}"#,
+            4,
+        );
+        store
+            .finish_task(&task, "running", "Abandoned before terminal commit")
+            .unwrap();
+        store
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE events SET payload=json_set(payload,'$.configuration.finite_search',json(?2)) WHERE task_id=?1 AND kind='execution_settings'",
+                rusqlite::params![task, json!({"max_nodes": 64}).to_string()],
+            )
+            .unwrap();
+
+        assert!(store.recover_verified_result(&task).is_err());
+        let db = store.lock().unwrap();
+        let charges: u64 = db
+            .query_row(
+                "SELECT count(*) FROM events WHERE task_id=?1 AND kind='tool_reservation'",
+                [&task],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(charges, 0);
+        drop(db);
+        assert_eq!(store.task(&task).unwrap()["task"]["status"], "running");
+        drop(store);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn prior_search_reservation_blocks_result_recovery_even_without_search_setting() {
+        let (root, store, task) = fixture(
+            r#"csp:{"variables":[{"id":"x","domain":[1,2]}],"constraints":[{"kind":"linear","terms":[{"variable":"x","coefficient":1}],"relation":"eq","rhs":2}]}"#,
+            r#"{"x":1}"#,
+            4,
+        );
+        store
+            .finish_task(&task, "running", "Abandoned before terminal commit")
+            .unwrap();
+        store
+            .event(
+                &task,
+                "tool_reservation",
+                "security-kernel",
+                json!({"format_version":1,"invocation":1,"actor":"jev-plus","capability":"constraints.solve"}),
+            )
+            .unwrap();
+
+        assert!(store.recover_verified_result(&task).is_err());
+        let db = store.lock().unwrap();
+        let charges: u64 = db
+            .query_row(
+                "SELECT count(*) FROM events WHERE task_id=?1 AND kind='tool_reservation'",
+                [&task],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(charges, 1);
         drop(db);
         drop(store);
         std::fs::remove_dir_all(root).unwrap();

@@ -79,7 +79,8 @@ accuracy, weighted routing, real-world feasibility or general reasoning quality.
 
 Explicit `csp:` objectives ask for an integer assignment satisfying all declared
 finite domains and constraints. `finite_domain/v1` checks a proposed witness;
-it neither searches for a solution nor executes generated code.
+the checker itself performs no search and executes no generated code. An optional
+[bounded search](FINITE_SEARCH.md) can propose assignments before this same checker.
 
 ```text
 csp:{"variables":[{"id":"a","domain":[1,2,3]},{"id":"b","domain":[1,2,3]}],"constraints":[{"kind":"all_different","variables":["a","b"]},{"kind":"linear","terms":[{"variable":"a","coefficient":1},{"variable":"b","coefficient":1}],"relation":"eq","rhs":4}]}
@@ -119,7 +120,9 @@ code, change the criterion or grant permissions.
 The criterion proves satisfaction of the supplied constraints only. It does not
 prove optimality, the truth/completeness of a real-world specification, general
 model quality, or unsatisfiability. Contradictory criteria may be valid inputs;
-no assignment or model declaration of impossibility is accepted for them.
+no assignment or model declaration of impossibility is accepted for them. Optional
+exhaustive search may establish a contradiction, but this does not satisfy the
+witness contract or change benchmark acceptance.
 
 Comparison JSONL can use `"verification":"finite_domain_v1"` with the explicit
 `csp:` input and no `expected` field. Scoring independently checks each arm's

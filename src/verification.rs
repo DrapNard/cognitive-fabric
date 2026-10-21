@@ -1,5 +1,6 @@
 mod finite;
 mod path;
+pub(crate) use finite::{SearchOutcome, SearchResult};
 // Independent bounded checks of operator-supplied structured constraints.
 use anyhow::{bail, Result};
 use serde::Deserialize;
@@ -175,6 +176,18 @@ impl Criterion {
         match self {
             Self::FiniteDomain(c) => c.progress_score(answer),
             _ => None,
+        }
+    }
+
+    /// Searches only finite-domain criteria; all other criterion types return `None`.
+    pub(crate) fn finite_search(
+        &self,
+        max_nodes: usize,
+        should_stop: impl FnMut() -> bool,
+    ) -> Result<Option<SearchOutcome>> {
+        match self {
+            Self::FiniteDomain(criterion) => Ok(Some(criterion.search(max_nodes, should_stop)?)),
+            _ => Ok(None),
         }
     }
 }

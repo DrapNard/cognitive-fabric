@@ -1,7 +1,21 @@
-//! Linear finite-domain assignment verification; no search or generated execution.
+//! Linear finite-domain assignment verification and bounded deterministic search.
 use anyhow::{bail, Result};
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
+
+const MAX_SEARCH_NODES: usize = 4096;
+
+pub(crate) struct SearchOutcome {
+    pub(crate) result: SearchResult,
+    pub(crate) explored_nodes: usize,
+}
+
+pub(crate) enum SearchResult {
+    Witness(String),
+    Unsatisfiable,
+    LimitReached,
+    Cancelled,
+}
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -165,6 +179,95 @@ impl FiniteDomain {
     pub(super) fn progress_score(&self, answer: &str) -> Option<u32> {
         let values = self.assignment(answer).ok()?;
         u32::try_from(self.violation_count(&values)).ok()
+    }
+
+    /// Enumerates assignments in declaration order under a strict partial-assignment node cap.
+    /// The empty root counts as one node. A stop callback is polled before the budget check at
+    /// every node, including the root.
+    pub(super) fn search(
+        &self,
+        max_nodes: usize,
+        mut should_stop: impl FnMut() -> bool,
+    ) -> Result<SearchOutcome> {
+        if !(1..=MAX_SEARCH_NODES).contains(&max_nodes) {
+            bail!("Finite-domain search node limit must be between 1 and {MAX_SEARCH_NODES}")
+        }
+
+        fn visit(
+            criterion: &FiniteDomain,
+            depth: usize,
+            values: &mut BTreeMap<String, i64>,
+            max_nodes: usize,
+            explored_nodes: &mut usize,
+            should_stop: &mut impl FnMut() -> bool,
+        ) -> Result<SearchResult> {
+            if should_stop() {
+                return Ok(SearchResult::Cancelled);
+            }
+            if *explored_nodes >= max_nodes {
+                return Ok(SearchResult::LimitReached);
+            }
+            *explored_nodes += 1;
+
+            for constraint in &criterion.constraints {
+                let fully_assigned = match constraint {
+                    Constraint::Linear { terms, .. } => {
+                        terms.iter().all(|term| values.contains_key(&term.variable))
+                    }
+                    Constraint::AllDifferent { variables } => variables
+                        .iter()
+                        .all(|variable| values.contains_key(variable)),
+                };
+                if fully_assigned && !FiniteDomain::constraint_accepts(constraint, values) {
+                    return Ok(SearchResult::Unsatisfiable);
+                }
+            }
+
+            if depth == criterion.variables.len() {
+                let answer = serde_json::to_string(values)?;
+                // Keep the search result behind the same strict public witness checker.
+                criterion.check(&answer)?;
+                return Ok(SearchResult::Witness(answer));
+            }
+
+            let variable = &criterion.variables[depth];
+            for value in &variable.domain {
+                values.insert(variable.id.clone(), *value);
+                let child = visit(
+                    criterion,
+                    depth + 1,
+                    values,
+                    max_nodes,
+                    explored_nodes,
+                    should_stop,
+                )?;
+                values.remove(&variable.id);
+                match child {
+                    SearchResult::Unsatisfiable => {}
+                    other => return Ok(other),
+                }
+            }
+            Ok(SearchResult::Unsatisfiable)
+        }
+
+        let mut explored_nodes = 0;
+        let result = visit(
+            self,
+            0,
+            &mut BTreeMap::new(),
+            max_nodes,
+            &mut explored_nodes,
+            &mut should_stop,
+        )?;
+        let result = match result {
+            SearchResult::Cancelled => SearchResult::Cancelled,
+            _completed if should_stop() => SearchResult::Cancelled,
+            completed => completed,
+        };
+        Ok(SearchOutcome {
+            result,
+            explored_nodes,
+        })
     }
 }
 

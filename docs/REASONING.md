@@ -153,3 +153,11 @@ independent check first. Default absence preserves existing behavior. Durable
 assessments and checkpoint recomputation retain the original history on supported
 continuation. Counts are a bounded search heuristic, not proof of impossibility
 or measured marginal utility; no broader prose progress score is claimed.
+
+## Optional exact finite-domain search
+
+An operator may enable [bounded finite search](FINITE_SEARCH.md) before fresh
+whole-goal model reasoning. This deterministic solver has a separate tool charge,
+node ceiling and independent witness recheck. Exhaustive contradictions remain
+rejected under the witness contract; incomplete search falls back with charges
+retained. It is disabled by default, and saved enabled finite-domain tasks cannot yet continue.

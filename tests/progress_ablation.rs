@@ -318,6 +318,24 @@ async fn rejects_non_csp_expected_labels_and_adaptive_history_before_task_creati
         ),
     )
     .unwrap();
+    let search_cfg = Config {
+        finite_search: Some(cogfabric::reasoning::finite_search::Settings { max_nodes: 4096 }),
+        ..cfg.clone()
+    };
+    let error = compare_progress_until(
+        &search_cfg,
+        store.clone(),
+        &dataset,
+        "research",
+        settings.clone(),
+        &review(),
+        std::future::pending(),
+    )
+    .await
+    .unwrap_err();
+    assert!(error.to_string().contains("pre-model finite search"));
+    assert_eq!(task_count(&cfg.db()), 0);
+
     let cfg = Config {
         advice_guard: Some(cogfabric::reasoning::advice_guard::Settings {
             min_observations: 1,

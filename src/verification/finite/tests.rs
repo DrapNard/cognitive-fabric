@@ -193,3 +193,163 @@ fn progress_score_is_order_invariant_and_only_scores_comparable_assignments() {
         .unwrap();
     assert_eq!(sorting.progress_score("[1]"), None);
 }
+
+#[test]
+fn deterministic_search_matches_small_independent_exhaustive_oracle() {
+    for relation in ["eq", "ne", "le", "ge"] {
+        for rhs in -3..=3 {
+            let raw = json!({
+                "variables": [
+                    {"id":"x", "domain":[2, -1, 0]},
+                    {"id":"y", "domain":[1, -2]}
+                ],
+                "constraints": [
+                    {"kind":"linear", "terms":[
+                        {"variable":"x", "coefficient":2},
+                        {"variable":"y", "coefficient":-1}
+                    ], "relation":relation, "rhs":rhs},
+                    {"kind":"all_different", "variables":["x", "y"]}
+                ]
+            });
+            let criterion = FiniteDomain::parse(&raw.to_string()).unwrap();
+            let expected = [2, -1, 0].into_iter().find_map(|x| {
+                [1, -2].into_iter().find_map(|y| {
+                    let value = 2 * x - y;
+                    let relation_holds = match relation {
+                        "eq" => value == rhs,
+                        "ne" => value != rhs,
+                        "le" => value <= rhs,
+                        _ => value >= rhs,
+                    };
+                    (relation_holds && x != y).then_some((x, y))
+                })
+            });
+
+            let outcome = criterion.search(4096, || false).unwrap();
+            match (expected, outcome.result) {
+                (Some((x, y)), SearchResult::Witness(answer)) => {
+                    assert_eq!(
+                        serde_json::from_str::<BTreeMap<String, i64>>(&answer).unwrap(),
+                        BTreeMap::from([("x".to_owned(), x), ("y".to_owned(), y)])
+                    );
+                    criterion.check(&answer).unwrap();
+                }
+                (None, SearchResult::Unsatisfiable) => {}
+                (expected, actual) => panic!(
+                    "oracle result {expected:?} disagrees with search result {}",
+                    match actual {
+                        SearchResult::Witness(_) => "witness",
+                        SearchResult::Unsatisfiable => "unsatisfiable",
+                        SearchResult::LimitReached => "limit reached",
+                        SearchResult::Cancelled => "cancelled",
+                    }
+                ),
+            }
+        }
+    }
+}
+
+#[test]
+fn search_reports_limits_cancellation_and_only_exhaustive_unsatisfiability() {
+    let criterion = FiniteDomain::parse(
+        &json!({
+            "variables":[{"id":"x","domain":[0,1]}],
+            "constraints":[{"kind":"linear","terms":[{"variable":"x","coefficient":1}],"relation":"eq","rhs":1}]
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let limited = criterion.search(2, || false).unwrap();
+    assert!(matches!(limited.result, SearchResult::LimitReached));
+    assert_eq!(limited.explored_nodes, 2);
+
+    let mut polls = 0;
+    let cancelled = criterion
+        .search(2, || {
+            polls += 1;
+            polls == 3
+        })
+        .unwrap();
+    assert!(matches!(cancelled.result, SearchResult::Cancelled));
+    assert_eq!(cancelled.explored_nodes, 2);
+
+    let impossible = FiniteDomain::parse(
+        &json!({
+            "variables":[{"id":"x","domain":[0,1]}],
+            "constraints":[{"kind":"linear","terms":[{"variable":"x","coefficient":1}],"relation":"eq","rhs":2}]
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let complete = impossible.search(4096, || false).unwrap();
+    assert!(matches!(complete.result, SearchResult::Unsatisfiable));
+    assert_eq!(complete.explored_nodes, 3);
+
+    let exact_limit_witness = criterion.search(3, || false).unwrap();
+    assert!(matches!(
+        exact_limit_witness.result,
+        SearchResult::Witness(_)
+    ));
+    assert_eq!(exact_limit_witness.explored_nodes, 3);
+
+    let exact_limit_unsatisfiable = impossible.search(3, || false).unwrap();
+    assert!(matches!(
+        exact_limit_unsatisfiable.result,
+        SearchResult::Unsatisfiable
+    ));
+    assert_eq!(exact_limit_unsatisfiable.explored_nodes, 3);
+}
+
+#[test]
+fn search_rejects_invalid_limits_and_cancellation_precedes_budget() {
+    let criterion = FiniteDomain::parse(&sample().to_string()).unwrap();
+    assert!(criterion.search(0, || false).is_err());
+    assert!(criterion.search(4097, || false).is_err());
+
+    let cancelled = criterion.search(1, || true).unwrap();
+    assert!(matches!(cancelled.result, SearchResult::Cancelled));
+    assert_eq!(cancelled.explored_nodes, 0);
+}
+
+#[test]
+fn search_enforces_the_hard_4096_node_ceiling() {
+    let variable_ids = (0..12).map(|index| format!("v{index}")).collect::<Vec<_>>();
+    let raw = json!({
+        "variables": variable_ids
+            .iter()
+            .map(|id| json!({"id": id, "domain": [0, 1]}))
+            .collect::<Vec<_>>(),
+        "constraints": [{"kind":"all_different", "variables": variable_ids}]
+    });
+    let criterion = FiniteDomain::parse(&raw.to_string()).unwrap();
+
+    let outcome = criterion.search(4096, || false).unwrap();
+    assert!(matches!(outcome.result, SearchResult::LimitReached));
+    assert_eq!(outcome.explored_nodes, 4096);
+}
+
+#[test]
+fn search_rechecks_stop_after_the_last_node_before_returning_a_proof() {
+    let criterion = FiniteDomain::parse(
+        &json!({
+            "variables":[{"id":"x","domain":[0,1]}],
+            "constraints":[{"kind":"linear","terms":[{"variable":"x","coefficient":1}],"relation":"eq","rhs":1}]
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let mut polls = 0;
+
+    // The first three polls visit root, x=0 and the witness x=1. The final poll observes
+    // cancellation after the witness was found but before the result is returned.
+    let outcome = criterion
+        .search(3, || {
+            polls += 1;
+            polls == 4
+        })
+        .unwrap();
+    assert!(matches!(outcome.result, SearchResult::Cancelled));
+    assert_eq!(outcome.explored_nodes, 3);
+    assert_eq!(polls, 4);
+}

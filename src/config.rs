@@ -32,6 +32,8 @@ pub struct Config {
     pub advice_guard: Option<crate::reasoning::advice_guard::Settings>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub progress_stopping: Option<crate::reasoning::progress::Settings>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub finite_search: Option<crate::reasoning::finite_search::Settings>,
     pub inference_auth_scope: Option<String>,
     pub model: String,
     pub model_registration: Option<crate::models::Selection>,
@@ -68,6 +70,7 @@ impl Default for Config {
             subtask_scheduling: None,
             advice_guard: None,
             progress_stopping: None,
+            finite_search: None,
             inference_auth_scope: None,
             model: "local-model".into(),
             model_registration: None,
@@ -135,6 +138,9 @@ impl Config {
             settings.validate()?;
         }
         if let Some(settings) = &self.progress_stopping {
+            settings.validate()?;
+        }
+        if let Some(settings) = &self.finite_search {
             settings.validate()?;
         }
         if let Some(configuration) = &self.resource_admission {

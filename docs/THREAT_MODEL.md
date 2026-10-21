@@ -912,3 +912,18 @@ checked witness. An enabled adaptive advice guard is refused rather than borrowi
 unfrozen history. The shared resource pool retains uncertain reservations; the
 experiment cannot release them or claim provider termination. Provider weights,
 physical resource use, cache state and independent curation remain unproven.
+
+## Opt-in finite-domain search
+
+A separate task-scoped Jev+ `constraints.solve` grant admits deterministic bounded
+search only over the original strictly parsed CSP. At most 4096 visited nodes,
+bounded depth/domain/constraint structures and deadline polls limit computation;
+this is a logical ceiling, not hard process isolation or physical CPU accounting.
+Model roles cannot invoke the search or change its node limit. An actual witness
+requires a separately authorized satisfaction check. Only exhaustive traversal
+permits a contradiction outcome, which remains rejected under witness scoring.
+Limit exhaustion cannot manufacture impossibility or refund tools. Required
+audit failure prevents subsequent dispatch. Enabled saved finite-domain tasks cannot continue
+until traversal receipts have a validated recovery format. No external solver,
+generated code, new network access, active-weight change or neural promotion is
+introduced. See [bounded search](FINITE_SEARCH.md).

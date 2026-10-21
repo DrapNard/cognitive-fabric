@@ -1,5 +1,50 @@
 # Current Rust implementation
 
+### Search explicit finite-domain tasks under independent limits — 2026-10-21
+
+**Implemented (opt-in bounded deterministic search); Partial (general solving and recovery).**
+Architecture sections 5 and 9 require algorithmic search under enforced budgets.
+`Config.finite_search.max_nodes` admits 1–4096 visited partial assignments, including
+the root. Rust DFS respects declared variable/domain order, prunes only fully
+assigned constraints, checks the original deadline and never runs generated code.
+A separate Jev+ `constraints.solve` grant and tool charge precede traversal; a
+second tool slot is preserved for independently checking a witness or fallback.
+Default absence and the LLM-only profile retain their original behavior.
+
+A witness must pass a separately charged original-criterion check. Exhaustive
+contradictions stop with `proven_unsatisfiable` but remain rejected under the
+satisfying-witness contract; witness-only evaluations cannot score them as solved.
+Limit exhaustion retains charges and falls back to existing bounded inference.
+Fixed-metadata search audit failures prevent further work. Saved enabled finite-domain tasks
+cannot continue until pre-model search evidence has a validated recovery format;
+no traversal or inference is replayed and no charge is refunded.
+
+Sources: `src/verification/{finite.rs,finite/tests.rs}`, `src/reasoning.rs`,
+`src/reasoning/finite_search.rs`, configuration, security grants, continuation
+admission and `tests/finite_search.rs`. See [search contract](FINITE_SEARCH.md).
+No model weights, protocol schema, migration or acceptance threshold changes.
+Deterministic oracle/runtime checks establish this limited algorithmic behavior,
+not held-out neural quality, physical efficiency or general intelligence. Jev+
+and Jev-R remain Partial. The next search milestone is validated durable recovery
+and a budget-matched evaluation on independently curated unseen problems.
+
+Verification: `cargo fmt --all -- --check`,
+`cargo check --locked --workspace --all-targets`,
+`cargo test --locked --workspace --all-targets` (**763 passed across 43 targets**,
+none ignored), and `cargo clippy --locked --workspace --all-targets -- -D warnings`
+pass on final frozen sources. Eleven finite-checker unit tests and ten runtime
+tests include independent small-domain enumeration, exact node bounds, deadline
+hooks, audit denial, ready cancellation, fallback accounting and all 17 public
+cases: 14 checked witnesses and three exhaustive contradictions, with no model
+calls. Configuration and saved-result recovery denial tests also pass. Existing
+socket, migrations, mock inference, malformed-frame, policy denial, cancellation,
+continuation and candidate rollback tests remain green. The first full run failed
+the source-fingerprint consistency test while the final permission fix changed
+source; a complete frozen-source rerun passed. Exact bundled FlatBuffers pairing/
+integrity checks pass; `flatc` is unavailable and fresh generation was not run.
+No real-backend inference or physical efficiency study was run for this slice.
+
+
 ### Retain and independently check the public progress-policy diagnostic — 2026-10-21
 
 **Measured public integration; independent utility remains Partial.** Source

@@ -14,20 +14,29 @@ impl TaskPolicy {
     }
 
     pub(crate) fn reasoning(task: &str) -> Result<Self> {
-        Self::scoped(
-            task,
-            &[
-                ("interface", "llm.generate"),
-                ("jev-r", "llm.generate"),
-                ("jev-plus", "knowledge.search"),
-                ("jev-plus", "math.evaluate"),
-                ("jev-plus", "ordering.verify"),
-                ("jev-plus", "sorting.verify"),
-                ("jev-plus", "path.verify"),
-                ("jev-plus", "constraints.verify"),
-                ("jev-plus", "sql.query"),
-            ],
-        )
+        Self::reasoning_scoped(task, false)
+    }
+
+    pub(crate) fn reasoning_with_finite_search(task: &str) -> Result<Self> {
+        Self::reasoning_scoped(task, true)
+    }
+
+    fn reasoning_scoped(task: &str, finite_search: bool) -> Result<Self> {
+        let mut grants = vec![
+            ("interface", "llm.generate"),
+            ("jev-r", "llm.generate"),
+            ("jev-plus", "knowledge.search"),
+            ("jev-plus", "math.evaluate"),
+            ("jev-plus", "ordering.verify"),
+            ("jev-plus", "sorting.verify"),
+            ("jev-plus", "path.verify"),
+            ("jev-plus", "constraints.verify"),
+            ("jev-plus", "sql.query"),
+        ];
+        if finite_search {
+            grants.push(("jev-plus", "constraints.solve"));
+        }
+        Self::scoped(task, &grants)
     }
 
     fn scoped(task: &str, grants: &[(&str, &str)]) -> Result<Self> {
@@ -89,6 +98,7 @@ pub fn authorize(principal: &str, capability: &str) -> Result<()> {
                 | "sorting.verify"
                 | "path.verify"
                 | "constraints.verify"
+                | "constraints.solve"
                 | "sql.query"
         ),
         "human-cli" => matches!(
@@ -238,15 +248,29 @@ mod path_policy_tests {
             .authorize(task, "jev-plus", "constraints.verify")
             .unwrap();
         assert!(policy
+            .authorize(task, "jev-plus", "constraints.solve")
+            .is_err());
+        let search_policy = TaskPolicy::reasoning_with_finite_search(task).unwrap();
+        search_policy
+            .authorize(task, "jev-plus", "constraints.solve")
+            .unwrap();
+        assert!(policy
             .authorize(other, "jev-plus", "constraints.verify")
+            .is_err());
+        assert!(search_policy
+            .authorize(other, "jev-plus", "constraints.solve")
             .is_err());
         assert!(policy
             .authorize(task, "jev-r", "constraints.verify")
+            .is_err());
+        assert!(search_policy
+            .authorize(task, "jev-r", "constraints.solve")
             .is_err());
         assert!(TaskPolicy::agent(task)
             .unwrap()
             .authorize(task, "jev-plus", "constraints.verify")
             .is_err());
         assert!(authorize("interface", "constraints.verify").is_err());
+        assert!(authorize("interface", "constraints.solve").is_err());
     }
 }

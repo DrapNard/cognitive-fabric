@@ -215,6 +215,9 @@ where
     if cfg.advice_guard.is_some() {
         bail!("Progress comparison refuses enabled adaptive advice history")
     }
+    if cfg.finite_search.is_some() {
+        bail!("Progress comparison refuses enabled pre-model finite search")
+    }
     cfg.validate()?;
     let (cases, dataset_checksum) = read_cases(dataset, review)?;
 

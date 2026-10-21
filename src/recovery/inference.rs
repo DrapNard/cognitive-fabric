@@ -116,6 +116,7 @@ pub(super) fn audit_from(db: &rusqlite::Connection, task: &str) -> Result<Value>
                                     | "sorting.verify"
                                     | "path.verify"
                                     | "constraints.verify"
+                                    | "constraints.solve"
                             )
                         )
                     {

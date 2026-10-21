@@ -272,7 +272,11 @@ impl Session {
             "research" => (18, 4),
             _ => bail!("Unknown reasoning mode"),
         };
-        let policy = security::TaskPolicy::reasoning(&task)?;
+        let policy = if cfg.finite_search.is_some() {
+            security::TaskPolicy::reasoning_with_finite_search(&task)?
+        } else {
+            security::TaskPolicy::reasoning(&task)?
+        };
         if record_settings {
             store.event(
             &task,
@@ -1262,6 +1266,118 @@ impl Session {
         )?;
         let resuming = saved_strategy.is_some();
         let mut strategy = saved_strategy.unwrap_or_default();
+        if !resuming
+            && self.resources.cycles == 0
+            && self.verification_enabled
+            && self.cfg.finite_search.is_some()
+        {
+            if let Some(criterion) = criterion
+                .as_ref()
+                .filter(|criterion| criterion.name() == "finite_domain/v1")
+            {
+                let max_nodes = self.cfg.finite_search.as_ref().unwrap().max_nodes;
+                let remaining_tools = self
+                    .cfg
+                    .max_tool_calls
+                    .saturating_sub(self.resources.tool_calls);
+                // Keep a post-search verification charge for a returned witness
+                // or the ordinary model fallback.
+                if remaining_tools >= 2 {
+                    // Let the outer cancellation/deadline select run before
+                    // entering this synchronous, hard-bounded search.
+                    tokio::task::yield_now().await;
+                    self.authorize_tool("constraints.solve")?;
+                    let outcome =
+                        criterion.finite_search(max_nodes, || Instant::now() >= self.deadline)?;
+                    // Search is synchronous and bounded; yield before committing
+                    // its receipt so cancellation during traversal can win the
+                    // engine's biased outer select.
+                    tokio::task::yield_now().await;
+                    let Some(outcome) = outcome else {
+                        bail!("Finite search was admitted for a non-finite criterion")
+                    };
+                    let (label, answer) = match outcome.result {
+                        crate::verification::SearchResult::Witness(answer) => {
+                            ("witness", Some(answer))
+                        }
+                        crate::verification::SearchResult::Unsatisfiable => ("unsatisfiable", None),
+                        crate::verification::SearchResult::LimitReached => ("limit_reached", None),
+                        crate::verification::SearchResult::Cancelled => ("cancelled", None),
+                    };
+                    self.store.event(
+                        &self.task,
+                        "finite_search",
+                        "jev-r",
+                        json!({
+                            "format_version":1,
+                            "criterion":"finite_domain/v1",
+                            "objective_sha256":crate::store::sha256(query.as_bytes()),
+                            "max_nodes":max_nodes,
+                            "explored_nodes":outcome.explored_nodes,
+                            "outcome":label,
+                            "verified":false,
+                            "permissions_granted":false
+                        }),
+                    )?;
+                    match label {
+                        "witness" => {
+                            let answer = answer.expect("witness search result carries an answer");
+                            self.authorize_tool("constraints.verify")?;
+                            self.verification_attempted = true;
+                            let result = criterion.check(&answer);
+                            self.store.event(
+                                &self.task,
+                                "verification",
+                                "verifier-r",
+                                json!({
+                                    "verified":result.is_ok(),
+                                    "criterion":criterion.name(),
+                                    "expert":self.checker_binding,
+                                    "objective_hash":crate::store::sha256(query.as_bytes()),
+                                    "answer_hash":crate::store::sha256(answer.as_bytes()),
+                                    "reason":result.as_ref().err().map(ToString::to_string),
+                                    "origin":"finite_search"
+                                }),
+                            )?;
+                            result?;
+                            self.verified = true;
+                            self.verified_criterion = Some(criterion.name());
+                            self.has_solution = true;
+                            self.stop_reason = "verified".into();
+                            return Ok(answer);
+                        }
+                        "unsatisfiable" => {
+                            self.verification_attempted = true;
+                            self.has_solution = true;
+                            self.stop_reason = "proven_unsatisfiable".into();
+                            return Ok(format!(
+                                "No satisfying assignment exists in the declared finite domains; exhaustive search checked {} nodes. This is a proof only for the supplied finite specification.",
+                                outcome.explored_nodes
+                            ));
+                        }
+                        "cancelled" => {
+                            self.stop_reason = "budget_exhausted".into();
+                            return Ok("Finite-domain search stopped at the task deadline".into());
+                        }
+                        "limit_reached" => {}
+                        _ => unreachable!("finite search outcome has a fixed label"),
+                    }
+                } else {
+                    self.store.event(
+                        &self.task,
+                        "schedule",
+                        "jev-plus",
+                        json!({
+                            "decision":"skip_finite_search",
+                            "reason":"Preserve separate search and verification tool charges",
+                            "remaining_tool_calls":remaining_tools,
+                            "required_tool_calls":2,
+                            "permissions_granted":false
+                        }),
+                    )?;
+                }
+            }
+        }
         if collective && !resuming && mode != "fast" {
             let prompt_reserve = base.len().saturating_mul(2).saturating_add(64);
             let admitted = self
@@ -3635,6 +3751,7 @@ pub(crate) mod exploration;
 #[path = "reasoning/advice_guard.rs"]
 pub mod advice_guard;
 
+pub mod finite_search;
 pub mod progress;
 
 #[cfg(test)]
