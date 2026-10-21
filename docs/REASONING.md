@@ -134,3 +134,11 @@ within the existing strategy cap; recovery reconstructs the portfolio from the
 original charged explorer result without replay. See
 [strategy portfolios](EXPLORATION.md) for schema, audit gates, legacy fallback,
 custom escalation budgets and the absence of measured quality/utility claims.
+
+## Optional recent-cost admission
+
+Owner-configured [advice guarding](ADVICE_GUARD.md) can decline fresh planning or
+exploration after repeated scoped failures or observed cost above the current
+phase allowance. It reads bounded same-boot metadata, preserves first-solver
+resources, records decisions/outcomes and keeps comparison profiles separate.
+Default behavior is unchanged; this heuristic is not calibrated expected utility.

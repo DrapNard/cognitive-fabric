@@ -83,6 +83,7 @@ pub struct Session {
     subtask_started: Option<(usize, Instant, Resources)>,
     resume_answer: Option<(String, Option<String>)>,
     exploration: Option<exploration::Portfolio>,
+    pub(crate) advice_profile: Option<crate::engine::ExecutionProfile>,
     pub(crate) scheduler: crate::scheduling::Handle,
     pub(crate) escalator: crate::escalation::Handle,
     escalation_snapshot: bool,
@@ -314,6 +315,7 @@ impl Session {
             subtask_started: None,
             resume_answer: None,
             exploration: None,
+            advice_profile: None,
             checker_binding: None,
             scheduler,
             escalator: Default::default(),
@@ -1065,9 +1067,12 @@ impl Session {
         })
     }
 
-    async fn exploration_advice(&mut self, base: &str) -> Result<Option<String>> {
-        let phase_budget = (self.deadline.saturating_duration_since(Instant::now()) / 3)
-            .min(Duration::from_secs(self.cfg.timeout_seconds));
+    async fn exploration_advice(
+        &mut self,
+        base: &str,
+        ticket: advice_guard::Ticket,
+    ) -> Result<Option<String>> {
+        let phase_budget = ticket.remaining();
         self.store.event(
             &self.task,
             "exploration_phase_budget",
@@ -1077,11 +1082,26 @@ impl Session {
                 "original_deadline_preserved":true,"provider_stop_proven":false
             }),
         )?;
-        let result =
-            match tokio::time::timeout(phase_budget, self.call("explorer", base, 128)).await {
-                Ok(result) => result,
-                Err(_) => Err(InferenceTimeout.into()),
-            };
+        if ticket.remaining().is_zero() {
+            return Ok(None);
+        }
+        let result = match tokio::time::timeout(
+            ticket.remaining(),
+            self.call("explorer", base, 128),
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(_) => Err(InferenceTimeout.into()),
+        };
+        self.observe_advice(
+            &ticket,
+            match &result {
+                Err(error) if error.is::<InferenceTimeout>() => advice_guard::Outcome::TimedOut,
+                Err(_) => advice_guard::Outcome::Failed,
+                Ok(_) => advice_guard::Outcome::Completed,
+            },
+        )?;
         match result {
             Err(error) if error.is::<InferenceTimeout>() => {
                 self.finish_metrics();
@@ -1100,9 +1120,12 @@ impl Session {
         }
     }
 
-    async fn planning_advice(&mut self, base: &str) -> Result<String> {
-        let phase_budget = (self.deadline.saturating_duration_since(Instant::now()) / 3)
-            .min(Duration::from_secs(self.cfg.timeout_seconds));
+    async fn planning_advice(
+        &mut self,
+        base: &str,
+        ticket: advice_guard::Ticket,
+    ) -> Result<String> {
+        let phase_budget = ticket.remaining();
         self.store.event(
             &self.task,
             "planning_phase_budget",
@@ -1112,7 +1135,10 @@ impl Session {
                 "original_deadline_preserved":true,"provider_stop_proven":false
             }),
         )?;
-        let result = tokio::time::timeout(phase_budget, async {
+        if ticket.remaining().is_zero() {
+            return Ok(String::new());
+        }
+        let result = tokio::time::timeout(ticket.remaining(), async {
             let Some(plan) = self.call("planner", base, 256).await? else {
                 return Ok(String::new());
             };
@@ -1146,6 +1172,14 @@ impl Session {
             Ok(result) => result,
             Err(_) => Err(InferenceTimeout.into()),
         };
+        self.observe_advice(
+            &ticket,
+            match &result {
+                Err(error) if error.is::<InferenceTimeout>() => advice_guard::Outcome::TimedOut,
+                Err(_) => advice_guard::Outcome::Failed,
+                Ok(_) => advice_guard::Outcome::Completed,
+            },
+        )?;
         match result {
             Err(error) if error.is::<InferenceTimeout>() => {
                 self.finish_metrics();
@@ -1241,9 +1275,15 @@ impl Session {
                     .saturating_sub(self.resources.prompt_bytes)
                     >= prompt_reserve
                 && base.len().saturating_add(64) <= 32000;
+            let ticket = if admitted {
+                self.advice_ticket(advice_guard::Phase::Planning, mode, &base)?
+            } else {
+                None
+            };
+            let admitted = ticket.is_some();
             self.store.event(&self.task,"schedule","jev-plus",json!({"decision":if admitted {"admit_planning"} else {"skip_planning"},"reason":"Preserve first whole-goal solver call, output and prompt budget","reserved_prompt_bytes":prompt_reserve}))?;
-            if admitted {
-                strategy = self.planning_advice(&base).await?;
+            if let Some(ticket) = ticket {
+                strategy = self.planning_advice(&base, ticket).await?;
             }
         }
         if collective && !resuming && mode == "research" && self.call_limit >= 4 {
@@ -1263,9 +1303,15 @@ impl Session {
                     .saturating_sub(self.resources.prompt_bytes)
                     >= prompt_reserve
                 && base.len().saturating_add(16064) <= 32000;
+            let ticket = if admitted {
+                self.advice_ticket(advice_guard::Phase::Exploration, mode, &base)?
+            } else {
+                None
+            };
+            let admitted = ticket.is_some();
             self.store.event(&self.task,"schedule","jev-plus",json!({"decision":if admitted {"admit_exploration"} else {"skip_exploration"},"reason":"Preserve first whole-goal solver call, output and prompt budget","reserved_prompt_bytes":prompt_reserve}))?;
-            if admitted {
-                if let Some(exploration) = self.exploration_advice(&base).await? {
+            if let Some(ticket) = ticket {
+                if let Some(exploration) = self.exploration_advice(&base, ticket).await? {
                     self.accept_exploration(&exploration, &mut strategy)?;
                 }
             }
@@ -3551,3 +3597,6 @@ pub(crate) mod convergence;
 
 #[path = "reasoning/exploration.rs"]
 pub(crate) mod exploration;
+
+#[path = "reasoning/advice_guard.rs"]
+pub mod advice_guard;

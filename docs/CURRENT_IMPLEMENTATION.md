@@ -1916,3 +1916,38 @@ fresh generation was not run. Real-provider validation is explicitly separate
 from mocks; all outcomes and provider-setting differences are retained. The
 previous automatic-review quota failure did not execute the pending comparison;
 this date's approved retry is the recorded b20d736 run, not a silent restart.
+
+## Recent optional-advice cost admission (2026-10-21)
+
+Optional owner `advice_guard` now skips planning/exploration after enough recent
+same-scope failures or completions too costly for the current phase budget.
+Scope binds configuration, prompts/source, module metadata, mode, criterion,
+prompt-size bucket and execution profile. The reader uses a fixed 512-event tail,
+4-KiB strict records and same-boot elapsed time; stale/other-boot/future samples do
+not establish failure. Decision/observation auditing fails closed and expired
+phase tickets dispatch no work. Original budgets, independent checks and default
+serialized behavior remain intact. Reopened state shares observations; model or
+profile changes start separate cohorts. Saved continuation does not replay fresh
+optional advice. See [advice guard](ADVICE_GUARD.md).
+
+This is operational cost suppression, not calibrated benefit, semantic equivalence,
+physical hardware enforcement or proven real-model efficiency/quality. Cancellation
+can leave missing observations and the bounded tail can forget history. Comparison
+profiles are separated, but same-profile history remains live and is disclosed by
+`adaptive_advice_history_frozen:false` when enabled. General expected-utility and
+independent live evaluation remain incomplete; Jev+ and Jev-R remain Partial.
+
+Verification: `cargo fmt --all -- --check`,
+`cargo check --locked --workspace --all-targets`,
+`cargo test --locked --workspace --all-targets` (**718 passed across 37 targets**,
+none ignored) and `cargo clippy --locked --workspace --all-targets -- -D warnings`
+pass on the final unchanged source. The focused five-test implementation pass and
+actual CLI/HTTP regression passed before final profile/cost/expiration coverage.
+An earlier full run correctly rejected a compiled-source fingerprint after edits
+continued during that run; the check was preserved and the final rebuild/full gate
+passes. Existing sockets, migrations, mock inference, malformed frames, denials,
+cancellation, recovery and rollback remain green under approved local socket
+access. Protocol/generated bindings are unchanged; exact bundled pairing/integrity
+checks pass, but `flatc` is absent and fresh generation was not run. No real-model
+performance/quality gain is claimed for the new guard; its fixture evidence is
+separate from the preceding public Qwen diagnostics.

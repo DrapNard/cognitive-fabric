@@ -1,5 +1,50 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+### Guard optional advice using recent scoped costs — 2026-10-21
+
+**Implemented (opt-in recent-cost suppression); Partial (calibrated utility).**
+`Config.advice_guard` configures bounded minimum/sample/window/failure thresholds.
+`src/reasoning/advice_guard.rs` binds configuration, compiled prompts/source,
+canonical modules, profile, mode, criterion and initial prompt-size bucket. It
+examines a fixed newest-512-event tail with strict 4-KiB observation bounds and
+same-boot time, taking at most 16 current matching samples. Timeout/error and
+completed-over-current-budget observations count as failure; exact threshold
+comparison can skip optional planning/exploration before new reservations.
+Larger original phase-budget buckets are required; stale/future/other-boot samples
+are ignored. No model, permission, inference allowance or schema change is added.
+
+Required decision/outcome auditing fails closed. Tickets retain original phase
+ceilings through history/audit time, and expired tickets start no inference.
+No-call phases create no positive observation. Persistence survives reopen; model,
+module/config/source/criterion/profile changes separate cohorts. Execution profiles
+cannot suppress one another. Comparison discloses that enabled same-profile
+history is live rather than frozen. Saved graph/revision continuation retains its
+existing path and original budgets. Default absent serialization stays compatible.
+
+Eight unit/engine tests plus an actual separate-process CLI/HTTP regression cover
+history bounds/scope/time/budget, thresholds, expensive completions, both stages,
+model/profile separation, persistence, expiration and audit failures. See
+[advice guard](ADVICE_GUARD.md). Mechanical phase completion is not usable/verified
+advice. Cancellation can leave no observation, the tail/window can forget history,
+and concurrent warm probes remain possible. Real-model gains, expected utility,
+physical resource proof and broader evaluation remain incomplete. Jev+ and Jev-R
+remain Partial.
+
+Verification: `cargo fmt --all -- --check`,
+`cargo check --locked --workspace --all-targets`,
+`cargo test --locked --workspace --all-targets` (**718 passed across 37 targets**,
+none ignored) and `cargo clippy --locked --workspace --all-targets -- -D warnings`
+pass on the final unchanged source. The focused five-test implementation pass and
+actual CLI/HTTP regression passed before final profile/cost/expiration coverage.
+An earlier full run correctly rejected a compiled-source fingerprint after edits
+continued during that run; the check was preserved and the final rebuild/full gate
+passes. Existing sockets, migrations, mock inference, malformed frames, denials,
+cancellation, recovery and rollback remain green under approved local socket
+access. Protocol/generated bindings are unchanged; exact bundled pairing/integrity
+checks pass, but `flatc` is absent and fresh generation was not run. No real-model
+performance/quality gain is claimed for the new guard; its fixture evidence is
+separate from the preceding public Qwen diagnostics.
+
 ## Retain and independently check public portfolio evidence — 2026-10-21
 
 **Measured public integration / general quality remains Partial.** Two complete

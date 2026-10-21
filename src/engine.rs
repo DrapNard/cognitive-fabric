@@ -371,6 +371,7 @@ impl Engine {
             execution_start,
         )?;
         session.scheduler = self.scheduler.clone();
+        session.advice_profile = Some(profile);
         session.resource_pool = resource_pool;
         if !matches!(
             profile,

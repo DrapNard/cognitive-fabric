@@ -78,7 +78,7 @@ impl ExecutionStart {
 }
 
 #[cfg(target_os = "linux")]
-fn observation() -> Option<(String, u64)> {
+pub(crate) fn observation() -> Option<(String, u64)> {
     use std::{io::Read, os::unix::fs::OpenOptionsExt};
     let mut time = libc::timespec {
         tv_sec: 0,
@@ -105,7 +105,7 @@ fn observation() -> Option<(String, u64)> {
     Some((boot_id, ns))
 }
 #[cfg(not(target_os = "linux"))]
-fn observation() -> Option<(String, u64)> {
+pub(crate) fn observation() -> Option<(String, u64)> {
     None
 }
 

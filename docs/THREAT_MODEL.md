@@ -865,3 +865,23 @@ validate replay, grant authority or prove execution/quality. Repeated recovery
 selection audits remain repeated observations. Compiled source/prompt fingerprints
 identify scope without attesting an executable, callback or provider weights.
 No task budgets, permissions, data retrieval or execution policy changes.
+
+## Recent-advice guard boundary (2026-10-21)
+
+The opt-in guard reads only bounded native observation metadata; external documents
+and model assertions cannot set outcome/cost or grant authority. Decision and
+post-attempt observation audits must persist. Unknown/malformed/oversized inspected
+observations fail before subsequent inference; valid unrelated/stale/other-boot/
+future samples are not borrowed. Default absence does not activate history reads.
+Config, compiled prompt/source scope, declared modules, profile, criterion and size
+bucket are bound, without claiming semantic or physical model identity. Tickets
+retain elapsed admission/audit time and never reset task/phase budgets. Skipping
+optional work never adds permissions, calls, tokens, cycles or provider-stop proof.
+
+This is a forgetful, concurrent operational heuristic, not a security quota,
+signature, calibrated probability or independently proven expected utility. Missing
+cancelled/crashed outcomes are not successes. Retention/tail displacement can permit
+new probes; same-user tampering and blocking trusted callbacks remain threats.
+Comparison arms have separate profiles, but their own adaptive history is not
+frozen by corpus capture and is explicitly disclosed. No schema/IPC replacement,
+provider lifecycle action or neural promotion is added.

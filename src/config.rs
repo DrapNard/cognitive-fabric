@@ -28,6 +28,8 @@ pub struct Config {
     pub resource_admission: Option<crate::resource_scheduler::Configuration>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub subtask_scheduling: Option<crate::scheduling::Policy>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub advice_guard: Option<crate::reasoning::advice_guard::Settings>,
     pub inference_auth_scope: Option<String>,
     pub model: String,
     pub model_registration: Option<crate::models::Selection>,
@@ -62,6 +64,7 @@ impl Default for Config {
             sql_process: false,
             resource_admission: None,
             subtask_scheduling: None,
+            advice_guard: None,
             inference_auth_scope: None,
             model: "local-model".into(),
             model_registration: None,
@@ -125,6 +128,9 @@ impl Config {
     }
 
     pub fn validate(&self) -> Result<()> {
+        if let Some(settings) = &self.advice_guard {
+            settings.validate()?;
+        }
         if let Some(configuration) = &self.resource_admission {
             configuration.validate()?;
         }

@@ -729,3 +729,12 @@ Both report headers include `runtime_sources_sha256`; comparison headers also
 include `compiled_role_prompts_sha256`. These identify compiled source/prompt
 scope separately from the operator-attested Git revision. They do not attest
 executables, a compiler, native callback implementations or provider weights.
+
+## Adaptive optional-advice history
+
+An enabled [advice guard](ADVICE_GUARD.md) isolates profiles in its scope, but its
+recent same-profile timing history remains live across cases/runs. The frozen
+corpus does not freeze this operational history. `adaptive_advice_history_frozen`
+is false when enabled (true when disabled), with a corresponding report limitation.
+Use the recorded task decisions when reviewing adaptive results; do not imply
+that timing history, provider state or expected utility was independently controlled.
