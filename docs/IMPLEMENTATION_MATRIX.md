@@ -1,5 +1,49 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+### Deploy reviewed workflow policies through the HTTP host — 2026-10-21
+
+**Implemented (explicit host deployment); Partial (general policy lifecycle).**
+Architecture sections 4, 9 and 10 require replaceable coordination decisions under
+independent permissions. `crates/cogfabric-server/src/main.rs` now accepts paired
+`--workflow-study` / `--workflow-thresholds` options. The existing bounded strict
+no-follow loader validates and pins the policy before configuration/state/backend
+initialization. Hidden worker entry points reject host policy options before
+worker startup. Omission retains default tag routing.
+
+Only the collective Engine receives the policy; native conversation turns retain
+their existing path. Requests cannot select evidence files or thresholds, replace
+the host router or raise budgets. Policy-file replacement after startup does not
+change the retained policy. No persistent configuration, capability grant,
+executable, model weight or provider lifecycle changes. Reviewed synthetic studies
+still do not establish held-out quality, calibrated utility or physical efficiency.
+Pre-routing checkpoint restoration and broader independent evaluation remain open;
+Jev+ and Jev-R remain Partial.
+
+The actual server-process regression covers default routing, evidence-matched
+acceptance, exact accepted/declined policy identities, collective requests after
+policy-file replacement, a stricter policy in a fresh host, native-turn isolation,
+HTTP override rejection without inference, and invalid/partial/worker options
+before state creation. These are synthetic loopback integration checks, not live
+model-quality or speed measurements.
+
+Sources and reproduction: server main, process integration in
+`crates/cogfabric-server/tests/workflow_policy.rs`,
+[workflow deployment](EMPIRICAL_WORKFLOW_ROUTING.md#direct-cli-and-local-service-deployment)
+and [HTTP setup](HTTP_API.md#reviewed-collective-workflow-policy).
+
+Verification: `cargo fmt --all -- --check`,
+`cargo check --locked --workspace --all-targets`,
+`cargo test --locked --workspace --all-targets` (**719 passed across 38 targets**,
+none ignored) and `cargo clippy --locked --workspace --all-targets -- -D warnings`
+pass. The focused real-process test also passes. Its initial restricted-sandbox
+run could not bind TCP (`EPERM`); the approved host-socket retry and full suite
+passed. Existing socket, database migration, mock inference, malformed frame,
+policy denial, cancellation, continuation and rollback regressions remain green.
+Core protocol/generated bindings are unchanged; bundled exact-pairing/integrity
+checks passed. `flatc` is unavailable, so fresh generation was not run. No live
+model, GPU or independently held-out effectiveness claim follows from this change.
+
+
 ### Guard optional advice using recent scoped costs — 2026-10-21
 
 **Implemented (opt-in recent-cost suppression); Partial (calibrated utility).**

@@ -124,6 +124,26 @@ Responses API, embeddings, images, audio, remote HTTP access and multi-tenant
 isolation are not implemented. Compatibility is tested with OpenCode v2.0.26,
 not asserted for every OpenAI client.
 
+### Reviewed collective workflow policy
+
+The server operator can pin a reviewed workflow policy at startup:
+
+```bash
+cogfabric-server --home /path/to/private/state --bind 127.0.0.1:8234 \
+  --workflow-study study.json --workflow-thresholds thresholds.json
+```
+
+Both options are required together. Bounded strict regular-file validation runs
+before workspace state or backend initialization. Invalid files stop startup;
+replacement after startup cannot alter the immutable policy. Hidden worker entry
+points reject these host options. Omission retains default tag routing.
+
+This policy ranks optional workflow experts for collective aliases only. Native
+`cogfabric-agent` turns retain their existing path. Clients cannot override the
+policy through request fields, messages or tools. Study observations do not grant
+capabilities or raise budgets, and operator attestations are not independent
+quality evidence. See [policy format and boundaries](EMPIRICAL_WORKFLOW_ROUTING.md).
+
 ## OpenCode v2 configuration
 
 Add this to the project `opencode.json` (v1 uses a different configuration shape):

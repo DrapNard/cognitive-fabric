@@ -89,9 +89,21 @@ A host reads and validates the files exactly once at startup. Replacing either
 file does not alter its policy or admitted tasks. A new process must explicitly
 load the revised policy. No configuration file is changed, no executable plugin
 is loaded, and no model capabilities are granted. Every task records the policy
-identity. This CLI deployment applies to direct Core tasks and the Unix service;
-the separate HTTP server binary has no equivalent options yet. Continuation supports only its existing post-routing ready checkpoints. It does
-not rerun a missing routing phase or reconstruct a router from stored metadata;
+identity. This deployment applies to direct Core tasks and the Unix service. The
+optional HTTP server accepts the same paired startup options:
+
+```sh
+cogfabric-server --home /path/to/private/state --bind 127.0.0.1:8234 \
+  --workflow-study study.json --workflow-thresholds thresholds.json
+```
+
+The HTTP host validates and pins the policy before creating workspace state or
+constructing backends. It applies to collective aliases; native `cogfabric-agent`
+turns retain their one-call conversation path. HTTP clients cannot submit policy
+files or thresholds. Worker entry points reject these host options. Omission
+preserves the default router. The existing dedicated server bearer key is still
+required. Continuation supports only its existing post-routing ready checkpoints.
+It does not rerun a missing routing phase or reconstruct a router from stored metadata;
 policy metadata alone cannot restore code or establish utility.
 
 The end-to-end fixture covers accepted and declined direct tasks, actual HTTP

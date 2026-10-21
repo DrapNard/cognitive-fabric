@@ -734,7 +734,10 @@ Direct `ask` and Unix `serve` accept paired `--workflow-study` and
 and the resulting policy is immutable for that host. Later file replacement does
 not alter tasks. Socket clients cannot override the service policy. This does not
 change persistent configuration, install executables or grant model capabilities.
-HTTP-server policy options and pre-routing checkpoint continuation remain incomplete.
+The HTTP server also accepts the paired host startup options, validates them before
+state/backend initialization and pins the policy for collective aliases. Native
+conversation turns do not use it, HTTP requests cannot replace it, and worker entry
+points reject the host flags. Pre-routing checkpoint continuation remains incomplete.
 See [workflow-policy deployment](EMPIRICAL_WORKFLOW_ROUTING.md#direct-cli-and-local-service-deployment).
 
 ### Bounded finite-domain evidence

@@ -9,6 +9,11 @@ struct Args {
     home: Option<PathBuf>,
     #[arg(long, default_value = "127.0.0.1:8234")]
     bind: SocketAddr,
+    /// Pin reviewed workflow utility evidence for this HTTP service lifetime.
+    #[arg(long, requires = "workflow_thresholds")]
+    workflow_study: Option<PathBuf>,
+    #[arg(long, requires = "workflow_study")]
+    workflow_thresholds: Option<PathBuf>,
     #[command(subcommand)]
     worker: Option<Worker>,
 }
@@ -49,6 +54,9 @@ enum Worker {
 async fn main() -> Result<()> {
     let args = Args::parse();
     if let Some(worker) = args.worker {
+        if args.workflow_study.is_some() || args.workflow_thresholds.is_some() {
+            anyhow::bail!("Workflow policy options are not valid for worker commands")
+        }
         let home = args
             .home
             .as_deref()
@@ -70,6 +78,18 @@ async fn main() -> Result<()> {
             }
         };
     }
+    // Validate and pin the optional policy before loading or preparing state and
+    // before constructing either inference backend. Requests cannot replace it.
+    let workflow_router: Option<Arc<dyn cogfabric::routing::ExpertRouter>> = match (
+        args.workflow_study.as_deref(),
+        args.workflow_thresholds.as_deref(),
+    ) {
+        (Some(study), Some(thresholds)) => Some(Arc::new(
+            cogfabric::routing::empirical::load_files(study, thresholds)?,
+        )),
+        (None, None) => None,
+        _ => anyhow::bail!("Workflow study and thresholds must be provided together"),
+    };
     cogfabric_server::validate_bind(args.bind)?;
     let token = std::env::var("COGFABRIC_SERVER_API_KEY").map_err(|_| {
         anyhow::anyhow!("Set a dedicated COGFABRIC_SERVER_API_KEY (32+ characters)")
@@ -79,7 +99,12 @@ async fn main() -> Result<()> {
     let store = Arc::new(Store::open_with_limit(&cfg.db(), cfg.max_database_bytes)?);
     cogfabric::store::bootstrap(&store)?;
     let agent = AgentRuntime::local(cfg.clone(), store.clone())?;
-    let server = cogfabric_server::Server::new(agent, Engine::new(cfg, store), &token)?;
+    let engine = Engine::new(cfg, store);
+    let engine = match workflow_router {
+        Some(router) => engine.with_expert_router(router)?,
+        None => engine,
+    };
+    let server = cogfabric_server::Server::new(agent, engine, &token)?;
     let listener = tokio::net::TcpListener::bind(args.bind).await?;
     eprintln!(
         "Cognitive Fabric HTTP API listening on {}",
