@@ -849,6 +849,24 @@ and resumes only recorded model work.
 
 Incomplete search reservations, altered/missing/duplicate receipts, terminal
 witness/contradiction/deadline results and budget-skipped searches are refused.
-Saved-result reconciliation remains unsupported for search-enabled CSPs. No search
-is replayed or refunded, and local hashes do not authenticate a hostile owner.
+Saved model-result reconciliation may use a valid completed limit receipt, as
+described below. No search is replayed or refunded, and local hashes do not
+authenticate a hostile owner.
 See [finite search](FINITE_SEARCH.md#continuation-after-an-incomplete-search).
+
+### Saved model-result reconciliation after a search limit
+
+`recover-verified-result` now validates the original finite-search limit receipt
+before checking a saved model candidate against the full original CSP. It retains
+the existing fresh verifier charge, transaction rollback and original resource
+ledger. The report and audit include `finite_search_history`. A saved subtask
+candidate may complete only if it satisfies the entire criterion. Rejected
+advisory checks do not count as whole-goal progress; validated proof metadata does
+not prevent later supported graph continuation.
+
+Failed whole-goal recovery may assemble a ready revision only through the normal
+progress/recurrence and checkpoint admission gates. Repeated rechecks retain fresh
+charges while reusing identical proof metadata. Reconciliation runs under its
+bounded SQL transaction and never replays search/inference or resets the original
+clock; an expired original deadline prevents new reasoning. Direct-search results
+and incomplete/skipped phases remain unsupported. See [saved search candidates](FINITE_SEARCH.md#reconcile-a-saved-model-candidate-after-the-search-limit).

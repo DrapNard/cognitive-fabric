@@ -1,5 +1,52 @@
 # Current Rust implementation
 
+### Reconcile saved model candidates after bounded search — 2026-10-21
+
+**Implemented (receipt-bound model-result reconciliation); Partial (general search-phase recovery).**
+Architecture sections 5, 7, 9 and 10 require evidence-aware persistent reasoning
+under independent permissions. `recover-verified-result` validates a completed
+original search-limit receipt before reserving a fresh independent verifier check.
+It recovers only a recorded ledger-backed solver candidate and checks the full
+original criterion. A satisfying advisory candidate is still a genuine witness;
+role labels and model assertions alone cannot complete a task.
+
+Reconciliation never repeats search or inference and retains all original charges.
+Failed checks remain charged, while identical recovery proof metadata may be reused.
+Rejected advisory proofs are validated against their actual recorded solver text
+and independent failure without advancing whole-goal progress. Failed whole-goal
+checks may create a ready revision only under existing recurrence/plateau, graph,
+escalation, resource and original deadline gates. Atomic audit failure rolls back
+new proof/checkpoint/charge writes. Reports expose bounded `finite_search_history`.
+
+Sources: `src/recovery/{finite_search,result,continuation,continuation_progress}.rs`,
+progress regression tests and `tests/finite_search_result_recovery.rs`. See
+[saved search candidates](FINITE_SEARCH.md#reconcile-a-saved-model-candidate-after-the-search-limit).
+No capability grant, network access, generated code, protocol, migration, model
+weight or acceptance threshold changes. Explicit proof reconciliation retains its
+bounded SQL transaction; it does not create a new task wall allowance. Direct
+search results and incomplete/skipped search phases remain unsupported. Jev+ and
+Jev-R remain Partial; durable search-result recovery and independent quality/cost
+measurement remain subsequent engineering milestones.
+
+Verification: `cargo fmt --all -- --check`,
+`cargo check --locked --workspace --all-targets`,
+`cargo test --locked --workspace --all-targets` (**784 passed across 45 targets**,
+none ignored), and `cargo clippy --locked --workspace --all-targets -- -D warnings`
+pass on frozen sources. Nine new integration tests cover receipt/candidate checks,
+atomic audit rollback, repeated charged recovery, proof/assessment crash windows,
+advisory witnesses and rejected-advice graph continuation, plateau refusal and
+expired-clock reconciliation. Actual loopback HTTP confirms resumed call counts.
+The eight focused progress-validator tests and six existing result-recovery unit
+tests pass, including strict advisory proof tampering and legacy no-call proof
+compatibility. Initial fixture errors (subtask state/plan shape, checkpoint count
+and plateau length) were corrected against runtime semantics; production budgets,
+thresholds and existing tests were preserved. Existing socket, migrations, mock
+inference, malformed frames, denials, cancellation, continuation and candidate
+rollback tests remain green. Exact bundled FlatBuffers pairing/integrity checks
+pass; `flatc` is unavailable and fresh generation was not run. No real-model,
+GPU/energy or general quality/performance measurement was performed for this slice.
+
+
 ### Continue model reasoning after a recorded search limit — 2026-10-21
 
 **Implemented (validated limit-receipt continuation); Partial (general search recovery).**

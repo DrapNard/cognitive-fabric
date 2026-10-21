@@ -272,6 +272,107 @@ pub(super) fn validate(
     }))
 }
 
+/// Validate the original completed search only when the finite-domain task
+/// enabled or entered that phase. Search-disabled legacy tasks keep their
+/// prior saved-result behavior.
+pub(super) fn validate_saved_history(
+    db: &rusqlite::Connection,
+    task: &str,
+    query: &str,
+) -> Result<Option<Receipt>> {
+    let criterion = Criterion::from_query(query)?;
+    if !criterion
+        .as_ref()
+        .is_some_and(|criterion| criterion.name() == "finite_domain/v1")
+    {
+        return Ok(None);
+    }
+
+    use rusqlite::OptionalExtension;
+    let settings: Option<String> = db
+        .query_row(
+            "SELECT CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN payload END FROM events WHERE task_id=?1 AND kind='execution_settings' ORDER BY id LIMIT 1",
+            [task],
+            |row| row.get(0),
+        )
+        .optional()?
+        .flatten();
+    let cfg = match settings {
+        Some(raw) => {
+            let payload = crate::strict_json::value(raw.as_bytes(), 262144)?;
+            let cfg: Config = serde_json::from_value(payload["configuration"].clone())?;
+            cfg.validate()?;
+            cfg
+        }
+        None => Config::default(),
+    };
+    let search_recorded: bool = db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM events WHERE task_id=?1 AND ((kind IN ('policy','tool_reservation') AND json_extract(payload,'$.capability')='constraints.solve') OR kind='finite_search'))",
+        [task],
+        |row| row.get(0),
+    )?;
+    if cfg.finite_search.is_none() && !search_recorded {
+        return Ok(None);
+    }
+    let context_id: Option<i64> = db.query_row(
+        "SELECT min(id) FROM events WHERE task_id=?1 AND kind='reasoning_context'",
+        [task],
+        |row| row.get(0),
+    )?;
+    let context_id =
+        context_id.ok_or_else(|| anyhow::anyhow!("Original reasoning context is missing"))?;
+    validate(db, task, query, &cfg, context_id, None)
+}
+
+/// Require a saved candidate to be the durable output of its original solver
+/// call, following the validated search receipt. A present positive reasoning
+/// cycle must also have its own preceding reservation; cycle zero is valid for
+/// advisory solver results produced before whole-goal cycle scheduling.
+pub(super) fn validate_saved_solver(
+    db: &rusqlite::Connection,
+    task: &str,
+    saved: &Value,
+    audit: &Value,
+    receipt: &Receipt,
+) -> Result<()> {
+    let node: crate::reasoning::Node = serde_json::from_value(saved["node"].clone())?;
+    let call = saved["call"]
+        .as_u64()
+        .ok_or_else(|| anyhow::anyhow!("Saved solver result has no call identity"))?;
+    if node.role != "solver"
+        || node.cycle > 16
+        || audit["calls"].as_array().is_none_or(|calls| {
+            !calls.iter().any(|entry| {
+                entry["call"].as_u64() == Some(call)
+                    && entry["role"] == "solver"
+                    && entry["state"] == "result_recorded"
+            })
+        })
+    {
+        bail!("Saved result has no ledger-backed solver call identity")
+    }
+    let (solver_id, source, raw): (i64, String, String) = db.query_row(
+        "SELECT id,CASE WHEN length(CAST(source AS BLOB))<=64 THEN source END,CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN payload END FROM events WHERE task_id=?1 AND kind='reasoning' AND json_extract(payload,'$.call')=?2 AND json_extract(payload,'$.node.role')='solver' ORDER BY id DESC LIMIT 1",
+        rusqlite::params![task, call],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+    )?;
+    let recorded = crate::strict_json::value(raw.as_bytes(), 262144)?;
+    if source != "jev-r" || recorded != *saved || solver_id <= receipt.event_id {
+        bail!("Saved solver result is not the recorded post-search result")
+    }
+    if node.cycle > 0 {
+        let cycle_recorded: bool = db.query_row(
+            "SELECT EXISTS(SELECT 1 FROM events WHERE task_id=?1 AND kind='cycle_reservation' AND json_extract(payload,'$.cycle')=?2 AND id<?3)",
+            rusqlite::params![task, node.cycle, solver_id],
+            |row| row.get(0),
+        )?;
+        if !cycle_recorded {
+            bail!("Saved solver cycle has no preceding durable reservation")
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

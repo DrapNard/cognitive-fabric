@@ -4,7 +4,14 @@ use anyhow::{bail, Result};
 use serde_json::Value;
 use std::collections::BTreeMap;
 
-type VerificationAudit = (i64, String, bool, Option<String>, Option<String>);
+type VerificationAudit = (
+    i64,
+    String,
+    bool,
+    Option<String>,
+    Option<String>,
+    Option<u64>,
+);
 
 fn validate_published_memory_check(
     query: &str,
@@ -164,7 +171,10 @@ pub(super) fn validate_before(
         },
     )?;
     let mut solvers = BTreeMap::<u32, (i64, String, String)>::new();
+    let mut solver_calls = BTreeMap::<u32, u64>::new();
+    let mut cycle_zero_solvers = Vec::<(i64, u64, String, String)>::new();
     let mut verifications = BTreeMap::<u32, Vec<VerificationAudit>>::new();
+    let mut cycle_zero_rechecks = Vec::<(i64, Value)>::new();
     let mut progress_events = BTreeMap::<u32, (i64, Value)>::new();
     let mut event_count = 0usize;
     let mut total_bytes = 0usize;
@@ -205,21 +215,31 @@ pub(super) fn validate_before(
                     .as_u64()
                     .and_then(|n| u32::try_from(n).ok())
                     .ok_or_else(|| anyhow::anyhow!("Invalid solver cycle in progress history"))?;
-                if cycle == 0 {
-                    continue;
-                }
                 let answer = payload["text"]
                     .as_str()
-                    .ok_or_else(|| anyhow::anyhow!("Missing whole-goal solver text"))?;
+                    .ok_or_else(|| anyhow::anyhow!("Missing saved solver text"))?;
                 let hash = crate::store::sha256(answer.as_bytes());
-                if answer.len() > 96_000
-                    || node.cycle != cycle
-                    || node.content_hash != hash
-                    || solvers
+                if answer.len() > 96_000 || node.cycle != cycle || node.content_hash != hash {
+                    bail!("Altered saved solver result")
+                }
+                let call = payload["call"]
+                    .as_u64()
+                    .ok_or_else(|| anyhow::anyhow!("Missing saved solver call identity"))?;
+                if cycle == 0 {
+                    if call == 0 {
+                        bail!("Invalid cycle-zero solver call identity")
+                    }
+                    cycle_zero_solvers.push((event_id, call, answer.to_owned(), hash));
+                } else {
+                    if solvers
                         .insert(cycle, (event_id, answer.to_owned(), hash))
                         .is_some()
-                {
-                    bail!("Duplicate or altered whole-goal solver result")
+                    {
+                        bail!("Duplicate whole-goal solver cycle")
+                    }
+                    if solver_calls.insert(cycle, call).is_some() {
+                        bail!("Duplicate whole-goal solver call identity")
+                    }
                 }
             }
             "verification" => {
@@ -252,6 +272,7 @@ pub(super) fn validate_before(
                                 | "reason"
                                 | "cycle"
                                 | "origin"
+                                | "call"
                         )
                     })
                 }) {
@@ -273,6 +294,7 @@ pub(super) fn validate_before(
                     .ok_or_else(|| anyhow::anyhow!("Missing verifier result"))?;
                 let reason = payload["reason"].as_str().map(str::to_owned);
                 let origin = payload["origin"].as_str().map(str::to_owned);
+                let call = payload["call"].as_u64();
                 if payload
                     .get("reason")
                     .is_some_and(|value| !value.is_null() && !value.is_string())
@@ -285,10 +307,17 @@ pub(super) fn validate_before(
                 {
                     bail!("Malformed independent progress verification")
                 }
+                if payload.get("call").is_some() && call.is_none() {
+                    bail!("Malformed independent verification call identity")
+                }
+                if cycle == 0 {
+                    cycle_zero_rechecks.push((event_id, payload));
+                    continue;
+                }
                 verifications
                     .entry(cycle)
                     .or_default()
-                    .push((event_id, hash, verified, reason, origin));
+                    .push((event_id, hash, verified, reason, origin, call));
             }
             "reasoning_progress" => {
                 if source != "verifier-r" {
@@ -314,6 +343,66 @@ pub(super) fn validate_before(
 
     if solvers.len() > 16 || progress_events.len() > 16 {
         bail!("Progress continuation exceeds the cycle cap")
+    }
+    if cycle_zero_solvers.len() > 32 || cycle_zero_rechecks.len() > 32 {
+        bail!("Cycle-zero recovery evidence exceeds bounds")
+    }
+    let mut cycle_zero_calls = std::collections::BTreeSet::new();
+    for (event_id, proof) in cycle_zero_rechecks {
+        let fields = [
+            "criterion",
+            "verified",
+            "origin",
+            "objective_hash",
+            "answer_hash",
+            "reason",
+            "cycle",
+            "call",
+        ];
+        if proof.as_object().is_none_or(|object| {
+            object.len() != fields.len() || fields.iter().any(|field| !object.contains_key(*field))
+        }) || proof["criterion"] != criterion.name()
+            || proof["verified"] != false
+            || proof["origin"] != "saved_solver_recovery"
+            || proof["objective_hash"] != crate::store::sha256(query.as_bytes())
+            || proof["cycle"] != 0
+        {
+            bail!("Malformed cycle-zero saved-result verification")
+        }
+        let hash = proof["answer_hash"]
+            .as_str()
+            .filter(|hash| {
+                hash.len() == 64
+                    && hash
+                        .bytes()
+                        .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+            })
+            .ok_or_else(|| anyhow::anyhow!("Invalid cycle-zero answer hash"))?;
+        let call = proof["call"]
+            .as_u64()
+            .ok_or_else(|| anyhow::anyhow!("Missing cycle-zero solver call identity"))?;
+        if !cycle_zero_calls.insert(call) {
+            bail!("Duplicate cycle-zero saved-result verification")
+        }
+        let reason = proof["reason"]
+            .as_str()
+            .filter(|reason| !reason.is_empty() && reason.len() <= 16384)
+            .ok_or_else(|| anyhow::anyhow!("Missing cycle-zero rejection reason"))?;
+        let matched =
+            cycle_zero_solvers
+                .iter()
+                .any(|(solver_id, solver_call, answer, solver_hash)| {
+                    *solver_id < event_id
+                        && *solver_call == call
+                        && solver_hash == hash
+                        && criterion
+                            .check(answer)
+                            .err()
+                            .is_some_and(|error| error.to_string() == reason)
+                });
+        if !matched {
+            bail!("Cycle-zero saved-result verification has no preceding matching rejected solver output")
+        }
     }
     let mut history = crate::reasoning::progress::History::default();
     let mut cycles = solvers.keys().copied().collect::<Vec<_>>();
@@ -354,6 +443,9 @@ pub(super) fn validate_before(
                         .get(position + 1)
                         .is_some_and(|next| check.0 >= solvers[next].0)
                     || check.3.as_deref() != Some(verifier_reason.as_str())
+                    || check
+                        .5
+                        .is_some_and(|call| solver_calls.get(&cycle) != Some(&call))
             })
         {
             bail!("Progress assessment lacks the supported matching failed verification history")

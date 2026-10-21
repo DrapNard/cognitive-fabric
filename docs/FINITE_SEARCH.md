@@ -75,14 +75,47 @@ Revalidating or continuing again does not create another search allowance.
 
 A search reservation without a complete receipt, completed witness/contradiction,
 deadline interruption, or a budget-skipped search remains unsupported for this
-continuation path. Saved-result reconciliation is still refused for search-enabled
-finite tasks. No incomplete traversal is reconstructed, rerun or refunded. These
+continuation path. Saved model-result reconciliation is supported after a valid
+limit receipt as described below. No incomplete traversal is reconstructed, rerun
+or refunded. These
 owner-local consistency checks do not authenticate against a malicious database
 owner or establish provider termination.
 
 The progress-policy ablation refuses enabled finite search so it cannot silently
 compare two arms that bypass the policy under study. Broader search-phase recovery
 and independent utility evaluation remain subsequent milestones.
+
+### Reconcile a saved model candidate after the search limit
+
+`recover-verified-result TASK_UUID` can independently recheck a ledger-backed
+saved solver candidate after a valid recorded search limit. The original search
+authorization/charge/receipt chain is validated before any new check reservation.
+A fresh check consumes one remaining original tool allowance, and its proof and
+recovery audit commit atomically. Successful full-criterion checking completes the
+task; a failed check retains its charge without fabricating success. Search and
+inference are never replayed. The recovery report exposes `finite_search_history`.
+
+The full original criterion applies even when a candidate came from advisory
+subtask work. A satisfying assignment is a valid witness regardless of its source
+role. A rejected advisory candidate does not advance whole-goal progress or create
+a new reasoning cycle. Its failed proof must remain linked to the recorded solver
+text and independent rejection; it cannot poison later graph continuation or be
+borrowed as a whole-goal assessment. With progress tracking enabled, repeated checks retain their new charges and
+reuse only identical bounded proof metadata. Each fresh failed whole-goal check
+records a new ready checkpoint when eligible, because its consumed tool count
+has changed; prior immutable checkpoints are not rewritten.
+
+A rejected whole-goal candidate may produce a ready revision checkpoint only under
+the existing recurrence, plateau, escalation, graph, resource and original-clock
+checks. Explicit reconciliation has the existing five-second SQLite computation
+ceiling; it grants no fresh task wall time. An expired original deadline prevents
+new model reasoning even when a saved witness can still be checked. Audit failure
+rolls back the new charge, proof and prospective checkpoint together.
+
+Terminal direct-search witnesses/contradictions, incomplete or skipped searches,
+unknown inference outcomes and broader traversal-state recovery remain outside
+this path. These checks establish local consistency, not weight identity, physical
+provider termination or general neural safety.
 
 ## Evidence and limits
 
@@ -115,3 +148,20 @@ Final recovery workspace verification: formatting, all-target build, **774 passi
 tests across 44 targets** (none ignored), and Clippy with warnings denied. The
 compiled protocol pair/integrity checks pass; no schema or generated binding was
 changed, and unavailable `flatc` prevented fresh generation.
+
+### Saved-result recovery verification
+
+Nine integration tests cover a recovered witness with no inference/search replay,
+invalid receipts with no new writes, verifier-audit rollback, repeated charged
+checks, proof/assessment crash windows, positive and negative advisory candidates,
+partial-graph continuation, plateau refusal and expired-clock reconciliation.
+The advisory proof unit regression validates call/hash/reason/objective/source/
+shape and duplicate-proof tampering without changing whole-goal progress.
+Loopback HTTP fixtures confirm the actual resumed solver and graph call counts.
+These are deterministic/scripted recovery checks, not live-model quality or
+physical performance measurements.
+
+Final saved-result workspace verification passes: formatting, all-target build,
+**784 tests across 45 targets** (none ignored), and Clippy with warnings denied.
+Protocol schemas and bindings are unchanged; bundled pairing/integrity tests pass,
+while unavailable `flatc` prevents fresh generation.

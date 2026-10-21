@@ -33,30 +33,8 @@ impl Store {
             let criterion = Criterion::from_query(&query)?.ok_or_else(|| {
                 anyhow::anyhow!("No independent structured checker for this task")
             })?;
-            if criterion.name() == "finite_domain/v1" {
-                let settings: Option<String> = tx
-                    .query_row(
-                        "SELECT CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN json_extract(payload,'$.configuration') END FROM events WHERE task_id=?1 AND kind='execution_settings' ORDER BY id LIMIT 1",
-                        [task],
-                        |row| row.get(0),
-                    )
-                    .optional()?;
-                let search_charged: bool = tx.query_row(
-                    "SELECT EXISTS(SELECT 1 FROM events WHERE task_id=?1 AND kind='tool_reservation' AND json_extract(payload,'$.capability')='constraints.solve')",
-                    [task],
-                    |row| row.get(0),
-                )?;
-                let search_configured = if let Some(settings) = settings {
-                    let cfg: crate::config::Config = serde_json::from_str(&settings)?;
-                    cfg.validate()?;
-                    cfg.finite_search.is_some()
-                } else {
-                    false
-                };
-                if search_charged || search_configured {
-                    bail!("Finite-domain result recovery is disabled while finite search lacks a validated durable receipt")
-                }
-            }
+            let finite_search_history =
+                super::finite_search::validate_saved_history(&tx, task, &query)?;
             security::TaskPolicy::reasoning(task)?.authorize(
                 task,
                 "jev-plus",
@@ -79,6 +57,13 @@ impl Store {
             let answer = saved["text"]
                 .as_str()
                 .ok_or_else(|| anyhow::anyhow!("Missing saved solver answer"))?;
+            let saved_call = saved["call"]
+                .as_u64()
+                .and_then(|call| i64::try_from(call).ok())
+                .ok_or_else(|| anyhow::anyhow!("Missing saved solver call identity"))?;
+            if let Some(receipt) = finite_search_history.as_ref() {
+                super::finite_search::validate_saved_solver(&tx, task, &saved, &audit, receipt)?;
+            }
             // The ledger has checked call identity, source, result hash and reservation.
             let tools: u64 = tx.query_row(
                 "SELECT count(*) FROM events WHERE task_id=?1 AND kind='tool_reservation'",
@@ -114,13 +99,17 @@ impl Store {
             let mut proof = json!({"criterion":criterion.name(),"verified":verified,"origin":"saved_solver_recovery","objective_hash":sha256(query.as_bytes()),"answer_hash":sha256(answer.as_bytes()),"reason":rejection});
             if let Some(cycle) = current_cycle {
                 proof["cycle"] = json!(cycle);
+                if cycle == 0 {
+                    proof["call"] = saved["call"].clone();
+                }
             }
             let existing: Vec<Value> = if progress_dedup_enabled {
                 let cycle = current_cycle.unwrap();
-                let mut statement = tx.prepare("SELECT CASE WHEN length(CAST(payload AS BLOB))<=16384 THEN payload END FROM events WHERE task_id=?1 AND kind='verification' AND source='verifier-r' AND json_extract(payload,'$.criterion')=?2 AND json_extract(payload,'$.cycle')=?3 AND json_extract(payload,'$.origin')='saved_solver_recovery' ORDER BY id LIMIT 3")?;
-                let rows = statement.query_map(params![task, criterion.name(), cycle], |row| {
-                    row.get::<_, String>(0)
-                })?;
+                let mut statement = tx.prepare("SELECT CASE WHEN length(CAST(payload AS BLOB))<=16384 THEN payload END FROM events WHERE task_id=?1 AND kind='verification' AND source='verifier-r' AND json_extract(payload,'$.criterion')=?2 AND json_extract(payload,'$.cycle')=?3 AND (?3!=0 OR json_extract(payload,'$.call')=?4) AND json_extract(payload,'$.origin')='saved_solver_recovery' ORDER BY id LIMIT 3")?;
+                let rows = statement
+                    .query_map(params![task, criterion.name(), cycle, saved_call], |row| {
+                        row.get::<_, String>(0)
+                    })?;
                 rows.map(|row| crate::strict_json::value(row?.as_bytes(), 16384))
                     .collect::<Result<Vec<_>>>()?
             } else {
@@ -143,7 +132,7 @@ impl Store {
             } else {
                 false
             };
-            let report = json!({"format_version":1,"task_id":task,"status":if verified {"completed"} else {status.as_str()},"verified":verified,"revision_ready":revision_ready,"criterion":criterion.name(),"answer_hash":sha256(answer.as_bytes()),"automatic_replay":false,"inference_repeated":false,"remaining_tool_calls":remaining-1,"resource_usage_complete":false,"reported_inference_usage_complete":audit["reported_usage_complete"],"subtask_results_verified":false});
+            let report = json!({"format_version":1,"task_id":task,"status":if verified {"completed"} else {status.as_str()},"verified":verified,"revision_ready":revision_ready,"criterion":criterion.name(),"answer_hash":sha256(answer.as_bytes()),"automatic_replay":false,"inference_repeated":false,"remaining_tool_calls":remaining-1,"resource_usage_complete":false,"reported_inference_usage_complete":audit["reported_usage_complete"],"subtask_results_verified":false,"finite_search_history":finite_search_history});
             tx.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'recovery','human-cli',?2,unixepoch())",params![task,report.to_string()])?;
             let progress = crate::events::Progress::from_audit(
                 tx.last_insert_rowid() as u64,

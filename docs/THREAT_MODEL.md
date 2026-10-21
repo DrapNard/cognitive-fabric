@@ -939,3 +939,17 @@ code is replayed and no prior charge is refunded. Audit/admission failure preven
 new dispatch. Enabled-but-skipped, incomplete and terminal search phases remain
 refused, as does saved-result reconciliation. This is local consistency checking
 under cooperative ownership, not a signature or proof against same-owner edits.
+
+### Saved model candidates following search limits
+
+The operator must supply a task identity, never a replacement answer or criterion.
+Receipt/ledger validation precedes a fresh original-budget verifier reservation.
+Only the compiled original criterion can establish a witness, including a candidate
+produced during advisory work. A failed advisory check has no whole-goal progress
+authority and must match an earlier recorded solver/rejection. Rechecks retain
+their charges and cannot duplicate assessment authority. Original-clock and normal
+checkpoint gates govern any subsequent inference; proof reconciliation cannot
+reset those gates. Transaction failure rolls back the new proof, charge and
+prospective boundary. No search/model work is repeated and incomplete/terminal
+search outcomes remain unsupported. Local audit consistency is not authenticity
+against a hostile owner or evidence of provider stopping.

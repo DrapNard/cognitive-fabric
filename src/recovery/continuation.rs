@@ -497,14 +497,7 @@ pub(super) fn record_failed_revision(
         [task],
         |row| row.get(0),
     )?;
-    let search_charged: bool = db.query_row(
-        "SELECT EXISTS(SELECT 1 FROM events WHERE task_id=?1 AND kind='tool_reservation' AND json_extract(payload,'$.capability')='constraints.solve')",
-        [task],
-        |row| row.get(0),
-    )?;
-    if search_charged && query.starts_with("csp:") {
-        return Ok(false);
-    }
+    let _finite_search_history = super::finite_search::validate_saved_history(db, task, &query)?;
     let criterion = crate::verification::Criterion::from_query(&query)?;
     let settings_raw: Option<String> = db.query_row(
         "SELECT CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN json_extract(payload,'$.configuration') END FROM events WHERE task_id=?1 AND kind='execution_settings' ORDER BY id LIMIT 1",
@@ -514,9 +507,6 @@ pub(super) fn record_failed_revision(
     let progress_active = if let (Some(criterion), Some(raw)) = (criterion, settings_raw) {
         let cfg: Config = serde_json::from_str(&raw)?;
         cfg.validate()?;
-        if cfg.finite_search.is_some() && criterion.name() == "finite_domain/v1" {
-            return Ok(false);
-        }
         cfg.progress_stopping.is_some() && criterion.name() == "finite_domain/v1"
     } else {
         false
