@@ -1,5 +1,52 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+### Persist and independently recover direct search witnesses — 2026-10-21
+
+**Implemented (durable direct witnesses); Partial (general search-phase recovery).**
+Architecture sections 5, 7, 9 and 10 require persistent reasoning evidence with
+independent checks and retained budgets. New `finite_search` witness receipts use
+format 2: the exact bounded integer assignment and SHA-256 are one durable event
+before the separate original verifier check. Non-witness receipts retain exact
+format 1. SQLite audit receipt versioning does not replace typed FlatBuffers IPC.
+
+The existing operator result-recovery API can now select this durable candidate
+without a model solver event. A strict bounded validator checks original settings,
+context, authorized search policy/charge lineage, unique receipt, assignment hash,
+node limits and allowed later verifier work. It exposes only metadata/hash history;
+the answer body remains in the owner-local task trace. Every fresh recovery check
+uses another original tool allowance and checks the complete original criterion.
+Prior search/checker reservations are retained, even if an original proof was lost.
+No model or search replay, permission grant, fresh reasoning cycle or wall budget.
+
+Successful fresh proof/status/audit writes commit atomically; a malformed receipt
+or exhausted allowance writes nothing, and audit failure rolls back the new charge.
+A hash-consistent but failing candidate stays unverified and cannot trigger model
+revision. Saved receipt flags and old verifier events cannot complete a task.
+Sources include `src/reasoning.rs`, `src/recovery/{finite_search_witness,finite_search,result}.rs`,
+recovery module wiring and `tests/finite_search_witness_recovery.rs`. See
+[direct witnesses](FINITE_SEARCH.md#persist-and-recover-direct-search-witnesses).
+Legacy body-less witness receipts, contradictions and search-phase crashes before
+receipt persistence remain unsupported. Jev+ and Jev-R remain Partial; resumable
+search state and independent quality/cost evidence remain subsequent milestones.
+
+Verification: `cargo fmt --all -- --check`,
+`cargo check --locked --workspace --all-targets`,
+`cargo test --locked --workspace --all-targets` (**792 passed across 46 targets**,
+none ignored), and `cargo clippy --locked --workspace --all-targets -- -D warnings`
+pass on final frozen files. Eight new integration tests cover all three durable
+receipt/checker crash windows, actual CLI recovery, fresh-check charging and
+rollback, altered/duplicate/legacy receipt and phase rejection, task-answer distrust,
+metadata redaction and a valid exhausted ledger with zero remaining allowance.
+The focused eight-test binary also passes. Initial unused test imports were removed;
+the exhaustion fixture was corrected to prove budget refusal rather than duplicate
+charge refusal, followed by a complete final rerun. Existing limit/model recovery,
+progress, socket, migrations, mock inference, malformed frames, policy denial,
+cancellation, continuation and candidate rollback checks remain green. Exact
+bundled FlatBuffers pairing/integrity checks pass; `flatc` is unavailable and fresh
+generation was not run. No real-model, GPU/energy or general efficiency experiment
+was performed for this change.
+
+
 ### Reconcile saved model candidates after bounded search — 2026-10-21
 
 **Implemented (receipt-bound model-result reconciliation); Partial (general search-phase recovery).**

@@ -117,6 +117,38 @@ unknown inference outcomes and broader traversal-state recovery remain outside
 this path. These checks establish local consistency, not weight identity, physical
 provider termination or general neural safety.
 
+### Persist and recover direct search witnesses
+
+New direct witnesses use a format-2 `finite_search` receipt containing the exact
+assignment string and `answer_sha256` in the same SQLite audit event. The answer
+is bounded to 8,192 bytes and must be a strict integer assignment object. The
+receipt is committed before the separate runtime verifier reservation/check and
+before returning success. Non-witness outcomes, including limits, retain their
+original exact format-1 contract. No IPC schema or generator version changes.
+
+For an abandoned running/interrupted task, `recover-verified-result` can use this
+receipt without a saved model call. It validates the original settings/context,
+unique ordered search authorization/charge, receipt version/hash/node bounds and
+permitted later verifier work. It ignores `tasks.answer` and never trusts the
+receipt's outcome or an earlier verification as proof of success. Every recovery
+attempt reserves a fresh original-budget `constraints.verify` call and checks
+the complete original criterion. Prior search and verifier reservations remain
+charged, including a verifier whose result was lost. No search or inference is
+replayed. A failed fresh criterion check cannot complete or start model reasoning.
+
+The fresh proof uses `origin: saved_search_recovery` and binds `receipt_event_id`.
+Its charge, proof, recovery audit and successful terminal status commit atomically
+under the existing five-second recovery transaction. Audit failure rolls back
+those new writes. Exhausted original allowance, malformed/ambiguous receipts,
+unknown inference work or conflicting later phases refuse recovery.
+
+The assignment body remains in the owner-local task trace. Serialized recovery
+`finite_search_history` omits it and exposes only bounded metadata and hashes.
+The unchanged typed progress stream does not include receipt bodies. Legacy
+format-1 witness receipts have no durable assignment and remain unrecoverable.
+Contradiction receipts, incomplete search phases and crashes before a durable
+receipt still require separate recovery designs; no success is invented for them.
+
 ## Evidence and limits
 
 Unit tests exercise independent small-domain enumeration, exact bound edges,
@@ -165,3 +197,15 @@ Final saved-result workspace verification passes: formatting, all-target build,
 **784 tests across 45 targets** (none ignored), and Clippy with warnings denied.
 Protocol schemas and bindings are unchanged; bundled pairing/integrity tests pass,
 while unavailable `flatc` prevents fresh generation.
+
+### Direct-witness recovery verification
+
+Eight focused integration tests cover recovery after receipt persistence, original
+verifier reservation and original verifier proof; CLI execution; tampered and
+legacy receipts; original-budget exhaustion; invalid candidates; audit rollback;
+task-answer distrust and report redaction. A valid ledger must show zero remaining
+allowance before the exhaustion case tests refusal. The full workspace passes
+formatting, all-target build, **792 tests across 46 targets** (none ignored), and
+Clippy with warnings denied. Protocol/bindings are unchanged; bundled pairing/
+integrity tests pass and unavailable `flatc` prevented fresh generation. No live
+model-quality or physical-efficiency measurement follows from these checks.

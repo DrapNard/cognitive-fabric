@@ -5,7 +5,7 @@ use serde::Serialize;
 use serde_json::{json, Value};
 
 const MAX_EVENTS: usize = 512;
-const MAX_EVENT_BYTES: usize = 262_144;
+pub(super) const MAX_EVENT_BYTES: usize = 262_144;
 const MAX_HISTORY_BYTES: usize = 8_000_000;
 
 /// A validated limit receipt is evidence that a bounded search phase completed,
@@ -25,20 +25,20 @@ pub(super) struct Receipt {
 }
 
 #[derive(Debug)]
-struct Event {
-    id: i64,
-    kind: String,
-    source: String,
-    payload: Value,
+pub(super) struct Event {
+    pub(super) id: i64,
+    pub(super) kind: String,
+    pub(super) source: String,
+    pub(super) payload: Value,
 }
 
-fn exact_fields(value: &Value, fields: &[&str]) -> bool {
+pub(super) fn exact_fields(value: &Value, fields: &[&str]) -> bool {
     value.as_object().is_some_and(|object| {
         object.len() == fields.len() && fields.iter().all(|field| object.contains_key(*field))
     })
 }
 
-fn read_events(db: &rusqlite::Connection, task: &str) -> Result<Vec<Event>> {
+pub(super) fn read_events(db: &rusqlite::Connection, task: &str) -> Result<Vec<Event>> {
     let mut statement = db.prepare(
         "SELECT id,kind,
             CASE WHEN length(CAST(source AS BLOB))<=64 THEN source END,

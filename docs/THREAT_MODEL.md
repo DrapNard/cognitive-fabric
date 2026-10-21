@@ -953,3 +953,16 @@ reset those gates. Transaction failure rolls back the new proof, charge and
 prospective boundary. No search/model work is repeated and incomplete/terminal
 search outcomes remain unsupported. Local audit consistency is not authenticity
 against a hostile owner or evidence of provider stopping.
+
+### Direct witness receipt recovery
+
+A version-2 direct-search receipt contains a bounded assignment/hash in one
+private task event. It remains unverified data: recovery validates its original
+settings/context, unique authorized charge lineage, bounds and later phase before
+reserving another independent checker call. Original reservations are never reused
+or refunded. Only a fresh complete-criterion check permits terminal completion.
+Malformed data fails before writes; proof/audit failures roll back the new charge
+and status. The recovery report omits the body, and typed progress frames retain
+their existing metadata-only schema. No search/model replay or new authority is
+introduced. Body-less legacy witnesses, contradictions and pre-receipt crashes
+remain unsupported; consistency checks do not authenticate against a hostile owner.

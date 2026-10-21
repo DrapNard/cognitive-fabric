@@ -1304,10 +1304,24 @@ impl Session {
                         crate::verification::SearchResult::LimitReached => ("limit_reached", None),
                         crate::verification::SearchResult::Cancelled => ("cancelled", None),
                     };
-                    self.store.event(
-                        &self.task,
-                        "finite_search",
-                        "jev-r",
+                    let receipt = if label == "witness" {
+                        let answer = answer
+                            .as_deref()
+                            .expect("witness search result carries an answer");
+                        json!({
+                            "format_version":2,
+                            "criterion":"finite_domain/v1",
+                            "objective_sha256":crate::store::sha256(query.as_bytes()),
+                            "max_nodes":max_nodes,
+                            "explored_nodes":outcome.explored_nodes,
+                            "outcome":label,
+                            "verified":false,
+                            "permissions_granted":false,
+                            "answer":answer,
+                            "answer_sha256":crate::store::sha256(answer.as_bytes())
+                        })
+                    } else {
+                        // Keep the format-1 non-witness receipt byte-compatible.
                         json!({
                             "format_version":1,
                             "criterion":"finite_domain/v1",
@@ -1317,8 +1331,10 @@ impl Session {
                             "outcome":label,
                             "verified":false,
                             "permissions_granted":false
-                        }),
-                    )?;
+                        })
+                    };
+                    self.store
+                        .event(&self.task, "finite_search", "jev-r", receipt)?;
                     match label {
                         "witness" => {
                             let answer = answer.expect("witness search result carries an answer");

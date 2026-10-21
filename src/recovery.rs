@@ -2,6 +2,7 @@
 mod advisory;
 pub mod continuation;
 mod finite_search;
+mod finite_search_witness;
 pub(crate) mod graph;
 mod inference;
 mod result;

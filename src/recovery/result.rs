@@ -33,8 +33,20 @@ impl Store {
             let criterion = Criterion::from_query(&query)?.ok_or_else(|| {
                 anyhow::anyhow!("No independent structured checker for this task")
             })?;
-            let finite_search_history =
-                super::finite_search::validate_saved_history(&tx, task, &query)?;
+            let direct_candidate = super::finite_search_witness::candidate(&tx, task, &query)?;
+            let model_search_history = if direct_candidate.is_none() {
+                super::finite_search::validate_saved_history(&tx, task, &query)?
+            } else {
+                None
+            };
+            let finite_search_history = if let Some(candidate) = &direct_candidate {
+                Some(candidate.history.clone())
+            } else {
+                model_search_history
+                    .as_ref()
+                    .map(serde_json::to_value)
+                    .transpose()?
+            };
             security::TaskPolicy::reasoning(task)?.authorize(
                 task,
                 "jev-plus",
@@ -52,30 +64,48 @@ impl Store {
             {
                 bail!("Unresolved inference reservations prevent result recovery")
             }
-            let raw: String = tx.query_row("SELECT CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN payload END FROM events WHERE task_id=?1 AND kind='reasoning' AND json_extract(payload,'$.node.role')='solver' ORDER BY id DESC LIMIT 1",[task],|r|r.get(0))?;
-            let saved: Value = serde_json::from_str(&raw)?;
-            let answer = saved["text"]
-                .as_str()
-                .ok_or_else(|| anyhow::anyhow!("Missing saved solver answer"))?;
-            let saved_call = saved["call"]
-                .as_u64()
-                .and_then(|call| i64::try_from(call).ok())
-                .ok_or_else(|| anyhow::anyhow!("Missing saved solver call identity"))?;
-            if let Some(receipt) = finite_search_history.as_ref() {
-                super::finite_search::validate_saved_solver(&tx, task, &saved, &audit, receipt)?;
+            let saved = if direct_candidate.is_some() {
+                None
+            } else {
+                let raw: String = tx.query_row("SELECT CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN payload END FROM events WHERE task_id=?1 AND kind='reasoning' AND json_extract(payload,'$.node.role')='solver' ORDER BY id DESC LIMIT 1",[task],|r|r.get(0))?;
+                Some(serde_json::from_str::<Value>(&raw)?)
+            };
+            let answer = match (&direct_candidate, &saved) {
+                (Some(candidate), None) => candidate.answer.clone(),
+                (None, Some(saved)) => saved["text"]
+                    .as_str()
+                    .ok_or_else(|| anyhow::anyhow!("Missing saved solver answer"))?
+                    .to_owned(),
+                _ => bail!("Ambiguous recovery candidate source"),
+            };
+            let saved_call = saved
+                .as_ref()
+                .map(|saved| {
+                    saved["call"]
+                        .as_u64()
+                        .and_then(|call| i64::try_from(call).ok())
+                        .ok_or_else(|| anyhow::anyhow!("Missing saved solver call identity"))
+                })
+                .transpose()?;
+            if let (Some(saved), Some(receipt)) = (&saved, &model_search_history) {
+                super::finite_search::validate_saved_solver(&tx, task, saved, &audit, receipt)?;
             }
-            // The ledger has checked call identity, source, result hash and reservation.
+            // Both candidate paths retain all original inference and tool charges.
             let tools: u64 = tx.query_row(
                 "SELECT count(*) FROM events WHERE task_id=?1 AND kind='tool_reservation'",
                 [task],
                 |r| r.get(0),
             )?;
             tx.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'tool_reservation','security-kernel',?2,unixepoch())",params![task,json!({"format_version":1,"invocation":tools+1,"actor":"jev-plus","capability":criterion.capability(),"origin":"operator_recovery"}).to_string()])?;
-            let checked = criterion.check(answer);
+            let checked = criterion.check(&answer);
             let verified = checked.is_ok();
             let rejection = checked.as_ref().err().map(ToString::to_string);
-            let current_cycle = saved["node"]["cycle"].as_u64();
-            let progress_dedup_enabled = if criterion.name() == "finite_domain/v1" {
+            let current_cycle = saved
+                .as_ref()
+                .and_then(|value| value["node"]["cycle"].as_u64());
+            let progress_dedup_enabled = if saved.is_some()
+                && criterion.name() == "finite_domain/v1"
+            {
                 let settings: Option<String> = tx
                     .query_row(
                         "SELECT CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN json_extract(payload,'$.configuration') END FROM events WHERE task_id=?1 AND kind='execution_settings' ORDER BY id LIMIT 1",
@@ -96,11 +126,14 @@ impl Store {
             if progress_dedup_enabled && current_cycle.is_none() {
                 bail!("Finite-domain progress recovery requires the saved solver cycle")
             }
-            let mut proof = json!({"criterion":criterion.name(),"verified":verified,"origin":"saved_solver_recovery","objective_hash":sha256(query.as_bytes()),"answer_hash":sha256(answer.as_bytes()),"reason":rejection});
+            let mut proof = json!({"criterion":criterion.name(),"verified":verified,"origin":if direct_candidate.is_some() {"saved_search_recovery"} else {"saved_solver_recovery"},"objective_hash":sha256(query.as_bytes()),"answer_hash":sha256(answer.as_bytes()),"reason":rejection});
+            if let Some(candidate) = &direct_candidate {
+                proof["receipt_event_id"] = json!(candidate.receipt_id);
+            }
             if let Some(cycle) = current_cycle {
                 proof["cycle"] = json!(cycle);
                 if cycle == 0 {
-                    proof["call"] = saved["call"].clone();
+                    proof["call"] = json!(saved_call);
                 }
             }
             let existing: Vec<Value> = if progress_dedup_enabled {
@@ -127,11 +160,12 @@ impl Store {
                     params![task, answer],
                 )?;
             }
-            let revision_ready = if let Some(reason) = rejection.as_deref() {
-                super::continuation::record_failed_revision(&tx, task, &audit, &saved, reason)?
-            } else {
-                false
-            };
+            let revision_ready =
+                if let (Some(reason), Some(saved)) = (rejection.as_deref(), saved.as_ref()) {
+                    super::continuation::record_failed_revision(&tx, task, &audit, saved, reason)?
+                } else {
+                    false
+                };
             let report = json!({"format_version":1,"task_id":task,"status":if verified {"completed"} else {status.as_str()},"verified":verified,"revision_ready":revision_ready,"criterion":criterion.name(),"answer_hash":sha256(answer.as_bytes()),"automatic_replay":false,"inference_repeated":false,"remaining_tool_calls":remaining-1,"resource_usage_complete":false,"reported_inference_usage_complete":audit["reported_usage_complete"],"subtask_results_verified":false,"finite_search_history":finite_search_history});
             tx.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'recovery','human-cli',?2,unixepoch())",params![task,report.to_string()])?;
             let progress = crate::events::Progress::from_audit(

@@ -870,3 +870,19 @@ charges while reusing identical proof metadata. Reconciliation runs under its
 bounded SQL transaction and never replays search/inference or resets the original
 clock; an expired original deadline prevents new reasoning. Direct-search results
 and incomplete/skipped phases remain unsupported. See [saved search candidates](FINITE_SEARCH.md#reconcile-a-saved-model-candidate-after-the-search-limit).
+
+### Direct finite-search witnesses
+
+New direct witnesses atomically store their bounded assignment and hash in a
+format-2 `finite_search` receipt before the original runtime check. Operator
+`recover-verified-result` validates its original authorization/charge/context and
+selects this candidate without requiring model inference history. It always
+spends another remaining original verifier allowance and checks the full original
+criterion. Lost original checker outcomes retain their charges; prior verification
+events are never reused as authority. All new proof/audit/status writes are atomic.
+
+Recovery metadata omits the assignment body; the private task trace retains it.
+Malformed receipts, unknown/conflicting execution and exhausted allowance refuse
+recovery. Earlier format-1 body-less witnesses, contradictions and pre-receipt
+search crashes remain unsupported. The existing limit-plus-model recovery path
+keeps its original format and behavior. See [direct witnesses](FINITE_SEARCH.md#persist-and-recover-direct-search-witnesses).
