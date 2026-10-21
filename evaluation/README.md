@@ -110,3 +110,7 @@ An unsatisfiable case intentionally has no valid witness; a model claiming
 impossibility still fails witness scoring. Inspect satisfiable/unsatisfiable
 strata when interpreting raw success fractions. Manifest solutions and labels
 never enter inference contexts.
+
+One complete [public Qwen progress diagnostic](results/README.md#public-finite-domain-progress-ablation--2026-10-21)
+is retained and independently score-checked. The manifest records that measured
+workflow separately from held-out/independent study flags, which remain false.

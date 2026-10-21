@@ -11,7 +11,7 @@
   "held_out": false,
   "training_contamination_checked": false,
   "model_training_use": false,
-  "live_model_evaluated": false,
+  "live_model_evaluated": true,
   "independent_live_study_completed": false,
   "oracle_scope": "Small-domain satisfiability and exact solution counts for public diagnostic tasks; does not measure Jev-R progress-policy benefit or general reasoning quality.",
   "cases": [
@@ -388,5 +388,6 @@
       "solution_count": 0,
       "sample_witnesses": []
     }
-  ]
+  ],
+  "live_evidence": "results/qwen3-8b-progress-ablation-summary.json"
 }

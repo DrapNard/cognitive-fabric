@@ -166,3 +166,37 @@ enumeration separately from runtime BFS. It pins the subset/report hashes,
 reconciles charged calls, task latency and per-arm diagnostic sums, and compares
 new counters with the exported public audit observations. This protects evidence
 consistency, not independent dataset curation or neural safety.
+
+## Public finite-domain progress ablation — 2026-10-21
+
+Source `08f621797cca1b6eafd682038a5c4ff6833e10f1` completed all 17 paired
+RESEARCH cases with the installed Qwen3 8B Q4_K_M model. Immutable
+[raw report](qwen3-8b-progress-ablation.json) and
+[provenance/audit projection](qwen3-8b-progress-ablation-summary.json) retain
+configurations, source/prompt/dataset hashes, answers, task identities and costs.
+The separate exhaustive Rust oracle checks all 34 final scores and reconciles
+reported calls and latency; it does not use the production verifier.
+
+| Observation | Stopping disabled | Stopping enabled (threshold 2) |
+|---|---:|---:|
+| Valid witnesses across all 17 tasks | 14 | 13 |
+| Valid witnesses on 14 satisfiable tasks | 14/14 | 13/14 |
+| Model calls | 85 | 78 |
+| Summed task latency | 55.87 s | 48.44 s |
+
+The other three cases are independently enumerated contradictions; no answer or
+model claim of impossibility receives witness credit. Total run duration was
+104.37 seconds. The policy's plateau audit fired only on unsatisfiable case 16.
+The satisfiable paired regression at case 4 did **not** fire that rule. Planner,
+advisory and solver paths differed, so neither that regression nor the aggregate
+call/time changes can be attributed solely to the policy. The evidence does not
+justify enabling it by default or claiming a quality/efficiency improvement.
+
+This is one public authored diagnostic, not a held-out, repeated or independently
+curated study. There is no larger-model baseline, weight attestation, measured
+energy or attributed peak GPU usage. Runtime counters are local audit projections,
+not independent execution attestations. The installed model was temporarily loaded
+with requested full GPU offload, 4,096 context and one parallel prediction; the
+reported 7.53-second load is outside task latency. Initial off/unloaded server
+state was restored and checked. No weights were downloaded, no policy was
+persistently installed and no neural candidate was promoted.

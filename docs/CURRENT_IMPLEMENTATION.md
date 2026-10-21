@@ -1,5 +1,42 @@
 # Current Rust implementation
 
+### Retain and independently check the public progress-policy diagnostic — 2026-10-21
+
+**Measured public integration; independent utility remains Partial.** Source
+08f6217 completed 17 paired RESEARCH cases (34 tasks) on existing Qwen3 8B Q4_K_M
+weights with the same collective and budgets. The disabled/enabled arms found
+14/13 witnesses, used 85/78 calls and accumulated 55.87/48.44 seconds task latency.
+The corpus has 14 satisfiable cases and three exhaustive-oracle contradictions.
+The separate Rust enumeration checks all 34 final scores, retained report hash,
+resource sums and audit projection consistency without the production verifier.
+Raw report and provenance are immutable in `evaluation/results/`.
+
+Only one plateau stop was recorded, on unsatisfiable case 16. The satisfiable
+regression at case 4 did not trigger plateau stopping; different planner/advice/
+solver paths and one public run prevent causal policy-effect claims. Lower cost
+with fewer witnesses is not a demonstrated efficiency win. Default policy remains
+off. No larger baseline, repeated trials, held-out/independent curation, provider
+weight attestation or attributed physical resource proof exists. Jev+ and Jev-R
+remain Partial; matched counterfactual/repeated independent studies remain open.
+
+The initially off/unloaded loopback server was temporarily started with existing
+weights (requested GPU ratio 1, context 4096, parallel 1); its initial state was
+restored and checked after the 104.37-second run. No weight download, persistent
+policy installation, capability promotion or neural change occurred. See
+[public results](../evaluation/results/README.md#public-finite-domain-progress-ablation--2026-10-21).
+
+Verification: formatting, locked workspace/all-target build checks,
+**745 tests across 42 targets** (none ignored), and Clippy with warnings denied
+pass on final unchanged sources. The focused two-test corpus/evidence regression
+also passes. Existing socket, migration, mock inference, malformed-frame, denial,
+cancellation, recovery and rollback checks remain green. Protocol/generated
+bindings are unchanged; exact bundled pairing/integrity tests pass, while `flatc`
+is unavailable and fresh generation was not run. Real-provider observations are
+retained separately from deterministic mocks; all 34 final answers are checked
+by a separately implemented exhaustive oracle. General quality, causal utility,
+independent human review and physical safety claims remain unproven.
+
+
 ### Measure progress stopping with paired collective runs — 2026-10-21
 
 **Implemented (explicit controlled workflow comparison); Partial (independent utility evidence).**

@@ -103,3 +103,10 @@ call counts. It does not install its winner or change persistent configuration.
 Public [diagnostic cases](../evaluation/README.md#public-finite-domain-diagnostics)
 have a separate exhaustive oracle; their authored provenance does not establish
 held-out independence or general quality.
+
+The first retained [public Qwen diagnostic](../evaluation/results/README.md#public-finite-domain-progress-ablation--2026-10-21)
+found 14 versus 13 valid witnesses with the policy disabled/enabled, using 85
+versus 78 calls. Only one plateau fired, on an unsatisfiable case; the observed
+satisfiable regression did not trip the plateau rule. Different reasoning paths
+and a single public run prevent causal/general claims. This evidence supports
+keeping the policy optional, not a default deployment recommendation.

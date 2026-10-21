@@ -1,0 +1,2211 @@
+{
+  "adaptive_advice_history_frozen": true,
+  "arms": [
+    {
+      "configuration": {
+        "api_base": "http://127.0.0.1:1234/v1",
+        "arithmetic_process": false,
+        "backend": "openai-local",
+        "format_version": 1,
+        "inference_auth_scope": null,
+        "inference_process": false,
+        "interpret_goals": false,
+        "max_artifact_bytes": 256000000,
+        "max_calls": 12,
+        "max_cycles": 4,
+        "max_database_bytes": 256000000,
+        "max_input_bytes": 128000,
+        "max_tokens": 4096,
+        "max_tool_calls": 8,
+        "max_wall_seconds": 45,
+        "model": "cf-progress-eval-20261021",
+        "model_registration": null,
+        "reasoning_effort": "none",
+        "role_profiles": {},
+        "sql_process": false,
+        "synthesize_results": false,
+        "temperature": 0.0,
+        "timeout_seconds": 12
+      },
+      "executed": 17,
+      "index": 0,
+      "name": "progress_disabled",
+      "passed": 14,
+      "profile": "collective",
+      "resources": {
+        "cycles": 25,
+        "executed": 17,
+        "failed_tasks": 3,
+        "input_tokens": 28328,
+        "latency_ms": 55872.851369,
+        "model_calls": 85,
+        "output_tokens": 2018,
+        "passed": 14,
+        "prompt_bytes": 68540,
+        "reserved_output_tokens": 21120,
+        "tool_calls": 25
+      }
+    },
+    {
+      "configuration": {
+        "api_base": "http://127.0.0.1:1234/v1",
+        "arithmetic_process": false,
+        "backend": "openai-local",
+        "format_version": 1,
+        "inference_auth_scope": null,
+        "inference_process": false,
+        "interpret_goals": false,
+        "max_artifact_bytes": 256000000,
+        "max_calls": 12,
+        "max_cycles": 4,
+        "max_database_bytes": 256000000,
+        "max_input_bytes": 128000,
+        "max_tokens": 4096,
+        "max_tool_calls": 8,
+        "max_wall_seconds": 45,
+        "model": "cf-progress-eval-20261021",
+        "model_registration": null,
+        "progress_stopping": {
+          "plateau_cycles": 2
+        },
+        "reasoning_effort": "none",
+        "role_profiles": {},
+        "sql_process": false,
+        "synthesize_results": false,
+        "temperature": 0.0,
+        "timeout_seconds": 12
+      },
+      "executed": 17,
+      "index": 1,
+      "name": "progress_enabled",
+      "passed": 13,
+      "profile": "collective",
+      "resources": {
+        "cycles": 27,
+        "executed": 17,
+        "failed_tasks": 4,
+        "input_tokens": 25415,
+        "latency_ms": 48440.626805,
+        "model_calls": 78,
+        "output_tokens": 1736,
+        "passed": 13,
+        "prompt_bytes": 59627,
+        "reserved_output_tokens": 20160,
+        "tool_calls": 27
+      }
+    }
+  ],
+  "automatic_policy_installation": false,
+  "baseline_configuration": {
+    "api_base": "http://127.0.0.1:1234/v1",
+    "arithmetic_process": false,
+    "backend": "openai-local",
+    "format_version": 1,
+    "inference_auth_scope": null,
+    "inference_process": false,
+    "interpret_goals": false,
+    "max_artifact_bytes": 256000000,
+    "max_calls": 12,
+    "max_cycles": 4,
+    "max_database_bytes": 256000000,
+    "max_input_bytes": 128000,
+    "max_tokens": 4096,
+    "max_tool_calls": 8,
+    "max_wall_seconds": 45,
+    "model": "cf-progress-eval-20261021",
+    "model_registration": null,
+    "reasoning_effort": "none",
+    "role_profiles": {},
+    "sql_process": false,
+    "synthesize_results": false,
+    "temperature": 0.0,
+    "timeout_seconds": 12
+  },
+  "baseline_configuration_sha256": "a9f99317302940c0921dbb1dc2e9c4bc6da163396e004ca5a01d7acd6644bb79",
+  "candidate_promotion": false,
+  "case_count": 17,
+  "cases": [
+    {
+      "baseline": {
+        "answer": "{\n  \"x\": 1,\n  \"y\": 2\n}",
+        "answer_sha256": "b13619db9a9de7a08f243edc7df0845a80c1ff64ffeafc96e2cebbcbbbafbc88",
+        "answer_truncated": false,
+        "arm_index": 0,
+        "calls": 3,
+        "cycles": 1,
+        "elapsed_ms": 2160.7154729999997,
+        "execution_position": 0,
+        "passed_independent_finite_domain_check": true,
+        "primary_model_snapshot": {
+          "registration": null,
+          "weight_identity_verified": false
+        },
+        "profile": "collective",
+        "reported_models": [
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021"
+        ],
+        "resources": {
+          "calls": 3,
+          "cycles": 1,
+          "inference_ms": 2153.2474140000004,
+          "input_tokens": 890,
+          "output_tokens": 47,
+          "process_lifetime_peak_rss_bytes": 27914240,
+          "process_rss_bytes": 27914240,
+          "prompt_bytes": 1785,
+          "queue_wait_ms": 0.289921,
+          "reserved_output_tokens": 768,
+          "tool_calls": 1
+        },
+        "status": "completed",
+        "stop_reason": "verified",
+        "task_id": "ca319106-7ad0-490a-944d-bd84b07370f9"
+      },
+      "baseline_passed": true,
+      "case_index": 0,
+      "input": "csp:{\"variables\":[{\"id\":\"x\",\"domain\":[0,1,2,3]},{\"id\":\"y\",\"domain\":[0,1,2,3]}],\"constraints\":[{\"kind\":\"linear\",\"terms\":[{\"variable\":\"x\",\"coefficient\":1},{\"variable\":\"y\",\"coefficient\":1}],\"relation\":\"eq\",\"rhs\":3}]}",
+      "paired": true,
+      "paired_resources": {
+        "baseline": {
+          "calls": 3,
+          "cycles": 1,
+          "inference_ms": 2153.2474140000004,
+          "input_tokens": 890,
+          "output_tokens": 47,
+          "process_lifetime_peak_rss_bytes": 27914240,
+          "process_rss_bytes": 27914240,
+          "prompt_bytes": 1785,
+          "queue_wait_ms": 0.289921,
+          "reserved_output_tokens": 768,
+          "tool_calls": 1
+        },
+        "progress_stopping": {
+          "calls": 3,
+          "cycles": 1,
+          "inference_ms": 1341.1154119999999,
+          "input_tokens": 890,
+          "output_tokens": 47,
+          "process_lifetime_peak_rss_bytes": 28024832,
+          "process_rss_bytes": 28024832,
+          "prompt_bytes": 1785,
+          "queue_wait_ms": 0.281566,
+          "reserved_output_tokens": 768,
+          "tool_calls": 1
+        }
+      },
+      "progress_stopping": {
+        "answer": "{\n  \"x\": 1,\n  \"y\": 2\n}",
+        "answer_sha256": "b13619db9a9de7a08f243edc7df0845a80c1ff64ffeafc96e2cebbcbbbafbc88",
+        "answer_truncated": false,
+        "arm_index": 1,
+        "calls": 3,
+        "cycles": 1,
+        "elapsed_ms": 1348.727897,
+        "execution_position": 1,
+        "passed_independent_finite_domain_check": true,
+        "primary_model_snapshot": {
+          "registration": null,
+          "weight_identity_verified": false
+        },
+        "profile": "collective",
+        "reported_models": [
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021"
+        ],
+        "resources": {
+          "calls": 3,
+          "cycles": 1,
+          "inference_ms": 1341.1154119999999,
+          "input_tokens": 890,
+          "output_tokens": 47,
+          "process_lifetime_peak_rss_bytes": 28024832,
+          "process_rss_bytes": 28024832,
+          "prompt_bytes": 1785,
+          "queue_wait_ms": 0.281566,
+          "reserved_output_tokens": 768,
+          "tool_calls": 1
+        },
+        "status": "completed",
+        "stop_reason": "verified",
+        "task_id": "d8ecca93-b939-4cc8-b20b-4774312b7e23"
+      },
+      "progress_stopping_passed": true,
+      "verification": "finite_domain_v1"
+    },
+    {
+      "baseline": {
+        "answer": "{\n  \"a\": 1,\n  \"b\": 2\n}",
+        "answer_sha256": "c81ded0f93b4c797225630516d7e3e02ada5e65cd20b7e91736767d4496793d3",
+        "answer_truncated": false,
+        "arm_index": 0,
+        "calls": 3,
+        "cycles": 1,
+        "elapsed_ms": 1693.473543,
+        "execution_position": 1,
+        "passed_independent_finite_domain_check": true,
+        "primary_model_snapshot": {
+          "registration": null,
+          "weight_identity_verified": false
+        },
+        "profile": "collective",
+        "reported_models": [
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021"
+        ],
+        "resources": {
+          "calls": 3,
+          "cycles": 1,
+          "inference_ms": 1685.869877,
+          "input_tokens": 878,
+          "output_tokens": 63,
+          "process_lifetime_peak_rss_bytes": 28131328,
+          "process_rss_bytes": 28131328,
+          "prompt_bytes": 1776,
+          "queue_wait_ms": 0.22854400000000002,
+          "reserved_output_tokens": 768,
+          "tool_calls": 1
+        },
+        "status": "completed",
+        "stop_reason": "verified",
+        "task_id": "b29c3f98-ace0-4a57-bb8e-04df8ca759b1"
+      },
+      "baseline_passed": true,
+      "case_index": 1,
+      "input": "csp:{\"variables\":[{\"id\":\"a\",\"domain\":[1,2,3]},{\"id\":\"b\",\"domain\":[1,2,3]}],\"constraints\":[{\"kind\":\"linear\",\"terms\":[{\"variable\":\"a\",\"coefficient\":1},{\"variable\":\"b\",\"coefficient\":-1}],\"relation\":\"ne\",\"rhs\":0}]}",
+      "paired": true,
+      "paired_resources": {
+        "baseline": {
+          "calls": 3,
+          "cycles": 1,
+          "inference_ms": 1685.869877,
+          "input_tokens": 878,
+          "output_tokens": 63,
+          "process_lifetime_peak_rss_bytes": 28131328,
+          "process_rss_bytes": 28131328,
+          "prompt_bytes": 1776,
+          "queue_wait_ms": 0.22854400000000002,
+          "reserved_output_tokens": 768,
+          "tool_calls": 1
+        },
+        "progress_stopping": {
+          "calls": 3,
+          "cycles": 1,
+          "inference_ms": 2278.104615,
+          "input_tokens": 878,
+          "output_tokens": 58,
+          "process_lifetime_peak_rss_bytes": 28078080,
+          "process_rss_bytes": 28078080,
+          "prompt_bytes": 1776,
+          "queue_wait_ms": 0.28716600000000003,
+          "reserved_output_tokens": 768,
+          "tool_calls": 1
+        }
+      },
+      "progress_stopping": {
+        "answer": "{\n  \"a\": 1,\n  \"b\": 2\n}",
+        "answer_sha256": "c81ded0f93b4c797225630516d7e3e02ada5e65cd20b7e91736767d4496793d3",
+        "answer_truncated": false,
+        "arm_index": 1,
+        "calls": 3,
+        "cycles": 1,
+        "elapsed_ms": 2285.553718,
+        "execution_position": 0,
+        "passed_independent_finite_domain_check": true,
+        "primary_model_snapshot": {
+          "registration": null,
+          "weight_identity_verified": false
+        },
+        "profile": "collective",
+        "reported_models": [
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021"
+        ],
+        "resources": {
+          "calls": 3,
+          "cycles": 1,
+          "inference_ms": 2278.104615,
+          "input_tokens": 878,
+          "output_tokens": 58,
+          "process_lifetime_peak_rss_bytes": 28078080,
+          "process_rss_bytes": 28078080,
+          "prompt_bytes": 1776,
+          "queue_wait_ms": 0.28716600000000003,
+          "reserved_output_tokens": 768,
+          "tool_calls": 1
+        },
+        "status": "completed",
+        "stop_reason": "verified",
+        "task_id": "f0130dff-6c4d-43cc-b65c-b800b5d26bba"
+      },
+      "progress_stopping_passed": true,
+      "verification": "finite_domain_v1"
+    },
+    {
+      "baseline": {
+        "answer": "{\n  \"x\": 0,\n  \"y\": 1\n}",
+        "answer_sha256": "d562a4ee41e663ff3400ebcf6a88dc70b511032ff6f6575a6063bac4819e1c6a",
+        "answer_truncated": false,
+        "arm_index": 0,
+        "calls": 3,
+        "cycles": 1,
+        "elapsed_ms": 2003.798777,
+        "execution_position": 0,
+        "passed_independent_finite_domain_check": true,
+        "primary_model_snapshot": {
+          "registration": null,
+          "weight_identity_verified": false
+        },
+        "profile": "collective",
+        "reported_models": [
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021"
+        ],
+        "resources": {
+          "calls": 3,
+          "cycles": 1,
+          "inference_ms": 1996.9392129999999,
+          "input_tokens": 878,
+          "output_tokens": 63,
+          "process_lifetime_peak_rss_bytes": 28180480,
+          "process_rss_bytes": 28180480,
+          "prompt_bytes": 1773,
+          "queue_wait_ms": 0.16156600000000002,
+          "reserved_output_tokens": 768,
+          "tool_calls": 1
+        },
+        "status": "completed",
+        "stop_reason": "verified",
+        "task_id": "48d8450c-3bc1-40ed-a555-193b9296e073"
+      },
+      "baseline_passed": true,
+      "case_index": 2,
+      "input": "csp:{\"variables\":[{\"id\":\"x\",\"domain\":[0,1,2]},{\"id\":\"y\",\"domain\":[0,1,2]}],\"constraints\":[{\"kind\":\"linear\",\"terms\":[{\"variable\":\"x\",\"coefficient\":1},{\"variable\":\"y\",\"coefficient\":2}],\"relation\":\"le\",\"rhs\":3}]}",
+      "paired": true,
+      "paired_resources": {
+        "baseline": {
+          "calls": 3,
+          "cycles": 1,
+          "inference_ms": 1996.9392129999999,
+          "input_tokens": 878,
+          "output_tokens": 63,
+          "process_lifetime_peak_rss_bytes": 28180480,
+          "process_rss_bytes": 28180480,
+          "prompt_bytes": 1773,
+          "queue_wait_ms": 0.16156600000000002,
+          "reserved_output_tokens": 768,
+          "tool_calls": 1
+        },
+        "progress_stopping": {
+          "calls": 3,
+          "cycles": 1,
+          "inference_ms": 1558.3392170000002,
+          "input_tokens": 878,
+          "output_tokens": 63,
+          "process_lifetime_peak_rss_bytes": 28229632,
+          "process_rss_bytes": 28229632,
+          "prompt_bytes": 1773,
+          "queue_wait_ms": 0.309028,
+          "reserved_output_tokens": 768,
+          "tool_calls": 1
+        }
+      },
+      "progress_stopping": {
+        "answer": "{\n  \"x\": 0,\n  \"y\": 1\n}",
+        "answer_sha256": "d562a4ee41e663ff3400ebcf6a88dc70b511032ff6f6575a6063bac4819e1c6a",
+        "answer_truncated": false,
+        "arm_index": 1,
+        "calls": 3,
+        "cycles": 1,
+        "elapsed_ms": 1567.095932,
+        "execution_position": 1,
+        "passed_independent_finite_domain_check": true,
+        "primary_model_snapshot": {
+          "registration": null,
+          "weight_identity_verified": false
+        },
+        "profile": "collective",
+        "reported_models": [
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021"
+        ],
+        "resources": {
+          "calls": 3,
+          "cycles": 1,
+          "inference_ms": 1558.3392170000002,
+          "input_tokens": 878,
+          "output_tokens": 63,
+          "process_lifetime_peak_rss_bytes": 28229632,
+          "process_rss_bytes": 28229632,
+          "prompt_bytes": 1773,
+          "queue_wait_ms": 0.309028,
+          "reserved_output_tokens": 768,
+          "tool_calls": 1
+        },
+        "status": "completed",
+        "stop_reason": "verified",
+        "task_id": "c5ea5b0b-cd26-42eb-aad6-d57037a2e16e"
+      },
+      "progress_stopping_passed": true,
+      "verification": "finite_domain_v1"
+    },
+    {
+      "baseline": {
+        "answer": "{\n  \"x\": 0,\n  \"y\": 0\n}",
+        "answer_sha256": "9aa821e1cdb7c5d5adf6b4c180f8cb50af1ee1cb8d24a48cfb1e04cb8b0ac09c",
+        "answer_truncated": false,
+        "arm_index": 0,
+        "calls": 3,
+        "cycles": 1,
+        "elapsed_ms": 1690.9323359999999,
+        "execution_position": 1,
+        "passed_independent_finite_domain_check": true,
+        "primary_model_snapshot": {
+          "registration": null,
+          "weight_identity_verified": false
+        },
+        "profile": "collective",
+        "reported_models": [
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021"
+        ],
+        "resources": {
+          "calls": 3,
+          "cycles": 1,
+          "inference_ms": 1682.091269,
+          "input_tokens": 878,
+          "output_tokens": 63,
+          "process_lifetime_peak_rss_bytes": 28315648,
+          "process_rss_bytes": 28315648,
+          "prompt_bytes": 1776,
+          "queue_wait_ms": 0.225208,
+          "reserved_output_tokens": 768,
+          "tool_calls": 1
+        },
+        "status": "completed",
+        "stop_reason": "verified",
+        "task_id": "89dad2f8-5858-4b9d-ae72-e0cb73cb3cb2"
+      },
+      "baseline_passed": true,
+      "case_index": 3,
+      "input": "csp:{\"variables\":[{\"id\":\"x\",\"domain\":[0,1,2]},{\"id\":\"y\",\"domain\":[0,1,2]}],\"constraints\":[{\"kind\":\"linear\",\"terms\":[{\"variable\":\"x\",\"coefficient\":2},{\"variable\":\"y\",\"coefficient\":-1}],\"relation\":\"ge\",\"rhs\":0}]}",
+      "paired": true,
+      "paired_resources": {
+        "baseline": {
+          "calls": 3,
+          "cycles": 1,
+          "inference_ms": 1682.091269,
+          "input_tokens": 878,
+          "output_tokens": 63,
+          "process_lifetime_peak_rss_bytes": 28315648,
+          "process_rss_bytes": 28315648,
+          "prompt_bytes": 1776,
+          "queue_wait_ms": 0.225208,
+          "reserved_output_tokens": 768,
+          "tool_calls": 1
+        },
+        "progress_stopping": {
+          "calls": 3,
+          "cycles": 1,
+          "inference_ms": 1966.5134899999998,
+          "input_tokens": 878,
+          "output_tokens": 70,
+          "process_lifetime_peak_rss_bytes": 28278784,
+          "process_rss_bytes": 28278784,
+          "prompt_bytes": 1776,
+          "queue_wait_ms": 0.16199799999999998,
+          "reserved_output_tokens": 768,
+          "tool_calls": 1
+        }
+      },
+      "progress_stopping": {
+        "answer": "{\n  \"x\": 0,\n  \"y\": 0\n}",
+        "answer_sha256": "9aa821e1cdb7c5d5adf6b4c180f8cb50af1ee1cb8d24a48cfb1e04cb8b0ac09c",
+        "answer_truncated": false,
+        "arm_index": 1,
+        "calls": 3,
+        "cycles": 1,
+        "elapsed_ms": 1975.045419,
+        "execution_position": 0,
+        "passed_independent_finite_domain_check": true,
+        "primary_model_snapshot": {
+          "registration": null,
+          "weight_identity_verified": false
+        },
+        "profile": "collective",
+        "reported_models": [
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021"
+        ],
+        "resources": {
+          "calls": 3,
+          "cycles": 1,
+          "inference_ms": 1966.5134899999998,
+          "input_tokens": 878,
+          "output_tokens": 70,
+          "process_lifetime_peak_rss_bytes": 28278784,
+          "process_rss_bytes": 28278784,
+          "prompt_bytes": 1776,
+          "queue_wait_ms": 0.16199799999999998,
+          "reserved_output_tokens": 768,
+          "tool_calls": 1
+        },
+        "status": "completed",
+        "stop_reason": "verified",
+        "task_id": "2d1d1713-bbd5-491c-9fa0-ff9496877541"
+      },
+      "progress_stopping_passed": true,
+      "verification": "finite_domain_v1"
+    },
+    {
+      "baseline": {
+        "answer": "{\"x\": 1, \"y\": 2}",
+        "answer_sha256": "8ce18b46435aba76f4bf81a0ab04d509cb8144d13d3665c96bd31b40ad05e37d",
+        "answer_truncated": false,
+        "arm_index": 0,
+        "calls": 7,
+        "cycles": 1,
+        "elapsed_ms": 5024.761016,
+        "execution_position": 0,
+        "passed_independent_finite_domain_check": true,
+        "primary_model_snapshot": {
+          "registration": null,
+          "weight_identity_verified": false
+        },
+        "profile": "collective",
+        "reported_models": [
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021"
+        ],
+        "resources": {
+          "calls": 7,
+          "cycles": 1,
+          "inference_ms": 5012.477544,
+          "input_tokens": 2393,
+          "output_tokens": 191,
+          "process_lifetime_peak_rss_bytes": 28385280,
+          "process_rss_bytes": 28385280,
+          "prompt_bytes": 6264,
+          "queue_wait_ms": 0.556315,
+          "reserved_output_tokens": 1536,
+          "tool_calls": 1
+        },
+        "status": "completed",
+        "stop_reason": "verified",
+        "task_id": "8b16a4f8-6714-4f45-85e7-79a656c06b33"
+      },
+      "baseline_passed": true,
+      "case_index": 4,
+      "input": "csp:{\"variables\":[{\"id\":\"x\",\"domain\":[0,1,2]},{\"id\":\"y\",\"domain\":[0,1,2,3]}],\"constraints\":[{\"kind\":\"linear\",\"terms\":[{\"variable\":\"x\",\"coefficient\":-2},{\"variable\":\"y\",\"coefficient\":1}],\"relation\":\"eq\",\"rhs\":0}]}",
+      "paired": true,
+      "paired_resources": {
+        "baseline": {
+          "calls": 7,
+          "cycles": 1,
+          "inference_ms": 5012.477544,
+          "input_tokens": 2393,
+          "output_tokens": 191,
+          "process_lifetime_peak_rss_bytes": 28385280,
+          "process_rss_bytes": 28385280,
+          "prompt_bytes": 6264,
+          "queue_wait_ms": 0.556315,
+          "reserved_output_tokens": 1536,
+          "tool_calls": 1
+        },
+        "progress_stopping": {
+          "calls": 6,
+          "cycles": 4,
+          "inference_ms": 2887.5584989999998,
+          "input_tokens": 1788,
+          "output_tokens": 114,
+          "process_lifetime_peak_rss_bytes": 28459008,
+          "process_rss_bytes": 28459008,
+          "prompt_bytes": 3993,
+          "queue_wait_ms": 0.51154,
+          "reserved_output_tokens": 1920,
+          "tool_calls": 4
+        }
+      },
+      "progress_stopping": {
+        "answer": "{\n  \"x\": 1,\n  \"y\": 3\n}",
+        "answer_sha256": "9127640e4febe26fd6165d0cabf07cda3e9e1737dfc3fc4167d65114820a76c3",
+        "answer_truncated": false,
+        "arm_index": 1,
+        "calls": 6,
+        "cycles": 4,
+        "elapsed_ms": 2904.755751,
+        "execution_position": 1,
+        "passed_independent_finite_domain_check": false,
+        "primary_model_snapshot": {
+          "registration": null,
+          "weight_identity_verified": false
+        },
+        "profile": "collective",
+        "reported_models": [
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021"
+        ],
+        "resources": {
+          "calls": 6,
+          "cycles": 4,
+          "inference_ms": 2887.5584989999998,
+          "input_tokens": 1788,
+          "output_tokens": 114,
+          "process_lifetime_peak_rss_bytes": 28459008,
+          "process_rss_bytes": 28459008,
+          "prompt_bytes": 3993,
+          "queue_wait_ms": 0.51154,
+          "reserved_output_tokens": 1920,
+          "tool_calls": 4
+        },
+        "status": "rejected",
+        "stop_reason": "no_progress",
+        "task_id": "9630b79e-652c-48dc-8797-d756363428fc"
+      },
+      "progress_stopping_passed": false,
+      "verification": "finite_domain_v1"
+    },
+    {
+      "baseline": {
+        "answer": "{\n  \"a\": 0,\n  \"b\": 1,\n  \"c\": 2\n}",
+        "answer_sha256": "287880748b9a350e83579dcaa2e8183d929d1a38288db9ebbd76c6e21400c100",
+        "answer_truncated": false,
+        "arm_index": 0,
+        "calls": 6,
+        "cycles": 1,
+        "elapsed_ms": 3727.1534119999997,
+        "execution_position": 1,
+        "passed_independent_finite_domain_check": true,
+        "primary_model_snapshot": {
+          "registration": null,
+          "weight_identity_verified": false
+        },
+        "profile": "collective",
+        "reported_models": [
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021"
+        ],
+        "resources": {
+          "calls": 6,
+          "cycles": 1,
+          "inference_ms": 3714.6794169999994,
+          "input_tokens": 2009,
+          "output_tokens": 143,
+          "process_lifetime_peak_rss_bytes": 28585984,
+          "process_rss_bytes": 28585984,
+          "prompt_bytes": 4977,
+          "queue_wait_ms": 0.597484,
+          "reserved_output_tokens": 1344,
+          "tool_calls": 1
+        },
+        "status": "completed",
+        "stop_reason": "verified",
+        "task_id": "aac461c5-b69c-4a23-a180-09cce6bd4c10"
+      },
+      "baseline_passed": true,
+      "case_index": 5,
+      "input": "csp:{\"variables\":[{\"id\":\"a\",\"domain\":[0,1,2]},{\"id\":\"b\",\"domain\":[0,1,2]},{\"id\":\"c\",\"domain\":[0,1,2]}],\"constraints\":[{\"kind\":\"all_different\",\"variables\":[\"a\",\"b\",\"c\"]}]}",
+      "paired": true,
+      "paired_resources": {
+        "baseline": {
+          "calls": 6,
+          "cycles": 1,
+          "inference_ms": 3714.6794169999994,
+          "input_tokens": 2009,
+          "output_tokens": 143,
+          "process_lifetime_peak_rss_bytes": 28585984,
+          "process_rss_bytes": 28585984,
+          "prompt_bytes": 4977,
+          "queue_wait_ms": 0.597484,
+          "reserved_output_tokens": 1344,
+          "tool_calls": 1
+        },
+        "progress_stopping": {
+          "calls": 6,
+          "cycles": 1,
+          "inference_ms": 4061.3917289999995,
+          "input_tokens": 2009,
+          "output_tokens": 143,
+          "process_lifetime_peak_rss_bytes": 28512256,
+          "process_rss_bytes": 28512256,
+          "prompt_bytes": 4977,
+          "queue_wait_ms": 0.367138,
+          "reserved_output_tokens": 1344,
+          "tool_calls": 1
+        }
+      },
+      "progress_stopping": {
+        "answer": "{\n  \"a\": 0,\n  \"b\": 1,\n  \"c\": 2\n}",
+        "answer_sha256": "287880748b9a350e83579dcaa2e8183d929d1a38288db9ebbd76c6e21400c100",
+        "answer_truncated": false,
+        "arm_index": 1,
+        "calls": 6,
+        "cycles": 1,
+        "elapsed_ms": 4072.316744,
+        "execution_position": 0,
+        "passed_independent_finite_domain_check": true,
+        "primary_model_snapshot": {
+          "registration": null,
+          "weight_identity_verified": false
+        },
+        "profile": "collective",
+        "reported_models": [
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021"
+        ],
+        "resources": {
+          "calls": 6,
+          "cycles": 1,
+          "inference_ms": 4061.3917289999995,
+          "input_tokens": 2009,
+          "output_tokens": 143,
+          "process_lifetime_peak_rss_bytes": 28512256,
+          "process_rss_bytes": 28512256,
+          "prompt_bytes": 4977,
+          "queue_wait_ms": 0.367138,
+          "reserved_output_tokens": 1344,
+          "tool_calls": 1
+        },
+        "status": "completed",
+        "stop_reason": "verified",
+        "task_id": "cdaa14de-fbf3-45cf-a202-068aaefaec28"
+      },
+      "progress_stopping_passed": true,
+      "verification": "finite_domain_v1"
+    },
+    {
+      "baseline": {
+        "answer": "{\"a\":1,\"b\":3,\"c\":0}",
+        "answer_sha256": "df68785bc430ef7551267d16acdb1ec10a5af734d29cb5c1d19677126a1e5e7c",
+        "answer_truncated": false,
+        "arm_index": 0,
+        "calls": 8,
+        "cycles": 2,
+        "elapsed_ms": 5046.2248580000005,
+        "execution_position": 0,
+        "passed_independent_finite_domain_check": true,
+        "primary_model_snapshot": {
+          "registration": null,
+          "weight_identity_verified": false
+        },
+        "profile": "collective",
+        "reported_models": [
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021"
+        ],
+        "resources": {
+          "calls": 8,
+          "cycles": 2,
+          "inference_ms": 5027.460822,
+          "input_tokens": 3018,
+          "output_tokens": 175,
+          "process_lifetime_peak_rss_bytes": 28663808,
+          "process_rss_bytes": 28663808,
+          "prompt_bytes": 7920,
+          "queue_wait_ms": 4.155799000000001,
+          "reserved_output_tokens": 1920,
+          "tool_calls": 2
+        },
+        "status": "completed",
+        "stop_reason": "verified",
+        "task_id": "4acf08c4-a304-4488-93da-fdd06dba0f0b"
+      },
+      "baseline_passed": true,
+      "case_index": 6,
+      "input": "csp:{\"variables\":[{\"id\":\"a\",\"domain\":[0,1,2,3]},{\"id\":\"b\",\"domain\":[0,1,2,3]},{\"id\":\"c\",\"domain\":[0,1,2,3]}],\"constraints\":[{\"kind\":\"linear\",\"terms\":[{\"variable\":\"a\",\"coefficient\":1},{\"variable\":\"b\",\"coefficient\":1},{\"variable\":\"c\",\"coefficient\":1}],\"relation\":\"eq\",\"rhs\":4},{\"kind\":\"all_different\",\"variables\":[\"a\",\"b\",\"c\"]}]}",
+      "paired": true,
+      "paired_resources": {
+        "baseline": {
+          "calls": 8,
+          "cycles": 2,
+          "inference_ms": 5027.460822,
+          "input_tokens": 3018,
+          "output_tokens": 175,
+          "process_lifetime_peak_rss_bytes": 28663808,
+          "process_rss_bytes": 28663808,
+          "prompt_bytes": 7920,
+          "queue_wait_ms": 4.155799000000001,
+          "reserved_output_tokens": 1920,
+          "tool_calls": 2
+        },
+        "progress_stopping": {
+          "calls": 8,
+          "cycles": 2,
+          "inference_ms": 4346.48297,
+          "input_tokens": 3005,
+          "output_tokens": 165,
+          "process_lifetime_peak_rss_bytes": 28729344,
+          "process_rss_bytes": 28729344,
+          "prompt_bytes": 7903,
+          "queue_wait_ms": 0.6428109999999999,
+          "reserved_output_tokens": 1920,
+          "tool_calls": 2
+        }
+      },
+      "progress_stopping": {
+        "answer": "{\"a\":1,\"b\":3,\"c\":0}",
+        "answer_sha256": "df68785bc430ef7551267d16acdb1ec10a5af734d29cb5c1d19677126a1e5e7c",
+        "answer_truncated": false,
+        "arm_index": 1,
+        "calls": 8,
+        "cycles": 2,
+        "elapsed_ms": 4362.8851429999995,
+        "execution_position": 1,
+        "passed_independent_finite_domain_check": true,
+        "primary_model_snapshot": {
+          "registration": null,
+          "weight_identity_verified": false
+        },
+        "profile": "collective",
+        "reported_models": [
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021"
+        ],
+        "resources": {
+          "calls": 8,
+          "cycles": 2,
+          "inference_ms": 4346.48297,
+          "input_tokens": 3005,
+          "output_tokens": 165,
+          "process_lifetime_peak_rss_bytes": 28729344,
+          "process_rss_bytes": 28729344,
+          "prompt_bytes": 7903,
+          "queue_wait_ms": 0.6428109999999999,
+          "reserved_output_tokens": 1920,
+          "tool_calls": 2
+        },
+        "status": "completed",
+        "stop_reason": "verified",
+        "task_id": "2dabcf7f-6b42-4a3a-be08-999ec12b59a5"
+      },
+      "progress_stopping_passed": true,
+      "verification": "finite_domain_v1"
+    },
+    {
+      "baseline": {
+        "answer": "{\n  \"high\": 9223372036854775807,\n  \"low\": -9223372036854775808\n}",
+        "answer_sha256": "6807fe209c0783c5e3b2fe4ed513aba1061afd3e08e148ab8bab9cc8817a9a37",
+        "answer_truncated": false,
+        "arm_index": 0,
+        "calls": 3,
+        "cycles": 1,
+        "elapsed_ms": 2692.038889,
+        "execution_position": 1,
+        "passed_independent_finite_domain_check": true,
+        "primary_model_snapshot": {
+          "registration": null,
+          "weight_identity_verified": false
+        },
+        "profile": "collective",
+        "reported_models": [
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021"
+        ],
+        "resources": {
+          "calls": 3,
+          "cycles": 1,
+          "inference_ms": 2682.951836,
+          "input_tokens": 993,
+          "output_tokens": 111,
+          "process_lifetime_peak_rss_bytes": 28811264,
+          "process_rss_bytes": 28811264,
+          "prompt_bytes": 2065,
+          "queue_wait_ms": 0.34360199999999996,
+          "reserved_output_tokens": 768,
+          "tool_calls": 1
+        },
+        "status": "completed",
+        "stop_reason": "verified",
+        "task_id": "a043927e-d003-4a40-9043-b4849ba84232"
+      },
+      "baseline_passed": true,
+      "case_index": 7,
+      "input": "csp:{\"variables\":[{\"id\":\"high\",\"domain\":[9223372036854775807]},{\"id\":\"low\",\"domain\":[-9223372036854775808]}],\"constraints\":[{\"kind\":\"linear\",\"terms\":[{\"variable\":\"high\",\"coefficient\":1},{\"variable\":\"low\",\"coefficient\":1}],\"relation\":\"eq\",\"rhs\":-1}]}",
+      "paired": true,
+      "paired_resources": {
+        "baseline": {
+          "calls": 3,
+          "cycles": 1,
+          "inference_ms": 2682.951836,
+          "input_tokens": 993,
+          "output_tokens": 111,
+          "process_lifetime_peak_rss_bytes": 28811264,
+          "process_rss_bytes": 28811264,
+          "prompt_bytes": 2065,
+          "queue_wait_ms": 0.34360199999999996,
+          "reserved_output_tokens": 768,
+          "tool_calls": 1
+        },
+        "progress_stopping": {
+          "calls": 3,
+          "cycles": 1,
+          "inference_ms": 3245.266047,
+          "input_tokens": 993,
+          "output_tokens": 122,
+          "process_lifetime_peak_rss_bytes": 28762112,
+          "process_rss_bytes": 28762112,
+          "prompt_bytes": 2065,
+          "queue_wait_ms": 0.41326499999999994,
+          "reserved_output_tokens": 768,
+          "tool_calls": 1
+        }
+      },
+      "progress_stopping": {
+        "answer": "{\n  \"high\": 9223372036854775807,\n  \"low\": -9223372036854775808\n}",
+        "answer_sha256": "6807fe209c0783c5e3b2fe4ed513aba1061afd3e08e148ab8bab9cc8817a9a37",
+        "answer_truncated": false,
+        "arm_index": 1,
+        "calls": 3,
+        "cycles": 1,
+        "elapsed_ms": 3255.729965,
+        "execution_position": 0,
+        "passed_independent_finite_domain_check": true,
+        "primary_model_snapshot": {
+          "registration": null,
+          "weight_identity_verified": false
+        },
+        "profile": "collective",
+        "reported_models": [
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021"
+        ],
+        "resources": {
+          "calls": 3,
+          "cycles": 1,
+          "inference_ms": 3245.266047,
+          "input_tokens": 993,
+          "output_tokens": 122,
+          "process_lifetime_peak_rss_bytes": 28762112,
+          "process_rss_bytes": 28762112,
+          "prompt_bytes": 2065,
+          "queue_wait_ms": 0.41326499999999994,
+          "reserved_output_tokens": 768,
+          "tool_calls": 1
+        },
+        "status": "completed",
+        "stop_reason": "verified",
+        "task_id": "48618566-7667-4da0-b92d-a98dae92235a"
+      },
+      "progress_stopping_passed": true,
+      "verification": "finite_domain_v1"
+    },
+    {
+      "baseline": {
+        "answer": "{\n  \"high\": 9223372036854775807,\n  \"low\": -9223372036854775808\n}",
+        "answer_sha256": "6807fe209c0783c5e3b2fe4ed513aba1061afd3e08e148ab8bab9cc8817a9a37",
+        "answer_truncated": false,
+        "arm_index": 0,
+        "calls": 3,
+        "cycles": 1,
+        "elapsed_ms": 2943.2116530000003,
+        "execution_position": 0,
+        "passed_independent_finite_domain_check": true,
+        "primary_model_snapshot": {
+          "registration": null,
+          "weight_identity_verified": false
+        },
+        "profile": "collective",
+        "reported_models": [
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021"
+        ],
+        "resources": {
+          "calls": 3,
+          "cycles": 1,
+          "inference_ms": 2934.0674209999997,
+          "input_tokens": 993,
+          "output_tokens": 111,
+          "process_lifetime_peak_rss_bytes": 28844032,
+          "process_rss_bytes": 28844032,
+          "prompt_bytes": 2068,
+          "queue_wait_ms": 0.359705,
+          "reserved_output_tokens": 768,
+          "tool_calls": 1
+        },
+        "status": "completed",
+        "stop_reason": "verified",
+        "task_id": "09d57507-9cc3-4025-9f48-f8a0bb2a7573"
+      },
+      "baseline_passed": true,
+      "case_index": 8,
+      "input": "csp:{\"variables\":[{\"id\":\"high\",\"domain\":[9223372036854775807]},{\"id\":\"low\",\"domain\":[-9223372036854775808]}],\"constraints\":[{\"kind\":\"linear\",\"terms\":[{\"variable\":\"high\",\"coefficient\":-1},{\"variable\":\"low\",\"coefficient\":-1}],\"relation\":\"eq\",\"rhs\":1}]}",
+      "paired": true,
+      "paired_resources": {
+        "baseline": {
+          "calls": 3,
+          "cycles": 1,
+          "inference_ms": 2934.0674209999997,
+          "input_tokens": 993,
+          "output_tokens": 111,
+          "process_lifetime_peak_rss_bytes": 28844032,
+          "process_rss_bytes": 28844032,
+          "prompt_bytes": 2068,
+          "queue_wait_ms": 0.359705,
+          "reserved_output_tokens": 768,
+          "tool_calls": 1
+        },
+        "progress_stopping": {
+          "calls": 3,
+          "cycles": 1,
+          "inference_ms": 2593.155191,
+          "input_tokens": 994,
+          "output_tokens": 105,
+          "process_lifetime_peak_rss_bytes": 28872704,
+          "process_rss_bytes": 28872704,
+          "prompt_bytes": 2076,
+          "queue_wait_ms": 0.341027,
+          "reserved_output_tokens": 768,
+          "tool_calls": 1
+        }
+      },
+      "progress_stopping": {
+        "answer": "{\"high\":9223372036854775807,\"low\":-9223372036854775808}",
+        "answer_sha256": "44e150fa0b7fef4b713b197ad334aff913db72ccd6edae81d97657f9273e41e5",
+        "answer_truncated": false,
+        "arm_index": 1,
+        "calls": 3,
+        "cycles": 1,
+        "elapsed_ms": 2601.002381,
+        "execution_position": 1,
+        "passed_independent_finite_domain_check": true,
+        "primary_model_snapshot": {
+          "registration": null,
+          "weight_identity_verified": false
+        },
+        "profile": "collective",
+        "reported_models": [
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021"
+        ],
+        "resources": {
+          "calls": 3,
+          "cycles": 1,
+          "inference_ms": 2593.155191,
+          "input_tokens": 994,
+          "output_tokens": 105,
+          "process_lifetime_peak_rss_bytes": 28872704,
+          "process_rss_bytes": 28872704,
+          "prompt_bytes": 2076,
+          "queue_wait_ms": 0.341027,
+          "reserved_output_tokens": 768,
+          "tool_calls": 1
+        },
+        "status": "completed",
+        "stop_reason": "verified",
+        "task_id": "bbb57dfb-1d42-40b0-9abd-03cbda766ba3"
+      },
+      "progress_stopping_passed": true,
+      "verification": "finite_domain_v1"
+    },
+    {
+      "baseline": {
+        "answer": "{\n  \"x\": 0\n}",
+        "answer_sha256": "dfbdcbad7e4d1e86eec1b42d51a8c04421a2fe31a295d17673bb3ce2c3e5e64c",
+        "answer_truncated": false,
+        "arm_index": 0,
+        "calls": 4,
+        "cycles": 2,
+        "elapsed_ms": 1486.038975,
+        "execution_position": 1,
+        "passed_independent_finite_domain_check": false,
+        "primary_model_snapshot": {
+          "registration": null,
+          "weight_identity_verified": false
+        },
+        "profile": "collective",
+        "reported_models": [
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021"
+        ],
+        "resources": {
+          "calls": 4,
+          "cycles": 2,
+          "inference_ms": 1474.3105289999999,
+          "input_tokens": 1170,
+          "output_tokens": 46,
+          "process_lifetime_peak_rss_bytes": 28942336,
+          "process_rss_bytes": 28942336,
+          "prompt_bytes": 2583,
+          "queue_wait_ms": 0.45353,
+          "reserved_output_tokens": 1152,
+          "tool_calls": 2
+        },
+        "status": "rejected",
+        "stop_reason": "no_progress",
+        "task_id": "4797cd4b-d9f7-4508-a2e4-7d77667a3ed0"
+      },
+      "baseline_passed": false,
+      "case_index": 9,
+      "input": "csp:{\"variables\":[{\"id\":\"x\",\"domain\":[0,1]}],\"constraints\":[{\"kind\":\"linear\",\"terms\":[{\"variable\":\"x\",\"coefficient\":1}],\"relation\":\"eq\",\"rhs\":0},{\"kind\":\"linear\",\"terms\":[{\"variable\":\"x\",\"coefficient\":1}],\"relation\":\"eq\",\"rhs\":1}]}",
+      "paired": true,
+      "paired_resources": {
+        "baseline": {
+          "calls": 4,
+          "cycles": 2,
+          "inference_ms": 1474.3105289999999,
+          "input_tokens": 1170,
+          "output_tokens": 46,
+          "process_lifetime_peak_rss_bytes": 28942336,
+          "process_rss_bytes": 28942336,
+          "prompt_bytes": 2583,
+          "queue_wait_ms": 0.45353,
+          "reserved_output_tokens": 1152,
+          "tool_calls": 2
+        },
+        "progress_stopping": {
+          "calls": 4,
+          "cycles": 2,
+          "inference_ms": 1645.704714,
+          "input_tokens": 1166,
+          "output_tokens": 38,
+          "process_lifetime_peak_rss_bytes": 28905472,
+          "process_rss_bytes": 28905472,
+          "prompt_bytes": 2578,
+          "queue_wait_ms": 0.26328,
+          "reserved_output_tokens": 1152,
+          "tool_calls": 2
+        }
+      },
+      "progress_stopping": {
+        "answer": "{\"x\":0}",
+        "answer_sha256": "5bff452c5ed93f2e87a23984db5a15050c6477335fdec955b70063bb2d692bf1",
+        "answer_truncated": false,
+        "arm_index": 1,
+        "calls": 4,
+        "cycles": 2,
+        "elapsed_ms": 1656.2726089999999,
+        "execution_position": 0,
+        "passed_independent_finite_domain_check": false,
+        "primary_model_snapshot": {
+          "registration": null,
+          "weight_identity_verified": false
+        },
+        "profile": "collective",
+        "reported_models": [
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021"
+        ],
+        "resources": {
+          "calls": 4,
+          "cycles": 2,
+          "inference_ms": 1645.704714,
+          "input_tokens": 1166,
+          "output_tokens": 38,
+          "process_lifetime_peak_rss_bytes": 28905472,
+          "process_rss_bytes": 28905472,
+          "prompt_bytes": 2578,
+          "queue_wait_ms": 0.26328,
+          "reserved_output_tokens": 1152,
+          "tool_calls": 2
+        },
+        "status": "rejected",
+        "stop_reason": "no_progress",
+        "task_id": "bd417bb5-c6d1-47c2-b051-a4dab4c3b79a"
+      },
+      "progress_stopping_passed": false,
+      "verification": "finite_domain_v1"
+    },
+    {
+      "baseline": {
+        "answer": "{\"a\": 1, \"b\": 2, \"c\": 1}",
+        "answer_sha256": "83d9fe09c75ec6619cffd291024977752a08837765e07ce55afc4e8c399aeea5",
+        "answer_truncated": false,
+        "arm_index": 0,
+        "calls": 7,
+        "cycles": 2,
+        "elapsed_ms": 4631.681846,
+        "execution_position": 0,
+        "passed_independent_finite_domain_check": false,
+        "primary_model_snapshot": {
+          "registration": null,
+          "weight_identity_verified": false
+        },
+        "profile": "collective",
+        "reported_models": [
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021"
+        ],
+        "resources": {
+          "calls": 7,
+          "cycles": 2,
+          "inference_ms": 4618.027021,
+          "input_tokens": 2281,
+          "output_tokens": 167,
+          "process_lifetime_peak_rss_bytes": 28995584,
+          "process_rss_bytes": 28995584,
+          "prompt_bytes": 5650,
+          "queue_wait_ms": 0.775253,
+          "reserved_output_tokens": 1728,
+          "tool_calls": 2
+        },
+        "status": "rejected",
+        "stop_reason": "no_progress",
+        "task_id": "0d2e0d02-354d-4ae9-8da2-71515f039c52"
+      },
+      "baseline_passed": false,
+      "case_index": 10,
+      "input": "csp:{\"variables\":[{\"id\":\"a\",\"domain\":[1,2]},{\"id\":\"b\",\"domain\":[1,2]},{\"id\":\"c\",\"domain\":[1,2]}],\"constraints\":[{\"kind\":\"all_different\",\"variables\":[\"a\",\"b\",\"c\"]}]}",
+      "paired": true,
+      "paired_resources": {
+        "baseline": {
+          "calls": 7,
+          "cycles": 2,
+          "inference_ms": 4618.027021,
+          "input_tokens": 2281,
+          "output_tokens": 167,
+          "process_lifetime_peak_rss_bytes": 28995584,
+          "process_rss_bytes": 28995584,
+          "prompt_bytes": 5650,
+          "queue_wait_ms": 0.775253,
+          "reserved_output_tokens": 1728,
+          "tool_calls": 2
+        },
+        "progress_stopping": {
+          "calls": 7,
+          "cycles": 2,
+          "inference_ms": 4227.382183,
+          "input_tokens": 2281,
+          "output_tokens": 167,
+          "process_lifetime_peak_rss_bytes": 29032448,
+          "process_rss_bytes": 29032448,
+          "prompt_bytes": 5650,
+          "queue_wait_ms": 0.509989,
+          "reserved_output_tokens": 1728,
+          "tool_calls": 2
+        }
+      },
+      "progress_stopping": {
+        "answer": "{\"a\": 1, \"b\": 2, \"c\": 1}",
+        "answer_sha256": "83d9fe09c75ec6619cffd291024977752a08837765e07ce55afc4e8c399aeea5",
+        "answer_truncated": false,
+        "arm_index": 1,
+        "calls": 7,
+        "cycles": 2,
+        "elapsed_ms": 4242.770367,
+        "execution_position": 1,
+        "passed_independent_finite_domain_check": false,
+        "primary_model_snapshot": {
+          "registration": null,
+          "weight_identity_verified": false
+        },
+        "profile": "collective",
+        "reported_models": [
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021"
+        ],
+        "resources": {
+          "calls": 7,
+          "cycles": 2,
+          "inference_ms": 4227.382183,
+          "input_tokens": 2281,
+          "output_tokens": 167,
+          "process_lifetime_peak_rss_bytes": 29032448,
+          "process_rss_bytes": 29032448,
+          "prompt_bytes": 5650,
+          "queue_wait_ms": 0.509989,
+          "reserved_output_tokens": 1728,
+          "tool_calls": 2
+        },
+        "status": "rejected",
+        "stop_reason": "no_progress",
+        "task_id": "cac0b21d-5904-4c79-ada2-3dac25a73e4b"
+      },
+      "progress_stopping_passed": false,
+      "verification": "finite_domain_v1"
+    },
+    {
+      "baseline": {
+        "answer": "{\n  \"x\": 0,\n  \"y\": 2\n}",
+        "answer_sha256": "63ca1f0d00bb48386a499dcbfeb56e57ffbabab9ef03f65dfb3c47b5eb924068",
+        "answer_truncated": false,
+        "arm_index": 0,
+        "calls": 3,
+        "cycles": 1,
+        "elapsed_ms": 1671.70329,
+        "execution_position": 1,
+        "passed_independent_finite_domain_check": true,
+        "primary_model_snapshot": {
+          "registration": null,
+          "weight_identity_verified": false
+        },
+        "profile": "collective",
+        "reported_models": [
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021"
+        ],
+        "resources": {
+          "calls": 3,
+          "cycles": 1,
+          "inference_ms": 1663.511688,
+          "input_tokens": 878,
+          "output_tokens": 63,
+          "process_lifetime_peak_rss_bytes": 29081600,
+          "process_rss_bytes": 29081600,
+          "prompt_bytes": 1773,
+          "queue_wait_ms": 0.154933,
+          "reserved_output_tokens": 768,
+          "tool_calls": 1
+        },
+        "status": "completed",
+        "stop_reason": "verified",
+        "task_id": "bf4f2531-8008-4a02-8158-1ff411dd6371"
+      },
+      "baseline_passed": true,
+      "case_index": 11,
+      "input": "csp:{\"variables\":[{\"id\":\"x\",\"domain\":[0,1,2]},{\"id\":\"y\",\"domain\":[0,1,2]}],\"constraints\":[{\"kind\":\"linear\",\"terms\":[{\"variable\":\"x\",\"coefficient\":1},{\"variable\":\"y\",\"coefficient\":1}],\"relation\":\"eq\",\"rhs\":2}]}",
+      "paired": true,
+      "paired_resources": {
+        "baseline": {
+          "calls": 3,
+          "cycles": 1,
+          "inference_ms": 1663.511688,
+          "input_tokens": 878,
+          "output_tokens": 63,
+          "process_lifetime_peak_rss_bytes": 29081600,
+          "process_rss_bytes": 29081600,
+          "prompt_bytes": 1773,
+          "queue_wait_ms": 0.154933,
+          "reserved_output_tokens": 768,
+          "tool_calls": 1
+        },
+        "progress_stopping": {
+          "calls": 3,
+          "cycles": 1,
+          "inference_ms": 1939.1811579999999,
+          "input_tokens": 878,
+          "output_tokens": 56,
+          "process_lifetime_peak_rss_bytes": 29057024,
+          "process_rss_bytes": 29057024,
+          "prompt_bytes": 1773,
+          "queue_wait_ms": 0.44055500000000003,
+          "reserved_output_tokens": 768,
+          "tool_calls": 1
+        }
+      },
+      "progress_stopping": {
+        "answer": "{\"x\":0,\"y\":2}",
+        "answer_sha256": "3721a8618bae71171debaf3fc3d8612de5ab36911f070a4edc8966829281569a",
+        "answer_truncated": false,
+        "arm_index": 1,
+        "calls": 3,
+        "cycles": 1,
+        "elapsed_ms": 1948.7476219999999,
+        "execution_position": 0,
+        "passed_independent_finite_domain_check": true,
+        "primary_model_snapshot": {
+          "registration": null,
+          "weight_identity_verified": false
+        },
+        "profile": "collective",
+        "reported_models": [
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021"
+        ],
+        "resources": {
+          "calls": 3,
+          "cycles": 1,
+          "inference_ms": 1939.1811579999999,
+          "input_tokens": 878,
+          "output_tokens": 56,
+          "process_lifetime_peak_rss_bytes": 29057024,
+          "process_rss_bytes": 29057024,
+          "prompt_bytes": 1773,
+          "queue_wait_ms": 0.44055500000000003,
+          "reserved_output_tokens": 768,
+          "tool_calls": 1
+        },
+        "status": "completed",
+        "stop_reason": "verified",
+        "task_id": "942d8bc4-fe61-42b9-8cf6-8ae9711a1226"
+      },
+      "progress_stopping_passed": true,
+      "verification": "finite_domain_v1"
+    },
+    {
+      "baseline": {
+        "answer": "{\"x\": 1, \"y\": 0}",
+        "answer_sha256": "9c9f84303349685b0c3aab76f9d075e02b33028f7c11147a325ffe3746f6486b",
+        "answer_truncated": false,
+        "arm_index": 0,
+        "calls": 4,
+        "cycles": 2,
+        "elapsed_ms": 2342.716491,
+        "execution_position": 0,
+        "passed_independent_finite_domain_check": true,
+        "primary_model_snapshot": {
+          "registration": null,
+          "weight_identity_verified": false
+        },
+        "profile": "collective",
+        "reported_models": [
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021"
+        ],
+        "resources": {
+          "calls": 4,
+          "cycles": 2,
+          "inference_ms": 2331.3235799999998,
+          "input_tokens": 1173,
+          "output_tokens": 72,
+          "process_lifetime_peak_rss_bytes": 29106176,
+          "process_rss_bytes": 29106176,
+          "prompt_bytes": 2513,
+          "queue_wait_ms": 1.1610249999999998,
+          "reserved_output_tokens": 1152,
+          "tool_calls": 2
+        },
+        "status": "completed",
+        "stop_reason": "verified",
+        "task_id": "8791a5ce-c9db-4355-a768-f4e19f3e4e6b"
+      },
+      "baseline_passed": true,
+      "case_index": 12,
+      "input": "csp:{\"variables\":[{\"id\":\"x\",\"domain\":[-1,0,1]},{\"id\":\"y\",\"domain\":[-1,0,1]}],\"constraints\":[{\"kind\":\"linear\",\"terms\":[{\"variable\":\"x\",\"coefficient\":-1},{\"variable\":\"y\",\"coefficient\":1}],\"relation\":\"ne\",\"rhs\":0}]}",
+      "paired": true,
+      "paired_resources": {
+        "baseline": {
+          "calls": 4,
+          "cycles": 2,
+          "inference_ms": 2331.3235799999998,
+          "input_tokens": 1173,
+          "output_tokens": 72,
+          "process_lifetime_peak_rss_bytes": 29106176,
+          "process_rss_bytes": 29106176,
+          "prompt_bytes": 2513,
+          "queue_wait_ms": 1.1610249999999998,
+          "reserved_output_tokens": 1152,
+          "tool_calls": 2
+        },
+        "progress_stopping": {
+          "calls": 4,
+          "cycles": 2,
+          "inference_ms": 2053.107763,
+          "input_tokens": 1177,
+          "output_tokens": 80,
+          "process_lifetime_peak_rss_bytes": 29126656,
+          "process_rss_bytes": 29126656,
+          "prompt_bytes": 2519,
+          "queue_wait_ms": 0.305121,
+          "reserved_output_tokens": 1152,
+          "tool_calls": 2
+        }
+      },
+      "progress_stopping": {
+        "answer": "{\n  \"x\": 1,\n  \"y\": 0\n}",
+        "answer_sha256": "99c7623534cfdee3214dd251a3d9b5b19522ccc5a571b855744bfe7282a7b881",
+        "answer_truncated": false,
+        "arm_index": 1,
+        "calls": 4,
+        "cycles": 2,
+        "elapsed_ms": 2063.5813289999996,
+        "execution_position": 1,
+        "passed_independent_finite_domain_check": true,
+        "primary_model_snapshot": {
+          "registration": null,
+          "weight_identity_verified": false
+        },
+        "profile": "collective",
+        "reported_models": [
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021"
+        ],
+        "resources": {
+          "calls": 4,
+          "cycles": 2,
+          "inference_ms": 2053.107763,
+          "input_tokens": 1177,
+          "output_tokens": 80,
+          "process_lifetime_peak_rss_bytes": 29126656,
+          "process_rss_bytes": 29126656,
+          "prompt_bytes": 2519,
+          "queue_wait_ms": 0.305121,
+          "reserved_output_tokens": 1152,
+          "tool_calls": 2
+        },
+        "status": "completed",
+        "stop_reason": "verified",
+        "task_id": "34129bda-a5c8-498b-8780-8992b3ca44f3"
+      },
+      "progress_stopping_passed": true,
+      "verification": "finite_domain_v1"
+    },
+    {
+      "baseline": {
+        "answer": "{\"a\":0,\"b\":1,\"c\":1}",
+        "answer_sha256": "d8e4e929b1688da1512b235e4013854dba010da2b059fadc1a7d56d1d0c479c2",
+        "answer_truncated": false,
+        "arm_index": 0,
+        "calls": 7,
+        "cycles": 1,
+        "elapsed_ms": 5364.422331,
+        "execution_position": 1,
+        "passed_independent_finite_domain_check": true,
+        "primary_model_snapshot": {
+          "registration": null,
+          "weight_identity_verified": false
+        },
+        "profile": "collective",
+        "reported_models": [
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021"
+        ],
+        "resources": {
+          "calls": 7,
+          "cycles": 1,
+          "inference_ms": 5350.305407999999,
+          "input_tokens": 2543,
+          "output_tokens": 212,
+          "process_lifetime_peak_rss_bytes": 29224960,
+          "process_rss_bytes": 29224960,
+          "prompt_bytes": 6727,
+          "queue_wait_ms": 0.73142,
+          "reserved_output_tokens": 1536,
+          "tool_calls": 1
+        },
+        "status": "completed",
+        "stop_reason": "verified",
+        "task_id": "0dd8c663-0800-4a7b-b0db-358b52e2b9a1"
+      },
+      "baseline_passed": true,
+      "case_index": 13,
+      "input": "csp:{\"variables\":[{\"id\":\"a\",\"domain\":[0,1,2]},{\"id\":\"b\",\"domain\":[0,1,2]},{\"id\":\"c\",\"domain\":[0,1,2]}],\"constraints\":[{\"kind\":\"linear\",\"terms\":[{\"variable\":\"a\",\"coefficient\":2},{\"variable\":\"b\",\"coefficient\":-1},{\"variable\":\"c\",\"coefficient\":1}],\"relation\":\"le\",\"rhs\":2}]}",
+      "paired": true,
+      "paired_resources": {
+        "baseline": {
+          "calls": 7,
+          "cycles": 1,
+          "inference_ms": 5350.305407999999,
+          "input_tokens": 2543,
+          "output_tokens": 212,
+          "process_lifetime_peak_rss_bytes": 29224960,
+          "process_rss_bytes": 29224960,
+          "prompt_bytes": 6727,
+          "queue_wait_ms": 0.73142,
+          "reserved_output_tokens": 1536,
+          "tool_calls": 1
+        },
+        "progress_stopping": {
+          "calls": 7,
+          "cycles": 1,
+          "inference_ms": 6020.009205,
+          "input_tokens": 2556,
+          "output_tokens": 222,
+          "process_lifetime_peak_rss_bytes": 29175808,
+          "process_rss_bytes": 29175808,
+          "prompt_bytes": 6744,
+          "queue_wait_ms": 0.578859,
+          "reserved_output_tokens": 1536,
+          "tool_calls": 1
+        }
+      },
+      "progress_stopping": {
+        "answer": "{\"a\":0,\"b\":1,\"c\":1}",
+        "answer_sha256": "d8e4e929b1688da1512b235e4013854dba010da2b059fadc1a7d56d1d0c479c2",
+        "answer_truncated": false,
+        "arm_index": 1,
+        "calls": 7,
+        "cycles": 1,
+        "elapsed_ms": 6035.028762999999,
+        "execution_position": 0,
+        "passed_independent_finite_domain_check": true,
+        "primary_model_snapshot": {
+          "registration": null,
+          "weight_identity_verified": false
+        },
+        "profile": "collective",
+        "reported_models": [
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021"
+        ],
+        "resources": {
+          "calls": 7,
+          "cycles": 1,
+          "inference_ms": 6020.009205,
+          "input_tokens": 2556,
+          "output_tokens": 222,
+          "process_lifetime_peak_rss_bytes": 29175808,
+          "process_rss_bytes": 29175808,
+          "prompt_bytes": 6744,
+          "queue_wait_ms": 0.578859,
+          "reserved_output_tokens": 1536,
+          "tool_calls": 1
+        },
+        "status": "completed",
+        "stop_reason": "verified",
+        "task_id": "dd7b8b1e-c363-4df5-a0cf-10d17847c8fb"
+      },
+      "progress_stopping_passed": true,
+      "verification": "finite_domain_v1"
+    },
+    {
+      "baseline": {
+        "answer": "{\"x\": -1, \"y\": 0}",
+        "answer_sha256": "a49d08d9f8fefada8b8f3346b603c9ddd9d9c89133f4b6252c92f728ef95d76e",
+        "answer_truncated": false,
+        "arm_index": 0,
+        "calls": 7,
+        "cycles": 1,
+        "elapsed_ms": 5169.499642,
+        "execution_position": 0,
+        "passed_independent_finite_domain_check": true,
+        "primary_model_snapshot": {
+          "registration": null,
+          "weight_identity_verified": false
+        },
+        "profile": "collective",
+        "reported_models": [
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021"
+        ],
+        "resources": {
+          "calls": 7,
+          "cycles": 1,
+          "inference_ms": 5150.439351,
+          "input_tokens": 2411,
+          "output_tokens": 185,
+          "process_lifetime_peak_rss_bytes": 29265920,
+          "process_rss_bytes": 29265920,
+          "prompt_bytes": 6342,
+          "queue_wait_ms": 0.566447,
+          "reserved_output_tokens": 1536,
+          "tool_calls": 1
+        },
+        "status": "completed",
+        "stop_reason": "verified",
+        "task_id": "e689c611-3f2d-4482-89a8-3ea197a3820b"
+      },
+      "baseline_passed": true,
+      "case_index": 14,
+      "input": "csp:{\"variables\":[{\"id\":\"x\",\"domain\":[-2,-1,0,1]},{\"id\":\"y\",\"domain\":[-2,-1,0,1]}],\"constraints\":[{\"kind\":\"linear\",\"terms\":[{\"variable\":\"x\",\"coefficient\":-1},{\"variable\":\"y\",\"coefficient\":-1}],\"relation\":\"ge\",\"rhs\":-1}]}",
+      "paired": true,
+      "paired_resources": {
+        "baseline": {
+          "calls": 7,
+          "cycles": 1,
+          "inference_ms": 5150.439351,
+          "input_tokens": 2411,
+          "output_tokens": 185,
+          "process_lifetime_peak_rss_bytes": 29265920,
+          "process_rss_bytes": 29265920,
+          "prompt_bytes": 6342,
+          "queue_wait_ms": 0.566447,
+          "reserved_output_tokens": 1536,
+          "tool_calls": 1
+        },
+        "progress_stopping": {
+          "calls": 3,
+          "cycles": 1,
+          "inference_ms": 1337.092306,
+          "input_tokens": 890,
+          "output_tokens": 47,
+          "process_lifetime_peak_rss_bytes": 29290496,
+          "process_rss_bytes": 29290496,
+          "prompt_bytes": 1806,
+          "queue_wait_ms": 0.21186100000000002,
+          "reserved_output_tokens": 768,
+          "tool_calls": 1
+        }
+      },
+      "progress_stopping": {
+        "answer": "{\n  \"x\": -1,\n  \"y\": 0\n}",
+        "answer_sha256": "949effb075fdaf07634ce6151565a007f32a4806e1c5289eb436326544eb4063",
+        "answer_truncated": false,
+        "arm_index": 1,
+        "calls": 3,
+        "cycles": 1,
+        "elapsed_ms": 1343.760635,
+        "execution_position": 1,
+        "passed_independent_finite_domain_check": true,
+        "primary_model_snapshot": {
+          "registration": null,
+          "weight_identity_verified": false
+        },
+        "profile": "collective",
+        "reported_models": [
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021"
+        ],
+        "resources": {
+          "calls": 3,
+          "cycles": 1,
+          "inference_ms": 1337.092306,
+          "input_tokens": 890,
+          "output_tokens": 47,
+          "process_lifetime_peak_rss_bytes": 29290496,
+          "process_rss_bytes": 29290496,
+          "prompt_bytes": 1806,
+          "queue_wait_ms": 0.21186100000000002,
+          "reserved_output_tokens": 768,
+          "tool_calls": 1
+        },
+        "status": "completed",
+        "stop_reason": "verified",
+        "task_id": "4997fe0b-ff08-4111-93bc-9f2f58667c65"
+      },
+      "progress_stopping_passed": true,
+      "verification": "finite_domain_v1"
+    },
+    {
+      "baseline": {
+        "answer": "{\"a\":0,\"b\":2,\"c\":1}",
+        "answer_sha256": "4309eb8ea5f11d5e2c9959e49bd4ec5b07b32c451142dcdb7e781e79bcc0571c",
+        "answer_truncated": false,
+        "arm_index": 0,
+        "calls": 8,
+        "cycles": 2,
+        "elapsed_ms": 4902.699726,
+        "execution_position": 1,
+        "passed_independent_finite_domain_check": true,
+        "primary_model_snapshot": {
+          "registration": null,
+          "weight_identity_verified": false
+        },
+        "profile": "collective",
+        "reported_models": [
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021"
+        ],
+        "resources": {
+          "calls": 8,
+          "cycles": 2,
+          "inference_ms": 4888.408261,
+          "input_tokens": 3188,
+          "output_tokens": 185,
+          "process_lifetime_peak_rss_bytes": 29372416,
+          "process_rss_bytes": 29372416,
+          "prompt_bytes": 8594,
+          "queue_wait_ms": 0.6291829999999999,
+          "reserved_output_tokens": 1920,
+          "tool_calls": 2
+        },
+        "status": "completed",
+        "stop_reason": "verified",
+        "task_id": "783c08d6-e117-48c1-b123-0b9e29073d27"
+      },
+      "baseline_passed": true,
+      "case_index": 15,
+      "input": "csp:{\"variables\":[{\"id\":\"a\",\"domain\":[0,1,2]},{\"id\":\"b\",\"domain\":[0,1,2]},{\"id\":\"c\",\"domain\":[0,1,2]}],\"constraints\":[{\"kind\":\"linear\",\"terms\":[{\"variable\":\"a\",\"coefficient\":1},{\"variable\":\"b\",\"coefficient\":1}],\"relation\":\"eq\",\"rhs\":2},{\"kind\":\"linear\",\"terms\":[{\"variable\":\"b\",\"coefficient\":1},{\"variable\":\"c\",\"coefficient\":-1}],\"relation\":\"ne\",\"rhs\":0},{\"kind\":\"all_different\",\"variables\":[\"a\",\"b\",\"c\"]}]}",
+      "paired": true,
+      "paired_resources": {
+        "baseline": {
+          "calls": 8,
+          "cycles": 2,
+          "inference_ms": 4888.408261,
+          "input_tokens": 3188,
+          "output_tokens": 185,
+          "process_lifetime_peak_rss_bytes": 29372416,
+          "process_rss_bytes": 29372416,
+          "prompt_bytes": 8594,
+          "queue_wait_ms": 0.6291829999999999,
+          "reserved_output_tokens": 1920,
+          "tool_calls": 2
+        },
+        "progress_stopping": {
+          "calls": 7,
+          "cycles": 2,
+          "inference_ms": 4279.01616,
+          "input_tokens": 2678,
+          "output_tokens": 142,
+          "process_lifetime_peak_rss_bytes": 29323264,
+          "process_rss_bytes": 29323264,
+          "prompt_bytes": 7186,
+          "queue_wait_ms": 0.625358,
+          "reserved_output_tokens": 1728,
+          "tool_calls": 2
+        }
+      },
+      "progress_stopping": {
+        "answer": "{\"a\":0,\"b\":2,\"c\":1}",
+        "answer_sha256": "4309eb8ea5f11d5e2c9959e49bd4ec5b07b32c451142dcdb7e781e79bcc0571c",
+        "answer_truncated": false,
+        "arm_index": 1,
+        "calls": 7,
+        "cycles": 2,
+        "elapsed_ms": 4296.148629,
+        "execution_position": 0,
+        "passed_independent_finite_domain_check": true,
+        "primary_model_snapshot": {
+          "registration": null,
+          "weight_identity_verified": false
+        },
+        "profile": "collective",
+        "reported_models": [
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021"
+        ],
+        "resources": {
+          "calls": 7,
+          "cycles": 2,
+          "inference_ms": 4279.01616,
+          "input_tokens": 2678,
+          "output_tokens": 142,
+          "process_lifetime_peak_rss_bytes": 29323264,
+          "process_rss_bytes": 29323264,
+          "prompt_bytes": 7186,
+          "queue_wait_ms": 0.625358,
+          "reserved_output_tokens": 1728,
+          "tool_calls": 2
+        },
+        "status": "completed",
+        "stop_reason": "verified",
+        "task_id": "0535f22f-1dfc-48dc-a676-545b36967e57"
+      },
+      "progress_stopping_passed": true,
+      "verification": "finite_domain_v1"
+    },
+    {
+      "baseline": {
+        "answer": "{\"x\":2,\"y\":0}",
+        "answer_sha256": "1e0db2a6b104bebbd6ca681025759691a2f21683f3776c44d2079b31bd9d7302",
+        "answer_truncated": false,
+        "arm_index": 0,
+        "calls": 6,
+        "cycles": 4,
+        "elapsed_ms": 3321.7791110000003,
+        "execution_position": 0,
+        "passed_independent_finite_domain_check": false,
+        "primary_model_snapshot": {
+          "registration": null,
+          "weight_identity_verified": false
+        },
+        "profile": "collective",
+        "reported_models": [
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021"
+        ],
+        "resources": {
+          "calls": 6,
+          "cycles": 4,
+          "inference_ms": 3308.54279,
+          "input_tokens": 1754,
+          "output_tokens": 121,
+          "process_lifetime_peak_rss_bytes": 29421568,
+          "process_rss_bytes": 29421568,
+          "prompt_bytes": 3954,
+          "queue_wait_ms": 0.40799399999999997,
+          "reserved_output_tokens": 1920,
+          "tool_calls": 4
+        },
+        "status": "rejected",
+        "stop_reason": "no_progress",
+        "task_id": "fe2adb8c-69c0-42e4-958a-25048734b42b"
+      },
+      "baseline_passed": false,
+      "case_index": 16,
+      "input": "csp:{\"variables\":[{\"id\":\"x\",\"domain\":[0,1,2]},{\"id\":\"y\",\"domain\":[0,1,2]}],\"constraints\":[{\"kind\":\"linear\",\"terms\":[{\"variable\":\"x\",\"coefficient\":-1},{\"variable\":\"y\",\"coefficient\":-1}],\"relation\":\"ge\",\"rhs\":1}]}",
+      "paired": true,
+      "paired_resources": {
+        "baseline": {
+          "calls": 6,
+          "cycles": 4,
+          "inference_ms": 3308.54279,
+          "input_tokens": 1754,
+          "output_tokens": 121,
+          "process_lifetime_peak_rss_bytes": 29421568,
+          "process_rss_bytes": 29421568,
+          "prompt_bytes": 3954,
+          "queue_wait_ms": 0.40799399999999997,
+          "reserved_output_tokens": 1920,
+          "tool_calls": 4
+        },
+        "progress_stopping": {
+          "calls": 5,
+          "cycles": 3,
+          "inference_ms": 2468.8047690000003,
+          "input_tokens": 1476,
+          "output_tokens": 97,
+          "process_lifetime_peak_rss_bytes": 29458432,
+          "process_rss_bytes": 29458432,
+          "prompt_bytes": 3247,
+          "queue_wait_ms": 0.325739,
+          "reserved_output_tokens": 1536,
+          "tool_calls": 3
+        }
+      },
+      "progress_stopping": {
+        "answer": "{\n  \"x\": 1,\n  \"y\": 0\n}",
+        "answer_sha256": "99c7623534cfdee3214dd251a3d9b5b19522ccc5a571b855744bfe7282a7b881",
+        "answer_truncated": false,
+        "arm_index": 1,
+        "calls": 5,
+        "cycles": 3,
+        "elapsed_ms": 2481.203901,
+        "execution_position": 1,
+        "passed_independent_finite_domain_check": false,
+        "primary_model_snapshot": {
+          "registration": null,
+          "weight_identity_verified": false
+        },
+        "profile": "collective",
+        "reported_models": [
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021",
+          "cf-progress-eval-20261021"
+        ],
+        "resources": {
+          "calls": 5,
+          "cycles": 3,
+          "inference_ms": 2468.8047690000003,
+          "input_tokens": 1476,
+          "output_tokens": 97,
+          "process_lifetime_peak_rss_bytes": 29458432,
+          "process_rss_bytes": 29458432,
+          "prompt_bytes": 3247,
+          "queue_wait_ms": 0.325739,
+          "reserved_output_tokens": 1536,
+          "tool_calls": 3
+        },
+        "status": "rejected",
+        "stop_reason": "no_progress",
+        "task_id": "5ac6ed78-e544-4816-85d2-edc5b3592b1d"
+      },
+      "progress_stopping_passed": false,
+      "verification": "finite_domain_v1"
+    }
+  ],
+  "code_revision_operator_attested": "08f621797cca1b6eafd682038a5c4ff6833e10f1",
+  "compiled_role_prompts_sha256": "7d6f0ee781c8dc9d2d05c834e2c9e3d5850d0395403f8aecc9ae26f48f69bf4c",
+  "complete": true,
+  "complete_cases": 17,
+  "configured_model": "cf-progress-eval-20261021",
+  "configured_resource_pool": false,
+  "configured_resource_pool_shared_across_arms": null,
+  "content_included": true,
+  "controls": {
+    "adaptive_advice_history_rejected": true,
+    "case_start_arm_rotates": true,
+    "result_synthesis_disabled": true,
+    "role_profiles_cleared": true,
+    "same_backend_and_frozen_corpus": true,
+    "same_execution_profile": true,
+    "same_runtime_budgets": true
+  },
+  "corpus_snapshot": {
+    "database_snapshot_bytes": 188416,
+    "database_snapshot_checksum": "5b2fe96f44af3e19e993b257e161004cbf5c07b246ce9d1d30708c960b4381e2",
+    "frozen": true
+  },
+  "criterion": "finite_domain/v1",
+  "dataset_checksum_operator_pinned": true,
+  "dataset_license": "CC0-1.0",
+  "dataset_scope": "caller-provided; may contain sensitive inputs",
+  "dataset_sha256": "f90202843b55e26397f376a7d7d628e69f7ee35cbb26dc38a5fe730895f5bd1f",
+  "dataset_source": "Original public finite-domain diagnostics authored alongside Cognitive Fabric",
+  "elapsed_ms": 104373.473065,
+  "execution_profile": "collective",
+  "experiment": "finite_domain_progress_stopping/v1",
+  "format_version": 1,
+  "held_out_operator_attested": false,
+  "limitations": [
+    "Constraint satisfaction is the only scored quality outcome; the experiment does not test general reasoning.",
+    "A failed case does not establish unsatisfiability or prove the search had no useful continuation.",
+    "A baseline-only witness in a paired regression is observed, but the comparison cannot prove that progress stopping caused a later search to find it.",
+    "Results are conditional on this exact corpus, configuration, runtime source, compiled prompts, provider state and execution order.",
+    "A configured resource pool enforces its declared logical reservations only; it does not measure or cap physical device usage.",
+    "Model labels and token counts are provider-reported and do not attest immutable weights or physical compute.",
+    "Held-out independence, workflow scope and code revision are operator-attested."
+  ],
+  "mode": "research",
+  "package_version": "1.1.0-alpha.1",
+  "paired_outcomes": {
+    "both_failed": [
+      9,
+      10,
+      16
+    ],
+    "both_passed": [
+      0,
+      1,
+      2,
+      3,
+      5,
+      6,
+      7,
+      8,
+      11,
+      12,
+      13,
+      14,
+      15
+    ],
+    "observed_regressions_with_baseline_witness": 1,
+    "paired_cases": 17,
+    "progress_stopping_regressions": [
+      4
+    ],
+    "progress_stopping_wins": [],
+    "unmatched_cases": []
+  },
+  "paired_resource_totals": {
+    "baseline": {
+      "cycles": 25,
+      "input_tokens": 28328,
+      "latency_ms": 55872.851369,
+      "model_calls": 85,
+      "output_tokens": 2018,
+      "prompt_bytes": 68540,
+      "reserved_output_tokens": 21120,
+      "tool_calls": 25
+    },
+    "delta_progress_minus_baseline": {
+      "cycles": 2,
+      "input_tokens": -2913,
+      "latency_ms": -7432.224564000004,
+      "model_calls": -7,
+      "output_tokens": -282,
+      "prompt_bytes": -8913,
+      "reserved_output_tokens": -960,
+      "tool_calls": 2
+    },
+    "progress_stopping": {
+      "cycles": 27,
+      "input_tokens": 25415,
+      "latency_ms": 48440.626805,
+      "model_calls": 78,
+      "output_tokens": 1736,
+      "prompt_bytes": 59627,
+      "reserved_output_tokens": 20160,
+      "tool_calls": 27
+    }
+  },
+  "permissions_granted_by_experiment": false,
+  "progress_configuration": {
+    "api_base": "http://127.0.0.1:1234/v1",
+    "arithmetic_process": false,
+    "backend": "openai-local",
+    "format_version": 1,
+    "inference_auth_scope": null,
+    "inference_process": false,
+    "interpret_goals": false,
+    "max_artifact_bytes": 256000000,
+    "max_calls": 12,
+    "max_cycles": 4,
+    "max_database_bytes": 256000000,
+    "max_input_bytes": 128000,
+    "max_tokens": 4096,
+    "max_tool_calls": 8,
+    "max_wall_seconds": 45,
+    "model": "cf-progress-eval-20261021",
+    "model_registration": null,
+    "progress_stopping": {
+      "plateau_cycles": 2
+    },
+    "reasoning_effort": "none",
+    "role_profiles": {},
+    "sql_process": false,
+    "synthesize_results": false,
+    "temperature": 0.0,
+    "timeout_seconds": 12
+  },
+  "progress_configuration_sha256": "3c3612049f3a14c6bfd053883fcbc63a8bd4f49f5693872bbf842cf69b3501aa",
+  "progress_settings": {
+    "plateau_cycles": 2
+  },
+  "progress_stopping_default_configuration_changed": false,
+  "reviewed_dataset_checksum_operator_attested": null,
+  "run_purpose": "workflow_check",
+  "runtime_sources_sha256": "87a171e1bc299a93a8d87febd64e3469426563c0a9ffc6463eecfa8fa313e2b5",
+  "snapshot_elapsed_ms": 5.510382,
+  "stop_reason": "completed",
+  "unavailable_metrics": [
+    "gpu_memory",
+    "energy",
+    "physical_model_load_cost",
+    "weight_identity",
+    "general_security_failure_rate"
+  ]
+}

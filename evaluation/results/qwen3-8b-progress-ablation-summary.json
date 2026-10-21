@@ -1,0 +1,605 @@
+{
+  "format_version": 1,
+  "scope": "One complete public workflow diagnostic; not a held-out or causal effectiveness study",
+  "source_revision": "08f621797cca1b6eafd682038a5c4ff6833e10f1",
+  "raw_report": "qwen3-8b-progress-ablation.json",
+  "raw_report_sha256": "28e9da58d21cd19a11eef4cf07f1df7759b4380320b717a2a507036cb2179b61",
+  "dataset_sha256": "f90202843b55e26397f376a7d7d628e69f7ee35cbb26dc38a5fe730895f5bd1f",
+  "runtime_sources_sha256": "87a171e1bc299a93a8d87febd64e3469426563c0a9ffc6463eecfa8fa313e2b5",
+  "compiled_role_prompts_sha256": "7d6f0ee781c8dc9d2d05c834e2c9e3d5850d0395403f8aecc9ae26f48f69bf4c",
+  "executable_sha256": "f0d306041eb7c06e14c16d2416d49e0d38f9934a08c14fbaea31c320ae5a0ae2",
+  "installed_model_key": "qwen/qwen3-8b",
+  "installed_quantization": "Q4_K_M",
+  "loaded_identifier": "cf-progress-eval-20261021",
+  "load_requested": {
+    "gpu_offload_ratio": 1,
+    "context_length": 4096,
+    "parallel": 1,
+    "ttl_seconds": 600
+  },
+  "load_reported_seconds": 7.53,
+  "hardware_preflight": {
+    "gpu_name": "NVIDIA GeForce RTX 3060",
+    "total_mib": 12288,
+    "free_mib_before_load": 8016,
+    "task_peak_or_attributed": false
+  },
+  "provider_weights_attested": false,
+  "physical_limits_enforced": false,
+  "initial_server_state": "off; no loaded models",
+  "final_server_state": "off; no loaded models",
+  "weights_downloaded": false,
+  "independent_human_review": false,
+  "held_out": false,
+  "cases": [
+    {
+      "case_index": 0,
+      "case_id": "csp.linear_eq_pair",
+      "satisfiable": true,
+      "baseline": {
+        "task_id": "ca319106-7ad0-490a-944d-bd84b07370f9",
+        "passed": true,
+        "calls": 3,
+        "cycles": 1,
+        "stop_reason": "verified",
+        "progress_assessments": []
+      },
+      "progress_stopping": {
+        "task_id": "d8ecca93-b939-4cc8-b20b-4774312b7e23",
+        "passed": true,
+        "calls": 3,
+        "cycles": 1,
+        "stop_reason": "verified",
+        "progress_assessments": []
+      }
+    },
+    {
+      "case_index": 1,
+      "case_id": "csp.linear_ne_distinct",
+      "satisfiable": true,
+      "baseline": {
+        "task_id": "b29c3f98-ace0-4a57-bb8e-04df8ca759b1",
+        "passed": true,
+        "calls": 3,
+        "cycles": 1,
+        "stop_reason": "verified",
+        "progress_assessments": []
+      },
+      "progress_stopping": {
+        "task_id": "f0130dff-6c4d-43cc-b65c-b800b5d26bba",
+        "passed": true,
+        "calls": 3,
+        "cycles": 1,
+        "stop_reason": "verified",
+        "progress_assessments": []
+      }
+    },
+    {
+      "case_index": 2,
+      "case_id": "csp.linear_le_weighted",
+      "satisfiable": true,
+      "baseline": {
+        "task_id": "48d8450c-3bc1-40ed-a555-193b9296e073",
+        "passed": true,
+        "calls": 3,
+        "cycles": 1,
+        "stop_reason": "verified",
+        "progress_assessments": []
+      },
+      "progress_stopping": {
+        "task_id": "c5ea5b0b-cd26-42eb-aad6-d57037a2e16e",
+        "passed": true,
+        "calls": 3,
+        "cycles": 1,
+        "stop_reason": "verified",
+        "progress_assessments": []
+      }
+    },
+    {
+      "case_index": 3,
+      "case_id": "csp.linear_ge_weighted",
+      "satisfiable": true,
+      "baseline": {
+        "task_id": "89dad2f8-5858-4b9d-ae72-e0cb73cb3cb2",
+        "passed": true,
+        "calls": 3,
+        "cycles": 1,
+        "stop_reason": "verified",
+        "progress_assessments": []
+      },
+      "progress_stopping": {
+        "task_id": "2d1d1713-bbd5-491c-9fa0-ff9496877541",
+        "passed": true,
+        "calls": 3,
+        "cycles": 1,
+        "stop_reason": "verified",
+        "progress_assessments": []
+      }
+    },
+    {
+      "case_index": 4,
+      "case_id": "csp.linear_negative_coefficient",
+      "satisfiable": true,
+      "baseline": {
+        "task_id": "8b16a4f8-6714-4f45-85e7-79a656c06b33",
+        "passed": true,
+        "calls": 7,
+        "cycles": 1,
+        "stop_reason": "verified",
+        "progress_assessments": []
+      },
+      "progress_stopping": {
+        "task_id": "9630b79e-652c-48dc-8797-d756363428fc",
+        "passed": false,
+        "calls": 6,
+        "cycles": 4,
+        "stop_reason": "no_progress",
+        "progress_assessments": [
+          {
+            "answer_hash": "8b318a4326a73f9c2942cfe7ea861571c9e94d43bc2b2e50a8735742f8d74bed",
+            "best_score": 1,
+            "criterion": "finite_domain/v1",
+            "cycle": 1,
+            "format_version": 1,
+            "non_improving_cycles": 0,
+            "objective_hash": "ae3ac592226966441223a71aa5dcc9e00c935ebc3a0cb29ff98a3e8ab219b3bb",
+            "permissions_granted": false,
+            "policy": "finite-domain-progress/v1",
+            "score": 1,
+            "stop": false,
+            "verified": false
+          },
+          {
+            "answer_hash": "9127640e4febe26fd6165d0cabf07cda3e9e1737dfc3fc4167d65114820a76c3",
+            "best_score": 1,
+            "criterion": "finite_domain/v1",
+            "cycle": 2,
+            "format_version": 1,
+            "non_improving_cycles": 1,
+            "objective_hash": "ae3ac592226966441223a71aa5dcc9e00c935ebc3a0cb29ff98a3e8ab219b3bb",
+            "permissions_granted": false,
+            "policy": "finite-domain-progress/v1",
+            "score": 1,
+            "stop": false,
+            "verified": false
+          },
+          {
+            "answer_hash": "481b4b909c518ed4d95449a505d7bea34b9bb97b070d47af17f212d066524262",
+            "best_score": 1,
+            "criterion": "finite_domain/v1",
+            "cycle": 3,
+            "format_version": 1,
+            "non_improving_cycles": 0,
+            "objective_hash": "ae3ac592226966441223a71aa5dcc9e00c935ebc3a0cb29ff98a3e8ab219b3bb",
+            "permissions_granted": false,
+            "policy": "finite-domain-progress/v1",
+            "score": null,
+            "stop": false,
+            "verified": false
+          },
+          {
+            "answer_hash": "9127640e4febe26fd6165d0cabf07cda3e9e1737dfc3fc4167d65114820a76c3",
+            "best_score": 1,
+            "criterion": "finite_domain/v1",
+            "cycle": 4,
+            "format_version": 1,
+            "non_improving_cycles": 1,
+            "objective_hash": "ae3ac592226966441223a71aa5dcc9e00c935ebc3a0cb29ff98a3e8ab219b3bb",
+            "permissions_granted": false,
+            "policy": "finite-domain-progress/v1",
+            "score": 1,
+            "stop": false,
+            "verified": false
+          }
+        ]
+      }
+    },
+    {
+      "case_index": 5,
+      "case_id": "csp.all_different_permutation",
+      "satisfiable": true,
+      "baseline": {
+        "task_id": "aac461c5-b69c-4a23-a180-09cce6bd4c10",
+        "passed": true,
+        "calls": 6,
+        "cycles": 1,
+        "stop_reason": "verified",
+        "progress_assessments": []
+      },
+      "progress_stopping": {
+        "task_id": "cdaa14de-fbf3-45cf-a202-068aaefaec28",
+        "passed": true,
+        "calls": 6,
+        "cycles": 1,
+        "stop_reason": "verified",
+        "progress_assessments": []
+      }
+    },
+    {
+      "case_index": 6,
+      "case_id": "csp.eq_and_all_different",
+      "satisfiable": true,
+      "baseline": {
+        "task_id": "4acf08c4-a304-4488-93da-fdd06dba0f0b",
+        "passed": true,
+        "calls": 8,
+        "cycles": 2,
+        "stop_reason": "verified",
+        "progress_assessments": []
+      },
+      "progress_stopping": {
+        "task_id": "2dabcf7f-6b42-4a3a-be08-999ec12b59a5",
+        "passed": true,
+        "calls": 8,
+        "cycles": 2,
+        "stop_reason": "verified",
+        "progress_assessments": [
+          {
+            "answer_hash": "e74d4ec1f2ef56fc6f8e5c71e9d8aa895ff5b019921ca0e2630828c06c6161e6",
+            "best_score": 1,
+            "criterion": "finite_domain/v1",
+            "cycle": 1,
+            "format_version": 1,
+            "non_improving_cycles": 0,
+            "objective_hash": "ee310d2e1f5c47502ec119409e8c3f896eb13e80fef17e903aa307ef2c8e93c8",
+            "permissions_granted": false,
+            "policy": "finite-domain-progress/v1",
+            "score": 1,
+            "stop": false,
+            "verified": false
+          }
+        ]
+      }
+    },
+    {
+      "case_index": 7,
+      "case_id": "csp.i64_extreme_sum",
+      "satisfiable": true,
+      "baseline": {
+        "task_id": "a043927e-d003-4a40-9043-b4849ba84232",
+        "passed": true,
+        "calls": 3,
+        "cycles": 1,
+        "stop_reason": "verified",
+        "progress_assessments": []
+      },
+      "progress_stopping": {
+        "task_id": "48618566-7667-4da0-b92d-a98dae92235a",
+        "passed": true,
+        "calls": 3,
+        "cycles": 1,
+        "stop_reason": "verified",
+        "progress_assessments": []
+      }
+    },
+    {
+      "case_index": 8,
+      "case_id": "csp.i64_extreme_negative_sum",
+      "satisfiable": true,
+      "baseline": {
+        "task_id": "09d57507-9cc3-4025-9f48-f8a0bb2a7573",
+        "passed": true,
+        "calls": 3,
+        "cycles": 1,
+        "stop_reason": "verified",
+        "progress_assessments": []
+      },
+      "progress_stopping": {
+        "task_id": "bbb57dfb-1d42-40b0-9abd-03cbda766ba3",
+        "passed": true,
+        "calls": 3,
+        "cycles": 1,
+        "stop_reason": "verified",
+        "progress_assessments": []
+      }
+    },
+    {
+      "case_index": 9,
+      "case_id": "csp.unsatisfiable_contradiction",
+      "satisfiable": false,
+      "baseline": {
+        "task_id": "4797cd4b-d9f7-4508-a2e4-7d77667a3ed0",
+        "passed": false,
+        "calls": 4,
+        "cycles": 2,
+        "stop_reason": "no_progress",
+        "progress_assessments": []
+      },
+      "progress_stopping": {
+        "task_id": "bd417bb5-c6d1-47c2-b051-a4dab4c3b79a",
+        "passed": false,
+        "calls": 4,
+        "cycles": 2,
+        "stop_reason": "no_progress",
+        "progress_assessments": [
+          {
+            "answer_hash": "5bff452c5ed93f2e87a23984db5a15050c6477335fdec955b70063bb2d692bf1",
+            "best_score": 1,
+            "criterion": "finite_domain/v1",
+            "cycle": 1,
+            "format_version": 1,
+            "non_improving_cycles": 0,
+            "objective_hash": "be4ff0b01f34f958ad91ea5b14531db2c6e6732b1bd6519cfef46c9d8ad8523a",
+            "permissions_granted": false,
+            "policy": "finite-domain-progress/v1",
+            "score": 1,
+            "stop": false,
+            "verified": false
+          },
+          {
+            "answer_hash": "5bff452c5ed93f2e87a23984db5a15050c6477335fdec955b70063bb2d692bf1",
+            "best_score": 1,
+            "criterion": "finite_domain/v1",
+            "cycle": 2,
+            "format_version": 1,
+            "non_improving_cycles": 1,
+            "objective_hash": "be4ff0b01f34f958ad91ea5b14531db2c6e6732b1bd6519cfef46c9d8ad8523a",
+            "permissions_granted": false,
+            "policy": "finite-domain-progress/v1",
+            "score": 1,
+            "stop": false,
+            "verified": false
+          }
+        ]
+      }
+    },
+    {
+      "case_index": 10,
+      "case_id": "csp.unsatisfiable_all_different",
+      "satisfiable": false,
+      "baseline": {
+        "task_id": "0d2e0d02-354d-4ae9-8da2-71515f039c52",
+        "passed": false,
+        "calls": 7,
+        "cycles": 2,
+        "stop_reason": "no_progress",
+        "progress_assessments": []
+      },
+      "progress_stopping": {
+        "task_id": "cac0b21d-5904-4c79-ada2-3dac25a73e4b",
+        "passed": false,
+        "calls": 7,
+        "cycles": 2,
+        "stop_reason": "no_progress",
+        "progress_assessments": [
+          {
+            "answer_hash": "83d9fe09c75ec6619cffd291024977752a08837765e07ce55afc4e8c399aeea5",
+            "best_score": 1,
+            "criterion": "finite_domain/v1",
+            "cycle": 1,
+            "format_version": 1,
+            "non_improving_cycles": 0,
+            "objective_hash": "a6c0e40fc6cf70e63ab11e6802a77af9af4f50c1f1c780f759e881a126243e23",
+            "permissions_granted": false,
+            "policy": "finite-domain-progress/v1",
+            "score": 1,
+            "stop": false,
+            "verified": false
+          },
+          {
+            "answer_hash": "83d9fe09c75ec6619cffd291024977752a08837765e07ce55afc4e8c399aeea5",
+            "best_score": 1,
+            "criterion": "finite_domain/v1",
+            "cycle": 2,
+            "format_version": 1,
+            "non_improving_cycles": 1,
+            "objective_hash": "a6c0e40fc6cf70e63ab11e6802a77af9af4f50c1f1c780f759e881a126243e23",
+            "permissions_granted": false,
+            "policy": "finite-domain-progress/v1",
+            "score": 1,
+            "stop": false,
+            "verified": false
+          }
+        ]
+      }
+    },
+    {
+      "case_index": 11,
+      "case_id": "csp.multiple_sum_witnesses",
+      "satisfiable": true,
+      "baseline": {
+        "task_id": "bf4f2531-8008-4a02-8158-1ff411dd6371",
+        "passed": true,
+        "calls": 3,
+        "cycles": 1,
+        "stop_reason": "verified",
+        "progress_assessments": []
+      },
+      "progress_stopping": {
+        "task_id": "942d8bc4-fe61-42b9-8cf6-8ae9711a1226",
+        "passed": true,
+        "calls": 3,
+        "cycles": 1,
+        "stop_reason": "verified",
+        "progress_assessments": []
+      }
+    },
+    {
+      "case_index": 12,
+      "case_id": "csp.linear_ne_offset",
+      "satisfiable": true,
+      "baseline": {
+        "task_id": "8791a5ce-c9db-4355-a768-f4e19f3e4e6b",
+        "passed": true,
+        "calls": 4,
+        "cycles": 2,
+        "stop_reason": "verified",
+        "progress_assessments": []
+      },
+      "progress_stopping": {
+        "task_id": "34129bda-a5c8-498b-8780-8992b3ca44f3",
+        "passed": true,
+        "calls": 4,
+        "cycles": 2,
+        "stop_reason": "verified",
+        "progress_assessments": [
+          {
+            "answer_hash": "0ab94253e5667f111fef797ab830eba43a9dddcef855605e18c4638d26589675",
+            "best_score": 1,
+            "criterion": "finite_domain/v1",
+            "cycle": 1,
+            "format_version": 1,
+            "non_improving_cycles": 0,
+            "objective_hash": "54118070321ff3f8b1951c385039d7bd5a909356ef88c5bf79f8468481a1eed9",
+            "permissions_granted": false,
+            "policy": "finite-domain-progress/v1",
+            "score": 1,
+            "stop": false,
+            "verified": false
+          }
+        ]
+      }
+    },
+    {
+      "case_index": 13,
+      "case_id": "csp.linear_le_three_terms",
+      "satisfiable": true,
+      "baseline": {
+        "task_id": "0dd8c663-0800-4a7b-b0db-358b52e2b9a1",
+        "passed": true,
+        "calls": 7,
+        "cycles": 1,
+        "stop_reason": "verified",
+        "progress_assessments": []
+      },
+      "progress_stopping": {
+        "task_id": "dd7b8b1e-c363-4df5-a0cf-10d17847c8fb",
+        "passed": true,
+        "calls": 7,
+        "cycles": 1,
+        "stop_reason": "verified",
+        "progress_assessments": []
+      }
+    },
+    {
+      "case_index": 14,
+      "case_id": "csp.linear_ge_negative_rhs",
+      "satisfiable": true,
+      "baseline": {
+        "task_id": "e689c611-3f2d-4482-89a8-3ea197a3820b",
+        "passed": true,
+        "calls": 7,
+        "cycles": 1,
+        "stop_reason": "verified",
+        "progress_assessments": []
+      },
+      "progress_stopping": {
+        "task_id": "4997fe0b-ff08-4111-93bc-9f2f58667c65",
+        "passed": true,
+        "calls": 3,
+        "cycles": 1,
+        "stop_reason": "verified",
+        "progress_assessments": []
+      }
+    },
+    {
+      "case_index": 15,
+      "case_id": "csp.combined_pairwise_constraints",
+      "satisfiable": true,
+      "baseline": {
+        "task_id": "783c08d6-e117-48c1-b123-0b9e29073d27",
+        "passed": true,
+        "calls": 8,
+        "cycles": 2,
+        "stop_reason": "verified",
+        "progress_assessments": []
+      },
+      "progress_stopping": {
+        "task_id": "0535f22f-1dfc-48dc-a676-545b36967e57",
+        "passed": true,
+        "calls": 7,
+        "cycles": 2,
+        "stop_reason": "verified",
+        "progress_assessments": [
+          {
+            "answer_hash": "5434d8b66283783881f1c6868ef4c1d6cc36b92633e1ece0866adf4173adaf42",
+            "best_score": 1,
+            "criterion": "finite_domain/v1",
+            "cycle": 1,
+            "format_version": 1,
+            "non_improving_cycles": 0,
+            "objective_hash": "c897f7974afc1db3f28d5b26ce52310e42c9a6a8aa473e7a538a8b08c4f3f8e2",
+            "permissions_granted": false,
+            "policy": "finite-domain-progress/v1",
+            "score": 1,
+            "stop": false,
+            "verified": false
+          }
+        ]
+      }
+    },
+    {
+      "case_index": 16,
+      "case_id": "csp.unsatisfiable_negative_bound",
+      "satisfiable": false,
+      "baseline": {
+        "task_id": "fe2adb8c-69c0-42e4-958a-25048734b42b",
+        "passed": false,
+        "calls": 6,
+        "cycles": 4,
+        "stop_reason": "no_progress",
+        "progress_assessments": []
+      },
+      "progress_stopping": {
+        "task_id": "5ac6ed78-e544-4816-85d2-edc5b3592b1d",
+        "passed": false,
+        "calls": 5,
+        "cycles": 3,
+        "stop_reason": "no_progress",
+        "progress_assessments": [
+          {
+            "answer_hash": "d562a4ee41e663ff3400ebcf6a88dc70b511032ff6f6575a6063bac4819e1c6a",
+            "best_score": 1,
+            "criterion": "finite_domain/v1",
+            "cycle": 1,
+            "format_version": 1,
+            "non_improving_cycles": 0,
+            "objective_hash": "6cec555d3da4344758e1f984d161f1498ad4c796c9628b7cc8975445fb1413ca",
+            "permissions_granted": false,
+            "policy": "finite-domain-progress/v1",
+            "score": 1,
+            "stop": false,
+            "verified": false
+          },
+          {
+            "answer_hash": "2a28d422b6ab9cbcda03e174abfbd86a3d9a8a15797b46f87805516fd3917ebd",
+            "best_score": 1,
+            "criterion": "finite_domain/v1",
+            "cycle": 2,
+            "format_version": 1,
+            "non_improving_cycles": 1,
+            "objective_hash": "6cec555d3da4344758e1f984d161f1498ad4c796c9628b7cc8975445fb1413ca",
+            "permissions_granted": false,
+            "policy": "finite-domain-progress/v1",
+            "score": 1,
+            "stop": false,
+            "verified": false
+          },
+          {
+            "answer_hash": "99c7623534cfdee3214dd251a3d9b5b19522ccc5a571b855744bfe7282a7b881",
+            "best_score": 1,
+            "criterion": "finite_domain/v1",
+            "cycle": 3,
+            "format_version": 1,
+            "non_improving_cycles": 2,
+            "objective_hash": "6cec555d3da4344758e1f984d161f1498ad4c796c9628b7cc8975445fb1413ca",
+            "permissions_granted": false,
+            "policy": "finite-domain-progress/v1",
+            "score": 1,
+            "stop": true,
+            "verified": false
+          }
+        ]
+      }
+    }
+  ],
+  "limitations": [
+    "Scoring in the runner shares the runtime Criterion implementation; a separate exhaustive Rust test checks the retained witnesses.",
+    "The sole treatment plateau stop was on unsatisfiable case index 16.",
+    "The observed satisfiable regression at index 4 did not trip plateau stopping; no causal policy-regression claim is established.",
+    "Planner/subtask paths and provider state differed; aggregate call/time changes cannot be attributed solely to the stopping rule.",
+    "One counterbalanced run, public authored cases, no repeated trials or larger-model baseline, and unmeasured energy/physical peak resources.",
+    "Model unload and stopped-server observations restore initial settings, not proof of per-call provider termination.",
+    "Progress counters are local audit projections, not independent execution attestations."
+  ]
+}
