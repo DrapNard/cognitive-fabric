@@ -16,6 +16,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[path = "continuation_parallel.rs"]
+mod parallel_history;
 #[path = "continuation_policy.rs"]
 mod policy;
 #[path = "continuation_progress.rs"]
@@ -33,6 +35,7 @@ struct Checkpoint {
     mode: String,
     subtasks: Vec<Subtask>,
     boundary: Option<Value>,
+    parallel_schedule: Option<parallel_history::ParallelContinuation>,
     state: RestoredState,
     admission: Value,
     resource_history: Value,
@@ -53,10 +56,10 @@ fn prepare_with_policy(
         [task],
         |row| row.get(0),
     )?;
-    if parallel_recorded {
-        bail!("Parallel advisory execution requires separate continuation reconciliation")
-    }
     let (status, graph, subtasks) = graph::graph_from(db, task)?;
+    if parallel_recorded && graph.is_none() {
+        bail!("Parallel advisory schedule has no pinned graph")
+    }
     if !matches!(status.as_str(), "running" | "interrupted") {
         bail!("Task is not abandoned or interrupted")
     }
@@ -207,9 +210,6 @@ fn prepare_with_policy(
     }
     let cfg: Config = serde_json::from_value(settings["configuration"].clone())?;
     cfg.validate()?;
-    if graph.is_some() && cfg.subtask_parallelism.is_some_and(|maximum| maximum > 1) {
-        bail!("Configured parallel advisory graphs require separate continuation reconciliation")
-    }
 
     if let Some(selection) = &cfg.model_registration {
         let registered = crate::models::registered_from(db, selection)?
@@ -358,6 +358,7 @@ fn prepare_with_policy(
         .iter()
         .filter(|c| c["call"].as_u64().unwrap() > calls_before)
         .collect::<Vec<_>>();
+    let mut parallel_schedule = None;
     if let Some(graph) = &graph {
         if tail.first().is_none_or(|c| c["role"] != "planner")
             || (boundary.is_none() && tail.iter().skip(1).any(|c| c["role"] != "solver"))
@@ -373,36 +374,74 @@ fn prepare_with_policy(
             bail!("Saved graph differs from charged planner result")
         }
         let order = super::graph::order_from(db, task, graph)?;
-        let completed = order
-            .iter()
-            .copied()
-            .filter(|i| subtasks[*i].state == "unverified")
-            .collect::<Vec<_>>();
-        if (boundary.is_none() && tail.len() != completed.len() + 1)
-            || tail.len() < completed.len() + 1
-        {
-            bail!("Saved graph and inference outcomes do not match")
-        }
-        if order
-            .iter()
-            .take(completed.len())
-            .copied()
-            .collect::<Vec<_>>()
-            != completed
-        {
-            bail!("Completed nodes are not a scheduler prefix")
-        }
-        for (call, index) in tail.iter().skip(1).zip(completed) {
-            if call["role"] != "solver" {
-                bail!("Invalid advisory result role")
+        parallel_schedule = parallel_history::validate(
+            db,
+            task,
+            graph,
+            &order,
+            &subtasks,
+            parallel_history::HistoryAnchor {
+                tail: &tail,
+                calls_before,
+                boundary_present: boundary.is_some(),
+            },
+        )?;
+        if let Some(schedule) = &parallel_schedule {
+            let completed = schedule
+                .waves
+                .iter()
+                .take(schedule.completed_waves)
+                .flatten()
+                .copied()
+                .collect::<Vec<_>>();
+            if boundary.is_none() && tail.len() != completed.len() + 1 {
+                bail!("Saved parallel graph and inference outcomes do not match")
             }
-            let answer = solver_texts
-                .get(&call["call"].as_u64().unwrap())
-                .ok_or_else(|| anyhow::anyhow!("Missing advisory solver result"))?;
-            if subtasks[index].result.as_deref()
-                != Some(answer.chars().take(1200).collect::<String>().as_str())
+        } else {
+            let parallel_configured = cfg.subtask_parallelism.is_some_and(|maximum| maximum > 1);
+            let skipped_before_boundary = boundary
+                .as_ref()
+                .is_some_and(|saved| saved["phase"] == "ready_solver")
+                && subtasks.iter().all(|node| node.state == "skipped");
+            let pre_marker_initialization = boundary.is_none()
+                && tail.len() == 1
+                && subtasks
+                    .iter()
+                    .all(|node| matches!(node.state.as_str(), "not_recorded" | "pending"));
+            if parallel_configured && !skipped_before_boundary && !pre_marker_initialization {
+                bail!("Parallel graph has no committed full-wave schedule")
+            }
+            let completed = order
+                .iter()
+                .copied()
+                .filter(|i| subtasks[*i].state == "unverified")
+                .collect::<Vec<_>>();
+            if (boundary.is_none() && tail.len() != completed.len() + 1)
+                || tail.len() < completed.len() + 1
             {
-                bail!("Saved advisory result differs from charged inference")
+                bail!("Saved graph and inference outcomes do not match")
+            }
+            if order
+                .iter()
+                .take(completed.len())
+                .copied()
+                .collect::<Vec<_>>()
+                != completed
+            {
+                bail!("Completed nodes are not a scheduler prefix")
+            }
+            for (call, index) in tail.iter().skip(1).zip(completed) {
+                if call["role"] != "solver" {
+                    bail!("Invalid advisory result role")
+                }
+                let answer = solver_texts
+                    .get(&call["call"].as_u64().unwrap())
+                    .ok_or_else(|| anyhow::anyhow!("Missing advisory solver result"))?;
+                if subtasks[index].result.as_deref()
+                    != Some(answer.chars().take(1200).collect::<String>().as_str())
+                {
+                    bail!("Saved advisory result differs from charged inference")
+                }
             }
         }
     } else {
@@ -415,6 +454,19 @@ fn prepare_with_policy(
         {
             bail!("A valid recorded planner result is missing its graph")
         }
+    }
+    if graph.is_some()
+        && boundary.is_none()
+        && cfg.subtask_parallelism.is_some_and(|maximum| maximum > 1)
+    {
+        validate_parallel_remaining_budget(
+            &cfg,
+            settings["call_limit"].as_u64().unwrap() as usize,
+            &query,
+            text,
+            &subtasks,
+            &audit,
+        )?;
     }
     if boundary.is_none() && subtasks.iter().any(|n| n.state == "skipped") {
         bail!("Skipped graphs require a saved solver boundary")
@@ -463,6 +515,7 @@ fn prepare_with_policy(
         mode,
         subtasks,
         boundary,
+        parallel_schedule,
         state: RestoredState {
             resources,
             nodes,
@@ -471,6 +524,30 @@ fn prepare_with_policy(
             deadline: observed + Duration::from_nanos(remaining),
         },
     })
+}
+
+fn validate_parallel_remaining_budget(
+    cfg: &Config,
+    call_limit: usize,
+    query: &str,
+    context: &str,
+    subtasks: &[Subtask],
+    audit: &Value,
+) -> Result<()> {
+    let base = Session::prompt_base(query, context, true)?;
+    let (fits, _) = crate::reasoning::parallel::remaining_plan_admission(
+        cfg,
+        call_limit,
+        audit["reserved_calls"].as_u64().unwrap() as usize,
+        audit["reserved_output_tokens"].as_u64().unwrap() as usize,
+        audit["charged_prompt_bytes"].as_u64().unwrap() as usize,
+        subtasks,
+        &base,
+    );
+    if !fits {
+        bail!("Original remaining budget cannot admit every pending parallel wave and the final solver")
+    }
+    Ok(())
 }
 
 pub(super) fn validate_checkpoint(db: &rusqlite::Connection, task: &str) -> Result<()> {
@@ -718,6 +795,11 @@ fn preview_with_handle(
             "managed_worker":checkpoint.cfg.inference_process,
             "resource_history":checkpoint.resource_history,
             "finite_search_history":checkpoint.finite_search_history,
+            "parallel_history":checkpoint.parallel_schedule.as_ref().map(|schedule| json!({
+                "marker_event_id":schedule.marker_id,"max_parallelism":schedule.max_parallelism,
+                "completed_waves":schedule.completed_waves,"total_waves":schedule.waves.len(),
+                "permissions_granted":false,"results_verified":false,"automatic_replay":false
+            })),
             "remaining_admission":checkpoint.admission,
             "consumed":{"calls":checkpoint.state.resources.calls,
                 "cycles":checkpoint.state.resources.cycles,
@@ -853,11 +935,16 @@ async fn resume_with_handle(
                     tx.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'subtask','jev-plus',?2,unixepoch())",rusqlite::params![task,json!({"node":node,"origin":"operator_initial_graph_recovery"}).to_string()])?;
                 }
             }
+            let parallel_history = checkpoint.parallel_schedule.as_ref().map(|schedule| {
+                json!({"marker_event_id":schedule.marker_id,"max_parallelism":schedule.max_parallelism,
+                    "completed_waves":schedule.completed_waves,"total_waves":schedule.waves.len(),
+                    "permissions_granted":false,"results_verified":false,"automatic_replay":false})
+            });
             tx.execute(
                 "UPDATE tasks SET status='running',updated=unixepoch() WHERE id=?1",
                 [task],
             )?;
-            tx.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'continuation','human-cli',?2,unixepoch())",rusqlite::params![task,json!({"state":"started","format_version":1,"original_budget_preserved":true,"prior_timing_complete":false,"subtask_results_verified":false,"escalation_policy":escalator.descriptor(),"restored_resource_pool":restored_pool,"resource_history":checkpoint.resource_history,"finite_search_history":checkpoint.finite_search_history}).to_string()])?;
+            tx.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'continuation','human-cli',?2,unixepoch())",rusqlite::params![task,json!({"state":"started","format_version":1,"original_budget_preserved":true,"prior_timing_complete":false,"subtask_results_verified":false,"escalation_policy":escalator.descriptor(),"restored_resource_pool":restored_pool,"resource_history":checkpoint.resource_history,"finite_search_history":checkpoint.finite_search_history,"parallel_history":parallel_history}).to_string()])?;
             if started.elapsed() > Duration::from_secs(5) {
                 bail!("Continuation admission deadline exhausted")
             }
@@ -867,6 +954,11 @@ async fn resume_with_handle(
         db.progress_handler(0, None::<fn() -> bool>);
         prepared?
     };
+    let parallel_history = checkpoint.parallel_schedule.as_ref().map(|schedule| {
+        json!({"marker_event_id":schedule.marker_id,"max_parallelism":schedule.max_parallelism,
+            "completed_waves":schedule.completed_waves,"total_waves":schedule.waves.len(),
+            "permissions_granted":false,"results_verified":false,"automatic_replay":false})
+    });
     let prior_calls = checkpoint.state.resources.calls;
     let deadline = checkpoint.state.deadline;
     let process = if checkpoint.cfg.inference_process {
@@ -904,8 +996,10 @@ async fn resume_with_handle(
         Some(process) => process.clone(),
         None => Arc::new(LocalBackend(checkpoint.cfg.clone())),
     };
-    let backend: Arc<dyn InferenceBackend> =
-        Arc::new(crate::fabric::Broker::with_inference(inference));
+    let inference_concurrency = checkpoint.cfg.subtask_parallelism.unwrap_or(1);
+    let backend: Arc<dyn InferenceBackend> = Arc::new(
+        crate::fabric::Broker::with_inference_concurrency(inference, inference_concurrency),
+    );
     let mut session = Session::restored(
         checkpoint.cfg,
         store.clone(),
@@ -933,6 +1027,10 @@ async fn resume_with_handle(
                     &checkpoint.query,
                     &checkpoint.context,
                     &checkpoint.mode,
+                    checkpoint
+                        .parallel_schedule
+                        .as_ref()
+                        .map(|schedule| schedule.waves.clone()),
                 )
                 .await
         }
@@ -969,6 +1067,7 @@ async fn resume_with_handle(
         "verified":session.verified,"criterion":session.verified_criterion,
         "verification_attempted":session.verification_attempted,"stop_reason":session.stop_reason,
         "restored_resource_pool":restored_pool,"resource_history":checkpoint.resource_history,
+        "parallel_history":parallel_history,
         "finite_search_history":checkpoint.finite_search_history,
         "new_calls":session.resources.calls-prior_calls,"charged_resources":session.resources,
         "timing_scope":"continuation_only","prior_timing_complete":false,"subtask_results_verified":false,"automatic_replay":false});
@@ -1426,7 +1525,13 @@ mod tests {
         )
         .unwrap();
         let answer = session
-            .continue_graph(saved.subtasks, &saved.query, &saved.context, &saved.mode)
+            .continue_graph(
+                saved.subtasks,
+                &saved.query,
+                &saved.context,
+                &saved.mode,
+                None,
+            )
             .await
             .unwrap();
         assert_eq!(answer, "[1,2,3]");
@@ -2041,7 +2146,13 @@ mod tests {
         )
         .unwrap();
         original
-            .continue_graph(saved.subtasks, &saved.query, &saved.context, &saved.mode)
+            .continue_graph(
+                saved.subtasks,
+                &saved.query,
+                &saved.context,
+                &saved.mode,
+                None,
+            )
             .await
             .unwrap();
         // Retain exactly the committed boundary preceding the second solver.

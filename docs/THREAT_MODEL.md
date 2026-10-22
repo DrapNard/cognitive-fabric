@@ -1002,6 +1002,7 @@ reservation precede backend polling; parallel scheduling cannot expand budgets
 or capabilities. Shared pool limits and original deadlines still apply. Locally
 owned futures are dropped on cancellation, without claiming remote execution
 stopped or refunding unknown work. Recorded results remain unverified advice.
-Strict wave/chronology validation governs graph observation, and parallel graph
-continuation remains denied until separate recovery rules exist. Owner-local
+Strict wave/chronology validation governs graph observation. Operator-approved
+continuation may restore complete recorded wave prefixes after unique charged
+call/result reconciliation; unknown or partial waves remain denied. Owner-local
 metadata is neither a code signature nor independent model quality/safety proof.

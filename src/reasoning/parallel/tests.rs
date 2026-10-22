@@ -176,3 +176,71 @@ async fn dropping_local_join_drops_every_incomplete_backend_future() {
     drop(joined);
     assert_eq!(dropped.load(Ordering::SeqCst), 3);
 }
+
+#[tokio::test]
+async fn saved_wave_executor_enforces_the_original_concurrency_ceiling() {
+    for waves in [
+        vec![vec![0, 1, 2], vec![3]],
+        vec![vec![0, 1], vec![2, 3], vec![]],
+        vec![vec![0, 0], vec![1, 2, 3]],
+    ] {
+        let store = Arc::new(crate::store::Store::in_memory().unwrap());
+        let task = store.create_task("original goal", "deep").unwrap();
+        let config = Config {
+            subtask_parallelism: Some(2),
+            ..Config::default()
+        };
+        let mut session = Session::new(
+            config.clone(),
+            store.clone(),
+            Arc::new(crate::backend::LocalBackend(config)),
+            task.clone(),
+            "deep",
+        )
+        .unwrap();
+        session.subtasks = graph(
+            r#"{"steps":[{"id":"a","objective":"A","depends_on":[]},{"id":"b","objective":"B","depends_on":[]},{"id":"c","objective":"C","depends_on":[]},{"id":"d","objective":"D","depends_on":[]}]}"#,
+        );
+        assert!(session
+            .execute_parallel_plan(vec![0, 1, 2, 3], "base", Some(waves))
+            .await
+            .is_err());
+        assert_eq!(session.resources.calls, 0);
+        assert!(!store.task(&task).unwrap()["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|event| event["kind"] == "model_dispatch"));
+    }
+}
+
+#[tokio::test]
+async fn saved_wave_executor_requires_ready_dependencies_before_any_reservation() {
+    let store = Arc::new(crate::store::Store::in_memory().unwrap());
+    let task = store.create_task("original goal", "deep").unwrap();
+    let config = Config {
+        subtask_parallelism: Some(2),
+        ..Config::default()
+    };
+    let mut session = Session::new(
+        config.clone(),
+        store.clone(),
+        Arc::new(crate::backend::LocalBackend(config)),
+        task.clone(),
+        "deep",
+    )
+    .unwrap();
+    session.subtasks = graph(
+        r#"{"steps":[{"id":"a","objective":"A","depends_on":[]},{"id":"b","objective":"B","depends_on":["a"]},{"id":"c","objective":"C","depends_on":[]},{"id":"d","objective":"D","depends_on":["c"]}]}"#,
+    );
+    assert!(session
+        .execute_parallel_plan(vec![0, 1, 2, 3], "base", Some(vec![vec![0, 1], vec![2, 3]]))
+        .await
+        .is_err());
+    assert_eq!(session.resources.calls, 0);
+    assert!(!store.task(&task).unwrap()["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|event| event["kind"] == "model_dispatch"));
+}

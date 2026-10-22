@@ -97,6 +97,49 @@ pub(crate) fn ready_waves(
     Ok(waves)
 }
 
+/// Check the original whole-plan budget, retaining one final solver reserve.
+/// Recovery uses the same pure preflight as live planning before it writes a
+/// continuation boundary or marks pending work skipped.
+pub(crate) fn remaining_plan_admission(
+    cfg: &crate::config::Config,
+    call_limit: usize,
+    calls_used: usize,
+    reserved_tokens: usize,
+    prompt_bytes_used: usize,
+    nodes: &[Subtask],
+    base: &str,
+) -> (bool, usize) {
+    let worst_result = "\0".repeat(1200);
+    let prompt_bounds = nodes
+        .iter()
+        .filter(|node| matches!(node.state.as_str(), "pending" | "not_recorded"))
+        .map(|node| {
+            let dependencies = node
+                .step
+                .depends_on
+                .iter()
+                .map(|id| json!({"id":id,"unverified_result":worst_result}))
+                .collect::<Vec<_>>();
+            subtask_prompt(base, &node.step.objective, &json!(dependencies)).len()
+        })
+        .collect::<Vec<_>>();
+    let pending = prompt_bounds.len();
+    let final_prompt_bound = base.len().saturating_add(16064);
+    let input_bound = prompt_bounds
+        .iter()
+        .fold(final_prompt_bound, |total, bytes| {
+            total.saturating_add(*bytes)
+        });
+    let fits = nodes.len() >= 2
+        && prompt_bounds.iter().all(|bytes| *bytes <= 32000)
+        && final_prompt_bound <= 32000
+        && cfg.max_input_bytes.saturating_sub(prompt_bytes_used) >= input_bound
+        && call_limit.saturating_sub(calls_used) > pending
+        && cfg.max_tokens.saturating_sub(reserved_tokens)
+            >= pending.saturating_mul(192).saturating_add(384);
+    (fits, input_bound)
+}
+
 /// Poll a bounded set of locally owned futures without spawning detached tasks.
 /// Dropping this future drops every unfinished backend future.
 pub(crate) async fn join_all<T>(futures: Vec<Pin<Box<dyn Future<Output = T> + Send>>>) -> Vec<T> {
@@ -148,24 +191,82 @@ impl Session {
         &mut self,
         order: Vec<usize>,
         base: &str,
+        saved_waves: Option<Vec<Vec<usize>>>,
     ) -> Result<String> {
         let cap = crate::reasoning::parallel::validate_parallelism(self.cfg.subtask_parallelism)?;
-        let waves = crate::reasoning::parallel::ready_waves(&self.subtasks, &order, cap)?;
+        let resume_saved = saved_waves.is_some();
+        let waves = if let Some(saved_waves) = saved_waves {
+            let flattened = saved_waves.iter().flatten().copied().collect::<Vec<_>>();
+            let unique = flattened.iter().copied().collect::<BTreeSet<_>>();
+            if flattened.len() != self.subtasks.len()
+                || unique.len() != self.subtasks.len()
+                || unique.iter().copied().ne(0..self.subtasks.len())
+                || saved_waves
+                    .iter()
+                    .any(|wave| wave.is_empty() || wave.len() > cap)
+            {
+                bail!("Saved parallel schedule does not cover the original graph exactly once")
+            }
+            let mut remaining = Vec::new();
+            let mut saw_pending = false;
+            for wave in saved_waves {
+                let completed = wave.iter().all(|index| {
+                    self.subtasks[*index].state == "unverified"
+                        && self.subtasks[*index].result.is_some()
+                });
+                let pending = wave.iter().all(|index| {
+                    self.subtasks[*index].state == "pending"
+                        && self.subtasks[*index].result.is_none()
+                });
+                if completed && !saw_pending {
+                    continue;
+                }
+                if pending {
+                    saw_pending = true;
+                    remaining.push(wave);
+                    continue;
+                }
+                bail!("Saved parallel graph is not a completed-wave prefix")
+            }
+            remaining
+        } else {
+            crate::reasoning::parallel::ready_waves(&self.subtasks, &order, cap)?
+        };
         let plan = Plan {
             steps: self.subtasks.iter().map(|node| node.step.clone()).collect(),
         };
         let graph_sha256 = crate::store::sha256(&serde_json::to_vec(&plan)?);
-        self.store.event(
-            &self.task,
-            "subtask_parallel_schedule",
-            "jev-plus",
-            json!({
-                "format_version":1,"max_parallelism":cap,"graph_sha256":graph_sha256,
-                "order":order,"waves":waves,"permissions_granted":false,"results_verified":false
-            }),
-        )?;
+        if !resume_saved {
+            self.store.event(
+                &self.task,
+                "subtask_parallel_schedule",
+                "jev-plus",
+                json!({
+                    "format_version":1,"max_parallelism":cap,"graph_sha256":graph_sha256,
+                    "order":order,"waves":waves,"permissions_granted":false,"results_verified":false
+                }),
+            )?;
+        }
 
         for wave in waves {
+            if wave.is_empty() || wave.len() > cap {
+                bail!("Parallel wave exceeds its configured concurrency ceiling")
+            }
+            for index in &wave {
+                let step = &self.subtasks[*index].step;
+                if self.subtasks[*index].state != "pending"
+                    || self.subtasks[*index].result.is_some()
+                    || step.depends_on.iter().any(|dependency| {
+                        !self.subtasks.iter().any(|node| {
+                            node.step.id == *dependency
+                                && node.state == "unverified"
+                                && node.result.is_some()
+                        })
+                    })
+                {
+                    bail!("Parallel wave is not dependency-ready under the restored graph")
+                }
+            }
             let mut prepared = Vec::with_capacity(wave.len());
             for index in &wave {
                 let step = &self.subtasks[*index].step;

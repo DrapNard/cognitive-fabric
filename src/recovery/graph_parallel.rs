@@ -1,12 +1,29 @@
 //! Validate declared parallel waves for observation, never continuation authority.
 use super::*;
 
+#[derive(Clone, Debug)]
+pub(crate) struct ParallelSchedule {
+    pub(crate) marker_id: i64,
+    pub(crate) max_parallelism: usize,
+    pub(crate) order: Vec<usize>,
+    pub(crate) waves: Vec<Vec<usize>>,
+}
+
 pub(super) fn parallel_waves_from(
     db: &rusqlite::Connection,
     task: &str,
     plan: &Plan,
     order: &[usize],
 ) -> Result<Option<Vec<Vec<usize>>>> {
+    Ok(parallel_schedule_from(db, task, plan, order)?.map(|schedule| schedule.waves))
+}
+
+pub(super) fn parallel_schedule_from(
+    db: &rusqlite::Connection,
+    task: &str,
+    plan: &Plan,
+    order: &[usize],
+) -> Result<Option<ParallelSchedule>> {
     let mut statement = db.prepare(
         "SELECT id,CASE WHEN length(CAST(source AS BLOB))<=64 THEN source END,CASE WHEN length(CAST(payload AS BLOB))<=4096 THEN payload END FROM events WHERE task_id=?1 AND kind='subtask_parallel_schedule' ORDER BY id LIMIT 2",
     )?;
@@ -115,7 +132,12 @@ pub(super) fn parallel_waves_from(
     {
         bail!("Parallel schedule does not precede subtask dispatch")
     }
-    Ok(Some(waves))
+    Ok(Some(ParallelSchedule {
+        marker_id: *event_id,
+        max_parallelism: maximum,
+        order: order.to_vec(),
+        waves,
+    }))
 }
 
 #[cfg(test)]

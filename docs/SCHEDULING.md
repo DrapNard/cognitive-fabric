@@ -162,12 +162,13 @@ Every member must enter the recorded running cohort before a wave result is
 accepted; this validates trace admission, not actual provider-level overlap.
 The existing sequential audit contract remains unchanged for default tasks.
 
-Checkpoint continuation of parallel advisory graphs is currently refused,
-including configurations above one whose marker was not yet persisted.
-Original charges remain auditable; no incomplete wave is replayed or refunded.
-Fresh independent checking of a durable saved candidate keeps its existing
-separate rules and cannot use the parallel marker as proof. General wave
-reconciliation remains a subsequent implementation milestone.
+Operator-approved continuation now supports completed-wave prefixes and ready
+final-solver boundaries after strict call/result/schedule validation. It skips
+completed waves and reuses the original full marker and saved concurrency;
+original charges/deadlines remain authoritative. Incomplete or unknown-outcome
+waves are refused and no work is replayed/refunded. Fresh independent checking
+of a durable saved candidate keeps its existing separate rules and cannot use
+the parallel marker as proof. See [parallel recovery](RECOVERY.md#completed-parallel-advisory-waves).
 
 Verification: formatting, locked workspace/all-target build, **833 tests across
 49 targets** (none ignored) and Clippy with denied warnings pass. New coverage
@@ -187,3 +188,19 @@ protocol pairing/integrity checks pass; schemas/bindings are unchanged and absen
 `flatc` prevents fresh generation. Localhost port 1234 refused connections during
 approved discovery. Mock overlap is concurrency evidence, not live-model latency,
 quality or physical-resource proof. Jev+ and Jev-R remain Partial.
+
+### Parallel continuation verification (2026-10-22)
+
+The full workspace passes formatting, locked all-target build, **840 tests across
+50 targets** (none ignored), and Clippy with warnings denied. Five HTTP-backed
+recovery regressions cover whole-wave reuse, a wave prefix that differs from the
+scheduler's total-order prefix, simultaneous pending requests, deterministic
+final context, original criterion checking, ready-solver and pre-marker crash
+windows, nine read-only refusal cases and transactional admission rollback.
+Two new executor unit cases retain hard caps and dependency readiness even for
+invalid internal saved partitions. Original marked history stays single and
+immutable. No planner or completed-subtask replay is observed; the authored
+fixture finishes with six charged calls and 1408 reserved outputs after three
+new calls. These are functional/accounting checks, not live-model performance
+or neural safety evidence. Local port 1234 was unavailable; unchanged bundled
+protocol pairing tests pass, while absent `flatc` prevents fresh generation.

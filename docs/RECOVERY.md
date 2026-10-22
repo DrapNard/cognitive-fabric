@@ -886,3 +886,67 @@ Malformed receipts, unknown/conflicting execution and exhausted allowance refuse
 recovery. Earlier format-1 body-less witnesses, contradictions and pre-receipt
 search crashes remain unsupported. The existing limit-plus-model recovery path
 keeps its original format and behavior. See [direct witnesses](FINITE_SEARCH.md#persist-and-recover-direct-search-witnesses).
+
+## Completed parallel advisory waves
+
+Operator-approved preview/continuation can restore a completed-wave prefix of
+an opt-in parallel advisory graph. The original bounded marker must remain
+unique and match the original settings, graph, scheduler order, concurrency
+ceiling and full deterministic wave partition. Completed waves contain only
+recorded unverified results; all later waves remain pending. A running, failed,
+cancelled, partly completed or unknown-outcome wave is refused.
+
+Validation binds each completed node to its original charged cycle-zero solver
+call, unique reasoning result, content hash and capped stored answer. All wave
+reservations and running admissions precede result publication, results follow
+the canonical wave order, and later dispatches follow all prior-wave recorded
+results. No model declaration, earlier task answer or historical status creates
+a witness or permission. Saved whole-goal boundaries retain their existing
+independent consistency checks.
+
+After approval, the runtime resumes only pending waves using the original full
+partition and existing marker. It restores the saved broker concurrency and
+keeps original settings/model/context, monotonic deadline and every consumed
+call/token/prompt/tool/cycle reservation. It never replays planning or completed
+subtasks and never creates a replacement marker or refunds failed work.
+Ready final-solver boundaries reuse all recorded advice with no subtask dispatch.
+Repeated continuation validates the entire accumulated history again.
+
+Admission remains lease-protected, bounded and transactional. Required audit
+failure rolls back admission before inference. An original configured shared
+resource pool must also have a complete validated ledger and be available for
+restoration. These are owner-local consistency checks, not signatures, backend
+weight identity, provider-stop proof or permission to trust unverified advice.
+If a crash occurs before the first parallel marker, a charged planner result
+and an entirely pending/uninitialized graph can resume initialization. No
+advisory call or result may exist. The original schedule/configuration determines
+the first marker once. A graph skipped before dispatch can retain its existing
+ready-solver boundary without manufacturing a parallel marker. The same remaining-
+budget preflight used by runtime admission runs before recovery mutation.
+Broader incomplete-wave recovery remains unsupported.
+
+Verification: `cargo fmt --all -- --check`,
+`cargo check --locked --workspace --all-targets`,
+`cargo test --locked --workspace --all-targets` (**840 passed across 50 targets**,
+none ignored) and `cargo clippy --locked --workspace --all-targets -- -D warnings`
+pass on final frozen sources. Five HTTP integration tests cover a completed
+non-scheduler-prefix wave, actual overlapping pending calls, original criterion
+checking, exact final-solver boundary, pre-marker initialization, nine altered
+history/state/clock/budget cases with no writes or HTTP dispatch, and admission
+audit rollback. The completed first wave retains three prior calls; three new
+calls finish with six total calls and 1408 reserved output tokens, matching the
+uninterrupted authored fixture. This is replay/accounting evidence, not a live-
+model efficiency or quality comparison. Nine helper tests include two new executor
+regressions rejecting invalid saved ceilings/partitions or unmet dependencies
+before any reservation. Independent source review found no blocking issue.
+
+Initial borrow-checker errors were fixed; integration fixtures were corrected to
+use a pending cancellation future and the retained ledger counts after rewind.
+Assertions for actual overlap, budgets and independent satisfaction remain intact.
+Existing socket, migration, mock inference, malformed-frame, policy-denial,
+cancellation, shared-resource, recovery and rollback coverage remains green.
+Protocol schemas/bindings are unchanged; bundled generator/runtime pairing and
+integrity checks pass. `flatc` is absent, so fresh generation was not run. Approved
+localhost discovery at port 1234 refused connections; no real-model/GPU measurement
+or general reasoning-quality claim follows. Incomplete/unknown waves and broader
+module recovery remain separate work.

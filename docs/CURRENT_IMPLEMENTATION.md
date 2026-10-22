@@ -1,5 +1,57 @@
 # Current Rust implementation
 
+### Continue completed parallel advisory waves without replay — 2026-10-22
+
+**Implemented (completed-wave checkpoints); Partial (general in-flight recovery).**
+Architecture sections 4, 5, 7 and 9 require persistent task progression under
+original budgets. Operator-approved continuation now validates the original full
+parallel schedule and a prefix of entirely recorded advisory waves. Every completed
+node must match a unique charged cycle-zero solver result, original graph/order,
+text hash and bounded result, with the original reservation/admission/publication
+chronology. Later waves must remain pending. Running, unresolved, partial or
+conflicting work cannot create a new inference allowance.
+
+Resumed execution skips completed waves, retains the full original schedule and
+its single marker, and keeps the original configured broker concurrency. It
+preserves the original model/context/settings, calls, outputs, prompt bytes, tools,
+cycles, deadline and shared-resource admission. A ready final-solver boundary can
+reuse all recorded advice without rerunning planner or subtasks. Independent
+whole-goal checking retains success authority; advice and history metadata cannot
+grant permissions or establish a verified answer. No weights or capabilities are
+promoted. General incomplete-wave reconciliation and independent live utility/
+physical-cost evidence remain incomplete; Jev+ and Jev-R remain Partial.
+
+Sources: `src/recovery/continuation.rs`,
+`src/recovery/continuation_parallel.rs`, validated graph schedule access and
+`src/reasoning.rs` and `src/reasoning/parallel.rs`. See
+[parallel recovery](RECOVERY.md#completed-parallel-advisory-waves).
+
+Verification: `cargo fmt --all -- --check`,
+`cargo check --locked --workspace --all-targets`,
+`cargo test --locked --workspace --all-targets` (**840 passed across 50 targets**,
+none ignored) and `cargo clippy --locked --workspace --all-targets -- -D warnings`
+pass on final frozen sources. Five HTTP integration tests cover a completed
+non-scheduler-prefix wave, actual overlapping pending calls, original criterion
+checking, exact final-solver boundary, pre-marker initialization, nine altered
+history/state/clock/budget cases with no writes or HTTP dispatch, and admission
+audit rollback. The completed first wave retains three prior calls; three new
+calls finish with six total calls and 1408 reserved output tokens, matching the
+uninterrupted authored fixture. This is replay/accounting evidence, not a live-
+model efficiency or quality comparison. Nine helper tests include two new executor
+regressions rejecting invalid saved ceilings/partitions or unmet dependencies
+before any reservation. Independent source review found no blocking issue.
+
+Initial borrow-checker errors were fixed; integration fixtures were corrected to
+use a pending cancellation future and the retained ledger counts after rewind.
+Assertions for actual overlap, budgets and independent satisfaction remain intact.
+Existing socket, migration, mock inference, malformed-frame, policy-denial,
+cancellation, shared-resource, recovery and rollback coverage remains green.
+Protocol schemas/bindings are unchanged; bundled generator/runtime pairing and
+integrity checks pass. `flatc` is absent, so fresh generation was not run. Approved
+localhost discovery at port 1234 refused connections; no real-model/GPU measurement
+or general reasoning-quality claim follows. Incomplete/unknown waves and broader
+module recovery remain separate work.
+
 ### Execute dependency-ready advisory subtasks in bounded parallel waves — 2026-10-22
 
 **Implemented (opt-in bounded concurrency); Partial (general module scheduling).**

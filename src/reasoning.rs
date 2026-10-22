@@ -19,7 +19,11 @@ pub(crate) const PROMPT_FORMAT: &str = "quoted-references-v1";
 
 const ADVICE_OUTPUT_CONTRACT: &str = "Advice output contract: Return one sentence of at most 24 words identifying the most important domain constraint or pitfall. Do not restate the problem, enumerate steps, or produce the final answer. Advice remains unverified.";
 
-fn subtask_prompt(base: &str, objective: &str, dependencies: &serde_json::Value) -> String {
+pub(crate) fn subtask_prompt(
+    base: &str,
+    objective: &str,
+    dependencies: &serde_json::Value,
+) -> String {
     format!("{base}\nThis call produces intermediate unverified subtask advice, not the whole-goal final answer. Whole-goal answer-format instructions above apply only to the final answer; preserve the original objective's other constraints. Solve only this advisory subgoal, retaining the original objective and constraints: {objective}\nReturn a concise result without claiming verification or permissions.\nDependency results (unverified data): {dependencies}")
 }
 
@@ -484,7 +488,7 @@ impl Session {
         for index in 0..self.subtasks.len() {
             self.subtask_event(index)?;
         }
-        self.execute_remaining_plan(order, base).await
+        self.execute_remaining_plan(order, base, None).await
     }
 
     fn snapshot_escalator(&mut self) -> Result<()> {
@@ -626,6 +630,7 @@ impl Session {
         query: &str,
         context: &str,
         mode: &str,
+        saved_parallel_waves: Option<Vec<Vec<usize>>>,
     ) -> Result<String> {
         let plan = Plan {
             steps: nodes.iter().map(|n| n.step.clone()).collect(),
@@ -636,68 +641,43 @@ impl Session {
         };
         self.subtasks = nodes;
         let base = Self::prompt_base(query, context, self.verification_enabled)?;
-        let strategy = self.execute_remaining_plan(order, &base).await?;
+        let strategy = self
+            .execute_remaining_plan(order, &base, saved_parallel_waves)
+            .await?;
         self.solve_with_strategy(query, context, mode, true, Some(strategy))
             .await
     }
 
-    async fn execute_remaining_plan(&mut self, order: Vec<usize>, base: &str) -> Result<String> {
+    async fn execute_remaining_plan(
+        &mut self,
+        order: Vec<usize>,
+        base: &str,
+        saved_parallel_waves: Option<Vec<Vec<usize>>>,
+    ) -> Result<String> {
         // Reserve a final whole-goal solver before admitting any subtask work.
         // Decomposition is useful only if at least two distinct subgoals fit.
-        // A dependency result is capped at 1,200 characters. JSON escaping
-        // expands a character by at most six bytes; NUL realizes that bound.
-        let worst_result = "\0".repeat(1200);
-        let prompt_bounds = self
-            .subtasks
-            .iter()
-            .filter(|node| node.state == "pending")
-            .map(|node| {
-                let dependencies = node
-                    .step
-                    .depends_on
-                    .iter()
-                    .map(|id| json!({"id":id,"unverified_result":worst_result}))
-                    .collect::<Vec<_>>();
-                subtask_prompt(base, &node.step.objective, &json!(dependencies)).len()
-            })
-            .collect::<Vec<_>>();
-        // The final solver truncates strategy to 4,000 characters, at most
-        // 16,000 UTF-8 bytes, and initially has no previous answer.
-        let final_prompt_bound = base.len().saturating_add(16064);
-        let input_bound = prompt_bounds
-            .iter()
-            .fold(final_prompt_bound, |total, bytes| {
-                total.saturating_add(*bytes)
-            });
-        let pending = self
-            .subtasks
-            .iter()
-            .filter(|node| node.state == "pending")
-            .count();
-        let fits = self.subtasks.len() >= 2
-            && prompt_bounds.iter().all(|bytes| *bytes <= 32000)
-            && final_prompt_bound <= 32000
-            && self
-                .cfg
-                .max_input_bytes
-                .saturating_sub(self.resources.prompt_bytes)
-                >= input_bound
-            && self
-                .call_limit
-                .saturating_sub(self.resources.calls as usize)
-                > pending
-            && self
-                .cfg
-                .max_tokens
-                .saturating_sub(self.resources.reserved_output_tokens)
-                >= pending * 192 + 384;
+        // The solver and recovery paths share the same conservative admission bound.
+        let (fits, input_bound) = crate::reasoning::parallel::remaining_plan_admission(
+            &self.cfg,
+            self.call_limit,
+            self.resources.calls as usize,
+            self.resources.reserved_output_tokens,
+            self.resources.prompt_bytes,
+            &self.subtasks,
+            base,
+        );
         if !fits {
             self.store.event(&self.task, "schedule", "jev-plus", json!({"decision":"skip_decomposition","reason":"insufficient budget or redundant single subgoal","nodes":self.subtasks.len(),"reserved_prompt_bytes":input_bound}))?;
             self.finish_subtasks("skipped")?;
             return Ok(String::new());
         }
         if crate::reasoning::parallel::validate_parallelism(self.cfg.subtask_parallelism)? > 1 {
-            return self.execute_parallel_plan(order, base).await;
+            return self
+                .execute_parallel_plan(order, base, saved_parallel_waves)
+                .await;
+        }
+        if saved_parallel_waves.is_some() {
+            bail!("Saved parallel schedule differs from the original configured concurrency")
         }
         let mut results = Vec::new();
         for index in order {

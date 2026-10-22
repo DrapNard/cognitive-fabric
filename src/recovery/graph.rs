@@ -164,6 +164,15 @@ pub(super) fn graph_from(
 mod parallel;
 use parallel::parallel_waves_from;
 
+pub(crate) fn parallel_schedule_from(
+    db: &rusqlite::Connection,
+    task: &str,
+    plan: &Plan,
+    order: &[usize],
+) -> Result<Option<parallel::ParallelSchedule>> {
+    parallel::parallel_schedule_from(db, task, plan, order)
+}
+
 /// Recover a committed scheduling decision, never reinvoke a policy callback.
 pub(crate) fn order_from(db: &rusqlite::Connection, task: &str, plan: &Plan) -> Result<Vec<usize>> {
     let mut stmt = db.prepare("SELECT id,kind,CASE WHEN length(CAST(source AS BLOB))<=64 THEN source END,CASE WHEN length(CAST(payload AS BLOB))<=16384 THEN payload END FROM events WHERE task_id=?1 AND kind IN ('plan','subtask_schedule_intent','subtask_schedule') ORDER BY id LIMIT 4")?;
