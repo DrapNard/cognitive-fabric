@@ -29,6 +29,8 @@ pub struct Config {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub subtask_scheduling: Option<crate::scheduling::Policy>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub subtask_parallelism: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub advice_guard: Option<crate::reasoning::advice_guard::Settings>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub progress_stopping: Option<crate::reasoning::progress::Settings>,
@@ -68,6 +70,7 @@ impl Default for Config {
             sql_process: false,
             resource_admission: None,
             subtask_scheduling: None,
+            subtask_parallelism: None,
             advice_guard: None,
             progress_stopping: None,
             finite_search: None,
@@ -145,6 +148,12 @@ impl Config {
         }
         if let Some(configuration) = &self.resource_admission {
             configuration.validate()?;
+        }
+        if self
+            .subtask_parallelism
+            .is_some_and(|parallelism| !(1..=4).contains(&parallelism))
+        {
+            bail!("Subtask parallelism must be between 1 and 4")
         }
         if self
             .reasoning_effort

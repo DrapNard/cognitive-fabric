@@ -10,6 +10,7 @@ use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::{
+    collections::BTreeMap,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -82,6 +83,9 @@ pub struct Session {
     pub(crate) verification_enabled: bool,
     pub subtasks: Vec<Subtask>,
     subtask_started: Option<(usize, Instant, Resources)>,
+    parallel_subtask_costs: BTreeMap<usize, (Instant, usize, usize)>,
+    parallel_active: std::collections::BTreeSet<usize>,
+    parallel_completions: Arc<std::sync::Mutex<BTreeMap<usize, f64>>>,
     resume_answer: Option<(String, Option<String>)>,
     exploration: Option<exploration::Portfolio>,
     progress: progress::History,
@@ -319,6 +323,9 @@ impl Session {
             verification_enabled: true,
             subtasks: Vec::new(),
             subtask_started: None,
+            parallel_subtask_costs: BTreeMap::new(),
+            parallel_active: std::collections::BTreeSet::new(),
+            parallel_completions: Arc::new(std::sync::Mutex::new(BTreeMap::new())),
             resume_answer: None,
             exploration: None,
             progress: Default::default(),
@@ -384,6 +391,37 @@ impl Session {
     }
 
     fn subtask_resources(&mut self, index: usize) -> Result<()> {
+        if let Some((started, allocation, prompt_bytes)) =
+            self.parallel_subtask_costs.remove(&index)
+        {
+            let active = self.parallel_active.remove(&index);
+            let elapsed = self
+                .parallel_completions
+                .lock()
+                .ok()
+                .and_then(|mut completed| completed.remove(&index))
+                .unwrap_or_else(|| {
+                    if active {
+                        started.elapsed().as_secs_f64() * 1000.0
+                    } else {
+                        0.0
+                    }
+                });
+            if active {
+                self.resources.inference_ms += elapsed;
+                self.complete_usage = false;
+                self.resources.input_tokens = None;
+                self.resources.output_tokens = None;
+                self.complete_queue_metrics = false;
+                self.resources.queue_wait_ms = None;
+            }
+            return self.store.event(&self.task, "subtask_resources", "jev-plus", json!({
+                "format_version":1,"node_id":self.subtasks[index].step.id,"state":self.subtasks[index].state,
+                "calls_reserved":1,"reserved_output_tokens":allocation,"prompt_bytes":prompt_bytes,
+                "input_tokens":null,"output_tokens":null,"elapsed_ms":elapsed,"inference_ms":elapsed,
+                "queue_wait_ms":null,"result_verified":false,"inference_completed":false
+            }));
+        }
         let active = if self
             .subtask_started
             .as_ref()
@@ -657,6 +695,9 @@ impl Session {
             self.store.event(&self.task, "schedule", "jev-plus", json!({"decision":"skip_decomposition","reason":"insufficient budget or redundant single subgoal","nodes":self.subtasks.len(),"reserved_prompt_bytes":input_bound}))?;
             self.finish_subtasks("skipped")?;
             return Ok(String::new());
+        }
+        if crate::reasoning::parallel::validate_parallelism(self.cfg.subtask_parallelism)? > 1 {
+            return self.execute_parallel_plan(order, base).await;
         }
         let mut results = Vec::new();
         for index in order {
@@ -3768,6 +3809,7 @@ pub(crate) mod exploration;
 pub mod advice_guard;
 
 pub mod finite_search;
+pub(crate) mod parallel;
 pub mod progress;
 
 #[cfg(test)]

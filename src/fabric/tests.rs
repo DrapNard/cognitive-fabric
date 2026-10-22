@@ -1220,7 +1220,7 @@ async fn processing_observation_clears_after_cancellation_and_shutdown() {
             assert!(call.await.unwrap_err().is_cancelled());
         }
         tokio::time::timeout(Duration::from_secs(1), async {
-            while module.processing.load(Ordering::Acquire) {
+            while module.processing.load(Ordering::Acquire) > 0 {
                 tokio::task::yield_now().await;
             }
         })

@@ -186,6 +186,18 @@ struct Module {
     stop: Arc<watch::Sender<bool>>,
     routing_rank: Option<u32>,
 }
+struct Processing(Arc<AtomicBool>);
+impl Processing {
+    fn new(flag: Arc<AtomicBool>) -> Self {
+        flag.store(true, Ordering::Release);
+        Self(flag)
+    }
+}
+impl Drop for Processing {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
+}
 impl Module {
     fn availability(&self) -> super::Availability {
         if self.queue.get().is_some_and(mpsc::Sender::is_closed) {
@@ -215,7 +227,7 @@ impl Module {
                         if work.reply.is_closed() {
                             continue;
                         }
-                        let _processing = super::Processing::new(processing.clone());
+                        let _processing = Processing::new(processing.clone());
                         let execution = async {
                             let backend = match &backend {
                                 Backend::Sql(backend) => {
@@ -641,7 +653,7 @@ impl Broker {
             .filter_map(|module| {
                 let (full, load) = super::routing_pressure(
                     module.queue.get(),
-                    module.processing.load(Ordering::Acquire),
+                    usize::from(module.processing.load(Ordering::Acquire)),
                 );
                 if full || module.availability().unavailable() {
                     None

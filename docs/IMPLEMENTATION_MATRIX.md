@@ -1,5 +1,55 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+### Execute dependency-ready advisory subtasks in bounded parallel waves — 2026-10-22
+
+**Implemented (opt-in bounded concurrency); Partial (general module scheduling).**
+Architecture sections 4, 5 and 9 require coordinated multi-role work under fixed
+budgets. Optional `subtask_parallelism` (1–4, absent by default) groups the pinned
+four-node planner graph into deterministic dependency-ready waves. Independent
+subtasks can overlap; dependent nodes wait for prior-wave results. Existing
+committed scheduler order determines wave selection and result reconciliation.
+Each wave authorizes and durably reserves individual calls before backend polling,
+retaining the final solver allowance and original deadlines. Shared resource-pool
+admission remains authoritative. Local future ownership preserves cancellation;
+unknown outcomes retain charges and do not establish provider stopping.
+
+A required metadata-only parallel schedule binds the graph/order/ceiling/waves
+with no permission or verification authority. Graph observation validates overlap
+against that partition; default sequential auditing remains unchanged. Parallel
+checkpoint continuation is explicitly refused pending separate reconciliation.
+Sources: `src/config.rs`, Engine construction, `src/fabric.rs`,
+`src/reasoning.rs`, `src/reasoning/parallel.rs`,
+`src/recovery/{graph,graph_parallel,continuation}.rs` and integration tests.
+See [scheduling](SCHEDULING.md#opt-in-parallel-advisory-execution).
+No new external capability, active weight change or physical GPU allocation is
+introduced. General module scheduling, wave recovery and independent usefulness/
+efficiency measurements remain incomplete; Jev+ and Jev-R remain Partial.
+
+Verification: `cargo fmt --all -- --check`,
+`cargo check --locked --workspace --all-targets`,
+`cargo test --locked --workspace --all-targets` (**833 passed across 49 targets**,
+none ignored) and `cargo clippy --locked --workspace --all-targets -- -D warnings`
+pass on final frozen sources. Seven helper tests cover configuration compatibility,
+wave selection/caps, malformed orders and local future cleanup; three broker tests
+cover concurrent cap enforcement, queueing, shutdown/drain and invalid caps.
+Six Engine integration tests prove actual backend overlap, reverse completion with
+dependency gating, deterministic result order, exact reservations/final-solver
+reserves, cancellation/unknown usage, serial compatibility, insufficient budgets
+and both schedule/partial-wave reservation audit failure. Four graph tests cover
+bounded observation, 14 marker alterations, premature results/wave crossing and
+read-only continuation refusal. Existing socket, migration, mock inference,
+malformed-frame, policy-denial, recovery and candidate-rollback coverage remains green.
+
+The first overlap test exposed the legacy broker serialization; the implementation
+was extended rather than weakening that test. Broker panic behavior was restored
+after the existing health regression caught JoinSet isolation changing it. Lint
+findings were fixed without suppression. An intermediate full run detected source
+edits during execution through the existing fingerprint check; the final frozen
+rebuild and full rerun pass. Protocol schemas/generated bindings are unchanged;
+bundled generator/runtime pairing and integrity tests pass. `flatc` remains absent,
+so fresh generation was not run. Approved localhost discovery at port 1234 refused
+connections; no live-model/GPU efficiency or quality result is claimed.
+
 ### Prune impossible partial finite-domain assignments — 2026-10-22
 
 **Implemented (bounded deterministic pruning); Partial (general solving).**

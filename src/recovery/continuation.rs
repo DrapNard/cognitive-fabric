@@ -48,6 +48,14 @@ fn prepare_with_policy(
     task: &str,
     escalator: &crate::escalation::Handle,
 ) -> Result<Checkpoint> {
+    let parallel_recorded: bool = db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM events WHERE task_id=?1 AND kind='subtask_parallel_schedule')",
+        [task],
+        |row| row.get(0),
+    )?;
+    if parallel_recorded {
+        bail!("Parallel advisory execution requires separate continuation reconciliation")
+    }
     let (status, graph, subtasks) = graph::graph_from(db, task)?;
     if !matches!(status.as_str(), "running" | "interrupted") {
         bail!("Task is not abandoned or interrupted")
@@ -199,6 +207,9 @@ fn prepare_with_policy(
     }
     let cfg: Config = serde_json::from_value(settings["configuration"].clone())?;
     cfg.validate()?;
+    if graph.is_some() && cfg.subtask_parallelism.is_some_and(|maximum| maximum > 1) {
+        bail!("Configured parallel advisory graphs require separate continuation reconciliation")
+    }
 
     if let Some(selection) = &cfg.model_registration {
         let registered = crate::models::registered_from(db, selection)?

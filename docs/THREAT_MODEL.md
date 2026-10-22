@@ -993,3 +993,15 @@ feasibility is not a witness; complete candidates retain the separate original
 checker. Bounds, cancellation polls, reservations and receipt formats are unchanged.
 Earlier logical contradiction detection does not establish physical resource
 limits, general impossibility outside the criterion or neural safety.
+
+### Bounded advisory concurrency
+
+Operator-selected parallelism groups only validated pinned advisory nodes with
+completed dependencies. Whole-plan preflight and per-call durable authorization/
+reservation precede backend polling; parallel scheduling cannot expand budgets
+or capabilities. Shared pool limits and original deadlines still apply. Locally
+owned futures are dropped on cancellation, without claiming remote execution
+stopped or refunding unknown work. Recorded results remain unverified advice.
+Strict wave/chronology validation governs graph observation, and parallel graph
+continuation remains denied until separate recovery rules exist. Owner-local
+metadata is neither a code signature nor independent model quality/safety proof.

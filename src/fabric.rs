@@ -10,17 +10,22 @@ use std::{
     future::Future,
     pin::Pin,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicUsize, Ordering},
         Arc, RwLock,
     },
     time::Duration,
 };
-use tokio::sync::{mpsc, oneshot, watch, OnceCell};
+use tokio::{
+    sync::{mpsc, oneshot, watch, OnceCell},
+    task::JoinSet,
+};
 pub(crate) mod protocol;
 pub mod tools;
 pub mod unix;
 pub mod worker_cleanup;
 use protocol::{actor, decode, encode, now_ms, Header, Packet, Payload, ROLES};
+#[cfg(test)]
+mod parallel_tests;
 #[cfg(test)]
 mod tests;
 
@@ -96,34 +101,35 @@ struct Module {
     descriptor: ModuleDescriptor,
     backend: Arc<dyn InferenceBackend>,
     queue: OnceCell<mpsc::Sender<Work>>,
-    processing: Arc<AtomicBool>,
+    processing: Arc<AtomicUsize>,
+    max_concurrency: usize,
     shutdown: Arc<watch::Sender<bool>>,
     routing_rank: Option<u32>,
 }
 
-// One worker processes each module serially. Drop also clears observation on
-// cancellation, shutdown, malformed input, provider error or worker unwinding.
-struct Processing(Arc<AtomicBool>);
+// Counts concurrently active requests. Drop clears each count on cancellation,
+// shutdown, malformed input, provider error or worker unwinding.
+struct Processing(Arc<AtomicUsize>);
 impl Processing {
-    fn new(flag: Arc<AtomicBool>) -> Self {
-        flag.store(true, Ordering::Release);
+    fn new(flag: Arc<AtomicUsize>) -> Self {
+        flag.fetch_add(1, Ordering::AcqRel);
         Self(flag)
     }
 }
 impl Drop for Processing {
     fn drop(&mut self) {
-        self.0.store(false, Ordering::Release);
+        self.0.fetch_sub(1, Ordering::AcqRel);
     }
 }
 
 // Routing samples available queue capacity once. This is not a slot reservation:
 // submissions can change it immediately after a new task chooses its route.
-fn routing_pressure<T>(queue: Option<&mpsc::Sender<T>>, processing: bool) -> (bool, usize) {
+fn routing_pressure<T>(queue: Option<&mpsc::Sender<T>>, processing: usize) -> (bool, usize) {
     let (full, queued) = queue.map_or((false, 0), |queue| {
         let available = queue.capacity();
         (available == 0, queue.max_capacity() - available)
     });
-    (full, queued + usize::from(processing))
+    (full, queued + processing)
 }
 
 fn same_header(left: &Header, right: &Header) -> bool {
@@ -133,6 +139,10 @@ fn same_header(left: &Header, right: &Header) -> bool {
         && left.destination == right.destination
         && left.module_version == right.module_version
         && left.expires == right.expires
+}
+
+async fn wait_for_shutdown(shutdown: &mut watch::Receiver<bool>) {
+    let _ = shutdown.wait_for(|stopped| *stopped).await;
 }
 
 impl Module {
@@ -149,48 +159,134 @@ impl Module {
             .map_or(0, |queue| queue.max_capacity() - queue.capacity())
     }
     async fn queue(&self) -> &mpsc::Sender<Work> {
-        self.queue.get_or_init(|| async {
-            let (sender, mut receiver) = mpsc::channel::<Work>(4);
-            let backend = self.backend.clone();
-            let descriptor = self.descriptor.clone();
-            let processing = self.processing.clone();
-            let mut shutdown = self.shutdown.subscribe();
-            tokio::spawn(async move {
-                loop {
-                    let mut work = tokio::select! {
-                        biased;
-                        _ = shutdown.wait_for(|stopped| *stopped) => break,
-                        work = receiver.recv() => match work { Some(work) => work, None => break },
-                    };
-                    if work.reply.is_closed() { continue; }
-                    let _processing = Processing::new(processing.clone());
-                    let queue_wait_ms = work.enqueued.elapsed().as_secs_f64() * 1000.0;
-                    let result = async {
-                        let packet = decode(&work.bytes)?;
-                        if !same_header(&packet.header, &work.identity) || packet.header.destination != descriptor.id || packet.header.module_version != descriptor.version || packet.header.expires <= now_ms() { bail!("Module identity or deadline mismatch") }
-                        let Payload::Request { role, prompt, tokens } = packet.payload else { bail!("Module expects an inference request") };
-                        if !descriptor.roles.contains(&role) || packet.header.sender != actor(&role)? { bail!("Module role is not registered for this actor") }
-                        TaskPolicy::reasoning(&packet.header.task)?.authorize(&packet.header.task, &packet.header.sender, "llm.generate")?;
-                        let remaining = Duration::from_millis(packet.header.expires.saturating_sub(now_ms()));
-                        let result = tokio::select! {
+        self.queue
+            .get_or_init(|| async {
+                let (sender, mut receiver) = mpsc::channel::<Work>(4);
+                let backend = self.backend.clone();
+                let descriptor = self.descriptor.clone();
+                let processing = self.processing.clone();
+                let max_concurrency = self.max_concurrency;
+                let mut shutdown = self.shutdown.subscribe();
+                tokio::spawn(async move {
+                    let mut tasks = JoinSet::new();
+                    let mut receiver_closed = false;
+                    loop {
+                        if receiver_closed && tasks.is_empty() {
+                            break;
+                        }
+                        if receiver_closed || tasks.len() >= max_concurrency {
+                            tokio::select! {
+                                biased;
+                                _ = wait_for_shutdown(&mut shutdown) => {
+                                    tasks.abort_all();
+                                    while tasks.join_next().await.is_some() {}
+                                    break;
+                                }
+                                result = tasks.join_next(), if !tasks.is_empty() => {
+                                    if result.is_some_and(|joined| joined.is_err()) {
+                                        tasks.abort_all();
+                                        while tasks.join_next().await.is_some() {}
+                                        break;
+                                    }
+                                }
+                            }
+                            continue;
+                        }
+                        tokio::select! {
                             biased;
-                            _ = shutdown.wait_for(|stopped| *stopped) => return Err(anyhow!("Module broker shut down")),
-                            _ = work.reply.closed() => return Err(anyhow!("Module caller cancelled")),
-                            result = tokio::time::timeout(remaining, backend.generate_for(&packet.header.task, &role, &prompt, tokens)) => result.map_err(|_| anyhow!("Module deadline exhausted"))?,
-                        };
-                        let payload = match result {
-                            Ok(report) if report.output_tokens.is_some_and(|count| count > tokens as u64) => Payload::Error("Module exceeded output token budget".into()),
-                            Ok(mut report) => { report.queue_wait_ms = Some(queue_wait_ms); Payload::Response(report) },
-                            Err(error) => Payload::Error(error.to_string().chars().take(250).collect()),
-                        };
-                        encode(&Packet { header: packet.header, payload })
-                    }.await;
-                    let _ = work.reply.send(result);
-                }
-            });
-            sender
-        }).await
+                            _ = wait_for_shutdown(&mut shutdown) => {
+                                tasks.abort_all();
+                                while tasks.join_next().await.is_some() {}
+                                break;
+                            }
+                            work = receiver.recv(), if !receiver_closed => {
+                                match work {
+                                    Some(work) if !work.reply.is_closed() => {
+                                        let task_backend = backend.clone();
+                                        let task_descriptor = descriptor.clone();
+                                        let task_processing = processing.clone();
+                                        let task_shutdown = shutdown.clone();
+                                        tasks.spawn(process_work(
+                                            work,
+                                            task_backend,
+                                            task_descriptor,
+                                            task_processing,
+                                            task_shutdown,
+                                        ));
+                                    }
+                                    Some(_) => {}
+                                    None => receiver_closed = true,
+                                }
+                            }
+                            result = tasks.join_next(), if !tasks.is_empty() => {
+                                if result.is_some_and(|joined| joined.is_err()) {
+                                    tasks.abort_all();
+                                    while tasks.join_next().await.is_some() {}
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                });
+                sender
+            })
+            .await
     }
+}
+
+async fn process_work(
+    mut work: Work,
+    backend: Arc<dyn InferenceBackend>,
+    descriptor: ModuleDescriptor,
+    processing: Arc<AtomicUsize>,
+    mut shutdown: watch::Receiver<bool>,
+) {
+    if work.reply.is_closed() {
+        return;
+    }
+    let _processing = Processing::new(processing);
+    let queue_wait_ms = work.enqueued.elapsed().as_secs_f64() * 1000.0;
+    let result = async {
+        let packet = decode(&work.bytes)?;
+        if !same_header(&packet.header, &work.identity)
+            || packet.header.destination != descriptor.id
+            || packet.header.module_version != descriptor.version
+            || packet.header.expires <= now_ms()
+        {
+            bail!("Module identity or deadline mismatch")
+        }
+        let Payload::Request { role, prompt, tokens } = packet.payload else {
+            bail!("Module expects an inference request")
+        };
+        if !descriptor.roles.contains(&role) || packet.header.sender != actor(&role)? {
+            bail!("Module role is not registered for this actor")
+        }
+        TaskPolicy::reasoning(&packet.header.task)?.authorize(
+            &packet.header.task,
+            &packet.header.sender,
+            "llm.generate",
+        )?;
+        let remaining = Duration::from_millis(packet.header.expires.saturating_sub(now_ms()));
+        let result = tokio::select! {
+            biased;
+            _ = wait_for_shutdown(&mut shutdown) => return Err(anyhow!("Module broker shut down")),
+            _ = work.reply.closed() => return Err(anyhow!("Module caller cancelled")),
+            result = tokio::time::timeout(remaining, backend.generate_for(&packet.header.task, &role, &prompt, tokens)) => result.map_err(|_| anyhow!("Module deadline exhausted"))?,
+        };
+        let payload = match result {
+            Ok(report) if report.output_tokens.is_some_and(|count| count > tokens as u64) => {
+                Payload::Error("Module exceeded output token budget".into())
+            }
+            Ok(mut report) => {
+                report.queue_wait_ms = Some(queue_wait_ms);
+                Payload::Response(report)
+            }
+            Err(error) => Payload::Error(error.to_string().chars().take(250).collect()),
+        };
+        encode(&Packet { header: packet.header, payload })
+    }
+    .await;
+    let _ = work.reply.send(result);
 }
 
 #[derive(Default)]
@@ -203,6 +299,7 @@ struct Registry {
 pub struct Broker {
     registry: RwLock<Registry>,
     shutdown: Arc<watch::Sender<bool>>,
+    max_concurrency: usize,
 }
 impl Broker {
     pub fn with_inference(backend: Arc<dyn InferenceBackend>) -> Self {
@@ -210,9 +307,29 @@ impl Broker {
             .expect("Trusted initial inference descriptor must be valid")
     }
 
+    /// Trusted host construction with a small explicit per-module concurrency
+    /// ceiling. Default construction remains one active request per module.
+    pub(crate) fn with_inference_concurrency(
+        backend: Arc<dyn InferenceBackend>,
+        max_concurrency: usize,
+    ) -> Self {
+        Self::try_with_inference_concurrency(backend, max_concurrency)
+            .expect("Trusted inference module concurrency must be bounded")
+    }
+
     /// Fallible host construction for transport-bound adapters. Fixed identities
     /// are preserved instead of being relabelled with the default local module.
     pub fn try_with_inference(backend: Arc<dyn InferenceBackend>) -> Result<Self> {
+        Self::try_with_inference_concurrency(backend, 1)
+    }
+
+    pub(crate) fn try_with_inference_concurrency(
+        backend: Arc<dyn InferenceBackend>,
+        max_concurrency: usize,
+    ) -> Result<Self> {
+        if !(1..=4).contains(&max_concurrency) {
+            bail!("Inference module concurrency must be between 1 and 4")
+        }
         let descriptor = backend
             .module_descriptor()
             .cloned()
@@ -227,7 +344,8 @@ impl Broker {
             descriptor: descriptor.clone(),
             backend,
             queue: OnceCell::new(),
-            processing: Arc::new(AtomicBool::new(false)),
+            processing: Arc::new(AtomicUsize::new(0)),
+            max_concurrency,
             shutdown: shutdown.clone(),
             routing_rank: None,
         });
@@ -242,6 +360,7 @@ impl Broker {
         Ok(Self {
             registry: RwLock::new(registry),
             shutdown,
+            max_concurrency,
         })
     }
 
@@ -319,7 +438,8 @@ impl Broker {
             descriptor,
             backend,
             queue: OnceCell::new(),
-            processing: Arc::new(AtomicBool::new(false)),
+            processing: Arc::new(AtomicUsize::new(0)),
+            max_concurrency: self.max_concurrency,
             shutdown: self.shutdown.clone(),
             routing_rank,
         });
@@ -464,7 +584,7 @@ impl Broker {
                 availability: module.availability(),
                 routing_rank: module.routing_rank,
                 queued_requests: Some(module.queued_requests() as u32),
-                processing_request: Some(module.processing.load(Ordering::Acquire)),
+                processing_request: Some(module.processing.load(Ordering::Acquire) > 0),
             })
             .collect())
     }

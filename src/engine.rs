@@ -69,7 +69,17 @@ impl Engine {
         store: Arc<Store>,
         backend: Arc<dyn InferenceBackend>,
     ) -> Self {
-        let broker = Arc::new(crate::fabric::Broker::with_inference(backend));
+        // Parallel Jev-R waves share the pinned broker backend. Keep the legacy
+        // one-call worker by default; only validated opt-in caps enable worker
+        // concurrency (invalid configuration is rejected when the task starts).
+        let module_concurrency = cfg
+            .subtask_parallelism
+            .filter(|cap| (2..=4).contains(cap))
+            .unwrap_or(1);
+        let broker = Arc::new(crate::fabric::Broker::with_inference_concurrency(
+            backend,
+            module_concurrency,
+        ));
         let scheduler = crate::scheduling::Handle::configured(cfg.subtask_scheduling);
         Self {
             cfg,

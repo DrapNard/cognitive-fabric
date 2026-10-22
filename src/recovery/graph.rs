@@ -35,6 +35,7 @@ pub(super) fn graph_from(
     let mut events = 0;
     let mut scheduled_order = Vec::new();
     let mut running_count = 0;
+    let mut parallel_waves: Option<Vec<Vec<usize>>> = None;
     {
         let mut stmt = db.prepare("SELECT kind,CASE WHEN length(CAST(source AS BLOB))<=64 THEN source END,CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN payload END FROM events WHERE task_id=?1 AND kind IN ('plan','subtask') ORDER BY id LIMIT 18")?;
         let mut rows = stmt.query([task])?;
@@ -56,6 +57,10 @@ pub(super) fn graph_from(
                 }
                 let plan = Plan::parse(&serde_json::to_string(&payload["graph"])?)?;
                 scheduled_order = order_from(db, task, &plan)?;
+                parallel_waves = parallel_waves_from(db, task, &plan, &scheduled_order)?;
+                if let Some(waves) = &parallel_waves {
+                    scheduled_order = waves.iter().flatten().copied().collect();
+                }
                 states = plan
                     .steps
                     .iter()
@@ -101,6 +106,20 @@ pub(super) fn graph_from(
                 {
                     bail!("Invalid recorded subtask state transition")
                 }
+                if node.state == "unverified" {
+                    if let Some(waves) = &parallel_waves {
+                        let mut cohort_end = 0;
+                        for wave in waves {
+                            cohort_end += wave.len();
+                            if wave.contains(&index) {
+                                break;
+                            }
+                        }
+                        if running_count < cohort_end {
+                            bail!("Parallel result preceded complete wave admission")
+                        }
+                    }
+                }
                 if node.state == "running"
                     && node.step.depends_on.iter().any(|id| {
                         !states
@@ -111,9 +130,25 @@ pub(super) fn graph_from(
                     bail!("Subtask ran before dependency results were recorded")
                 }
                 if node.state == "running" {
-                    if scheduled_order.get(running_count) != Some(&index)
-                        || states.iter().any(|s| s.state == "running")
-                    {
+                    if scheduled_order.get(running_count) != Some(&index) {
+                        bail!("Subtask execution differs from committed schedule")
+                    }
+                    if let Some(waves) = &parallel_waves {
+                        let wave_index = waves
+                            .iter()
+                            .position(|wave| wave.contains(&index))
+                            .ok_or_else(|| anyhow::anyhow!("Unscheduled parallel subtask"))?;
+                        if waves[..wave_index]
+                            .iter()
+                            .flatten()
+                            .any(|prior| states[*prior].state != "unverified")
+                            || states.iter().enumerate().any(|(active, state)| {
+                                state.state == "running" && !waves[wave_index].contains(&active)
+                            })
+                        {
+                            bail!("Parallel subtask crossed an unfinished wave boundary")
+                        }
+                    } else if states.iter().any(|s| s.state == "running") {
                         bail!("Subtask execution differs from committed sequential schedule")
                     }
                     running_count += 1;
@@ -124,6 +159,10 @@ pub(super) fn graph_from(
     }
     Ok((status, graph, states))
 }
+
+#[path = "graph_parallel.rs"]
+mod parallel;
+use parallel::parallel_waves_from;
 
 /// Recover a committed scheduling decision, never reinvoke a policy callback.
 pub(crate) fn order_from(db: &rusqlite::Connection, task: &str, plan: &Plan) -> Result<Vec<usize>> {

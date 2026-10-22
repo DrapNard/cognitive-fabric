@@ -1,6 +1,6 @@
 # Trusted subtask scheduling
 
-Jev+ executes bounded advisory plans sequentially, preserving dependency results
+By default Jev+ executes bounded advisory plans sequentially, preserving dependency results
 and a final whole-goal solver budget. Plans contain at most four subtasks and
 remain untrusted model suggestions. The default `StableScheduler` uses stable
 topological order, retaining the previous runtime behavior.
@@ -49,8 +49,8 @@ their arbitrary host side effects, or attest their implementation. External I/O,
 inference and untrusted executable policies need separately budgeted/isolation
 integration; declared versions are not code identity. Existing in-flight task
 snapshots and already committed orders do not change when another engine installs
-a different handle. Current execution remains sequential with a four-node graph
-limit. This is replaceable dependency ordering, not general module/GPU scheduling,
+a different handle. Default execution remains sequential with a four-node graph
+limit; opt-in ready waves are described below. This is replaceable dependency ordering, not general module/GPU scheduling,
 calibrated expected utility or proof of faster/better reasoning.
 
 
@@ -114,8 +114,76 @@ completed work and planning are not replayed. Unit tests cover every permutation
 of all 64 edge subsets of a four-node labelled topological DAG, malformed public
 plans, configuration fingerprints, direct Session installation and audit denial.
 
-Execution is still sequential. Reordering cannot establish lower total compute,
+Critical-path ordering alone is sequential. Reordering cannot establish lower total compute,
 faster completion, better answers or optimal scheduling; no real-model improvement
 has been measured. Dynamic costs, physical GPU/memory allocation and calibrated
 utility remain separate incomplete work. Protocol schemas and permissions do not
 change.
+
+## Opt-in parallel advisory execution
+
+An operator can set `"subtask_parallelism": 2` in `config.json`; the allowed
+range is 1–4. Omission preserves the existing serialized configuration and
+sequential behavior. A value of 1 also uses the sequential path. This changes
+only accepted advisory planner graphs, each still limited to four subtasks.
+
+Jev+ scans the committed scheduler order and groups currently dependency-ready
+nodes into bounded waves. A blocked node does not prevent a later independent
+node joining a wave. All dependencies must have recorded results from previous
+waves. Results remain unverified advice for the final whole-goal solver.
+Within each wave, results and reasoning events are reconciled in deterministic
+dispatch order regardless of backend completion order.
+
+The complete graph admission reserves room for all pending subtask calls,
+outputs and bounded prompts plus the final solver. Each wave authorizes and
+durably reserves its individual calls before polling any backend future.
+Required audit failure stops dispatch. Shared resource-pool admission still
+applies to every call; a graph concurrency ceiling does not create provider
+slots, GPU memory or permission. Engine construction also configures the local
+FlatBuffers inference broker with the same bounded module concurrency, so its
+legacy serial queue does not prevent overlap. The module keeps its four-request
+queue, active-count tracking and owned cancellation/shutdown jobs. Omitted/one
+configuration retains single-request module execution. A provider or an external
+process transport may still serialize requests itself.
+
+Backend futures are locally owned. Cancellation drops unfinished futures and
+retains original reservations; it does not prove remote provider termination.
+Incomplete usage remains unknown. Per-node resource records avoid shared-counter
+deltas; aggregate `inference_ms` sums local admitted-call elapsed time, including
+queue/setup wait, and can exceed task wall time for overlapping calls. It is not
+GPU execution time. Original deadlines and output ceilings still apply. Parallel work never grants fresh task calls, tokens, tool allowances or
+wall time. No new executable, external action or model is activated.
+
+A required `subtask_parallel_schedule` event binds the pinned graph, original
+scheduler order, ceiling and complete ready-wave partition, with verification
+and permission flags false. Graph observation validates its bounded shape,
+chronology and wave dependencies before accepting overlapping running states.
+Every member must enter the recorded running cohort before a wave result is
+accepted; this validates trace admission, not actual provider-level overlap.
+The existing sequential audit contract remains unchanged for default tasks.
+
+Checkpoint continuation of parallel advisory graphs is currently refused,
+including configurations above one whose marker was not yet persisted.
+Original charges remain auditable; no incomplete wave is replayed or refunded.
+Fresh independent checking of a durable saved candidate keeps its existing
+separate rules and cannot use the parallel marker as proof. General wave
+reconciliation remains a subsequent implementation milestone.
+
+Verification: formatting, locked workspace/all-target build, **833 tests across
+49 targets** (none ignored) and Clippy with denied warnings pass. New coverage
+includes seven helper, three broker, six end-to-end Engine and four graph-audit
+regressions. Barrier-controlled backend calls overlap; dependencies wait, reverse
+completion still yields deterministic result order, and planner/subtask/final
+call/output/prompt reservations remain exact. Cancellation drops active work and
+records unknown usage without refunds. Cap enforcement, queued work, shutdown,
+serial compatibility, insufficient budget, schedule/reservation audit failures,
+14 altered markers, wave crossing and read-only continuation refusal are covered.
+The existing backend-panic health test retains its closed-worker behavior.
+
+The initial overlap test caught broker serialization; fixing the worker enabled
+actual overlap. Lint findings and an intermediate source-fingerprint failure
+caused by concurrent edits were fixed, followed by a full frozen rerun. Bundled
+protocol pairing/integrity checks pass; schemas/bindings are unchanged and absent
+`flatc` prevents fresh generation. Localhost port 1234 refused connections during
+approved discovery. Mock overlap is concurrency evidence, not live-model latency,
+quality or physical-resource proof. Jev+ and Jev-R remain Partial.
