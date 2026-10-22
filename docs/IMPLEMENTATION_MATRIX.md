@@ -1,5 +1,61 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+### Pin an optional trusted host verifier to structured reasoning — 2026-10-22
+
+**Implemented (native extension); Partial (general executable verification).**
+Architecture sections 4–6 and 9–10 require replaceable roles with independent
+evidence and fixed permissions. Native hosts can select a `VerifierProvider` with
+`Engine::with_verifier_provider`; sessions and Engine clones retain the captured
+descriptor and callback instance. The provider receives bounded original objective/
+candidate data and the original deadline. Its claim and the original compiled
+checker must both pass. This covers the four existing structured criteria, solver
+answers, direct search witnesses and matching published-memory reuse; ordinary
+prose and generation-only comparisons gain no checker authority.
+
+Existing tool authorization/reservation remains outside the provider. Required
+snapshot, intent and outcome audits bind the identity, criterion and both hashes,
+with separate provider elapsed wall time. Invalid claims/errors cannot fall back
+to unchecked success. Cancellation drops the owned future without refunds.
+Effective workflow/escalation/advice fingerprints include the captured descriptor,
+preventing built-in-only evidence from silently matching a changed acceptance rule.
+Recovery refuses custom-provider histories until their implementation can be
+restored, rather than silently dropping the selected acceptance gate.
+
+Sources: `src/verification/provider.rs`, Engine/Session integration, advice scope
+construction and recovery admission guards. See
+[host verifier contract](VERIFICATION.md#trusted-host-verifier-extension).
+The digest is operator-declared, not binary attestation. Cooperative async timeouts
+cannot isolate blocking native code. Arbitrary untrusted executable loading, new
+criterion families, provider restoration and independent quality/physical-cost
+measurements remain incomplete; Jev+ and Jev-R remain **Partial**.
+
+Verification after implementation: `cargo fmt --all -- --check`,
+`cargo check --locked --workspace --all-targets`,
+`cargo test --locked --workspace --all-targets` (**861 passed across 52 targets**,
+zero failed/ignored) and
+`cargo clippy --locked --workspace --all-targets -- -D warnings` all pass.
+Sixteen provider integration tests cover actual dispatch, exact retained budgets,
+false acceptance, vetoes, errors/invalid claims, original-deadline exhaustion,
+cancellation/drop, every required audit gate, captured descriptor/decision/history
+scope, memory rechecks, direct-search fallback and recovery refusals. Two new
+progress unit regressions preserve the original score-zero invariant and validate
+veto cycle/scope/plateau behavior. Three saved-parallel-advice crash-window tests
+also pass in this full run; the existing reconciliation implementation needed no
+production change for that window.
+
+Source review found and fixed unbounded JSON inspection in the new recovery guard.
+Testing found and fixed a provider-veto/finite-progress composition issue before
+the final gates. Test fixtures were corrected for their actual planner/solver
+prefix, original wall ceiling, interrupted-intent semantics and retained search/
+fallback checks; acceptance, accounting and no-dispatch assertions remain.
+Default socket, persistence/migration, malformed-frame, permission denial,
+cancellation, rollback and current-source-fingerprint regressions remain green.
+Schemas/bindings are unchanged and bundled generator/runtime checks pass; `flatc`
+is unavailable, so fresh generation was not run. Local discovery at port 1234
+refused connections; no real-model/GPU, general quality or speedup result is claimed.
+Final logs: `/tmp/jev-verifier-{check,tests,clippy}-final.log`.
+
+
 ### Continue completed parallel advisory waves without replay — 2026-10-22
 
 **Implemented (completed-wave checkpoints); Partial (general in-flight recovery).**
@@ -1753,8 +1809,8 @@ remains a pre-release. `QUALITY_REVIEW.md` preserves verification history.
 | 3, 7, 9, 10, 12 | External agent HTTP interoperability | Implemented / Partial | `src/agent/`, `crates/cogfabric-server/`: generation-only native solver turns and authenticated same-image workers, authenticated loopback Chat Completions/SSE, client-owned tool proposals/results, collective aliases and bounded admission; real OpenCode v2 + Qwen read/edit/read, HTTP and worker regression tests | Responses/multimodal API, independent executable provisioning and role selection, broader client compatibility and independent agentic-quality/security evaluation |
 | 7, 12 | Typed local IPC | Partial | `protocol/*.fbs`, `src/fabric.rs`, `src/events.rs`, `src/wire.rs`, `src/service.rs`: bounded verified IPC and module RPC, content-minimized typed progress subscriptions/catch-up, version-pinned inference registration/discovery, correlation/actor/destination/expiry checks, queues and cancellation; socket, spoofing, overflow, replacement and compatibility tests | General command routing, automatic independent actor provisioning and broader compatibility fixtures |
 | 3 | Language interface | Partial | `src/language.rs`, `src/backend.rs`, `src/config.rs`: strict advisory intent, clarification, original-goal preservation, explicit conversation references, optional synthesis, persistent role profiles; scripted and HTTP tests | Live interpretation and synthesis quality measurements; direct/managed/socket generation now succeeds |
-| 4, 9 | Jev+ coordination | Partial | `src/engine.rs`, `src/planning.rs`, `src/store.rs::route`: capability routing/gaps, bounded topological subtask execution, admission budgets; dependency and budget tests | General module scheduling, measured escalation policy, automatic subtask resumption and broader scheduling telemetry |
-| 5 | Jev-R reasoning | Partial | `src/reasoning.rs`: planner/solver/explorer/critic/reflector, strict recursive revisions, no-progress stopping, unverified subtask results and original-goal synthesis; order, revision and cancellation tests | General independent executable verifiers and live-model effectiveness measurements |
+| 4, 9 | Jev+ coordination | Partial | `src/engine.rs`, `src/planning.rs`, `src/store.rs::route`: pinned capability coverage, dependency scheduling, bounded parallel advisory waves, original-budget completed-wave continuation and admission budgets; dependency, recovery and budget tests | General module scheduling, calibrated measured escalation, incomplete in-flight outcome reconciliation and broader physical scheduling telemetry |
+| 5 | Jev-R reasoning | Partial | `src/reasoning.rs`, `src/verification/provider.rs`: planner/solver/explorer/critic/reflector, bounded revisions/search, progress stopping, unverified subtask advice, original-goal synthesis and optional trusted host verification with a required compiled criterion | Untrusted executable verifier isolation, new criterion families, host-provider restoration and independent live-model effectiveness measurements |
 | 6 | Expert network | Partial | `src/registry.rs`: immutable semantic-versioned reference manifests, dependency/reverse-dependency checks, health, activate/disable/metadata rollback, bounded registry; lifecycle/tampering tests | General executable loading and health, measured workflow usefulness and real weight residency; trusted tool/inference rollback is implemented |
 | 7 | Persistent memory | Partial | `src/store.rs`: SQLite WAL/FTS5, schema migrations through 6, durable task/events, isolated explicit history, pinned registry/document snapshots, explicit lease-protected interrupted-task recovery, immutable versioned local model manifests and task selection snapshots, operator-published episodic snapshots, recomputed arithmetic memory, revocation and payload quotas, SQLite page ceilings, global task admission and reviewed retention; migration/isolation/tampering/deletion-rollback tests | Broader independent fact verifiers, backend model residency, physical WAL/filesystem bounds, general external/neural artifact portability and automatic checkpoint resumption |
 | 8 A/B | RAG evolution | Partial | `src/evolution.rs`, `src/evaluation.rs`: content-addressed quarantine, hashes/provenance/deduplication/quotas, isolated held-out retrieval, bounded cumulative approved-version regression gates and immutable accepted suites, atomic paired review records, transactional human promotion/rollback; integrity, regression, concurrency and rollback tests | Stronger poisoning/security evaluation, automatic source discovery and cleaning; dataset independence remains operator-attested |

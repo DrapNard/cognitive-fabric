@@ -90,6 +90,7 @@ impl Store {
         );
         let result = (|| -> Result<Value> {
             let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+            super::reject_custom_verifier_recovery(&tx, task)?;
             let query:String=tx.query_row("SELECT CASE WHEN length(CAST(query AS BLOB))<=12000 THEN query END FROM tasks WHERE id=?1",[task],|r|r.get(0))?;
             if crate::verification::Criterion::from_query(&query)?.is_some() {
                 bail!("Structured objectives require independent result recovery")

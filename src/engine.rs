@@ -54,6 +54,7 @@ pub struct Engine {
     router: crate::routing::Handle,
     scheduler: crate::scheduling::Handle,
     escalator: crate::escalation::Handle,
+    verifier_provider: Option<crate::verification::provider::Handle>,
     resource_pool: Arc<std::sync::Mutex<Option<Arc<crate::resource_scheduler::ResourcePool>>>>,
 }
 impl Engine {
@@ -92,6 +93,7 @@ impl Engine {
             router: Default::default(),
             scheduler,
             escalator: Default::default(),
+            verifier_provider: None,
             resource_pool: Default::default(),
         }
     }
@@ -155,6 +157,20 @@ impl Engine {
     }
     pub fn escalation_policy_descriptor(&self) -> &crate::escalation::Descriptor {
         self.escalator.descriptor()
+    }
+    /// Install an operator-trusted async verifier gate for future structured
+    /// tasks. The compiled checker remains a required success condition.
+    pub fn with_verifier_provider(
+        mut self,
+        provider: Arc<dyn crate::verification::VerifierProvider>,
+    ) -> Result<Self> {
+        self.verifier_provider = Some(crate::verification::provider::Handle::new(provider)?);
+        Ok(self)
+    }
+    pub fn verifier_provider_descriptor(&self) -> Option<&crate::verification::VerifierDescriptor> {
+        self.verifier_provider
+            .as_ref()
+            .map(|handle| handle.descriptor())
     }
     pub(crate) fn with_frozen_corpus(mut self, corpus: Arc<crate::corpus::FrozenCorpus>) -> Self {
         self.corpus = Some(corpus);
@@ -383,6 +399,8 @@ impl Engine {
         session.scheduler = self.scheduler.clone();
         session.advice_profile = Some(profile);
         session.resource_pool = resource_pool;
+        session.verifier_provider = self.verifier_provider.clone();
+        session.verification_enabled = profile != ExecutionProfile::Alone;
         if !matches!(
             profile,
             ExecutionProfile::Alone | ExecutionProfile::Tools | ExecutionProfile::Recursive
@@ -409,6 +427,7 @@ impl Engine {
         let mut skills = Vec::new();
         let mut evidence = Vec::new();
         let execution = async {
+            session.record_verifier_provider_snapshot(query)?;
             let retrieval_requested = matches!(
                 profile,
                 ExecutionProfile::Full | ExecutionProfile::Memory | ExecutionProfile::Experts
@@ -559,21 +578,17 @@ impl Engine {
             {
                 if let Some(criterion) = crate::verification::Criterion::from_query(query)? {
                     for memory in memories.iter().filter(|memory| memory.query == query) {
-                        session.authorize_tool(criterion.capability())?;
-                        let checked = criterion.check(&memory.answer);
-                        self.store.event(
-                            &id,
-                            "verification",
-                            "verifier-r",
-                            json!({
-                                "criterion":criterion.name(),"verified":checked.is_ok(),
-                                "origin":"published_memory","memory_id":memory.id,"expert":session.checker_binding,
-                                "objective_hash":store::sha256(query.as_bytes()),
-                                "answer_hash":store::sha256(memory.answer.as_bytes()),
-                                "reason":checked.as_ref().err().map(ToString::to_string)
-                            }),
-                        )?;
-                        if checked.is_ok() {
+                        let (checked, _) = session
+                            .verify_candidate(
+                                query,
+                                &criterion,
+                                &memory.answer,
+                                None,
+                                Some("published_memory"),
+                                Some(&memory.id),
+                            )
+                            .await?;
+                        if checked {
                             session.stop_reason = "verified_memory".into();
                             evidence.push(format!("verified:{}", criterion.name()));
                             return Ok((memory.answer.clone(), "completed".into()));

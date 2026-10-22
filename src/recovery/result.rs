@@ -26,6 +26,7 @@ impl Store {
         );
         let result = (|| -> Result<(Value, crate::events::Progress)> {
             let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+            super::reject_custom_verifier_recovery(&tx, task)?;
             let (query,status): (String,String) = tx.query_row("SELECT CASE WHEN length(CAST(query AS BLOB))<=12000 THEN query END,CASE WHEN length(status)<=64 THEN status END FROM tasks WHERE id=?1",[task],|r|Ok((r.get(0)?,r.get(1)?)))?;
             if !matches!(status.as_str(), "running" | "interrupted") {
                 bail!("Only abandoned running or interrupted tasks permit result recovery")

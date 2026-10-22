@@ -99,6 +99,8 @@ pub struct Session {
     escalation_snapshot: bool,
     escalation_criterion: Option<&'static str>,
     pub(crate) checker_binding: Option<serde_json::Value>,
+    pub(crate) verifier_provider: Option<crate::verification::provider::Handle>,
+    verifier_provider_snapshot_written: bool,
     cfg: Config,
     store: Arc<Store>,
     backend: Arc<dyn InferenceBackend>,
@@ -166,9 +168,7 @@ impl Session {
             mode: mode.into(),
             criterion: crate::verification::Criterion::from_query(query)?
                 .map(|criterion| criterion.name().into()),
-            configuration_sha256: crate::escalation::empirical::configuration_fingerprint(
-                &self.cfg,
-            )?,
+            configuration_sha256: self.policy_configuration_fingerprint()?,
             role_prompts_sha256: crate::backend::runtime_role_prompts_sha256()?,
             runtime_sources_sha256: crate::escalation::empirical::runtime_sources_fingerprint()
                 .into(),
@@ -210,6 +210,7 @@ impl Session {
         self.resources.process_rss_bytes = memory.rss_bytes;
         self.resources.process_lifetime_peak_rss_bytes = memory.lifetime_peak_rss_bytes;
     }
+
     pub fn authorize_tool(&mut self, capability: &str) -> Result<()> {
         if Instant::now() >= self.deadline {
             self.stop_reason = "budget_exhausted".into();
@@ -335,6 +336,8 @@ impl Session {
             progress: Default::default(),
             advice_profile: None,
             checker_binding: None,
+            verifier_provider: None,
+            verifier_provider_snapshot_written: false,
             scheduler,
             escalator: Default::default(),
             escalation_snapshot: false,
@@ -513,9 +516,7 @@ impl Session {
             cycle: self.resources.cycles,
             candidate_sha256: crate::store::sha256(answer.as_bytes()),
             verification_criterion: self.escalation_criterion.map(String::from),
-            configuration_sha256: crate::escalation::empirical::configuration_fingerprint(
-                &self.cfg,
-            )?,
+            configuration_sha256: self.policy_configuration_fingerprint()?,
             role_prompts_sha256: crate::backend::runtime_role_prompts_sha256()?,
             runtime_sources_sha256: crate::escalation::empirical::runtime_sources_fingerprint()
                 .into(),
@@ -1359,29 +1360,27 @@ impl Session {
                     match label {
                         "witness" => {
                             let answer = answer.expect("witness search result carries an answer");
-                            self.authorize_tool("constraints.verify")?;
+                            let (accepted, rejection) = self
+                                .verify_candidate(
+                                    query,
+                                    criterion,
+                                    &answer,
+                                    None,
+                                    Some("finite_search"),
+                                    None,
+                                )
+                                .await?;
                             self.verification_attempted = true;
-                            let result = criterion.check(&answer);
-                            self.store.event(
-                                &self.task,
-                                "verification",
-                                "verifier-r",
-                                json!({
-                                    "verified":result.is_ok(),
-                                    "criterion":criterion.name(),
-                                    "expert":self.checker_binding,
-                                    "objective_hash":crate::store::sha256(query.as_bytes()),
-                                    "answer_hash":crate::store::sha256(answer.as_bytes()),
-                                    "reason":result.as_ref().err().map(ToString::to_string),
-                                    "origin":"finite_search"
-                                }),
-                            )?;
-                            result?;
-                            self.verified = true;
-                            self.verified_criterion = Some(criterion.name());
-                            self.has_solution = true;
-                            self.stop_reason = "verified".into();
-                            return Ok(answer);
+                            if accepted {
+                                self.has_solution = true;
+                                return Ok(answer);
+                            }
+                            let answer_hash = crate::store::sha256(answer.as_bytes());
+                            self.resume_answer = Some((answer, Some(answer_hash)));
+                            strategy = format!(
+                                "Independent checker rejected the candidate: {}",
+                                rejection.unwrap_or_else(|| "verification failed".into())
+                            );
                         }
                         "unsatisfiable" => {
                             self.verification_attempted = true;
@@ -1536,32 +1535,59 @@ impl Session {
             answer = candidate;
             self.has_solution = true;
             if let Some(criterion) = &criterion {
-                self.authorize_tool(criterion.capability())?;
+                let (accepted, rejection) = self
+                    .verify_candidate(
+                        query,
+                        criterion,
+                        &answer,
+                        Some(self.resources.cycles),
+                        None,
+                        None,
+                    )
+                    .await?;
                 self.verification_attempted = true;
-                let result = criterion.check(&answer);
-                self.store.event(&self.task,"verification","verifier-r",json!({"verified":result.is_ok(),"criterion":criterion.name(),"expert":self.checker_binding,"objective_hash":crate::store::sha256(query.as_bytes()),"answer_hash":hash,"reason":result.as_ref().err().map(ToString::to_string),"cycle":self.resources.cycles}))?;
-                if result.is_ok() {
-                    self.verified = true;
-                    self.verified_criterion = Some(criterion.name());
-                    self.stop_reason = "verified".into();
+                if accepted {
                     break;
                 }
                 let plateau = if let Some(settings) = &self.cfg.progress_stopping {
                     if criterion.name() == "finite_domain/v1" {
-                        let assessment = self.progress.observe(
-                            query,
-                            self.resources.cycles,
-                            &answer,
-                            settings,
-                        )?;
-                        let stop = assessment["stop"] == true;
-                        self.store.event(
-                            &self.task,
-                            "reasoning_progress",
-                            "verifier-r",
-                            assessment,
-                        )?;
-                        stop
+                        if self.verifier_provider.is_some()
+                            && criterion.progress_score(&answer) == Some(0)
+                        {
+                            // The compiled criterion accepted a finite witness,
+                            // but the opt-in host provider vetoed it. Count this
+                            // cycle as explicitly unscored so it cannot violate
+                            // the failed-answer progress invariant or trigger a
+                            // false plateau stop.
+                            let assessment = self.progress.observe_provider_veto(
+                                query,
+                                self.resources.cycles,
+                                &answer,
+                                settings,
+                            )?;
+                            self.store.event(
+                                &self.task,
+                                "reasoning_progress_provider_veto",
+                                "verifier-r",
+                                assessment,
+                            )?;
+                            false
+                        } else {
+                            let assessment = self.progress.observe(
+                                query,
+                                self.resources.cycles,
+                                &answer,
+                                settings,
+                            )?;
+                            let stop = assessment["stop"] == true;
+                            self.store.event(
+                                &self.task,
+                                "reasoning_progress",
+                                "verifier-r",
+                                assessment,
+                            )?;
+                            stop
+                        }
                     } else {
                         false
                     }
@@ -1576,7 +1602,7 @@ impl Session {
                 last_hash = Some(hash);
                 strategy = format!(
                     "Independent checker rejected the candidate: {}",
-                    result.unwrap_err()
+                    rejection.unwrap_or_else(|| "verification failed".into())
                 );
                 if let Some(portfolio) = &self.exploration {
                     strategy = portfolio.strategy(&strategy, self.resources.cycles + 1)?;
@@ -3787,6 +3813,9 @@ pub(crate) mod exploration;
 
 #[path = "reasoning/advice_guard.rs"]
 pub mod advice_guard;
+
+#[path = "reasoning/verification.rs"]
+mod verification_provider;
 
 pub mod finite_search;
 pub(crate) mod parallel;

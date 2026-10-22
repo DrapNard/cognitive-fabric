@@ -51,6 +51,7 @@ fn prepare_with_policy(
     task: &str,
     escalator: &crate::escalation::Handle,
 ) -> Result<Checkpoint> {
+    super::reject_custom_verifier_recovery(db, task)?;
     let parallel_recorded: bool = db.query_row(
         "SELECT EXISTS(SELECT 1 FROM events WHERE task_id=?1 AND kind='subtask_parallel_schedule')",
         [task],

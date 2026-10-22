@@ -1,5 +1,61 @@
 # Current Rust implementation
 
+### Pin an optional trusted host verifier to structured reasoning — 2026-10-22
+
+**Implemented (native extension); Partial (general executable verification).**
+Architecture sections 4–6 and 9–10 require replaceable roles with independent
+evidence and fixed permissions. Native hosts can select a `VerifierProvider` with
+`Engine::with_verifier_provider`; sessions and Engine clones retain the captured
+descriptor and callback instance. The provider receives bounded original objective/
+candidate data and the original deadline. Its claim and the original compiled
+checker must both pass. This covers the four existing structured criteria, solver
+answers, direct search witnesses and matching published-memory reuse; ordinary
+prose and generation-only comparisons gain no checker authority.
+
+Existing tool authorization/reservation remains outside the provider. Required
+snapshot, intent and outcome audits bind the identity, criterion and both hashes,
+with separate provider elapsed wall time. Invalid claims/errors cannot fall back
+to unchecked success. Cancellation drops the owned future without refunds.
+Effective workflow/escalation/advice fingerprints include the captured descriptor,
+preventing built-in-only evidence from silently matching a changed acceptance rule.
+Recovery refuses custom-provider histories until their implementation can be
+restored, rather than silently dropping the selected acceptance gate.
+
+Sources: `src/verification/provider.rs`, Engine/Session integration, advice scope
+construction and recovery admission guards. See
+[host verifier contract](VERIFICATION.md#trusted-host-verifier-extension).
+The digest is operator-declared, not binary attestation. Cooperative async timeouts
+cannot isolate blocking native code. Arbitrary untrusted executable loading, new
+criterion families, provider restoration and independent quality/physical-cost
+measurements remain incomplete; Jev+ and Jev-R remain **Partial**.
+
+Verification after implementation: `cargo fmt --all -- --check`,
+`cargo check --locked --workspace --all-targets`,
+`cargo test --locked --workspace --all-targets` (**861 passed across 52 targets**,
+zero failed/ignored) and
+`cargo clippy --locked --workspace --all-targets -- -D warnings` all pass.
+Sixteen provider integration tests cover actual dispatch, exact retained budgets,
+false acceptance, vetoes, errors/invalid claims, original-deadline exhaustion,
+cancellation/drop, every required audit gate, captured descriptor/decision/history
+scope, memory rechecks, direct-search fallback and recovery refusals. Two new
+progress unit regressions preserve the original score-zero invariant and validate
+veto cycle/scope/plateau behavior. Three saved-parallel-advice crash-window tests
+also pass in this full run; the existing reconciliation implementation needed no
+production change for that window.
+
+Source review found and fixed unbounded JSON inspection in the new recovery guard.
+Testing found and fixed a provider-veto/finite-progress composition issue before
+the final gates. Test fixtures were corrected for their actual planner/solver
+prefix, original wall ceiling, interrupted-intent semantics and retained search/
+fallback checks; acceptance, accounting and no-dispatch assertions remain.
+Default socket, persistence/migration, malformed-frame, permission denial,
+cancellation, rollback and current-source-fingerprint regressions remain green.
+Schemas/bindings are unchanged and bundled generator/runtime checks pass; `flatc`
+is unavailable, so fresh generation was not run. Local discovery at port 1234
+refused connections; no real-model/GPU, general quality or speedup result is claimed.
+Final logs: `/tmp/jev-verifier-{check,tests,clippy}-final.log`.
+
+
 ### Continue completed parallel advisory waves without replay — 2026-10-22
 
 **Implemented (completed-wave checkpoints); Partial (general in-flight recovery).**

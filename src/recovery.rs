@@ -20,6 +20,21 @@ use std::{
     path::Path,
 };
 
+/// Custom native verifier callbacks are not reconstructable from stored metadata.
+/// Every recovery/reconciliation path refuses these task histories until it can
+/// restore the exact operator-installed implementation and run a fresh check.
+pub(crate) fn reject_custom_verifier_recovery(db: &rusqlite::Connection, task: &str) -> Result<()> {
+    let found: bool = db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM events WHERE task_id=?1 AND (kind GLOB 'verification_provider*' OR (kind='verification' AND CASE WHEN length(CAST(payload AS BLOB))>262144 THEN 1 WHEN json_valid(payload) THEN json_type(payload,'$.provider') IS NOT NULL ELSE 1 END)))",
+        [task],
+        |row| row.get(0),
+    )?;
+    if found {
+        bail!("Recovery of a custom-verifier task requires the exact pinned provider; this recovery path cannot restore it")
+    }
+    Ok(())
+}
+
 pub(crate) struct ExecutionLease(#[allow(dead_code)] File);
 impl ExecutionLease {
     /// Convert only while holding the admission SQLite write transaction: flock

@@ -173,7 +173,7 @@ impl Session {
             bail!("Optional advice module scope exceeds byte bound")
         }
         let scope = crate::store::sha256(&serde_json::to_vec(&json!({
-            "format_version":1,"configuration":crate::escalation::empirical::configuration_fingerprint(&self.cfg)?,
+            "format_version":1,"configuration":self.policy_configuration_fingerprint()?,
             "prompts":crate::backend::runtime_role_prompts_sha256()?,"runtime":crate::escalation::empirical::runtime_sources_fingerprint(),
             "modules":crate::store::sha256(&module_bytes),"mode":mode,"execution_profile":self.advice_profile,
             "criterion_binding":self.escalation_criterion,"prompt_kib_bucket":base.len().div_ceil(1024)

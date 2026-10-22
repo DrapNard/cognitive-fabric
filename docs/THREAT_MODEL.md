@@ -1,5 +1,27 @@
 # Threat Model (v1.0)
 
+## Trusted host verifier extension
+
+Optional native verifier callbacks are installed by the host, never by models or
+checker manifests. Their captured declared identity and original objective/answer
+hashes are audited before invocation. Existing task authorization and charges
+remain required. Acceptance also requires the original compiled checker; a custom
+claim cannot replace criteria or certify an invalid candidate. Matching memories
+must be rechecked under the selected gate. Provider failure cannot silently remove
+it, and recovery refuses provider histories until exact restoration is supported.
+Interrupted callbacks may retain only an intent, never an inferred acceptance.
+The recovery guard refuses oversized or malformed proof payloads before JSON
+inspection. A compiled finite witness vetoed by the provider consumes its cycle
+without entering ordinary failed-answer progress scoring or gaining authority.
+
+Effective decision/history configuration hashes include the captured descriptor;
+default and differently declared provider scopes cannot silently share empirical
+evidence. The implementation digest is an operator assertion, not attestation.
+Native callbacks are trusted process code, not sandboxed experts: they must yield
+and be cancellation-safe. Dropping a future or reaching a deadline does not prove
+external work stopped. No new model grant, executable loader, neural evaluation
+or general factual-verification claim is introduced. See [verification](VERIFICATION.md).
+
 ## Trust boundaries
 
 - **User interface:** human inputs are untrusted data, not system permissions.

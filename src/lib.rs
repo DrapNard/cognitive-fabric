@@ -40,6 +40,10 @@ pub mod strict_json;
 mod structured;
 pub mod telemetry;
 mod verification;
+pub use verification::{
+    VerificationClaim, VerificationFuture, VerificationRequest, VerifierDescriptor,
+    VerifierProvider,
+};
 pub mod wire;
 
 pub mod gpu;

@@ -1,6 +1,60 @@
 # Independent result verification
 
-The runtime can verify arithmetic and explicit dependency-order objectives without
+## Trusted host verifier extension
+
+Native Rust hosts can select an additional verifier with
+`Engine::with_verifier_provider`. It applies to the four existing structured
+criteria: dependency ordering, integer sorting, shortest paths and finite-domain
+assignments. The original compiled criterion must also accept the exact candidate.
+A provider can veto a valid candidate; its acceptance alone cannot establish a
+verified result. Ordinary prose and the generation-only comparison profile gain
+no checker authority.
+
+The host supplies a `VerifierDescriptor` containing an identifier, canonical
+semantic version and lowercase implementation SHA-256. The Engine captures that
+descriptor once and retains the provider instance; clones retain their selection.
+The digest is an operator declaration, not a binary signature or attestation.
+Model output, retrieved documents and checker manifests cannot install providers.
+No command-line plugin loader or new model permission is introduced.
+
+Each callback receives bounded original objective and candidate bytes, their
+hashes, the original criterion identity and the original task deadline. One
+existing authorized checker invocation covers the combined provider and compiled
+check; no inference allowance is created. Required identity and dispatch audits
+precede callback execution. Result audits record both acceptance decisions and
+elapsed wall time. Only bounded reason codes enter provider diagnostics; raw
+provider errors are omitted. Failure, an invalid claim or an unsupported check
+cannot bypass the selected gate. Published-memory reuse must pass it again.
+
+Routing, escalation and recent-advice history use a domain-separated effective
+configuration fingerprint when a provider is installed. It binds the captured
+descriptor as well as the ordinary configuration, so built-in-only evidence and
+different declared provider versions do not match. Default fingerprints remain
+unchanged. Existing comparison runners construct their own built-in-only Engines;
+this extension does not turn their reports into evaluations of host callbacks.
+
+Cancellation or the original task deadline drops the owned callback future and
+retains prior charges. An interrupted callback may have only its durable intent;
+missing outcome data never counts as acceptance. Async
+timeouts rely on cooperative native code: they cannot preempt a blocking callback
+or prove an external process stopped. Providers are trusted host code, receive no
+tool or permission handle through this interface, and are not sandboxed. General
+untrusted executable loading, new criterion implementations, binary attestation
+and independently measured quality remain incomplete.
+
+When finite-domain progress stopping is enabled, a compiled witness vetoed by
+the provider consumes its original cycle as an explicitly unscored observation.
+It resets plateau accumulation without marking the answer verified. Ordinary
+failed-answer progress still rejects zero-violation witnesses; the combined
+acceptance rule and original recursion limits remain authoritative.
+
+Recovery cannot restore an arbitrary host callback. A task containing a custom
+provider identity or invocation is therefore refused by saved-result recovery
+and reasoning continuation, before new writes or dispatch. It must not silently
+resume with only the built-in checker. Implementation verification is recorded in
+`CURRENT_IMPLEMENTATION.md` and `IMPLEMENTATION_MATRIX.md` after checks run.
+
+The runtime can verify arithmetic and explicit structured objectives without
 trusting model confidence. General prose remains unverified.
 
 Explicit `sql:` tasks additionally execute bounded SELECT queries over inline

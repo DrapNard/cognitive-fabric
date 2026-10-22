@@ -1,6 +1,11 @@
 mod finite;
 mod path;
+pub mod provider;
 pub(crate) use finite::{SearchOutcome, SearchResult};
+pub use provider::{
+    VerificationClaim, VerificationFuture, VerificationRequest, VerifierDescriptor,
+    VerifierProvider,
+};
 // Independent bounded checks of operator-supplied structured constraints.
 use anyhow::{bail, Result};
 use serde::Deserialize;
