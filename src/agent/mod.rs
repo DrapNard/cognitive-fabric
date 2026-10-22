@@ -23,6 +23,11 @@ use std::{
 pub use types::*;
 
 pub trait ChatBackend: Send + Sync {
+    /// Return a stable backend snapshot for profile selection and dispatch.
+    /// Implementations that cannot pin their route must leave this unsupported.
+    fn pin(self: Arc<Self>) -> Result<Option<Arc<dyn ChatBackend>>> {
+        Ok(None)
+    }
     /// Trusted local adapter metadata; unknown does not attest resident coverage.
     fn inference_target(&self) -> Result<Option<crate::backend::InferenceTarget>> {
         Ok(None)
@@ -203,8 +208,17 @@ impl AgentRuntime {
                 _ = cancel => { self.store.finish_task(&task,"cancelled","")?; guard.finished=true; bail!("Agent turn cancelled") },
                 result = tokio::time::timeout_at(tokio::time::Instant::from_std(start + Duration::from_secs(self.cfg.max_wall_seconds)),async {
                     if let (Some(configuration), Some(pool)) = (&self.cfg.resource_admission, &self.resource_pool) {
-                        let (completion, _) = pool.execute(&task,"solver",configuration.allocation, || backend.inference_target(),
-                            || backend.complete_for(&task,&request,tokens)).await?;
+                        let (completion, _) = if configuration.working_profiles.is_empty() {
+                            pool.execute(&task,"solver",configuration.allocation, || backend.inference_target(),
+                                || backend.complete_for(&task,&request,tokens)).await?
+                        } else {
+                            let pinned = backend.clone().pin()?.ok_or_else(|| anyhow::anyhow!(
+                                "Configured working profiles require a pinnable agent backend"
+                            ))?;
+                            pool.execute_profiled(&task,"solver",configuration.allocation,
+                                || pinned.inference_target(),
+                                || pinned.complete_for(&task,&request,tokens)).await?
+                        };
                         Ok(completion)
                     } else {
                         backend.complete_for(&task,&request,tokens).await

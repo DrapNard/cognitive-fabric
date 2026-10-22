@@ -451,7 +451,7 @@ impl Session {
     ) -> Result<Option<PreparedInference>> {
         let backend = match (&self.cfg.resource_admission, &self.resource_pool) {
             (Some(configuration), Some(pool)) if pool.matches(&self.store, configuration) => {
-                pool.wrap_backend("human-cli", self.backend.clone(), configuration.allocation)?
+                pool.wrap_configured_backend("human-cli", self.backend.clone(), configuration)?
             }
             (Some(_), _) => bail!("Configured inference resource pool is missing or changed"),
             (None, Some(_)) => bail!("Unexpected inference resource pool"),

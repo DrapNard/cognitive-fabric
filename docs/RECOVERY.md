@@ -761,6 +761,20 @@ See RESOURCE_SCHEDULING.md for the exact bounded operator workflow and limitatio
 
 ### Configured resource-pool restoration
 
+Target-specific working profiles extend the saved resource configuration. For an
+active table, restoration must match the original profile intent/decision pair,
+canonical catalog digest, role, exact target and selected allocation before the
+normal admission/dispatch/completion chain. Unknown, denied, incomplete or altered
+decisions cannot create a new allowance. Current configuration files are not
+replacement authority; a conflicting live pool still prevents restoration.
+
+Validation uses bounded per-reservation histories matched to earlier same-role
+model dispatches, allowing complete resource chains to overlap in advisory waves.
+Every dispatch must have one complete chain and every chain one prior dispatch;
+interleaving does not relax event order within a reservation or permit unknown
+outcomes. Profile-free histories retain the original configuration contract.
+See [working profiles](RESOURCE_SCHEDULING.md#target-specific-working-profiles).
+
 The earlier blanket configured-pool refusal is superseded for supported ready
 checkpoints. Preview and approved resume now validate original resource call chains
 and resident coverage, preserve the original configuration/charges/deadline, and

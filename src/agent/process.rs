@@ -250,6 +250,9 @@ impl Drop for ProcessTask {
     }
 }
 impl ChatBackend for ProcessTask {
+    fn pin(self: Arc<Self>) -> Result<Option<Arc<dyn ChatBackend>>> {
+        Ok(Some(self))
+    }
     fn inference_target(&self) -> Result<Option<crate::backend::InferenceTarget>> {
         if self.cfg.backend != "openai-local" {
             return Ok(None);

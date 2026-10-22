@@ -1,5 +1,69 @@
 # Current Rust implementation
 
+### Admit heterogeneous model working sets under one resource pool — 2026-10-22
+
+**Implemented (configured admission); Partial (general module lifecycle).**
+Architecture sections 4, 6 and 9 require resource-aware coordination of replaceable
+models. Optional
+`resource_admission.working_profiles` binds bounded operator-declared allocations
+to canonical local model targets and roles. An active table requires an exact
+match; no unknown/unlisted/deterministic target may use the uniform fallback.
+Absent/empty tables preserve legacy behavior and configuration bytes.
+
+The runtime pins a backend before resolving its target and dispatches through
+that same pin after selecting the allocation. Required profile intent/decision
+audits bind the canonical catalog digest, role, target, profile and allocation.
+Existing resident footprints, shared queue/capacity, task budgets, cancellation
+and unknown-outcome quarantine remain authoritative. No model grants, automatic
+provider load/unload or physical memory attestation are introduced.
+
+Resource recovery now validates bounded per-reservation histories instead of a
+single serial chain, allowing complete overlapping advisory waves. Every chain
+must match an earlier charged same-role dispatch, original profile/target/
+allocation and complete ordered admission/outcome audits. Saved configuration
+retains authority; current config-file changes cannot replace it, and incompatible
+live pools are refused.
+
+Sources: `src/resource_scheduler/profiles.rs`, pool/adapter/admission integration,
+configured Session/parallel wrappers, native ChatBackend snapshots and
+`src/recovery/continuation_resources.rs`. Tests: `tests/working_profiles.rs`,
+`tests/agent_working_profiles.rs`, `tests/working_profile_resume.rs`. See
+[working profiles](RESOURCE_SCHEDULING.md#target-specific-working-profiles).
+This addresses heterogeneous logical admission; broker eligibility/fallback,
+automatic ownership-aware residency, untrusted executable isolation and independent
+physical/quality measurements remain incomplete. Jev+ and Jev-R remain **Partial**.
+
+Verification after implementation: `cargo fmt --all -- --check`,
+`cargo check --locked --workspace --all-targets`,
+`cargo test --locked --workspace --all-targets` (**876 passed across 55 targets**,
+none failed/ignored) and
+`cargo clippy --locked --workspace --all-targets -- -D warnings` all pass on the
+final frozen sources. Nine admission/configuration tests cover strict bounds,
+empty-table bytes, CLI roundtrip, per-role targets, real shared-pool pressure,
+unknown/unlisted/deterministic targets, metadata-error redaction, audit failure,
+exact quarantine and registry replacement while queued. Three native-turn tests
+cover refusal without snapshot support, actual LocalChat HTTP dispatch and a
+queued snapshot surviving a route change while new turns select the new route.
+
+Three recovery tests validate profiled and legacy parallel histories, unchanged
+original settings despite current config-file changes, exact retained calls/
+tokens/cycles/allocations, nine altered audit-chain cases with no writes/HTTP, and
+actual overlapping pending HTTP calls. The original first wave uses a bounded
+barrier: both resource dispatches must precede either completion in the retained
+checkpoint. No planner or completed subtask is replayed. Source review found and
+fixed the native chat snapshot gap; initial build/test fixture errors (new struct
+field, private Store access and moved values) were corrected without removing
+tests or weakening resource/identity assertions.
+
+Existing socket, database/migration, mock, malformed-frame, permission-denial,
+cancellation, verifier, candidate-rollback and current-source-fingerprint checks
+remain green. Protocol schemas/bindings are unchanged and bundled pairing/integrity
+checks pass. `flatc` is absent, so fresh generation was not run. Local port 1234
+refused connections; real-model/GPU performance was not measured. These fixtures
+prove logical admission/reconciliation behavior, not physical memory use or a
+quality/speedup advantage. Final logs: `/tmp/jev-working-profiles-{check,tests,clippy}-final.log`.
+
+
 ### Pin an optional trusted host verifier to structured reasoning — 2026-10-22
 
 **Implemented (native extension); Partial (general executable verification).**

@@ -169,6 +169,7 @@ async fn workflow_loopback_ablation_measures_saved_calls_and_an_observed_regress
                 device_memory_bytes: 0,
             },
             residents: Vec::new(),
+            working_profiles: Vec::new(),
         }),
         ..Config::default()
     };

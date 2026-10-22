@@ -35,11 +35,12 @@ impl ResourcePool {
         if !Self::unresolved(&store)?.is_empty() {
             bail!("Unresolved prior resource dispatch; independently stop the provider and perform reviewed resource reconciliation before restarting")
         }
-        let mut pool = Self::with_residents(
+        let mut pool = Self::with_profiles(
             "human-cli",
             store,
             configuration.settings.clone(),
             configuration.residents.clone(),
+            configuration.working_profiles.clone(),
         )?;
         Arc::get_mut(&mut pool)
             .expect("Fresh pool is uniquely owned")

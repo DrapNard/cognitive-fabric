@@ -1,5 +1,69 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+### Admit heterogeneous model working sets under one resource pool — 2026-10-22
+
+**Implemented (configured admission); Partial (general module lifecycle).**
+Architecture sections 4, 6 and 9 require resource-aware coordination of replaceable
+models. Optional
+`resource_admission.working_profiles` binds bounded operator-declared allocations
+to canonical local model targets and roles. An active table requires an exact
+match; no unknown/unlisted/deterministic target may use the uniform fallback.
+Absent/empty tables preserve legacy behavior and configuration bytes.
+
+The runtime pins a backend before resolving its target and dispatches through
+that same pin after selecting the allocation. Required profile intent/decision
+audits bind the canonical catalog digest, role, target, profile and allocation.
+Existing resident footprints, shared queue/capacity, task budgets, cancellation
+and unknown-outcome quarantine remain authoritative. No model grants, automatic
+provider load/unload or physical memory attestation are introduced.
+
+Resource recovery now validates bounded per-reservation histories instead of a
+single serial chain, allowing complete overlapping advisory waves. Every chain
+must match an earlier charged same-role dispatch, original profile/target/
+allocation and complete ordered admission/outcome audits. Saved configuration
+retains authority; current config-file changes cannot replace it, and incompatible
+live pools are refused.
+
+Sources: `src/resource_scheduler/profiles.rs`, pool/adapter/admission integration,
+configured Session/parallel wrappers, native ChatBackend snapshots and
+`src/recovery/continuation_resources.rs`. Tests: `tests/working_profiles.rs`,
+`tests/agent_working_profiles.rs`, `tests/working_profile_resume.rs`. See
+[working profiles](RESOURCE_SCHEDULING.md#target-specific-working-profiles).
+This addresses heterogeneous logical admission; broker eligibility/fallback,
+automatic ownership-aware residency, untrusted executable isolation and independent
+physical/quality measurements remain incomplete. Jev+ and Jev-R remain **Partial**.
+
+Verification after implementation: `cargo fmt --all -- --check`,
+`cargo check --locked --workspace --all-targets`,
+`cargo test --locked --workspace --all-targets` (**876 passed across 55 targets**,
+none failed/ignored) and
+`cargo clippy --locked --workspace --all-targets -- -D warnings` all pass on the
+final frozen sources. Nine admission/configuration tests cover strict bounds,
+empty-table bytes, CLI roundtrip, per-role targets, real shared-pool pressure,
+unknown/unlisted/deterministic targets, metadata-error redaction, audit failure,
+exact quarantine and registry replacement while queued. Three native-turn tests
+cover refusal without snapshot support, actual LocalChat HTTP dispatch and a
+queued snapshot surviving a route change while new turns select the new route.
+
+Three recovery tests validate profiled and legacy parallel histories, unchanged
+original settings despite current config-file changes, exact retained calls/
+tokens/cycles/allocations, nine altered audit-chain cases with no writes/HTTP, and
+actual overlapping pending HTTP calls. The original first wave uses a bounded
+barrier: both resource dispatches must precede either completion in the retained
+checkpoint. No planner or completed subtask is replayed. Source review found and
+fixed the native chat snapshot gap; initial build/test fixture errors (new struct
+field, private Store access and moved values) were corrected without removing
+tests or weakening resource/identity assertions.
+
+Existing socket, database/migration, mock, malformed-frame, permission-denial,
+cancellation, verifier, candidate-rollback and current-source-fingerprint checks
+remain green. Protocol schemas/bindings are unchanged and bundled pairing/integrity
+checks pass. `flatc` is absent, so fresh generation was not run. Local port 1234
+refused connections; real-model/GPU performance was not measured. These fixtures
+prove logical admission/reconciliation behavior, not physical memory use or a
+quality/speedup advantage. Final logs: `/tmp/jev-working-profiles-{check,tests,clippy}-final.log`.
+
+
 ### Pin an optional trusted host verifier to structured reasoning — 2026-10-22
 
 **Implemented (native extension); Partial (general executable verification).**
@@ -1809,14 +1873,14 @@ remains a pre-release. `QUALITY_REVIEW.md` preserves verification history.
 | 3, 7, 9, 10, 12 | External agent HTTP interoperability | Implemented / Partial | `src/agent/`, `crates/cogfabric-server/`: generation-only native solver turns and authenticated same-image workers, authenticated loopback Chat Completions/SSE, client-owned tool proposals/results, collective aliases and bounded admission; real OpenCode v2 + Qwen read/edit/read, HTTP and worker regression tests | Responses/multimodal API, independent executable provisioning and role selection, broader client compatibility and independent agentic-quality/security evaluation |
 | 7, 12 | Typed local IPC | Partial | `protocol/*.fbs`, `src/fabric.rs`, `src/events.rs`, `src/wire.rs`, `src/service.rs`: bounded verified IPC and module RPC, content-minimized typed progress subscriptions/catch-up, version-pinned inference registration/discovery, correlation/actor/destination/expiry checks, queues and cancellation; socket, spoofing, overflow, replacement and compatibility tests | General command routing, automatic independent actor provisioning and broader compatibility fixtures |
 | 3 | Language interface | Partial | `src/language.rs`, `src/backend.rs`, `src/config.rs`: strict advisory intent, clarification, original-goal preservation, explicit conversation references, optional synthesis, persistent role profiles; scripted and HTTP tests | Live interpretation and synthesis quality measurements; direct/managed/socket generation now succeeds |
-| 4, 9 | Jev+ coordination | Partial | `src/engine.rs`, `src/planning.rs`, `src/store.rs::route`: pinned capability coverage, dependency scheduling, bounded parallel advisory waves, original-budget completed-wave continuation and admission budgets; dependency, recovery and budget tests | General module scheduling, calibrated measured escalation, incomplete in-flight outcome reconciliation and broader physical scheduling telemetry |
+| 4, 9 | Jev+ coordination | Partial | `src/engine.rs`, `src/planning.rs`, `src/store.rs::route`, `src/resource_scheduler/`: pinned capability coverage, dependency scheduling, bounded parallel advisory waves, target/role working allocations, original-budget completed-wave continuation and admission budgets; dependency, recovery and budget tests | Resource-aware broker eligibility, automatic ownership-aware residency, calibrated measured escalation, incomplete in-flight outcome reconciliation and physical scheduling telemetry |
 | 5 | Jev-R reasoning | Partial | `src/reasoning.rs`, `src/verification/provider.rs`: planner/solver/explorer/critic/reflector, bounded revisions/search, progress stopping, unverified subtask advice, original-goal synthesis and optional trusted host verification with a required compiled criterion | Untrusted executable verifier isolation, new criterion families, host-provider restoration and independent live-model effectiveness measurements |
 | 6 | Expert network | Partial | `src/registry.rs`: immutable semantic-versioned reference manifests, dependency/reverse-dependency checks, health, activate/disable/metadata rollback, bounded registry; lifecycle/tampering tests | General executable loading and health, measured workflow usefulness and real weight residency; trusted tool/inference rollback is implemented |
 | 7 | Persistent memory | Partial | `src/store.rs`: SQLite WAL/FTS5, schema migrations through 6, durable task/events, isolated explicit history, pinned registry/document snapshots, explicit lease-protected interrupted-task recovery, immutable versioned local model manifests and task selection snapshots, operator-published episodic snapshots, recomputed arithmetic memory, revocation and payload quotas, SQLite page ceilings, global task admission and reviewed retention; migration/isolation/tampering/deletion-rollback tests | Broader independent fact verifiers, backend model residency, physical WAL/filesystem bounds, general external/neural artifact portability and automatic checkpoint resumption |
 | 8 A/B | RAG evolution | Partial | `src/evolution.rs`, `src/evaluation.rs`: content-addressed quarantine, hashes/provenance/deduplication/quotas, isolated held-out retrieval, bounded cumulative approved-version regression gates and immutable accepted suites, atomic paired review records, transactional human promotion/rollback; integrity, regression, concurrency and rollback tests | Stronger poisoning/security evaluation, automatic source discovery and cleaning; dataset independence remains operator-attested |
 | 8 C | Offline neural adaptation | Experimental | `training/train_lora.py`, inactive artifact registration; neural evaluation/promotion denied | Base-model provenance and independent neural evaluation manifests, actual training and externally isolated pipeline; no hot-swap claim |
 | 8 D, 14 | Novel neural reconstruction | Not implemented | Research only; no trained Jev networks or superiority claims | Separate research and independent evaluations, beyond proven v1.0 infrastructure |
-| 9 | Resource enforcement | Partial | `src/config.rs`, `src/reasoning.rs`: FAST/STANDARD/DEEP/RESEARCH ceilings, calls/cycles/reserved outputs/prompt bytes/tools/time, cancellation; exhaustion tests; optional provider usage and measured inference duration | Exact input-token preflight, model-load cost and retry metrics, process-isolated inference/GPU memory and optional energy telemetry |
+| 9 | Resource enforcement | Partial | `src/config.rs`, `src/reasoning.rs`, `src/resource_scheduler/`: mode ceilings, calls/cycles/outputs/prompt bytes/tools/time, shared queues, resident-aware declared working profiles, cancellation/quarantine and validated parallel resource restoration; negative/pressure/recovery tests; optional provider usage and inference duration | Exact input-token preflight, model-load cost and retry metrics, process-isolated inference/GPU memory and optional energy telemetry |
 | 10, 11 | Security kernel | Partial | `src/security.rs`: immutable task/actor scope intersected with global policy, per-dispatch audits, deny-default capabilities, bounded no-follow reads; replay/actor/promotion denials and artifact tampering tests | General executable attestation and isolation before untrusted experts; signatures/attestations and neural behavioral evaluator absent |
 | 13 | Reproducible evaluation | Partial | `src/evaluation.rs`, `src/benchmarking.rs`, `src/corpus.rs`: expected exact-match benchmarks, six isolated same-model ablation profiles plus optional larger baseline, per-arm resources, reviewed dataset hashes, bounded read-only corpus snapshots and durable run cancellation; profile/isolation/deadline tests | Independent review of the provisional 100-case corpus, unseen technical tasks, robustness/security studies and measured live-model comparisons |
 | 12, 14 | CLI/service | Partial | `src/main.rs`: initialization/configuration, ask, service controls, task-specific socket progress/cancellation, skill lifecycle, ingestion/search, task traces, candidates/rollback, benchmark, self-test; real socket fixtures | Generative switching and ownership-aware residency scheduling |

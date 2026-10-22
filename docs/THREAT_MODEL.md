@@ -1,5 +1,22 @@
 # Threat Model (v1.0)
 
+## Target-specific working admission
+
+Only operator configuration declares model/role working profiles. Canonical
+targets, nonoverlapping roles, bounded tables and resident-aware allocation checks
+prevent ambiguous selection or expanded pool capacity. A pinned backend supplies
+trusted local target metadata; the same backend is retained across queueing and
+dispatch. Required profile audits precede provider generation. Unknown/unlisted
+targets under an active table are refused without a uniform fallback.
+
+Original task budgets, authorization and quarantine remain authoritative. Recovery
+must reconcile complete per-reservation chains against prior same-role dispatches
+and saved profile/target/allocation bindings, including overlapping waves. Neither
+a new config file nor a selected profile can reset charges or certify missing
+outcomes. Metadata is operator/adapter-declared, not measured loaded-weight or
+physical GPU/RSS identity. No model residency-mutation grant, automatic unloading,
+alternate route selection or new executable loader is added.
+
 ## Trusted host verifier extension
 
 Optional native verifier callbacks are installed by the host, never by models or

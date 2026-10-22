@@ -43,7 +43,8 @@ let engine = Engine::with_backend(cfg, store, backend);
 ```
 
 These example sizes are declared working allocations, not measured model memory
-requirements. Each wrapped backend reserves its fixed allocation per operation.
+requirements. Without working profiles, each wrapped backend reserves its fixed
+allocation per operation; configured profiles select the role/target allocation.
 Register wrappers with `fabric::Broker::{register,register_candidate}` to cover
 additional inference modules, or pass them to `Engine::with_backend` as above.
 Use the **same Arc** for every competing backend. Clones and backend pins retain
@@ -165,9 +166,9 @@ cogfabric resource-status
 cogfabric resource-release RESERVATION_UUID --human-approve
 ```
 
-The sizes are examples, not measured model requirements. A uniform allocation is
-used for every configured call, so it must cover the largest admitted role/expert
-working set. Resident weights are not included automatically. Configuration uses
+The sizes are examples, not measured model requirements. Without working profiles,
+the uniform allocation covers every configured call and must cover the largest
+admitted role/expert working set. Resident weights are not included automatically. Configuration uses
 a bounded regular file, strict JSON and validated settings/demand; malformed input
 fails before state creation. Absent `resource_admission` retains old config bytes
 and behavior. `configure-resources --disable` explicitly removes it. Existing
@@ -175,6 +176,60 @@ services retain their immutable settings until restarted; configuration output
 reports that restart is required. Active Engine clones cannot reset/remove a live
 pool by mutating their public Config. Different allocations must still fit the
 unchanged pool ceiling.
+
+### Target-specific working profiles
+
+Optional `working_profiles` gives separate operator-declared working allocations
+to canonical local model targets and runtime roles. It is part of the resource
+configuration, not model output or a capability declaration. For example, a pool
+with sufficient capacity can declare:
+
+```json
+"working_profiles": [
+  {
+    "id": "small-planner",
+    "target": {"api_base": "http://127.0.0.1:1234/v1", "model": "small"},
+    "roles": ["planner"],
+    "allocation": {"compute_slots": 1, "host_memory_bytes": 134217728, "device_memory_bytes": 134217728}
+  },
+  {
+    "id": "solver",
+    "target": {"api_base": "http://127.0.0.1:1234/v1", "model": "reasoner"},
+    "roles": ["solver"],
+    "allocation": {"compute_slots": 1, "host_memory_bytes": 536870912, "device_memory_bytes": 536870912}
+  }
+]
+```
+
+Place this field beside `settings`, `allocation` and optional `residents` in the
+file passed to `configure-resources`. These are example logical sizes, not measured
+requirements. Profiles do not select models: the original pinned model/role
+configuration still determines each target. Every invoked role/target needs a
+matching profile when the table is nonempty. Unknown, deterministic and unlisted
+targets cannot silently fall back to `allocation` under an active profile table.
+Absent or empty profiles retain the original uniform behavior and serialization.
+
+The table has at most 32 profiles and 16,000 canonical JSON bytes. Each profile has
+a bounded unique identifier, canonical loopback model target, valid unique roles
+and a working allocation that fits capacity after the fixed resident footprint.
+Overlapping role/target entries are rejected. Working memory remains distinct from
+once-per-pool resident weights.
+
+The runtime pins the backend before resolving its target and retains that same
+backend while queued and during dispatch. Required profile intent and selection
+audits bind the role, exact target, canonical table digest, selected profile and
+allocation before provider execution. Shared queue capacity, original task
+deadlines, per-call authorization, resource quarantine and operator reconciliation
+remain authoritative. A smaller declared profile cannot expand any task allowance.
+Native conversation turns require an explicit `ChatBackend` snapshot when profiles
+are enabled. The local and managed adapters retain their immutable target settings;
+a custom chat adapter without snapshot support is refused before dispatch.
+Recovery must reconstruct the original profile decision and allocation rather than
+selecting from current configuration or granting new resources.
+
+This supports heterogeneous logical admission. It does not load/unload models,
+choose an alternate broker route, attest adapter metadata or enforce physical
+GPU/RSS usage. Automatic ownership-aware residency remains a separate milestone.
 
 `resource-status` opens only an existing database read-only and exposes sampled
 unresolved reservation/task/pool identities. It does not inspect provider health

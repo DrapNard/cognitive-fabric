@@ -21,16 +21,149 @@ impl ResourcePool {
         resolve_target: impl FnOnce() -> Result<Option<crate::backend::InferenceTarget>>,
         invoke: impl FnOnce() -> F,
     ) -> Result<(T, f64)> {
+        self.execute_inner(task, role, allocation, false, resolve_target, invoke)
+            .await
+    }
+    pub(crate) async fn execute_profiled<T, F: Future<Output = Result<T>>>(
+        self: &Arc<Self>,
+        task: &str,
+        role: &str,
+        fallback_allocation: Allocation,
+        resolve_target: impl FnOnce() -> Result<Option<crate::backend::InferenceTarget>>,
+        invoke: impl FnOnce() -> F,
+    ) -> Result<(T, f64)> {
+        self.execute_inner(
+            task,
+            role,
+            fallback_allocation,
+            true,
+            resolve_target,
+            invoke,
+        )
+        .await
+    }
+    async fn execute_inner<T, F: Future<Output = Result<T>>>(
+        self: &Arc<Self>,
+        task: &str,
+        role: &str,
+        mut allocation: Allocation,
+        profiled: bool,
+        resolve_target: impl FnOnce() -> Result<Option<crate::backend::InferenceTarget>>,
+        invoke: impl FnOnce() -> F,
+    ) -> Result<(T, f64)> {
         let actor = crate::fabric::protocol::actor(role)?;
         security::TaskPolicy::reasoning(task)?.authorize(task, actor, "llm.generate")?;
         self.require_running(task)?;
         let reservation_id = uuid::Uuid::new_v4().to_string();
-        if !self.residents.is_empty() {
+        let profile_digest = if profiled {
+            let digest = self
+                .working_profiles_sha256
+                .as_deref()
+                .ok_or_else(|| anyhow!("Working profile digest is unavailable"))?;
+            self.store.event(
+                task,
+                "resource_profile_intent",
+                "jev-plus",
+                json!({
+                    "format_version":1,"pool_id":self.id,"reservation_id":reservation_id,
+                    "role":role,"working_profiles_sha256":digest,"permissions_granted":false,
+                }),
+            )?;
+            Some(digest)
+        } else {
+            None
+        };
+        if !profiled && !self.residents.is_empty() {
             self.store.event(task,"resource_target_intent","jev-plus",json!({
                 "format_version":1,"pool_id":self.id,"reservation_id":reservation_id,"role":role,
                 "resident_catalog_sha256":self.resident_catalog_sha256,"permissions_granted":false,
             }))?;
-            let coverage = resolve_target().and_then(|target| self.resident_coverage(target));
+        }
+        let resolved_target = if profiled || !self.residents.is_empty() {
+            Some(resolve_target())
+        } else {
+            None
+        };
+        let selected_profile = if profiled {
+            let raw_target = resolved_target
+                .as_ref()
+                .and_then(|result| result.as_ref().ok())
+                .and_then(|target| target.clone());
+            let canonical_target = match raw_target {
+                Some(crate::backend::InferenceTarget::LocalHttp(target)) => target
+                    .canonical()
+                    .map(crate::backend::InferenceTarget::LocalHttp)
+                    .map(Some),
+                Some(crate::backend::InferenceTarget::Deterministic) | None => Ok(None),
+            };
+            let target = canonical_target
+                .as_ref()
+                .ok()
+                .and_then(|target| target.clone());
+            let profile = match resolved_target.as_ref() {
+                Some(Err(_)) | None => {
+                    Err(anyhow!("Profiled inference target metadata is unavailable"))
+                }
+                Some(Ok(_)) => match &canonical_target {
+                    Err(_) => Err(anyhow!("Profiled inference target metadata is invalid")),
+                    Ok(Some(crate::backend::InferenceTarget::LocalHttp(target))) => {
+                        self.find_working_profile(role, target)
+                    }
+                    Ok(Some(crate::backend::InferenceTarget::Deterministic)) | Ok(None) => Err(
+                        anyhow!("Configured working profiles require a known local model target"),
+                    ),
+                },
+            };
+            let allowed = profile.is_ok();
+            let metadata_error =
+                resolved_target.as_ref().is_none_or(Result::is_err) || canonical_target.is_err();
+            let reason_code = if allowed {
+                "configured_profile_match"
+            } else if metadata_error {
+                "profile_metadata_error"
+            } else {
+                "unknown_or_unlisted_target"
+            };
+            let profile_id = profile.as_ref().ok().map(|item| item.id.clone());
+            let selected_allocation = profile.as_ref().ok().map(|item| item.allocation);
+            self.store.event(
+                task,
+                "resource_profile",
+                "jev-plus",
+                json!({
+                    "format_version":1,"pool_id":self.id,"reservation_id":reservation_id,
+                    "role":role,"working_profiles_sha256":profile_digest,"target":target,
+                    "profile_id":profile_id,"allocation":selected_allocation,
+                    "allowed":allowed,"reason_code":reason_code,"permissions_granted":false,
+                    "physical_limits_enforced":false,
+                }),
+            )?;
+            let profile =
+                profile.map_err(|_| anyhow!("Configured working profile admission denied"))?;
+            allocation = profile.allocation;
+            Some((target, profile))
+        } else {
+            None
+        };
+        if !self.residents.is_empty() {
+            if profiled {
+                self.store.event(task,"resource_target_intent","jev-plus",json!({
+                    "format_version":1,"pool_id":self.id,"reservation_id":reservation_id,"role":role,
+                    "resident_catalog_sha256":self.resident_catalog_sha256,"permissions_granted":false,
+                }))?;
+            }
+            let target = if let Some((target, _)) = selected_profile.as_ref() {
+                Ok(target.clone())
+            } else {
+                match resolved_target
+                    .as_ref()
+                    .ok_or_else(|| anyhow!("Resident target was not resolved"))?
+                {
+                    Ok(target) => Ok(target.clone()),
+                    Err(error) => Err(anyhow!(error.to_string())),
+                }
+            };
+            let coverage = target.and_then(|target| self.resident_coverage(target));
             self.store.event(task,"resource_target","jev-plus",json!({
                 "format_version":1,"pool_id":self.id,"reservation_id":reservation_id,"role":role,
                 "resident_catalog_sha256":self.resident_catalog_sha256,"allowed":coverage.is_ok(),

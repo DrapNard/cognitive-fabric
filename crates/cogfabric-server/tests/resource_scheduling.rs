@@ -72,6 +72,7 @@ async fn real_http_native_and_collective_requests_share_configured_capacity() {
                 host_memory_bytes: 20,
                 device_memory_bytes: 20,
             },
+            working_profiles: Vec::new(),
         }),
         ..Config::default()
     };

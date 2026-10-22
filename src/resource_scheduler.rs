@@ -14,8 +14,11 @@ use tokio::sync::Notify;
 mod adapter;
 mod admission;
 mod configured;
+mod profiles;
 mod queue;
 mod resident;
+use profiles::canonical_working_profiles;
+pub use profiles::WorkingProfile;
 pub use queue::PriorityScheduling;
 pub use resident::{ResidentAllocation, ResidentConsumer};
 #[cfg(test)]
@@ -89,11 +92,16 @@ pub struct Configuration {
     pub allocation: Allocation,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub residents: Vec<ResidentAllocation>,
+    /// Optional exact working-set declarations for a role and configured local model.
+    /// Empty preserves the historical uniform-allocation behavior.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub working_profiles: Vec<WorkingProfile>,
 }
 impl Configuration {
     pub fn validate(&self) -> Result<()> {
         self.settings.validate()?;
         let (_, resident) = resident::canonical(&self.residents, self.settings.capacity)?;
+        canonical_working_profiles(&self.working_profiles, self.settings.capacity, resident)?;
         if self.allocation.compute_slots == 0
             || !self
                 .allocation
@@ -166,6 +174,8 @@ pub struct ResourcePool {
     residents: Vec<ResidentAllocation>,
     resident_allocated: Allocation,
     resident_catalog_sha256: String,
+    working_profiles: Vec<WorkingProfile>,
+    working_profiles_sha256: Option<String>,
     _workspace_lease: Option<crate::recovery::ExecutionLease>,
 }
 impl ResourcePool {
@@ -177,13 +187,27 @@ impl ResourcePool {
             && self.settings == configuration.settings
             && resident::canonical(&configuration.residents, self.settings.capacity)
                 .is_ok_and(|(catalog, _)| catalog == self.residents)
+            && canonical_working_profiles(
+                &configuration.working_profiles,
+                self.settings.capacity,
+                self.resident_allocated,
+            )
+            .is_ok_and(|profiles| profiles == self.working_profiles)
     }
     pub(crate) fn configuration_binding(configuration: &Configuration) -> Result<Value> {
         let (residents, allocated) =
             resident::canonical(&configuration.residents, configuration.settings.capacity)?;
-        Ok(
-            json!({"resident_catalog_sha256":crate::store::sha256(&serde_json::to_vec(&residents)?),"resident_allocated":allocated,"residency_attested":false}),
-        )
+        let mut binding = json!({"resident_catalog_sha256":crate::store::sha256(&serde_json::to_vec(&residents)?),"resident_allocated":allocated,"residency_attested":false});
+        let profiles = canonical_working_profiles(
+            &configuration.working_profiles,
+            configuration.settings.capacity,
+            allocated,
+        )?;
+        if !profiles.is_empty() {
+            binding["working_profiles_sha256"] =
+                json!(crate::store::sha256(&serde_json::to_vec(&profiles)?));
+        }
+        Ok(binding)
     }
     pub(crate) fn configuration_coverage(
         configuration: &Configuration,
@@ -206,9 +230,27 @@ impl ResourcePool {
         settings: Settings,
         residents: Vec<ResidentAllocation>,
     ) -> Result<Arc<Self>> {
+        Self::with_profiles(actor, store, settings, residents, Vec::new())
+    }
+    fn with_profiles(
+        actor: &str,
+        store: Arc<Store>,
+        settings: Settings,
+        residents: Vec<ResidentAllocation>,
+        working_profiles: Vec<WorkingProfile>,
+    ) -> Result<Arc<Self>> {
         security::authorize(actor, "resources.configure")?;
         settings.validate()?;
         let (residents, resident_allocated) = resident::canonical(&residents, settings.capacity)?;
+        let working_profiles =
+            canonical_working_profiles(&working_profiles, settings.capacity, resident_allocated)?;
+        let working_profiles_sha256 = if working_profiles.is_empty() {
+            None
+        } else {
+            Some(crate::store::sha256(&serde_json::to_vec(
+                &working_profiles,
+            )?))
+        };
         let resident_catalog_sha256 = crate::store::sha256(&serde_json::to_vec(&residents)?);
         Ok(Arc::new(Self {
             id: uuid::Uuid::new_v4().to_string(),
@@ -221,6 +263,8 @@ impl ResourcePool {
             residents,
             resident_allocated,
             resident_catalog_sha256,
+            working_profiles,
+            working_profiles_sha256,
             _workspace_lease: None,
         }))
     }
@@ -279,6 +323,30 @@ impl ResourcePool {
             pool: self.clone(),
             backend,
             allocation,
+            use_working_profiles: !self.working_profiles.is_empty(),
+        }))
+    }
+    /// Wrap a backend using this pool's immutable configured role/target profiles.
+    /// An empty profile table preserves the legacy uniform allocation behavior.
+    pub(crate) fn wrap_configured_backend(
+        self: &Arc<Self>,
+        actor: &str,
+        backend: Arc<dyn InferenceBackend>,
+        configuration: &Configuration,
+    ) -> Result<Arc<dyn InferenceBackend>> {
+        security::authorize(actor, "resources.configure")?;
+        configuration.validate()?;
+        if !self.matches_ref(self.store.as_ref(), configuration) {
+            bail!("Configured inference pool does not match the selected configuration")
+        }
+        if self.lock()?.closed {
+            bail!("Resource pool closed")
+        }
+        Ok(Arc::new(adapter::ScheduledBackend {
+            pool: self.clone(),
+            backend,
+            allocation: configuration.allocation,
+            use_working_profiles: !self.working_profiles.is_empty(),
         }))
     }
     fn pump(&self, state: &mut State) {

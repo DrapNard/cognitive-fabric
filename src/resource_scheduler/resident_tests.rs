@@ -115,6 +115,7 @@ fn rejects_invalid_or_oversized_resident_declarations_before_installation() {
         settings: settings(),
         allocation: allocation(1, 20, 20),
         residents: vec![resident()],
+        working_profiles: Vec::new(),
     };
     assert!(cfg.validate().is_ok());
     for mutation in 0..17 {
@@ -262,6 +263,7 @@ fn catalog_and_consumer_permutations_keep_live_identity_but_changed_contents_do_
         settings: settings(),
         allocation: allocation(1, 20, 20),
         residents: vec![r, other],
+        working_profiles: Vec::new(),
     };
     let pool = ResourcePool::configured(store.clone(), &cfg).unwrap();
     let mut reordered = cfg.clone();
@@ -284,6 +286,7 @@ fn catalog_and_consumer_permutations_keep_live_identity_but_changed_contents_do_
         settings: settings(),
         allocation: allocation(1, 20, 20),
         residents: vec![],
+        working_profiles: Vec::new(),
     };
     assert!(serde_json::to_value(legacy)
         .unwrap()

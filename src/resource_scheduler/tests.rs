@@ -631,6 +631,7 @@ fn configured() -> Configuration {
             scheduling: None,
         },
         allocation: allocation(1, 40, 60),
+        working_profiles: Vec::new(),
     }
 }
 #[tokio::test]

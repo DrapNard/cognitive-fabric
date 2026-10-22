@@ -737,7 +737,7 @@ impl Session {
     ) -> Result<Option<String>> {
         let backend = match (&self.cfg.resource_admission, &self.resource_pool) {
             (Some(configuration), Some(pool)) if pool.matches(&self.store, configuration) => {
-                pool.wrap_backend("human-cli", backend, configuration.allocation)?
+                pool.wrap_configured_backend("human-cli", backend, configuration)?
             }
             (Some(_), _) => bail!("Configured inference resource pool is missing or changed"),
             (None, Some(_)) => bail!("Unexpected inference resource pool"),
@@ -3724,6 +3724,7 @@ mod configured_resource_tests {
         let cfg = Config {
             resource_admission: Some(Configuration {
                 residents: serde_json::from_value(json!([{"id":"backbone.expert_fixture","version":"1.0.0","weights_sha256":"a".repeat(64),"host_memory_bytes":10,"device_memory_bytes":20,"consumers":[{"api_base":"http://127.0.0.1:1234/v1","model":"fixture"}]}])).unwrap(),
+                working_profiles: Vec::new(),
                 settings: Settings {
                     label: "gpu.experts".into(),
                     capacity: Allocation { compute_slots:1, host_memory_bytes:20, device_memory_bytes:40 },

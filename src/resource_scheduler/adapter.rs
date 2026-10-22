@@ -9,6 +9,7 @@ pub(super) struct ScheduledBackend {
     pub pool: Arc<ResourcePool>,
     pub backend: Arc<dyn InferenceBackend>,
     pub allocation: Allocation,
+    pub use_working_profiles: bool,
 }
 impl InferenceBackend for ScheduledBackend {
     fn inference_target(&self, role: &str) -> Result<Option<crate::backend::InferenceTarget>> {
@@ -32,6 +33,7 @@ impl InferenceBackend for ScheduledBackend {
             pool: self.pool.clone(),
             backend: self.backend.pin()?.unwrap_or_else(|| self.backend.clone()),
             allocation: self.allocation,
+            use_working_profiles: self.use_working_profiles,
         })))
     }
     fn generate<'a>(
@@ -57,22 +59,33 @@ impl InferenceBackend for ScheduledBackend {
             }
             // Freeze dynamic routes before checking target metadata, so a registry
             // replacement while waiting cannot substitute an unaccounted backend.
-            let backend = if self.pool.residents.is_empty() {
-                self.backend.clone()
-            } else {
+            let backend = if self.use_working_profiles || !self.pool.residents.is_empty() {
                 self.pool.require_running(task)?;
                 self.backend.pin()?.unwrap_or_else(|| self.backend.clone())
+            } else {
+                self.backend.clone()
             };
-            let (mut report, wait_ms) = self
-                .pool
-                .execute(
-                    task,
-                    role,
-                    self.allocation,
-                    || backend.inference_target(role),
-                    || backend.generate_for(task, role, prompt, tokens),
-                )
-                .await?;
+            let (mut report, wait_ms) = if self.use_working_profiles {
+                self.pool
+                    .execute_profiled(
+                        task,
+                        role,
+                        self.allocation,
+                        || backend.inference_target(role),
+                        || backend.generate_for(task, role, prompt, tokens),
+                    )
+                    .await?
+            } else {
+                self.pool
+                    .execute(
+                        task,
+                        role,
+                        self.allocation,
+                        || backend.inference_target(role),
+                        || backend.generate_for(task, role, prompt, tokens),
+                    )
+                    .await?
+            };
             report.queue_wait_ms = Some(wait_ms);
             Ok(report)
         })
