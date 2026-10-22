@@ -3,6 +3,7 @@ use crate::{models::Registered, registry::Manifest, store::Skill};
 use anyhow::{bail, Result};
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
+mod cover;
 #[derive(Debug, Serialize)]
 pub(crate) struct Binding {
     pub requested: String,
@@ -26,6 +27,8 @@ pub(crate) struct Resolution {
     pub excluded_version_routes: Vec<String>,
     pub unavailable: Vec<String>,
     pub unselected: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub coverage_search: Option<cover::CoverageSearch>,
 }
 struct Candidate<'a> {
     skill: &'a Skill,
@@ -158,31 +161,16 @@ pub(crate) fn resolve(
             true
         }
     });
-    let mut covered = chosen
+    let covered = chosen
         .iter()
         .filter_map(|id| candidates.get(id))
         .filter(|c| c.available)
         .fold(0, |mask, c| mask | c.mask);
-    while refine && chosen.len() < 4 {
-        let next = candidates
-            .iter()
-            .filter(|(id, c)| c.available && !chosen.contains(id) && c.mask & !covered != 0)
-            .max_by(|(aid, a), (bid, b)| {
-                (a.mask & !covered)
-                    .count_ones()
-                    .cmp(&(b.mask & !covered).count_ones())
-                    .then_with(|| {
-                        requested
-                            .iter()
-                            .any(|r| r.as_str() == a.skill.id)
-                            .cmp(&requested.iter().any(|r| r.as_str() == b.skill.id))
-                    })
-                    .then_with(|| bid.cmp(aid))
-            });
-        let Some((id, candidate)) = next else { break };
-        chosen.push(id.clone());
-        covered |= candidate.mask;
-    }
+    let coverage_search = if refine {
+        Some(cover::select(&candidates, &requested, &mut chosen, covered))
+    } else {
+        None
+    };
     let mut result = Resolution {
         skills: chosen,
         bindings: Vec::new(),
@@ -191,6 +179,7 @@ pub(crate) fn resolve(
         excluded_version_routes,
         unavailable: Vec::new(),
         unselected: Vec::new(),
+        coverage_search,
     };
     for (i, requested) in requested.into_iter().enumerate() {
         let bit = 1u16 << i;

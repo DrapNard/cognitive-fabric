@@ -698,6 +698,9 @@ impl Engine {
                 if let Some(raw) = interpretation {
                     match crate::language::Interpretation::parse(&raw) {
                         Ok(intent) => {
+                            // Let cancellation/deadline selection run around bounded
+                            // synchronous metadata resolution before route publication.
+                            tokio::task::yield_now().await;
                             let resolution = crate::capabilities::resolve(
                                 &pinned.skills,
                                 &pinned.manifests,
@@ -712,8 +715,9 @@ impl Engine {
                                         | ExecutionProfile::Experts
                                 ),
                             )?;
+                            tokio::task::yield_now().await;
                             let missing = &resolution.missing;
-                            self.store.event(&id,"capability_resolution","jev-plus",json!({"format_version":1,"algorithm":"greedy-cover/v2","resolution":resolution,"provider_health_proven":false,"permissions_granted":false}))?;
+                            self.store.event(&id,"capability_resolution","jev-plus",json!({"format_version":1,"algorithm":"bounded-cover/v3","resolution":resolution,"provider_health_proven":false,"permissions_granted":false}))?;
                             skills = resolution.skills;
                             self.store.event(&id,"route_refined","jev-plus",json!({"skills":skills,"versions":pinned.skills.iter().filter(|skill|skills.contains(&skill.id)).collect::<Vec<_>>(),"capability_bindings":resolution.bindings}))?;
                             self.store.event(&id,"structured_goal","interface",json!({"original":query,"interpretation":intent,"missing_capabilities":missing,"trusted_permissions":false}))?;

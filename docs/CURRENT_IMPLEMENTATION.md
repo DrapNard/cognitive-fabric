@@ -1,5 +1,57 @@
 # Current Rust implementation
 
+### Find a complete declared capability cover within pinned route limits — 2026-10-22
+
+**Implemented (bounded exact complete coverage); Partial (general calibrated routing).**
+Architecture section 4 requires dynamic capability discovery and robust routing;
+section 9 requires sparse activation under fixed ceilings. Jev+ now uses
+`bounded-cover/v3`: preserve initial route order/pins and version exclusions, then
+find a full compatible available cover with the fewest additional providers when
+one fits the remaining four-route capacity. Equal coverage masks share a stable
+representative. A two-provider-union table plus superset transform is exact for
+complete sets of at most four additions; ties are deterministic, not a claimed
+globally lexicographic optimum. If no full cover fits, the old greedy partial rule
+remains and is not presented as maximum partial coverage.
+
+Bounds remain 4096 skills/manifests and 16 requested IDs. Compact indices cap
+pair enumeration at 8,386,560 visits and tables at 65,536 entries each; cheap full
+cover/impossible-union paths avoid unnecessary transforms. The engine yields
+before/after synchronous resolution so cancellation/deadline can stop publication
+and later dispatch, without claiming mid-loop preemption or physical CPU limits.
+The additive declaration-only `coverage_search` audit records feasibility, provider/
+mask/work counts, additions and fallback with no permission authority.
+
+Sources: `src/capabilities.rs`, `src/capabilities/cover.rs`, Engine audit dispatch,
+resolver unit regressions and `tests/capability_cover.rs`. See [capability selection](CAPABILITIES.md#selection).
+No tool grant, model call, network probe, active-version mutation or new provider
+execution is added. Existing workflow/resource/verification gates still apply.
+Minimum declared route count is not measured inference cost, backbone sharing,
+physical memory saving or calibrated usefulness. Jev+ and Jev-R remain Partial;
+independent provider utility/cost evidence and broader resource-aware scheduling
+remain subsequent milestones.
+
+Verification: `cargo fmt --all -- --check`,
+`cargo check --locked --workspace --all-targets`,
+`cargo test --locked --workspace --all-targets` (**804 passed across 47 targets**,
+none ignored), and `cargo clippy --locked --workspace --all-targets -- -D warnings`
+pass on final frozen sources. Eighteen focused capability tests cover the greedy
+trap, independent exhaustive small-case minimum-cardinality oracles, order
+invariance, retained routes (including unavailable pins), version/availability
+filters, ablation exclusions, fast paths and the full 4096-provider/16-bit bound.
+The actual Engine integration exercises interpretation, fixed metadata audits,
+pinned bindings and workflow dispatch across Full/Collective/Experts profiles.
+Two unoptimized selection-kernel observations were 1089.067/1083.882 ms with
+8,386,560 pair visits and 786432 bytes of table entries, excluding fixture/Cargo
+and total-process overhead. These are synthetic local timings, not a model or
+physical-efficiency comparison. See the reproducible [cost check](CAPABILITIES.md#deterministic-cost-check-2026-10-22).
+Initial fixture expectations were corrected for a provider's compatible subset;
+three test-only allocation lint warnings were fixed without suppression, followed
+by a complete final rerun. Existing socket, database migration, mock inference,
+malformed frames, permission denial, cancellation, continuation and rollback tests
+remain green. Protocol/bindings are unchanged; exact bundled pairing/integrity
+checks pass. `flatc` is unavailable and fresh generation was not run.
+
+
 ### Persist and independently recover direct search witnesses — 2026-10-21
 
 **Implemented (durable direct witnesses); Partial (general search-phase recovery).**

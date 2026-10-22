@@ -322,3 +322,288 @@ fn mixed_coverage_keeps_only_compatible_credit_and_separates_model_unavailabilit
         assert!(result.skills.is_empty());
     }
 }
+
+#[test]
+fn exact_cover_avoids_the_greedy_trap_and_uses_the_minimum_number_of_routes() {
+    // `a.trap` covers five requirements, so greedy selection takes it first.
+    // That leaves at least one uncovered requirement in each of four disjoint
+    // groups and needs five total routes. The four group providers are a full
+    // cover within the actual four-route limit.
+    let requirements = (0..12)
+        .map(|i| format!("domain.cap{i}"))
+        .collect::<Vec<_>>();
+    let mut pairs = vec![candidate(
+        "a.trap",
+        &[
+            "domain.cap0",
+            "domain.cap3",
+            "domain.cap6",
+            "domain.cap9",
+            "domain.cap1",
+        ],
+    )];
+    for (name, start) in [("b.one", 0), ("c.two", 3), ("d.three", 6), ("e.four", 9)] {
+        let aliases = (start..start + 3)
+            .map(|i| format!("domain.cap{i}"))
+            .collect::<Vec<_>>();
+        let alias_refs = aliases.iter().map(String::as_str).collect::<Vec<_>>();
+        pairs.push(candidate(name, &alias_refs));
+    }
+
+    let result = resolve(
+        &pairs.iter().map(|pair| pair.0.clone()).collect::<Vec<_>>(),
+        &pairs.iter().map(|pair| pair.1.clone()).collect::<Vec<_>>(),
+        &BTreeMap::new(),
+        &requirements,
+        &BTreeMap::new(),
+        &[],
+        true,
+    )
+    .unwrap();
+
+    assert_eq!(result.skills.len(), 4);
+    assert!(!result.skills.contains(&"a.trap".to_owned()));
+    assert!(result.unselected.is_empty());
+    assert!(result.missing.is_empty());
+    assert!(result.incompatible.is_empty());
+    assert!(result.unavailable.is_empty());
+    assert!(result.bindings.iter().all(|binding| binding.selected));
+}
+
+#[test]
+fn exact_cover_is_order_invariant_for_requirements_and_provider_snapshots() {
+    let requirements = (0..12)
+        .map(|i| format!("domain.cap{i}"))
+        .collect::<Vec<_>>();
+    let mut pairs = vec![candidate(
+        "a.trap",
+        &[
+            "domain.cap0",
+            "domain.cap3",
+            "domain.cap6",
+            "domain.cap9",
+            "domain.cap1",
+        ],
+    )];
+    for (name, start) in [("b.one", 0), ("c.two", 3), ("d.three", 6), ("e.four", 9)] {
+        let aliases = (start..start + 3)
+            .map(|i| format!("domain.cap{i}"))
+            .collect::<Vec<_>>();
+        pairs.push(candidate(
+            name,
+            &aliases.iter().map(String::as_str).collect::<Vec<_>>(),
+        ));
+    }
+    let run_order = |pairs: &[(Skill, Manifest)], requirements: &[String]| {
+        resolve(
+            &pairs.iter().map(|pair| pair.0.clone()).collect::<Vec<_>>(),
+            &pairs.iter().map(|pair| pair.1.clone()).collect::<Vec<_>>(),
+            &BTreeMap::new(),
+            requirements,
+            &BTreeMap::new(),
+            &[],
+            true,
+        )
+        .unwrap()
+    };
+    let original = run_order(&pairs, &requirements);
+    pairs.reverse();
+    let reversed_requirements = requirements.iter().cloned().rev().collect::<Vec<_>>();
+    let reversed = run_order(&pairs, &reversed_requirements);
+    assert_eq!(
+        serde_json::to_value(original).unwrap(),
+        serde_json::to_value(reversed).unwrap()
+    );
+}
+
+#[test]
+fn exact_cover_matches_an_independent_minimum_cover_oracle_on_small_registries() {
+    fn oracle_minimum(masks: &[u16], target: u16, slots: usize) -> Option<usize> {
+        (0..=slots).find(|count| {
+            (0u64..(1u64 << masks.len())).any(|subset| {
+                subset.count_ones() as usize == *count
+                    && masks
+                        .iter()
+                        .enumerate()
+                        .filter(|(index, _)| subset & (1u64 << index) != 0)
+                        .fold(0u16, |cover, (_, mask)| cover | mask)
+                        & target
+                        == target
+            })
+        })
+    }
+
+    // A small deterministic generator keeps this test reproducible while
+    // exercising dense, sparse, duplicate-mask, and impossible registries.
+    let mut seed = 0x8a5c_31d7u32;
+    for case in 0..160 {
+        seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+        let requirement_count = 1 + (seed as usize % 8);
+        seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+        let candidate_count = 1 + ((seed >> 8) as usize % 9);
+        let requirements = (0..requirement_count)
+            .map(|i| format!("domain.cap{i}"))
+            .collect::<Vec<_>>();
+        let full_mask = (1u16 << requirement_count) - 1;
+        let mut pairs = Vec::new();
+        let mut masks = Vec::new();
+        for candidate_index in 0..candidate_count {
+            seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            let mask = (seed as u16) & full_mask;
+            masks.push(mask);
+            let aliases = requirements
+                .iter()
+                .enumerate()
+                .filter(|(bit, _)| mask & (1 << bit) != 0)
+                .map(|(_, id)| id.as_str())
+                .collect::<Vec<_>>();
+            pairs.push(candidate(&format!("expert.p{candidate_index}"), &aliases));
+        }
+        let retained = masks[0];
+        let expected = oracle_minimum(&masks[1..], full_mask & !retained, 3);
+        let result = resolve(
+            &pairs.iter().map(|pair| pair.0.clone()).collect::<Vec<_>>(),
+            &pairs.iter().map(|pair| pair.1.clone()).collect::<Vec<_>>(),
+            &BTreeMap::new(),
+            &requirements,
+            &BTreeMap::new(),
+            &[pairs[0].0.id.clone()],
+            true,
+        )
+        .unwrap();
+        if let Some(minimum) = expected {
+            assert_eq!(
+                result.skills.len(),
+                minimum + 1,
+                "case {case}: expected retained route plus minimum full cover of {minimum} routes"
+            );
+            assert!(result.unselected.is_empty(), "case {case}");
+            assert!(
+                result.bindings.iter().all(|binding| binding.selected),
+                "case {case}"
+            );
+        } else {
+            assert!(
+                !result.unselected.is_empty() || !result.missing.is_empty(),
+                "case {case}: no full cover exists within the remaining three routes"
+            );
+        }
+    }
+}
+
+#[test]
+fn exact_cover_uses_only_enabled_available_version_compatible_declarations() {
+    let mut trap = candidate(
+        "a.trap",
+        &["domain.cap0", "domain.cap1", "domain.cap2", "domain.cap3"],
+    );
+    trap.1.capabilities[0].version = "1.9.0".into();
+    let ready_a = candidate("b.ready_a", &["domain.cap0", "domain.cap1"]);
+    let ready_b = candidate("c.ready_b", &["domain.cap2", "domain.cap3"]);
+    let mut disabled = candidate(
+        "d.disabled",
+        &["domain.cap0", "domain.cap1", "domain.cap2", "domain.cap3"],
+    );
+    disabled.0.enabled = false;
+    let mut unavailable = candidate(
+        "e.unavailable",
+        &["domain.cap0", "domain.cap1", "domain.cap2", "domain.cap3"],
+    );
+    unavailable.1.kind = "workflow".into();
+    unavailable.1.workflow = Some("Unavailable workflow fixture".into());
+    unavailable.1.model = Some(crate::models::Selection {
+        id: "fixture.model".into(),
+        version: "1.0.0".into(),
+    });
+    unavailable.1.validate().unwrap();
+    let pairs = [trap, ready_a, ready_b, disabled, unavailable];
+    let requirements = (0..4).map(|i| format!("domain.cap{i}")).collect::<Vec<_>>();
+    let versions = requirements
+        .iter()
+        .map(|id| (id.clone(), "^2".to_owned()))
+        .collect::<BTreeMap<_, _>>();
+    let result = resolve(
+        &pairs.iter().map(|pair| pair.0.clone()).collect::<Vec<_>>(),
+        &pairs.iter().map(|pair| pair.1.clone()).collect::<Vec<_>>(),
+        &BTreeMap::new(),
+        &requirements,
+        &versions,
+        &[],
+        true,
+    )
+    .unwrap();
+
+    // A mixed provider remains eligible for its compatible declarations.
+    // It cannot provide cap0, but can combine with ready_a for a two-route cover.
+    assert_eq!(result.skills, vec!["a.trap", "b.ready_a"]);
+    assert!(!result.skills.contains(&"d.disabled".to_owned()));
+    assert!(!result.skills.contains(&"e.unavailable".to_owned()));
+    assert!(result.unselected.is_empty());
+    assert!(result.incompatible.is_empty());
+    assert!(result.bindings.iter().all(|binding| {
+        binding.selected && binding.version_compatible && !binding.permissions_granted
+    }));
+    assert_eq!(result.bindings[0].provider.as_deref(), Some("b.ready_a"));
+    assert_eq!(
+        result.bindings[0].version_requirement.as_deref(),
+        Some("^2")
+    );
+
+    let without_refinement = resolve(
+        &pairs.iter().map(|pair| pair.0.clone()).collect::<Vec<_>>(),
+        &pairs.iter().map(|pair| pair.1.clone()).collect::<Vec<_>>(),
+        &BTreeMap::new(),
+        &requirements,
+        &versions,
+        &[],
+        false,
+    )
+    .unwrap();
+    assert!(without_refinement.skills.is_empty());
+    assert_eq!(without_refinement.unselected.len(), 4);
+    assert!(without_refinement
+        .bindings
+        .iter()
+        .all(|binding| !binding.selected && !binding.permissions_granted));
+}
+
+#[test]
+fn retained_unavailable_route_consumes_capacity_but_never_counts_as_coverage() {
+    let retained = candidate("a.retained", &["domain.cap0"]);
+    let mut unavailable = candidate("b.unavailable", &["domain.cap1"]);
+    unavailable.1.kind = "workflow".into();
+    unavailable.1.workflow = Some("Unavailable workflow fixture".into());
+    unavailable.1.model = Some(crate::models::Selection {
+        id: "fixture.model".into(),
+        version: "1.0.0".into(),
+    });
+    unavailable.1.validate().unwrap();
+    let rest = candidate("c.rest", &["domain.cap1", "domain.cap2", "domain.cap3"]);
+    let pairs = [retained, unavailable, rest];
+    let result = resolve(
+        &pairs.iter().map(|pair| pair.0.clone()).collect::<Vec<_>>(),
+        &pairs.iter().map(|pair| pair.1.clone()).collect::<Vec<_>>(),
+        &BTreeMap::new(),
+        &[
+            "domain.cap0".into(),
+            "domain.cap1".into(),
+            "domain.cap2".into(),
+            "domain.cap3".into(),
+        ],
+        &BTreeMap::new(),
+        &["a.retained".into(), "b.unavailable".into()],
+        true,
+    )
+    .unwrap();
+
+    assert_eq!(result.skills, vec!["a.retained", "b.unavailable", "c.rest"]);
+    assert!(result.unselected.is_empty());
+    assert!(result.unavailable.is_empty());
+    assert_eq!(result.bindings[1].provider.as_deref(), Some("c.rest"));
+    assert!(result.bindings[1].available);
+    assert!(result.bindings[1].selected);
+    assert!(result
+        .bindings
+        .iter()
+        .all(|binding| !binding.permissions_granted));
+}

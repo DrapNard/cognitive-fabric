@@ -765,7 +765,7 @@ external provider-stop or malicious-owner guarantee.
 
 ### Joint capability metadata resolution
 
-The bounded greedy resolver uses only pinned enabled declaration metadata and
+The bounded complete-cover resolver uses only pinned enabled declaration metadata and
 existing model-registration availability. It grants no tools, loads no executable
 and performs no provider contact. Recorded availability is a prerequisite check,
 not endpoint health or weight attestation. Selection cannot exceed four routes or
@@ -966,3 +966,20 @@ and status. The recovery report omits the body, and typed progress frames retain
 their existing metadata-only schema. No search/model replay or new authority is
 introduced. Body-less legacy witnesses, contradictions and pre-receipt crashes
 remain unsupported; consistency checks do not authenticate against a hostile owner.
+
+### Exact complete declared capability coverage
+
+Jev+ may use a bounded mask search to find the fewest additional compatible
+providers covering all requested declarations under its retained four-route
+ceiling. Selected initial routes, disabled/version/unavailable filters and task
+permissions remain authoritative. A complete declared cover grants no tool, loads
+no executable and establishes no endpoint health or answer quality. If no full
+cover fits, partial greedy fallback remains heuristic. Fixed audit metadata is
+required before route refinement or expert admission.
+
+At most 4096 eligible providers, 16 requirement bits, 8,386,560 pair visits and
+two compact 65,536-entry tables bound logical work. Yields before/after synchronous
+resolution let cancellation/deadline win before publication, not during the loop;
+this is not hard CPU isolation or a physical latency guarantee. Original task
+budgets cannot be increased. No model confidence, retrieved instruction or mutable
+live registry can change the pinned declarations, limits or permissions.
