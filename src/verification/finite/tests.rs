@@ -284,7 +284,7 @@ fn search_reports_limits_cancellation_and_only_exhaustive_unsatisfiability() {
     .unwrap();
     let complete = impossible.search(4096, || false).unwrap();
     assert!(matches!(complete.result, SearchResult::Unsatisfiable));
-    assert_eq!(complete.explored_nodes, 3);
+    assert_eq!(complete.explored_nodes, 1);
 
     let exact_limit_witness = criterion.search(3, || false).unwrap();
     assert!(matches!(
@@ -293,7 +293,15 @@ fn search_reports_limits_cancellation_and_only_exhaustive_unsatisfiability() {
     ));
     assert_eq!(exact_limit_witness.explored_nodes, 3);
 
-    let exact_limit_unsatisfiable = impossible.search(3, || false).unwrap();
+    let duplicate_only = FiniteDomain::parse(
+        &json!({
+            "variables":[{"id":"x","domain":[0]},{"id":"y","domain":[0]}],
+            "constraints":[{"kind":"all_different","variables":["x","y"]}]
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let exact_limit_unsatisfiable = duplicate_only.search(3, || false).unwrap();
     assert!(matches!(
         exact_limit_unsatisfiable.result,
         SearchResult::Unsatisfiable
@@ -314,19 +322,116 @@ fn search_rejects_invalid_limits_and_cancellation_precedes_budget() {
 
 #[test]
 fn search_enforces_the_hard_4096_node_ceiling() {
-    let variable_ids = (0..12).map(|index| format!("v{index}")).collect::<Vec<_>>();
+    let variable_ids = (0..16).map(|index| format!("v{index}")).collect::<Vec<_>>();
     let raw = json!({
         "variables": variable_ids
             .iter()
             .map(|id| json!({"id": id, "domain": [0, 1]}))
             .collect::<Vec<_>>(),
-        "constraints": [{"kind":"all_different", "variables": variable_ids}]
+        "constraints": [{
+            "kind":"linear",
+            "terms": variable_ids.iter().map(|id| json!({"variable": id, "coefficient": 2})).collect::<Vec<_>>(),
+            "relation":"eq",
+            "rhs":15
+        }]
     });
     let criterion = FiniteDomain::parse(&raw.to_string()).unwrap();
 
     let outcome = criterion.search(4096, || false).unwrap();
     assert!(matches!(outcome.result, SearchResult::LimitReached));
     assert_eq!(outcome.explored_nodes, 4096);
+}
+
+#[test]
+fn interval_bounds_prune_only_when_every_completion_violates_a_linear_constraint() {
+    let cases = [("eq", 3), ("ne", 2), ("le", 1), ("ge", 3)];
+    for (relation, rhs) in cases {
+        let criterion = FiniteDomain::parse(
+            &json!({
+                "variables":[
+                    {"id":"x","domain":[1]},
+                    {"id":"y","domain":[1]}
+                ],
+                "constraints":[{"kind":"linear","terms":[
+                    {"variable":"x","coefficient":1},
+                    {"variable":"y","coefficient":1}
+                ],"relation":relation,"rhs":rhs}]
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let outcome = criterion.search(1, || false).unwrap();
+        assert!(
+            matches!(outcome.result, SearchResult::Unsatisfiable),
+            "{relation} {rhs}"
+        );
+        assert_eq!(outcome.explored_nodes, 1, "{relation} {rhs}");
+    }
+
+    // A mixed-sign interval includes the target, so equality remains feasible at the root.
+    let criterion = FiniteDomain::parse(
+        &json!({
+            "variables":[{"id":"x","domain":[-1,1]},{"id":"y","domain":[-1,1]}],
+            "constraints":[{"kind":"linear","terms":[
+                {"variable":"x","coefficient":-2},
+                {"variable":"y","coefficient":1}
+            ],"relation":"eq","rhs":3}]
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let outcome = criterion.search(4096, || false).unwrap();
+    let SearchResult::Witness(answer) = outcome.result else {
+        panic!("expected a witness within the interval bounds")
+    };
+    assert_eq!(
+        serde_json::from_str::<BTreeMap<String, i64>>(&answer).unwrap(),
+        BTreeMap::from([("x".to_owned(), -1), ("y".to_owned(), 1)])
+    );
+    criterion.check(&answer).unwrap();
+}
+
+#[test]
+fn interval_bounds_use_wide_signed_arithmetic_for_extreme_domains() {
+    for (value, coefficient, relation, rhs) in [
+        (i64::MIN, 1_000_000, "ge", i64::MAX),
+        (i64::MAX, -1_000_000, "ge", i64::MIN),
+    ] {
+        let criterion = FiniteDomain::parse(
+            &json!({
+                "variables":[{"id":"x","domain":[value]}],
+                "constraints":[{"kind":"linear","terms":[
+                    {"variable":"x","coefficient":coefficient}
+                ],"relation":relation,"rhs":rhs}]
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let outcome = criterion.search(1, || false).unwrap();
+        assert!(matches!(outcome.result, SearchResult::Unsatisfiable));
+        assert_eq!(outcome.explored_nodes, 1);
+    }
+}
+
+#[test]
+fn all_different_prunes_a_duplicate_before_the_constraint_is_fully_assigned() {
+    let criterion = FiniteDomain::parse(
+        &json!({
+            "variables":[
+                {"id":"a","domain":[0,1]},
+                {"id":"b","domain":[0,1]},
+                {"id":"c","domain":[0,1]}
+            ],
+            "constraints":[{"kind":"all_different","variables":["a","b","c"]}]
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let outcome = criterion.search(4096, || false).unwrap();
+    assert!(matches!(outcome.result, SearchResult::Unsatisfiable));
+    // Root, two first-variable choices, four second-variable choices, and four third-variable
+    // choices are visited. Duplicate pairs are rejected before completing their constraints.
+    assert_eq!(outcome.explored_nodes, 11);
 }
 
 #[test]

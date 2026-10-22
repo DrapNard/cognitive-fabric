@@ -1,5 +1,46 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+### Prune impossible partial finite-domain assignments — 2026-10-22
+
+**Implemented (bounded deterministic pruning); Partial (general solving).**
+Architecture sections 5 and 9 require algorithmic reasoning under fixed compute
+ceilings. Jev-R now rejects impossible partial linear ranges and assigned-value
+collisions in all-different constraints before enumerating their remaining
+variables. Signed i128 arithmetic and once-per-search true domain extrema keep
+bounds conservative, including sparse domains and i64 extremes. Disequality only
+prunes an interval fixed to the forbidden value. Declaration-order traversal and
+the independent complete-assignment witness checker remain intact.
+
+The root and each visited partial assignment still consume one node; unvisited
+pruned descendants consume none. The existing 4096-node ceiling, cancellation
+polls, original tool reservations and final stop check remain authoritative.
+Contradictions can now be established earlier; a limit is still inconclusive.
+Receipt schemas and recovery budgets are unchanged, and historical receipts are
+not replayed. No external execution, new permission or neural adaptation is added.
+Sources: `src/verification/finite.rs`, its unit tests and
+`tests/finite_search_pruning.rs`. See [search contract](FINITE_SEARCH.md#search-and-outcome-contract).
+This is necessary-condition pruning, not full domain propagation, Hall-set
+filtering, a general SAT solver or evidence of improved model intelligence.
+Jev+ and Jev-R remain Partial; general search recovery and independent quality/
+cost evaluation remain incomplete.
+
+Verification: formatting, locked all-target workspace build, **813 tests across
+48 targets** (none ignored) and Clippy with warnings denied pass. Fourteen focused
+finite-domain unit tests and six new integration tests cover every relation,
+wide signed arithmetic, sparse domains, deterministic exhaustive comparisons on
+72 generated cases (both satisfiable and unsatisfiable), original checker events,
+root accounting, exact witness/cap edges, cancellation and the hard 4096 ceiling.
+The independent legacy traversal reference visits 10 nodes versus the new 4 for
+a sparse linear contradiction and 31 versus 11 for an all-different contradiction.
+These are logical search-work examples, not latency, live-model quality or
+physical-efficiency measurements. The initial test fixtures were corrected for
+sign and earlier pruning; the cap fixture now uses a 16-variable parity case that
+intervals cannot resolve. Three test-only lint findings were fixed, with no
+suppression or gate removal. Existing socket, migration, mock inference, malformed
+frame, denial, cancellation, recovery and rollback coverage remains green.
+Schemas and generated bindings are unchanged; bundled generator/runtime pairing
+and integrity checks pass. `flatc` is unavailable, so fresh generation was not run.
+
 ### Find a complete declared capability cover within pinned route limits — 2026-10-22
 
 **Implemented (bounded exact complete coverage); Partial (general calibrated routing).**

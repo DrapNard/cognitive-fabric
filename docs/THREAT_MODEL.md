@@ -920,7 +920,7 @@ search only over the original strictly parsed CSP. At most 4096 visited nodes,
 bounded depth/domain/constraint structures and deadline polls limit computation;
 this is a logical ceiling, not hard process isolation or physical CPU accounting.
 Model roles cannot invoke the search or change its node limit. An actual witness
-requires a separately authorized satisfaction check. Only exhaustive traversal
+requires a separately authorized satisfaction check. Only exhaustive traversal with sound impossible-branch pruning
 permits a contradiction outcome, which remains rejected under witness scoring.
 Limit exhaustion cannot manufacture impossibility or refund tools. Required
 audit failure prevents subsequent dispatch. Enabled saved finite-domain tasks cannot continue
@@ -983,3 +983,13 @@ resolution let cancellation/deadline win before publication, not during the loop
 this is not hard CPU isolation or a physical latency guarantee. Original task
 budgets cannot be increased. No model confidence, retrieved instruction or mutable
 live registry can change the pinned declarations, limits or permissions.
+
+### Partial finite-domain pruning
+
+Only deterministic necessary conditions from the original strictly parsed
+criterion prune search branches. Signed interval bounds over declared domains
+and duplicate assigned values carry no model authority. Sparse-domain interval
+feasibility is not a witness; complete candidates retain the separate original
+checker. Bounds, cancellation polls, reservations and receipt formats are unchanged.
+Earlier logical contradiction detection does not establish physical resource
+limits, general impossibility outside the criterion or neural safety.

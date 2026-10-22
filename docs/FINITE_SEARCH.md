@@ -19,7 +19,13 @@ although a direct search success consumes no model cycle.
 
 Depth-first search visits variables and domain values in declaration order.
 Each candidate partial assignment, including the empty root, costs one node.
-A constraint can prune a branch only once all its variables are assigned. The existing strict grammar,
+Search prunes an impossible partial branch using conservative signed linear
+intervals or duplicate assigned values in an all-different constraint. Domain
+minima/maxima are computed once per search; holes in sparse domains are not
+assumed attainable. Equality requires the target inside the interval; `le`
+requires the minimum at or below its target and `ge` the maximum at or above it.
+Disequality rejects only a singleton interval equal to its target. These necessary
+conditions never establish a witness. The existing strict grammar,
 32-variable/64-value domain ceilings, 128-constraint ceiling and bounded i128
 arithmetic remain in force. The deadline is checked during traversal and before
 returning its result. The engine yields before traversal so a ready task cancel
@@ -29,7 +35,8 @@ physical latency guarantee.
 
 - **Witness:** serialize an exact assignment, then independently authorize and
   execute the original satisfaction checker before returning verified success.
-- **Unsatisfiable:** only a completely exhausted search tree permits this result.
+- **Unsatisfiable:** only complete exhaustion of the remaining tree, with every
+  pruned branch proven unable to satisfy a declared constraint, permits this result.
   The task remains `rejected`, with `proven_unsatisfiable` as its stopping reason,
   because its contract requests a satisfying witness. No model impossibility
   declaration is accepted as proof, and witness-only benchmarks award no success.
@@ -209,3 +216,23 @@ formatting, all-target build, **792 tests across 46 targets** (none ignored), an
 Clippy with warnings denied. Protocol/bindings are unchanged; bundled pairing/
 integrity tests pass and unavailable `flatc` prevented fresh generation. No live
 model-quality or physical-efficiency measurement follows from these checks.
+
+### Partial-pruning verification (2026-10-22)
+
+The full workspace passes formatting, locked all-target build, **813 tests across
+48 targets** (none ignored) and Clippy with warnings denied. Fourteen focused
+unit tests retain exact cap and cancellation contracts; six integration tests
+compare 72 deterministic generated cases against an independent exhaustive
+i128 oracle, verify both satisfiable/unsatisfiable populations and check actual
+Engine receipts and independent witness-check events. Signed extreme values,
+sparse non-monotone domains, all relations and early duplicate rejection are covered.
+
+A separate reference traversal that checks only fully assigned constraints
+visits 10 nodes versus 4 for the new sparse linear contradiction case and 31
+versus 11 for the new all-different case. A three-variable linear witness fits
+exactly seven visited nodes after pruning, retaining the original verifier charge.
+These authored examples measure logical visits only, not wall time, model quality,
+physical resources or a general speedup. Search remains opt-in and incomplete
+under its hard cap. Existing receipt/recovery contracts and tests are unchanged.
+No protocol/generated binding changes; bundled pairing/integrity tests pass,
+while unavailable `flatc` prevents fresh generation.

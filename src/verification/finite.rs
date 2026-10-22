@@ -17,6 +17,55 @@ pub(crate) enum SearchResult {
     Cancelled,
 }
 
+struct SearchContext<'a> {
+    criterion: &'a FiniteDomain,
+    domain_bounds: BTreeMap<&'a str, (i64, i64)>,
+}
+
+impl SearchContext<'_> {
+    fn visit(
+        &self,
+        depth: usize,
+        values: &mut BTreeMap<String, i64>,
+        max_nodes: usize,
+        explored_nodes: &mut usize,
+        should_stop: &mut impl FnMut() -> bool,
+    ) -> Result<SearchResult> {
+        if should_stop() {
+            return Ok(SearchResult::Cancelled);
+        }
+        if *explored_nodes >= max_nodes {
+            return Ok(SearchResult::LimitReached);
+        }
+        *explored_nodes += 1;
+
+        for constraint in &self.criterion.constraints {
+            if !FiniteDomain::partial_constraint_possible(constraint, values, &self.domain_bounds) {
+                return Ok(SearchResult::Unsatisfiable);
+            }
+        }
+
+        if depth == self.criterion.variables.len() {
+            let answer = serde_json::to_string(values)?;
+            // Keep the search result behind the same strict public witness checker.
+            self.criterion.check(&answer)?;
+            return Ok(SearchResult::Witness(answer));
+        }
+
+        let variable = &self.criterion.variables[depth];
+        for value in &variable.domain {
+            values.insert(variable.id.clone(), *value);
+            let child = self.visit(depth + 1, values, max_nodes, explored_nodes, should_stop)?;
+            values.remove(&variable.id);
+            match child {
+                SearchResult::Unsatisfiable => {}
+                other => return Ok(other),
+            }
+        }
+        Ok(SearchResult::Unsatisfiable)
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct FiniteDomain {
@@ -166,6 +215,54 @@ impl FiniteDomain {
             .count()
     }
 
+    fn partial_constraint_possible(
+        constraint: &Constraint,
+        values: &BTreeMap<String, i64>,
+        domain_bounds: &BTreeMap<&str, (i64, i64)>,
+    ) -> bool {
+        match constraint {
+            Constraint::Linear {
+                terms,
+                relation,
+                rhs,
+            } => {
+                let mut minimum = 0_i128;
+                let mut maximum = 0_i128;
+                for term in terms {
+                    let coefficient = i128::from(term.coefficient);
+                    if let Some(value) = values.get(&term.variable) {
+                        let contribution = i128::from(*value) * coefficient;
+                        minimum += contribution;
+                        maximum += contribution;
+                    } else {
+                        let (domain_min, domain_max) = domain_bounds[term.variable.as_str()];
+                        let (low, high) = if coefficient >= 0 {
+                            (domain_min, domain_max)
+                        } else {
+                            (domain_max, domain_min)
+                        };
+                        minimum += i128::from(low) * coefficient;
+                        maximum += i128::from(high) * coefficient;
+                    }
+                }
+                let rhs = i128::from(*rhs);
+                match relation {
+                    Relation::Eq => minimum <= rhs && rhs <= maximum,
+                    Relation::Ne => minimum != rhs || maximum != rhs,
+                    Relation::Le => minimum <= rhs,
+                    Relation::Ge => maximum >= rhs,
+                }
+            }
+            Constraint::AllDifferent { variables } => {
+                let mut assigned = BTreeSet::new();
+                variables
+                    .iter()
+                    .filter_map(|variable| values.get(variable))
+                    .all(|value| assigned.insert(*value))
+            }
+        }
+    }
+
     pub(super) fn check(&self, answer: &str) -> Result<()> {
         let values = self.assignment(answer)?;
         for (index, constraint) in self.constraints.iter().enumerate() {
@@ -193,66 +290,29 @@ impl FiniteDomain {
             bail!("Finite-domain search node limit must be between 1 and {MAX_SEARCH_NODES}")
         }
 
-        fn visit(
-            criterion: &FiniteDomain,
-            depth: usize,
-            values: &mut BTreeMap<String, i64>,
-            max_nodes: usize,
-            explored_nodes: &mut usize,
-            should_stop: &mut impl FnMut() -> bool,
-        ) -> Result<SearchResult> {
-            if should_stop() {
-                return Ok(SearchResult::Cancelled);
-            }
-            if *explored_nodes >= max_nodes {
-                return Ok(SearchResult::LimitReached);
-            }
-            *explored_nodes += 1;
-
-            for constraint in &criterion.constraints {
-                let fully_assigned = match constraint {
-                    Constraint::Linear { terms, .. } => {
-                        terms.iter().all(|term| values.contains_key(&term.variable))
-                    }
-                    Constraint::AllDifferent { variables } => variables
+        let context = SearchContext {
+            criterion: self,
+            domain_bounds: self
+                .variables
+                .iter()
+                .map(|variable| {
+                    let minimum = *variable
+                        .domain
                         .iter()
-                        .all(|variable| values.contains_key(variable)),
-                };
-                if fully_assigned && !FiniteDomain::constraint_accepts(constraint, values) {
-                    return Ok(SearchResult::Unsatisfiable);
-                }
-            }
-
-            if depth == criterion.variables.len() {
-                let answer = serde_json::to_string(values)?;
-                // Keep the search result behind the same strict public witness checker.
-                criterion.check(&answer)?;
-                return Ok(SearchResult::Witness(answer));
-            }
-
-            let variable = &criterion.variables[depth];
-            for value in &variable.domain {
-                values.insert(variable.id.clone(), *value);
-                let child = visit(
-                    criterion,
-                    depth + 1,
-                    values,
-                    max_nodes,
-                    explored_nodes,
-                    should_stop,
-                )?;
-                values.remove(&variable.id);
-                match child {
-                    SearchResult::Unsatisfiable => {}
-                    other => return Ok(other),
-                }
-            }
-            Ok(SearchResult::Unsatisfiable)
-        }
+                        .min()
+                        .expect("validated nonempty domain");
+                    let maximum = *variable
+                        .domain
+                        .iter()
+                        .max()
+                        .expect("validated nonempty domain");
+                    (variable.id.as_str(), (minimum, maximum))
+                })
+                .collect(),
+        };
 
         let mut explored_nodes = 0;
-        let result = visit(
-            self,
+        let result = context.visit(
             0,
             &mut BTreeMap::new(),
             max_nodes,
