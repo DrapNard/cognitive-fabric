@@ -4,6 +4,31 @@ CLI/loopback lifecycle, uncertainty, cancellation and receipt reuse pass the
 combined automated suite. See `CURRENT_IMPLEMENTATION.md` for exact evidence.
 Real model quality and GPU behavior remain unverified.
 
+## Read-only restoration preflight
+
+```sh
+cogfabric --home ./state native-resume-preview TASK_UUID --policy ./native-policy.json
+```
+
+This command inspects original receipt identity for an unfinished native child
+task using a read-only database. The original policy, unique scope/bindings,
+configured role models, completed generation admission and unexpired same-boot
+clock must match. It holds exclusive local runtime/resource leases, checks the
+pending-generation gate and performs a bounded fresh inventory GET. Every original
+receipt must still validate against that complete inventory; state is rechecked
+after the observation. It does not adopt or rebase foreign/drifted instances.
+
+`receipt_identity_matches: true` establishes only this observed local consistency.
+The report explicitly retains `checkpoint_validated: false` and
+`resume_authorized: false`. No task audit/status, model load/unload, generation,
+stop acknowledgement, budget or permission is changed. Ordinary native task
+continuation still refuses until exact ownership/backend restoration is integrated.
+Provider identity reuse, same-owner tampering, real weights and physical provider
+termination remain outside this preflight's proof.
+
+Library callers use
+`residency::lifecycle::restoration::inspect(store, task, &policy).await`.
+
 ## Operator policy
 
 Ordinary collective tasks can use an explicitly approved, immutable local policy:

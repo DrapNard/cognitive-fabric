@@ -112,6 +112,11 @@ enum Command {
         #[arg(long, requires = "retry_study")]
         retry_thresholds: Option<PathBuf>,
     },
+    NativeResumePreview {
+        id: String,
+        #[arg(long)]
+        policy: PathBuf,
+    },
     ResumeTask {
         id: String,
         #[arg(long)]
@@ -1122,6 +1127,14 @@ async fn run_cli() -> Result<()> {
         )?;
         return Ok(());
     }
+    if let Command::NativeResumePreview { id, policy } = &cli.command {
+        let policy = cogfabric::residency::lifecycle::NativeLifecyclePolicy::load(policy)?;
+        let store = Arc::new(Store::open_existing_read_only(&cfg.db())?);
+        let report =
+            cogfabric::residency::lifecycle::restoration::inspect(store, id, &policy).await?;
+        output(&report, cli.json)?;
+        return Ok(());
+    }
     if let Command::ResumePreview { id, .. } = &cli.command {
         let store = Store::open_existing_read_only(&cfg.db())?;
         let report = match (restored_policy, verifier_provider.clone()) {
@@ -1463,6 +1476,9 @@ async fn run_cli() -> Result<()> {
             json!({"inference_process":enabled,"sandboxed":false})
         }
         Command::ResumePreview { .. } => bail!("Preview must run before runtime initialization"),
+        Command::NativeResumePreview { .. } => {
+            bail!("Native preview must run before runtime initialization")
+        }
         Command::ResumeTask { .. } => bail!("Continuation must run before runtime initialization"),
         Command::ResidencyLoad {
             api_base,

@@ -296,6 +296,157 @@ async fn cli_ask_uses_approved_native_instance_and_persists_policy_scope() {
 }
 
 #[tokio::test]
+async fn native_restoration_preflight_is_read_only_and_refuses_policy_or_binding_changes() {
+    let home = root();
+    let cfg = config(&home, 120);
+    cfg.save().unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let api_base = format!("http://{}/api/v1", listener.local_addr().unwrap());
+    let path = write_policy(&home, &api_base, false);
+    let policy = NativeLifecyclePolicy::load(&path).unwrap();
+    let (stop_tx, stop_rx) = tokio::sync::oneshot::channel();
+    let seen = native_fixture(listener, ChatReply::Correct, stop_rx, None).await;
+    let result = cli(
+        &home,
+        &[
+            "--native-lifecycle-policy",
+            path.to_str().unwrap(),
+            "--approve-native-lifecycle",
+            "ask",
+            "Say hello",
+            "--mode",
+            "fast",
+        ],
+    )
+    .await;
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let result: Value = serde_json::from_slice(&result.stdout).unwrap();
+    let task = result["task_id"].as_str().unwrap();
+    let store = Arc::new(Store::open(&cfg.db()).unwrap());
+    store.finish_task(task, "interrupted", "").unwrap();
+    let before = store.task(task).unwrap();
+    let chats = seen.lock().unwrap().chats;
+    let report =
+        cogfabric::residency::lifecycle::restoration::inspect(store.clone(), task, &policy)
+            .await
+            .unwrap();
+    assert_eq!(report["receipt_identity_matches"], true);
+    assert_eq!(report["resume_authorized"], false);
+    assert_eq!(report["checkpoint_validated"], false);
+    assert_eq!(report["model_mutation_performed"], false);
+    assert!(report["original_remaining_ns"].as_u64().unwrap() > 0);
+    assert_eq!(store.task(task).unwrap(), before);
+    assert_eq!(seen.lock().unwrap().chats, chats);
+    assert_eq!(seen.lock().unwrap().unloads, 0);
+    let command = cli(
+        &home,
+        &[
+            "native-resume-preview",
+            task,
+            "--policy",
+            path.to_str().unwrap(),
+        ],
+    )
+    .await;
+    assert!(
+        command.status.success(),
+        "{}",
+        String::from_utf8_lossy(&command.stderr)
+    );
+    assert_eq!(store.task(task).unwrap(), before);
+    let count = seen.lock().unwrap().requests.len();
+    let mut changed = policy.clone();
+    changed.models[0].context_length += 1;
+    assert!(
+        cogfabric::residency::lifecycle::restoration::inspect(store.clone(), task, &changed)
+            .await
+            .is_err()
+    );
+    assert_eq!(seen.lock().unwrap().requests.len(), count);
+    let parent = report["lifecycle_task_id"].as_str().unwrap();
+    let db = rusqlite::Connection::open(cfg.db()).unwrap();
+    let mut statement = db.prepare("SELECT id,task_id,kind,payload FROM events WHERE (task_id=?1 AND kind IN ('native_task_scope','execution_settings')) OR (task_id=?2 AND kind='native_task_lifecycle' AND json_extract(payload,'$.state')='generation_confirmed')").unwrap();
+    let saved = statement
+        .query_map(rusqlite::params![task, parent], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+            ))
+        })
+        .unwrap()
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .unwrap();
+    drop(statement);
+    for scenario in 0..5 {
+        for (id, _, kind, raw) in &saved {
+            let mut payload: Value = serde_json::from_str(raw).unwrap();
+            match (scenario, kind.as_str()) {
+                (0, "native_task_scope") => payload["permissions_granted"] = json!(true),
+                (1, "execution_settings") => {
+                    payload["configuration"]["model"] = json!("unapproved-model")
+                }
+                (2, "execution_settings") => {
+                    payload["execution_clock"]["started_ns"] = json!(0);
+                    payload["execution_clock"]["deadline_ns"] = json!(120_000_000_000u64);
+                }
+                (3, "native_task_lifecycle") => payload["state"] = json!("generation_started"),
+                (4, "native_task_lifecycle") => {
+                    payload["endpoint"] = json!("http://127.0.0.1:1/api/v1/models")
+                }
+                _ => {}
+            }
+            db.execute(
+                "UPDATE events SET payload=?2 WHERE id=?1",
+                rusqlite::params![id, payload.to_string()],
+            )
+            .unwrap();
+        }
+        let child_before = store.task(task).unwrap();
+        let parent_before = store.task(parent).unwrap();
+        assert!(
+            cogfabric::residency::lifecycle::restoration::inspect(store.clone(), task, &policy)
+                .await
+                .is_err(),
+            "scenario {scenario}"
+        );
+        assert_eq!(
+            seen.lock().unwrap().requests.len(),
+            count,
+            "scenario {scenario}"
+        );
+        assert_eq!(store.task(task).unwrap(), child_before);
+        assert_eq!(store.task(parent).unwrap(), parent_before);
+        for (id, _, _, raw) in &saved {
+            db.execute(
+                "UPDATE events SET payload=?2 WHERE id=?1",
+                rusqlite::params![id, raw],
+            )
+            .unwrap();
+        }
+    }
+    drop(db);
+    rusqlite::Connection::open(cfg.db()).unwrap().execute("UPDATE events SET payload=json_set(payload,'$.bindings_sha256',?2) WHERE task_id=?1 AND kind='native_task_bindings'",rusqlite::params![parent,"0".repeat(64)]).unwrap();
+    let tampered = store.task(task).unwrap();
+    assert!(
+        cogfabric::residency::lifecycle::restoration::inspect(store.clone(), task, &policy)
+            .await
+            .is_err()
+    );
+    assert_eq!(seen.lock().unwrap().requests.len(), count);
+    assert_eq!(store.task(task).unwrap(), tampered);
+    drop(store);
+    let _ = stop_tx.send(());
+    tokio::time::sleep(Duration::from_millis(120)).await;
+    std::fs::remove_dir_all(home).unwrap();
+}
+
+#[tokio::test]
 async fn cli_serve_preserves_options_and_progress_and_does_not_release_reused_receipt() {
     let home = root();
     let cfg = config(&home, 15);

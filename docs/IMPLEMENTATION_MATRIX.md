@@ -1,5 +1,28 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Native restoration preflight — 2026-10-23
+
+**Partial: read-only receipt preflight implemented; native continuation remains
+unsupported.** `src/residency/lifecycle/restoration.rs` validates one unfinished
+task's original native scope, exact policy hash, configuration/role model set,
+same-boot remaining clock, unique bounded lifecycle bindings, matching completed
+generation admission, and fresh complete inventory against every original receipt.
+Exclusive runtime/resource ownership spans inspection; original-record reads have
+SQLite deadlines and the GET retains the original task's remaining allowance.
+Original configuration, clock and bindings are revalidated after observation.
+
+`native-resume-preview TASK_UUID --policy POLICY.json` uses a read-only store and
+reports receipt identity separately from checkpoint eligibility. It cannot load,
+release, adopt, rebase, replay, acknowledge provider stopping, admit a checkpoint,
+or grant permissions. `tests/native_lifecycle.rs` verifies library/CLI operation,
+unchanged child and parent histories, no chat/unload, and early refusal of policy,
+clock, role, generation endpoint/phase and binding changes. Combined verification
+passes **1,012 tests across 66 workspace targets**, zero failed or ignored, plus
+**four optional Wasm tests**. Formatting, Rust 1.99 workspace check and strict
+Clippy with default and all features pass.
+Next implementation step: retain this validated owner and
+exact backend through independently validated continuation and durable admission.
+
 ## Builtin registry reconstruction — 2026-10-23
 
 **Implemented for the fixed compiled worker; native-owner recovery remains

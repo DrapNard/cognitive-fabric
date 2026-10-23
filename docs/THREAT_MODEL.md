@@ -1,5 +1,15 @@
 # Threat Model (v1.0)
 
+## Read-only native restoration inspection
+
+The operator supplies the original policy; model text cannot choose new receipt
+authority. Bounded unique source records, role mappings, same-boot remaining time,
+completed generation identity and fresh full inventory are checked under exclusive
+local leases. Inspection changes no model/task state and is not checkpoint
+admission or provider-stop acknowledgement. The default native continuation guard
+remains in force. Reported receipt consistency does not prove physical instance
+continuity, weight identity, safe callbacks or authenticity against the same owner.
+
 ## Target-specific working admission
 
 Only operator configuration declares model/role working profiles. Canonical

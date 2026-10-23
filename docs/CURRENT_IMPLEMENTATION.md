@@ -1,5 +1,20 @@
 # Current Rust implementation
 
+## Native restoration inspection — 2026-10-23
+
+The new read-only `native-resume-preview TASK_UUID --policy POLICY.json` checks
+original policy, role/receipt bindings, completed generation admission, remaining
+same-boot time and fresh inventory under exclusive local ownership. It changes no
+task/model state, grants no permission and explicitly does not validate or admit a
+continuation checkpoint. Native-owner continuation itself remains incomplete.
+
+The workspace passes **1,012 tests across 66 targets**, zero failed or ignored,
+plus **four optional Wasm tests**. Formatting, Rust 1.99 workspace check and strict
+Clippy with default and all features pass. Library/CLI regressions verify no
+generation/unload or history changes and refusal of altered policy, model, clock,
+generation endpoint/phase and receipt-binding evidence. These are loopback and
+framework checks; real-model performance and quality remain unverified.
+
 ## Source-bound builtin restart recovery — 2026-10-23
 
 Version-2 typed snapshots now record declared source identities. Explicit

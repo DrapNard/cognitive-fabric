@@ -6,6 +6,7 @@ use crate::{
     store::Store,
 };
 use std::sync::Arc;
+pub mod restoration;
 
 /// Immutable operator-selected scope for ordinary tasks. This file describes
 /// which local models may be loaded and whether newly loaded receipts may be
