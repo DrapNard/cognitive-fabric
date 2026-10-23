@@ -31,7 +31,7 @@ sha2 = "0.10"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "io-util", "time", "sync", "signal", "process"] }
 url = "2"
 uuid = { version = "1", features = ["v4"] }
-wasmi = { version = "=2.0.0", optional = true, default-features = false, features = ["std", "validate", "extra-checks"] }
+wasmi = { version = "=2.0.0", optional = true, default-features = false, features = ["std", "validate", "extra-checks", "portable-dispatch"] }
 
 [build-dependencies]
 sha2 = "0.10"

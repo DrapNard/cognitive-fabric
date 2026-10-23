@@ -16,6 +16,18 @@ corresponding `--all-features` command pass locally with Rust 1.97.1. This corre
 compiler deprecation/chunk lints. Final runtime verification of the broader
 integration remains separate; this lint correction does not mark v1.0 ready.
 
+## Optional Wasm dispatch stack safety — 2026-10-23
+
+**Implemented and targeted regression-tested.** `Cargo.toml` enables Wasmi 2.0.0
+`portable-dispatch`. With default features disabled, the previous opcode dispatch
+path exhausted the native worker stack on the infinite-loop fuel regression before
+fuel could trap. Portable dispatch preserves the existing fuel, memory, concurrency
+and recursion limits without increasing the host stack or suppressing the test.
+`cargo test --locked --features wasm-verifier --test wasm_verifier` passes all four
+tests, including fuel exhaustion and compiled-criterion authority. This resolves
+the previously recorded optional Wasm stack overflow; full integration verification
+is still pending.
+
 ## Implementation phase — task lifecycle and replaceable modules
 
 **Partial / unverified source integration.** The owner requested completion of
