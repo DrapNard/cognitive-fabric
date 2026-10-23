@@ -59,13 +59,21 @@ pub struct TaskGrant {
 pub struct Revoker(Arc<AtomicU8>);
 impl Revoker {
     pub fn revoke(&self) -> bool {
-        self.0
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |state| match state {
-                READY => Some(REVOKED),
-                RUNNING => Some(CANCELLED),
-                _ => None,
-            })
-            .is_ok()
+        let mut state = self.0.load(Ordering::SeqCst);
+        loop {
+            let next = match state {
+                READY => REVOKED,
+                RUNNING => CANCELLED,
+                _ => return false,
+            };
+            match self
+                .0
+                .compare_exchange_weak(state, next, Ordering::SeqCst, Ordering::SeqCst)
+            {
+                Ok(_) => return true,
+                Err(current) => state = current,
+            }
+        }
     }
 }
 impl TaskGrant {

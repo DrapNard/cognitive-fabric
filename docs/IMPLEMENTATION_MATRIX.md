@@ -1,5 +1,20 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Rust 1.99 CI follow-up — 2026-10-23
+
+**Implemented; workspace lint gate verified on Rust 1.99.0.** The failed GitHub
+run for `fa1b354` identified a remaining deprecated `fetch_update` in
+`tests/working_profiles.rs`. It now uses a sequentially consistent atomic
+compare/exchange loop, preserving the zero floor and one blocked dispatch per
+reservation. The same deprecated API in the separate Wasm expert experiment is
+replaced without changing revocation transitions or their atomic ordering.
+A repository-wide Rust source scan finds no remaining `fetch_update` calls.
+`cargo +1.99.0 clippy --locked --workspace --all-targets -- -D warnings` passes.
+All nine `working_profiles` tests and all 23 separate Wasm experiment tests pass.
+The experiment also passes strict Clippy on Rust 1.99.0. Both formatting gates pass.
+This supersedes reliance on the older local compiler for the CI lint gate;
+full integration readiness is still unproven.
+
 ## CI lint compatibility correction — 2026-10-23
 
 **Implemented.** The reported strict-Clippy failures are corrected without

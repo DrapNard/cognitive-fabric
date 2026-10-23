@@ -180,12 +180,21 @@ impl InferenceBackend for ScriptBackend {
             .unwrap_or("[1,2,3]");
         let target = self.targets.get(role).cloned().flatten();
         self.calls.lock().unwrap().push(BackendCall { target });
-        let block = self
-            .blocked_dispatches_remaining
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |remaining| {
-                remaining.checked_sub(1)
-            })
-            .is_ok();
+        let mut remaining = self.blocked_dispatches_remaining.load(Ordering::SeqCst);
+        let block = loop {
+            if remaining == 0 {
+                break false;
+            }
+            match self.blocked_dispatches_remaining.compare_exchange_weak(
+                remaining,
+                remaining - 1,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            ) {
+                Ok(_) => break true,
+                Err(current) => remaining = current,
+            }
+        };
         let started = self.started.clone();
         let release = self.release.clone();
         Box::pin(async move {
