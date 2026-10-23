@@ -515,6 +515,9 @@ enum Command {
     },
     Compare {
         file: PathBuf,
+        /// Observe shared-device GPU metrics during each execution window.
+        #[arg(long)]
+        observe_gpu: bool,
         #[arg(long, default_value = "deep")]
         mode: String,
         #[arg(long)]
@@ -1800,6 +1803,7 @@ async fn run_cli() -> Result<()> {
         }
         Command::Compare {
             file,
+            observe_gpu,
             mode,
             larger_model,
             source,
@@ -1810,20 +1814,23 @@ async fn run_cli() -> Result<()> {
             workflow_check,
             max_run_seconds,
         } => {
-            let report = cogfabric::benchmarking::compare_until(
+            let report = cogfabric::benchmarking::compare_observed_until(
                 &cfg,
                 store.clone(),
-                &file,
-                &mode,
-                larger_model.as_deref(),
-                &cogfabric::benchmarking::Review {
-                    source,
-                    license,
-                    code_revision,
-                    expected_dataset_sha256: dataset_sha256,
-                    held_out,
-                    workflow_check,
-                    max_run_seconds,
+                cogfabric::benchmarking::Comparison {
+                    dataset: &file,
+                    mode: &mode,
+                    larger: larger_model.as_deref(),
+                    review: &cogfabric::benchmarking::Review {
+                        source,
+                        license,
+                        code_revision,
+                        expected_dataset_sha256: dataset_sha256,
+                        held_out,
+                        workflow_check,
+                        max_run_seconds,
+                    },
+                    gpu_observation: observe_gpu.then_some(Default::default()),
                 },
                 async {
                     let _ = tokio::signal::ctrl_c().await;

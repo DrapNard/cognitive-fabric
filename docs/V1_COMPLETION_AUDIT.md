@@ -57,7 +57,7 @@ instructions explicitly place them beyond proven v1.0 functionality.
 | Comparable baseline arms (§13) | `src/benchmarking.rs`, `tests/{benchmark_cli,progress_ablation,progress_ablation_cli}.rs`; six same-model profiles and optional larger-model baseline exist. Equal-budget independent live results are not established. |
 | 100–200 reproducible technical/reasoning tasks (§13) | `src/benchmarking.rs::authored_v1_suite_has_bounded_unique_cases_and_checked_tool_labels` validates 100 authored cases. Independent review, unseen domain breadth, ambiguity/tool necessity and distribution robustness remain Partial. |
 | Verified success, latency, calls, regressions (§13) | Supported criterion scoring, timing/resource totals, hashes and RAG regression gates exist. These do not demonstrate a statistically meaningful collective gain. |
-| Joules per solved task, peak VRAM, total physical compute (§13) | `src/gpu.rs` observes whole-device metrics; `src/telemetry.rs` observes process memory. Task-attributed energy/peak VRAM/compute accounting is not implemented/proven. Missing values must remain unknown. |
+| Joules per solved task, peak VRAM, total physical compute (§13) | `src/gpu.rs` and opt-in `src/gpu/window.rs` observe whole-device metrics and partial benchmark-window power intervals; `src/telemetry.rs` observes process memory. Task-attributed energy/peak VRAM/compute accounting is not implemented/proven. Missing values must remain unknown. |
 | Independent hostile-input and neural safety evaluation (§10, §13) | Fixed compiled security corpus and negative tests exist; independent broad behavioral/neural evaluator remains absent. |
 | No implicit permissions, live-weight mutation or self-promotion (§15.1–4) | Replaceable adapters, immutable task grants, inactive candidates and neural-promotion denial provide supported local mechanisms; no guarantee for forks or hostile owners. |
 | Cost justification and independent success (§15.5–6) | Budget/empirical gates and supported compiled verification exist; universal cost benefit or external truth is not proven. |
@@ -71,8 +71,8 @@ The audited source passes these checks:
 
 - `cargo fmt --all -- --check` and `git diff --check`.
 - `cargo +1.99.0 check --locked --workspace --all-targets`.
-- `cargo test --locked --workspace --all-targets --no-fail-fast`: **1,021 passed
-  across 68 targets**, zero failed or ignored.
+- `cargo test --locked --workspace --all-targets --no-fail-fast`: **1,027 passed
+  across 69 targets**, zero failed or ignored.
 - Rust 1.99 strict workspace Clippy with default and all features.
 - `cargo test --locked --features wasm-verifier --test wasm_verifier`: **4 passed**.
 - Fresh exact `flatc 25.12.19` generation matches all ten reviewed binding files.

@@ -1,5 +1,26 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Bounded benchmark GPU observation windows — 2026-10-23
+
+**Implemented device observations; task-attributed physical accounting remains
+Partial.** `src/gpu/window.rs` observes execution futures using one irreversible
+run-wide query budget, bounded cadence/device counts, sampled maxima and partial
+trapezoidal device-power intervals. Missing samples/power, large gaps and device
+identity changes cannot fabricate complete energy. In-flight query cleanup is
+drained and timed; late samples are excluded. No sampler task is detached.
+
+`src/benchmarking.rs` and `compare --observe-gpu` explicitly enable per-case/arm
+observations while preserving default output and original budgets. Existing
+fixed-command GPU query limits and reaping remain in force. Five deterministic
+window tests plus `tests/gpu_observation.rs` cover interpolation, missing data,
+identity changes, shared budgets, cleanup, invalid settings and optional CLI
+reports. Combined checks pass **1,027 tests across 69 workspace targets**, zero
+failed or ignored, plus **four optional Wasm tests**. Formatting, Rust 1.99
+workspace check, strict default/all-feature Clippy and both offline CLI/HTTP smoke
+scripts pass. See
+[GPU observations](GPU_OBSERVATIONS.md). No task energy, true peak, physical
+isolation or efficiency gain is claimed.
+
 ## Bounded local source discovery — 2026-10-23
 
 **Implemented local inventory; remote discovery/independent curation remain

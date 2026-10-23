@@ -1,5 +1,21 @@
 # Current Rust implementation
 
+## Optional benchmark device observations — 2026-10-23
+
+`compare --observe-gpu` now samples bounded whole-device metrics during each
+execution window using a shared run-wide query cap. Reports include sampled
+maxima, partial observed power intervals, missing-data/identity flags and query
+cleanup overhead. No detached queries remain after a window. Default comparison
+output and original execution budgets remain unchanged when observation is absent.
+Task energy, true peak memory and full-window energy remain explicitly unknown.
+
+Combined checks pass **1,027 tests across 69 workspace targets**, zero failed or
+ignored, plus **four optional Wasm tests**. Formatting, Rust 1.99 workspace check,
+strict Clippy with default/all features and offline CLI/HTTP smoke scripts pass.
+The five deterministic window tests and actual CLI regression establish measurement/accounting
+mechanics, not real-model performance, physical attribution or efficiency gains.
+See [GPU observations](GPU_OBSERVATIONS.md).
+
 ## Local source discovery — 2026-10-23
 
 `candidate discover-sources` now inventories a bounded operator-selected local

@@ -1,5 +1,16 @@
 # Threat Model (v1.0)
 
+## Optional benchmark device sampling
+
+Only explicit operator comparison options enable GPU observation; models receive
+no telemetry capability or command selection. One run-wide cap charges each fixed
+query irreversibly. The observer drains existing bounded child cleanup and rejects
+late samples from completed windows. Missing data and identity changes retain
+unknown energy instead of becoming zeros or authority. Sampling is shared-device
+observation with timing overhead, not physical task attribution, GPU isolation,
+weight attestation, verifier evidence or permission. No result can promote a model
+or increase the original inference/tool/deadline/resource ceilings.
+
 ## Local source discovery drafts
 
 Discovery enumerates a selected directory descriptor through trusted Linux procfs,

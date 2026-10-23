@@ -289,6 +289,46 @@ pub async fn compare_until<F>(
 where
     F: std::future::Future<Output = ()>,
 {
+    compare_observed_until(
+        cfg,
+        store,
+        Comparison {
+            dataset,
+            mode,
+            larger,
+            review,
+            gpu_observation: None,
+        },
+        cancel,
+    )
+    .await
+}
+
+pub struct Comparison<'a> {
+    pub dataset: &'a Path,
+    pub mode: &'a str,
+    pub larger: Option<&'a str>,
+    pub review: &'a Review,
+    pub gpu_observation: Option<crate::gpu::window::Settings>,
+}
+
+/// Optional device observations are not task-attributed physical accounting.
+pub async fn compare_observed_until(
+    cfg: &Config,
+    store: Arc<Store>,
+    request: Comparison<'_>,
+    cancel: impl std::future::Future<Output = ()>,
+) -> Result<Value> {
+    let Comparison {
+        dataset,
+        mode,
+        larger,
+        review,
+        gpu_observation,
+    } = request;
+    let mut gpu_meter = gpu_observation
+        .map(crate::gpu::window::Meter::new)
+        .transpose()?;
     security::validate_provenance(&review.source, &review.license)?;
     if review.held_out == review.workflow_check
         || review.code_revision.len() != 40
@@ -403,14 +443,19 @@ where
             }
             let arm_index = (case_index + position) % arms.len();
             let (profile, model, engine) = &arms[arm_index];
-            let outcome = engine
-                .run_profile_until(&case.input, mode, *profile, async {
-                    tokio::select! {
-                        _ = tokio::time::sleep_until(deadline) => {},
-                        _ = &mut cancel => { cancelled = true; },
-                    }
-                })
-                .await?;
+            let execution = engine.run_profile_until(&case.input, mode, *profile, async {
+                tokio::select! {
+                    _ = tokio::time::sleep_until(deadline) => {},
+                    _ = &mut cancel => { cancelled = true; },
+                }
+            });
+            let (outcome, gpu_observed) = match &mut gpu_meter {
+                Some(meter) => {
+                    let (result, observed) = meter.observe(execution).await;
+                    (result?, Some(observed))
+                }
+                None => (execution.await?, None),
+            };
             let passed = case.score(
                 criteria[case_index].as_ref(),
                 &outcome.status,
@@ -435,14 +480,18 @@ where
                 .add(&identities.hypothesis_diagnostics);
             details.push(json!({"case_index":case_index,"arm_index":arm_index,"execution_position":position,"profile":profile,"configured_model":model,
                 "hypothesis_diagnostics":identities.hypothesis_diagnostics,"planning_advice":identities.planning_advice,"exploration_advice":identities.exploration_advice,"expert_advice":identities.expert_advice,"reported_models":identities.reported_models,"bound_expert_models":identities.bound_expert_models,"primary_model_snapshot":identities.primary_model_snapshot,"resource_route_sha256":identities.resource_route_sha256,"resource_routes":identities.resource_routes,"passed":passed,"expected":case.expected,"input":case.input,"outcome":outcome,"verification":case.verification}));
+            if let Some(observed) = gpu_observed {
+                if let Some(detail) = details.last_mut() {
+                    detail["gpu_observation"] = observed;
+                }
+            }
             if cancelled || tokio::time::Instant::now() >= deadline {
                 stopped = true;
                 break 'cases;
             }
         }
     }
-    Ok(
-        json!({"format_version":1,"dataset_checksum":dataset_checksum,"reviewed_dataset_checksum_operator_attested":if review.held_out {review.expected_dataset_sha256.as_ref()} else {None},"dataset_checksum_operator_pinned":review.expected_dataset_sha256.is_some(),"dataset_source":review.source,"dataset_license":review.license,"held_out_operator_attested":review.held_out,
+    let mut report = json!({"format_version":1,"dataset_checksum":dataset_checksum,"reviewed_dataset_checksum_operator_attested":if review.held_out {review.expected_dataset_sha256.as_ref()} else {None},"dataset_checksum_operator_pinned":review.expected_dataset_sha256.is_some(),"dataset_source":review.source,"dataset_license":review.license,"held_out_operator_attested":review.held_out,
         "run_purpose":if review.workflow_check {"workflow_check"} else {"held_out_comparison"},"held_out_run":review.held_out,
         "runtime_sources_sha256":crate::escalation::empirical::runtime_sources_fingerprint(),"compiled_role_prompts_sha256":crate::backend::runtime_role_prompts_sha256()?,"code_revision_operator_attested":review.code_revision,"package_version":env!("CARGO_PKG_VERSION"),"configuration":common,"mode":mode,"corpus_snapshot":corpus.metadata,"snapshot_elapsed_ms":snapshot_ms,
         "expert_router":arms[0].2.expert_router_descriptor(),"router_implementation_attested":false,"subtask_scheduler":arms[0].2.subtask_scheduler_descriptor(),"scheduler_implementation_attested":false,
@@ -451,8 +500,13 @@ where
         "arms":arms.iter().enumerate().map(|(index,(profile,model,_))| json!({"index":index,"profile":profile,"model":model,"executed":counts[index],"passed":scores[index],"resources":totals[index],"accuracy":if counts[index]>0 {Some(scores[index] as f64/counts[index] as f64)} else {None}})).collect::<Vec<_>>(),
         "paired_changes_against_small_model_alone":paired_changes(&paired_results,arms.len()),
         "details":details,"unavailable_metrics":["peak_memory","gpu_memory","energy","model_load_cost","general_security_failure_rate"],
-        "limitations":[if review.workflow_check {"Public workflow check only; no held-out review or benchmark quality claim"} else {"Held-out independence and code revision are operator-attested"},"Backend model labels do not attest immutable weights","A bound expert model configuration invalidates the same-model ablation control, even if advice is refused or fails; inspect per-case bound_expert_models","Exact-match, dependency-order, integer-sort and SQL criteria do not establish broad reasoning quality","Structured comparison recomputes checks without trusting runtime status; ordering/sorting share the runtime compiled verifier implementation","Retrieval uses one read-only SQLite snapshot; checksum includes unrelated stored history","Snapshot bounds are 64 MB and temporarily require an additional serialization buffer","Live model availability, weight identity and server state are not frozen","An enabled advice guard uses live same-profile failure history; that history is not frozen by the corpus snapshot","Different arms consume different amounts within the same operator ceilings; inspect actual usage"]}),
-    )
+        "limitations":[if review.workflow_check {"Public workflow check only; no held-out review or benchmark quality claim"} else {"Held-out independence and code revision are operator-attested"},"Backend model labels do not attest immutable weights","A bound expert model configuration invalidates the same-model ablation control, even if advice is refused or fails; inspect per-case bound_expert_models","Exact-match, dependency-order, integer-sort and SQL criteria do not establish broad reasoning quality","Structured comparison recomputes checks without trusting runtime status; ordering/sorting share the runtime compiled verifier implementation","Retrieval uses one read-only SQLite snapshot; checksum includes unrelated stored history","Snapshot bounds are 64 MB and temporarily require an additional serialization buffer","Live model availability, weight identity and server state are not frozen","An enabled advice guard uses live same-profile failure history; that history is not frozen by the corpus snapshot","Different arms consume different amounts within the same operator ceilings; inspect actual usage"]});
+    if let Some(meter) = gpu_meter {
+        report["gpu_observation"] = json!({"settings":gpu_observation,"remaining_run_samples":meter.remaining_samples(),
+            "task_attributed":false,"measurement_overhead_excluded_from_task_metrics":false,
+            "sampling_scope":"whole-device; shared workloads and query overhead are not isolated"});
+    }
+    Ok(report)
 }
 
 #[cfg(test)]

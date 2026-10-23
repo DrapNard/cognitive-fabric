@@ -1,4 +1,5 @@
 //! Opt-in operator GPU observations, never task-attributed resource accounting.
+pub mod window;
 #[cfg(any(target_os = "linux", test))]
 use anyhow::bail;
 use anyhow::Result;
