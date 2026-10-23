@@ -147,6 +147,110 @@ fn configuration_is_bounded_and_never_model_authority() {
         .wrap_backend("jev-plus", Gate::new(false), allocation(1, 0, 0))
         .is_err());
 }
+
+#[test]
+fn native_targets_keep_instance_identity_while_resources_match_only_canonical_base_and_model() {
+    let resource_target = crate::backend::ModelTarget {
+        api_base: "http://127.0.0.1:1234/api/v1".into(),
+        model: "native-model-key".into(),
+    };
+    let configuration = Configuration {
+        settings: Settings {
+            label: "native_pool".into(),
+            capacity: allocation(2, 100, 100),
+            max_pending: 4,
+            max_wait_ms: 1000,
+            max_execution_ms: 1000,
+            scheduling: None,
+        },
+        allocation: allocation(1, 8, 8),
+        residents: vec![resident::ResidentAllocation {
+            id: "native.shared".into(),
+            version: "1.0.0".into(),
+            weights_sha256: "a".repeat(64),
+            host_memory_bytes: 20,
+            device_memory_bytes: 25,
+            consumers: vec![resource_target.clone()],
+        }],
+        working_profiles: vec![WorkingProfile {
+            id: "native.solver".into(),
+            target: resource_target,
+            roles: vec!["solver".into()],
+            allocation: allocation(1, 12, 8),
+        }],
+    };
+    configuration.validate().unwrap();
+    let store = Arc::new(Store::in_memory().unwrap());
+    let pool = ResourcePool::configured(store, &configuration).unwrap();
+    let target = crate::backend::NativeModelTarget {
+        api_base: "http://127.0.0.1:1234/api/v1".into(),
+        model: "native-model-key".into(),
+        model_instance_id: "model-instance-a".into(),
+    };
+    let selected = pool
+        .routing_candidate(
+            "solver",
+            Some(crate::backend::InferenceTarget::Native(target.clone())),
+        )
+        .unwrap();
+    assert_eq!(
+        selected.target,
+        crate::backend::InferenceTarget::Native(target.clone())
+    );
+    assert_eq!(
+        selected.metadata["target"],
+        serde_json::to_value(crate::backend::InferenceTarget::Native(target.clone())).unwrap()
+    );
+    assert_eq!(selected.metadata["profile_id"], "native.solver");
+    assert_eq!(
+        selected.metadata["resident_coverage"]["target"],
+        serde_json::to_value(crate::backend::InferenceTarget::Native(target.clone())).unwrap()
+    );
+
+    let other_instance = crate::backend::NativeModelTarget {
+        model_instance_id: "model-instance-b".into(),
+        ..target.clone()
+    };
+    let other = pool
+        .routing_candidate(
+            "solver",
+            Some(crate::backend::InferenceTarget::Native(
+                other_instance.clone(),
+            )),
+        )
+        .unwrap();
+    assert_eq!(
+        other.target,
+        crate::backend::InferenceTarget::Native(other_instance)
+    );
+    assert_ne!(other.metadata["target"], selected.metadata["target"]);
+
+    let wrong_model = crate::backend::NativeModelTarget {
+        model: "unlisted-native-model".into(),
+        ..target.clone()
+    };
+    assert!(matches!(
+        pool.routing_candidate(
+            "solver",
+            Some(crate::backend::InferenceTarget::Native(wrong_model))
+        ),
+        Err(RoutingRejection::UnlistedProfile)
+    ));
+    let openai_protocol_base = crate::backend::NativeModelTarget {
+        api_base: "http://127.0.0.1:1234/v1".into(),
+        ..target
+    };
+    assert!(matches!(
+        pool.routing_candidate(
+            "solver",
+            Some(crate::backend::InferenceTarget::Native(
+                openai_protocol_base
+            ))
+        ),
+        Err(RoutingRejection::MetadataError)
+    ));
+}
+
 #[tokio::test]
 async fn fifo_admits_all_dimensions_atomically_without_smaller_request_starvation() {
     let pool = pool(allocation(3, 100, 100));

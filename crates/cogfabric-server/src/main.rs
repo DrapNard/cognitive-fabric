@@ -9,11 +9,19 @@ struct Args {
     home: Option<PathBuf>,
     #[arg(long, default_value = "127.0.0.1:8234")]
     bind: SocketAddr,
+    /// Execute supported typed tools through the compiled same-image module worker.
+    #[arg(long, global = true)]
+    typed_module_worker: bool,
     /// Pin reviewed workflow utility evidence for this HTTP service lifetime.
     #[arg(long, requires = "workflow_thresholds")]
     workflow_study: Option<PathBuf>,
     #[arg(long, requires = "workflow_study")]
     workflow_thresholds: Option<PathBuf>,
+    /// Explicit operator policy for task-driven local model lifecycle.
+    #[arg(long, global = true)]
+    native_lifecycle_policy: Option<PathBuf>,
+    #[arg(long, global = true, requires = "native_lifecycle_policy")]
+    approve_native_lifecycle: bool,
     #[command(subcommand)]
     worker: Option<Worker>,
 }
@@ -21,6 +29,13 @@ struct Args {
 // worker entry points here; all worker implementation remains in the core.
 #[derive(Subcommand)]
 enum Worker {
+    #[command(hide = true, name = "module-worker")]
+    Module {
+        #[arg(long)]
+        socket: PathBuf,
+        #[arg(long)]
+        host_pid: u32,
+    },
     #[command(hide = true, name = "agent-worker")]
     Agent {
         #[arg(long)]
@@ -54,14 +69,23 @@ enum Worker {
 async fn main() -> Result<()> {
     let args = Args::parse();
     if let Some(worker) = args.worker {
-        if args.workflow_study.is_some() || args.workflow_thresholds.is_some() {
-            anyhow::bail!("Workflow policy options are not valid for worker commands")
+        if args.workflow_study.is_some()
+            || args.workflow_thresholds.is_some()
+            || args.native_lifecycle_policy.is_some()
+            || args.approve_native_lifecycle
+            || args.typed_module_worker
+        {
+            anyhow::bail!("Policy options are not valid for worker commands")
+        }
+        if let Worker::Module { socket, host_pid } = &worker {
+            return cogfabric::fabric::modules::worker_entrypoint(socket, *host_pid).await;
         }
         let home = args
             .home
             .as_deref()
             .ok_or_else(|| anyhow::anyhow!("Worker requires an explicit home"))?;
         return match worker {
+            Worker::Module { .. } => unreachable!("Module worker returned above"),
             Worker::Agent { socket, host_pid } => {
                 cogfabric::agent::process::run_worker(home, &socket, host_pid).await
             }
@@ -78,6 +102,19 @@ async fn main() -> Result<()> {
             }
         };
     }
+    if args.native_lifecycle_policy.is_some() && !args.approve_native_lifecycle {
+        anyhow::bail!("Native lifecycle policy requires explicit operator approval")
+    }
+    if args.native_lifecycle_policy.is_some() && args.typed_module_worker {
+        anyhow::bail!("Set typed_module_worker inside the approved native lifecycle policy")
+    }
+    // Read and validate reviewed policy before configuration or runtime state
+    // is loaded. HTTP requests cannot replace this pinned policy.
+    let native_lifecycle = args
+        .native_lifecycle_policy
+        .as_ref()
+        .map(|path| cogfabric::residency::lifecycle::NativeLifecyclePolicy::load(path))
+        .transpose()?;
     // Validate and pin the optional policy before loading or preparing state and
     // before constructing either inference backend. Requests cannot replace it.
     let workflow_router: Option<Arc<dyn cogfabric::routing::ExpertRouter>> = match (
@@ -100,8 +137,19 @@ async fn main() -> Result<()> {
     cogfabric::store::bootstrap(&store)?;
     let agent = AgentRuntime::local(cfg.clone(), store.clone())?;
     let engine = Engine::new(cfg, store);
+    let engine = if args.typed_module_worker {
+        engine.with_builtin_module_worker()?
+    } else {
+        engine
+    };
     let engine = match workflow_router {
         Some(router) => engine.with_expert_router(router)?,
+        None => engine,
+    };
+    let engine = match native_lifecycle {
+        Some(policy) => {
+            engine.with_approved_native_lifecycle(policy, args.approve_native_lifecycle)?
+        }
         None => engine,
     };
     let server = cogfabric_server::Server::new(agent, engine, &token)?;

@@ -94,6 +94,10 @@ impl ResourcePool {
                     .canonical()
                     .map(crate::backend::InferenceTarget::LocalHttp)
                     .map(Some),
+                Some(crate::backend::InferenceTarget::Native(target)) => target
+                    .canonical()
+                    .map(crate::backend::InferenceTarget::Native)
+                    .map(Some),
                 Some(crate::backend::InferenceTarget::Deterministic) | None => Ok(None),
             };
             let target = canonical_target
@@ -108,6 +112,12 @@ impl ResourcePool {
                     Err(_) => Err(anyhow!("Profiled inference target metadata is invalid")),
                     Ok(Some(crate::backend::InferenceTarget::LocalHttp(target))) => {
                         self.find_working_profile(role, target)
+                    }
+                    Ok(Some(crate::backend::InferenceTarget::Native(target))) => {
+                        let resource_target = target.resource_target().map_err(|_| {
+                            anyhow!("Profiled inference target metadata is invalid")
+                        })?;
+                        self.find_working_profile(role, &resource_target)
                     }
                     Ok(Some(crate::backend::InferenceTarget::Deterministic)) | Ok(None) => Err(
                         anyhow!("Configured working profiles require a known local model target"),

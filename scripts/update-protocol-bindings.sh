@@ -8,7 +8,7 @@ fi
 compiler=$1
 [[ $("$compiler" --version) == 'flatc version 25.12.19' ]] || { echo 'Expected flatc 25.12.19.' >&2; exit 1; }
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
-schemas=(cognitive module events bootstrap event_stream tool sql_tool tool_bootstrap agent)
+schemas=(cognitive module events bootstrap event_stream tool sql_tool tool_bootstrap agent general_module)
 staging=$(mktemp -d /tmp/cogfabric-protocol-bindings.XXXXXX)
 # Retain staging as reproducible developer evidence; never delete caller-owned files.
 inputs=()

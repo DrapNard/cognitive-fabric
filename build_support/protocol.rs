@@ -6,7 +6,7 @@ use std::{
 };
 pub const VERSION: &str = "25.12.19";
 pub const UPSTREAM: &str = "7e163021e59cca4f8e1e35a7c828b5c6b7915953";
-pub const SCHEMAS: [&str; 9] = [
+pub const SCHEMAS: [&str; 10] = [
     "cognitive",
     "module",
     "events",
@@ -16,6 +16,7 @@ pub const SCHEMAS: [&str; 9] = [
     "sql_tool",
     "tool_bootstrap",
     "agent",
+    "general_module",
 ];
 fn read(path: &Path, limit: u64) -> Result<Vec<u8>, String> {
     let metadata =

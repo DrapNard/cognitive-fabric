@@ -264,7 +264,7 @@ fn resource_routes(
 }
 
 fn canonical_target(value: &Value) -> Result<crate::backend::InferenceTarget> {
-    use crate::backend::{InferenceTarget, ModelTarget};
+    use crate::backend::{InferenceTarget, ModelTarget, NativeModelTarget};
     let target = match value["kind"].as_str() {
         Some("deterministic") if value.as_object().is_some_and(|object| object.len() == 1) => {
             InferenceTarget::Deterministic
@@ -284,6 +284,22 @@ fn canonical_target(value: &Value) -> Result<crate::backend::InferenceTarget> {
                 bail!("Selected route target is not canonical")
             }
             InferenceTarget::LocalHttp(target)
+        }
+        Some("native")
+            if value
+                .as_object()
+                .is_some_and(|object| object.len() == 2 && object.contains_key("target")) =>
+        {
+            let target: NativeModelTarget = serde_json::from_value(value["target"].clone())?;
+            let canonical = target.canonical()?;
+            if canonical != target
+                || value["target"]
+                    .as_object()
+                    .is_none_or(|object| object.len() != 3)
+            {
+                bail!("Selected native route target is not canonical")
+            }
+            InferenceTarget::Native(target)
         }
         _ => bail!("Malformed selected route target"),
     };
@@ -626,6 +642,59 @@ mod tests {
         }
         assert!(report.contains("fixture.planner"));
         assert!(report.contains("planner-profile"));
+    }
+
+    #[test]
+    fn native_route_report_hashes_the_exact_instance_but_omits_api_identity() {
+        let native = crate::backend::NativeModelTarget {
+            api_base: "http://127.0.0.1:1234/api/v1".into(),
+            model: "native-model-key".into(),
+            model_instance_id: "instance-a".into(),
+        };
+        let target = crate::backend::InferenceTarget::Native(native.clone());
+        let mut selection = routed_selection(&["planner"]);
+        selection["routes"][0]["resource"]["target"] = serde_json::to_value(&target).unwrap();
+        selection["route_scope_sha256"] =
+            json!(crate::fabric::resource_route_scope(&selection).unwrap());
+
+        let metadata = read_routing_snapshot(wrapped_selection(selection)).unwrap();
+        let route = &metadata.resource_routes.unwrap()[0];
+        assert_eq!(
+            route["target_sha256"],
+            crate::store::sha256(&serde_json::to_vec(&target).unwrap())
+        );
+        assert_ne!(
+            route["target_sha256"],
+            crate::store::sha256(
+                &serde_json::to_vec(&crate::backend::InferenceTarget::Native(
+                    crate::backend::NativeModelTarget {
+                        model_instance_id: "instance-b".into(),
+                        ..native
+                    }
+                ))
+                .unwrap()
+            )
+        );
+        let report = serde_json::to_string(route).unwrap();
+        assert!(!report.contains("api_base"));
+        assert!(!report.contains("127.0.0.1"));
+        assert!(!report.contains("instance-a"));
+    }
+
+    #[test]
+    fn native_route_report_rejects_openai_protocol_bases() {
+        let mut selection = routed_selection(&["planner"]);
+        selection["routes"][0]["resource"]["target"] = json!({
+            "kind":"native",
+            "target":{
+                "api_base":"http://127.0.0.1:1234/v1",
+                "model":"native-model-key",
+                "model_instance_id":"instance-a"
+            }
+        });
+        selection["route_scope_sha256"] =
+            json!(crate::fabric::resource_route_scope(&selection).unwrap());
+        assert!(read_routing_snapshot(wrapped_selection(selection)).is_err());
     }
 
     #[test]

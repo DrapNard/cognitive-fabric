@@ -7,8 +7,8 @@ supply domain documentation or independent verification automatically.
 
 The SQL domain now also has a built-in bounded inline-data SELECT tool. Explicit
 `sql:` objectives use deterministic authorization and fresh in-memory databases;
-reference registration does not grant execution authority. See `SQL.md`. Dynamic
-tool manifests and external database connections remain unsupported.
+reference registration does not grant execution authority. See `SQL.md`. Optional immutable typed-provider bindings are described in `TYPED_MODULES.md`;
+external database connections remain unsupported.
 
 ## Versioned reference manifests
 
@@ -550,3 +550,21 @@ or permissions. It sees typed resource/hash metadata, not reference instructions
 See `ESCALATION.md` for audited dispatch ordering, baseline exclusions, native-code
 limits and fail-closed recovery of unavailable policy versions. This is not a
 measured usefulness claim or general expert scheduler.
+
+
+## Coordinated activation and typed providers
+
+The source now includes `skill-activation-plan CHANGES.json` and
+`skill-activation-apply CHANGES.json --registry-sha256 DIGEST`. CHANGES is a bounded
+array of `{ "id": "expert.id", "version": "1.0.0" }` selections. Planning validates
+the entire proposed active dependency graph. Applying rechecks the current registry
+and immutable candidate hashes in one transaction; stale or incompatible plans
+make no partial changes.
+
+An optional `provider` binding names an exact typed module ID/version/capability
+set. It cannot name arbitrary executable paths or add permissions. New-task and
+already-pinned-task APIs independently validate the immutable expert and provider
+snapshots before returning a task-bound handle. The Engine records unavailable
+provider bindings before optional expert admission. Module dispatch still requires
+the original Session budget and compiled policy. These additions are source
+integrations awaiting the final combined verification pass.

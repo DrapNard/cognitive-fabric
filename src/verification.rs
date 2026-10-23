@@ -1,6 +1,8 @@
 mod finite;
 mod path;
 pub mod provider;
+#[cfg(feature = "wasm-verifier")]
+pub mod wasm;
 pub(crate) use finite::{SearchOutcome, SearchResult};
 pub use provider::{
     VerificationClaim, VerificationFuture, VerificationRequest, VerifierDescriptor,

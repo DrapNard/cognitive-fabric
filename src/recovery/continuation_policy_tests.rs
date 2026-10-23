@@ -1,7 +1,155 @@
 use super::*;
 use crate::escalation::{Decision, Descriptor, EscalationPolicy, Request};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use crate::verification::VerifierProvider;
+use std::time::Instant;
+use std::{
+    future::Future,
+    pin::Pin,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+const ORIGINAL_QUERY: &str = r#"sort:{"values":[3,1,2]}"#;
+
+struct Verifier {
+    descriptor: crate::verification::VerifierDescriptor,
+    calls: AtomicUsize,
+    requests: std::sync::Mutex<Vec<(String, String, String, String, Instant)>>,
+}
+
+impl Verifier {
+    fn new(id: &str) -> Self {
+        Self {
+            descriptor: crate::verification::VerifierDescriptor {
+                id: id.into(),
+                version: "1.0.0".into(),
+                implementation_sha256: "a".repeat(64),
+            },
+            calls: AtomicUsize::new(0),
+            requests: std::sync::Mutex::new(Vec::new()),
+        }
+    }
+}
+
+impl crate::verification::VerifierProvider for Verifier {
+    fn descriptor(&self) -> crate::verification::VerifierDescriptor {
+        self.descriptor.clone()
+    }
+
+    fn verify(
+        &self,
+        request: crate::verification::VerificationRequest,
+    ) -> crate::verification::VerificationFuture<'_> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        self.requests.lock().unwrap().push((
+            request.criterion,
+            request.objective,
+            request.objective_sha256,
+            request.answer_sha256,
+            request.deadline,
+        ));
+        Box::pin(async { Ok(crate::verification::VerificationClaim::accepted()) })
+    }
+}
+
+struct SolverReplies(std::sync::Mutex<std::collections::VecDeque<&'static str>>);
+
+impl crate::backend::InferenceBackend for SolverReplies {
+    fn generate<'a>(
+        &'a self,
+        role: &'a str,
+        _: &'a str,
+        _: usize,
+    ) -> Pin<Box<dyn Future<Output = Result<crate::backend::Generation>> + Send + 'a>> {
+        assert_eq!(role, "solver");
+        let text = self.0.lock().unwrap().pop_front().unwrap();
+        Box::pin(async move {
+            Ok(crate::backend::Generation {
+                text: text.into(),
+                model: "fixture/v1".into(),
+                input_tokens: Some(20),
+                output_tokens: Some(10),
+                elapsed_ms: 1.0,
+                queue_wait_ms: None,
+            })
+        })
+    }
+}
+
+fn pin_verifier(store: &Store, task: &str, provider: &Verifier) -> crate::verification::Criterion {
+    let query: String = store
+        .lock()
+        .unwrap()
+        .query_row("SELECT query FROM tasks WHERE id=?1", [task], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    let criterion = crate::verification::Criterion::from_query(&query)
+        .unwrap()
+        .unwrap();
+    store
+        .event(
+            task,
+            "verification_provider_snapshot",
+            "security-kernel",
+            serde_json::json!({
+                "format_version":1,
+                "provider":provider.descriptor(),
+                "criterion":criterion.name(),
+                "objective_sha256":crate::store::sha256(query.as_bytes()),
+                "compiled_checker_required":true,
+                "permissions_granted":false,
+                "implementation_attested":false
+            }),
+        )
+        .unwrap();
+    criterion
+}
+
+fn append_unresolved_verifier_intent(
+    store: &Store,
+    task: &str,
+    provider: &Verifier,
+    criterion: &crate::verification::Criterion,
+) {
+    let query: String = store
+        .lock()
+        .unwrap()
+        .query_row("SELECT query FROM tasks WHERE id=?1", [task], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    store
+        .event(
+            task,
+            "tool_reservation",
+            "security-kernel",
+            serde_json::json!({
+                "format_version":1,
+                "invocation":1,
+                "actor":"jev-plus",
+                "capability":criterion.capability()
+            }),
+        )
+        .unwrap();
+    store
+        .event(
+            task,
+            "verification_provider_intent",
+            "security-kernel",
+            serde_json::json!({
+                "format_version":1,
+                "provider":provider.descriptor(),
+                "criterion":criterion.name(),
+                "objective_sha256":crate::store::sha256(query.as_bytes()),
+                "answer_sha256":"b".repeat(64),
+                "remaining_ms":30000,
+                "compiled_checker_required":true,
+                "permissions_granted":false
+            }),
+        )
+        .unwrap();
+}
 
 struct Policy {
     allow: bool,
@@ -711,4 +859,182 @@ async fn continuation_never_silently_discards_an_original_shared_resource_pool()
     assert_eq!(store.task(&task).unwrap(), before);
     drop(store);
     std::fs::remove_dir_all(root).unwrap();
+}
+
+#[tokio::test]
+async fn combined_policy_preview_restores_exact_verifier_identity_without_callbacks_or_writes() {
+    let (store, root) = persistent();
+    let policy = Arc::new(Policy::new(store.clone(), false));
+    let verifier = Arc::new(Verifier::new("fixture.verifier"));
+    let (store, task) =
+        super::tests::fixture_in_with_policy(store, false, Some(policy.descriptor())).await;
+    pin_verifier(&store, &task, &verifier);
+
+    let before = store.task(&task).unwrap();
+    let report =
+        preview_with_restored_policies(&store, &task, policy.clone(), verifier.clone()).unwrap();
+    assert_eq!(report["escalation_policy"]["id"], "fixture.restored_deny");
+    assert_eq!(report["verifier_provider"]["id"], "fixture.verifier");
+    assert_eq!(report["verifier_implementation_attested"], false);
+    assert_eq!(report["resume_authorized"], false);
+    assert_eq!(store.task(&task).unwrap(), before);
+    assert_eq!(policy.decisions.load(Ordering::Acquire), 0);
+    assert_eq!(verifier.calls.load(Ordering::Acquire), 0);
+
+    drop(verifier);
+    drop(policy);
+    drop(store);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[tokio::test]
+async fn restored_verifier_checks_the_original_candidate_without_replaying_charged_work() {
+    let (store, root) = persistent();
+    let verifier = Arc::new(Verifier::new("fixture.verifier"));
+    let (store, task) = super::tests::fixture_in_with_policy(store, false, None).await;
+    pin_verifier(&store, &task, &verifier);
+    let handle = crate::verification::provider::Handle::new(verifier.clone()).unwrap();
+    let checkpoint = {
+        let db = store.lock().unwrap();
+        super::prepare_with_policy(
+            &db,
+            &task,
+            &crate::escalation::Handle::default(),
+            Some(&handle),
+        )
+        .unwrap()
+    };
+    let original_deadline = checkpoint.state.deadline;
+    let original_calls = checkpoint.state.resources.calls;
+    let original_tokens = checkpoint.state.resources.reserved_output_tokens;
+    let backend = Arc::new(SolverReplies(std::sync::Mutex::new(
+        ["remaining advice", "[1,2,3]"].into(),
+    )));
+    let mut session = crate::reasoning::Session::restored(
+        checkpoint.cfg,
+        store.clone(),
+        backend.clone(),
+        task.clone(),
+        &checkpoint.mode,
+        checkpoint.state,
+    )
+    .unwrap();
+    session.restore_verifier_provider(handle);
+    let answer = session
+        .continue_graph(
+            checkpoint.subtasks,
+            &checkpoint.query,
+            &checkpoint.context,
+            &checkpoint.mode,
+            None,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(answer, "[1,2,3]");
+    assert!(session.verified);
+    assert_eq!(session.resources.calls, original_calls + 2);
+    assert_eq!(
+        session.resources.reserved_output_tokens,
+        original_tokens + 576,
+        "continuation reserves 192 tokens for the remaining subtask and 384 for the final solver call"
+    );
+    assert_eq!(session.resources.tool_calls, 1);
+    assert_eq!(verifier.calls.load(Ordering::Acquire), 1);
+    let requests = verifier.requests.lock().unwrap();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].0, "integer_sort/v1");
+    assert_eq!(requests[0].1, ORIGINAL_QUERY);
+    assert_eq!(
+        requests[0].2,
+        crate::store::sha256(ORIGINAL_QUERY.as_bytes())
+    );
+    assert_eq!(requests[0].3, crate::store::sha256(b"[1,2,3]"));
+    assert_eq!(requests[0].4, original_deadline);
+    drop(requests);
+    let audit = store.task(&task).unwrap();
+    assert_eq!(
+        audit["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|event| event["kind"] == "verification_provider_result")
+            .count(),
+        1
+    );
+    assert!(backend.0.lock().unwrap().is_empty());
+
+    drop(session);
+    drop(verifier);
+    drop(store);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[tokio::test]
+async fn missing_changed_or_unresolved_verifier_restoration_denies_before_writes() {
+    for variant in 0..3 {
+        let (store, root) = persistent();
+        let pinned = Arc::new(Verifier::new("fixture.verifier"));
+        let supplied = if variant == 1 {
+            Arc::new(Verifier::new("fixture.other_verifier"))
+        } else {
+            pinned.clone()
+        };
+        let (store, task) = super::tests::fixture_in_with_policy(store, false, None).await;
+        let criterion = pin_verifier(&store, &task, &pinned);
+        if variant == 2 {
+            append_unresolved_verifier_intent(&store, &task, &pinned, &criterion);
+        }
+
+        let before = store.task(&task).unwrap();
+        let event_count: u64 = store
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT count(*) FROM events WHERE task_id=?1",
+                [&task],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let preview = if variant == 0 {
+            preview(&store, &task)
+        } else {
+            preview_with_verifier_provider(&store, &task, supplied.clone())
+        };
+        assert!(
+            preview.is_err(),
+            "variant {variant} was accepted by preview"
+        );
+        let resume = if variant == 0 {
+            resume(store.clone(), &task, true, std::future::pending()).await
+        } else {
+            resume_with_verifier_provider(
+                store.clone(),
+                &task,
+                true,
+                supplied.clone(),
+                std::future::pending(),
+            )
+            .await
+        };
+        assert!(resume.is_err(), "variant {variant} was accepted by resume");
+        assert_eq!(store.task(&task).unwrap(), before);
+        let after_event_count: u64 = store
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT count(*) FROM events WHERE task_id=?1",
+                [&task],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(after_event_count, event_count);
+        assert_eq!(pinned.calls.load(Ordering::Acquire), 0);
+        assert_eq!(supplied.calls.load(Ordering::Acquire), 0);
+
+        drop(supplied);
+        drop(pinned);
+        drop(store);
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }

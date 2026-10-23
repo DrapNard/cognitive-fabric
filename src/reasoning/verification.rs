@@ -2,6 +2,14 @@
 use super::*;
 
 impl Session {
+    pub(crate) fn restore_verifier_provider(
+        &mut self,
+        provider: crate::verification::provider::Handle,
+    ) {
+        self.verifier_provider = Some(provider);
+        self.verifier_provider_snapshot_written = true;
+    }
+
     pub(crate) fn set_resource_route_scope(&mut self, scope: Option<String>) -> Result<()> {
         if scope.as_ref().is_some_and(|value| {
             value.len() != 64
@@ -79,8 +87,53 @@ impl Session {
         self.authorize_tool(criterion.capability())?;
         let answer_hash = crate::store::sha256(answer.as_bytes());
         let objective_hash = crate::store::sha256(query.as_bytes());
-        let provider = self.verifier_provider.clone();
         let compiled = criterion.check(answer);
+        // A pinned typed verifier may provide a bounded diagnostic, but its
+        // claim never replaces or weakens the compiled criterion check.
+        if let (Some((broker, pins)), Some(request)) = (
+            self.typed_modules.clone(),
+            crate::reasoning::modules::candidate_verification_request(query, answer)?,
+        ) {
+            let capability = request.capability();
+            if let Some(pin) = pins.get(&capability) {
+                let module = pin.descriptor();
+                let response = self
+                    .dispatch_typed_module_pre_authorized(&broker, pin, request)
+                    .await;
+                let (claim, result_code) = match response {
+                    Ok(crate::fabric::modules::Response::SortDiagnostic { claimed_valid }) => {
+                        (Some(claimed_valid), "diagnostic")
+                    }
+                    Ok(crate::fabric::modules::Response::OrderingDiagnostic { claimed_valid }) => {
+                        (Some(claimed_valid), "diagnostic")
+                    }
+                    Ok(crate::fabric::modules::Response::PathDiagnostic { claimed_valid }) => {
+                        (Some(claimed_valid), "diagnostic")
+                    }
+                    Ok(_) => (None, "wrong_response_kind"),
+                    Err(_) => (None, "unavailable"),
+                };
+                self.store.event(
+                    &self.task,
+                    "typed_verifier_result",
+                    "fabric",
+                    json!({
+                        "format_version": 1,
+                        "module_id": module.id,
+                        "module_version": module.version,
+                        "capability": capability.as_str(),
+                        "objective_sha256": objective_hash,
+                        "candidate_sha256": answer_hash,
+                        "claim_valid": claim,
+                        "result": result_code,
+                        "compiled_checker_accepted": compiled.is_ok(),
+                        "compiled_checker_authoritative": true,
+                        "permissions_granted": false
+                    }),
+                )?;
+            }
+        }
+        let provider = self.verifier_provider.clone();
         let mut provider_claim = None;
         let mut provider_reason_code = None;
         let verified = if let Some(provider) = provider {

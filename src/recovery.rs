@@ -20,19 +20,205 @@ use std::{
     path::Path,
 };
 
-/// Custom native verifier callbacks are not reconstructable from stored metadata.
-/// Every recovery/reconciliation path refuses these task histories until it can
-/// restore the exact operator-installed implementation and run a fresh check.
-pub(crate) fn reject_custom_verifier_recovery(db: &rusqlite::Connection, task: &str) -> Result<()> {
-    let found: bool = db.query_row(
-        "SELECT EXISTS(SELECT 1 FROM events WHERE task_id=?1 AND (kind GLOB 'verification_provider*' OR (kind='verification' AND CASE WHEN length(CAST(payload AS BLOB))>262144 THEN 1 WHEN json_valid(payload) THEN json_type(payload,'$.provider') IS NOT NULL ELSE 1 END)))",
+/// Validate the operator-restored verifier against the task's original pinned
+/// identity. An unfinished callback is deliberately unrecoverable: its external
+/// completion is unknown, so invoking it again would replay an uncertain call.
+pub(crate) fn validate_verifier_recovery(
+    db: &rusqlite::Connection,
+    task: &str,
+    restored: Option<&crate::verification::provider::Handle>,
+) -> Result<()> {
+    use serde_json::Value;
+    use std::collections::BTreeMap;
+    let managed_native: bool = db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM events WHERE task_id=?1 AND kind='native_task_scope')",
         [task],
         |row| row.get(0),
     )?;
-    if found {
-        bail!("Recovery of a custom-verifier task requires the exact pinned provider; this recovery path cannot restore it")
+    if managed_native {
+        bail!("Native task continuation requires restoring its exact lifecycle owner and instance bindings")
     }
-    Ok(())
+
+    let query: String = db.query_row(
+        "SELECT CASE WHEN length(CAST(query AS BLOB))<=12000 THEN query END FROM tasks WHERE id=?1",
+        [task],
+        |row| row.get(0),
+    )?;
+    let expected_objective = crate::store::sha256(query.as_bytes());
+
+    let mut statement = db.prepare(
+        "SELECT kind,CASE WHEN length(CAST(source AS BLOB))<=64 THEN source END,
+                CASE WHEN length(CAST(payload AS BLOB))<=4096 THEN payload END,id
+         FROM events WHERE task_id=?1 AND kind IN
+         ('verification_provider_snapshot','verification_provider_intent','verification_provider_result')
+         ORDER BY id LIMIT 130",
+    )?;
+    let mut rows = statement.query([task])?;
+    let mut snapshot: Option<crate::verification::VerifierDescriptor> = None;
+    let mut pinned_criterion: Option<String> = None;
+    let mut calls = BTreeMap::<(String, String, String), Vec<bool>>::new();
+    let mut charged_callbacks = 0u64;
+    let mut count = 0usize;
+    while let Some(row) = rows.next()? {
+        count += 1;
+        if count > 129 {
+            bail!("Verifier recovery history exceeds bounds")
+        }
+        let kind: String = row.get(0)?;
+        let source: Option<String> = row.get(1)?;
+        let raw: Option<String> = row.get(2)?;
+        let event_id: i64 = row.get(3)?;
+        let raw =
+            raw.ok_or_else(|| anyhow::anyhow!("Verifier recovery evidence exceeds bounds"))?;
+        let payload: Value = crate::strict_json::value(raw.as_bytes(), 4096)?;
+        let provider: crate::verification::VerifierDescriptor =
+            serde_json::from_value(payload["provider"].clone())?;
+        provider.validate()?;
+        match kind.as_str() {
+            "verification_provider_snapshot" => {
+                let criterion = crate::verification::Criterion::from_query(&query)?
+                    .ok_or_else(|| anyhow::anyhow!("Pinned verifier has no compiled criterion"))?;
+                let expected = serde_json::json!({
+                    "format_version":1,"provider":provider,"criterion":criterion.name(),
+                    "objective_sha256":crate::store::sha256(query.as_bytes()),
+                    "compiled_checker_required":true,"permissions_granted":false,
+                    "implementation_attested":false
+                });
+                if source.as_deref() != Some("security-kernel")
+                    || payload != expected
+                    || snapshot.replace(provider.clone()).is_some()
+                {
+                    bail!("Invalid or duplicate pinned verifier identity")
+                }
+                pinned_criterion = Some(criterion.name().to_owned());
+            }
+            "verification_provider_intent" => {
+                let criterion = payload["criterion"]
+                    .as_str()
+                    .ok_or_else(|| anyhow::anyhow!("Missing verifier criterion"))?;
+                let objective = payload["objective_sha256"]
+                    .as_str()
+                    .ok_or_else(|| anyhow::anyhow!("Missing verifier objective identity"))?;
+                let answer = payload["answer_sha256"]
+                    .as_str()
+                    .ok_or_else(|| anyhow::anyhow!("Missing verifier answer identity"))?;
+                if source.as_deref() != Some("security-kernel")
+                    || payload["format_version"] != 1
+                    || payload["compiled_checker_required"] != true
+                    || payload["permissions_granted"] != false
+                    || !valid_hash(objective)
+                    || objective != &expected_objective
+                    || pinned_criterion.as_deref() != Some(criterion)
+                    || !valid_hash(answer)
+                {
+                    bail!("Invalid or duplicate verifier callback intent")
+                }
+                let checker =
+                    crate::verification::Criterion::from_query(&query)?.ok_or_else(|| {
+                        anyhow::anyhow!("Verifier intent lost its compiled criterion")
+                    })?;
+                let prior_charges: u64 = db.query_row(
+                    "SELECT count(*) FROM events WHERE task_id=?1 AND kind='tool_reservation'
+                     AND json_extract(payload,'$.capability')=?2 AND id<?3",
+                    rusqlite::params![task, checker.capability(), event_id],
+                    |row| row.get(0),
+                )?;
+                if prior_charges != charged_callbacks {
+                    bail!("Verifier callback intent is not paired with its original tool charge")
+                }
+                charged_callbacks += 1;
+                calls
+                    .entry((criterion.into(), objective.into(), answer.into()))
+                    .or_default()
+                    .push(false);
+            }
+            "verification_provider_result" => {
+                let criterion = payload["criterion"]
+                    .as_str()
+                    .ok_or_else(|| anyhow::anyhow!("Missing verifier result criterion"))?;
+                let objective = payload["objective_sha256"]
+                    .as_str()
+                    .ok_or_else(|| anyhow::anyhow!("Missing verifier result objective"))?;
+                let answer = payload["answer_sha256"]
+                    .as_str()
+                    .ok_or_else(|| anyhow::anyhow!("Missing verifier result answer"))?;
+                let key = (criterion.into(), objective.into(), answer.into());
+                if source.as_deref() != Some("verifier-r")
+                    || payload["format_version"] != 1
+                    || payload["compiled_checker_required"] != true
+                    || payload["permissions_granted"] != false
+                    || objective != &expected_objective
+                    || pinned_criterion.as_deref() != Some(criterion)
+                    || payload["provider_accepted"].as_bool().is_none()
+                    || payload["compiled_accepted"].as_bool().is_none()
+                    || payload["verified"]
+                        != (payload["provider_accepted"].as_bool().unwrap()
+                            && payload["compiled_accepted"].as_bool().unwrap())
+                    || calls.get_mut(&key).is_none_or(|attempts| {
+                        attempts
+                            .iter_mut()
+                            .find(|finished| !**finished)
+                            .is_none_or(|finished| {
+                                *finished = true;
+                                false
+                            })
+                    })
+                {
+                    bail!("Invalid, duplicate, or unpaired verifier callback result")
+                }
+                let audit_exists: bool = db.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM events
+                     WHERE task_id=?1 AND kind='verification' AND source='verifier-r'
+                       AND json_extract(payload,'$.objective_hash')=?2
+                       AND json_extract(payload,'$.answer_hash')=?3
+                       AND json_extract(payload,'$.criterion')=?4
+                       AND json_extract(payload,'$.provider.id')=?5
+                       AND json_extract(payload,'$.provider.version')=?6
+                       AND json_extract(payload,'$.provider.implementation_sha256')=?7
+                       AND json_extract(payload,'$.provider_accepted')=?8
+                       AND json_extract(payload,'$.compiled_accepted')=?9
+                       AND json_extract(payload,'$.verified')=?10)",
+                    rusqlite::params![
+                        task,
+                        objective,
+                        answer,
+                        criterion,
+                        provider.id,
+                        provider.version,
+                        provider.implementation_sha256,
+                        payload["provider_accepted"].as_bool().unwrap(),
+                        payload["compiled_accepted"].as_bool().unwrap(),
+                        payload["verified"].as_bool().unwrap()
+                    ],
+                    |row| row.get(0),
+                )?;
+                if !audit_exists {
+                    bail!("Verifier result has no matching durable criterion audit")
+                }
+            }
+            _ => unreachable!(),
+        }
+        if snapshot.as_ref().is_some_and(|pinned| pinned != &provider) {
+            bail!("Verifier callback identity differs from the pinned provider")
+        }
+    }
+    if calls.values().flatten().any(|finished| !finished) {
+        bail!("An uncertain verifier callback prevents recovery; it will not be replayed")
+    }
+    match (snapshot, restored) {
+        (None, None) if calls.is_empty() => Ok(()),
+        (Some(pinned), Some(restored)) if &pinned == restored.descriptor() => Ok(()),
+        (Some(_), None) => bail!("Task recovery requires the exact pinned host verifier"),
+        (None, Some(_)) => bail!("A verifier cannot be added to a task that did not pin one"),
+        _ => bail!("Restored verifier identity does not match the original pinned provider"),
+    }
+}
+
+fn valid_hash(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 pub(crate) struct ExecutionLease(#[allow(dead_code)] File);

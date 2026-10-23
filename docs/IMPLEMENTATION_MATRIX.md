@@ -1,5 +1,55 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Implementation phase — task lifecycle and replaceable modules
+
+**Partial / unverified source integration.** The owner requested completion of
+remaining implementation before the next final test pass. Historical passing
+counts below do not verify the newly integrated sources.
+
+- `src/residency/lifecycle.rs`, `src/engine.rs`, `src/reasoning.rs`: operator-approved
+  task model sets, retained exclusive runtime/resource ownership, receipt-bound
+  generation preflight, model-specific expert adapters, original task budgets,
+  conditional release of only newly loaded instances, and durable unknown-inference
+  gates with explicit stop-acknowledgement resolution. Never adopt foreign instances.
+- `src/main.rs`, `crates/cogfabric-server/src/main.rs`: explicit reviewed lifecycle
+  policy and approval options for ordinary collective tasks, with policy validation
+  before state initialization; HTTP same-image typed worker entrypoint. See
+  [native lifecycle](NATIVE_LIFECYCLE.md).
+- `src/backend/native.rs`, `src/backend.rs`: native LM Studio role adapters with
+  response-instance checks, no provider integrations, bounded strict responses and
+  sticky uncertain-dispatch counters. Requests select documented model keys; the
+  returned instance is checked, without claiming request-time instance selection.
+- `src/resource_scheduler/`, `src/evaluation/model_metadata.rs`, recovery resource
+  validators: preserve explicit native adapter/instance identities and declared
+  resource mappings; native/OpenAI protocol identities are not interchangeable.
+- `src/registry.rs`: whole-graph expert version activation planning and atomic apply,
+  immutable candidate/current-set hashes, dependency closure and stale-plan refusal.
+- `src/fabric/modules.rs`: typed trusted-host module registration, version pins,
+  task grants, bounded queues/concurrency/deadlines, cancellation and audits.
+  `src/fabric/modules/{protocol,process}.rs` and `protocol/general_module.fbs`
+  add bounded authenticated same-image process workers using generated FlatBuffers
+  unions. Engine math/SQL dispatch can use task-pinned general modules; compiled
+  checking remains independent. `--typed-module-worker` explicitly enables the
+  compiled worker. Host code can register other trusted typed implementations.
+- `src/recovery.rs`, continuation and reasoning verification helpers: explicit exact
+  host-verifier restoration, preserved charges/deadline and refusal of unfinished
+  callbacks. Completed-but-unpublished parallel-wave reconciliation now has source
+  admission logic for uniquely charged, fully recorded response sets, without replay.
+
+- `src/verification/wasm.rs`: optional default-off hash-pinned no-import verifier
+  ABI with compiled memory/table/stack/recursion/fuel/concurrency ceilings. Secondary
+  acceptance never replaces the original compiled criterion; cancellation keeps
+  blocking-job permits until execution ends.
+- `src/security_evaluation/corpus.rs`: bounded exact-hash manifest evaluation with
+  closed deterministic probe families, independent expected labels and explicit
+  operator-attested review/provenance. It cannot promote a model or alter gates.
+
+No build, test, real-backend, sandbox, neural-quality or performance readiness claim
+is made for this implementation phase. Arbitrary native executable isolation,
+unknown-outcome recovery and independent empirical evaluation retain explicit
+limitations. New neural architectures remain separate research.
+
+
 ### Track approved native loads before managed release — 2026-10-23
 
 **Implemented and regression-tested; general lifecycle remains Partial.** Architecture sections 4, 6,
@@ -2027,7 +2077,7 @@ remains a pre-release. `QUALITY_REVIEW.md` preserves verification history.
 | 4, 9 | Jev+ coordination | Partial | `src/engine.rs`, `src/planning.rs`, `src/store.rs::route`, `src/resource_scheduler/`: pinned capability coverage, dependency scheduling, bounded parallel advisory waves, target/role working allocations, resource-aware per-role Broker eligibility, operator-approved managed native residency receipts, exact pinned route-scope recovery, original-budget completed-wave continuation and admission budgets; dependency, routing, recovery and budget tests | Automatic ownership-aware residency, calibrated measured escalation, incomplete in-flight outcome reconciliation and physical scheduling telemetry |
 | 5 | Jev-R reasoning | Partial | `src/reasoning.rs`, `src/verification/provider.rs`: planner/solver/explorer/critic/reflector, bounded revisions/search, progress stopping, unverified subtask advice, original-goal synthesis and optional trusted host verification with a required compiled criterion | Untrusted executable verifier isolation, new criterion families, host-provider restoration and independent live-model effectiveness measurements |
 | 6 | Expert network | Partial | `src/registry.rs`: immutable semantic-versioned reference manifests, dependency/reverse-dependency checks, health, activate/disable/metadata rollback, bounded registry; lifecycle/tampering tests | General executable loading and health, measured workflow usefulness and real weight residency; trusted tool/inference rollback is implemented |
-| 7 | Persistent memory | Partial | `src/store.rs`: SQLite WAL/FTS5, schema migrations through 6, durable task/events, isolated explicit history, pinned registry/document snapshots, explicit lease-protected interrupted-task recovery, immutable versioned local model manifests and task selection snapshots, operator-published episodic snapshots, recomputed arithmetic memory, revocation and payload quotas, SQLite page ceilings, global task admission and reviewed retention; migration/isolation/tampering/deletion-rollback tests | Broader independent fact verifiers, backend model residency, physical WAL/filesystem bounds, general external/neural artifact portability and automatic checkpoint resumption |
+| 7 | Persistent memory | Partial | `src/store.rs`: SQLite WAL/FTS5, schema migrations through 8, durable task/events, isolated explicit history, pinned registry/document snapshots, explicit lease-protected interrupted-task recovery, immutable versioned local model manifests and task selection snapshots, operator-published episodic snapshots, recomputed arithmetic memory, revocation and payload quotas, SQLite page ceilings, global task admission and reviewed retention; migration/isolation/tampering/deletion-rollback tests | Broader independent fact verifiers, backend model residency, physical WAL/filesystem bounds, general external/neural artifact portability and automatic checkpoint resumption |
 | 8 A/B | RAG evolution | Partial | `src/evolution.rs`, `src/evaluation.rs`: content-addressed quarantine, hashes/provenance/deduplication/quotas, isolated held-out retrieval, bounded cumulative approved-version regression gates and immutable accepted suites, atomic paired review records, transactional human promotion/rollback; integrity, regression, concurrency and rollback tests | Stronger poisoning/security evaluation, automatic source discovery and cleaning; dataset independence remains operator-attested |
 | 8 C | Offline neural adaptation | Experimental | `training/train_lora.py`, inactive artifact registration; neural evaluation/promotion denied | Base-model provenance and independent neural evaluation manifests, actual training and externally isolated pipeline; no hot-swap claim |
 | 8 D, 14 | Novel neural reconstruction | Not implemented | Research only; no trained Jev networks or superiority claims | Separate research and independent evaluations, beyond proven v1.0 infrastructure |
@@ -4762,3 +4812,19 @@ cover both tool types with deliberate worker panic, no old-handle replay, future
 healthy selection, metadata reentry and retirement during observation. Immutable
 history remains reserved. No new tool permission, automatic retry, provider-stop
 proof, native sandbox or residency operation is introduced.
+
+### Managed unknown-operation resolution and receipt archives
+
+**Partial — implementation integrated; full verification pending.**
+
+- `src/residency/managed/resolution.rs`: original-intent-bound GET-only operator
+  resolution, stop acknowledgement, immutable cohort retirement evidence and
+  atomic local interruption; no replay, adoption or provider-success claim.
+- `src/residency/managed/retirement.rs`: immutable terminal receipt compaction,
+  audit validation and historical evidence lookup; archived rows grant no release.
+- `src/main.rs`, `src/store.rs`, `src/storage.rs`: explicit CLI gates, schema 8,
+  separate bounded quotas and retained original/resolver/archive task references.
+- `tests/managed_residency.rs`: unknown load resolution, replay/approval denials,
+  terminal archives, and unknown release resolution/archiving regression coverage.
+- Remaining gate: complete negative/migration tests and mandatory frozen-source
+  checks. Automatic task-to-native-instance lifecycle remains separate work.

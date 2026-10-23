@@ -33,7 +33,7 @@ impl Store {
         );
         let result = (|| -> Result<Value> {
             let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-            super::reject_custom_verifier_recovery(&tx, task)?;
+            super::validate_verifier_recovery(&tx, task, None)?;
             let (status, plan, states) = graph::graph_from(&tx, task)?;
             if !matches!(status.as_str(), "running" | "interrupted") || plan.is_none() {
                 bail!("No abandoned advisory graph")

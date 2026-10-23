@@ -42,12 +42,16 @@ pub enum ExecutionProfile {
     Experts,
 }
 
+pub(crate) type ModelBackendFactory =
+    Arc<dyn Fn(&Config) -> Result<Arc<dyn InferenceBackend>> + Send + Sync>;
+
 #[derive(Clone)]
 pub struct Engine {
     pub cfg: Config,
     pub store: Arc<Store>,
     pub broker: Arc<crate::fabric::Broker>,
     pub tools: Arc<crate::fabric::tools::Broker>,
+    pub modules: Arc<crate::fabric::modules::Broker>,
     backend: Arc<dyn InferenceBackend>,
     corpus: Option<Arc<crate::corpus::FrozenCorpus>>,
     process_inference: bool,
@@ -56,6 +60,12 @@ pub struct Engine {
     escalator: crate::escalation::Handle,
     verifier_provider: Option<crate::verification::provider::Handle>,
     resource_pool: Arc<std::sync::Mutex<Option<Arc<crate::resource_scheduler::ResourcePool>>>>,
+    managed_ownership: Option<Arc<crate::residency::lifecycle::Ownership>>,
+    model_backend_factory: Option<ModelBackendFactory>,
+    native_lifecycle_policy: Option<Arc<crate::residency::lifecycle::NativeLifecyclePolicy>>,
+    native_lifecycle_eligible: bool,
+    native_lifecycle_digest: Option<String>,
+    native_lifecycle_config_digest: Option<String>,
 }
 impl Engine {
     pub fn new(cfg: Config, store: Arc<Store>) -> Self {
@@ -63,6 +73,7 @@ impl Engine {
         let backend = Arc::new(LocalBackend(cfg.clone()));
         let mut engine = Self::with_backend(cfg, store, backend);
         engine.process_inference = process_inference;
+        engine.native_lifecycle_eligible = true;
         engine
     }
     pub fn with_backend(
@@ -82,12 +93,14 @@ impl Engine {
             module_concurrency,
         ));
         let scheduler = crate::scheduling::Handle::configured(cfg.subtask_scheduling);
+        let modules = Arc::new(crate::fabric::modules::Broker::new(store.clone()));
         Self {
             cfg,
             store,
             backend: broker.clone(),
             broker,
             tools: Arc::new(crate::fabric::tools::Broker::default()),
+            modules,
             corpus: None,
             process_inference: false,
             router: Default::default(),
@@ -95,8 +108,128 @@ impl Engine {
             escalator: Default::default(),
             verifier_provider: None,
             resource_pool: Default::default(),
+            managed_ownership: None,
+            model_backend_factory: None,
+            native_lifecycle_policy: None,
+            native_lifecycle_eligible: false,
+            native_lifecycle_digest: None,
+            native_lifecycle_config_digest: None,
         }
     }
+
+    /// Enable task-scoped native model lifecycle under an immutable operator
+    /// policy. Approval is a host-side argument and is never read from models.
+    pub fn with_approved_native_lifecycle(
+        mut self,
+        policy: crate::residency::lifecycle::NativeLifecyclePolicy,
+        human_approve: bool,
+    ) -> Result<Self> {
+        crate::security::authorize("human-cli", "model.residency.change")?;
+        if !human_approve {
+            bail!("Native lifecycle policy requires explicit operator approval")
+        }
+        policy.validate()?;
+        self.cfg.validate()?;
+        if !self.native_lifecycle_eligible
+            || self.cfg.backend != "openai-local"
+            || self.cfg.inference_process
+            || self.cfg.arithmetic_process
+            || self.cfg.sql_process
+            || self.managed_ownership.is_some()
+            || self.model_backend_factory.is_some()
+        {
+            bail!(
+                "Native lifecycle policy is unsupported for this backend or process configuration"
+            )
+        }
+        let configured_models = std::iter::once(self.cfg.model.as_str())
+            .chain(
+                self.cfg
+                    .role_profiles
+                    .values()
+                    .map(|profile| profile.model.as_str()),
+            )
+            .collect::<std::collections::BTreeSet<_>>();
+        let approved_models = policy
+            .models
+            .iter()
+            .map(|model| model.model.as_str())
+            .collect::<std::collections::BTreeSet<_>>();
+        if !configured_models.is_subset(&approved_models) {
+            bail!("Native lifecycle model set must cover the configured model profiles")
+        }
+        let retained_pool = self
+            .resource_pool
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Engine resource pool poisoned"))?;
+        if retained_pool.is_some() {
+            bail!("Native lifecycle policy must be installed before a task initializes resource admission")
+        }
+        drop(retained_pool);
+        self.native_lifecycle_config_digest =
+            Some(crate::store::sha256(&serde_json::to_vec(&self.cfg)?));
+        self.native_lifecycle_policy = Some(Arc::new(policy));
+        Ok(self)
+    }
+
+    /// Fork the configured host runtime while replacing only its inference
+    /// backend. All installed host policies, tools, modules and snapshots stay
+    /// pinned; task lifecycle owns a fresh resource-pool lease.
+    pub(crate) fn with_owned_native_runtime(
+        &self,
+        backend: Arc<dyn InferenceBackend>,
+        ownership: Arc<crate::residency::lifecycle::Ownership>,
+        factory: ModelBackendFactory,
+        policy_digest: String,
+    ) -> Result<Self> {
+        ownership.validate(&self.store)?;
+        let concurrency = self
+            .cfg
+            .subtask_parallelism
+            .filter(|cap| (2..=4).contains(cap))
+            .unwrap_or(1);
+        let broker = Arc::new(crate::fabric::Broker::with_inference_concurrency(
+            backend,
+            concurrency,
+        ));
+        let mut fork = self.clone();
+        fork.backend = broker.clone();
+        fork.broker = broker;
+        fork.resource_pool = Default::default();
+        fork.managed_ownership = Some(ownership);
+        fork.model_backend_factory = Some(factory);
+        fork.native_lifecycle_policy = None;
+        fork.native_lifecycle_eligible = false;
+        fork.native_lifecycle_digest = Some(policy_digest);
+        fork.native_lifecycle_config_digest = None;
+        Ok(fork)
+    }
+    pub(crate) fn with_managed_ownership(
+        mut self,
+        ownership: Arc<crate::residency::lifecycle::Ownership>,
+    ) -> Result<Self> {
+        ownership.validate(&self.store)?;
+        self.managed_ownership = Some(ownership);
+        Ok(self)
+    }
+
+    pub(crate) fn with_model_backend_factory(mut self, factory: ModelBackendFactory) -> Self {
+        self.model_backend_factory = Some(factory);
+        self
+    }
+
+    /// Use the compiled typed-module worker for future task tool dispatches.
+    /// This launches the same image under task grants, never an arbitrary path.
+    pub fn with_builtin_module_worker(self) -> Result<Self> {
+        let module = crate::fabric::modules::ProcessModule::builtin_with_ownership(
+            self.store.clone(),
+            self.managed_ownership.clone(),
+        )?;
+        self.modules
+            .register(Arc::new(module), crate::fabric::modules::Limits::default())?;
+        Ok(self)
+    }
+
     /// Install an operator-trusted policy for future tasks on this Engine value.
     /// Existing cloned engines and admitted route decisions remain unchanged.
     pub fn with_expert_router(
@@ -131,8 +264,11 @@ impl Engine {
             }
             return Ok(Some(pool.clone()));
         }
-        let pool =
-            crate::resource_scheduler::ResourcePool::configured(self.store.clone(), configuration)?;
+        let pool = crate::resource_scheduler::ResourcePool::configured_owned(
+            self.store.clone(),
+            configuration,
+            self.managed_ownership.clone(),
+        )?;
         *retained = Some(pool.clone());
         Ok(Some(pool))
     }
@@ -274,7 +410,6 @@ impl Engine {
     {
         let (options, task_id) = execution_options;
         self.cfg.validate()?;
-        let resource_pool = self.configured_resource_pool()?;
         if query.trim().is_empty() || query.len() > 12_000 {
             bail!("Query is empty or exceeds 12,000 bytes")
         }
@@ -286,6 +421,59 @@ impl Engine {
         }
         let execution_start =
             crate::execution_clock::ExecutionStart::new(self.cfg.max_wall_seconds);
+        let task_id = task_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        if let Some(policy) = self.native_lifecycle_policy.clone() {
+            let current_config_digest = crate::store::sha256(&serde_json::to_vec(&self.cfg)?);
+            if self.cfg.backend != "openai-local"
+                || self.cfg.inference_process
+                || self.cfg.arithmetic_process
+                || self.cfg.sql_process
+                || self.native_lifecycle_config_digest.as_deref()
+                    != Some(current_config_digest.as_str())
+            {
+                bail!("Native lifecycle policy no longer matches the approved Engine configuration")
+            }
+            return crate::residency::lifecycle::run_engine_task(
+                self,
+                policy,
+                &task_id,
+                query,
+                mode,
+                options,
+                profile,
+                execution_start,
+                cancel,
+            )
+            .await;
+        }
+        self.run_execution_body(
+            query,
+            mode,
+            options,
+            task_id,
+            profile,
+            execution_start,
+            false,
+            cancel,
+        )
+        .await
+    }
+
+    pub(crate) async fn run_execution_body<F>(
+        &self,
+        query: &str,
+        mode: &str,
+        options: crate::language::TaskOptions,
+        task_id: String,
+        profile: ExecutionProfile,
+        execution_start: crate::execution_clock::ExecutionStart,
+        task_precreated: bool,
+        cancel: F,
+    ) -> Result<Outcome>
+    where
+        F: std::future::Future<Output = ()>,
+    {
+        let resource_pool = self.configured_resource_pool()?;
         let start = execution_start.instant;
         let deadline = execution_start.deadline;
         let model_registration = self.store.pin_model(&self.cfg)?;
@@ -338,10 +526,41 @@ impl Engine {
                 bail!("Managed process mode requires the default inference registry; custom process modules need explicit lifecycle integration")
             }
         }
-        let _execution_lease = self.store.execution_lease()?;
-        let id = match task_id {
-            Some(id) => self.store.create_named_task(&id, query, mode)?,
-            None => self.store.create_task(query, mode)?,
+        let _execution_lease = match &self.managed_ownership {
+            Some(owner) => {
+                owner.validate(&self.store)?;
+                None
+            }
+            None => self.store.execution_lease()?,
+        };
+        let id = if task_precreated {
+            task_id
+        } else {
+            self.store.create_named_task(&task_id, query, mode)?
+        };
+        let typed_modules=(|| -> Result<std::collections::BTreeMap<crate::fabric::modules::Capability,crate::fabric::modules::Pin>> {
+            let mut pins=std::collections::BTreeMap::new();
+            let mut descriptors=Vec::new();
+            for descriptor in self.modules.discover()? {
+                let pin=self.modules.pin(&id,&descriptor.id,&descriptor.version)?;
+                descriptors.push(json!({"id":descriptor.id,"version":descriptor.version,
+                    "capabilities":descriptor.capabilities.iter().map(|capability|capability.as_str()).collect::<Vec<_>>() }));
+                for capability in &descriptor.capabilities {
+                    if pins.insert(*capability,pin.clone()).is_some() { bail!("Conflicting pinned typed module capability") }
+                }
+            }
+            if !descriptors.is_empty() {
+                self.store.event(&id,"typed_module_snapshot","fabric",json!({"format_version":1,"broker_id":self.modules.identity_id().to_string(),"modules":descriptors,"permissions_granted":false}))?;
+            }
+            Ok(pins)
+        })();
+        let typed_modules = match typed_modules {
+            Ok(pins) => pins,
+            Err(error) => {
+                self.store
+                    .finish_task(&id, "failed", "Typed module pinning or audit failed")?;
+                return Err(error);
+            }
         };
         let tool_process = if self.cfg.arithmetic_process {
             Some(Arc::new(
@@ -457,6 +676,7 @@ impl Engine {
                 },
             )?;
             session.scheduler = self.scheduler.clone();
+            session.typed_modules = Some((self.modules.clone(), typed_modules.clone()));
             session.advice_profile = Some(profile);
             session.set_resource_route_scope(
                 resource_routes
@@ -466,6 +686,10 @@ impl Engine {
             )?;
             session.resource_pool = resource_pool;
             session.verifier_provider = self.verifier_provider.clone();
+            session.model_backend_factory = self.model_backend_factory.clone();
+            if self.managed_ownership.is_some() {
+                self.store.event(&id,"native_task_scope","security-kernel",json!({"format_version":1,"instance_binding_required":true,"policy_sha256":self.native_lifecycle_digest,"permissions_granted":false}))?;
+            }
             session.verification_enabled = profile != ExecutionProfile::Alone;
             if !matches!(
                 profile,
@@ -597,6 +821,50 @@ impl Engine {
                 "versions":pinned.skills.iter().filter(|s|skills.contains(&s.id)).collect::<Vec<_>>(),
                 "manifests":pinned.manifests.iter().filter(|m|skills.contains(&m.id)).collect::<Vec<_>>()}))?;
             if experts {
+                let mut unavailable = Vec::new();
+                for manifest in pinned
+                    .manifests
+                    .iter()
+                    .filter(|manifest| skills.contains(&manifest.id))
+                {
+                    if let Some(provider) = &manifest.provider {
+                        let available = provider.capabilities.iter().all(|capability| {
+                            typed_modules
+                                .get(&capability.module_capability())
+                                .is_some_and(|pin| {
+                                    let descriptor = pin.descriptor();
+                                    descriptor.id == provider.module_id
+                                        && descriptor.version == provider.module_version
+                                        && descriptor.capabilities
+                                            == provider
+                                                .capabilities
+                                                .iter()
+                                                .map(|capability| capability.module_capability())
+                                                .collect()
+                                })
+                        });
+                        if !available {
+                            self.store.event(&id,"expert_provider_unavailable","jev-plus",json!({"format_version":1,"expert_id":manifest.id,"expert_version":manifest.version,"reason":"provider_not_in_original_task_catalog","permissions_granted":false}))?;
+                            unavailable.push(manifest.id.clone());
+                            continue;
+                        }
+                        for capability in &provider.capabilities {
+                            let pin = typed_modules
+                                .get(&capability.module_capability())
+                                .expect("Validated task provider capability");
+                            crate::registry::providers::pin_task_snapshot_provider(
+                                &self.store,
+                                manifest,
+                                &self.modules,
+                                pin,
+                                *capability,
+                            )?;
+                        }
+                    }
+                }
+                skills.retain(|skill| !unavailable.contains(skill));
+            }
+            if experts {
                 if let Some(criterion) = crate::verification::Criterion::from_query(query)? {
                     if let Some(manifest) = skills.iter().find_map(|id| {
                         pinned.manifests.iter().find(|m| {
@@ -702,12 +970,30 @@ impl Engine {
             if let Some(expression) =
                 math::extract(query).filter(|_| profile != ExecutionProfile::Alone)
             {
-                session.authorize_tool("math.evaluate")?;
-                let module = arithmetic
-                    .as_ref()
-                    .ok_or_else(|| anyhow::anyhow!("No active arithmetic capability module"))?;
-                let routed = module.evaluate(&id, "jev-plus", expression).await;
-                self.store.event(&id,"tool_dispatch","fabric",json!({"module_id":module.descriptor().id,"module_version":module.descriptor().version,"capability":"math.evaluate","response_available":routed.is_ok(),"verified":false}))?;
+                let typed = typed_modules.get(&crate::fabric::modules::Capability::MathEvaluate);
+                let routed = if let Some(pin) = typed {
+                    match session
+                        .dispatch_typed_module(
+                            &self.modules,
+                            pin,
+                            crate::fabric::modules::Request::Arithmetic {
+                                expression: expression.to_owned(),
+                            },
+                        )
+                        .await?
+                    {
+                        crate::fabric::modules::Response::Arithmetic { value } => Ok(value),
+                        _ => bail!("Typed arithmetic module returned another response kind"),
+                    }
+                } else {
+                    session.authorize_tool("math.evaluate")?;
+                    let module = arithmetic
+                        .as_ref()
+                        .ok_or_else(|| anyhow::anyhow!("No active arithmetic capability module"))?;
+                    let routed = module.evaluate(&id, "jev-plus", expression).await;
+                    self.store.event(&id,"tool_dispatch","fabric",json!({"module_id":module.descriptor().id,"module_version":module.descriptor().version,"capability":"math.evaluate","response_available":routed.is_ok(),"verified":false}))?;
+                    routed
+                };
                 return match math::calculate(expression) {
                     Ok(answer) => {
                         if routed? != answer {
@@ -736,13 +1022,23 @@ impl Engine {
                 .strip_prefix("sql:")
                 .filter(|_| profile != ExecutionProfile::Alone)
             {
-                session.authorize_tool("sql.query")?;
                 let input_hash = store::sha256(raw.as_bytes());
-                let module = sql
-                    .as_ref()
-                    .ok_or_else(|| anyhow::anyhow!("No active SQL capability module"))?;
-                let routed = module.query_sql(&id, "jev-plus", raw).await;
-                self.store.event(&id, "tool_dispatch", "fabric", json!({"module_id":module.descriptor().id,"module_version":module.descriptor().version,"capability":"sql.query","response_available":routed.is_ok(),"verified":false}))?;
+                let typed = typed_modules.get(&crate::fabric::modules::Capability::SqlQuery);
+                let routed = if let Some(pin) = typed {
+                    let request = crate::reasoning::modules::sql_request(raw)?;
+                    let response = session
+                        .dispatch_typed_module(&self.modules, pin, request)
+                        .await?;
+                    crate::reasoning::modules::sql_response(response)
+                } else {
+                    session.authorize_tool("sql.query")?;
+                    let module = sql
+                        .as_ref()
+                        .ok_or_else(|| anyhow::anyhow!("No active SQL capability module"))?;
+                    let routed = module.query_sql(&id, "jev-plus", raw).await;
+                    self.store.event(&id,"tool_dispatch","fabric",json!({"module_id":module.descriptor().id,"module_version":module.descriptor().version,"capability":"sql.query","response_available":routed.is_ok(),"verified":false}))?;
+                    routed
+                };
                 return match crate::sql::execute(raw.to_string()).await {
                     Ok(answer) => {
                         let returned = routed?;

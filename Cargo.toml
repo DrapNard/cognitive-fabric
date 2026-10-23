@@ -8,6 +8,10 @@ license = "GPL-3.0-only"
 description = "Local, resource-bounded cognitive coordination runtime"
 build = "build.rs"
 
+[features]
+default = []
+wasm-verifier = ["dep:wasmi"]
+
 [[bin]]
 name = "cogfabric"
 path = "src/main.rs"
@@ -27,6 +31,7 @@ sha2 = "0.10"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "io-util", "time", "sync", "signal", "process"] }
 url = "2"
 uuid = { version = "1", features = ["v4"] }
+wasmi = { version = "=2.0.0", optional = true, default-features = false, features = ["std", "validate", "extra-checks"] }
 
 [build-dependencies]
 sha2 = "0.10"

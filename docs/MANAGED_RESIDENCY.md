@@ -57,8 +57,8 @@ required audits never imply success or authorize replay. Pending load history ca
 block the endpoint even when no receipt/instance could be established. An uncertain
 release retains a requested or quarantined receipt and cannot be retried through
 the managed API. A matching later inventory observation does not resolve history.
-Explicit reconciliation/retirement remains separate work; unresolved state can
-therefore block managed operation until such an operator workflow exists.
+Resolution requires the explicit schema-8 workflow below. A later inventory
+observation alone cannot clear the gate.
 
 Existing manual load/unload and reviewed residency plans preserve explicit operator
 administration of exact selected instances. Before their provider mutation, active
@@ -75,7 +75,8 @@ explicitly approved fresh load, but it receives a new receipt UUID and cannot
 reactivate the old receipt. Normal retention preserves receipt-linked tasks and
 managed operation history, including unknown loads without a receipt.
 
-The current quota is 1,024 lifetime receipt rows; released rows remain tombstones.
+The current hot-ledger quota is 1,024 receipt rows; terminal rows remain tombstones
+until explicitly archived using the schema-8 command below.
 Loads refuse at capacity before an external effect; guarded releases still work.
 There is no automatic compaction or deletion to reset the gate. Bounded history
 reads and database quotas can independently refuse further work. These operational
@@ -91,11 +92,11 @@ rewrite the database and its evidence. No physical GPU/RSS or energy limit is
 established. The inference adapter currently selects endpoint/model, not an
 attested native instance; a receipt does not prove a reasoning task used it.
 
-General task-driven load/unload, provider continuity, explicit unknown-outcome
-resolution, receipt retirement and independent utility/physical measurements remain
-incomplete.
+General task-driven load/unload, provider continuity and independent
+utility/physical measurements remain incomplete. Explicit unknown-outcome
+resolution and terminal receipt archiving are described below.
 
-## Verification
+## Prior schema-7 verification
 
 Verification on final frozen sources: `cargo fmt --all -- --check`,
 `cargo check --locked --workspace --all-targets`,
@@ -122,7 +123,49 @@ pairing/integrity checks pass; `flatc` is unavailable, so fresh generation was n
 run. Port 1234 refused local-model discovery: no real provider load/unload,
 inference quality, physical memory or efficiency result is claimed.
 
-Jev+ and Jev-R remain **Partial**. The next verifiable lifecycle milestone is
-explicit operator resolution of uncertain operations and reviewed receipt
-retirement, followed by task-to-native-instance integration. No model gains
+Jev+ and Jev-R remain **Partial**. Following the explicit resolution and archive
+workflow below, the next lifecycle milestone is task-to-native-instance integration. No model gains
 mutation permission and local receipts still do not prove exclusive ownership.
+
+## Operator resolution and evidence archiving (schema 8)
+
+The previous unresolved-operation limitation is addressed by two explicit operator
+commands. Task-driven native-instance integration remains partial.
+
+```sh
+cogfabric residency-managed-resolve --api-base http://127.0.0.1:1234/api/v1 \
+  --task-id ORIGINAL_TASK_UUID --human-approve --provider-stop-acknowledged
+cogfabric residency-managed-archive --receipt-id RECEIPT_UUID --human-approve
+cogfabric residency-managed-inspect --receipt-id RECEIPT_UUID
+```
+
+Resolution requires an existing current database, the original unknown managed
+operation, its exact endpoint, both runtime/resource leases, operator approval and
+an explicit acknowledgement that the provider operation has stopped. The
+acknowledgement is testimony, not measured termination. A fresh inventory GET must
+show no loaded instance of the original load key, or absence of the original
+release instance. Resolution never POSTs, retries, adopts an instance or marks the
+original provider outcome successful. Its original events remain unchanged; a
+locally running task becomes interrupted to release the local active-task slot.
+
+A stable active receipt retains its existing digest. Stale endpoint receipts block
+resolution unless `--retire-stale-cohort` explicitly abandons their release
+authority. This does not unload their instances or refresh their inventory digest.
+An uncertain release's receipt is retired even without that option. Other unknown
+operations still require their own resolution. Immutable resolution payloads,
+member snapshots and audit pairs must validate before the pending gate clears.
+
+Read-only inspection accepts hot or archived receipt UUIDs and validates archive
+evidence; it never grants release authority.
+
+Archiving accepts only released receipts or retired receipts with valid resolution
+evidence. It contacts no provider. An immutable snapshot, retained task references
+and matching audit pair replace the hot row in one transaction. Archived evidence
+can validate history but cannot authorize a release. Hot receipts are capped at
+1,024, archives at 8,192 and resolutions at 1,024; exhaustion is explicit. History
+validation retains at most 36,864 events and 64 MB of projected payload under a
+five-second deadline. These are logical bounds, not physical resource guarantees.
+
+Migration preserves schema-7 receipt rows without adopting provider inventory.
+No model receives a new permission. Owner-local hashes and audit consistency do
+not authenticate evidence against an owner who edits the database or source.

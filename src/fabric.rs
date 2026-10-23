@@ -19,6 +19,7 @@ use tokio::{
     sync::{mpsc, oneshot, watch, OnceCell},
     task::JoinSet,
 };
+pub mod modules;
 pub(crate) mod protocol;
 pub mod tools;
 pub mod unix;

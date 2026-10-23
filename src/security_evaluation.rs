@@ -1,4 +1,6 @@
 //! Reproducible offline boundary probes, not a neural safety evaluation.
+pub mod corpus;
+
 use crate::{security, store::sha256, wire};
 use anyhow::Result;
 use serde_json::{json, Value};

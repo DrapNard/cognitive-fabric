@@ -2,6 +2,9 @@
 //!
 //! Receipts are causal records for this workspace's native request. They do not
 //! attest provider identity, exclusive ownership, weights, or inference routing.
+pub mod resolution;
+pub mod retirement;
+
 use super::{
     endpoint, identity, mutation_leases, parse, request, status, Instance, Model, Mutation,
 };
@@ -18,7 +21,7 @@ use uuid::Uuid;
 
 const MAX_RECEIPTS: i64 = 1024;
 const MAX_EVENT_BYTES: usize = 4096;
-const RESIDENCY_HISTORY_QUERY: &str = "SELECT CASE WHEN length(CAST(e.payload AS BLOB))<=4096 THEN e.payload END,CASE WHEN length(CAST(t.status AS BLOB))<=64 THEN t.status END,e.task_id FROM events e JOIN tasks t ON t.id=e.task_id WHERE e.kind='model_residency' AND e.source='human-cli' ORDER BY e.id LIMIT 4097";
+const RESIDENCY_HISTORY_QUERY: &str = "SELECT CASE WHEN length(CAST(e.payload AS BLOB))<=4096 THEN e.payload END,CASE WHEN length(CAST(t.status AS BLOB))<=64 THEN t.status END,e.task_id FROM events e JOIN tasks t ON t.id=e.task_id WHERE e.kind='model_residency' AND e.source='human-cli' ORDER BY e.id LIMIT 36865";
 
 struct ProgressHandlerReset<'a>(&'a rusqlite::Connection);
 
@@ -134,7 +137,7 @@ fn decode_row(row: ReceiptRow) -> Result<StoredReceipt> {
         || !valid_digest(&row.current_inventory_sha256)
         || !matches!(
             row.state.as_str(),
-            "active" | "release_requested" | "released" | "quarantined"
+            "active" | "release_requested" | "released" | "quarantined" | "retired"
         )
     {
         bail!("Managed residency receipt integrity check failed")
@@ -176,6 +179,24 @@ fn load_receipt(store: &Store, receipt_id: &str) -> Result<StoredReceipt> {
     decode_row(row)
 }
 
+// Archived receipts supply evidence only. Public release still uses the hot ledger.
+fn load_receipt_evidence(store: &Store, id: &str) -> Result<StoredReceipt> {
+    let hot = {
+        let db = store.lock()?;
+        db.query_row(
+            "SELECT EXISTS(SELECT 1 FROM managed_residency_receipts WHERE receipt_id=?1)",
+            [id],
+            |r| r.get::<_, bool>(0),
+        )?
+    };
+    if hot {
+        load_receipt(store, id)
+    } else {
+        retirement::load_archive(store, id)?
+            .ok_or_else(|| anyhow::anyhow!("Receipt evidence is missing"))
+    }
+}
+
 fn model_instance<'a>(models: &'a [Model], receipt: &Receipt) -> Option<&'a Instance> {
     models
         .iter()
@@ -201,7 +222,7 @@ fn active_cohort(
     }
     let db = store.lock()?;
     let mut statement = db.prepare(
-        "SELECT CASE WHEN length(CAST(receipt_id AS BLOB))<=64 THEN receipt_id END,CASE WHEN length(CAST(endpoint AS BLOB))<=512 THEN endpoint END,CASE WHEN length(CAST(instance_id AS BLOB))<=256 THEN instance_id END,CASE WHEN length(CAST(receipt_json AS BLOB))<=8192 THEN receipt_json END,CASE WHEN length(CAST(receipt_sha256 AS BLOB))=64 THEN receipt_sha256 END,CASE WHEN length(CAST(current_inventory_sha256 AS BLOB))=64 THEN current_inventory_sha256 END,CASE WHEN length(CAST(state AS BLOB))<=32 THEN state END,CASE WHEN length(CAST(load_task_id AS BLOB))<=64 THEN load_task_id END,CASE WHEN length(CAST(release_task_id AS BLOB))<=64 THEN release_task_id END FROM managed_residency_receipts WHERE endpoint=?1 AND state!='released' ORDER BY created,receipt_id LIMIT 1025",
+        "SELECT CASE WHEN length(CAST(receipt_id AS BLOB))<=64 THEN receipt_id END,CASE WHEN length(CAST(endpoint AS BLOB))<=512 THEN endpoint END,CASE WHEN length(CAST(instance_id AS BLOB))<=256 THEN instance_id END,CASE WHEN length(CAST(receipt_json AS BLOB))<=8192 THEN receipt_json END,CASE WHEN length(CAST(receipt_sha256 AS BLOB))=64 THEN receipt_sha256 END,CASE WHEN length(CAST(current_inventory_sha256 AS BLOB))=64 THEN current_inventory_sha256 END,CASE WHEN length(CAST(state AS BLOB))<=32 THEN state END,CASE WHEN length(CAST(load_task_id AS BLOB))<=64 THEN load_task_id END,CASE WHEN length(CAST(release_task_id AS BLOB))<=64 THEN release_task_id END FROM managed_residency_receipts WHERE endpoint=?1 AND state NOT IN ('released','retired') ORDER BY created,receipt_id LIMIT 1025",
     )?;
     let rows = statement
         .query_map([endpoint], receipt_row_from_sql)?
@@ -226,6 +247,7 @@ fn active_cohort(
 /// Fail closed on interrupted/unknown provider operations. Read-only inspection
 /// never clears these records or adopts observed instances.
 fn pending_endpoint_operation(store: &Store, endpoint: &str) -> Result<()> {
+    super::lifecycle::require_no_unknown_generation(store, endpoint)?;
     pending_endpoint_operation_with_limits(store, endpoint, Duration::from_secs(5), 1000)
 }
 
@@ -255,12 +277,15 @@ fn pending_endpoint_operation_with_limits(
     drop(statement);
     drop(reset);
     drop(db);
-    if rows.len() > 4096 {
+    if rows.len() > 36864 || rows.iter().map(|(raw, _, _)| raw.len()).sum::<usize>() > 64_000_000 {
         bail!("Residency operation history exceeds managed bounds")
     }
     let mut groups: std::collections::BTreeMap<String, (String, Vec<Value>)> =
         std::collections::BTreeMap::new();
     for (raw, task_state, task_id) in rows {
+        if started.elapsed() > timeout {
+            bail!("Residency history deadline exhausted")
+        }
         if raw.len() > MAX_EVENT_BYTES {
             bail!("Residency operation history contains oversized metadata")
         }
@@ -297,6 +322,9 @@ fn pending_endpoint_operation_with_limits(
         entry.1.push(value);
     }
     for (task_id, (task_state, events)) in groups {
+        if started.elapsed() > timeout {
+            bail!("Residency history deadline exhausted")
+        }
         let intent_positions = events
             .iter()
             .enumerate()
@@ -344,6 +372,9 @@ fn pending_endpoint_operation_with_limits(
             }
             continue;
         }
+        if resolution::is_resolved(store, &task_id, event_endpoint)? {
+            continue;
+        }
         if events.len() != 2 {
             if event_endpoint == endpoint {
                 bail!("Managed residency task has incomplete or ambiguous completion history")
@@ -384,7 +415,10 @@ fn pending_endpoint_operation_with_limits(
                 if receipt.load_task_id != task_id || receipt.endpoint != event_endpoint {
                     bail!("Managed load completion receipt does not match its task")
                 }
-                let saved = load_receipt(store, &receipt.receipt_id)?;
+                let saved = load_receipt_evidence(store, &receipt.receipt_id)?;
+                if saved.state == "retired" {
+                    resolution::validate_retired(store, &receipt.receipt_id)?;
+                }
                 let (expected_json, expected_sha) = receipt_hash(&receipt)?;
                 let (saved_json, saved_sha) = receipt_hash(&saved.receipt)?;
                 if saved.receipt.receipt_id != receipt.receipt_id
@@ -404,7 +438,7 @@ fn pending_endpoint_operation_with_limits(
                 if completion["details"]["receipt_id"].as_str() != Some(receipt_id) {
                     bail!("Managed release completion names another receipt")
                 }
-                let saved = load_receipt(store, receipt_id)?;
+                let saved = load_receipt_evidence(store, receipt_id)?;
                 if !matches!(unload_action, Mutation::Unload { ref instance_id } if instance_id == &saved.receipt.instance_id)
                 {
                     bail!("Managed release action differs from its saved receipt")
@@ -614,6 +648,26 @@ pub async fn load(
     context_length: u32,
     human_approve: bool,
 ) -> Result<Value> {
+    load_owned(
+        store,
+        base,
+        authenticate,
+        model_key,
+        context_length,
+        (human_approve, None),
+    )
+    .await
+}
+
+pub(crate) async fn load_owned(
+    store: &Store,
+    base: &str,
+    authenticate: bool,
+    model_key: &str,
+    context_length: u32,
+    approval: (bool, Option<&super::lifecycle::Ownership>),
+) -> Result<Value> {
+    let (human_approve, ownership) = approval;
     security::authorize("human-cli", "model.residency.change")?;
     if !human_approve {
         bail!("Managed model loads require explicit operator approval")
@@ -622,7 +676,13 @@ pub async fn load(
     if !identity(model_key) || !(1..=32768).contains(&context_length) {
         bail!("Invalid managed load identity or context ceiling")
     }
-    let _leases = mutation_leases(store)?;
+    let _leases = match ownership {
+        Some(owner) => {
+            owner.validate(store)?;
+            None
+        }
+        None => Some(mutation_leases(store)?),
+    };
     pending_endpoint_operation(store, native_endpoint.as_str())?;
     let started = Instant::now();
     let before_value = status(base, authenticate).await?;
@@ -686,6 +746,17 @@ pub async fn release(
     receipt_id: &str,
     human_approve: bool,
 ) -> Result<Value> {
+    release_owned(store, base, authenticate, receipt_id, (human_approve, None)).await
+}
+
+pub(crate) async fn release_owned(
+    store: &Store,
+    base: &str,
+    authenticate: bool,
+    receipt_id: &str,
+    approval: (bool, Option<&super::lifecycle::Ownership>),
+) -> Result<Value> {
+    let (human_approve, ownership) = approval;
     security::authorize("human-cli", "model.residency.change")?;
     if !human_approve {
         bail!("Managed model releases require explicit operator approval")
@@ -696,7 +767,13 @@ pub async fn release(
     if saved.state != "active" || saved.receipt.endpoint != native_endpoint.as_str() {
         bail!("Managed receipt is not active at this native endpoint")
     }
-    let _leases = mutation_leases(store)?;
+    let _leases = match ownership {
+        Some(owner) => {
+            owner.validate(store)?;
+            None
+        }
+        None => Some(mutation_leases(store)?),
+    };
     pending_endpoint_operation(store, native_endpoint.as_str())?;
     let started = Instant::now();
     let before_value = status(base, authenticate).await?;
@@ -763,7 +840,10 @@ pub async fn release(
 /// no provider request and confers no retry or mutation authority.
 pub fn inspect(store: &Store, receipt_id: &str) -> Result<Value> {
     security::authorize("human-cli", "model.residency.inspect")?;
-    let saved = load_receipt(store, receipt_id)?;
+    let saved = load_receipt_evidence(store, receipt_id)?;
+    if saved.state == "retired" {
+        resolution::validate_retired(store, receipt_id)?;
+    }
     Ok(
         json!({"receipt":saved.receipt,"state":saved.state,"current_inventory_sha256":saved.current_inventory_sha256,"release_task_id":saved.release_task_id,"ownership_established":false,"automatic_retry":false,"model_mutation_performed":false}),
     )
@@ -778,7 +858,7 @@ pub fn list(store: &Store, base: &str) -> Result<Value> {
     let mut pending = false;
     let mut blocked = receipts
         .iter()
-        .any(|item| item.state != "active" && item.state != "released");
+        .any(|item| item.state != "active" && item.state != "released" && item.state != "retired");
     match pending_endpoint_operation(store, native_endpoint.as_str()) {
         Ok(()) => {}
         Err(_) => {
@@ -885,4 +965,61 @@ mod tests {
         );
         Ok(())
     }
+}
+
+#[cfg(test)]
+mod archived_capacity_history_tests {
+    use super::*;
+
+    #[test]
+    fn history_beyond_old_receipt_limit_is_validated_without_hiding_later_unknowns() -> Result<()> {
+        let store = Store::in_memory()?;
+        let endpoint = "http://127.0.0.1:1234/api/v1/models";
+        {
+            let mut db = store.lock()?;
+            let tx = db.transaction()?;
+            for _ in 0..2050 {
+                let task = Uuid::new_v4().to_string();
+                tx.execute("INSERT INTO tasks(id,query,mode,status,created,updated) VALUES(?1,'legacy operator mutation','fast','completed',1,1)", [&task])?;
+                for state in ["requested", "server_confirmed"] {
+                    let payload =
+                        json!({"state":state,"endpoint":endpoint,"managed":false}).to_string();
+                    tx.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'model_residency','human-cli',?2,1)", params![task,payload])?;
+                }
+            }
+            tx.commit()?;
+        }
+        pending_endpoint_operation(&store, endpoint)?;
+        let task = store.create_task("unresolved after old history ceiling", "fast")?;
+        store.event(
+            &task,
+            "model_residency",
+            "human-cli",
+            json!({"state":"requested","endpoint":endpoint,"managed":false}),
+        )?;
+        assert!(pending_endpoint_operation(&store, endpoint).is_err());
+        Ok(())
+    }
+}
+
+/// Validate one pinned active receipt against the complete freshly observed
+/// inventory. This returns metadata only and never refreshes release authority.
+pub(crate) fn validate_task_binding(
+    store: &Store,
+    receipt_id: &str,
+    base: &str,
+    inventory: &[Model],
+) -> Result<Receipt> {
+    let native = endpoint(base)?;
+    let saved = load_receipt(store, receipt_id)?;
+    let digest = inventory_digest(inventory)?;
+    if saved.state != "active"
+        || saved.receipt.endpoint != native.as_str()
+        || saved.current_inventory_sha256 != digest
+        || model_instance(inventory, &saved.receipt).is_none()
+    {
+        bail!("Task native-instance binding has drifted or lost release eligibility")
+    }
+    active_cohort(store, native.as_str(), inventory, &digest)?;
+    Ok(saved.receipt)
 }

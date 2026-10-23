@@ -1088,6 +1088,19 @@ references and managed operations without a confirmed receipt. The indexed histo
 scan has an independent SQLite deadline. No model obtains a residency capability.
 This is local evidence, not exclusive ownership or native-instance inference
 attestation. External applications and provider ID reuse can defeat continuity
-assumptions between observations. Explicit resolution/retirement, task-driven
+assumptions between observations. Explicit schema-8 resolution/retirement is described below; task-driven
 lifecycle and physical resource enforcement remain incomplete. See
 [managed residency](MANAGED_RESIDENCY.md).
+
+### Explicit unknown-operation resolution and terminal evidence archives
+
+Operator testimony plus a fresh inventory GET may resolve the local pending gate;
+it does not prove provider termination or original success. Exact original intents,
+endpoint identities and immutable resolution/member audits are checked. Stale cohort
+release authority requires explicit abandonment; it is never silently rebased.
+Resolution can interrupt a dangling local task, but cannot grant model permissions,
+refund inference or repeat provider mutations. Terminal archive rows remain evidence
+only. Archive and resolution transactions retain task references and fail atomically
+on audit errors. Fixed row/history/payload/deadline bounds limit local work; they
+provide neither physical resource enforcement nor protection against malicious
+same-owner database/source edits. Full verification of schema-8 paths is pending.

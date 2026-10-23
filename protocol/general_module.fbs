@@ -1,0 +1,92 @@
+// Versioned, bounded internal RPC for host-granted typed modules.
+// Capability declarations are metadata; only the host's per-task grant authorizes work.
+namespace Fabric.GeneralModule;
+
+enum Capability:ubyte {
+  None = 0,
+  MathEvaluate = 1,
+  SqlQuery = 2,
+  SortingVerify = 3,
+  OrderingVerify = 4,
+  PathVerify = 5,
+  ConstraintsSolve = 6
+}
+
+enum MessageKind:ubyte { Request = 0, Response = 1 }
+enum Relation:ubyte { Equal = 0, NotEqual = 1, LessOrEqual = 2, GreaterOrEqual = 3 }
+
+table NullValue {}
+table BooleanValue { value:bool; }
+table IntegerValue { value:long; }
+table RealValue { value:double; }
+table TextValue { value:string (required); }
+union ScalarValue { NullValue, BooleanValue, IntegerValue, RealValue, TextValue }
+table SqlValue { value:ScalarValue; }
+table SqlRow { values:[SqlValue] (required); }
+table SqlTable { name:string (required); columns:[string] (required); rows:[SqlRow] (required); }
+
+table ArithmeticRequest { expression:string (required); }
+table SqlRequest { query:string (required); tables:[SqlTable] (required); }
+table SortRequest { values:[long] (required); candidate:[long] (required); descending:bool; }
+table StringPair { first:string (required); second:string (required); }
+table DependencyNode { id:string (required); depends_on:[string] (required); }
+table DependencyOrderRequest { nodes:[DependencyNode] (required); candidate:[string] (required); }
+table ShortestPathRequest {
+  nodes:[string] (required);
+  edges:[StringPair] (required);
+  start:string (required);
+  goal:string (required);
+  candidate:[string] (required);
+}
+table LinearTerm { variable:string (required); coefficient:long; }
+table LinearConstraint { terms:[LinearTerm] (required); relation:Relation; rhs:long; }
+table AllDifferentConstraint { variables:[string] (required); }
+union ConstraintValue { LinearConstraint, AllDifferentConstraint }
+table Constraint { value:ConstraintValue; }
+table FiniteVariable { id:string (required); domain:[long] (required); }
+table FiniteDomainRequest { variables:[FiniteVariable] (required); constraints:[Constraint] (required); }
+union RequestValue {
+  ArithmeticRequest,
+  SqlRequest,
+  SortRequest,
+  DependencyOrderRequest,
+  ShortestPathRequest,
+  FiniteDomainRequest
+}
+
+table ArithmeticResult { value:string (required); }
+table SqlResult { columns:[string] (required); rows:[SqlRow] (required); }
+table SortDiagnostic { claimed_valid:bool; }
+table OrderingDiagnostic { claimed_valid:bool; }
+table PathDiagnostic { claimed_valid:bool; }
+table AssignmentValue { variable:string (required); value:long; }
+table FiniteAssignment { values:[AssignmentValue] (required); }
+union ResultValue {
+  ArithmeticResult,
+  SqlResult,
+  SortDiagnostic,
+  OrderingDiagnostic,
+  PathDiagnostic,
+  FiniteAssignment
+}
+
+// The host validates every identity field against an out-of-band, one-task grant.
+// The worker never receives general filesystem, shell, network, or secret handles.
+table Packet {
+  version:ushort = 1;
+  kind:MessageKind;
+  correlation_id:string (required);
+  task_id:string (required);
+  actor:string (required);
+  module_id:string (required);
+  module_version:string (required);
+  capability:Capability;
+  expires_at_ms:ulong;
+  request:RequestValue;
+  result:ResultValue;
+  failed:bool;
+  error:string;
+}
+
+root_type Packet;
+file_identifier "CGMD";

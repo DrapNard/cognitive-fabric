@@ -839,6 +839,65 @@ async fn unknown_release_quarantines_receipt_and_uuid_retry_is_refused_before_ne
         "quarantined release must not create a retry task"
     );
     drop(db);
+    let task = rows[0].release_task_id.as_ref().unwrap();
+    let server_listener = listener.clone();
+    let server = tokio::spawn(async move {
+        exchange(
+            &server_listener,
+            "GET /api/v1/models ",
+            "200 OK",
+            models(&BTreeMap::new()),
+        )
+        .await;
+    });
+    let resolved = cli(
+        &home,
+        args(&[
+            "residency-managed-resolve",
+            "--api-base",
+            &api_base,
+            "--task-id",
+            task,
+            "--human-approve",
+            "--provider-stop-acknowledged",
+        ]),
+    )
+    .await;
+    assert!(
+        resolved.status.success(),
+        "{}",
+        String::from_utf8_lossy(&resolved.stderr)
+    );
+    server.await.unwrap();
+    assert_eq!(receipts(&cfg.db())[0].state, "retired");
+    let archived = cli(
+        &home,
+        args(&[
+            "residency-managed-archive",
+            "--receipt-id",
+            &receipt_id,
+            "--human-approve",
+        ]),
+    )
+    .await;
+    assert!(
+        archived.status.success(),
+        "{}",
+        String::from_utf8_lossy(&archived.stderr)
+    );
+    let status = cli(
+        &home,
+        args(&["residency-managed-status", "--api-base", &api_base]),
+    )
+    .await;
+    assert!(
+        status.status.success(),
+        "{}",
+        String::from_utf8_lossy(&status.stderr)
+    );
+    let status: Value = serde_json::from_slice(&status.stdout).unwrap();
+    assert_eq!(status["unresolved_provider_operation"], false);
+    no_request(&listener).await;
     std::fs::remove_dir_all(home).unwrap();
 }
 
@@ -1329,5 +1388,457 @@ async fn receipt_capacity_rejects_load_before_task_or_provider_but_allows_releas
             .state,
         "released"
     );
+    std::fs::remove_dir_all(home).unwrap();
+}
+
+#[tokio::test]
+async fn unknown_load_resolution_requires_testimony_preserves_unknown_and_never_posts() {
+    let _serial = serial().await;
+    let home = home();
+    let cfg = create_home(&home);
+    let listener = Arc::new(tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap());
+    let api_base = base(&listener);
+    let server_listener = listener.clone();
+    let server = tokio::spawn(async move {
+        exchange(
+            &server_listener,
+            "GET /api/v1/models ",
+            "200 OK",
+            models(&BTreeMap::new()),
+        )
+        .await;
+        let (mut stream, _) = server_listener.accept().await.unwrap();
+        assert!(read_request(&mut stream)
+            .await
+            .0
+            .starts_with("POST /api/v1/models/load "));
+        drop(stream);
+    });
+    assert!(!cli(&home, managed_command("load", &api_base, "alpha"))
+        .await
+        .status
+        .success());
+    server.await.unwrap();
+    let db = rusqlite::Connection::open(cfg.db()).unwrap();
+    let task: String = db
+        .query_row("SELECT id FROM tasks LIMIT 1", [], |r| r.get(0))
+        .unwrap();
+    drop(db);
+    let mut command = args(&[
+        "residency-managed-resolve",
+        "--api-base",
+        &api_base,
+        "--task-id",
+        &task,
+        "--human-approve",
+    ]);
+    assert!(!cli(&home, command.clone()).await.status.success());
+    no_request(&listener).await;
+    command.push("--provider-stop-acknowledged".into());
+    let server_listener = listener.clone();
+    let server = tokio::spawn(async move {
+        exchange(
+            &server_listener,
+            "GET /api/v1/models ",
+            "200 OK",
+            models(&BTreeMap::new()),
+        )
+        .await;
+    });
+    let db = rusqlite::Connection::open(cfg.db()).unwrap();
+    db.execute("UPDATE tasks SET status='running' WHERE id=?1", [&task])
+        .unwrap();
+    for _ in 0..7 {
+        db.execute("INSERT INTO tasks(id,query,mode,status,created,updated) VALUES(?1,'other dangling task','fast','running',1,1)", [uuid::Uuid::new_v4().to_string()]).unwrap();
+    }
+    db.execute_batch("CREATE TRIGGER reject_resolution_audit BEFORE INSERT ON events WHEN NEW.kind='managed_residency_resolution' BEGIN SELECT RAISE(ABORT,'fixture audit denial'); END;").unwrap();
+    drop(db);
+    let refused = cli(&home, command.clone()).await;
+    assert!(!refused.status.success());
+    server.await.unwrap();
+    let db = rusqlite::Connection::open(cfg.db()).unwrap();
+    assert_eq!(
+        db.query_row(
+            "SELECT count(*) FROM managed_residency_resolutions",
+            [],
+            |r| r.get::<_, i64>(0)
+        )
+        .unwrap(),
+        0
+    );
+    assert_eq!(
+        db.query_row("SELECT count(*) FROM tasks", [], |r| r.get::<_, i64>(0))
+            .unwrap(),
+        8
+    );
+    assert_eq!(
+        db.query_row("SELECT status FROM tasks WHERE id=?1", [&task], |r| r
+            .get::<_, String>(0))
+            .unwrap(),
+        "running",
+        "audit failure must roll back the local interruption"
+    );
+    db.execute_batch("DROP TRIGGER reject_resolution_audit;")
+        .unwrap();
+    drop(db);
+    let server_listener = listener.clone();
+    let server = tokio::spawn(async move {
+        exchange(
+            &server_listener,
+            "GET /api/v1/models ",
+            "200 OK",
+            models(&BTreeMap::new()),
+        )
+        .await;
+    });
+    let resolved = cli(&home, command.clone()).await;
+    assert!(
+        resolved.status.success(),
+        "{}",
+        String::from_utf8_lossy(&resolved.stderr)
+    );
+    server.await.unwrap();
+    let report: Value = serde_json::from_slice(&resolved.stdout).unwrap();
+    assert_eq!(report["original_outcome"], "unknown");
+    assert_eq!(report["provider_stop_proven"], false);
+    assert_eq!(report["retired_receipts"], 0);
+    assert!(!cli(&home, command).await.status.success());
+    no_request(&listener).await;
+    let status = cli(
+        &home,
+        args(&["residency-managed-status", "--api-base", &api_base]),
+    )
+    .await;
+    assert!(
+        status.status.success(),
+        "{}",
+        String::from_utf8_lossy(&status.stderr)
+    );
+    let report: Value = serde_json::from_slice(&status.stdout).unwrap();
+    assert_eq!(report["unresolved_provider_operation"], false);
+    let db = rusqlite::Connection::open(cfg.db()).unwrap();
+    let state: String = db
+        .query_row("SELECT status FROM tasks WHERE id=?1", [&task], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(state, "interrupted");
+    assert!(db
+        .execute(
+            "UPDATE managed_residency_resolutions SET operator_approved=1",
+            []
+        )
+        .is_err());
+    assert_eq!(
+        db.query_row("SELECT count(*) FROM managed_residency_receipts", [], |r| r
+            .get::<_, i64>(0))
+            .unwrap(),
+        0
+    );
+    drop(db);
+    std::fs::remove_dir_all(home).unwrap();
+}
+
+#[tokio::test]
+async fn terminal_receipt_archive_preserves_history_without_restoring_release_authority() {
+    let _serial = serial().await;
+    let home = home();
+    let cfg = create_home(&home);
+    let listener = Arc::new(tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap());
+    let api_base = base(&listener);
+    let server_listener = listener.clone();
+    let server = tokio::spawn(async move {
+        let empty = models(&BTreeMap::new());
+        let loaded = models(&BTreeMap::from([(
+            "alpha".into(),
+            vec![("instance-a".into(), 2048)],
+        )]));
+        exchange(
+            &server_listener,
+            "GET /api/v1/models ",
+            "200 OK",
+            empty.clone(),
+        )
+        .await;
+        exchange(&server_listener, "POST /api/v1/models/load ", "200 OK", json!({"status":"loaded","type":"llm","instance_id":"instance-a","load_time_seconds":0.1})).await;
+        exchange(
+            &server_listener,
+            "GET /api/v1/models ",
+            "200 OK",
+            loaded.clone(),
+        )
+        .await;
+        exchange(&server_listener, "GET /api/v1/models ", "200 OK", loaded).await;
+        exchange(
+            &server_listener,
+            "POST /api/v1/models/unload ",
+            "200 OK",
+            json!({"instance_id":"instance-a"}),
+        )
+        .await;
+        exchange(&server_listener, "GET /api/v1/models ", "200 OK", empty).await;
+    });
+    let loaded = cli(&home, managed_command("load", &api_base, "alpha")).await;
+    assert!(
+        loaded.status.success(),
+        "{}",
+        String::from_utf8_lossy(&loaded.stderr)
+    );
+    let loaded: Value = serde_json::from_slice(&loaded.stdout).unwrap();
+    let id = loaded["receipt"]["receipt_id"].as_str().unwrap();
+    let archive = args(&[
+        "residency-managed-archive",
+        "--receipt-id",
+        id,
+        "--human-approve",
+    ]);
+    assert!(!cli(&home, archive.clone()).await.status.success());
+    let released = cli(&home, managed_command("release", &api_base, id)).await;
+    assert!(
+        released.status.success(),
+        "{}",
+        String::from_utf8_lossy(&released.stderr)
+    );
+    server.await.unwrap();
+    let db = rusqlite::Connection::open(cfg.db()).unwrap();
+    db.execute_batch("CREATE TRIGGER reject_archive_audit BEFORE INSERT ON events WHEN NEW.kind='managed_residency_audit' AND json_extract(NEW.payload,'$.state')='receipt_archived' BEGIN SELECT RAISE(ABORT,'fixture audit denial'); END;").unwrap();
+    drop(db);
+    assert!(!cli(&home, archive.clone()).await.status.success());
+    assert_eq!(receipts(&cfg.db())[0].state, "released");
+    let inspected = cli(
+        &home,
+        args(&["residency-managed-inspect", "--receipt-id", id]),
+    )
+    .await;
+    assert!(
+        inspected.status.success(),
+        "{}",
+        String::from_utf8_lossy(&inspected.stderr)
+    );
+    let inspected: Value = serde_json::from_slice(&inspected.stdout).unwrap();
+    assert_eq!(inspected["state"], "released");
+    let db = rusqlite::Connection::open(cfg.db()).unwrap();
+    assert_eq!(
+        db.query_row(
+            "SELECT count(*) FROM managed_residency_receipt_archive",
+            [],
+            |r| r.get::<_, i64>(0)
+        )
+        .unwrap(),
+        0
+    );
+    db.execute_batch("DROP TRIGGER reject_archive_audit;")
+        .unwrap();
+    drop(db);
+    let archived = cli(&home, archive.clone()).await;
+    assert!(
+        archived.status.success(),
+        "{}",
+        String::from_utf8_lossy(&archived.stderr)
+    );
+    assert!(!cli(&home, archive).await.status.success());
+    assert!(!cli(&home, managed_command("release", &api_base, id))
+        .await
+        .status
+        .success());
+    no_request(&listener).await;
+    let status = cli(
+        &home,
+        args(&["residency-managed-status", "--api-base", &api_base]),
+    )
+    .await;
+    assert!(
+        status.status.success(),
+        "{}",
+        String::from_utf8_lossy(&status.stderr)
+    );
+    let db = rusqlite::Connection::open(cfg.db()).unwrap();
+    assert_eq!(
+        db.query_row("SELECT count(*) FROM managed_residency_receipts", [], |r| r
+            .get::<_, i64>(0))
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        db.query_row(
+            "SELECT count(*) FROM managed_residency_receipt_archive",
+            [],
+            |r| r.get::<_, i64>(0)
+        )
+        .unwrap(),
+        1
+    );
+    assert!(db
+        .execute("DELETE FROM managed_residency_receipt_archive", [])
+        .is_err());
+    db.execute("UPDATE events SET payload='{}' WHERE kind='managed_residency_audit' AND json_extract(payload,'$.state')='receipt_archived'", []).unwrap();
+    drop(db);
+    let invalid = cli(
+        &home,
+        args(&["residency-managed-status", "--api-base", &api_base]),
+    )
+    .await;
+    assert!(
+        invalid.status.success(),
+        "status reports blocked state without authorizing mutation"
+    );
+    let invalid: Value = serde_json::from_slice(&invalid.stdout).unwrap();
+    assert_eq!(invalid["managed_lifecycle_blocked"], true);
+    let inspect = cli(
+        &home,
+        args(&["residency-managed-inspect", "--receipt-id", id]),
+    )
+    .await;
+    assert!(
+        !inspect.status.success(),
+        "corrupted archive audit must reject evidence inspection"
+    );
+    assert!(!cli(&home, managed_command("load", &api_base, "beta"))
+        .await
+        .status
+        .success());
+    no_request(&listener).await;
+    std::fs::remove_dir_all(home).unwrap();
+}
+
+#[tokio::test]
+async fn stale_cohort_requires_explicit_authority_retirement_and_retains_member_proof() {
+    let _serial = serial().await;
+    let home = home();
+    let cfg = create_home(&home);
+    let listener = Arc::new(tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap());
+    let api_base = base(&listener);
+    let server_listener = listener.clone();
+    let server = tokio::spawn(async move {
+        let loaded = models(&BTreeMap::from([(
+            "alpha".into(),
+            vec![("instance-a".into(), 2048)],
+        )]));
+        exchange(
+            &server_listener,
+            "GET /api/v1/models ",
+            "200 OK",
+            models(&BTreeMap::new()),
+        )
+        .await;
+        exchange(&server_listener, "POST /api/v1/models/load ", "200 OK", json!({"status":"loaded","type":"llm","instance_id":"instance-a","load_time_seconds":0.1})).await;
+        exchange(
+            &server_listener,
+            "GET /api/v1/models ",
+            "200 OK",
+            loaded.clone(),
+        )
+        .await;
+        exchange(&server_listener, "GET /api/v1/models ", "200 OK", loaded).await;
+        let (mut stream, _) = server_listener.accept().await.unwrap();
+        let (head, body) = read_request(&mut stream).await;
+        assert!(head.starts_with("POST /api/v1/models/load "));
+        assert_eq!(body["model"], "beta");
+        drop(stream);
+    });
+    let loaded = cli(&home, managed_command("load", &api_base, "alpha")).await;
+    assert!(
+        loaded.status.success(),
+        "{}",
+        String::from_utf8_lossy(&loaded.stderr)
+    );
+    assert!(!cli(&home, managed_command("load", &api_base, "beta"))
+        .await
+        .status
+        .success());
+    server.await.unwrap();
+    let row = receipts(&cfg.db()).remove(0);
+    let db = rusqlite::Connection::open(cfg.db()).unwrap();
+    let task: String = db
+        .query_row("SELECT id FROM tasks WHERE status='interrupted'", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    drop(db);
+    let mut command = args(&[
+        "residency-managed-resolve",
+        "--api-base",
+        &api_base,
+        "--task-id",
+        &task,
+        "--human-approve",
+        "--provider-stop-acknowledged",
+    ]);
+    for approved in [false, true] {
+        if approved {
+            command.push("--retire-stale-cohort".into());
+        }
+        let server_listener = listener.clone();
+        let server = tokio::spawn(async move {
+            let changed = models(&BTreeMap::from([(
+                "alpha".into(),
+                vec![("instance-a".into(), 4096)],
+            )]));
+            exchange(&server_listener, "GET /api/v1/models ", "200 OK", changed).await;
+        });
+        let result = cli(&home, command.clone()).await;
+        server.await.unwrap();
+        assert_eq!(
+            result.status.success(),
+            approved,
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        if !approved {
+            assert_eq!(receipts(&cfg.db())[0].state, "active");
+        }
+    }
+    let after = receipts(&cfg.db()).remove(0);
+    assert_eq!(after.state, "retired");
+    assert_eq!(
+        after.current_digest, row.current_digest,
+        "retirement must not rebase stale authority"
+    );
+    assert!(!cli(
+        &home,
+        managed_command("release", &api_base, &row.receipt_id)
+    )
+    .await
+    .status
+    .success());
+    no_request(&listener).await;
+    let inspected = cli(
+        &home,
+        args(&["residency-managed-inspect", "--receipt-id", &row.receipt_id]),
+    )
+    .await;
+    assert!(
+        inspected.status.success(),
+        "{}",
+        String::from_utf8_lossy(&inspected.stderr)
+    );
+    let db = rusqlite::Connection::open(cfg.db()).unwrap();
+    assert_eq!(
+        db.query_row(
+            "SELECT count(*) FROM managed_residency_resolution_members",
+            [],
+            |r| r.get::<_, i64>(0)
+        )
+        .unwrap(),
+        1
+    );
+    assert!(db
+        .execute("DELETE FROM managed_residency_resolution_members", [])
+        .is_err());
+    db.execute("UPDATE events SET payload='{}' WHERE kind='managed_residency_resolution' AND json_extract(payload,'$.state')='operator_resolved'", []).unwrap();
+    drop(db);
+    assert!(!cli(
+        &home,
+        args(&[
+            "residency-managed-archive",
+            "--receipt-id",
+            &row.receipt_id,
+            "--human-approve"
+        ])
+    )
+    .await
+    .status
+    .success());
+    no_request(&listener).await;
     std::fs::remove_dir_all(home).unwrap();
 }

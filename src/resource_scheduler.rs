@@ -177,13 +177,14 @@ pub struct ResourcePool {
     working_profiles: Vec<WorkingProfile>,
     working_profiles_sha256: Option<String>,
     _workspace_lease: Option<crate::recovery::ExecutionLease>,
+    _managed_ownership: Option<Arc<crate::residency::lifecycle::Ownership>>,
 }
 
 pub(crate) struct RoutingCandidate {
     pub target: crate::backend::InferenceTarget,
     pub metadata: Value,
 }
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub(crate) enum RoutingRejection {
     UnknownTarget,
     MetadataError,
@@ -256,6 +257,10 @@ impl ResourcePool {
                 Ok(target) => crate::backend::InferenceTarget::LocalHttp(target),
                 Err(_) => return Err(RoutingRejection::MetadataError),
             },
+            Some(crate::backend::InferenceTarget::Native(target)) => match target.canonical() {
+                Ok(target) => crate::backend::InferenceTarget::Native(target),
+                Err(_) => return Err(RoutingRejection::MetadataError),
+            },
             Some(crate::backend::InferenceTarget::Deterministic) => {
                 crate::backend::InferenceTarget::Deterministic
             }
@@ -267,6 +272,17 @@ impl ResourcePool {
             let profile = match &canonical_target {
                 crate::backend::InferenceTarget::LocalHttp(target) => {
                     match profiles::select_profile(&self.working_profiles, role, target) {
+                        Ok(Some(profile)) => profile,
+                        Ok(None) => return Err(RoutingRejection::UnlistedProfile),
+                        Err(_) => return Err(RoutingRejection::MetadataError),
+                    }
+                }
+                crate::backend::InferenceTarget::Native(target) => {
+                    let resource_target = match target.resource_target() {
+                        Ok(target) => target,
+                        Err(_) => return Err(RoutingRejection::MetadataError),
+                    };
+                    match profiles::select_profile(&self.working_profiles, role, &resource_target) {
                         Ok(Some(profile)) => profile,
                         Ok(None) => return Err(RoutingRejection::UnlistedProfile),
                         Err(_) => return Err(RoutingRejection::MetadataError),
@@ -402,6 +418,7 @@ impl ResourcePool {
             working_profiles,
             working_profiles_sha256,
             _workspace_lease: None,
+            _managed_ownership: None,
         }))
     }
     fn lock(&self) -> Result<MutexGuard<'_, State>> {

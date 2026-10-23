@@ -15,7 +15,8 @@ semantic version and lowercase implementation SHA-256. The Engine captures that
 descriptor once and retains the provider instance; clones retain their selection.
 The digest is an operator declaration, not a binary signature or attestation.
 Model output, retrieved documents and checker manifests cannot install providers.
-No command-line plugin loader or new model permission is introduced.
+No native callback plugin loader or new model permission is introduced. The
+optional restricted Wasm loader is described below.
 
 Each callback receives bounded original objective and candidate bytes, their
 hashes, the original criterion identity and the original task deadline. One
@@ -38,9 +39,10 @@ retains prior charges. An interrupted callback may have only its durable intent;
 missing outcome data never counts as acceptance. Async
 timeouts rely on cooperative native code: they cannot preempt a blocking callback
 or prove an external process stopped. Providers are trusted host code, receive no
-tool or permission handle through this interface, and are not sandboxed. General
-untrusted executable loading, new criterion implementations, binary attestation
-and independently measured quality remain incomplete.
+tool or permission handle through this interface, and are not sandboxed. Arbitrary
+native executable loading remains unsupported. The optional restricted Wasm path
+below is separate from trusted native callbacks; binary attestation and
+independently measured quality remain incomplete.
 
 When finite-domain progress stopping is enabled, a compiled witness vetoed by
 the provider consumes its original cycle as an explicitly unscored observation.
@@ -48,11 +50,14 @@ It resets plateau accumulation without marking the answer verified. Ordinary
 failed-answer progress still rejects zero-violation witnesses; the combined
 acceptance rule and original recursion limits remain authoritative.
 
-Recovery cannot restore an arbitrary host callback. A task containing a custom
-provider identity or invocation is therefore refused by saved-result recovery
-and reasoning continuation, before new writes or dispatch. It must not silently
-resume with only the built-in checker. Implementation verification is recorded in
-`CURRENT_IMPLEMENTATION.md` and `IMPLEMENTATION_MATRIX.md` after checks run.
+Default recovery cannot reconstruct an arbitrary host callback and refuses such
+tasks before new writes or dispatch. An operator embedding may supply the exact
+original verifier through the explicit restoration API; descriptor, original
+criterion and durable callback evidence must match. Unfinished callbacks are not
+replayed. Combined restoration can also supply the original escalation policy.
+No path silently resumes with only the built-in checker. Current integration
+verification is recorded in `CURRENT_IMPLEMENTATION.md` and
+`IMPLEMENTATION_MATRIX.md` after checks run.
 
 The runtime can verify arithmetic and explicit structured objectives without
 trusting model confidence. General prose remains unverified.
@@ -195,3 +200,41 @@ verified evidence. Optional [progress stopping](PROGRESS_STOPPING.md) uses nonze
 counts to decline further revisions after a bounded plateau. Counts express no
 distance-to-solution or unsatisfiability proof; all original grants and tool/call
 charges remain authoritative.
+
+## Optional Wasm secondary verifier implementation
+
+The default-off `wasm-verifier` Cargo feature adds `WasmVerifierProvider` using
+exact Wasmi 2.0.0. Its source is integrated but awaits the final verification pass.
+The operator supplies a bounded regular module file and exact SHA-256 pin:
+
+```sh
+cargo build --locked --features wasm-verifier
+cogfabric --verifier-wasm /absolute/path/checker.wasm \
+  --verifier-wasm-sha256 EXACT_LOWERCASE_SHA256 \
+  ask 'sort:{"values":[3,1,2]}'
+```
+
+The module file must implement the ABI below.
+The loader exposes artifact and settings hashes separately; the captured provider
+descriptor binds both. The same file/settings identity must be restored for
+operator continuation. Exact verifier and escalation callbacks can also be
+restored together through the host continuation API.
+
+ABI v1 exports only `memory` and
+`verify(i32,i32,i32,i32,i32,i32)->i32`. Parameters are UTF-8 criterion, objective and
+answer pointer/length pairs. There are no imports, WASI, host functions, filesystem,
+network, secrets or tools. Return 0 vetoes; 1 passes only this secondary check;
+other values are invalid. The original compiled criterion must still accept.
+
+Bytecode, memory, table, stack, recursion, fuel and concurrent blocking jobs have
+compiled ceilings. Fuel includes start-function work. The caller retains its
+original deadline; timing out stops waiting, while a blocking execution keeps its
+permit until it finishes. This is not instant thread preemption or proof against
+an interpreter vulnerability. Models cannot install providers, change these limits
+or turn a verifier claim into independent evidence.
+
+The continuation code can also reconstruct missing publication events for a
+completed parallel advisory wave when every original dispatch, response and charge
+is uniquely recorded. Preview stays read-only; approved resume writes only the
+missing unverified transitions atomically with admission. Unknown responses remain
+denied and no model call, plan, schedule or charge is replayed or refunded.

@@ -11,7 +11,7 @@ use crate::{
 use anyhow::{bail, Result};
 use serde_json::{json, Value};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -47,29 +47,45 @@ struct Checkpoint {
     resource_route_scope: Option<String>,
     finite_search_history: Option<super::finite_search::Receipt>,
     path_progress_enabled: bool,
+    verifier_provider: Option<crate::verification::provider::Handle>,
+    reconciled_parallel_subtasks: Vec<Subtask>,
 }
 
 fn prepare(db: &rusqlite::Connection, task: &str) -> Result<Checkpoint> {
-    prepare_with_policy(db, task, &crate::escalation::Handle::default())
+    prepare_with_policy(db, task, &crate::escalation::Handle::default(), None)
 }
 
 fn prepare_with_policy(
     db: &rusqlite::Connection,
     task: &str,
     escalator: &crate::escalation::Handle,
+    verifier_provider: Option<&crate::verification::provider::Handle>,
 ) -> Result<Checkpoint> {
-    super::reject_custom_verifier_recovery(db, task)?;
+    super::validate_verifier_recovery(db, task, verifier_provider)?;
     let parallel_recorded: bool = db.query_row(
         "SELECT EXISTS(SELECT 1 FROM events WHERE task_id=?1 AND kind='subtask_parallel_schedule')",
         [task],
         |row| row.get(0),
     )?;
-    let (status, graph, subtasks) = graph::graph_from(db, task)?;
+    let (status, graph, mut subtasks) = graph::graph_from(db, task)?;
     if parallel_recorded && graph.is_none() {
         bail!("Parallel advisory schedule has no pinned graph")
     }
     if !matches!(status.as_str(), "running" | "interrupted") {
         bail!("Task is not abandoned or interrupted")
+    }
+    let mut reconciled_parallel_subtasks = Vec::new();
+    let mut reconciled_parallel_indices = BTreeSet::new();
+    if parallel_recorded && subtasks.iter().any(|node| node.state == "running") {
+        let plan = graph
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Running parallel nodes have no saved graph"))?;
+        let order = graph::order_from(db, task, plan)?;
+        let reconciliation =
+            parallel_history::reconcile_unpublished(db, task, plan, &order, &subtasks)?;
+        subtasks = reconciliation.subtasks;
+        reconciled_parallel_subtasks = reconciliation.reconciled;
+        reconciled_parallel_indices = reconciliation.reconciled_indices;
     }
     if subtasks.iter().any(|n| {
         !matches!(
@@ -408,6 +424,7 @@ fn prepare_with_policy(
             graph,
             &order,
             &subtasks,
+            &reconciled_parallel_indices,
             parallel_history::HistoryAnchor {
                 tail: &tail,
                 calls_before,
@@ -536,6 +553,7 @@ fn prepare_with_policy(
     Ok(Checkpoint {
         finite_search_history,
         path_progress_enabled,
+        verifier_provider: verifier_provider.cloned(),
         resource_history,
         resource_routes,
         resource_route_scope,
@@ -547,6 +565,7 @@ fn prepare_with_policy(
         subtasks,
         boundary,
         parallel_schedule,
+        reconciled_parallel_subtasks,
         state: RestoredState {
             resources,
             nodes,
@@ -844,7 +863,7 @@ fn validate_worker_workspace(cfg: &mut Config, path: &std::path::Path) -> Result
 /// Inspect current continuation admission without changing task state or launching workers.
 /// Eligibility is sampled; an approved resume always validates again.
 pub fn preview(store: &Store, task: &str) -> Result<Value> {
-    preview_with_handle(store, task, crate::escalation::Handle::default())
+    preview_with_handle(store, task, crate::escalation::Handle::default(), None)
 }
 
 /// Inspect a checkpoint against an explicitly restored trusted-native policy.
@@ -856,13 +875,50 @@ pub fn preview_with_escalation_policy(
 ) -> Result<Value> {
     security::authorize("human-cli", "task.resume")?;
     uuid::Uuid::parse_str(task)?;
-    preview_with_handle(store, task, crate::escalation::Handle::new(policy)?)
+    preview_with_handle(store, task, crate::escalation::Handle::new(policy)?, None)
+}
+
+/// Inspect continuation while restoring the exact task-pinned host verifier.
+/// The callback is retained only as trusted host code; database metadata never
+/// constructs or grants it.
+pub fn preview_with_verifier_provider(
+    store: &Store,
+    task: &str,
+    provider: Arc<dyn crate::verification::VerifierProvider>,
+) -> Result<Value> {
+    security::authorize("human-cli", "task.resume")?;
+    uuid::Uuid::parse_str(task)?;
+    let provider = crate::verification::provider::Handle::new(provider)?;
+    preview_with_handle(
+        store,
+        task,
+        crate::escalation::Handle::default(),
+        Some(provider),
+    )
+}
+
+/// Restore both task-pinned native policy callbacks for checkpoint inspection.
+pub fn preview_with_restored_policies(
+    store: &Store,
+    task: &str,
+    escalator: Arc<dyn crate::escalation::EscalationPolicy>,
+    provider: Arc<dyn crate::verification::VerifierProvider>,
+) -> Result<Value> {
+    security::authorize("human-cli", "task.resume")?;
+    uuid::Uuid::parse_str(task)?;
+    preview_with_handle(
+        store,
+        task,
+        crate::escalation::Handle::new(escalator)?,
+        Some(crate::verification::provider::Handle::new(provider)?),
+    )
 }
 
 fn preview_with_handle(
     store: &Store,
     task: &str,
     escalator: crate::escalation::Handle,
+    verifier_provider: Option<crate::verification::provider::Handle>,
 ) -> Result<Value> {
     security::authorize("human-cli", "task.resume")?;
     uuid::Uuid::parse_str(task)?;
@@ -881,7 +937,8 @@ fn preview_with_handle(
     );
     let result = (|| -> Result<Checkpoint> {
         let tx = db.transaction()?;
-        let mut checkpoint = prepare_with_policy(&tx, task, &escalator)?;
+        let mut checkpoint =
+            prepare_with_policy(&tx, task, &escalator, verifier_provider.as_ref())?;
         validate_worker_workspace(&mut checkpoint.cfg, path)?;
         if started.elapsed() > Duration::from_secs(5) {
             bail!("Continuation admission deadline exhausted")
@@ -905,6 +962,8 @@ fn preview_with_handle(
             "phase":checkpoint.boundary.as_ref().map(|b| b["phase"].clone()).unwrap_or(json!("pre_solver_graph")),
             "mode":checkpoint.mode,"model":checkpoint.cfg.model,
             "escalation_policy":escalator.descriptor(),"policy_implementation_attested":false,
+            "verifier_provider":checkpoint.verifier_provider.as_ref().map(|provider|provider.descriptor()),
+            "verifier_implementation_attested":false,
             "managed_worker":checkpoint.cfg.inference_process,
             "resource_history":checkpoint.resource_history,
             "finite_search_history":checkpoint.finite_search_history,
@@ -921,6 +980,7 @@ fn preview_with_handle(
                 "prompt_bytes":checkpoint.state.resources.prompt_bytes},
             "initial_nodes_to_record":checkpoint.subtasks.iter().filter(|n| n.state == "not_recorded").count(),
             "subtasks":checkpoint.subtasks.iter().map(|n|json!({"id":n.step.id,"state":n.state})).collect::<Vec<_>>(),
+            "parallel_result_publications_to_reconcile":checkpoint.reconciled_parallel_subtasks.len(),
             "weights_attested":false}))
 }
 
@@ -935,6 +995,7 @@ pub async fn resume(
         task,
         human_approve,
         crate::escalation::Handle::default(),
+        None,
         cancel,
     )
     .await
@@ -955,7 +1016,61 @@ pub async fn resume_with_escalation_policy(
     }
     uuid::Uuid::parse_str(task)?;
     let escalator = crate::escalation::Handle::new(policy)?;
-    resume_with_handle(store, task, human_approve, escalator, cancel).await
+    resume_with_handle(store, task, human_approve, escalator, None, cancel).await
+}
+
+/// Resume with the exact operator-restored provider pinned to this task. The
+/// restored callback is compared before admission and is used for future checks;
+/// an intent without a result remains unresolved and is never retried.
+pub async fn resume_with_verifier_provider(
+    store: Arc<Store>,
+    task: &str,
+    human_approve: bool,
+    provider: Arc<dyn crate::verification::VerifierProvider>,
+    cancel: impl std::future::Future<Output = ()>,
+) -> Result<Value> {
+    security::authorize("human-cli", "task.resume")?;
+    if !human_approve {
+        bail!("Task continuation requires explicit operator approval")
+    }
+    uuid::Uuid::parse_str(task)?;
+    let provider = crate::verification::provider::Handle::new(provider)?;
+    resume_with_handle(
+        store,
+        task,
+        human_approve,
+        crate::escalation::Handle::default(),
+        Some(provider),
+        cancel,
+    )
+    .await
+}
+
+/// Resume with both original host-installed native callbacks. Neither identity
+/// is loaded from task metadata; each supplied implementation is compared to its
+/// persisted descriptor before the task is admitted.
+pub async fn resume_with_restored_policies(
+    store: Arc<Store>,
+    task: &str,
+    human_approve: bool,
+    escalator: Arc<dyn crate::escalation::EscalationPolicy>,
+    provider: Arc<dyn crate::verification::VerifierProvider>,
+    cancel: impl std::future::Future<Output = ()>,
+) -> Result<Value> {
+    security::authorize("human-cli", "task.resume")?;
+    if !human_approve {
+        bail!("Task continuation requires explicit operator approval")
+    }
+    uuid::Uuid::parse_str(task)?;
+    resume_with_handle(
+        store,
+        task,
+        human_approve,
+        crate::escalation::Handle::new(escalator)?,
+        Some(crate::verification::provider::Handle::new(provider)?),
+        cancel,
+    )
+    .await
 }
 
 async fn resume_with_handle(
@@ -963,6 +1078,7 @@ async fn resume_with_handle(
     task: &str,
     human_approve: bool,
     escalator: crate::escalation::Handle,
+    verifier_provider: Option<crate::verification::provider::Handle>,
     cancel: impl std::future::Future<Output = ()>,
 ) -> Result<Value> {
     security::authorize("human-cli", "task.resume")?;
@@ -986,7 +1102,7 @@ async fn resume_with_handle(
         );
         let prepared = (|| -> Result<Config> {
             let tx = db.transaction()?;
-            Ok(prepare_with_policy(&tx, task, &escalator)?.cfg)
+            Ok(prepare_with_policy(&tx, task, &escalator, verifier_provider.as_ref())?.cfg)
         })();
         db.progress_handler(0, None::<fn() -> bool>);
         prepared?
@@ -1023,7 +1139,8 @@ async fn resume_with_handle(
         );
         let prepared = (|| -> Result<Checkpoint> {
             let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-            let mut checkpoint = prepare_with_policy(&tx, task, &escalator)?;
+            let mut checkpoint =
+                prepare_with_policy(&tx, task, &escalator, verifier_provider.as_ref())?;
             if serde_json::to_value(&checkpoint.cfg)?
                 != serde_json::to_value(&original_configuration)?
             {
@@ -1048,6 +1165,15 @@ async fn resume_with_handle(
                     tx.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'subtask','jev-plus',?2,unixepoch())",rusqlite::params![task,json!({"node":node,"origin":"operator_initial_graph_recovery"}).to_string()])?;
                 }
             }
+            for node in &checkpoint.reconciled_parallel_subtasks {
+                if node.state != "unverified" || node.result.is_none() {
+                    bail!("Parallel reconciliation produced an invalid advisory state")
+                }
+                tx.execute(
+                    "INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'subtask','jev-plus',?2,unixepoch())",
+                    rusqlite::params![task,json!({"node":node,"origin":"operator_parallel_result_reconciliation"}).to_string()],
+                )?;
+            }
             let parallel_history = checkpoint.parallel_schedule.as_ref().map(|schedule| {
                 json!({"marker_event_id":schedule.marker_id,"max_parallelism":schedule.max_parallelism,
                     "completed_waves":schedule.completed_waves,"total_waves":schedule.waves.len(),
@@ -1057,7 +1183,7 @@ async fn resume_with_handle(
                 "UPDATE tasks SET status='running',updated=unixepoch() WHERE id=?1",
                 [task],
             )?;
-            tx.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'continuation','human-cli',?2,unixepoch())",rusqlite::params![task,json!({"state":"started","format_version":1,"original_budget_preserved":true,"prior_timing_complete":false,"subtask_results_verified":false,"escalation_policy":escalator.descriptor(),"restored_resource_pool":restored_pool,"resource_history":checkpoint.resource_history,"finite_search_history":checkpoint.finite_search_history,"parallel_history":parallel_history}).to_string()])?;
+            tx.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'continuation','human-cli',?2,unixepoch())",rusqlite::params![task,json!({"state":"started","format_version":1,"original_budget_preserved":true,"prior_timing_complete":false,"subtask_results_verified":false,"reconciled_parallel_result_publications":checkpoint.reconciled_parallel_subtasks.len(),"escalation_policy":escalator.descriptor(),"verifier_provider":checkpoint.verifier_provider.as_ref().map(|provider|provider.descriptor()),"restored_resource_pool":restored_pool,"resource_history":checkpoint.resource_history,"finite_search_history":checkpoint.finite_search_history,"parallel_history":parallel_history}).to_string()])?;
             if started.elapsed() > Duration::from_secs(5) {
                 bail!("Continuation admission deadline exhausted")
             }
@@ -1127,6 +1253,9 @@ async fn resume_with_handle(
     session.set_path_progress_enabled(path_progress_enabled);
     session.escalator = escalator;
     session.resource_pool = resource_pool;
+    if let Some(provider) = checkpoint.verifier_provider.clone() {
+        session.restore_verifier_provider(provider);
+    }
     let execution = async {
         if let Some(boundary) = &checkpoint.boundary {
             session
@@ -1222,6 +1351,7 @@ mod policy_tests;
 mod tests {
     use super::*;
     use crate::backend::Generation;
+    use crate::scheduling::SubtaskScheduler;
     use std::{collections::VecDeque, future::Future, pin::Pin, sync::Mutex};
     const QUERY: &str = r#"sort:{"values":[3,1,2]}"#;
     const PLAN: &str = r#"{"steps":[{"id":"a","objective":"Inspect input","depends_on":[]},{"id":"b","objective":"Combine advice","depends_on":["a"]}]}"#;
@@ -1336,6 +1466,84 @@ mod tests {
         store.finish_task(&task, "interrupted", "").unwrap();
         (store, task)
     }
+
+    async fn unpublished_parallel_result_fixture(store: Arc<Store>) -> (Arc<Store>, String) {
+        const PARALLEL_PLAN: &str = r#"{"steps":[{"id":"a","objective":"Inspect first input","depends_on":[]},{"id":"b","objective":"Inspect second input","depends_on":[]}]}"#;
+        let task = store.create_task(QUERY, "deep").unwrap();
+        let cfg = Config {
+            backend: "openai-local".into(),
+            interpret_goals: false,
+            max_tokens: 3000,
+            subtask_parallelism: Some(2),
+            ..Config::default()
+        };
+        let plan = crate::planning::Plan::parse(PARALLEL_PLAN).unwrap();
+        let backend = Arc::new(Script(Mutex::new(
+            vec![
+                ("planner", PARALLEL_PLAN),
+                ("solver", "first parallel advice"),
+                ("solver", "second parallel advice"),
+            ]
+            .into(),
+        )));
+        let mut session = Session::new(cfg, store.clone(), backend, task.clone(), "deep").unwrap();
+        store.event(&task,"execution_options","runtime",json!({"format_version":1,"profile":"full","explain":false,"conversation_ref":null})).unwrap();
+        store.event(&task,"module_snapshot","fabric",json!({"modules":[{"id":"inference.local","version":"1.0.0","roles":crate::fabric::protocol::ROLES}]})).unwrap();
+        store.event(&task,"reasoning_context","jev-r",json!({"format_version":1,"objective":QUERY,"context":"","objective_hash":sha256(QUERY.as_bytes()),"context_hash":sha256(b""),"prompt_base_hash":sha256(Session::prompt_base(QUERY,"",true).unwrap().as_bytes()),"calls_before":0,"cycles_before":0,"untrusted_data":true,"permissions_restorable":false})).unwrap();
+        session
+            .call("planner", "planning", 256)
+            .await
+            .unwrap()
+            .unwrap();
+        store
+            .event(
+                &task,
+                "plan",
+                "planner-r",
+                json!({"graph":plan,"trusted_permissions":false,"scheduler_required":true}),
+            )
+            .unwrap();
+        let scheduler = crate::scheduling::StableScheduler.descriptor();
+        let order = crate::scheduling::StableScheduler.order(&plan).unwrap();
+        store.event(&task,"subtask_schedule_intent","jev-plus",json!({"scheduler":scheduler,"permissions_granted":false,"implementation_attested":false})).unwrap();
+        store.event(&task,"subtask_schedule","jev-plus",json!({"format_version":1,"scheduler":scheduler,"graph_sha256":sha256(&serde_json::to_vec(&plan).unwrap()),"order":order,"permissions_granted":false})).unwrap();
+        let nodes = plan
+            .steps
+            .iter()
+            .cloned()
+            .map(|step| Subtask {
+                step,
+                state: "pending".into(),
+                result: None,
+            })
+            .collect::<Vec<_>>();
+        for node in &nodes {
+            store
+                .event(&task, "subtask", "jev-plus", json!({"node":node}))
+                .unwrap();
+        }
+        store.lock().unwrap().execute_batch("CREATE TRIGGER reject_second_parallel_publication BEFORE INSERT ON events WHEN NEW.kind='subtask' AND json_extract(NEW.payload,'$.node.state')='unverified' AND json_extract(NEW.payload,'$.node.step.id')='b' BEGIN SELECT RAISE(ABORT,'fixture publication failure'); END;").unwrap();
+        assert!(session
+            .continue_graph(nodes, QUERY, "", "deep", None)
+            .await
+            .is_err());
+        store
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE tasks SET status='interrupted',answer='' WHERE id=?1",
+                [&task],
+            )
+            .unwrap();
+        drop(session);
+        store
+            .lock()
+            .unwrap()
+            .execute_batch("DROP TRIGGER reject_second_parallel_publication")
+            .unwrap();
+        (store, task)
+    }
+
     async fn advisory_crash_fixture(
         custom_order: bool,
     ) -> (Arc<Store>, String, std::path::PathBuf) {
@@ -2585,6 +2793,131 @@ mod tests {
         assert!(prepare(&store.lock().unwrap(), &task).is_err());
         assert_eq!(store.inference_audit(&task).unwrap()["reserved_calls"], 5);
         drop(resumed);
+        drop(store);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn parallel_reconciliation_preview_is_read_only_and_resume_publishes_without_replay() {
+        use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+
+        let root = std::env::temp_dir().join(format!(
+            "fabric-parallel-continuation-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let persistent = Arc::new(Store::open(&root.join("state.db")).unwrap());
+        let (store, task) = unpublished_parallel_result_fixture(persistent).await;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}/v1", listener.local_addr().unwrap());
+        store.lock().unwrap().execute(
+            "UPDATE events SET payload=json_set(payload,'$.configuration.api_base',?2) WHERE task_id=?1 AND kind='execution_settings'",
+            rusqlite::params![task, endpoint],
+        ).unwrap();
+
+        let before = store.task(&task).unwrap();
+        let preview = preview(&store, &task).unwrap();
+        assert_eq!(preview["parallel_result_publications_to_reconcile"], 1);
+        assert_eq!(preview["consumed"]["calls"], 3);
+        assert_eq!(preview["resume_authorized"], false);
+        assert_eq!(store.task(&task).unwrap(), before);
+        assert_eq!(
+            before["events"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(
+                    |event| event["payload"]["origin"] == "operator_parallel_result_reconciliation"
+                )
+                .count(),
+            0
+        );
+
+        let server = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let mut socket = BufReader::new(socket);
+            let mut length = None;
+            loop {
+                let mut line = String::new();
+                assert!(socket.read_line(&mut line).await.unwrap() > 0);
+                if line == "\r\n" {
+                    break;
+                }
+                if let Some(value) = line.to_ascii_lowercase().strip_prefix("content-length: ") {
+                    length = Some(value.trim().parse::<usize>().unwrap());
+                }
+            }
+            let mut body = vec![0; length.unwrap()];
+            socket.read_exact(&mut body).await.unwrap();
+            let payload: Value = serde_json::from_slice(&body).unwrap();
+            assert!(payload["messages"]
+                .to_string()
+                .contains("first parallel advice"));
+            assert!(payload["messages"]
+                .to_string()
+                .contains("second parallel advice"));
+            let response = json!({"choices":[{"message":{"content":"[1,2,3]"}}]}).to_string();
+            socket.get_mut().write_all(format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                response.len(), response
+            ).as_bytes()).await.unwrap();
+        });
+
+        let report = tokio::time::timeout(
+            Duration::from_secs(10),
+            resume(store.clone(), &task, true, std::future::pending()),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        server.await.unwrap();
+        assert_eq!(report["status"], "completed");
+        let after = store.task(&task).unwrap();
+        assert_eq!(
+            after["events"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(
+                    |event| event["payload"]["origin"] == "operator_parallel_result_reconciliation"
+                )
+                .count(),
+            1
+        );
+        let audit = store.inference_audit(&task).unwrap();
+        assert_eq!(audit["reserved_calls"], 4);
+        assert_eq!(audit["reserved_output_tokens"], 1024);
+        assert_eq!(audit["results_not_recorded"], 0);
+        drop(store);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn parallel_reconciliation_audit_failure_rolls_back_transition_and_task_admission() {
+        let root = std::env::temp_dir().join(format!(
+            "fabric-parallel-reconciliation-rollback-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let persistent = Arc::new(Store::open(&root.join("state.db")).unwrap());
+        let (store, task) = unpublished_parallel_result_fixture(persistent).await;
+        store.lock().unwrap().execute_batch("CREATE TRIGGER reject_parallel_continuation_audit BEFORE INSERT ON events WHEN NEW.kind='continuation' AND json_extract(NEW.payload,'$.state')='started' BEGIN SELECT RAISE(ABORT,'fixture continuation audit failure'); END;").unwrap();
+        let before = store.task(&task).unwrap();
+        assert!(resume(store.clone(), &task, true, std::future::pending())
+            .await
+            .is_err());
+        let after = store.task(&task).unwrap();
+        assert_eq!(after, before);
+        assert_eq!(after["task"]["status"], "interrupted");
+        assert_eq!(
+            after["events"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(
+                    |event| event["payload"]["origin"] == "operator_parallel_result_reconciliation"
+                )
+                .count(),
+            0
+        );
         drop(store);
         std::fs::remove_dir_all(root).unwrap();
     }

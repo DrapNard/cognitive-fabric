@@ -1,5 +1,31 @@
 # Current Rust implementation
 
+## Current worktree: implementation integration, not verified readiness
+
+The current source includes schema-8 managed recovery/archive, task-bound native
+lifecycle, general typed module workers, exact provider restoration, recorded-wave
+reconciliation, optional Wasm secondary verification and a manifest-driven security
+corpus runner. The owner requested committing and pushing this integration snapshot
+before final verification completed. It is not a readiness or release claim.
+
+Verification performed during integration:
+
+- `cargo fmt --all -- --check` and
+  `cargo check --locked --workspace --all-targets --all-features` passed on the
+  final source snapshot before commit.
+- Exact `flatc 25.12.19` regeneration matched all ten checked-in binding files.
+- The first all-feature library test run reported 735 passed and five failed.
+  Recovery/provider fixture corrections followed; those fixes need a full rerun.
+- Already-built integration binaries reported five passing security-corpus tests,
+  failures in native lifecycle and typed-worker expectations, and a stack overflow
+  in optional Wasm tests. Corrections/investigation followed; no final green result
+  is claimed.
+- The mandatory full test and lint gates remain pending on the final sources.
+
+The older dated entries below describe their own verified historical snapshots.
+Their test counts and schema numbers do not verify this integration snapshot.
+
+
 ### Track approved native loads before managed release — 2026-10-23
 
 **Implemented and regression-tested; general lifecycle remains Partial.** Architecture sections 4, 6,
@@ -2778,3 +2804,50 @@ access. Protocol/generated bindings are unchanged; exact bundled pairing/integri
 checks pass, but `flatc` is absent and fresh generation was not run. No real-model
 performance/quality gain is claimed for the new guard; its fixture evidence is
 separate from the preceding public Qwen diagnostics.
+
+### Managed operation resolution and receipt archive — work in progress
+
+Schema 8 adds explicit operator resolution of unknown native residency operations
+and immutable terminal receipt archives. The CLI requires approval and provider-stop
+acknowledgement for GET-only resolution; no retry or inferred provider success is
+introduced. Stale receipt authority requires explicit retirement. Archive snapshots
+preserve history without restoring release authority. Initial integration tests
+cover unknown loads, terminal archives and permission/replay denials. Full current
+source verification is still pending. See `docs/MANAGED_RESIDENCY.md`.
+
+
+### Ongoing implementation before the final verification pass
+
+Task-driven operator-approved native model lifecycle integration now has source
+APIs and CLI entry points (`residency-run`, `residency-task-resolve`). A request
+provides the exact approved model set and lifecycle deadline. The coordinator
+retains runtime/resource leases while loading/reusing active receipt-backed models,
+binds each role to a receipt, checks fresh inventory before generation and checks
+native response instance IDs. Only newly loaded models may be automatically
+released, and uncertain inference defers cleanup. Registered expert models pass
+through the same approved adapter factory rather than bypassing native bindings.
+
+Native model keys are the provider's documented request selectors. Instance checks
+apply to returned metadata, not an attestation that an input selected immutable
+weights. Unknown task generation creates a durable independent mutation gate;
+explicit resolution requires operator stop acknowledgement and unchanged receipt
+inventory. Ordinary recovery cannot silently replace a native lifecycle backend.
+
+Other integrated source work includes atomic coordinated expert dependency-version
+activation, a typed trusted in-process module broker exposed on Engine, and exact
+trusted verifier restoration. General FlatBuffers process dispatch and complete
+recorded-wave reconciliation are being implemented. This source state has not
+received the final build/test/security/performance pass. Earlier passing counts
+refer only to their recorded historical source snapshots.
+
+General module IPC source is now integrated: versioned `general_module.fbs`,
+strict typed codecs, private authenticated Unix sockets, fixed same-image workers,
+parent/child identity checks, deadlines, cancellation and owned child reaping.
+`Engine::with_builtin_module_worker` and CLI `--typed-module-worker` enable this
+path for typed arithmetic/SQL work; Session retains task tool accounting and the
+compiled checker independently verifies results. Expert manifests can optionally
+bind exact typed provider identities without creating grants. Task admission pins
+the general module catalog so later host version switches do not replace handles.
+The exact official FlatBuffers 25.12.19 compiler was downloaded to temporary build
+tooling with its release SHA-256 checked; new bindings were generated rather than
+handwritten. Source integration remains unverified pending the final pass.

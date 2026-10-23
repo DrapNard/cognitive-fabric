@@ -14,9 +14,14 @@ use std::{
     path::Path,
 };
 #[cfg(test)]
+mod activation_tests;
+#[cfg(test)]
 mod bounds_tests;
 #[cfg(test)]
 mod capability_tests;
+#[cfg(test)]
+mod provider_tests;
+pub mod providers;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -41,6 +46,56 @@ pub struct Capability {
     pub version: String,
 }
 
+/// Exact typed host module selected by an immutable expert manifest version.
+/// This declaration never constructs a task grant or registers implementation code.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ProviderCapability {
+    #[serde(rename = "math.evaluate")]
+    MathEvaluate,
+    #[serde(rename = "sql.query")]
+    SqlQuery,
+    #[serde(rename = "sorting.verify")]
+    SortingVerify,
+    #[serde(rename = "ordering.verify")]
+    OrderingVerify,
+    #[serde(rename = "path.verify")]
+    PathVerify,
+    #[serde(rename = "constraints.solve")]
+    ConstraintsSolve,
+}
+
+impl ProviderCapability {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::MathEvaluate => "math.evaluate",
+            Self::SqlQuery => "sql.query",
+            Self::SortingVerify => "sorting.verify",
+            Self::OrderingVerify => "ordering.verify",
+            Self::PathVerify => "path.verify",
+            Self::ConstraintsSolve => "constraints.solve",
+        }
+    }
+
+    pub fn module_capability(self) -> crate::fabric::modules::Capability {
+        match self {
+            Self::MathEvaluate => crate::fabric::modules::Capability::MathEvaluate,
+            Self::SqlQuery => crate::fabric::modules::Capability::SqlQuery,
+            Self::SortingVerify => crate::fabric::modules::Capability::SortingVerify,
+            Self::OrderingVerify => crate::fabric::modules::Capability::OrderingVerify,
+            Self::PathVerify => crate::fabric::modules::Capability::PathVerify,
+            Self::ConstraintsSolve => crate::fabric::modules::Capability::ConstraintsSolve,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ProviderBinding {
+    pub module_id: String,
+    pub module_version: String,
+    pub capabilities: Vec<ProviderCapability>,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Manifest {
@@ -63,6 +118,8 @@ pub struct Manifest {
     pub workflow_steps: Option<Vec<WorkflowStep>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<crate::models::Selection>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<ProviderBinding>,
 }
 
 pub(crate) fn identifier(id: &str) -> bool {
@@ -110,6 +167,29 @@ impl Manifest {
             model.validate()?;
             if self.kind != "workflow" {
                 bail!("Only workflow experts can bind an inference model")
+            }
+        }
+        if let Some(provider) = &self.provider {
+            if !matches!(self.kind.as_str(), "workflow" | "checker")
+                || !identifier(&provider.module_id)
+                || provider.module_id.len() > 64
+                || provider.module_version.len() > 64
+                || Version::parse(&provider.module_version)?.to_string() != provider.module_version
+                || provider.capabilities.is_empty()
+                || provider.capabilities.len() > 8
+            {
+                bail!("Invalid typed provider binding")
+            }
+            let declared = self
+                .capabilities
+                .iter()
+                .map(|capability| capability.id.as_str())
+                .collect::<BTreeSet<_>>();
+            let mut bound = BTreeSet::new();
+            for capability in &provider.capabilities {
+                if !bound.insert(*capability) || !declared.contains(capability.as_str()) {
+                    bail!("Provider capabilities must be unique and declared by the expert")
+                }
             }
         }
         let version = Version::parse(&self.version)?;
@@ -405,51 +485,222 @@ pub fn register(store: &Store, manifest: &Manifest) -> Result<Value> {
     Ok(json!({"id":manifest.id,"version":manifest.version,"registered":true,"checksum":hash}))
 }
 
-pub fn activate(store: &Store, id: &str, version: &str) -> Result<Value> {
-    security::authorize("human-cli", "skill.activate")?;
-    if !identifier(id) || version.len() > 64 || Version::parse(version)?.to_string() != version {
-        bail!("Invalid expert activation identity/version")
+/// One immutable expert version selected for an atomic dependency-graph update.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ActivationChange {
+    pub id: String,
+    pub version: String,
+}
+
+struct ActivationComputation {
+    registry_sha256: String,
+    graph: BTreeMap<String, Manifest>,
+    graph_checksums: BTreeMap<String, String>,
+    candidates: BTreeMap<String, (Manifest, String)>,
+    changes: Vec<ActivationChange>,
+    changed: Vec<String>,
+}
+
+fn activation_computation(
+    db: &Connection,
+    requested: &[ActivationChange],
+) -> Result<ActivationComputation> {
+    if requested.is_empty() || requested.len() > 256 {
+        bail!("Select between 1 and 256 expert versions to activate")
     }
+    let mut changes = requested.to_vec();
+    changes.sort_by(|left, right| left.id.cmp(&right.id));
+    let mut seen = BTreeSet::new();
+    let mut candidates = BTreeMap::new();
+    for change in &changes {
+        if !identifier(&change.id)
+            || change.version.len() > 64
+            || Version::parse(&change.version)?.to_string() != change.version
+            || !seen.insert(change.id.as_str())
+        {
+            bail!("Invalid or duplicate expert activation identity/version")
+        }
+        let (raw, checksum): (String, String) = db.query_row(
+            "SELECT CASE WHEN length(CAST(manifest AS BLOB))<=64000 THEN manifest END, CASE WHEN length(CAST(checksum AS BLOB))=64 THEN checksum END FROM expert_manifests WHERE skill_id=?1 AND version=?2",
+            params![change.id, change.version],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        let manifest = verified_manifest(raw, checksum.clone())?;
+        if manifest.id != change.id || manifest.version != change.version {
+            bail!("Manifest identity mismatch")
+        }
+        // Explicitly bound local model registrations are declarations only; activation
+        // still requires an enabled registration with enough reserved output capacity.
+        if let Some(selection) = &manifest.model {
+            let model = crate::models::registered_from(db, selection)?
+                .context("Unknown expert model registration")?;
+            if !model.enabled || model.manifest.max_output_tokens < 192 {
+                bail!("Expert model is disabled or cannot supply the reserved advice allocation")
+            }
+        }
+        candidates.insert(change.id.clone(), (manifest, checksum));
+    }
+
+    let mut graph = active_graph(db)?;
+    let mut changed = Vec::new();
+    for change in &changes {
+        let candidate = &candidates[&change.id].0;
+        if graph
+            .get(&change.id)
+            .is_none_or(|current| current.version != candidate.version)
+        {
+            changed.push(change.id.clone());
+        }
+        graph.insert(change.id.clone(), candidate.clone());
+    }
+    validate_graph(&graph)?;
+
+    // Bind the plan to the entire currently active graph and every selected
+    // immutable candidate. A plan becomes stale after any active version changes.
+    let active = active_graph(db)?;
+    let mut snapshot = Vec::with_capacity(active.len());
+    let mut graph_checksums = BTreeMap::new();
+    for manifest in active.values() {
+        let checksum: String = db.query_row(
+            "SELECT checksum FROM expert_manifests WHERE skill_id=?1 AND version=?2 AND active=1",
+            params![manifest.id, manifest.version],
+            |row| row.get(0),
+        )?;
+        graph_checksums.insert(manifest.id.clone(), checksum.clone());
+        snapshot.push((manifest.id.clone(), manifest.version.clone(), checksum));
+    }
+    snapshot.sort();
+    let selected = candidates
+        .iter()
+        .map(|(id, (manifest, checksum))| (id.clone(), manifest.version.clone(), checksum.clone()))
+        .collect::<Vec<_>>();
+    let registry_sha256 = sha256(&serde_json::to_vec(&(snapshot, selected))?);
+    for (id, (_, checksum)) in &candidates {
+        graph_checksums.insert(id.clone(), checksum.clone());
+    }
+    Ok(ActivationComputation {
+        registry_sha256,
+        graph,
+        graph_checksums,
+        candidates,
+        changes,
+        changed,
+    })
+}
+
+fn activation_report(computation: &ActivationComputation) -> Result<Value> {
+    let mut proposed = Vec::with_capacity(computation.graph.len());
+    for manifest in computation.graph.values() {
+        proposed.push(json!({
+            "id":manifest.id,
+            "version":manifest.version,
+            "manifest_sha256":computation.graph_checksums.get(&manifest.id),
+            "kind":manifest.kind,
+            "dependencies":manifest.dependencies,
+            "capabilities":manifest.capabilities,
+            "permissions_granted":false
+        }));
+    }
+    Ok(json!({
+        "changes":computation.changes,
+        "registry_sha256":computation.registry_sha256,
+        "proposed_active":proposed,
+        "changed_ids":computation.changed,
+        "valid":true,
+        "permissions_granted":false,
+        "code_executed":false
+    }))
+}
+
+/// Validate a complete proposed expert version set without changing active state.
+/// The returned digest is required by `apply_activation_plan` and covers the full
+/// active registry plus all selected immutable candidates.
+pub fn activation_plan(store: &Store, changes: &[ActivationChange]) -> Result<Value> {
+    security::authorize("human-cli", "skill.inspect")?;
+    let db = store.lock()?;
+    activation_report(&activation_computation(&db, changes)?)
+}
+
+fn apply_activation_plan_tx(
+    tx: &rusqlite::Transaction<'_>,
+    changes: &[ActivationChange],
+    expected_registry_sha256: &str,
+) -> Result<Value> {
+    if expected_registry_sha256.len() != 64
+        || !expected_registry_sha256
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit())
+    {
+        bail!("Invalid expert activation plan digest")
+    }
+    let computation = activation_computation(tx, changes)?;
+    if computation.registry_sha256 != expected_registry_sha256 {
+        bail!("Expert activation plan is stale; inspect and plan the complete graph again")
+    }
+    for id in &computation.changed {
+        let (candidate, _) = &computation.candidates[id];
+        tx.execute(
+            "UPDATE expert_manifests SET active=0 WHERE skill_id=?1",
+            [id],
+        )?;
+        let changed = tx.execute(
+            "UPDATE expert_manifests SET active=1 WHERE skill_id=?1 AND version=?2",
+            params![id, candidate.version],
+        )?;
+        if changed != 1 {
+            bail!("Expert candidate disappeared during activation")
+        }
+        tx.execute(
+            "UPDATE skills SET enabled=1,description=?2,tags_json=?3 WHERE id=?1",
+            params![
+                id,
+                candidate.description,
+                serde_json::to_string(&candidate.tags)?
+            ],
+        )?;
+        tx.execute(
+            "INSERT INTO expert_audit(skill_id,version,action,created) VALUES (?1,?2,'activate',unixepoch())",
+            params![id, candidate.version],
+        )?;
+    }
+    Ok(json!({
+        "changes":computation.changes,
+        "active":true,
+        "changed":!computation.changed.is_empty(),
+        "changed_ids":computation.changed,
+        "registry_sha256":computation.registry_sha256,
+        "permissions_granted":false
+    }))
+}
+
+/// Atomically activate a coordinated set of immutable expert versions after
+/// revalidating the exact graph reviewed by `activation_plan`.
+pub fn apply_activation_plan(
+    store: &Store,
+    changes: &[ActivationChange],
+    expected_registry_sha256: &str,
+) -> Result<Value> {
+    security::authorize("human-cli", "skill.activate")?;
     let mut db = store.lock()?;
     let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-    let (raw, checksum): (String, String) = tx.query_row(
-        "SELECT CASE WHEN length(CAST(manifest AS BLOB))<=64000 THEN manifest END, CASE WHEN length(CAST(checksum AS BLOB))=64 THEN checksum END FROM expert_manifests WHERE skill_id=?1 AND version=?2",
-        params![id, version],
-        |r| Ok((r.get(0)?, r.get(1)?)),
-    )?;
-    let candidate = verified_manifest(raw, checksum)?;
-    if candidate.id != id || candidate.version != version {
-        bail!("Manifest identity mismatch")
-    }
-    if let Some(selection) = &candidate.model {
-        let model = crate::models::registered_from(&tx, selection)?
-            .context("Unknown expert model registration")?;
-        if !model.enabled || model.manifest.max_output_tokens < 192 {
-            bail!("Expert model is disabled or cannot supply the reserved advice allocation")
-        }
-    }
-    let mut graph = active_graph(&tx)?;
-    graph.insert(id.into(), candidate.clone());
-    validate_graph(&graph)?;
-    tx.execute(
-        "UPDATE expert_manifests SET active=0 WHERE skill_id=?1",
-        [id],
-    )?;
-    tx.execute(
-        "UPDATE expert_manifests SET active=1 WHERE skill_id=?1 AND version=?2",
-        params![id, version],
-    )?;
-    tx.execute(
-        "UPDATE skills SET enabled=1,description=?2,tags_json=?3 WHERE id=?1",
-        params![
-            id,
-            candidate.description,
-            serde_json::to_string(&candidate.tags)?
-        ],
-    )?;
-    tx.execute("INSERT INTO expert_audit(skill_id,version,action,created) VALUES (?1,?2,'activate',unixepoch())",params![id,version])?;
+    let result = apply_activation_plan_tx(&tx, changes, expected_registry_sha256)?;
     tx.commit()?;
-    Ok(json!({"id":id,"version":version,"active":true}))
+    Ok(result)
+}
+
+pub fn activate(store: &Store, id: &str, version: &str) -> Result<Value> {
+    security::authorize("human-cli", "skill.activate")?;
+    let changes = [ActivationChange {
+        id: id.to_owned(),
+        version: version.to_owned(),
+    }];
+    let mut db = store.lock()?;
+    let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+    let computation = activation_computation(&tx, &changes)?;
+    let result = apply_activation_plan_tx(&tx, &changes, &computation.registry_sha256)?;
+    tx.commit()?;
+    Ok(json!({"id":id,"version":version,"active":true,"changed":result["changed"]}))
 }
 
 pub fn disable(store: &Store, id: &str) -> Result<Value> {
@@ -544,6 +795,7 @@ mod tests {
             workflow: None,
             workflow_steps: None,
             model: None,
+            provider: None,
             description: "Reviewed reference skill".into(),
             tags: vec!["rust".into()],
             capabilities: Vec::new(),

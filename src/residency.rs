@@ -7,6 +7,7 @@ use std::{
     collections::BTreeSet,
     time::{Duration, Instant},
 };
+pub mod lifecycle;
 pub mod managed;
 pub mod planning;
 

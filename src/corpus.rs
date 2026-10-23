@@ -105,6 +105,7 @@ mod tests {
             workflow: None,
             workflow_steps: None,
             model: None,
+            provider: None,
             id: "rust.s1".into(),
             version: "1.0.0".into(),
             kind: "reference".into(),

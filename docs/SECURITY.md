@@ -104,3 +104,17 @@ remain owned by blocking work until it actually ends, even if its caller cancels
 The existing SQLite operation/row/byte limits and 100 ms evaluation deadline stay
 in force; queue waiting adds bounded latency rather than expanding SQL authority.
 Managed processes each have their own capacity; this is not a host-wide quota.
+
+## Reviewed offline boundary corpora
+
+`security-corpus-evaluate --manifest PATH --sha256 DIGEST` evaluates a bounded,
+exact-hash-pinned manifest without initializing a runtime workspace. The closed
+probe families exercise compiled global/task policy, strict JSON and FlatBuffers
+wire parsing. Corpus data cannot supply code, replace a gate, change acceptance
+thresholds or promote a model. Expected labels remain outside probe inputs.
+
+The report records case-level observations, false accepts/denials, canonical
+corpus/result hashes, provenance and declared review/split metadata. Review and
+label independence are operator attestations. This is neither a neural safety
+study nor a sandbox-escape evaluation. The new corpus runner is source-integrated
+and has not yet received the final combined verification pass.

@@ -15,7 +15,10 @@ Cognitive Fabric is a local, resource-bounded framework for coordinating languag
 - Connects to local OpenAI-compatible inference servers through a replaceable adapter, with an offline demonstration backend for deterministic workflows.
 - Provides bounded FAST, STANDARD, DEEP, and RESEARCH task modes, optional expert workflows, structured checking, and task recovery.
 - Stores task state, versioned skill metadata, and reviewed knowledge in SQLite.
+- Includes operator-approved task model lifecycle, native response-instance checks, versioned typed modules, and optional Wasm secondary-verifier source paths. These additions are undergoing implementation integration; their final combined verification is pending.
 - Offers an optional loopback HTTP server for OpenAI-compatible clients. It proposes client tool calls; the connected client remains responsible for executing and authorizing those tools.
+
+See [typed modules](docs/TYPED_MODULES.md), [managed residency](docs/MANAGED_RESIDENCY.md), and [verification](docs/VERIFICATION.md) for the new interfaces and trust boundaries.
 
 The design retains separate language interface, Jev+, Jev-R, expert, memory/fabric, evolution, and security/evaluation responsibilities. See the [architecture](docs/ARCHITECTURE.md) and the [current implementation snapshot](docs/CURRENT_IMPLEMENTATION.md) for the target design and what exists today.
 
@@ -94,3 +97,5 @@ to explicitly pin a reviewed workflow policy for that host.
 
 Verifier-R supports [finite-domain constraint assignments](docs/VERIFICATION.md#finite-domain-assignments)
 through explicit `csp:` objectives, alongside sorting, ordering and path checks.
+
+Native lifecycle policy and uncertainty handling: [operator guide](docs/NATIVE_LIFECYCLE.md).

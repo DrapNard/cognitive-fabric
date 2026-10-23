@@ -39,7 +39,7 @@ pub mod store;
 pub mod strict_json;
 mod structured;
 pub mod telemetry;
-mod verification;
+pub mod verification;
 pub use verification::{
     VerificationClaim, VerificationFuture, VerificationRequest, VerifierDescriptor,
     VerifierProvider,

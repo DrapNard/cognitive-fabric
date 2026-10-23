@@ -82,9 +82,6 @@ pub(crate) fn validate(
         .resource_admission
         .as_ref()
         .ok_or_else(|| anyhow!("Resource route history has no saved resource configuration"))?;
-    if cfg.backend != "openai-local" {
-        bail!("Resource route recovery supports only the builtin local inference adapter")
-    }
     let (intent_id, intent_source, intent_payload) =
         intent.ok_or_else(|| anyhow!("Missing original resource routing intent"))?;
     let (selection_id, selection_source, selection_payload) =
@@ -230,10 +227,22 @@ pub(crate) fn validate(
             bail!("Unsupported or reordered pinned resource route")
         }
         previous_rank = rank;
-        let target = crate::backend::configured_target(cfg, Some(role))?
-            .ok_or_else(|| anyhow!("Saved route target cannot be reconstructed"))?;
-        if !matches!(target, InferenceTarget::LocalHttp(_)) {
-            bail!("Resource route recovery requires the original local HTTP target")
+        let target = target_from_value(&route["resource"]["target"])?;
+        match &target {
+            InferenceTarget::LocalHttp(_) => {
+                if cfg.backend != "openai-local"
+                    || crate::backend::configured_target(cfg, Some(role))?.as_ref() != Some(&target)
+                {
+                    bail!("Saved local route differs from its configured target")
+                }
+            }
+            InferenceTarget::Native(_) => {
+                // The instance ID is not a Config field. Exact host reconstitution
+                // is enforced by restrict_backend before the route is usable.
+            }
+            InferenceTarget::Deterministic => {
+                bail!("A deterministic target cannot be selected as an inference route")
+            }
         }
         let resource = expected_resource_metadata(resources, role, target.clone())?;
         if route["resource"] != resource {
@@ -267,6 +276,42 @@ pub(crate) fn validate(
         bail!("Saved resource route scope digest differs from its immutable selection")
     }
     Ok(Some((role_targets, scope.to_owned())))
+}
+
+fn target_from_value(value: &Value) -> Result<InferenceTarget> {
+    match value["kind"].as_str() {
+        Some("local_http") if value.as_object().is_some_and(|object| object.len() == 2) => {
+            let target: crate::backend::ModelTarget =
+                serde_json::from_value(value["target"].clone())?;
+            if target.canonical()? != target
+                || value["target"]
+                    .as_object()
+                    .is_none_or(|object| object.len() != 2)
+                || serde_json::to_value(InferenceTarget::LocalHttp(target.clone()))? != *value
+            {
+                bail!("Saved local route identity is not canonical")
+            }
+            Ok(InferenceTarget::LocalHttp(target))
+        }
+        Some("native") if value.as_object().is_some_and(|object| object.len() == 2) => {
+            let target: crate::backend::NativeModelTarget =
+                serde_json::from_value(value["target"].clone())?;
+            let canonical = target.canonical()?;
+            if canonical != target
+                || value["target"]
+                    .as_object()
+                    .is_none_or(|object| object.len() != 3)
+                || serde_json::to_value(InferenceTarget::Native(target.clone()))? != *value
+            {
+                bail!("Saved native route identity is not canonical")
+            }
+            Ok(InferenceTarget::Native(target))
+        }
+        Some("deterministic") if value.as_object().is_some_and(|object| object.len() == 1) => {
+            Ok(InferenceTarget::Deterministic)
+        }
+        _ => bail!("Unsupported saved route target"),
+    }
 }
 
 fn expected_resource_metadata(
@@ -462,12 +507,205 @@ mod tests {
         }
     }
 
+    fn native_fixture() -> (Fixture, crate::backend::NativeModelTarget) {
+        let allocation = Allocation {
+            compute_slots: 1,
+            host_memory_bytes: 256,
+            device_memory_bytes: 256,
+        };
+        let native = crate::backend::NativeModelTarget {
+            api_base: "http://127.0.0.1:1234/api/v1".into(),
+            model: "native-key".into(),
+            model_instance_id: "native-instance-a".into(),
+        };
+        let resources = Configuration {
+            settings: Settings {
+                label: "native-pool".into(),
+                capacity: Allocation {
+                    compute_slots: 2,
+                    host_memory_bytes: 2048,
+                    device_memory_bytes: 2048,
+                },
+                max_pending: 8,
+                max_wait_ms: 1000,
+                max_execution_ms: 1000,
+                scheduling: None,
+            },
+            allocation,
+            residents: Vec::new(),
+            working_profiles: vec![WorkingProfile {
+                id: "native-solver".into(),
+                target: native.resource_target().unwrap(),
+                roles: vec!["solver".into()],
+                allocation,
+            }],
+        };
+        let binding = ResourcePool::configuration_binding(&resources).unwrap();
+        let pool_id = "00000000-0000-4000-8000-000000000002";
+        let intent = json!({
+            "format_version":1,
+            "pool_id":pool_id,
+            "binding":binding,
+            "roles":crate::fabric::protocol::ROLES,
+            "permissions_granted":false,
+            "weights_attested":false,
+            "physical_limits_enforced":false,
+        });
+        let target = InferenceTarget::Native(native.clone());
+        let resource = expected_resource_metadata(&resources, "solver", target.clone()).unwrap();
+        let route = json!({
+            "role":"solver",
+            "module_id":BUILTIN_ID,
+            "module_version":BUILTIN_VERSION,
+            "resource":resource
+        });
+        let unmatched = crate::fabric::protocol::ROLES
+            .iter()
+            .filter(|role| **role != "solver")
+            .copied()
+            .collect::<Vec<_>>();
+        let mut selection = json!({
+            "format_version":1,
+            "pool_id":pool_id,
+            "binding":binding,
+            "routes":[route],
+            "unmatched_roles":unmatched,
+            "excluded_candidates":[],
+            "route_scope_sha256":"",
+            "eligible":true,
+            "permissions_granted":false,
+            "weights_attested":false,
+            "physical_limits_enforced":false,
+        });
+        selection["route_scope_sha256"] =
+            json!(crate::fabric::resource_route_scope(&selection).unwrap());
+        let snapshot = json!({
+            "modules":[{
+                "id":BUILTIN_ID,
+                "version":BUILTIN_VERSION,
+                "roles":crate::fabric::protocol::ROLES
+            }],
+            "resource_routing_version":1,
+            "resource_routes":selection,
+        });
+        let db = rusqlite::Connection::open_in_memory().unwrap();
+        db.execute_batch(
+            "CREATE TABLE events (id INTEGER PRIMARY KEY, task_id TEXT, kind TEXT, source TEXT, payload TEXT);",
+        )
+        .unwrap();
+        insert_event(&db, 1, "routing_resource_intent", "jev-plus", &intent);
+        insert_event(&db, 2, "routing_resource_selection", "jev-plus", &selection);
+        insert_event(&db, 3, "module_snapshot", "fabric", &snapshot);
+        let cfg = Config {
+            backend: "host-native".into(),
+            resource_admission: Some(resources),
+            ..Config::default()
+        };
+        (
+            Fixture {
+                db,
+                cfg,
+                settings: json!({"resource_routing_version":1}),
+                snapshot,
+                selection,
+            },
+            native,
+        )
+    }
+
     fn insert_event(db: &rusqlite::Connection, id: i64, kind: &str, source: &str, payload: &Value) {
         db.execute(
             "INSERT INTO events(id,task_id,kind,source,payload) VALUES(?1,?2,?3,?4,?5)",
             rusqlite::params![id, TASK, kind, source, payload.to_string()],
         )
         .unwrap();
+    }
+
+    struct NativeIdentityBackend(crate::backend::NativeModelTarget);
+
+    impl InferenceBackend for NativeIdentityBackend {
+        fn inference_target(&self, role: &str) -> Result<Option<InferenceTarget>> {
+            Ok((role == "solver").then(|| InferenceTarget::Native(self.0.clone())))
+        }
+
+        fn availability(&self) -> crate::fabric::Availability {
+            crate::fabric::Availability::Connected
+        }
+
+        fn generate<'a>(
+            &'a self,
+            _role: &'a str,
+            _prompt: &'a str,
+            _max_tokens: usize,
+        ) -> Pin<Box<dyn Future<Output = Result<Generation>> + Send + 'a>> {
+            Box::pin(async { bail!("Native route fixture does not dispatch inference") })
+        }
+    }
+
+    #[test]
+    fn native_route_recovery_preserves_exact_instance_and_requires_exact_host_backend() {
+        let (fixture, native) = native_fixture();
+        let (routes, scope) = validate(
+            &fixture.db,
+            TASK,
+            &fixture.cfg,
+            &fixture.settings,
+            &fixture.snapshot,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(scope, fixture.selection["route_scope_sha256"]);
+        assert_eq!(
+            routes.get("solver"),
+            Some(&InferenceTarget::Native(native.clone()))
+        );
+
+        let restored = restrict_backend(
+            Arc::new(NativeIdentityBackend(native.clone())),
+            Some(routes.clone()),
+        )
+        .unwrap();
+        assert_eq!(
+            restored.inference_target("solver").unwrap(),
+            Some(InferenceTarget::Native(native.clone()))
+        );
+
+        let wrong_instance = crate::backend::NativeModelTarget {
+            model_instance_id: "native-instance-b".into(),
+            ..native
+        };
+        assert!(restrict_backend(
+            Arc::new(NativeIdentityBackend(wrong_instance)),
+            Some(routes)
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn native_route_recovery_rejects_protocol_base_and_unlisted_resource_mapping() {
+        let (fixture, native) = native_fixture();
+        let admission = crate::resource_scheduler::ResourcePool::configured(
+            Arc::new(crate::store::Store::in_memory().unwrap()),
+            fixture.cfg.resource_admission.as_ref().unwrap(),
+        )
+        .unwrap();
+        let wrong_model = crate::backend::NativeModelTarget {
+            model: "unlisted-model-key".into(),
+            ..native.clone()
+        };
+        assert!(matches!(
+            admission.routing_candidate("solver", Some(InferenceTarget::Native(wrong_model))),
+            Err(crate::resource_scheduler::RoutingRejection::UnlistedProfile)
+        ));
+
+        let wrong_protocol = crate::backend::NativeModelTarget {
+            api_base: "http://127.0.0.1:1234/v1".into(),
+            ..native
+        };
+        assert!(matches!(
+            admission.routing_candidate("solver", Some(InferenceTarget::Native(wrong_protocol))),
+            Err(crate::resource_scheduler::RoutingRejection::MetadataError)
+        ));
     }
 
     fn replace_snapshot(fixture: &Fixture, snapshot: &Value) {

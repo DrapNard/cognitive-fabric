@@ -1,6 +1,6 @@
 //! Original configured resource charges must form complete, matching call chains.
 use crate::{
-    backend::{InferenceTarget, ModelTarget},
+    backend::{InferenceTarget, ModelTarget, NativeModelTarget},
     config::Config,
     resource_scheduler::{ResourcePool, WorkingProfile},
 };
@@ -26,6 +26,19 @@ fn target_from_value(value: &Value) -> Result<InferenceTarget> {
                 bail!("Original resource target is not canonical")
             }
             InferenceTarget::LocalHttp(target)
+        }
+        Some("native") => {
+            let target: NativeModelTarget = serde_json::from_value(value["target"].clone())?;
+            let canonical = target.canonical()?;
+            if canonical != target
+                || value.as_object().is_none_or(|object| object.len() != 2)
+                || value["target"]
+                    .as_object()
+                    .is_none_or(|object| object.len() != 3)
+            {
+                bail!("Original native resource target is not canonical")
+            }
+            InferenceTarget::Native(target)
         }
         _ => bail!("Unsupported original resource target"),
     };
@@ -198,6 +211,7 @@ pub(super) fn validate(db: &rusqlite::Connection, task: &str, cfg: &Config) -> R
                 let target_value = &value["target"];
                 let target = target_from_value(target_value)?;
                 if in_reasoning
+                    && !matches!(&target, InferenceTarget::Native(_))
                     && Some(target.clone()) != crate::backend::configured_target(cfg, Some(role))?
                 {
                     bail!("Original reasoning resource target differs from pinned configuration")
@@ -242,6 +256,7 @@ pub(super) fn validate(db: &rusqlite::Connection, task: &str, cfg: &Config) -> R
             "resource_target" if nonempty_residents && history.stage == profile_events + 1 => {
                 let target = target_from_value(&value["coverage"]["target"])?;
                 if in_reasoning
+                    && !matches!(&target, InferenceTarget::Native(_))
                     && Some(target.clone()) != crate::backend::configured_target(cfg, Some(role))?
                 {
                     bail!("Original reasoning resource target differs from pinned configuration")

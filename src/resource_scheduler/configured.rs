@@ -7,6 +7,16 @@ impl ResourcePool {
         store: Arc<Store>,
         configuration: &Configuration,
     ) -> Result<Arc<Self>> {
+        Self::configured_owned(store, configuration, None)
+    }
+    pub(crate) fn configured_owned(
+        store: Arc<Store>,
+        configuration: &Configuration,
+        ownership: Option<Arc<crate::residency::lifecycle::Ownership>>,
+    ) -> Result<Arc<Self>> {
+        if let Some(owner) = &ownership {
+            owner.validate(&store)?;
+        }
         configuration.validate()?;
         let mut pools = POOLS
             .get_or_init(|| Mutex::new(BTreeMap::new()))
@@ -23,15 +33,22 @@ impl ResourcePool {
         if pools.len() >= 128 {
             bail!("Configured resource pool registry full")
         }
-        let lease = store
-            .runtime_lock
-            .as_ref()
-            .map(|path| {
-                let mut resource_path = path.as_os_str().to_os_string();
-                resource_path.push(".resources");
-                crate::recovery::ExecutionLease::acquire(std::path::Path::new(&resource_path), true)
-            })
-            .transpose()?;
+        let lease = if ownership.is_some() {
+            None
+        } else {
+            store
+                .runtime_lock
+                .as_ref()
+                .map(|path| {
+                    let mut resource_path = path.as_os_str().to_os_string();
+                    resource_path.push(".resources");
+                    crate::recovery::ExecutionLease::acquire(
+                        std::path::Path::new(&resource_path),
+                        true,
+                    )
+                })
+                .transpose()?
+        };
         if !Self::unresolved(&store)?.is_empty() {
             bail!("Unresolved prior resource dispatch; independently stop the provider and perform reviewed resource reconciliation before restarting")
         }
@@ -45,6 +62,9 @@ impl ResourcePool {
         Arc::get_mut(&mut pool)
             .expect("Fresh pool is uniquely owned")
             ._workspace_lease = lease;
+        Arc::get_mut(&mut pool)
+            .expect("Fresh pool is uniquely owned")
+            ._managed_ownership = ownership;
         pools.insert(key, Arc::downgrade(&pool));
         Ok(pool)
     }

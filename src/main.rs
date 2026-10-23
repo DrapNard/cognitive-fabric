@@ -23,11 +23,31 @@ struct Cli {
     backend: Option<String>,
     #[arg(long, global = true)]
     json: bool,
+    /// Execute supported typed tools in the compiled same-image module worker.
+    #[arg(long, global = true)]
+    typed_module_worker: bool,
+    /// Optional isolated secondary verifier; requires a wasm-verifier feature build.
+    #[arg(long, global = true, requires = "verifier_wasm_sha256")]
+    verifier_wasm: Option<PathBuf>,
+    #[arg(long, global = true, requires = "verifier_wasm")]
+    verifier_wasm_sha256: Option<String>,
+    /// Explicit operator policy for task-driven local model lifecycle.
+    #[arg(long, global = true)]
+    native_lifecycle_policy: Option<PathBuf>,
+    #[arg(long, global = true, requires = "native_lifecycle_policy")]
+    approve_native_lifecycle: bool,
     #[command(subcommand)]
     command: Command,
 }
 #[derive(Subcommand)]
 enum Command {
+    #[command(hide = true)]
+    ModuleWorker {
+        #[arg(long)]
+        socket: PathBuf,
+        #[arg(long)]
+        host_pid: u32,
+    },
     #[command(hide = true)]
     AgentWorker {
         #[arg(long)]
@@ -60,6 +80,12 @@ enum Command {
     Status,
     SelfTest,
     SecurityEval,
+    SecurityCorpusEvaluate {
+        #[arg(long)]
+        manifest: PathBuf,
+        #[arg(long)]
+        sha256: String,
+    },
     /// Inspect reviewed retry evidence without initializing runtime state.
     RetryStudyEvaluate {
         study: PathBuf,
@@ -187,6 +213,25 @@ enum Command {
         #[arg(long)]
         human_approve: bool,
     },
+    /// Run a task with an explicitly approved native model lifecycle request.
+    ResidencyRun {
+        request: PathBuf,
+        #[arg(long)]
+        human_approve: bool,
+    },
+    /// Acknowledge independently stopped unknown native task inference.
+    ResidencyTaskResolve {
+        #[arg(long)]
+        api_base: String,
+        #[arg(long)]
+        authenticate: bool,
+        #[arg(long)]
+        task_id: String,
+        #[arg(long)]
+        human_approve: bool,
+        #[arg(long)]
+        provider_stop_acknowledged: bool,
+    },
     /// Load a model and retain an auditable managed-instance receipt.
     ResidencyManagedLoad {
         #[arg(long)]
@@ -210,6 +255,33 @@ enum Command {
         receipt_id: String,
         #[arg(long)]
         human_approve: bool,
+    },
+    /// Resolve an unknown operation without repeating its provider mutation.
+    ResidencyManagedResolve {
+        #[arg(long)]
+        api_base: String,
+        #[arg(long)]
+        authenticate: bool,
+        #[arg(long)]
+        task_id: String,
+        #[arg(long)]
+        human_approve: bool,
+        #[arg(long)]
+        provider_stop_acknowledged: bool,
+        #[arg(long)]
+        retire_stale_cohort: bool,
+    },
+    /// Archive a terminal receipt while retaining its immutable evidence.
+    ResidencyManagedArchive {
+        #[arg(long)]
+        receipt_id: String,
+        #[arg(long)]
+        human_approve: bool,
+    },
+    /// Inspect one current or archived managed receipt without provider access.
+    ResidencyManagedInspect {
+        #[arg(long)]
+        receipt_id: String,
     },
     /// Inspect local managed receipts without contacting the provider.
     ResidencyManagedStatus {
@@ -266,6 +338,14 @@ enum Command {
     Skills,
     SkillRegister {
         manifest: PathBuf,
+    },
+    SkillActivationPlan {
+        changes: PathBuf,
+    },
+    SkillActivationApply {
+        changes: PathBuf,
+        #[arg(long)]
+        registry_sha256: String,
     },
     SkillActivate {
         id: String,
@@ -553,6 +633,23 @@ fn output<T: Serialize>(value: T, force_json: bool) -> Result<()> {
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
+    if cli.native_lifecycle_policy.is_some() {
+        if !cli.approve_native_lifecycle {
+            bail!("Native lifecycle policy requires explicit operator approval")
+        }
+        if !matches!(&cli.command, Command::Ask { .. } | Command::Serve { .. }) {
+            bail!("Native lifecycle policy is supported only for ask and serve")
+        }
+        if cli.typed_module_worker {
+            bail!("Set typed_module_worker inside the approved native lifecycle policy")
+        }
+    }
+    if let Command::SecurityCorpusEvaluate { manifest, sha256 } = &cli.command {
+        return output(
+            cogfabric::security_evaluation::corpus::evaluate_file(manifest, sha256)?,
+            cli.json,
+        );
+    }
     if let Command::WorkflowStudyEvaluate { study, thresholds } = &cli.command {
         return output(
             cogfabric::routing::empirical::evaluate_files(study, thresholds)?,
@@ -576,9 +673,33 @@ async fn main() -> Result<()> {
         } | Command::ResidencyManagedRelease {
             human_approve: false,
             ..
+        } | Command::ResidencyManagedResolve {
+            human_approve: false,
+            ..
+        } | Command::ResidencyManagedArchive {
+            human_approve: false,
+            ..
+        } | Command::ResidencyRun {
+            human_approve: false,
+            ..
+        } | Command::ResidencyTaskResolve {
+            human_approve: false,
+            ..
         }
     ) {
         bail!("Managed residency changes require explicit operator approval")
+    }
+    if matches!(
+        &cli.command,
+        Command::ResidencyManagedResolve {
+            provider_stop_acknowledged: false,
+            ..
+        } | Command::ResidencyTaskResolve {
+            provider_stop_acknowledged: false,
+            ..
+        }
+    ) {
+        bail!("Managed resolution requires explicit provider-stop acknowledgement")
     }
     if let Command::ResidencyPlan {
         request,
@@ -641,6 +762,9 @@ async fn main() -> Result<()> {
             cogfabric::escalation::empirical::evaluate_files(study, thresholds)?,
             cli.json,
         );
+    }
+    if let Command::ModuleWorker { socket, host_pid } = &cli.command {
+        return cogfabric::fabric::modules::worker_entrypoint(socket, *host_pid).await;
     }
     if let Command::AgentWorker { socket, host_pid } = &cli.command {
         let home = cli
@@ -705,8 +829,83 @@ async fn main() -> Result<()> {
         )?)),
         _ => None,
     };
+    let verifier_provider: Option<Arc<dyn cogfabric::verification::VerifierProvider>> =
+        match (&cli.verifier_wasm, &cli.verifier_wasm_sha256) {
+            (Some(path), Some(digest)) => {
+                security::authorize("human-cli", "expert.module.evaluate")?;
+                #[cfg(feature = "wasm-verifier")]
+                {
+                    Some(Arc::new(
+                        cogfabric::verification::wasm::WasmVerifierProvider::load(
+                            path,
+                            digest,
+                            "wasm.verifier",
+                            "1.0.0",
+                        )?,
+                    ))
+                }
+                #[cfg(not(feature = "wasm-verifier"))]
+                {
+                    let _ = (path, digest);
+                    bail!("Wasm verifier support requires a build with the wasm-verifier feature")
+                }
+            }
+            (None, None) => None,
+            _ => bail!("Wasm verifier requires both a module file and its exact SHA-256 pin"),
+        };
+    let native_lifecycle = cli
+        .native_lifecycle_policy
+        .as_ref()
+        .map(|path| cogfabric::residency::lifecycle::NativeLifecyclePolicy::load(path))
+        .transpose()?;
     let cfg = Config::load(cli.home, cli.backend)?;
     match &cli.command {
+        Command::ResidencyRun {
+            request,
+            human_approve,
+        } => {
+            let bytes = security::read_regular_bytes(request, 16384)?;
+            let request = serde_json::from_value(cogfabric::strict_json::value(&bytes, 16384)?)?;
+            let store = Arc::new(Store::open_existing_with_limit(
+                &cfg.db(),
+                cfg.max_database_bytes,
+            )?);
+            return output(
+                cogfabric::residency::lifecycle::run_with_verifier(
+                    cfg.clone(),
+                    store,
+                    request,
+                    *human_approve,
+                    verifier_provider.clone(),
+                )
+                .await?,
+                cli.json,
+            );
+        }
+        Command::ResidencyTaskResolve {
+            api_base,
+            authenticate,
+            task_id,
+            human_approve,
+            provider_stop_acknowledged,
+        } => {
+            let store = Arc::new(Store::open_existing_with_limit(
+                &cfg.db(),
+                cfg.max_database_bytes,
+            )?);
+            return output(
+                cogfabric::residency::lifecycle::resolve_generation(
+                    store,
+                    api_base,
+                    *authenticate,
+                    task_id,
+                    *human_approve,
+                    *provider_stop_acknowledged,
+                )
+                .await?,
+                cli.json,
+            );
+        }
         Command::ResidencyManagedLoad {
             api_base,
             authenticate,
@@ -744,6 +943,52 @@ async fn main() -> Result<()> {
                     *human_approve,
                 )
                 .await?,
+                cli.json,
+            );
+        }
+        Command::ResidencyManagedResolve {
+            api_base,
+            authenticate,
+            task_id,
+            human_approve,
+            provider_stop_acknowledged,
+            retire_stale_cohort,
+        } => {
+            let store = Store::open_existing_with_limit(&cfg.db(), cfg.max_database_bytes)?;
+            return output(
+                cogfabric::residency::managed::resolution::resolve(
+                    &store,
+                    api_base,
+                    *authenticate,
+                    task_id,
+                    cogfabric::residency::managed::resolution::Options {
+                        human_approve: *human_approve,
+                        provider_stop_acknowledged: *provider_stop_acknowledged,
+                        retire_stale_cohort: *retire_stale_cohort,
+                    },
+                )
+                .await?,
+                cli.json,
+            );
+        }
+        Command::ResidencyManagedArchive {
+            receipt_id,
+            human_approve,
+        } => {
+            let store = Store::open_existing_with_limit(&cfg.db(), cfg.max_database_bytes)?;
+            return output(
+                cogfabric::residency::managed::retirement::archive(
+                    &store,
+                    receipt_id,
+                    *human_approve,
+                )?,
+                cli.json,
+            );
+        }
+        Command::ResidencyManagedInspect { receipt_id } => {
+            let store = Store::open_existing_read_only(&cfg.db())?;
+            return output(
+                cogfabric::residency::managed::inspect(&store, receipt_id)?,
                 cli.json,
             );
         }
@@ -864,11 +1109,23 @@ async fn main() -> Result<()> {
     }
     if let Command::ResumePreview { id, .. } = &cli.command {
         let store = Store::open_existing_read_only(&cfg.db())?;
-        let report = match restored_policy {
-            Some(policy) => cogfabric::recovery::continuation::preview_with_escalation_policy(
-                &store, id, policy,
-            )?,
-            None => cogfabric::recovery::continuation::preview(&store, id)?,
+        let report = match (restored_policy, verifier_provider.clone()) {
+            (Some(policy), Some(provider)) => {
+                cogfabric::recovery::continuation::preview_with_restored_policies(
+                    &store, id, policy, provider,
+                )?
+            }
+            (Some(policy), None) => {
+                cogfabric::recovery::continuation::preview_with_escalation_policy(
+                    &store, id, policy,
+                )?
+            }
+            (None, Some(provider)) => {
+                cogfabric::recovery::continuation::preview_with_verifier_provider(
+                    &store, id, provider,
+                )?
+            }
+            (None, None) => cogfabric::recovery::continuation::preview(&store, id)?,
         };
         output(&report, cli.json)?;
         return Ok(());
@@ -884,8 +1141,19 @@ async fn main() -> Result<()> {
         let cancel = async {
             let _ = tokio::signal::ctrl_c().await;
         };
-        let report = match restored_policy {
-            Some(policy) => {
+        let report = match (restored_policy, verifier_provider.clone()) {
+            (Some(policy), Some(provider)) => {
+                cogfabric::recovery::continuation::resume_with_restored_policies(
+                    store,
+                    id,
+                    *human_approve,
+                    policy,
+                    provider,
+                    cancel,
+                )
+                .await?
+            }
+            (Some(policy), None) => {
                 cogfabric::recovery::continuation::resume_with_escalation_policy(
                     store,
                     id,
@@ -895,7 +1163,17 @@ async fn main() -> Result<()> {
                 )
                 .await?
             }
-            None => {
+            (None, Some(provider)) => {
+                cogfabric::recovery::continuation::resume_with_verifier_provider(
+                    store,
+                    id,
+                    *human_approve,
+                    provider,
+                    cancel,
+                )
+                .await?
+            }
+            (None, None) => {
                 cogfabric::recovery::continuation::resume(store, id, *human_approve, cancel).await?
             }
         };
@@ -906,15 +1184,31 @@ async fn main() -> Result<()> {
     let store = Arc::new(Store::open_with_limit(&cfg.db(), cfg.max_database_bytes)?);
     store::bootstrap(&store)?;
     let engine = Engine::new(cfg.clone(), store.clone());
+    let engine = match verifier_provider {
+        Some(provider) => engine.with_verifier_provider(provider)?,
+        None => engine,
+    };
+    let engine = if cli.typed_module_worker {
+        engine.with_builtin_module_worker()?
+    } else {
+        engine
+    };
     let engine = match workflow_router {
         Some(router) => engine.with_expert_router(router)?,
+        None => engine,
+    };
+    let engine = match native_lifecycle {
+        Some(policy) => {
+            engine.with_approved_native_lifecycle(policy, cli.approve_native_lifecycle)?
+        }
         None => engine,
     };
     let response: Value = match cli.command {
         Command::RetryStudyEvaluate { .. } => {
             bail!("Retry study evaluation must run before runtime initialization")
         }
-        Command::AgentWorker { .. }
+        Command::ModuleWorker { .. }
+        | Command::AgentWorker { .. }
         | Command::InferenceWorker { .. }
         | Command::ArithmeticWorker { .. }
         | Command::SqlWorker { .. } => {
@@ -1086,14 +1380,22 @@ async fn main() -> Result<()> {
             json!({"saved":true,"inference_auth_scope":settings.inference_auth_scope,"credential_environment_variable":cogfabric::credentials::ENVIRONMENT_VARIABLE,"credential_stored":false})
         }
         Command::ConfigShow => serde_json::to_value(&cfg)?,
+        Command::SecurityCorpusEvaluate { .. } => {
+            bail!("Security corpus evaluation must precede state initialization")
+        }
         Command::WorkflowStudyEvaluate { .. } => {
             bail!("Workflow study inspection must precede state initialization")
         }
         Command::ResidencyPlan { .. }
         | Command::ResidencyApply { .. }
         | Command::ResidencyManagedLoad { .. }
+        | Command::ResidencyRun { .. }
+        | Command::ResidencyTaskResolve { .. }
         | Command::ResidencyManagedRelease { .. }
-        | Command::ResidencyManagedStatus { .. } => {
+        | Command::ResidencyManagedStatus { .. }
+        | Command::ResidencyManagedInspect { .. }
+        | Command::ResidencyManagedResolve { .. }
+        | Command::ResidencyManagedArchive { .. } => {
             bail!("Residency plans must run before runtime initialization")
         }
         Command::ResourceStatus | Command::ResourceRelease { .. } => {
@@ -1258,6 +1560,21 @@ async fn main() -> Result<()> {
         })?,
         Command::SkillRegister { manifest } => {
             cogfabric::registry::register(&store, &cogfabric::registry::read_manifest(&manifest)?)?
+        }
+        Command::SkillActivationPlan { changes } => {
+            let bytes = security::read_regular_bytes(&changes, 32768)?;
+            let changes: Vec<cogfabric::registry::ActivationChange> =
+                serde_json::from_value(cogfabric::strict_json::value(&bytes, 32768)?)?;
+            cogfabric::registry::activation_plan(&store, &changes)?
+        }
+        Command::SkillActivationApply {
+            changes,
+            registry_sha256,
+        } => {
+            let bytes = security::read_regular_bytes(&changes, 32768)?;
+            let changes: Vec<cogfabric::registry::ActivationChange> =
+                serde_json::from_value(cogfabric::strict_json::value(&bytes, 32768)?)?;
+            cogfabric::registry::apply_activation_plan(&store, &changes, &registry_sha256)?
         }
         Command::SkillActivate { id, version } => {
             cogfabric::registry::activate(&store, &id, &version)?

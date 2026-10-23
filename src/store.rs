@@ -51,7 +51,7 @@ CREATE TABLE IF NOT EXISTS evaluations (
 "#;
 
 /// Latest schema understood by writable and read-only Store entry points.
-pub(crate) const CURRENT_SCHEMA_VERSION: i64 = 7;
+pub(crate) const CURRENT_SCHEMA_VERSION: i64 = 8;
 
 const MANAGED_RESIDENCY_SCHEMA: &str = r#"
 CREATE TABLE managed_residency_receipts (
@@ -80,6 +80,152 @@ BEGIN
 END;
 PRAGMA user_version=7;
 "#;
+
+const MANAGED_RESIDENCY_SCHEMA_V8: &str = r#"
+-- Copy schema-7 receipt rows verbatim while adding an explicit retired state.
+-- Existing external observations are not adopted or rewritten.
+DROP INDEX managed_residency_active_identity;
+DROP INDEX managed_residency_state;
+DROP TRIGGER managed_residency_identity_immutable;
+CREATE TABLE managed_residency_receipts_v8 (
+ receipt_id TEXT PRIMARY KEY CHECK(length(CAST(receipt_id AS BLOB)) BETWEEN 1 AND 64),
+ endpoint TEXT NOT NULL CHECK(length(CAST(endpoint AS BLOB)) BETWEEN 1 AND 512),
+ instance_id TEXT NOT NULL CHECK(length(CAST(instance_id AS BLOB)) BETWEEN 1 AND 256),
+ receipt_json TEXT NOT NULL CHECK(length(CAST(receipt_json AS BLOB)) BETWEEN 2 AND 8192),
+ receipt_sha256 TEXT NOT NULL CHECK(length(receipt_sha256)=64 AND receipt_sha256 NOT GLOB '*[^0-9a-f]*'),
+ current_inventory_sha256 TEXT NOT NULL CHECK(length(current_inventory_sha256)=64 AND current_inventory_sha256 NOT GLOB '*[^0-9a-f]*'),
+ state TEXT NOT NULL CHECK(state IN ('active','release_requested','released','quarantined','retired')),
+ load_task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE RESTRICT,
+ release_task_id TEXT REFERENCES tasks(id) ON DELETE RESTRICT,
+ created REAL NOT NULL,
+ updated REAL NOT NULL
+);
+INSERT INTO managed_residency_receipts_v8
+ SELECT receipt_id,endpoint,instance_id,receipt_json,receipt_sha256,current_inventory_sha256,state,load_task_id,release_task_id,created,updated
+ FROM managed_residency_receipts;
+DROP TABLE managed_residency_receipts;
+ALTER TABLE managed_residency_receipts_v8 RENAME TO managed_residency_receipts;
+CREATE UNIQUE INDEX managed_residency_active_identity ON managed_residency_receipts(endpoint,instance_id)
+ WHERE state NOT IN ('released','retired');
+CREATE INDEX managed_residency_state ON managed_residency_receipts(state,endpoint,updated);
+CREATE TRIGGER managed_residency_identity_immutable
+BEFORE UPDATE OF receipt_id,endpoint,instance_id,receipt_json,receipt_sha256,load_task_id,created
+ON managed_residency_receipts
+BEGIN
+ SELECT RAISE(ABORT,'managed residency receipt identity is immutable');
+END;
+
+CREATE TABLE managed_residency_resolutions (
+ resolution_id TEXT PRIMARY KEY CHECK(length(CAST(resolution_id AS BLOB))=36),
+ original_task_id TEXT NOT NULL UNIQUE REFERENCES tasks(id) ON DELETE RESTRICT,
+ resolver_task_id TEXT NOT NULL UNIQUE REFERENCES tasks(id) ON DELETE RESTRICT,
+ endpoint TEXT NOT NULL CHECK(length(CAST(endpoint AS BLOB)) BETWEEN 1 AND 512),
+ operation TEXT NOT NULL CHECK(operation IN ('load_absent','release_absent')),
+ query_evidence_sha256 TEXT NOT NULL CHECK(length(query_evidence_sha256)=64 AND query_evidence_sha256 NOT GLOB '*[^0-9a-f]*'),
+ intent_sha256 TEXT NOT NULL CHECK(length(intent_sha256)=64 AND intent_sha256 NOT GLOB '*[^0-9a-f]*'),
+ inventory_sha256 TEXT NOT NULL CHECK(length(inventory_sha256)=64 AND inventory_sha256 NOT GLOB '*[^0-9a-f]*'),
+ model_key TEXT CHECK(model_key IS NULL OR length(CAST(model_key AS BLOB)) BETWEEN 1 AND 256),
+ model_type TEXT CHECK(model_type IS NULL OR model_type IN ('llm','embedding','decision')),
+ context_length INTEGER CHECK(context_length IS NULL OR context_length BETWEEN 1 AND 32768),
+ receipt_id TEXT CHECK(receipt_id IS NULL OR length(CAST(receipt_id AS BLOB)) BETWEEN 1 AND 64),
+ instance_id TEXT CHECK(instance_id IS NULL OR length(CAST(instance_id AS BLOB)) BETWEEN 1 AND 256),
+ operator_approved INTEGER NOT NULL CHECK(operator_approved=1),
+ provider_stop_acknowledged INTEGER NOT NULL CHECK(provider_stop_acknowledged=1),
+ payload_json TEXT NOT NULL CHECK(length(CAST(payload_json AS BLOB)) BETWEEN 2 AND 4096),
+ payload_sha256 TEXT NOT NULL CHECK(length(payload_sha256)=64 AND payload_sha256 NOT GLOB '*[^0-9a-f]*'),
+ created REAL NOT NULL,
+ CHECK((operation='load_absent' AND model_key IS NOT NULL AND model_type IS NOT NULL AND context_length IS NOT NULL AND receipt_id IS NULL AND instance_id IS NULL)
+    OR (operation='release_absent' AND model_key IS NULL AND model_type IS NULL AND context_length IS NULL AND receipt_id IS NOT NULL AND instance_id IS NOT NULL))
+);
+CREATE INDEX native_task_lifecycle_history ON events(kind,source,id) WHERE kind='native_task_lifecycle' AND source='human-cli';
+CREATE INDEX managed_residency_resolution_task_endpoint ON managed_residency_resolutions(original_task_id,endpoint);
+CREATE TRIGGER managed_residency_resolution_no_update
+BEFORE UPDATE ON managed_residency_resolutions BEGIN
+ SELECT RAISE(ABORT,'managed residency resolutions are append-only');
+END;
+CREATE TRIGGER managed_residency_resolution_no_delete
+BEFORE DELETE ON managed_residency_resolutions BEGIN
+ SELECT RAISE(ABORT,'managed residency resolutions are append-only');
+END;
+
+CREATE TABLE managed_residency_resolution_members (
+ resolution_id TEXT NOT NULL REFERENCES managed_residency_resolutions(resolution_id) ON DELETE RESTRICT,
+ receipt_id TEXT NOT NULL,
+ member_json TEXT NOT NULL CHECK(length(CAST(member_json AS BLOB)) BETWEEN 2 AND 16384),
+ member_sha256 TEXT NOT NULL CHECK(length(member_sha256)=64 AND member_sha256 NOT GLOB '*[^0-9a-f]*'),
+ PRIMARY KEY(resolution_id,receipt_id)
+);
+CREATE INDEX managed_resolution_member_receipt ON managed_residency_resolution_members(receipt_id,resolution_id);
+CREATE TRIGGER managed_resolution_member_no_update BEFORE UPDATE ON managed_residency_resolution_members BEGIN
+ SELECT RAISE(ABORT,'resolution members are immutable'); END;
+CREATE TRIGGER managed_resolution_member_no_delete BEFORE DELETE ON managed_residency_resolution_members BEGIN
+ SELECT RAISE(ABORT,'resolution members are immutable'); END;
+
+CREATE TABLE managed_residency_receipt_archive (
+ receipt_id TEXT PRIMARY KEY CHECK(length(CAST(receipt_id AS BLOB)) BETWEEN 1 AND 64),
+ endpoint TEXT NOT NULL CHECK(length(CAST(endpoint AS BLOB)) BETWEEN 1 AND 512),
+ instance_id TEXT NOT NULL CHECK(length(CAST(instance_id AS BLOB)) BETWEEN 1 AND 256),
+ receipt_json TEXT NOT NULL CHECK(length(CAST(receipt_json AS BLOB)) BETWEEN 2 AND 8192),
+ receipt_sha256 TEXT NOT NULL CHECK(length(receipt_sha256)=64 AND receipt_sha256 NOT GLOB '*[^0-9a-f]*'),
+ current_inventory_sha256 TEXT NOT NULL CHECK(length(current_inventory_sha256)=64 AND current_inventory_sha256 NOT GLOB '*[^0-9a-f]*'),
+ state TEXT NOT NULL CHECK(state IN ('released','retired')),
+ load_task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE RESTRICT,
+ release_task_id TEXT REFERENCES tasks(id) ON DELETE RESTRICT,
+ created REAL NOT NULL,
+ updated REAL NOT NULL,
+ archived_at REAL NOT NULL,
+ retirement_task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE RESTRICT,
+ archive_sha256 TEXT NOT NULL CHECK(length(archive_sha256)=64 AND archive_sha256 NOT GLOB '*[^0-9a-f]*'),
+ CHECK(state!='released' OR release_task_id IS NOT NULL)
+);
+CREATE INDEX managed_residency_archive_endpoint ON managed_residency_receipt_archive(endpoint,receipt_id);
+CREATE INDEX managed_residency_archive_load_task ON managed_residency_receipt_archive(load_task_id);
+CREATE INDEX managed_residency_archive_release_task ON managed_residency_receipt_archive(release_task_id);
+CREATE TRIGGER managed_residency_archive_no_hot_duplicate
+BEFORE INSERT ON managed_residency_receipt_archive
+WHEN EXISTS(SELECT 1 FROM managed_residency_receipts WHERE receipt_id=NEW.receipt_id)
+BEGIN SELECT RAISE(ABORT,'managed residency receipt already exists in hot storage'); END;
+CREATE TRIGGER managed_residency_hot_no_archive_duplicate
+BEFORE INSERT ON managed_residency_receipts
+WHEN EXISTS(SELECT 1 FROM managed_residency_receipt_archive WHERE receipt_id=NEW.receipt_id)
+BEGIN SELECT RAISE(ABORT,'managed residency receipt already exists in archive'); END;
+CREATE TRIGGER managed_residency_archive_no_update
+BEFORE UPDATE ON managed_residency_receipt_archive BEGIN
+ SELECT RAISE(ABORT,'managed residency receipt archive is immutable');
+END;
+CREATE TRIGGER managed_residency_archive_no_delete
+BEFORE DELETE ON managed_residency_receipt_archive BEGIN
+ SELECT RAISE(ABORT,'managed residency receipt archive is immutable');
+END;
+PRAGMA user_version=8;
+"#;
+
+pub(crate) const MAX_MANAGED_RESIDENCY_RESOLUTIONS: u64 = 1024;
+pub(crate) const MAX_MANAGED_RESIDENCY_ARCHIVE: u64 = 8192;
+
+pub(crate) fn admit_managed_residency_resolution(db: &Connection) -> Result<()> {
+    let rows: u64 = db.query_row(
+        "SELECT count(*) FROM managed_residency_resolutions",
+        [],
+        |r| r.get(0),
+    )?;
+    if rows >= MAX_MANAGED_RESIDENCY_RESOLUTIONS {
+        bail!("Managed residency resolution history is full")
+    }
+    Ok(())
+}
+
+pub(crate) fn admit_managed_residency_archive(db: &Connection) -> Result<()> {
+    let rows: u64 = db.query_row(
+        "SELECT count(*) FROM managed_residency_receipt_archive",
+        [],
+        |r| r.get(0),
+    )?;
+    if rows >= MAX_MANAGED_RESIDENCY_ARCHIVE {
+        bail!("Managed residency receipt archive is full")
+    }
+    Ok(())
+}
 
 fn now() -> f64 {
     SystemTime::now()
@@ -366,6 +512,9 @@ impl Store {
         }
         if version < 7 {
             tx.execute_batch(MANAGED_RESIDENCY_SCHEMA)?;
+        }
+        if version < 8 {
+            tx.execute_batch(MANAGED_RESIDENCY_SCHEMA_V8)?;
         }
         tx.commit()?;
         Ok(Self {
@@ -1393,7 +1542,7 @@ mod tests {
         {
             let db = store.lock().unwrap();
             db.execute_batch(
-                "DROP TRIGGER managed_residency_identity_immutable;
+                "DROP INDEX native_task_lifecycle_history; DROP TABLE managed_residency_resolution_members; DROP TABLE managed_residency_resolutions; DROP TABLE managed_residency_receipt_archive; DROP TRIGGER managed_residency_hot_no_archive_duplicate; DROP TRIGGER managed_residency_identity_immutable;
                  DROP INDEX managed_residency_active_identity;
                  DROP INDEX managed_residency_state;
                  DROP TABLE managed_residency_receipts;
@@ -1509,7 +1658,7 @@ mod tests {
     }
 
     #[test]
-    fn existing_database_readers_require_the_current_schema_seven() {
+    fn existing_database_readers_require_the_current_schema_eight() {
         let path = database_path();
         drop(Store::open(&path).unwrap());
         drop(Store::open_existing_read_only(&path).unwrap());
@@ -1687,5 +1836,110 @@ mod tests {
         );
         drop(store);
         let _ = std::fs::remove_file(tmp);
+    }
+}
+
+#[cfg(test)]
+mod managed_schema_eight_tests {
+    use super::*;
+
+    fn legacy() -> Connection {
+        let db = Connection::open_in_memory().unwrap();
+        db.execute_batch("PRAGMA foreign_keys=ON;").unwrap();
+        db.execute_batch(SCHEMA).unwrap();
+        db.execute_batch(MANAGED_RESIDENCY_SCHEMA).unwrap();
+        db.execute("INSERT INTO tasks(id,query,mode,status,created,updated) VALUES('original','load','fast','completed',1,1)", []).unwrap();
+        db.execute("INSERT INTO managed_residency_receipts VALUES('receipt','http://127.0.0.1:1234/api/v1/models','instance','{}',?1,?1,'active','original',NULL,1,2)", [sha256(b"fixture")]).unwrap();
+        db
+    }
+
+    #[test]
+    fn schema_eight_preserves_existing_receipts_without_adopting_inventory() {
+        let mut db = legacy();
+        let before: String = db
+            .query_row(
+                "SELECT receipt_json FROM managed_residency_receipts",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let tx = db.transaction().unwrap();
+        tx.execute_batch(MANAGED_RESIDENCY_SCHEMA_V8).unwrap();
+        tx.commit().unwrap();
+        assert_eq!(
+            db.pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0))
+                .unwrap(),
+            8
+        );
+        assert_eq!(
+            db.query_row(
+                "SELECT receipt_json FROM managed_residency_receipts",
+                [],
+                |r| r.get::<_, String>(0)
+            )
+            .unwrap(),
+            before
+        );
+        assert_eq!(
+            db.query_row(
+                "SELECT count(*) FROM managed_residency_resolutions",
+                [],
+                |r| r.get::<_, i64>(0)
+            )
+            .unwrap(),
+            0
+        );
+        assert_eq!(
+            db.query_row(
+                "SELECT count(*) FROM managed_residency_receipt_archive",
+                [],
+                |r| r.get::<_, i64>(0)
+            )
+            .unwrap(),
+            0
+        );
+        db.execute("UPDATE managed_residency_receipts SET state='retired'", [])
+            .unwrap();
+        assert!(db
+            .execute(
+                "UPDATE managed_residency_receipts SET receipt_json='[0]'",
+                []
+            )
+            .is_err());
+        assert!(db
+            .execute("DELETE FROM tasks WHERE id='original'", [])
+            .is_err());
+    }
+
+    #[test]
+    fn failed_schema_eight_migration_rolls_back_original_ledger_and_version() {
+        let mut db = legacy();
+        db.execute_batch("CREATE TABLE managed_residency_resolutions(conflicting TEXT);")
+            .unwrap();
+        {
+            let tx = db.transaction().unwrap();
+            assert!(tx.execute_batch(MANAGED_RESIDENCY_SCHEMA_V8).is_err());
+        }
+        assert_eq!(
+            db.pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0))
+                .unwrap(),
+            7
+        );
+        assert_eq!(
+            db.query_row("SELECT state FROM managed_residency_receipts", [], |r| {
+                r.get::<_, String>(0)
+            })
+            .unwrap(),
+            "active"
+        );
+        assert!(db
+            .execute("UPDATE managed_residency_receipts SET state='retired'", [])
+            .is_err());
+        assert!(db
+            .execute(
+                "UPDATE managed_residency_receipts SET receipt_json='[0]'",
+                []
+            )
+            .is_err());
     }
 }
