@@ -41,7 +41,7 @@ instructions explicitly place them beyond proven v1.0 functionality.
 | Persistent task/episodic/semantic/skill/model/evaluation stores (§7) | `src/{store,memory,models,evaluation,storage,restore}.rs`, schema-8 migration and rollback tests | Implemented SQLite-backed logical stores, FTS retrieval, explicit publication and migrations. General external/neural artifact portability and physical filesystem/WAL bounds remain Partial. |
 | Crash continuation and unknown outcomes (§7, §10) | `src/recovery/`, native restoration and typed reconstruction; resume/parallel/receipt/refusal tests | Implemented supported original checkpoint forms with retained budgets, exact callbacks or fixed source-bound workers. Unknown calls are refused, not replayed; arbitrary crash-phase resumption remains unsupported. |
 | Evolution A: reusable memory (§8) | `src/memory.rs`, `src/gaps.rs`; publication/revocation, bounded retrieval and provenance tests | Implemented explicit verified memory publication and gap evidence. Independent transfer of learned strategies remains unproven. |
-| Evolution B: RAG candidates (§8) | `src/evolution.rs`, `src/evaluation.rs`, `src/rag_archive.rs`; quarantine, deduplication, held-out, promotion and rollback tests | Implemented operator-selected candidate pipeline. Reviewed local source normalization, deduplication and split preparation now exist in `src/evolution/preparation.rs` with `tests/source_preparation.rs`. Automatic source discovery and independently established dataset quality/poisoning resistance remain Partial. |
+| Evolution B: RAG candidates (§8) | `src/evolution.rs`, `src/evaluation.rs`, `src/rag_archive.rs`; quarantine, deduplication, held-out, promotion and rollback tests | Implemented operator-selected candidate pipeline. Reviewed local source normalization, deduplication and split preparation now exist in `src/evolution/preparation.rs` with `tests/source_preparation.rs`. Bounded local inventory drafts now exist in `src/evolution/discovery.rs` with `tests/source_discovery.rs`; remote discovery and independently established dataset quality/poisoning resistance remain Partial. |
 | Evolution C: offline LoRA (§8) | `training/train_lora.py`, inactive candidate import, deterministic neural-promotion denial | Experimental, as allowed by owner instructions. Actual isolated training, base-model provenance, independent neural evaluation and validated adapter promotion are not proven. |
 | Evolution D/new trained Jev networks (§5, §8, §14) | No trained Jev network or self-rebuilding active weights are claimed | Not implemented: explicit future neural research. RAG tests must not be used to promote neural weights. |
 | Independent Security Kernel (§10) | `src/security.rs`, task grants, protocol validation, worker cleanup, candidate gates, `src/security_evaluation/corpus.rs`; denial/tampering/cancellation tests | Implemented deny-default supported capabilities and local boundaries. Same-image processes and trusted Rust callbacks are not a hardened untrusted-code sandbox. |
@@ -71,8 +71,8 @@ The audited source passes these checks:
 
 - `cargo fmt --all -- --check` and `git diff --check`.
 - `cargo +1.99.0 check --locked --workspace --all-targets`.
-- `cargo test --locked --workspace --all-targets --no-fail-fast`: **1,019 passed
-  across 67 targets**, zero failed or ignored.
+- `cargo test --locked --workspace --all-targets --no-fail-fast`: **1,021 passed
+  across 68 targets**, zero failed or ignored.
 - Rust 1.99 strict workspace Clippy with default and all features.
 - `cargo test --locked --features wasm-verifier --test wasm_verifier`: **4 passed**.
 - Fresh exact `flatc 25.12.19` generation matches all ten reviewed binding files.

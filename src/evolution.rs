@@ -1,4 +1,5 @@
 //! Operator-selected candidate artifacts are copied into read-only content-addressed quarantine.
+pub mod discovery;
 pub mod preparation;
 use crate::{
     config::Config,

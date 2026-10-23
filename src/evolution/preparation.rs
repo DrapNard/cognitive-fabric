@@ -103,7 +103,7 @@ fn read_beneath(root: &File, path: &str) -> Result<Vec<u8>> {
     bail!("Missing source file")
 }
 
-fn normalize(bytes: &[u8]) -> Result<String> {
+pub(super) fn normalize(bytes: &[u8]) -> Result<String> {
     let text = std::str::from_utf8(bytes)?
         .trim_start_matches('\u{feff}')
         .replace("\r\n", "\n")
@@ -243,38 +243,43 @@ impl Prepared {
     /// Create a new private bundle; never overwrite existing operator files.
     /// The artifact excludes validation/test text, which is stored separately.
     pub fn write(&self, output: &Path) -> Result<Value> {
-        fs::DirBuilder::new()
-            .mode(0o700)
-            .create(output)
-            .context("Preparation output directory must not already exist")?;
-        let mut created = Vec::new();
-        let result = (|| -> Result<Value> {
-            let payloads = [
-                ("artifact.md", self.artifact.as_bytes().to_vec()),
-                ("held-out.json", serde_json::to_vec_pretty(&self.held_out)?),
-                ("report.json", serde_json::to_vec_pretty(&self.report)?),
-            ];
-            for (name, bytes) in payloads {
-                let path = output.join(name);
-                let mut file = fs::OpenOptions::new()
-                    .write(true)
-                    .create_new(true)
-                    .mode(0o600)
-                    .custom_flags(libc::O_NOFOLLOW)
-                    .open(&path)?;
-                created.push(path);
-                file.write_all(&bytes)?;
-                file.sync_all()?;
-            }
-            File::open(output)?.sync_all()?;
-            Ok(self.report.clone())
-        })();
-        if result.is_err() {
-            for path in created {
-                let _ = fs::remove_file(path);
-            }
-            let _ = fs::remove_dir(output);
-        }
-        result
+        let payloads = vec![
+            ("artifact.md", self.artifact.as_bytes().to_vec()),
+            ("held-out.json", serde_json::to_vec_pretty(&self.held_out)?),
+            ("report.json", serde_json::to_vec_pretty(&self.report)?),
+        ];
+        write_bundle(output, payloads)?;
+        Ok(self.report.clone())
     }
+}
+
+pub(super) fn write_bundle(output: &Path, payloads: Vec<(&str, Vec<u8>)>) -> Result<()> {
+    fs::DirBuilder::new()
+        .mode(0o700)
+        .create(output)
+        .context("Preparation output directory must not already exist")?;
+    let mut created = Vec::new();
+    let result = (|| -> Result<()> {
+        for (name, bytes) in payloads {
+            let path = output.join(name);
+            let mut file = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .custom_flags(libc::O_NOFOLLOW)
+                .open(&path)?;
+            created.push(path);
+            file.write_all(&bytes)?;
+            file.sync_all()?;
+        }
+        File::open(output)?.sync_all()?;
+        Ok(())
+    })();
+    if result.is_err() {
+        for path in created {
+            let _ = fs::remove_file(path);
+        }
+        let _ = fs::remove_dir(output);
+    }
+    result
 }

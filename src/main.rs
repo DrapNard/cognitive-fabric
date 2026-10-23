@@ -564,6 +564,16 @@ enum Command {
 #[derive(Subcommand)]
 enum CandidateAction {
     List,
+    DiscoverSources {
+        #[arg(long)]
+        root: PathBuf,
+        #[arg(long)]
+        source: String,
+        #[arg(long)]
+        license: String,
+        #[arg(long)]
+        output: PathBuf,
+    },
     PrepareSources {
         #[arg(long)]
         root: PathBuf,
@@ -676,6 +686,19 @@ async fn run_cli() -> Result<()> {
         if cli.typed_module_worker {
             bail!("Set typed_module_worker inside the approved native lifecycle policy")
         }
+    }
+    if let Command::Candidate {
+        action:
+            CandidateAction::DiscoverSources {
+                root,
+                source,
+                license,
+                output: directory,
+            },
+    } = &cli.command
+    {
+        let draft = cogfabric::evolution::discovery::discover(root, source, license)?;
+        return output(&draft.write(directory)?, cli.json);
     }
     if let Command::Candidate {
         action:
@@ -1852,6 +1875,9 @@ async fn run_cli() -> Result<()> {
             report
         }
         Command::Candidate { action } => match action {
+            CandidateAction::DiscoverSources { .. } => {
+                bail!("Source discovery must precede runtime initialization")
+            }
             CandidateAction::PrepareSources { .. } => {
                 bail!("Source preparation must precede runtime initialization")
             }

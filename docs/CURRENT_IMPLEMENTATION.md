@@ -1,5 +1,22 @@
 # Current Rust implementation
 
+## Local source discovery — 2026-10-23
+
+`candidate discover-sources` now inventories a bounded operator-selected local
+document tree on Linux using retained directory descriptors and no-follow reads.
+It writes sorted hash/provenance records in a private draft bundle, without
+initializing the runtime. Review is false and all sources remain reference-only;
+the operator must review documents and choose held-out splits before preparation.
+Counts, paths, depth, bytes and elapsed work are bounded; unsafe or incomplete
+inventories refuse rather than returning a successful truncated draft.
+
+Combined checks pass **1,021 tests across 68 workspace targets**, zero failed or
+ignored, plus **four optional Wasm tests**. Formatting, Rust 1.99 workspace check,
+strict Clippy with default/all features and offline CLI/HTTP smoke scripts pass.
+Discovery/preparation tests cover no overwrite, required review, held-out exclusion
+and unsafe inventory refusal.
+Remote discovery and independently established source quality remain incomplete.
+
 ## Reviewed local source preparation — 2026-10-23
 
 `candidate prepare-sources` prepares hash-pinned reviewed local sources without

@@ -1,5 +1,25 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Bounded local source discovery — 2026-10-23
+
+**Implemented local inventory; remote discovery/independent curation remain
+Partial.** `src/evolution/discovery.rs` walks an operator-selected root through
+retained directory descriptors and Linux procfs, with no-follow/nonblocking
+`openat`, strict count/depth/path/byte/time bounds and no successful truncation.
+Visible local text documents get sorted stable identities, original hashes and
+operator-declared provenance/license metadata. Review remains false and all splits
+remain reference-only drafts. No model permission or source-quality claim follows.
+
+`candidate discover-sources` runs before runtime initialization and writes only a
+new private draft bundle. `preparation.rs` shares its no-overwrite bundle writer.
+`tests/source_discovery.rs` checks deterministic CLI output, unused-home/privacy,
+mandatory review, subsequent preparation with held-out exclusion, no overwrite,
+and nine unsafe/empty/exhausted inventory scenarios. Combined checks pass **1,021
+tests across 68 workspace targets**, zero failed or ignored, plus **four optional
+Wasm tests**. Formatting, Rust 1.99 workspace check, strict default/all-feature
+Clippy and both offline CLI/HTTP smoke scripts pass. See
+[source preparation](SOURCE_PREPARATION.md).
+
 ## Bounded reviewed-source preparation — 2026-10-23
 
 **Implemented local preparation; automatic discovery and independent curation

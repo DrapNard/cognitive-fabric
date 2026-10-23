@@ -1,5 +1,16 @@
 # Threat Model (v1.0)
 
+## Local source discovery drafts
+
+Discovery enumerates a selected directory descriptor through trusted Linux procfs,
+not a mutable user pathname. Each child opens relative to its retained parent
+with no-follow/nonblocking flags; symlink/special-file or bound failures prevent a
+successful partial inventory. Hidden entries are excluded by an explicit counted
+policy. Drafts publish hashes/paths and asserted provenance, not source bodies,
+independent review or held-out authority. Preparation refuses the unreviewed
+reference-only draft. This introduces no model filesystem/network capability,
+candidate promotion, crawler, or sandbox/physical-I/O preemption guarantee.
+
 ## Reviewed-source preparation boundary
 
 Only explicitly selected local manifest/root inputs reach preparation. Hash pins,

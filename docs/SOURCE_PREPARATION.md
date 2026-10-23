@@ -1,5 +1,36 @@
 # Reviewed local source preparation
 
+## Discover a local source inventory
+
+```sh
+cogfabric --json candidate discover-sources --root ./documents \
+  --source operator-selected-local-collection --license LICENSE_LABEL \
+  --output ./source-draft
+```
+
+On Linux, this inventories visible `.md`/`.txt` files beneath the selected root
+using retained directory descriptors and procfs enumeration. It writes a new
+private `sources.json` plus `discovery.json`, with sorted paths, stable path-derived
+IDs, original content hashes and explicit operator-supplied provenance/license
+labels. Source text is not included in the discovery report. Hidden entries are
+skipped and counted; other regular file extensions are ignored.
+
+The draft has `sources_reviewed: false`, an empty reviewer and all sources assigned
+to `reference`. **It is deliberately ineligible for preparation.** Review the
+sources and labels, select independent validation/test documents, set the reviewer
+and review assertion, then compute the edited manifest's hash before preparation.
+Discovery cannot attest licensing, relevance, independence or safety.
+
+The walk refuses incomplete inventories instead of returning a successful partial
+plan: at most 256 entries, 32 documents, eight path components, 240-byte paths,
+64 KB per document, 512 KB total and five seconds between bounded operations.
+Symlinks, special files, invalid UTF-8, unsafe content and exhausted bounds refuse.
+Output follows the same private/no-overwrite rules as preparation. No network,
+runtime initialization, candidate creation or promotion occurs. Remote discovery
+and independent curation remain unsupported.
+
+## Prepare reviewed sources
+
 Prepare a reproducible RAG input bundle from explicitly selected local documents:
 
 ```sh
