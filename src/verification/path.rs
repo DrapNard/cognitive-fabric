@@ -83,6 +83,70 @@ impl ShortestPath {
         }
         Ok(())
     }
+
+    /// Return a bounded, criterion-derived structural/length deficit. This is
+    /// a stopping hint only; `check` remains the sole acceptance test.
+    pub(super) fn progress_score(&self, answer: &str) -> Option<u32> {
+        if answer.len() > 4096 {
+            return None;
+        }
+        let path: Vec<String> = serde_json::from_str(answer).ok()?;
+        if path.len() > 64
+            || path.iter().any(|node| {
+                node.is_empty()
+                    || node.len() > 32
+                    || !node
+                        .bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+                    || !self.nodes.iter().any(|known| known == node)
+            })
+        {
+            return None;
+        }
+
+        let mut distances = BTreeMap::from([(&self.start, 0usize)]);
+        let mut queue = VecDeque::from([&self.start]);
+        while let Some(node) = queue.pop_front() {
+            let next_distance = distances[node] + 1;
+            for [from, to] in &self.edges {
+                if from == node && !distances.contains_key(to) {
+                    distances.insert(to, next_distance);
+                    queue.push_back(to);
+                }
+            }
+        }
+
+        let Some(distance) = distances.get(&self.goal) else {
+            // An unreachable goal has one valid answer: the empty path. A
+            // nonempty sequence receives a fixed required-empty violation; it
+            // does not claim a path-distance measurement.
+            return Some(if path.is_empty() { 0 } else { 1 });
+        };
+        let expected_length = distance.saturating_add(1);
+        let endpoint_mismatches = (if path.first() == Some(&self.start) {
+            0
+        } else {
+            1
+        }) + (if path.last() == Some(&self.goal) {
+            0
+        } else {
+            1
+        });
+        let invalid_edges = path
+            .windows(2)
+            .filter(|pair| {
+                !self
+                    .edges
+                    .iter()
+                    .any(|[from, to]| from == &pair[0] && to == &pair[1])
+            })
+            .count();
+        let length_delta = path.len().abs_diff(expected_length);
+
+        // With at most 64 node IDs, the length term is at most 64. A 65-point
+        // structural penalty therefore always outweighs any length difference.
+        Some(((endpoint_mismatches + invalid_edges) * 65 + length_delta) as u32)
+    }
 }
 
 #[cfg(test)]
@@ -188,5 +252,75 @@ mod tests {
             .unwrap()
             .check(&" ".repeat(4097))
             .is_err());
+    }
+
+    #[test]
+    fn progress_score_zero_is_exactly_compiled_acceptance_for_bounded_candidates() {
+        let nodes = ["a", "b", "c"];
+        let directed_edges: Vec<_> = (0..3)
+            .flat_map(|from| {
+                (0..3)
+                    .filter(move |to| *to != from)
+                    .map(move |to| [from, to])
+            })
+            .collect();
+        for edge_mask in 0..(1 << directed_edges.len()) {
+            let edges: Vec<[String; 2]> = directed_edges
+                .iter()
+                .enumerate()
+                .filter(|(index, _)| edge_mask & (1 << index) != 0)
+                .map(|(_, [from, to])| [nodes[*from].to_owned(), nodes[*to].to_owned()])
+                .collect();
+            for start in nodes {
+                for goal in nodes {
+                    let criterion = ShortestPath {
+                        nodes: nodes.iter().map(|node| (*node).to_owned()).collect(),
+                        edges: edges.clone(),
+                        start: start.to_owned(),
+                        goal: goal.to_owned(),
+                    };
+                    for length in 0..=4 {
+                        let candidate_count = 3usize.pow(length as u32);
+                        for mut index in 0..candidate_count {
+                            let mut path = Vec::with_capacity(length);
+                            for _ in 0..length {
+                                path.push(nodes[index % nodes.len()].to_owned());
+                                index /= nodes.len();
+                            }
+                            let answer = serde_json::to_string(&path).unwrap();
+                            assert_eq!(
+                                criterion.progress_score(&answer) == Some(0),
+                                criterion.check(&answer).is_ok(),
+                                "graph mask={edge_mask}, start={start}, goal={goal}, answer={answer}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn structural_penalties_dominate_all_bounded_length_differences() {
+        let criterion = ShortestPath::parse(
+            r#"{"nodes":["a","b","c"],"edges":[["a","b"],["b","a"]],"start":"a","goal":"b"}"#,
+        )
+        .unwrap();
+        let longest = serde_json::to_string(
+            &(0..64)
+                .map(|index| if index % 2 == 0 { "a" } else { "b" })
+                .collect::<Vec<_>>(),
+        )
+        .unwrap();
+        let longest_score = criterion.progress_score(&longest).unwrap();
+        assert!(longest_score <= 64);
+
+        let structural_score = criterion.progress_score(r#"["b","a"]"#).unwrap();
+        assert!(structural_score >= 65);
+        assert!(criterion.progress_score(r#"["unknown"]"#).is_none());
+        assert!(criterion
+            .progress_score(&serde_json::to_string(&vec!["a"; 65]).unwrap())
+            .is_none());
+        assert!(criterion.progress_score("not json").is_none());
     }
 }

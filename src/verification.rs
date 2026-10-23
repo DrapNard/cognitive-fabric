@@ -180,6 +180,7 @@ impl Criterion {
     pub(crate) fn progress_score(&self, answer: &str) -> Option<u32> {
         match self {
             Self::FiniteDomain(c) => c.progress_score(answer),
+            Self::ShortestPath(c) => c.progress_score(answer),
             _ => None,
         }
     }

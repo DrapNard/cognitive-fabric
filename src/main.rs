@@ -414,7 +414,7 @@ enum Command {
         #[arg(long, default_value = "1800")]
         max_run_seconds: u64,
     },
-    /// Compare optional finite-domain stopping against the same collective without it.
+    /// Compare optional structured progress stopping against the same collective without it.
     CompareProgress {
         file: PathBuf,
         #[arg(long, default_value = "research")]

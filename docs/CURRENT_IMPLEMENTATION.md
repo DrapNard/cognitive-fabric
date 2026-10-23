@@ -1,5 +1,52 @@
 # Current Rust implementation
 
+### Measure shortest-path revision plateaus — 2026-10-23
+
+**Implemented and regression-tested; general reasoning remains Partial.** Architecture sections 5 and 9 require
+stopping when independently measured improvement becomes marginal. The next slice
+extends optional progress stopping to `shortest_path/v1` with a separate versioned
+history, preserving the finite-domain policy. Only bounded declared-node arrays
+are comparable; malformed answers reset streaks. Compiled shortest-path checking
+remains the acceptance authority; a progress score grants no verification.
+
+Fresh enabled tasks bind the selected policy in execution settings and immutable
+reasoning context. Recovery must restore that exact policy and history; legacy
+unmarked tasks cannot gain scoring midway through continuation. Original budgets,
+permission checks, provider-veto handling and exact-recurrence stopping remain
+independent. Controlled progress comparison accepts both supported structured
+criteria with matching per-case verification labels. Sources: `src/verification/path.rs`, `src/reasoning/progress.rs`, Session/Engine
+policy pinning, `src/recovery/continuation_path_progress.rs`, result-proof
+deduplication and `src/benchmarking/progress.rs`. Runtime and recovery targets
+pass 11 tests; focused helper tests cover score/checker equivalence, bounds and
+malformed history. Final workspace results follow below. These are functional
+regressions, not measured neural quality, latency or calibrated expected utility.
+
+
+
+Verification on final frozen sources: `cargo fmt --all -- --check`,
+`cargo check --locked --workspace --all-targets`,
+`cargo test --locked --workspace --all-targets` (**921 passed across 60 targets**,
+zero failures or ignored tests), and
+`cargo clippy --locked --workspace --all-targets -- -D warnings` all pass.
+The 12 new integration tests cover runtime stopping, original-budget HTTP
+continuation, repeated charged result rechecks with one proof, legacy behavior,
+nine tamper/no-dispatch cases and a two-case HTTP comparison. Helper tests cover
+exhaustive small-graph score/checker equivalence, bounds, history transitions,
+criterion-label preflight and malformed/duplicate recovery evidence.
+
+Tests exposed and fixed shortest-path result-proof deduplication missing from the
+existing finite-only gate. Review also fixed duplicate cycle-zero proofs and
+foreign/malformed progress audit acceptance. Initial fixture/compile/lint errors
+were corrected; no tests were removed. Existing socket/process, migrations, mock,
+malformed-frame, policy-denial, cancellation and rollback coverage remains green.
+Protocol schemas/bindings are unchanged; bundled generator/runtime checks pass.
+`flatc` remains unavailable, so fresh generation was not run. Localhost port 1234
+refused discovery. No real-model quality, GPU, latency or energy gain is asserted.
+Jev+ and Jev-R remain **Partial**: automatic ownership-aware provider lifecycle,
+broader isolated executable verification and independent live-model effectiveness
+measurements remain open. The next lifecycle step requires explicit provider
+instance identity and durable ownership, without granting models mutation rights.
+
 ### Select eligible inference routes before pinning — 2026-10-22
 
 **Implemented and regression-tested for declared eligibility. General Jev+/Jev-R remains Partial.**

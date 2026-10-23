@@ -100,6 +100,19 @@ pub(super) fn validate_before(
     before_id: Option<i64>,
     before_boundary_id: Option<i64>,
 ) -> Result<crate::reasoning::progress::History> {
+    if super::path_progress_history::validate_before(
+        db,
+        task,
+        query,
+        cfg,
+        boundary,
+        before_id,
+        before_boundary_id,
+    )?
+    .is_some()
+    {
+        return Ok(crate::reasoning::progress::History::default());
+    }
     use crate::verification::Criterion;
     let enabled = cfg.progress_stopping.is_some();
     let criterion = Criterion::from_query(query)?;

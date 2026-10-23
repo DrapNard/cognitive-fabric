@@ -789,3 +789,20 @@ quality/cost tradeoff, not an efficiency win. Neither frozen inputs nor an
 operator-attested held-out flag establish independent study quality. Real-model
 policy utility requires repeated controlled runs and independently reviewed tasks;
 synthetic scripted regressions only validate runner behavior.
+
+### Compare shortest-path stopping
+
+`compare-progress` also accepts `verification:"shortest_path_v1"` with explicit
+`path:` objectives. The same frozen corpus/backend and original budgets run with
+stopping disabled and enabled. Both arms use the independent original shortest-
+path checker. Mixed finite-domain/path corpora are accepted only when each case's
+label matches its objective; reports label their aggregate `mixed-structured/v1`.
+
+Path-containing runs use experiment `structured_progress_stopping/v2` and report
+`passed_independent_criterion_check` per arm. The legacy finite-domain-specific
+field remains available for finite-domain cases and is null for path cases.
+Per-case route scope and selected module/target hashes retain backend provenance.
+No result installs the policy, grants permissions or promotes a candidate.
+Compare verified success and failures with calls, reserved tokens and latency;
+a lower call count alone is not a quality improvement. Public fixtures are not
+independently held-out evidence and the optional policy remains default-off.

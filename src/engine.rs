@@ -440,25 +440,22 @@ impl Engine {
                 "runtime",
                 json!({"registration":model_registration,"weight_identity_verified":false}),
             )?;
-            let mut session = if resource_route_active {
-                Session::new_started_with_resource_routing(
-                    self.cfg.clone(),
-                    self.store.clone(),
-                    backend,
-                    id.clone(),
-                    mode,
-                    execution_start,
-                )?
-            } else {
-                Session::new_started(
-                    self.cfg.clone(),
-                    self.store.clone(),
-                    backend,
-                    id.clone(),
-                    mode,
-                    execution_start,
-                )?
-            };
+            let path_progress = profile != ExecutionProfile::Alone
+                && self.cfg.progress_stopping.is_some()
+                && crate::verification::Criterion::from_query(query)?
+                    .is_some_and(|criterion| criterion.name() == "shortest_path/v1");
+            let mut session = Session::new_started_with_policies(
+                self.cfg.clone(),
+                self.store.clone(),
+                backend,
+                id.clone(),
+                mode,
+                execution_start,
+                crate::reasoning::ExecutionPolicies {
+                    resource_routing: resource_route_active,
+                    path_progress,
+                },
+            )?;
             session.scheduler = self.scheduler.clone();
             session.advice_profile = Some(profile);
             session.set_resource_route_scope(

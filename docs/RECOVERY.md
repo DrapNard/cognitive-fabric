@@ -998,3 +998,45 @@ inference, malformed-frame, policy-denial, cancellation and rollback tests remai
 green. Schemas/bindings are unchanged; bundled FlatBuffers pairing/integrity checks
 pass. `flatc` is unavailable, so fresh generation was not performed. Localhost
 port 1234 refused discovery; no real-model/GPU quality or speed claim is made.
+
+## Shortest-path progress history
+
+Marked `shortest_path/v1` tasks restore a separate `path_progress_state` under
+`shortest-path-progress/v1`. Execution settings and every reasoning context must
+agree on the original policy. Recovery rechecks the saved solver texts, actual
+compiled verification failures, score/streak transitions and boundary state before
+any new dispatch. Foreign/malformed progress audits and duplicate cycle-zero
+proofs fail closed. Unmarked legacy path tasks preserve their old behavior and
+cannot gain stopping policy during continuation.
+
+Repeated saved-result rechecks retain fresh tool charges while deduplicating the
+identical per-cycle recovery proof. An original runtime check and its progress
+audit may precede a later recovery proof. Original calls, tokens, cycles, deadlines,
+permissions, selected routes and context stay pinned. Provider-vetoed witnesses
+remain explicitly unscored during execution; continuation still refuses custom
+provider histories because the exact provider cannot be restored.
+
+
+Verification on final frozen sources: `cargo fmt --all -- --check`,
+`cargo check --locked --workspace --all-targets`,
+`cargo test --locked --workspace --all-targets` (**921 passed across 60 targets**,
+zero failures or ignored tests), and
+`cargo clippy --locked --workspace --all-targets -- -D warnings` all pass.
+The 12 new integration tests cover runtime stopping, original-budget HTTP
+continuation, repeated charged result rechecks with one proof, legacy behavior,
+nine tamper/no-dispatch cases and a two-case HTTP comparison. Helper tests cover
+exhaustive small-graph score/checker equivalence, bounds, history transitions,
+criterion-label preflight and malformed/duplicate recovery evidence.
+
+Tests exposed and fixed shortest-path result-proof deduplication missing from the
+existing finite-only gate. Review also fixed duplicate cycle-zero proofs and
+foreign/malformed progress audit acceptance. Initial fixture/compile/lint errors
+were corrected; no tests were removed. Existing socket/process, migrations, mock,
+malformed-frame, policy-denial, cancellation and rollback coverage remains green.
+Protocol schemas/bindings are unchanged; bundled generator/runtime checks pass.
+`flatc` remains unavailable, so fresh generation was not run. Localhost port 1234
+refused discovery. No real-model quality, GPU, latency or energy gain is asserted.
+Jev+ and Jev-R remain **Partial**: automatic ownership-aware provider lifecycle,
+broader isolated executable verification and independent live-model effectiveness
+measurements remain open. The next lifecycle step requires explicit provider
+instance identity and durable ownership, without granting models mutation rights.

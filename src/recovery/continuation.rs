@@ -18,6 +18,8 @@ use std::{
 
 #[path = "continuation_parallel.rs"]
 mod parallel_history;
+#[path = "continuation_path_progress.rs"]
+mod path_progress_history;
 #[path = "continuation_policy.rs"]
 mod policy;
 #[path = "continuation_progress.rs"]
@@ -44,6 +46,7 @@ struct Checkpoint {
     resource_routes: Option<BTreeMap<String, crate::backend::InferenceTarget>>,
     resource_route_scope: Option<String>,
     finite_search_history: Option<super::finite_search::Receipt>,
+    path_progress_enabled: bool,
 }
 
 fn prepare(db: &rusqlite::Connection, task: &str) -> Result<Checkpoint> {
@@ -358,6 +361,16 @@ fn prepare_with_policy(
     )?;
     let finite_search_history =
         super::finite_search::validate(db, task, &query, &cfg, original_context_id, boundary_id)?;
+    let path_progress = path_progress_history::validate_before(
+        db,
+        task,
+        &query,
+        &cfg,
+        boundary.as_ref(),
+        None,
+        boundary_id,
+    )?;
+    let path_progress_enabled = path_progress.is_some();
     let progress = progress_history::validate_before(
         db,
         task,
@@ -522,6 +535,7 @@ fn prepare_with_policy(
     let resource_history = resource_history::validate(db, task, &cfg)?;
     Ok(Checkpoint {
         finite_search_history,
+        path_progress_enabled,
         resource_history,
         resource_routes,
         resource_route_scope,
@@ -538,6 +552,7 @@ fn prepare_with_policy(
             nodes,
             exploration,
             progress,
+            path_progress: path_progress.unwrap_or_default(),
             deadline: observed + Duration::from_nanos(remaining),
         },
     })
@@ -617,6 +632,7 @@ pub(super) fn record_failed_revision(
         false
     };
     let mut progress_state = None;
+    let mut path_progress_state = None;
     if progress_active {
         let raw: String = db.query_row(
             "SELECT CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN payload END FROM events WHERE task_id=?1 AND kind='execution_settings' ORDER BY id LIMIT 1",
@@ -682,6 +698,83 @@ pub(super) fn record_failed_revision(
             return Ok(false);
         }
     }
+    let path_settings: Option<(String, String)> = db
+        .query_row(
+            "SELECT CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN payload END,CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN json_extract(payload,'$.configuration') END FROM events WHERE task_id=?1 AND kind='execution_settings' ORDER BY id LIMIT 1",
+            [task],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?;
+    if let Some((raw_settings, raw_configuration)) = path_settings {
+        let settings_payload: Value = crate::strict_json::value(raw_settings.as_bytes(), 262144)?;
+        let path_cfg: Config = serde_json::from_str(&raw_configuration)?;
+        path_cfg.validate()?;
+        if settings_payload["progress_policy"] == "shortest-path-progress/v1"
+            && query.starts_with("path:")
+        {
+            let path_settings = path_cfg.progress_stopping.as_ref().ok_or_else(|| {
+                anyhow::anyhow!("Path progress marker lacks its original settings")
+            })?;
+            let path_criterion = crate::verification::Criterion::from_query(&query)?
+                .ok_or_else(|| anyhow::anyhow!("Missing shortest-path criterion"))?;
+            if path_criterion.name() != "shortest_path/v1" {
+                bail!("Path progress marker differs from the original criterion")
+            }
+            let current_solver_id: i64 = db.query_row(
+                "SELECT id FROM events WHERE task_id=?1 AND kind='reasoning' AND json_extract(payload,'$.call')=?2 AND json_extract(payload,'$.node.role')='solver' ORDER BY id DESC LIMIT 1",
+                rusqlite::params![task, saved["call"].as_u64()],
+                |row| row.get(0),
+            )?;
+            let current_path_audit: bool = db.query_row(
+                "SELECT EXISTS(SELECT 1 FROM events WHERE task_id=?1 AND kind IN ('reasoning_progress','reasoning_progress_provider_veto') AND json_extract(payload,'$.criterion')='shortest_path/v1' AND json_extract(payload,'$.cycle')=?2)",
+                rusqlite::params![task, cycles],
+                |row| row.get(0),
+            )?;
+            let history = if current_path_audit {
+                let history = path_progress_history::validate_before(
+                    db, task, &query, &path_cfg, None, None, None,
+                )?
+                .ok_or_else(|| anyhow::anyhow!("Path progress audit lacks its original marker"))?;
+                let raw: String = db.query_row(
+                    "SELECT CASE WHEN length(CAST(payload AS BLOB))<=16384 THEN payload END FROM events WHERE task_id=?1 AND kind IN ('reasoning_progress','reasoning_progress_provider_veto') AND json_extract(payload,'$.criterion')='shortest_path/v1' AND json_extract(payload,'$.cycle')=?2 ORDER BY id DESC LIMIT 1",
+                    rusqlite::params![task, cycles],
+                    |row| row.get(0),
+                )?;
+                let assessment = crate::strict_json::value(raw.as_bytes(), 16384)?;
+                if assessment["stop"] == true {
+                    return Ok(false);
+                }
+                history
+            } else {
+                let mut history = path_progress_history::validate_before(
+                    db,
+                    task,
+                    &query,
+                    &path_cfg,
+                    None,
+                    Some(current_solver_id),
+                    None,
+                )?
+                .ok_or_else(|| anyhow::anyhow!("Path progress is missing its original marker"))?;
+                if history.observed_cycles().saturating_add(1) != cycles as u32 {
+                    bail!("Recovered shortest-path progress history is gapped or stale")
+                }
+                let answer = saved["text"]
+                    .as_str()
+                    .ok_or_else(|| anyhow::anyhow!("Missing recovered shortest-path answer"))?;
+                let assessment = history.observe(&query, cycles as u32, answer, path_settings)?;
+                db.execute(
+                    "INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'reasoning_progress','verifier-r',?2,unixepoch())",
+                    rusqlite::params![task, assessment.to_string()],
+                )?;
+                if assessment["stop"] == true {
+                    return Ok(false);
+                }
+                history
+            };
+            path_progress_state = Some(serde_json::to_value(history)?);
+        }
+    }
     let previous:Option<String>=db.query_row("SELECT json_extract(payload,'$.node.content_hash') FROM events WHERE task_id=?1 AND kind='reasoning' AND json_extract(payload,'$.node.role')='solver' AND json_extract(payload,'$.node.cycle')>0 ORDER BY id DESC LIMIT 1 OFFSET 1",[task],|r|r.get(0)).optional()?;
     if previous
         .as_ref()
@@ -710,6 +803,9 @@ pub(super) fn record_failed_revision(
         "permissions_restorable":false,"subtask_results_verified":false,"origin":"operator_failed_result_recovery"});
     if let Some(state) = progress_state {
         boundary["progress_state"] = state;
+    }
+    if let Some(state) = path_progress_state {
+        boundary["path_progress_state"] = state;
     }
     let raw = serde_json::to_string(&boundary)?;
     if raw.len() > 262144 {
@@ -978,6 +1074,7 @@ async fn resume_with_handle(
     });
     let prior_calls = checkpoint.state.resources.calls;
     let deadline = checkpoint.state.deadline;
+    let path_progress_enabled = checkpoint.path_progress_enabled;
     let process = if checkpoint.cfg.inference_process {
         let mut cfg = checkpoint.cfg.clone();
         cfg.max_calls = cfg
@@ -1027,6 +1124,7 @@ async fn resume_with_handle(
         checkpoint.state,
     )?;
     session.set_resource_route_scope(checkpoint.resource_route_scope.clone())?;
+    session.set_path_progress_enabled(path_progress_enabled);
     session.escalator = escalator;
     session.resource_pool = resource_pool;
     let execution = async {

@@ -74,6 +74,7 @@ pub(crate) struct RestoredState {
     pub(crate) deadline: Instant,
     pub(crate) exploration: Option<exploration::Portfolio>,
     pub(crate) progress: progress::History,
+    pub(crate) path_progress: progress::PathHistory,
 }
 
 pub struct Session {
@@ -93,6 +94,8 @@ pub struct Session {
     resume_answer: Option<(String, Option<String>)>,
     exploration: Option<exploration::Portfolio>,
     progress: progress::History,
+    path_progress: progress::PathHistory,
+    path_progress_enabled: bool,
     pub(crate) advice_profile: Option<crate::engine::ExecutionProfile>,
     pub(crate) scheduler: crate::scheduling::Handle,
     pub(crate) escalator: crate::escalation::Handle,
@@ -128,9 +131,14 @@ impl std::fmt::Display for InferenceTimeout {
 }
 impl std::error::Error for InferenceTimeout {}
 
+pub(crate) struct ExecutionPolicies {
+    pub resource_routing: bool,
+    pub path_progress: bool,
+}
+
 enum SettingsRecording {
     Legacy,
-    ResourceRouting,
+    Policies(ExecutionPolicies),
     Restore,
 }
 
@@ -281,23 +289,27 @@ impl Session {
         )
     }
 
-    pub(crate) fn new_started_with_resource_routing(
+    pub(crate) fn new_started_with_policies(
         cfg: Config,
         store: Arc<Store>,
         backend: Arc<dyn InferenceBackend>,
         task: String,
         mode: &str,
         start: crate::execution_clock::ExecutionStart,
+        policies: ExecutionPolicies,
     ) -> Result<Self> {
-        Self::new_state(
+        let path_progress = policies.path_progress;
+        let mut session = Self::new_state(
             cfg,
             store,
             backend,
             task,
             mode,
             start,
-            SettingsRecording::ResourceRouting,
-        )
+            SettingsRecording::Policies(policies),
+        )?;
+        session.set_path_progress_enabled(path_progress);
+        Ok(session)
     }
     fn new_state(
         cfg: Config,
@@ -330,8 +342,13 @@ impl Session {
                 "runtime_role_prompts_sha256":crate::backend::runtime_role_prompts_sha256()?,
                 "permissions_restorable_from_settings":false
             });
-            if matches!(recording, SettingsRecording::ResourceRouting) {
+            if matches!(&recording, SettingsRecording::Policies(policies) if policies.resource_routing)
+            {
                 settings["resource_routing_version"] = json!(1);
+            }
+            if matches!(&recording, SettingsRecording::Policies(policies) if policies.path_progress)
+            {
+                settings["progress_policy"] = json!("shortest-path-progress/v1");
             }
             store.event(&task, "execution_settings", "runtime", settings)?;
         }
@@ -369,6 +386,8 @@ impl Session {
             resume_answer: None,
             exploration: None,
             progress: Default::default(),
+            path_progress: Default::default(),
+            path_progress_enabled: false,
             advice_profile: None,
             checker_binding: None,
             verifier_provider: None,
@@ -413,7 +432,12 @@ impl Session {
         session.nodes = state.nodes;
         session.exploration = state.exploration;
         session.progress = state.progress;
+        session.path_progress = state.path_progress;
         Ok(session)
+    }
+
+    pub(crate) fn set_path_progress_enabled(&mut self, enabled: bool) {
+        self.path_progress_enabled = enabled;
     }
 
     fn subtask_event(&self, index: usize) -> Result<()> {
@@ -1317,19 +1341,23 @@ impl Session {
         };
         self.escalation_criterion = criterion.as_ref().map(|value| value.name());
         let base = Self::prompt_base(query, context, self.verification_enabled)?;
-        self.store.event(
-            &self.task,
-            "reasoning_context",
-            "jev-r",
-            json!({
-                "format_version":1,"prompt_format":PROMPT_FORMAT,"objective":query,"context":context,
-                "objective_hash":crate::store::sha256(query.as_bytes()),
-                "context_hash":crate::store::sha256(context.as_bytes()),
-                "prompt_base_hash":crate::store::sha256(base.as_bytes()),
-                "calls_before":self.resources.calls,"cycles_before":self.resources.cycles,
-                "untrusted_data":true,"permissions_restorable":false
-            }),
-        )?;
+        let mut context_event = json!({
+            "format_version":1,"prompt_format":PROMPT_FORMAT,"objective":query,"context":context,
+            "objective_hash":crate::store::sha256(query.as_bytes()),
+            "context_hash":crate::store::sha256(context.as_bytes()),
+            "prompt_base_hash":crate::store::sha256(base.as_bytes()),
+            "calls_before":self.resources.calls,"cycles_before":self.resources.cycles,
+            "untrusted_data":true,"permissions_restorable":false
+        });
+        if self.path_progress_enabled
+            && criterion
+                .as_ref()
+                .is_some_and(|c| c.name() == "shortest_path/v1")
+        {
+            context_event["progress_policy"] = json!("shortest-path-progress/v1");
+        }
+        self.store
+            .event(&self.task, "reasoning_context", "jev-r", context_event)?;
         let resuming = saved_strategy.is_some();
         let mut strategy = saved_strategy.unwrap_or_default();
         if !resuming
@@ -1554,6 +1582,14 @@ impl Session {
             {
                 boundary["progress_state"] = serde_json::to_value(&self.progress)?;
             }
+            if self.path_progress_enabled
+                && self.cfg.progress_stopping.is_some()
+                && criterion
+                    .as_ref()
+                    .is_some_and(|c| c.name() == "shortest_path/v1")
+            {
+                boundary["path_progress_state"] = serde_json::to_value(&self.path_progress)?;
+            }
             if serde_json::to_vec(&boundary)?.len() > 262144 {
                 bail!("Reasoning boundary exceeds durable checkpoint limit")
             }
@@ -1618,6 +1654,39 @@ impl Session {
                             false
                         } else {
                             let assessment = self.progress.observe(
+                                query,
+                                self.resources.cycles,
+                                &answer,
+                                settings,
+                            )?;
+                            let stop = assessment["stop"] == true;
+                            self.store.event(
+                                &self.task,
+                                "reasoning_progress",
+                                "verifier-r",
+                                assessment,
+                            )?;
+                            stop
+                        }
+                    } else if self.path_progress_enabled && criterion.name() == "shortest_path/v1" {
+                        if self.verifier_provider.is_some()
+                            && criterion.progress_score(&answer) == Some(0)
+                        {
+                            let assessment = self.path_progress.observe_provider_veto(
+                                query,
+                                self.resources.cycles,
+                                &answer,
+                                settings,
+                            )?;
+                            self.store.event(
+                                &self.task,
+                                "reasoning_progress_provider_veto",
+                                "verifier-r",
+                                assessment,
+                            )?;
+                            false
+                        } else {
+                            let assessment = self.path_progress.observe(
                                 query,
                                 self.resources.cycles,
                                 &answer,

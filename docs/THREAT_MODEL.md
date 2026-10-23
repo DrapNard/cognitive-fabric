@@ -1060,3 +1060,15 @@ Legacy empirical studies with a different scope fail closed. Versioned recovery
 requires the saved audit pair and exact supported builtin map; unsupported custom
 routes cannot be replaced silently. These are local consistency checks, not
 cryptographic proof against an operator who edits the database or source.
+
+## Shortest-path stopping evidence
+
+Optional path progress is deterministic bounded assessment of operator-declared
+criteria. It does not execute candidate code, grant tools or accept a model's
+success claim. Malformed/unknown/oversized candidates cannot accumulate a plateau;
+accepted witnesses are checked first. A provider veto cannot turn a compiled
+witness into an ordinary failed zero score. Immutable policy markers prevent
+legacy continuation from acquiring a new stopping rule. Recomputed histories,
+strict audit identities and deduplicated result proofs retain original budgets.
+These local consistency rules are not signatures against same-owner database
+editing and provide no neural quality or provider-termination guarantee.

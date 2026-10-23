@@ -105,19 +105,23 @@ impl Store {
                 .as_ref()
                 .and_then(|value| value["node"]["cycle"].as_u64());
             let progress_dedup_enabled = if saved.is_some()
-                && criterion.name() == "finite_domain/v1"
+                && matches!(criterion.name(), "finite_domain/v1" | "shortest_path/v1")
             {
                 let settings: Option<String> = tx
                     .query_row(
-                        "SELECT CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN json_extract(payload,'$.configuration') END FROM events WHERE task_id=?1 AND kind='execution_settings' ORDER BY id LIMIT 1",
+                        "SELECT CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN payload END FROM events WHERE task_id=?1 AND kind='execution_settings' ORDER BY id LIMIT 1",
                         [task],
                         |row| row.get(0),
                     )
                     .optional()?;
                 if let Some(settings) = settings {
-                    let cfg: crate::config::Config = serde_json::from_str(&settings)?;
+                    let settings = crate::strict_json::value(settings.as_bytes(), 262144)?;
+                    let cfg: crate::config::Config =
+                        serde_json::from_value(settings["configuration"].clone())?;
                     cfg.validate()?;
                     cfg.progress_stopping.is_some()
+                        && (criterion.name() == "finite_domain/v1"
+                            || settings["progress_policy"] == "shortest-path-progress/v1")
                 } else {
                     false
                 }
@@ -125,7 +129,7 @@ impl Store {
                 false
             };
             if progress_dedup_enabled && current_cycle.is_none() {
-                bail!("Finite-domain progress recovery requires the saved solver cycle")
+                bail!("Structured progress recovery requires the saved solver cycle")
             }
             let mut proof = json!({"criterion":criterion.name(),"verified":verified,"origin":if direct_candidate.is_some() {"saved_search_recovery"} else {"saved_solver_recovery"},"objective_hash":sha256(query.as_bytes()),"answer_hash":sha256(answer.as_bytes()),"reason":rejection});
             if let Some(candidate) = &direct_candidate {

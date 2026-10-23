@@ -1,4 +1,4 @@
-//! Controlled public ablation of finite-domain progress stopping.
+//! Controlled public ablation of independently scored structured progress stopping.
 //!
 //! Both arms execute the same Jev+ collective profile with one Engine, backend,
 //! frozen corpus, and configured resource pool. The treatment changes only the
@@ -18,7 +18,7 @@ use std::{collections::BTreeSet, path::Path, sync::Arc, time::Duration};
 
 const MAX_DATASET_BYTES: usize = 2_000_000;
 const MAX_CASES: usize = 200;
-const CRITERION: &str = "finite_domain/v1";
+const CRITERIA: &[&str] = &["finite_domain/v1", "shortest_path/v1"];
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -153,18 +153,20 @@ fn read_cases(dataset: &Path, review: &crate::benchmarking::Review) -> Result<(V
     }
     let mut seen = BTreeSet::new();
     for case in &cases {
-        if case.verification != "finite_domain_v1" {
-            bail!("Progress comparison requires verification=finite_domain_v1")
+        let (prefix, expected) = match case.verification.as_str() {
+            "finite_domain_v1" => ("csp:", "finite_domain/v1"),
+            "shortest_path_v1" => ("path:", "shortest_path/v1"),
+            _ => bail!(
+                "Progress comparison requires finite_domain_v1 or shortest_path_v1 verification"
+            ),
+        };
+        if !case.input.starts_with(prefix) || !seen.insert(case.input.clone()) {
+            bail!("Progress comparison requires unique explicit structured objectives")
         }
-        if !case.input.starts_with("csp:") || !seen.insert(case.input.clone()) {
-            bail!("Progress comparison requires unique explicit csp: objectives")
-        }
-        let criterion =
-            crate::verification::Criterion::from_query(&case.input)?.ok_or_else(|| {
-                anyhow::anyhow!("Progress comparison requires finite-domain objectives")
-            })?;
-        if criterion.name() != CRITERION {
-            bail!("Progress comparison requires finite-domain objectives")
+        let criterion = crate::verification::Criterion::from_query(&case.input)?
+            .ok_or_else(|| anyhow::anyhow!("Progress comparison requires structured objectives"))?;
+        if criterion.name() != expected {
+            bail!("Progress comparison criterion differs from declared verification")
         }
     }
     Ok((cases, checksum))
@@ -177,7 +179,9 @@ fn check(answer: &str, query: &str, status: &str) -> bool {
     crate::verification::Criterion::from_query(query)
         .ok()
         .flatten()
-        .is_some_and(|criterion| criterion.name() == CRITERION && criterion.check(answer).is_ok())
+        .is_some_and(|criterion| {
+            CRITERIA.contains(&criterion.name()) && criterion.check(answer).is_ok()
+        })
 }
 
 fn bounded_answer(answer: &str) -> (Option<String>, bool) {
@@ -192,8 +196,8 @@ fn bounded_answer(answer: &str) -> (Option<String>, bool) {
     (Some(answer[..end].to_owned()), true)
 }
 
-/// Compare the same Jev+ Collective workflow with finite-domain Jev-R progress
-/// stopping disabled and enabled. The independent finite-domain checker scores
+/// Compare the same Jev+ Collective workflow with structured Jev-R progress
+/// stopping disabled and enabled. The independently compiled original criterion scores
 /// every returned answer; the heuristic never certifies unsatisfiability.
 pub async fn compare_progress_until<F>(
     cfg: &Config,
@@ -306,12 +310,15 @@ where
                 "task_id": outcome.task_id,
                 "status": outcome.status,
                 "stop_reason": outcome.stop_reason,
-                "passed_independent_finite_domain_check": passed,
+                "passed_independent_criterion_check": passed,
+                "passed_independent_finite_domain_check": if case.verification == "finite_domain_v1" { Some(passed) } else { None },
                 "answer_sha256": store::sha256(outcome.answer.as_bytes()),
                 "answer": if review.workflow_check { reported_answer } else { None },
                 "answer_truncated": review.workflow_check && answer_truncated,
                 "reported_models": identities.reported_models,
                 "primary_model_snapshot": identities.primary_model_snapshot,
+                "resource_route_sha256": identities.resource_route_sha256,
+                "resource_routes": identities.resource_routes,
                 "calls": outcome.calls,
                 "cycles": outcome.cycles,
                 "resources": outcome.resources,
@@ -404,7 +411,9 @@ where
 
     let provenance = json!({
         "format_version": 1,
-        "experiment": "finite_domain_progress_stopping/v1",
+        "experiment": if cases.iter().all(|case| case.verification == "finite_domain_v1") {
+            "finite_domain_progress_stopping/v1"
+        } else { "structured_progress_stopping/v2" },
         "dataset_sha256": dataset_checksum,
         "dataset_source": review.source,
         "dataset_license": review.license,
@@ -417,7 +426,11 @@ where
         "code_revision_operator_attested": review.code_revision,
         "package_version": env!("CARGO_PKG_VERSION"),
         "mode": mode,
-        "criterion": CRITERION,
+        "criterion": if cases.iter().all(|case| case.verification == "finite_domain_v1") {
+            "finite_domain/v1"
+        } else if cases.iter().all(|case| case.verification == "shortest_path_v1") {
+            "shortest_path/v1"
+        } else { "mixed-structured/v1" },
         "execution_profile": "collective",
         "configured_model": common.model
     });
@@ -460,8 +473,8 @@ where
         "both_passed": both_passed,
         "both_failed": both_failed,
         "observed_regressions_with_baseline_witness": regressions.iter().filter(|index| {
-            outcomes[**index][0].as_ref().is_some_and(|trace| trace["passed_independent_finite_domain_check"] == true)
-                && outcomes[**index][1].as_ref().is_some_and(|trace| trace["passed_independent_finite_domain_check"] == false)
+            outcomes[**index][0].as_ref().is_some_and(|trace| trace["passed_independent_criterion_check"] == true)
+                && outcomes[**index][1].as_ref().is_some_and(|trace| trace["passed_independent_criterion_check"] == false)
         }).count()
     });
     let arms = json!([
@@ -510,4 +523,63 @@ where
     );
     report.insert("limitations".into(), limitations);
     Ok(Value::Object(report))
+}
+
+#[cfg(test)]
+mod criterion_family_tests {
+    use super::*;
+    const PATH: &str = r#"path:{"nodes":["s","g"],"edges":[["s","g"]],"start":"s","goal":"g"}"#;
+    const CSP: &str = r#"csp:{"variables":[{"id":"x","domain":[1]}],"constraints":[{"kind":"linear","terms":[{"variable":"x","coefficient":1}],"relation":"eq","rhs":1}]}"#;
+
+    fn review() -> crate::benchmarking::Review {
+        crate::benchmarking::Review {
+            source: "Public synthetic regression fixture".into(),
+            license: "CC0-1.0".into(),
+            code_revision: "fixture".into(),
+            held_out: false,
+            workflow_check: true,
+            expected_dataset_sha256: None,
+            max_run_seconds: 30,
+        }
+    }
+
+    fn read(rows: &[Value]) -> Result<(Vec<Case>, String)> {
+        let path = std::env::temp_dir().join(format!(
+            "path-progress-corpus-{}.jsonl",
+            uuid::Uuid::new_v4()
+        ));
+        let data = rows
+            .iter()
+            .map(Value::to_string)
+            .collect::<Vec<_>>()
+            .join("\n");
+        std::fs::write(&path, data).unwrap();
+        let result = read_cases(&path, &review());
+        std::fs::remove_file(path).unwrap();
+        result
+    }
+
+    #[test]
+    fn comparisons_accept_exact_path_and_mixed_structured_criteria() {
+        let path = json!({"input":PATH,"verification":"shortest_path_v1"});
+        let finite = json!({"input":CSP,"verification":"finite_domain_v1"});
+        assert_eq!(read(std::slice::from_ref(&path)).unwrap().0.len(), 1);
+        assert_eq!(read(&[finite, path]).unwrap().0.len(), 2);
+        assert!(check(r#"["s","g"]"#, PATH, "completed"));
+        assert!(!check(r#"["s"]"#, PATH, "completed"));
+        assert!(!check(r#"["s","g"]"#, PATH, "failed"));
+    }
+
+    #[test]
+    fn comparisons_reject_mismatched_labels_duplicates_and_unsupported_criteria() {
+        for rows in [
+            vec![json!({"input":PATH,"verification":"finite_domain_v1"})],
+            vec![json!({"input":CSP,"verification":"shortest_path_v1"})],
+            vec![json!({"input":PATH,"verification":"expected_output_exact_match"})],
+            vec![json!({"input":PATH,"verification":"shortest_path_v1"}); 2],
+            vec![json!({"input":"path:{}","verification":"shortest_path_v1"})],
+        ] {
+            assert!(read(&rows).is_err());
+        }
+    }
 }

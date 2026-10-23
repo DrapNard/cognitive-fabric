@@ -1,4 +1,4 @@
-# Finite-domain progress stopping
+# Structured progress stopping
 
 Architecture sections 5 and 9 require bounded revision and a stopping rule when
 improvement becomes marginal. The existing exact-answer recurrence rule catches
@@ -30,7 +30,8 @@ inside every declared domain. The score ranges from 0 through 128. Parsing and
 relation evaluation share the full checker's strict JSON, byte/structure bounds
 and i128 arithmetic. Malformed JSON, duplicate/extra/missing keys, non-integers
 and out-of-domain values are **incomparable**, represented by a null score.
-Other criteria and unrestricted prose do not use this policy. Failed checks of
+Other criteria and unrestricted prose do not use the finite-domain policy; the
+separate shortest-path policy is described below. Failed checks of
 published memory before whole-goal solving are separate retrieval evidence; they
 do not initialize or advance the solver progress history.
 
@@ -110,3 +111,53 @@ versus 78 calls. Only one plateau fired, on an unsatisfiable case; the observed
 satisfiable regression did not trip the plateau rule. Different reasoning paths
 and a single public run prevent causal/general claims. This evidence supports
 keeping the policy optional, not a default deployment recommendation.
+
+## Shortest-path policy
+
+The separate `shortest-path-progress/v1` policy extends the same optional setting
+to explicit `path:` objectives. Candidate JSON arrays are
+bounded to 4,096 bytes and 64 declared node IDs. Unknown nodes, malformed JSON or
+larger arrays are incomparable and reset the non-improvement streak.
+
+For a reachable goal, breadth-first search derives the shortest length. The score
+adds 65 per incorrect endpoint or undeclared directed edge, plus the absolute
+candidate-length difference. The 64-node cap makes each structural penalty larger
+than any length deficit. This is a weighted violation measure, not a distance to
+a correct answer. For an unreachable goal, a nonempty comparable candidate scores
+one for violating the required empty witness; `[]` is accepted by the checker.
+Scoring never proves correctness, impossibility, provider termination or utility.
+
+Separate path history and policy markers preserve finite-domain history bytes.
+Fresh policy-enabled tasks record the version in execution settings and reasoning
+context. Continuation must reconstruct the exact history and preserve whether the
+original task enabled the policy; an unmarked legacy task cannot acquire it midway.
+Provider-vetoed compiled witnesses consume their cycle as explicitly unscored,
+resetting plateau accumulation without becoming ordinary rejected score-zero data.
+Controlled comparisons accept matching `finite_domain_v1`/`csp:` and
+`shortest_path_v1`/`path:` cases. Mixed corpora retain per-case criteria and use the
+report label `mixed-structured/v1`; lower call counts do not establish better quality.
+
+
+Verification on final frozen sources: `cargo fmt --all -- --check`,
+`cargo check --locked --workspace --all-targets`,
+`cargo test --locked --workspace --all-targets` (**921 passed across 60 targets**,
+zero failures or ignored tests), and
+`cargo clippy --locked --workspace --all-targets -- -D warnings` all pass.
+The 12 new integration tests cover runtime stopping, original-budget HTTP
+continuation, repeated charged result rechecks with one proof, legacy behavior,
+nine tamper/no-dispatch cases and a two-case HTTP comparison. Helper tests cover
+exhaustive small-graph score/checker equivalence, bounds, history transitions,
+criterion-label preflight and malformed/duplicate recovery evidence.
+
+Tests exposed and fixed shortest-path result-proof deduplication missing from the
+existing finite-only gate. Review also fixed duplicate cycle-zero proofs and
+foreign/malformed progress audit acceptance. Initial fixture/compile/lint errors
+were corrected; no tests were removed. Existing socket/process, migrations, mock,
+malformed-frame, policy-denial, cancellation and rollback coverage remains green.
+Protocol schemas/bindings are unchanged; bundled generator/runtime checks pass.
+`flatc` remains unavailable, so fresh generation was not run. Localhost port 1234
+refused discovery. No real-model quality, GPU, latency or energy gain is asserted.
+Jev+ and Jev-R remain **Partial**: automatic ownership-aware provider lifecycle,
+broader isolated executable verification and independent live-model effectiveness
+measurements remain open. The next lifecycle step requires explicit provider
+instance identity and durable ownership, without granting models mutation rights.

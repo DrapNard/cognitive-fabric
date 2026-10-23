@@ -1,5 +1,52 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+### Measure shortest-path revision plateaus — 2026-10-23
+
+**Implemented and regression-tested; general reasoning remains Partial.** Architecture sections 5 and 9 require
+stopping when independently measured improvement becomes marginal. The next slice
+extends optional progress stopping to `shortest_path/v1` with a separate versioned
+history, preserving the finite-domain policy. Only bounded declared-node arrays
+are comparable; malformed answers reset streaks. Compiled shortest-path checking
+remains the acceptance authority; a progress score grants no verification.
+
+Fresh enabled tasks bind the selected policy in execution settings and immutable
+reasoning context. Recovery must restore that exact policy and history; legacy
+unmarked tasks cannot gain scoring midway through continuation. Original budgets,
+permission checks, provider-veto handling and exact-recurrence stopping remain
+independent. Controlled progress comparison accepts both supported structured
+criteria with matching per-case verification labels. Sources: `src/verification/path.rs`, `src/reasoning/progress.rs`, Session/Engine
+policy pinning, `src/recovery/continuation_path_progress.rs`, result-proof
+deduplication and `src/benchmarking/progress.rs`. Runtime and recovery targets
+pass 11 tests; focused helper tests cover score/checker equivalence, bounds and
+malformed history. Final workspace results follow below. These are functional
+regressions, not measured neural quality, latency or calibrated expected utility.
+
+
+
+Verification on final frozen sources: `cargo fmt --all -- --check`,
+`cargo check --locked --workspace --all-targets`,
+`cargo test --locked --workspace --all-targets` (**921 passed across 60 targets**,
+zero failures or ignored tests), and
+`cargo clippy --locked --workspace --all-targets -- -D warnings` all pass.
+The 12 new integration tests cover runtime stopping, original-budget HTTP
+continuation, repeated charged result rechecks with one proof, legacy behavior,
+nine tamper/no-dispatch cases and a two-case HTTP comparison. Helper tests cover
+exhaustive small-graph score/checker equivalence, bounds, history transitions,
+criterion-label preflight and malformed/duplicate recovery evidence.
+
+Tests exposed and fixed shortest-path result-proof deduplication missing from the
+existing finite-only gate. Review also fixed duplicate cycle-zero proofs and
+foreign/malformed progress audit acceptance. Initial fixture/compile/lint errors
+were corrected; no tests were removed. Existing socket/process, migrations, mock,
+malformed-frame, policy-denial, cancellation and rollback coverage remains green.
+Protocol schemas/bindings are unchanged; bundled generator/runtime checks pass.
+`flatc` remains unavailable, so fresh generation was not run. Localhost port 1234
+refused discovery. No real-model quality, GPU, latency or energy gain is asserted.
+Jev+ and Jev-R remain **Partial**: automatic ownership-aware provider lifecycle,
+broader isolated executable verification and independent live-model effectiveness
+measurements remain open. The next lifecycle step requires explicit provider
+instance identity and durable ownership, without granting models mutation rights.
+
 ### Select eligible inference routes before pinning — 2026-10-22
 
 **Implemented and regression-tested for declared eligibility. General Jev+/Jev-R remains Partial.**
@@ -1923,7 +1970,7 @@ remains a pre-release. `QUALITY_REVIEW.md` preserves verification history.
 | 3, 7, 9, 10, 12 | External agent HTTP interoperability | Implemented / Partial | `src/agent/`, `crates/cogfabric-server/`: generation-only native solver turns and authenticated same-image workers, authenticated loopback Chat Completions/SSE, client-owned tool proposals/results, collective aliases and bounded admission; real OpenCode v2 + Qwen read/edit/read, HTTP and worker regression tests | Responses/multimodal API, independent executable provisioning and role selection, broader client compatibility and independent agentic-quality/security evaluation |
 | 7, 12 | Typed local IPC | Partial | `protocol/*.fbs`, `src/fabric.rs`, `src/events.rs`, `src/wire.rs`, `src/service.rs`: bounded verified IPC and module RPC, content-minimized typed progress subscriptions/catch-up, version-pinned inference registration/discovery, correlation/actor/destination/expiry checks, queues and cancellation; socket, spoofing, overflow, replacement and compatibility tests | General command routing, automatic independent actor provisioning and broader compatibility fixtures |
 | 3 | Language interface | Partial | `src/language.rs`, `src/backend.rs`, `src/config.rs`: strict advisory intent, clarification, original-goal preservation, explicit conversation references, optional synthesis, persistent role profiles; scripted and HTTP tests | Live interpretation and synthesis quality measurements; direct/managed/socket generation now succeeds |
-| 4, 9 | Jev+ coordination | Partial | `src/engine.rs`, `src/planning.rs`, `src/store.rs::route`, `src/resource_scheduler/`: pinned capability coverage, dependency scheduling, bounded parallel advisory waves, target/role working allocations, original-budget completed-wave continuation and admission budgets; dependency, recovery and budget tests | Resource-aware broker eligibility, automatic ownership-aware residency, calibrated measured escalation, incomplete in-flight outcome reconciliation and physical scheduling telemetry |
+| 4, 9 | Jev+ coordination | Partial | `src/engine.rs`, `src/planning.rs`, `src/store.rs::route`, `src/resource_scheduler/`: pinned capability coverage, dependency scheduling, bounded parallel advisory waves, target/role working allocations, resource-aware per-role Broker eligibility, exact pinned route-scope recovery, original-budget completed-wave continuation and admission budgets; dependency, routing, recovery and budget tests | Automatic ownership-aware residency, calibrated measured escalation, incomplete in-flight outcome reconciliation and physical scheduling telemetry |
 | 5 | Jev-R reasoning | Partial | `src/reasoning.rs`, `src/verification/provider.rs`: planner/solver/explorer/critic/reflector, bounded revisions/search, progress stopping, unverified subtask advice, original-goal synthesis and optional trusted host verification with a required compiled criterion | Untrusted executable verifier isolation, new criterion families, host-provider restoration and independent live-model effectiveness measurements |
 | 6 | Expert network | Partial | `src/registry.rs`: immutable semantic-versioned reference manifests, dependency/reverse-dependency checks, health, activate/disable/metadata rollback, bounded registry; lifecycle/tampering tests | General executable loading and health, measured workflow usefulness and real weight residency; trusted tool/inference rollback is implemented |
 | 7 | Persistent memory | Partial | `src/store.rs`: SQLite WAL/FTS5, schema migrations through 6, durable task/events, isolated explicit history, pinned registry/document snapshots, explicit lease-protected interrupted-task recovery, immutable versioned local model manifests and task selection snapshots, operator-published episodic snapshots, recomputed arithmetic memory, revocation and payload quotas, SQLite page ceilings, global task admission and reviewed retention; migration/isolation/tampering/deletion-rollback tests | Broader independent fact verifiers, backend model residency, physical WAL/filesystem bounds, general external/neural artifact portability and automatic checkpoint resumption |
