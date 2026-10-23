@@ -1,5 +1,35 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Explicit retained-registry continuation — 2026-10-23
+
+**Implemented for retained host registries; cross-process reconstruction remains
+Partial.** `RuntimeRestoration` combines original typed registry, escalation and
+verifier objects. New `preview_with_runtime` / `resume_with_runtime` APIs validate
+the original Broker UUID and Store identity, exact immutable descriptors and
+available retained versions, independently of the active version. Default APIs
+continue to refuse missing registry restoration.
+
+- `src/fabric/modules.rs`: private exact retained-version pins and Store identity
+  checks; snapshot metadata cannot construct code or task grants.
+- `src/recovery/continuation_modules.rs`: bounded snapshot parsing, immutable pin
+  reconstruction from the retained registry, and hashed restoration evidence.
+- `src/recovery/continuation_module_history.rs`: bounded chronological checks of
+  reservations, unique intents/returned outcomes, process dispatch links and
+  completely reaped ownership. Unknown/failed/forged/duplicate histories refuse.
+- `src/recovery/continuation.rs`: read-only preview, revalidated transactional
+  admission, combined policy restoration, retained pins in Session and conversion
+  to shared execution ownership before process-backed module dispatch.
+- `src/recovery/continuation_module_tests.rs`: active-v2/original-v1 restoration,
+  original model/tool charge preservation, two-call loopback resume without old
+  callback replay, approval/write denials, foreign Store/Broker and retired-version
+  refusal, tampered dispatch history and synthetic process-audit completeness.
+
+The full workspace suite passes **1,005 tests across 66 targets**, with no ignored
+or failed tests; all four optional Wasm tests pass too. Format/check and Rust 1.99
+strict Clippy in default and all-feature configurations pass. The prior
+snapshot `82a88ac` also passed GitHub CI; that result does not verify new source.
+No new real-model, GPU, binary-attestation or neural-safety claim is made.
+
 ## Integrated runtime verification — 2026-10-23
 
 **Implemented and tested runtime fixes; overall scope remains Partial.**
@@ -75,8 +105,8 @@ is still pending.
 ## Implementation phase — task lifecycle and replaceable modules
 
 **Partial overall; integrated paths verified by the newest entry above.**
-Historical passing counts below describe their own snapshots. Explicit registry
-and lifecycle-owner restoration and real-model measurements remain incomplete.
+Historical passing counts below describe their own snapshots. Cross-process registry
+reconstruction, lifecycle-owner restoration and real-model measurements remain incomplete.
 
 - `src/residency/lifecycle.rs`, `src/engine.rs`, `src/reasoning.rs`: operator-approved
   task model sets, retained exclusive runtime/resource ownership, receipt-bound

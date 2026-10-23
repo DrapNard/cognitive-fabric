@@ -1115,6 +1115,13 @@ task, durable reaped-child evidence and an absent child PID. Abrupt process deat
 still cannot guarantee audit completion or provider stop.
 
 Default continuation refuses pinned custom module registries and orphan dispatch
-history. Database descriptors cannot install code or silently replace the original
-implementation. Exact original-registry restoration remains incomplete; this is a
-fail-closed boundary, not complete crash recovery for arbitrary callbacks.
+history. Explicit host restoration requires the retained original Broker and Store,
+exact immutable versions, known returned outcomes and prior task-scoped tool
+reservations. It revalidates before transactional admission and preserves original
+budgets. Process history requires complete dispatch/result links and reaped ownership;
+recorded PIDs are validation data and never become new process handles.
+
+Database descriptors cannot install callbacks. Retained runtime identity is local
+provenance, not binary attestation. Arbitrary callback reconstruction across process
+restarts, uncertain-call replay and native lifecycle-owner restoration remain
+unsupported; approval cannot convert unknown effects into success.

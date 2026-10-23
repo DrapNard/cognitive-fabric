@@ -16,8 +16,13 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[path = "continuation_module_history.rs"]
+mod module_dispatch_history;
 #[path = "continuation_modules.rs"]
 mod module_history;
+#[cfg(test)]
+#[path = "continuation_module_tests.rs"]
+mod module_tests;
 #[path = "continuation_parallel.rs"]
 mod parallel_history;
 #[path = "continuation_path_progress.rs"]
@@ -50,6 +55,7 @@ struct Checkpoint {
     finite_search_history: Option<super::finite_search::Receipt>,
     path_progress_enabled: bool,
     verifier_provider: Option<crate::verification::provider::Handle>,
+    typed_modules: Option<module_history::Restored>,
     reconciled_parallel_subtasks: Vec<Subtask>,
 }
 
@@ -63,7 +69,17 @@ fn prepare_with_policy(
     escalator: &crate::escalation::Handle,
     verifier_provider: Option<&crate::verification::provider::Handle>,
 ) -> Result<Checkpoint> {
-    module_history::validate(db, task)?;
+    prepare_with_runtime(db, task, escalator, verifier_provider, None)
+}
+
+fn prepare_with_runtime(
+    db: &rusqlite::Connection,
+    task: &str,
+    escalator: &crate::escalation::Handle,
+    verifier_provider: Option<&crate::verification::provider::Handle>,
+    modules: Option<Arc<crate::fabric::modules::Broker>>,
+) -> Result<Checkpoint> {
+    let typed_modules = module_history::restore(db, task, modules)?;
     super::validate_verifier_recovery(db, task, verifier_provider)?;
     let parallel_recorded: bool = db.query_row(
         "SELECT EXISTS(SELECT 1 FROM events WHERE task_id=?1 AND kind='subtask_parallel_schedule')",
@@ -557,6 +573,7 @@ fn prepare_with_policy(
         finite_search_history,
         path_progress_enabled,
         verifier_provider: verifier_provider.cloned(),
+        typed_modules,
         resource_history,
         resource_routes,
         resource_route_scope,
@@ -863,6 +880,71 @@ fn validate_worker_workspace(cfg: &mut Config, path: &std::path::Path) -> Result
     Ok(())
 }
 
+/// Host-owned runtime objects retained from the original task. No deserializer:
+/// database/model metadata cannot construct callbacks or registry authority.
+#[derive(Clone, Default)]
+pub struct RuntimeRestoration {
+    pub escalation_policy: Option<Arc<dyn crate::escalation::EscalationPolicy>>,
+    pub verifier: Option<Arc<dyn crate::verification::VerifierProvider>>,
+    pub modules: Option<Arc<crate::fabric::modules::Broker>>,
+}
+
+/// Inspect using exact retained host objects. This never dispatches a module,
+/// changes activation, recreates code, or grants permissions.
+pub fn preview_with_runtime(
+    store: &Store,
+    task: &str,
+    runtime: RuntimeRestoration,
+) -> Result<Value> {
+    security::authorize("human-cli", "task.resume")?;
+    uuid::Uuid::parse_str(task)?;
+    let escalator = runtime
+        .escalation_policy
+        .map(crate::escalation::Handle::new)
+        .transpose()?
+        .unwrap_or_default();
+    let verifier = runtime
+        .verifier
+        .map(crate::verification::provider::Handle::new)
+        .transpose()?;
+    preview_with_runtime_handles(store, task, escalator, verifier, runtime.modules)
+}
+
+/// Resume under original budgets and exact retained module versions. Unknown
+/// earlier dispatches remain refused; approval does not acknowledge their stop.
+pub async fn resume_with_runtime(
+    store: Arc<Store>,
+    task: &str,
+    human_approve: bool,
+    runtime: RuntimeRestoration,
+    cancel: impl std::future::Future<Output = ()>,
+) -> Result<Value> {
+    security::authorize("human-cli", "task.resume")?;
+    if !human_approve {
+        bail!("Task continuation requires explicit operator approval")
+    }
+    uuid::Uuid::parse_str(task)?;
+    let escalator = runtime
+        .escalation_policy
+        .map(crate::escalation::Handle::new)
+        .transpose()?
+        .unwrap_or_default();
+    let verifier = runtime
+        .verifier
+        .map(crate::verification::provider::Handle::new)
+        .transpose()?;
+    resume_with_runtime_handles(
+        store,
+        task,
+        human_approve,
+        escalator,
+        verifier,
+        runtime.modules,
+        cancel,
+    )
+    .await
+}
+
 /// Inspect current continuation admission without changing task state or launching workers.
 /// Eligibility is sampled; an approved resume always validates again.
 pub fn preview(store: &Store, task: &str) -> Result<Value> {
@@ -923,8 +1005,21 @@ fn preview_with_handle(
     escalator: crate::escalation::Handle,
     verifier_provider: Option<crate::verification::provider::Handle>,
 ) -> Result<Value> {
+    preview_with_runtime_handles(store, task, escalator, verifier_provider, None)
+}
+
+fn preview_with_runtime_handles(
+    store: &Store,
+    task: &str,
+    escalator: crate::escalation::Handle,
+    verifier_provider: Option<crate::verification::provider::Handle>,
+    modules: Option<Arc<crate::fabric::modules::Broker>>,
+) -> Result<Value> {
     security::authorize("human-cli", "task.resume")?;
     uuid::Uuid::parse_str(task)?;
+    if let Some(broker) = &modules {
+        broker.require_store(store)?;
+    }
     let path = store
         .runtime_lock
         .as_deref()
@@ -940,8 +1035,13 @@ fn preview_with_handle(
     );
     let result = (|| -> Result<Checkpoint> {
         let tx = db.transaction()?;
-        let mut checkpoint =
-            prepare_with_policy(&tx, task, &escalator, verifier_provider.as_ref())?;
+        let mut checkpoint = prepare_with_runtime(
+            &tx,
+            task,
+            &escalator,
+            verifier_provider.as_ref(),
+            modules.clone(),
+        )?;
         validate_worker_workspace(&mut checkpoint.cfg, path)?;
         if started.elapsed() > Duration::from_secs(5) {
             bail!("Continuation admission deadline exhausted")
@@ -967,6 +1067,7 @@ fn preview_with_handle(
             "escalation_policy":escalator.descriptor(),"policy_implementation_attested":false,
             "verifier_provider":checkpoint.verifier_provider.as_ref().map(|provider|provider.descriptor()),
             "verifier_implementation_attested":false,
+            "restored_typed_modules":checkpoint.typed_modules.as_ref().map(|modules|modules.evidence()),
             "managed_worker":checkpoint.cfg.inference_process,
             "resource_history":checkpoint.resource_history,
             "finite_search_history":checkpoint.finite_search_history,
@@ -1084,11 +1185,35 @@ async fn resume_with_handle(
     verifier_provider: Option<crate::verification::provider::Handle>,
     cancel: impl std::future::Future<Output = ()>,
 ) -> Result<Value> {
+    resume_with_runtime_handles(
+        store,
+        task,
+        human_approve,
+        escalator,
+        verifier_provider,
+        None,
+        cancel,
+    )
+    .await
+}
+
+async fn resume_with_runtime_handles(
+    store: Arc<Store>,
+    task: &str,
+    human_approve: bool,
+    escalator: crate::escalation::Handle,
+    verifier_provider: Option<crate::verification::provider::Handle>,
+    modules: Option<Arc<crate::fabric::modules::Broker>>,
+    cancel: impl std::future::Future<Output = ()>,
+) -> Result<Value> {
     security::authorize("human-cli", "task.resume")?;
     if !human_approve {
         bail!("Task continuation requires explicit operator approval")
     }
     uuid::Uuid::parse_str(task)?;
+    if let Some(broker) = &modules {
+        broker.require_store(store.as_ref())?;
+    }
     let path = store
         .runtime_lock
         .as_deref()
@@ -1105,7 +1230,14 @@ async fn resume_with_handle(
         );
         let prepared = (|| -> Result<Config> {
             let tx = db.transaction()?;
-            Ok(prepare_with_policy(&tx, task, &escalator, verifier_provider.as_ref())?.cfg)
+            Ok(prepare_with_runtime(
+                &tx,
+                task,
+                &escalator,
+                verifier_provider.as_ref(),
+                modules.clone(),
+            )?
+            .cfg)
         })();
         db.progress_handler(0, None::<fn() -> bool>);
         prepared?
@@ -1142,8 +1274,13 @@ async fn resume_with_handle(
         );
         let prepared = (|| -> Result<Checkpoint> {
             let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-            let mut checkpoint =
-                prepare_with_policy(&tx, task, &escalator, verifier_provider.as_ref())?;
+            let mut checkpoint = prepare_with_runtime(
+                &tx,
+                task,
+                &escalator,
+                verifier_provider.as_ref(),
+                modules.clone(),
+            )?;
             if serde_json::to_value(&checkpoint.cfg)?
                 != serde_json::to_value(&original_configuration)?
             {
@@ -1151,7 +1288,9 @@ async fn resume_with_handle(
             }
             if checkpoint.cfg.inference_process {
                 validate_worker_workspace(&mut checkpoint.cfg, path)?;
-                // No inference has begun. A competing exclusive owner during conversion
+            }
+            if checkpoint.cfg.inference_process || checkpoint.typed_modules.is_some() {
+                // No inference or module dispatch has begun. A competing exclusive owner during conversion
                 // cannot commit recovery while this write transaction remains open.
                 lease = Some(
                     lease
@@ -1186,7 +1325,7 @@ async fn resume_with_handle(
                 "UPDATE tasks SET status='running',updated=unixepoch() WHERE id=?1",
                 [task],
             )?;
-            tx.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'continuation','human-cli',?2,unixepoch())",rusqlite::params![task,json!({"state":"started","format_version":1,"original_budget_preserved":true,"prior_timing_complete":false,"subtask_results_verified":false,"reconciled_parallel_result_publications":checkpoint.reconciled_parallel_subtasks.len(),"escalation_policy":escalator.descriptor(),"verifier_provider":checkpoint.verifier_provider.as_ref().map(|provider|provider.descriptor()),"restored_resource_pool":restored_pool,"resource_history":checkpoint.resource_history,"finite_search_history":checkpoint.finite_search_history,"parallel_history":parallel_history}).to_string()])?;
+            tx.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'continuation','human-cli',?2,unixepoch())",rusqlite::params![task,json!({"state":"started","format_version":1,"original_budget_preserved":true,"prior_timing_complete":false,"subtask_results_verified":false,"reconciled_parallel_result_publications":checkpoint.reconciled_parallel_subtasks.len(),"escalation_policy":escalator.descriptor(),"verifier_provider":checkpoint.verifier_provider.as_ref().map(|provider|provider.descriptor()),"restored_typed_modules":checkpoint.typed_modules.as_ref().map(|modules|modules.evidence()),"restored_resource_pool":restored_pool,"resource_history":checkpoint.resource_history,"finite_search_history":checkpoint.finite_search_history,"parallel_history":parallel_history}).to_string()])?;
             if started.elapsed() > Duration::from_secs(5) {
                 bail!("Continuation admission deadline exhausted")
             }
@@ -1252,6 +1391,10 @@ async fn resume_with_handle(
         &checkpoint.mode,
         checkpoint.state,
     )?;
+    session.typed_modules = checkpoint
+        .typed_modules
+        .as_ref()
+        .map(|modules| (modules.broker.clone(), modules.pins.clone()));
     session.set_resource_route_scope(checkpoint.resource_route_scope.clone())?;
     session.set_path_progress_enabled(path_progress_enabled);
     session.escalator = escalator;
@@ -1317,6 +1460,7 @@ async fn resume_with_handle(
         "verification_attempted":session.verification_attempted,"stop_reason":session.stop_reason,
         "restored_resource_pool":restored_pool,"resource_history":checkpoint.resource_history,
         "parallel_history":parallel_history,
+        "restored_typed_modules":checkpoint.typed_modules.as_ref().map(|modules|modules.evidence()),
         "finite_search_history":checkpoint.finite_search_history,
         "new_calls":session.resources.calls-prior_calls,"charged_resources":session.resources,
         "timing_scope":"continuation_only","prior_timing_complete":false,"subtask_results_verified":false,"automatic_replay":false});

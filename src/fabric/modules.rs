@@ -861,6 +861,34 @@ impl Broker {
         })
     }
 
+    /// Restoration uses the same Store object and retained registered code;
+    /// metadata can neither construct a Broker nor replace its implementation.
+    pub(crate) fn require_store(&self, store: &Store) -> Result<()> {
+        if !std::ptr::eq(self.store.as_ref(), store) {
+            bail!("Restored typed registry belongs to another Store")
+        }
+        Ok(())
+    }
+
+    pub(crate) fn pin_retained(&self, task: &str, descriptor: &Descriptor) -> Result<Pin> {
+        uuid::Uuid::parse_str(task)?;
+        descriptor.validate()?;
+        let module = self
+            .registry
+            .read()
+            .map_err(|_| anyhow!("Typed module registry poisoned"))?
+            .versions
+            .get(&(descriptor.id.clone(), descriptor.version.clone()))
+            .filter(|module| module.descriptor == *descriptor && module.available())
+            .cloned()
+            .context("Original typed module version is not retained and available")?;
+        Ok(Pin {
+            task: task.into(),
+            module,
+            broker_identity: self.identity,
+        })
+    }
+
     pub fn status(&self) -> Result<Vec<Status>> {
         let registry = self
             .registry

@@ -9,7 +9,7 @@ This is framework evidence, not a claim of trained Jev networks or real-model qu
 
 - `cargo fmt --all -- --check`: passed.
 - `cargo +1.99.0 check --locked --workspace --all-targets`: passed.
-- `cargo test --locked --workspace --all-targets --no-fail-fast`: **1,000 passed
+- `cargo test --locked --workspace --all-targets --no-fail-fast`: **1,005 passed
   across 66 targets**, no failures or ignored tests (Rust 1.97.1).
 - `cargo +1.99.0 clippy --locked --workspace --all-targets -- -D warnings`
   and its `--all-features` variant: passed.
@@ -26,10 +26,15 @@ protocol-count and native-service fixtures. Typed sorting/ordering/path diagnost
 and opt-in finite assignments now have Engine-level regression tests proving
 original charges and independent compiled checking.
 
-**Remaining work:** ordinary continuation refuses tasks with pinned typed modules
-until the original host registry can be explicitly restored; it never substitutes
-new implementations or replays uncertain dispatches. Native lifecycle continuation
-also requires restoring its exact owner and bindings and remains refused by default.
+**Typed registry restoration:** `RuntimeRestoration`, `preview_with_runtime` and
+`resume_with_runtime` now accept the retained original Broker/Store and optional
+original verifier/escalator. They restore exact retained versions across active
+swaps and preserve earlier charges. Read-only preview, end-to-end continuation,
+process audit completeness and unknown/forged history refusal are regression-tested.
+
+**Remaining work:** arbitrary registry reconstruction across process restarts is
+unsupported. Native lifecycle continuation requires restoring its exact owner and
+bindings and remains refused by default.
 A probe of `127.0.0.1:1234` found no inference server, so real model quality, GPU
 behavior and comparable-budget performance remain unverified. Novel neural Jev
 architectures and independent neural promotion remain research work.

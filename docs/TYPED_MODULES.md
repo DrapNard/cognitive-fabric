@@ -84,6 +84,42 @@ implementations. CLI shutdown drains cancelled process reapers before Tokio exit
 required audits and runtime leases remain owned until reaping is observed.
 
 Ordinary checkpoint continuation refuses nonempty typed-module snapshots and
-orphan module dispatch evidence. It cannot silently resume with a fresh registry
-or a different implementation. Explicit restoration of the original host registry
-is still incomplete; operator-selected verifier restoration is a separate API.
+orphan module dispatch evidence. An embedding can explicitly supply retained
+original runtime objects through `RuntimeRestoration`:
+
+```rust,ignore
+use cogfabric::recovery::continuation::{
+    RuntimeRestoration, preview_with_runtime, resume_with_runtime,
+};
+
+let runtime = RuntimeRestoration {
+    modules: Some(engine.modules.clone()),
+    ..Default::default()
+};
+let preview = preview_with_runtime(&store, &task_id, runtime.clone())?;
+// The operator reviews preview and explicitly approves this continuation.
+let report = resume_with_runtime(
+    store.clone(), &task_id, true, runtime, std::future::pending(),
+).await?;
+```
+
+The supplied Broker must be the exact original instance and use the same Store
+object. Each task pins its original retained module ID, version and capability
+set, even after a newer active version is installed. Retired or unavailable
+implementations are refused. Registry metadata never constructs callbacks.
+Optional original escalation and verifier objects can be supplied in the same
+context; their existing descriptor checks apply.
+
+Preview is read-only and invokes no module. Admission revalidates under the
+original task deadline and an exclusive execution lease. Before dispatch, the
+lease becomes shared so same-image workers can obtain their own task leases.
+Original model/tool/token charges remain consumed. Earlier module intents require
+unique matching returned outcomes and original tool reservations; process audits
+must link completed dispatches and completely reaped child ownership. Unknown,
+failed, duplicated or inconsistent history is refused without replay.
+
+`restored_typed_modules` in preview/continuation audits identifies the original
+snapshot, its hash, the retained Broker and earlier completed dispatch count.
+It grants no permission and attests no implementation binary. Arbitrary callback
+reconstruction after process restart and native lifecycle-owner restoration remain
+unsupported by this API.
