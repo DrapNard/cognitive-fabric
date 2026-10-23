@@ -550,13 +550,14 @@ impl Engine {
             for descriptor in self.modules.discover()? {
                 let pin=self.modules.pin(&id,&descriptor.id,&descriptor.version)?;
                 descriptors.push(json!({"id":descriptor.id,"version":descriptor.version,
-                    "capabilities":descriptor.capabilities.iter().map(|capability|capability.as_str()).collect::<Vec<_>>() }));
+                    "capabilities":descriptor.capabilities.iter().map(|capability|capability.as_str()).collect::<Vec<_>>(),
+                    "source_sha256":pin.source_fingerprint() }));
                 for capability in &descriptor.capabilities {
                     if pins.insert(*capability,pin.clone()).is_some() { bail!("Conflicting pinned typed module capability") }
                 }
             }
             if !descriptors.is_empty() {
-                self.store.event(&id,"typed_module_snapshot","fabric",json!({"format_version":1,"broker_id":self.modules.identity_id().to_string(),"modules":descriptors,"permissions_granted":false}))?;
+                self.store.event(&id,"typed_module_snapshot","fabric",json!({"format_version":2,"broker_id":self.modules.identity_id().to_string(),"modules":descriptors,"permissions_granted":false}))?;
             }
             Ok(pins)
         })();

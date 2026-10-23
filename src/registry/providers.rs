@@ -144,11 +144,12 @@ fn verify_task_module_snapshot(
     task_id: &str,
     broker: &Broker,
     binding: &ProviderBinding,
-    descriptor: &Descriptor,
+    pin: &Pin,
 ) -> Result<()> {
+    let descriptor = pin.descriptor();
     let snapshot = snapshot_event(store, task_id, "typed_module_snapshot", "fabric")?;
     let broker_id = broker.identity_id().to_string();
-    if snapshot["format_version"].as_u64() != Some(1)
+    if !matches!(snapshot["format_version"].as_u64(), Some(1 | 2))
         || snapshot["permissions_granted"].as_bool() != Some(false)
         || snapshot["broker_id"].as_str() != Some(broker_id.as_str())
     {
@@ -167,6 +168,11 @@ fn verify_task_module_snapshot(
         .collect::<Vec<_>>();
     if matches.len() != 1 {
         bail!("Task module snapshot does not contain the exact provider version")
+    }
+    if snapshot["format_version"] == 2
+        && matches[0]["source_sha256"] != serde_json::to_value(pin.source_fingerprint())?
+    {
+        bail!("Pinned provider source identity differs from task snapshot")
     }
     let capabilities = matches[0]["capabilities"]
         .as_array()
@@ -290,7 +296,7 @@ pub fn pin_task_snapshot_provider(
     let manifest_sha256 = stored_manifest_sha256(store, manifest, false)?;
     let binding = binding_and_descriptor(manifest, pin.descriptor(), required_capability)?;
     verify_task_route(store, pin.task(), manifest)?;
-    verify_task_module_snapshot(store, pin.task(), broker, binding, pin.descriptor())?;
+    verify_task_module_snapshot(store, pin.task(), broker, binding, pin)?;
     record_provider_snapshot(
         store,
         manifest,

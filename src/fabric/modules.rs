@@ -533,6 +533,11 @@ pub struct TaskBinding {
 /// A host can still capture such resources itself, so this is not a sandbox.
 pub trait Module: Send + Sync {
     fn descriptor(&self) -> Descriptor;
+    /// Optional compiled source identity, declared by trusted host code. This
+    /// identifies sources only, not the executable, compiler or model weights.
+    fn source_fingerprint(&self) -> Option<&'static str> {
+        None
+    }
     /// Return a task-scoped adapter when runtime ownership must be rebound.
     /// The default retains the same trusted implementation. This is metadata
     /// setup, not permission to invoke tools or models.
@@ -640,6 +645,7 @@ struct Work {
 
 struct Registered {
     descriptor: Descriptor,
+    source_fingerprint: Option<&'static str>,
     implementation: Arc<dyn Module>,
     limits: Limits,
     queue: OnceCell<mpsc::Sender<Work>>,
@@ -676,6 +682,10 @@ impl Pin {
         &self.module.descriptor
     }
 
+    pub fn source_fingerprint(&self) -> Option<&'static str> {
+        self.module.source_fingerprint
+    }
+
     pub fn task(&self) -> &str {
         &self.task
     }
@@ -696,6 +706,17 @@ pub struct Status {
 }
 
 impl Broker {
+    /// Only reviewed recovery code may reconstruct a recorded registry UUID.
+    /// This restores local provenance, not process identity or executable trust.
+    pub(crate) fn reconstructed_builtin(
+        store: Arc<Store>,
+        identity: uuid::Uuid,
+    ) -> Result<Arc<Self>> {
+        let mut broker = Self::new(store.clone());
+        broker.identity = identity;
+        broker.register(Arc::new(ProcessModule::builtin(store)?), Limits::default())?;
+        Ok(Arc::new(broker))
+    }
     pub fn new(store: Arc<Store>) -> Self {
         Self {
             store,
@@ -729,6 +750,7 @@ impl Broker {
                         module.descriptor.clone(),
                         module.implementation.clone(),
                         module.limits,
+                        module.source_fingerprint,
                     )
                 })
                 .collect::<Vec<_>>()
@@ -738,9 +760,11 @@ impl Broker {
             ownership,
         };
         let fork = Arc::new(Self::new(self.store.clone()));
-        for (descriptor, original, limits) in active {
+        for (descriptor, original, limits, fingerprint) in active {
             let implementation = original.bind_task(&binding)?.unwrap_or(original);
-            if implementation.descriptor() != descriptor {
+            if implementation.descriptor() != descriptor
+                || implementation.source_fingerprint() != fingerprint
+            {
                 bail!("Task binding changed an immutable module descriptor")
             }
             fork.register(implementation, limits)?;
@@ -766,6 +790,12 @@ impl Broker {
     /// model response, document, or IPC actor.
     pub fn register(&self, implementation: Arc<dyn Module>, limits: Limits) -> Result<()> {
         let descriptor = implementation.descriptor();
+        let source_fingerprint = implementation.source_fingerprint();
+        if source_fingerprint.is_some_and(|hash| {
+            hash.len() != 64 || !hash.bytes().all(|byte| byte.is_ascii_hexdigit())
+        }) {
+            bail!("Invalid declared module source fingerprint")
+        }
         descriptor.validate()?;
         let limits = limits.validate()?;
         let key = (descriptor.id.clone(), descriptor.version.clone());
@@ -793,6 +823,7 @@ impl Broker {
         }
         let module = Arc::new(Registered {
             descriptor: descriptor.clone(),
+            source_fingerprint,
             implementation,
             limits,
             queue: OnceCell::new(),

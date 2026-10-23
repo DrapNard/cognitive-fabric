@@ -1109,6 +1109,14 @@ physical GPU isolation.
 
 ### Typed module lifetime and continuation identity
 
+Explicit builtin reconstruction accepts only a version-2 source-bound fixed
+descriptor, original registry UUID and complete known dispatch history. Exclusive
+workspace ownership and a bounded transaction govern the required operator audit.
+The reconstructed UUID records provenance rather than original process identity.
+No worker executes until independently authorized continuation. Source hashes do
+not attest executable/compiler bytes or defeat same-owner database/source edits.
+Legacy/custom/mixed registries and native lifecycle owners cannot use this path.
+
 Native task setup forks the trusted catalog and binds process adapters to that
 task's owner before provider mutation. Binding cannot change immutable descriptors
 or grant capabilities. Idle process adapters retain weak ownership only; an

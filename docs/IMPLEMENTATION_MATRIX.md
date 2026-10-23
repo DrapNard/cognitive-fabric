@@ -1,5 +1,32 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Builtin registry reconstruction — 2026-10-23
+
+**Implemented for the fixed compiled worker; native-owner recovery remains
+Partial.** Version-2 typed snapshots bind optional source fingerprints to captured
+pins. Retained registries remain compatible with version 1. The approved
+`reconstruct_builtin_registry` API and `resume-task --restore-builtin-worker`
+restore only the exact compiled builtin descriptor under matching source inputs.
+Neither persisted executable paths nor arbitrary callbacks are loaded.
+
+- `src/fabric/modules.rs`, `process.rs`, `src/engine.rs`: captured bounded source
+  declarations, immutable task bindings and version-2 snapshots.
+- `src/recovery/continuation_modules.rs`, `continuation.rs`: exclusive ownership,
+  bounded transactional source/history validation and required operator audit;
+  ordinary continuation gates remain independent.
+- `src/main.rs`, `src/registry/providers.rs`: explicit CLI opt-in, combined policy
+  restoration and provider source identity checks.
+- Unit regressions cover reopened stores plus twelve refusal/rollback scenarios;
+  `tests/typed_modules.rs` covers actual prior child history without replay and
+  fresh CLI continuation with a real typed worker after the original host exits.
+
+Combined verification passes **1,011 tests across 66 workspace targets**, with
+zero failures or ignored tests, plus **four optional Wasm tests**. Formatting,
+Rust 1.99 workspace check and strict Clippy with default and all features pass. Focused process tests pass (five tests).
+Matching sources are not executable/compiler attestation, and arbitrary host
+callback deserialization remains intentionally unsupported. Real-model quality
+and performance are still unverified.
+
 ## Native task worker ownership — 2026-10-23
 
 **Implemented and regression-tested.** Native lifecycle setup forks

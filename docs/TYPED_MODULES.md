@@ -123,3 +123,38 @@ snapshot, its hash, the retained Broker and earlier completed dispatch count.
 It grants no permission and attests no implementation binary. Arbitrary callback
 reconstruction after process restart and native lifecycle-owner restoration remain
 unsupported by this API.
+
+## Approved builtin reconstruction after restart
+
+New task snapshots use version 2 and record each pin's optional declared
+`source_sha256`. The compiled builtin worker uses the runtime source fingerprint
+(Rust sources, bindings, schemas, build support and locked dependency inputs).
+Version-1 snapshots still support retained registries; they cannot reconstruct
+workers without a recorded source identity.
+
+For an unfinished non-native task using only `builtin.typed@1.0.0`, run:
+
+```sh
+cogfabric --home ./state resume-task TASK_UUID --human-approve --restore-builtin-worker
+```
+
+The flag permits reconstruction of the fixed compiled worker only. It accepts no
+executable path or callback from the database. Exact current source fingerprint,
+all six compiled capabilities, the original registry UUID, unique snapshot and
+complete prior dispatch/charge/reaped-child evidence must match. A bounded
+transaction under exclusive workspace ownership records reconstruction before
+returning a registry. Audit failures roll back; no worker runs during this step.
+Normal continuation independently checks the original checkpoint, deadline,
+configuration, reservations and permissions before new work.
+
+Library hosts can call `reconstruct_builtin_registry(store, task, true)` and pass
+the returned Broker through `RuntimeRestoration.modules` to preview or resume.
+Reconstruction itself writes an operator audit and does not admit continuation.
+Ordinary preview remains read-only and does not reconstruct anything.
+
+The restored UUID is explicit local provenance, not the original process object.
+Source equality does not attest compiler flags, executable bytes, dependencies
+beyond locked inputs, runtime environment, or provider weights. Same-owner
+database/source tampering remains outside this guarantee. Source changes, custom
+callbacks, mixed registries, legacy snapshots, unknown dispatches and native
+lifecycle ownership remain refused; no replay, refund or capability is granted.

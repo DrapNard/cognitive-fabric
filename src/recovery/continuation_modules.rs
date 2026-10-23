@@ -37,6 +37,8 @@ struct ModuleSnapshot {
     id: String,
     version: String,
     capabilities: Vec<String>,
+    #[serde(default)]
+    source_sha256: Option<String>,
 }
 
 fn capability(name: &str) -> Result<Capability> {
@@ -49,6 +51,91 @@ fn capability(name: &str) -> Result<Capability> {
         "constraints.solve" => Capability::ConstraintsSolve,
         _ => bail!("Unknown original typed module capability"),
     })
+}
+
+/// Reconstruct only the fixed compiled worker, never a path or callback named
+/// by persisted metadata. Actual continuation independently validates all gates.
+pub(super) fn reconstruct_builtin(
+    store: Arc<crate::store::Store>,
+    task: &str,
+    human_approve: bool,
+) -> Result<Arc<Broker>> {
+    crate::security::authorize("human-cli", "task.resume")?;
+    if !human_approve {
+        bail!("Builtin registry reconstruction requires explicit operator approval")
+    }
+    uuid::Uuid::parse_str(task)?;
+    let path = store.runtime_lock.as_deref().ok_or_else(|| {
+        anyhow::anyhow!("Builtin registry reconstruction requires a persistent store")
+    })?;
+    let _lease = crate::recovery::ExecutionLease::acquire(path, true)?;
+    let mut db = store.lock()?;
+    let started = std::time::Instant::now();
+    db.progress_handler(
+        1000,
+        Some(move || started.elapsed() > std::time::Duration::from_secs(5)),
+    );
+    let result = (|| -> Result<Arc<Broker>> {
+        let tx = db.transaction()?;
+        let (status, native): (String, bool) = tx.query_row(
+            "SELECT status, EXISTS(SELECT 1 FROM events WHERE task_id=?1 AND kind='native_task_scope') FROM tasks WHERE id=?1",
+            [task], |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        if !matches!(status.as_str(), "running" | "interrupted") || native {
+            bail!("Builtin reconstruction requires an unfinished task without native ownership")
+        }
+        let raw: String = tx.query_row(
+            "SELECT CASE WHEN length(CAST(payload AS BLOB))<=65536 THEN payload END FROM events WHERE task_id=?1 AND kind='typed_module_snapshot' ORDER BY id LIMIT 1",
+            [task], |row| row.get(0),
+        )?;
+        let snapshot: Snapshot =
+            serde_json::from_value(crate::strict_json::value(raw.as_bytes(), 65536)?)?;
+        if snapshot.format_version != 2 || snapshot.modules.len() != 1 {
+            bail!("Builtin reconstruction requires one source-bound version-2 module")
+        }
+        let original: ModuleSnapshot = serde_json::from_value(snapshot.modules[0].clone())?;
+        if original.source_sha256.as_deref()
+            != Some(crate::escalation::empirical::runtime_sources_fingerprint())
+        {
+            bail!("Builtin worker sources differ from the original task")
+        }
+        let broker = Broker::reconstructed_builtin(
+            store.clone(),
+            uuid::Uuid::parse_str(&snapshot.broker_id)?,
+        )?;
+        let compiled = broker.discover()?;
+        if compiled.len() != 1
+            || compiled[0].id != original.id
+            || compiled[0].version != original.version
+            || compiled[0]
+                .capabilities
+                .iter()
+                .map(|c| c.as_str())
+                .collect::<BTreeSet<_>>()
+                != original
+                    .capabilities
+                    .iter()
+                    .map(String::as_str)
+                    .collect::<BTreeSet<_>>()
+        {
+            bail!("Original registry differs from the compiled builtin worker")
+        }
+        let restored = restore(&tx, task, Some(broker.clone()))?
+            .ok_or_else(|| anyhow::anyhow!("Missing original builtin registry"))?;
+        crate::storage::admit(&tx)?;
+        let evidence = json!({"format_version":1,"source_sha256":original.source_sha256,
+            "original_registry":restored.evidence(),"permissions_granted":false,
+            "implementation_attested":false,"worker_dispatched":false,"resume_authorized":false});
+        tx.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'builtin_registry_reconstruction','human-cli',?2,unixepoch())",
+            rusqlite::params![task, evidence.to_string()])?;
+        if started.elapsed() > std::time::Duration::from_secs(5) {
+            bail!("Builtin registry reconstruction deadline exhausted")
+        }
+        tx.commit()?;
+        Ok(broker)
+    })();
+    db.progress_handler(0, None::<fn() -> bool>);
+    result
 }
 
 #[cfg(test)]
@@ -86,7 +173,7 @@ pub(super) fn restore(
     let snapshot: Snapshot =
         serde_json::from_value(crate::strict_json::value(raw.as_bytes(), 65536)?)?;
     if source != "fabric"
-        || snapshot.format_version != 1
+        || !matches!(snapshot.format_version, 1 | 2)
         || snapshot.permissions_granted
         || uuid::Uuid::parse_str(&snapshot.broker_id).is_err()
         || rows.next()?.is_some()
@@ -134,6 +221,14 @@ pub(super) fn restore(
             capabilities,
         };
         let pin = broker.pin_retained(task, &descriptor)?;
+        if snapshot.format_version == 1 && module.source_sha256.is_some() {
+            bail!("Legacy module snapshot contains unsupported source identity")
+        }
+        if snapshot.format_version == 2
+            && pin.source_fingerprint() != module.source_sha256.as_deref()
+        {
+            bail!("Restored module source identity differs from original snapshot")
+        }
         for cap in descriptor.capabilities {
             if pins.insert(cap, pin.clone()).is_some() {
                 bail!("Conflicting original module capability pins")
@@ -164,6 +259,123 @@ mod tests {
     use super::*;
     use crate::store::Store;
     use serde_json::json;
+
+    fn builtin_snapshot(broker: &Broker) -> Value {
+        let descriptor = broker.discover().unwrap().pop().unwrap();
+        json!({"format_version":2,"broker_id":broker.identity_id().to_string(),
+            "modules":[{"id":descriptor.id,"version":descriptor.version,
+            "capabilities":descriptor.capabilities.iter().map(|c|c.as_str()).collect::<Vec<_>>(),
+            "source_sha256":crate::escalation::empirical::runtime_sources_fingerprint()}],
+            "permissions_granted":false})
+    }
+
+    #[test]
+    fn builtin_registry_reconstructs_after_reopening_without_dispatch_or_grants() {
+        let root =
+            std::env::temp_dir().join(format!("fabric-builtin-restart-{}", uuid::Uuid::new_v4()));
+        let path = root.join("fabric.sqlite3");
+        let store = Arc::new(Store::open(&path).unwrap());
+        let task = store
+            .create_task("Restore compiled worker", "standard")
+            .unwrap();
+        let original = Broker::reconstructed_builtin(store.clone(), uuid::Uuid::new_v4()).unwrap();
+        let identity = original.identity_id();
+        store
+            .event(
+                &task,
+                "typed_module_snapshot",
+                "fabric",
+                builtin_snapshot(&original),
+            )
+            .unwrap();
+        drop(original);
+        drop(store);
+        let store = Arc::new(Store::open(&path).unwrap());
+        let restored = reconstruct_builtin(store.clone(), &task, true).unwrap();
+        assert_eq!(restored.identity_id(), identity);
+        assert_eq!(restored.discover().unwrap().len(), 1);
+        let state = restore(&store.lock().unwrap(), &task, Some(restored.clone()))
+            .unwrap()
+            .unwrap();
+        assert_eq!(state.pins.len(), 6);
+        let trace = store.task(&task).unwrap();
+        let events = trace["events"].as_array().unwrap();
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| e["kind"] == "builtin_registry_reconstruction")
+                .count(),
+            1
+        );
+        assert!(!events.iter().any(|e| matches!(
+            e["kind"].as_str(),
+            Some("module_dispatch_intent" | "module_process_launch" | "tool_reservation")
+        )));
+        drop(state);
+        drop(restored);
+        drop(store);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn builtin_reconstruction_denies_unsafe_or_ambiguous_state_atomically() {
+        for scenario in 0..12 {
+            let root =
+                std::env::temp_dir().join(format!("fabric-builtin-deny-{}", uuid::Uuid::new_v4()));
+            let store = Arc::new(Store::open(&root.join("fabric.sqlite3")).unwrap());
+            let task = store
+                .create_task("Reject substituted worker", "standard")
+                .unwrap();
+            let broker =
+                Broker::reconstructed_builtin(store.clone(), uuid::Uuid::new_v4()).unwrap();
+            let mut snapshot = builtin_snapshot(&broker);
+            match scenario {
+                0 => snapshot["modules"][0]["source_sha256"] = json!("0".repeat(64)),
+                1 => snapshot["modules"][0]["id"] = json!("host.custom"),
+                2 => snapshot["modules"][0]["version"] = json!("2.0.0"),
+                3 => snapshot["format_version"] = json!(1),
+                4 => snapshot["permissions_granted"] = json!(true),
+                5 => snapshot["modules"][0]["capabilities"] = json!(["math.evaluate"]),
+                _ => {}
+            }
+            store
+                .event(&task, "typed_module_snapshot", "fabric", snapshot.clone())
+                .unwrap();
+            if scenario == 6 {
+                store
+                    .event(&task, "typed_module_snapshot", "fabric", snapshot)
+                    .unwrap();
+            }
+            if scenario == 7 {
+                store
+                    .event(&task, "native_task_scope", "security-kernel", json!({}))
+                    .unwrap();
+            }
+            if scenario == 8 {
+                store
+                    .event(&task, "module_dispatch_intent", "jev-plus", json!({}))
+                    .unwrap();
+            }
+            if scenario == 9 {
+                store.lock().unwrap().execute_batch("CREATE TRIGGER deny_reconstruction BEFORE INSERT ON events WHEN NEW.kind='builtin_registry_reconstruction' BEGIN SELECT RAISE(FAIL,'fixture'); END;").unwrap();
+            }
+            let lease = if scenario == 11 {
+                store.execution_lease().unwrap()
+            } else {
+                None
+            };
+            let before = store.task(&task).unwrap();
+            assert!(
+                reconstruct_builtin(store.clone(), &task, scenario != 10).is_err(),
+                "scenario {scenario}"
+            );
+            assert_eq!(store.task(&task).unwrap(), before, "scenario {scenario}");
+            drop(lease);
+            drop(broker);
+            drop(store);
+            std::fs::remove_dir_all(root).unwrap();
+        }
+    }
 
     #[test]
     fn empty_or_legacy_module_state_needs_no_new_runtime_authority() {
@@ -197,7 +409,7 @@ mod tests {
                 0 => snapshot["modules"] = json!([{"id":"host.custom","version":"1.0.0"}]),
                 1 => snapshot["broker_id"] = json!("forged"),
                 2 => snapshot["permissions_granted"] = json!(true),
-                3 => snapshot["format_version"] = json!(2),
+                3 => snapshot["format_version"] = json!(3),
                 _ => {}
             }
             if scenario != 6 {

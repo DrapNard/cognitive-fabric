@@ -889,6 +889,17 @@ pub struct RuntimeRestoration {
     pub modules: Option<Arc<crate::fabric::modules::Broker>>,
 }
 
+/// Restore the current compiled builtin worker under its recorded source
+/// fingerprint. No worker is launched and no checkpoint is admitted here.
+/// Custom callbacks and native lifecycle tasks require their original authority.
+pub fn reconstruct_builtin_registry(
+    store: Arc<Store>,
+    task: &str,
+    human_approve: bool,
+) -> Result<Arc<crate::fabric::modules::Broker>> {
+    module_history::reconstruct_builtin(store, task, human_approve)
+}
+
 /// Inspect using exact retained host objects. This never dispatches a module,
 /// changes activation, recreates code, or grants permissions.
 pub fn preview_with_runtime(

@@ -116,6 +116,9 @@ enum Command {
         id: String,
         #[arg(long)]
         human_approve: bool,
+        /// Reconstruct the fixed builtin worker from matching recorded sources.
+        #[arg(long)]
+        restore_builtin_worker: bool,
         #[arg(long, requires = "retry_thresholds")]
         retry_study: Option<PathBuf>,
         #[arg(long, requires = "retry_study")]
@@ -1143,7 +1146,10 @@ async fn run_cli() -> Result<()> {
         return Ok(());
     }
     if let Command::ResumeTask {
-        id, human_approve, ..
+        id,
+        human_approve,
+        restore_builtin_worker,
+        ..
     } = &cli.command
     {
         let store = Arc::new(Store::open_existing_with_limit(
@@ -1153,6 +1159,28 @@ async fn run_cli() -> Result<()> {
         let cancel = async {
             let _ = tokio::signal::ctrl_c().await;
         };
+        if *restore_builtin_worker {
+            let modules = cogfabric::recovery::continuation::reconstruct_builtin_registry(
+                store.clone(),
+                id,
+                *human_approve,
+            )?;
+            let runtime = cogfabric::recovery::continuation::RuntimeRestoration {
+                escalation_policy: restored_policy,
+                verifier: verifier_provider.clone(),
+                modules: Some(modules),
+            };
+            let report = cogfabric::recovery::continuation::resume_with_runtime(
+                store,
+                id,
+                *human_approve,
+                runtime,
+                cancel,
+            )
+            .await?;
+            output(&report, cli.json)?;
+            return Ok(());
+        }
         let report = match (restored_policy, verifier_provider.clone()) {
             (Some(policy), Some(provider)) => {
                 cogfabric::recovery::continuation::resume_with_restored_policies(

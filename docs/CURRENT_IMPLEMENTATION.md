@@ -1,5 +1,23 @@
 # Current Rust implementation
 
+## Source-bound builtin restart recovery — 2026-10-23
+
+Version-2 typed snapshots now record declared source identities. Explicit
+operator-approved reconstruction supports the fixed compiled builtin worker after
+host restart; it validates exact source inputs, descriptors, original registry
+identity, prior reservations and complete reaped-child history. It does not replay
+requests or admit a checkpoint. The CLI opt-in is
+`resume-task TASK_UUID --human-approve --restore-builtin-worker`; normal
+continuation independently enforces its existing gates and original budgets.
+
+The combined workspace passes **1,011 tests across 66 targets**, zero failed or
+ignored, plus **four optional Wasm tests**. Formatting, Rust 1.99 workspace check
+and strict all-feature Clippy pass. Real-process regressions verify both completed
+child history without replay and a resumed typed worker in a new CLI host.
+Native-owner continuation remains incomplete; arbitrary Rust callbacks require
+their retained host objects. Source equality is not binary/compiler attestation
+or evidence of real-model reasoning quality or performance.
+
 ## Native worker ownership verification — 2026-10-23
 
 Native task catalogs are now forked from the service template before provider

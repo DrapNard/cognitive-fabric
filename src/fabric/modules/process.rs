@@ -318,6 +318,10 @@ impl Module for ProcessModule {
         self.descriptor.clone()
     }
 
+    fn source_fingerprint(&self) -> Option<&'static str> {
+        Some(crate::escalation::empirical::runtime_sources_fingerprint())
+    }
+
     fn bind_task(&self, binding: &TaskBinding) -> Result<Option<Arc<dyn Module>>> {
         if !std::ptr::eq(self.store.as_ref(), binding.store.as_ref()) {
             bail!("Task module binding belongs to another Store")
