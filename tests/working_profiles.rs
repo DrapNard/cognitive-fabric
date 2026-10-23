@@ -722,20 +722,20 @@ async fn heterogeneous_profiles_wait_for_the_shared_pool_and_account_for_exact_a
 }
 
 #[tokio::test]
-async fn unknown_deterministic_and_unlisted_targets_are_denied_before_backend_dispatch() {
+async fn unknown_deterministic_and_unlisted_targets_are_excluded_before_backend_dispatch() {
     let base = "http://127.0.0.1:4321/v1";
     for (case, target_value, expected_reason) in [
-        ("unknown", None, "unknown_or_unlisted_target"),
-        ("metadata-error", None, "profile_metadata_error"),
+        ("unknown", None, "unknown_target"),
+        ("metadata-error", None, "metadata_error"),
         (
             "deterministic",
             Some(InferenceTarget::Deterministic),
-            "unknown_or_unlisted_target",
+            "unlisted_profile",
         ),
         (
             "unlisted",
             Some(InferenceTarget::LocalHttp(target(base, "other-model"))),
-            "unknown_or_unlisted_target",
+            "unlisted_profile",
         ),
     ] {
         let home = test_home(&format!("working-profile-{case}"));
@@ -778,6 +778,12 @@ async fn unknown_deterministic_and_unlisted_targets_are_denied_before_backend_di
             0,
             "{case} target reached provider"
         );
+        if let Ok(outcome) = &result {
+            assert_eq!(
+                outcome.calls, 1,
+                "{case} must retain the attempted-call budget"
+            );
+        }
         let task_ids: Vec<String> = {
             let db = rusqlite::Connection::open(cfg.db()).unwrap();
             let mut statement = db.prepare("SELECT id FROM tasks ORDER BY created").unwrap();
@@ -792,12 +798,28 @@ async fn unknown_deterministic_and_unlisted_targets_are_denied_before_backend_di
             .as_array()
             .unwrap()
             .clone();
-        let decision = events
+        let selection = events
             .iter()
-            .find(|event| event["kind"] == "resource_profile")
-            .unwrap();
-        assert_eq!(decision["payload"]["allowed"], false);
-        assert_eq!(decision["payload"]["reason_code"], expected_reason);
+            .find(|event| event["kind"] == "routing_resource_selection")
+            .expect("initial resource routing selection should be audited");
+        assert_eq!(selection["payload"]["eligible"], false);
+        assert!(selection["payload"]["routes"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+        assert!(selection["payload"]["excluded_candidates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|candidate| candidate["reason_code"] == expected_reason));
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| event["kind"] == "model_dispatch")
+                .count(),
+            1,
+            "the attempted model call remains charged before the empty route fails"
+        );
         if case == "metadata-error" {
             assert!(!serde_json::to_string(&events)
                 .unwrap()
@@ -837,18 +859,23 @@ async fn profile_intent_audit_failure_prevents_target_lookup_and_provider_dispat
         .unwrap();
     let backend = ScriptBackend::new(local_targets(base), [("solver", "[1,2,3]")]);
     let engine = Engine::with_backend(cfg, store.clone(), backend.clone());
-    let result = engine
-        .run_profile(
-            r#"sort:{"values":[3,1,2]}"#,
-            "fast",
-            ExecutionProfile::Collective,
-        )
+    // Exercise the per-call resource admission wrapper directly. Engine routing
+    // now inspects candidate metadata after its separate routing_resource_intent;
+    // this assertion concerns the later resource_profile_intent that must precede
+    // the per-call target lookup.
+    let task = store
+        .create_task("direct profiled admission fixture", "fast")
+        .unwrap();
+    let pool = engine.configured_resource_pool().unwrap().unwrap();
+    let scheduled = pool
+        .wrap_backend("human-cli", backend.clone(), alloc(1, 1, 1))
+        .unwrap();
+    let result = scheduled
+        .generate_for(&task, "solver", "bounded fixture prompt", 8)
         .await;
     assert!(
-        result.is_err()
-            || result
-                .as_ref()
-                .is_ok_and(|outcome| outcome.status != "completed")
+        result.is_err(),
+        "the required profile intent audit should fail"
     );
     assert_eq!(
         backend.metadata_reads.load(Ordering::SeqCst),
@@ -859,15 +886,15 @@ async fn profile_intent_audit_failure_prevents_target_lookup_and_provider_dispat
     let db = rusqlite::Connection::open(&database).unwrap();
     let target_events: i64 = db
         .query_row(
-            "SELECT count(*) FROM events WHERE kind='resource_profile'",
-            [],
+            "SELECT count(*) FROM events WHERE task_id=?1 AND kind='resource_profile'",
+            [&task],
             |row| row.get(0),
         )
         .unwrap();
     let dispatch_events: i64 = db
         .query_row(
-            "SELECT count(*) FROM events WHERE kind='resource_dispatch'",
-            [],
+            "SELECT count(*) FROM events WHERE task_id=?1 AND kind='resource_dispatch'",
+            [&task],
             |row| row.get(0),
         )
         .unwrap();

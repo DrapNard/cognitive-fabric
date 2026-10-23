@@ -131,7 +131,7 @@ where
         calls += out.calls;
         let identities = model_metadata::read(&engine.store, &out.task_id)?;
         details.push(json!({"task_id":out.task_id,"passed":ok,"input":case.input,
-            "hypothesis_diagnostics":identities.hypothesis_diagnostics,"planning_advice":identities.planning_advice,"exploration_advice":identities.exploration_advice,"expert_advice":identities.expert_advice,"reported_models":identities.reported_models,"bound_expert_models":identities.bound_expert_models,"primary_model_snapshot":identities.primary_model_snapshot,
+            "hypothesis_diagnostics":identities.hypothesis_diagnostics,"planning_advice":identities.planning_advice,"exploration_advice":identities.exploration_advice,"expert_advice":identities.expert_advice,"reported_models":identities.reported_models,"bound_expert_models":identities.bound_expert_models,"primary_model_snapshot":identities.primary_model_snapshot,"resource_route_sha256":identities.resource_route_sha256,"resource_routes":identities.resource_routes,
             "expected":case.expected,"answer":out.answer,"latency_ms":out.elapsed_ms,"model_calls":out.calls,
             "verification":"expected_output_exact_match","runtime_status":out.status,"resources":out.resources,"stop_reason":out.stop_reason}));
         if stop_reason != "completed" {

@@ -1045,3 +1045,18 @@ Strict wave/chronology validation governs graph observation. Operator-approved
 continuation may restore complete recorded wave prefixes after unique charged
 call/result reconciliation; unknown or partial waves remain denied. Owner-local
 metadata is neither a code signature nor independent model quality/safety proof.
+
+## Initial route eligibility and evidence scope
+
+Operator-declared profiles/residents constrain initial Broker selection. Required
+routing intent commits before trusted metadata callbacks; bounded decisions use
+fixed reason codes without copying callback errors. Registry identities are
+revalidated after observation. Selected routes stay pinned and no failure grants
+a retry, refund, new permission or residency mutation. Final pool admission remains
+independent. Metadata is still a trusted adapter declaration, not weight attestation.
+
+Policy fingerprints bind the actual selected role/module/target/profile map.
+Legacy empirical studies with a different scope fail closed. Versioned recovery
+requires the saved audit pair and exact supported builtin map; unsupported custom
+routes cannot be replaced silently. These are local consistency checks, not
+cryptographic proof against an operator who edits the database or source.

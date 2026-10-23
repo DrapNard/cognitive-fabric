@@ -178,7 +178,143 @@ pub struct ResourcePool {
     working_profiles_sha256: Option<String>,
     _workspace_lease: Option<crate::recovery::ExecutionLease>,
 }
+
+pub(crate) struct RoutingCandidate {
+    pub target: crate::backend::InferenceTarget,
+    pub metadata: Value,
+}
+#[derive(Clone, Copy)]
+pub(crate) enum RoutingRejection {
+    UnknownTarget,
+    MetadataError,
+    UnlistedProfile,
+    ResidentMiss,
+}
+impl RoutingRejection {
+    pub(crate) fn reason_code(self) -> &'static str {
+        match self {
+            Self::UnknownTarget => "unknown_target",
+            Self::MetadataError => "metadata_error",
+            Self::UnlistedProfile => "unlisted_profile",
+            Self::ResidentMiss => "resident_miss",
+        }
+    }
+}
 impl ResourcePool {
+    /// Persist the immutable resource catalog scope before initial route metadata
+    /// callbacks. The event is task-scoped but grants no provider or model rights.
+    pub(crate) fn record_routing_intent(&self, task: &str) -> Result<Value> {
+        let binding = Self::configuration_binding_from_pool(self)?;
+        let intent = json!({
+            "format_version":1,
+            "pool_id":self.id,
+            "binding":binding,
+            "roles":crate::fabric::protocol::ROLES,
+            "permissions_granted":false,
+            "weights_attested":false,
+            "physical_limits_enforced":false,
+        });
+        self.store
+            .event(task, "routing_resource_intent", "jev-plus", intent.clone())?;
+        Ok(intent)
+    }
+
+    pub(crate) fn record_routing_selection(
+        &self,
+        task: &str,
+        selection: &Value,
+        eligible: bool,
+    ) -> Result<()> {
+        let mut selection = selection.clone();
+        selection["eligible"] = json!(eligible);
+        self.store
+            .event(task, "routing_resource_selection", "jev-plus", selection)
+    }
+
+    fn configuration_binding_from_pool(&self) -> Result<Value> {
+        let mut binding = json!({
+            "resident_catalog_sha256":self.resident_catalog_sha256,
+            "resident_allocated":self.resident_allocated,
+            "residency_attested":false,
+        });
+        if let Some(digest) = &self.working_profiles_sha256 {
+            binding["working_profiles_sha256"] = json!(digest);
+        }
+        Ok(binding)
+    }
+
+    /// Resolve a candidate target against the existing canonical operator
+    /// declarations. The caller must treat any error as an ineligible candidate
+    /// and must not expose its text in task audit records.
+    pub(crate) fn routing_candidate(
+        &self,
+        role: &str,
+        target: Option<crate::backend::InferenceTarget>,
+    ) -> std::result::Result<RoutingCandidate, RoutingRejection> {
+        let canonical_target = match target {
+            Some(crate::backend::InferenceTarget::LocalHttp(target)) => match target.canonical() {
+                Ok(target) => crate::backend::InferenceTarget::LocalHttp(target),
+                Err(_) => return Err(RoutingRejection::MetadataError),
+            },
+            Some(crate::backend::InferenceTarget::Deterministic) => {
+                crate::backend::InferenceTarget::Deterministic
+            }
+            None => return Err(RoutingRejection::UnknownTarget),
+        };
+        let (profile_id, allocation) = if self.working_profiles.is_empty() {
+            (None, None)
+        } else {
+            let profile = match &canonical_target {
+                crate::backend::InferenceTarget::LocalHttp(target) => {
+                    match profiles::select_profile(&self.working_profiles, role, target) {
+                        Ok(Some(profile)) => profile,
+                        Ok(None) => return Err(RoutingRejection::UnlistedProfile),
+                        Err(_) => return Err(RoutingRejection::MetadataError),
+                    }
+                }
+                crate::backend::InferenceTarget::Deterministic => {
+                    return Err(RoutingRejection::UnlistedProfile)
+                }
+            };
+            (Some(profile.id), Some(profile.allocation))
+        };
+        let resident_coverage = if self.residents.is_empty() {
+            None
+        } else {
+            match self.resident_coverage(Some(canonical_target.clone())) {
+                Ok(coverage) => Some(
+                    serde_json::to_value(coverage).map_err(|_| RoutingRejection::MetadataError)?,
+                ),
+                Err(_) => return Err(RoutingRejection::ResidentMiss),
+            }
+        };
+        let metadata = json!({
+            "target":canonical_target,
+            "profile_id":profile_id,
+            "allocation":allocation,
+            "resident_coverage":resident_coverage,
+            "eligible":true,
+            "reason_code":"configured_resource_match",
+            "permissions_granted":false,
+            "weights_attested":false,
+            "physical_limits_enforced":false,
+        });
+        Ok(RoutingCandidate {
+            target: canonical_target,
+            metadata,
+        })
+    }
+
+    pub(crate) fn routing_identity(&self) -> Result<Value> {
+        Ok(json!({
+            "pool_id":self.id,
+            "binding":self.configuration_binding_from_pool()?,
+            "permissions_granted":false,
+            "weights_attested":false,
+            "physical_limits_enforced":false,
+        }))
+    }
+
     pub(crate) fn matches(&self, store: &Arc<Store>, configuration: &Configuration) -> bool {
         self.matches_ref(store, configuration)
     }

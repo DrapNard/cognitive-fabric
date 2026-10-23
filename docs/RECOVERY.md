@@ -964,3 +964,37 @@ integrity checks pass. `flatc` is absent, so fresh generation was not run. Appro
 localhost discovery at port 1234 refused connections; no real-model/GPU measurement
 or general reasoning-quality claim follows. Incomplete/unknown waves and broader
 module recovery remain separate work.
+
+## Versioned resource route restoration
+
+New resource-aware tasks record routing version 1 in execution settings and module
+snapshots. Recovery validates intent/selection order before dispatch, saved catalog
+bindings, canonical targets, exact role subsets and stable route-scope digest.
+The restored backend receives only the saved supported builtin routes; it cannot
+expand a partial map to all default roles. Arbitrary custom module restoration
+remains unsupported. Original task budgets and ledger reconciliation still apply.
+
+Histories without either marker or new routing records retain their legacy rules,
+including earlier resource-catalog tasks. A marked history missing its route pair
+is refused. Current configuration cannot replace saved authority. Scope excludes
+the ephemeral pool identity so restoration can preserve policy evidence under a
+new compatible pool without pooling different target maps.
+
+An empty selected map is valid only with `eligible:false`, an empty module list,
+all roles unmatched and no prior model dispatch. Restoration exposes no targets or
+modules and refuses generation without touching the underlying provider. Existing
+supported checkpoint-phase and ledger requirements still apply; this does not add
+replay of interrupted tools or partially completed inference.
+
+Verification on frozen sources: `cargo fmt --all -- --check`,
+`cargo check --locked --workspace --all-targets`,
+`cargo test --locked --workspace --all-targets` (**899 passed across 57 targets**,
+zero failures or ignored tests), and
+`cargo clippy --locked --workspace --all-targets -- -D warnings` all pass.
+Initial new-test compilation/fixture errors and lint findings were corrected;
+the queue test now uses actual same-task parallel work because the Store execution
+lease prevents simultaneous task runs. Existing socket/process, migrations, mock
+inference, malformed-frame, policy-denial, cancellation and rollback tests remain
+green. Schemas/bindings are unchanged; bundled FlatBuffers pairing/integrity checks
+pass. `flatc` is unavailable, so fresh generation was not performed. Localhost
+port 1234 refused discovery; no real-model/GPU quality or speed claim is made.

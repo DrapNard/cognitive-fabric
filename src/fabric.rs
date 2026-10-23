@@ -95,6 +95,7 @@ struct Work {
     enqueued: std::time::Instant,
     bytes: Vec<u8>,
     identity: Header,
+    backend: Option<Arc<dyn InferenceBackend>>,
     reply: oneshot::Sender<Result<Vec<u8>>>,
 }
 struct Module {
@@ -244,6 +245,7 @@ async fn process_work(
     if work.reply.is_closed() {
         return;
     }
+    let backend = work.backend.take().unwrap_or(backend);
     let _processing = Processing::new(processing);
     let queue_wait_ms = work.enqueued.elapsed().as_secs_f64() * 1000.0;
     let result = async {
@@ -301,6 +303,40 @@ pub struct Broker {
     shutdown: Arc<watch::Sender<bool>>,
     max_concurrency: usize,
 }
+
+/// Stable task-policy scope for recent-advice and empirical decisions. It binds
+/// only the selected role/module/target/profile map and original resource
+/// catalogs; queue pressure, excluded candidates and pool UUIDs are observations.
+pub(crate) fn resource_route_scope(selection: &serde_json::Value) -> Result<String> {
+    let binding = &selection["binding"];
+    let routes = selection["routes"]
+        .as_array()
+        .ok_or_else(|| anyhow!("Resource route map is unavailable"))?
+        .iter()
+        .map(|route| {
+            serde_json::json!({
+                "role":route["role"],
+                "module_id":route["module_id"],
+                "module_version":route["module_version"],
+                "target":route["resource"]["target"],
+                "profile_id":route["resource"]["profile_id"],
+                "allocation":route["resource"]["allocation"],
+                "resident_coverage":route["resource"]["resident_coverage"],
+            })
+        })
+        .collect::<Vec<serde_json::Value>>();
+    if serde_json::to_vec(binding)?.len() > 4096 || routes.len() > ROLES.len() {
+        bail!("Resource route scope exceeds bounds")
+    }
+    Ok(crate::store::sha256(&serde_json::to_vec(
+        &serde_json::json!({
+            "domain":"cognitive-fabric/resource-route-scope/v1",
+            "binding":binding,
+            "routes":routes,
+        }),
+    )?))
+}
+
 impl Broker {
     pub fn with_inference(backend: Arc<dyn InferenceBackend>) -> Self {
         Self::try_with_inference(backend)
@@ -665,13 +701,346 @@ impl Broker {
                 routes.entry(role.clone()).or_insert_with(|| module.clone());
             }
         }
-        Ok(Pinned { routes })
+        Ok(Pinned {
+            routes,
+            resource_targets: None,
+            route_backends: None,
+        })
+    }
+
+    /// Select routes only from candidates that satisfy the immutable configured
+    /// working-profile and resident declarations. Trusted metadata callbacks are
+    /// invoked without the registry, pool, or Store lock held.
+    pub(crate) fn pin_resource_aware(
+        &self,
+        task: &str,
+        pool: &crate::resource_scheduler::ResourcePool,
+    ) -> Result<(Arc<dyn InferenceBackend>, serde_json::Value)> {
+        pool.record_routing_intent(task)?;
+        let registry_snapshot = {
+            let registry = self
+                .registry
+                .read()
+                .map_err(|_| anyhow!("Module registry poisoned"))?;
+            if *self.shutdown.borrow() {
+                bail!("Module broker shut down")
+            }
+            registry.active.values().cloned().collect::<Vec<_>>()
+        };
+        let mut candidates = registry_snapshot
+            .iter()
+            .cloned()
+            .map(|module| {
+                let (full, load) = routing_pressure(
+                    module.queue.get(),
+                    module.processing.load(Ordering::Acquire),
+                );
+                (full, load, module)
+            })
+            .collect::<Vec<_>>();
+        candidates.sort_by_cached_key(|(full, load, module)| {
+            (
+                module.routing_rank.unwrap_or(0),
+                *full,
+                *load,
+                module.descriptor.id.clone(),
+            )
+        });
+
+        let mut routes = BTreeMap::<String, Arc<Module>>::new();
+        let mut targets = BTreeMap::<String, crate::backend::InferenceTarget>::new();
+        let mut route_metadata = BTreeMap::<String, serde_json::Value>::new();
+        let mut route_backends = BTreeMap::<String, Arc<dyn InferenceBackend>>::new();
+        let mut excluded_candidates = Vec::new();
+        for (_, _, module) in &candidates {
+            let role_candidates = module
+                .descriptor
+                .roles
+                .iter()
+                .filter(|role| !routes.contains_key(*role))
+                .cloned()
+                .collect::<Vec<_>>();
+            if role_candidates.is_empty() {
+                continue;
+            }
+            let (queue_full, _) = routing_pressure(
+                module.queue.get(),
+                module.processing.load(Ordering::Acquire),
+            );
+            if queue_full {
+                excluded_candidates.extend(role_candidates.iter().map(|role| {
+                    serde_json::json!({"role":role,"module_id":module.descriptor.id,
+                        "module_version":module.descriptor.version,"reason_code":"queue_full"})
+                }));
+                continue;
+            }
+            if module.availability().unavailable() {
+                excluded_candidates.extend(role_candidates.iter().map(|role| {
+                    serde_json::json!({"role":role,"module_id":module.descriptor.id,
+                        "module_version":module.descriptor.version,"reason_code":"unavailable"})
+                }));
+                continue;
+            }
+            let pinned_backend = match module.backend.pin() {
+                Ok(Some(backend)) => backend,
+                Ok(None) => module.backend.clone(),
+                Err(_) => {
+                    excluded_candidates.extend(role_candidates.iter().map(|role| {
+                        serde_json::json!({"role":role,"module_id":module.descriptor.id,
+                            "module_version":module.descriptor.version,"reason_code":"metadata_error"})
+                    }));
+                    continue;
+                }
+            };
+            if pinned_backend
+                .module_descriptor()
+                .is_some_and(|descriptor| {
+                    descriptor.id != module.descriptor.id
+                        || descriptor.version != module.descriptor.version
+                        || module
+                            .descriptor
+                            .roles
+                            .iter()
+                            .any(|role| !descriptor.roles.contains(role))
+                })
+            {
+                excluded_candidates.extend(role_candidates.iter().map(|role| {
+                    serde_json::json!({"role":role,"module_id":module.descriptor.id,
+                        "module_version":module.descriptor.version,"reason_code":"metadata_error"})
+                }));
+                continue;
+            }
+            if pinned_backend.availability().unavailable() {
+                excluded_candidates.extend(role_candidates.iter().map(|role| {
+                    serde_json::json!({"role":role,"module_id":module.descriptor.id,
+                        "module_version":module.descriptor.version,"reason_code":"unavailable"})
+                }));
+                continue;
+            }
+            for role in role_candidates {
+                let target = match pinned_backend.inference_target(&role) {
+                    Ok(target) => target,
+                    Err(_) => {
+                        excluded_candidates.push(serde_json::json!({"role":role,
+                            "module_id":module.descriptor.id,"module_version":module.descriptor.version,
+                            "reason_code":"metadata_error"}));
+                        continue;
+                    }
+                };
+                let candidate = match pool.routing_candidate(&role, target) {
+                    Ok(candidate) => candidate,
+                    Err(reason) => {
+                        excluded_candidates.push(serde_json::json!({"role":role,
+                            "module_id":module.descriptor.id,"module_version":module.descriptor.version,
+                            "reason_code":reason.reason_code()}));
+                        continue;
+                    }
+                };
+                routes.insert(role.clone(), module.clone());
+                targets.insert(role.clone(), candidate.target);
+                route_backends.insert(role.clone(), pinned_backend.clone());
+                route_metadata.insert(role, candidate.metadata);
+            }
+        }
+
+        // A trusted callback may have changed activation or retirement. Refuse
+        // the whole pin if any selected identity changed before publication.
+        {
+            let registry = self
+                .registry
+                .read()
+                .map_err(|_| anyhow!("Module registry poisoned"))?;
+            if *self.shutdown.borrow()
+                || registry.active.len() != registry_snapshot.len()
+                || registry_snapshot.iter().any(|module| {
+                    !registry
+                        .active
+                        .get(&module.descriptor.id)
+                        .is_some_and(|active| Arc::ptr_eq(active, module))
+                        || !registry
+                            .versions
+                            .get(&(
+                                module.descriptor.id.clone(),
+                                module.descriptor.version.clone(),
+                            ))
+                            .is_some_and(|version| Arc::ptr_eq(version, module))
+                })
+            {
+                bail!("Inference route changed during resource eligibility checks")
+            }
+        }
+        let unmatched_roles = ROLES
+            .iter()
+            .filter(|role| !routes.contains_key(**role))
+            .copied()
+            .collect::<Vec<_>>();
+        let route_evidence = ROLES
+            .iter()
+            .filter_map(|role| {
+                let module = routes.get(*role)?;
+                let resource = route_metadata.get(*role)?;
+                Some(serde_json::json!({
+                    "role":role,
+                    "module_id":module.descriptor.id,
+                    "module_version":module.descriptor.version,
+                    "resource":resource,
+                }))
+            })
+            .collect::<Vec<_>>();
+        if excluded_candidates.len() > 32 * ROLES.len() {
+            bail!("Resource route exclusion evidence exceeds bounds")
+        }
+        excluded_candidates.sort_by(|left, right| {
+            let rank = |value: &serde_json::Value| {
+                ROLES
+                    .iter()
+                    .position(|role| Some(*role) == value["role"].as_str())
+                    .unwrap_or(ROLES.len())
+            };
+            (
+                rank(left),
+                left["module_id"].as_str().unwrap_or_default(),
+                left["module_version"].as_str().unwrap_or_default(),
+                left["reason_code"].as_str().unwrap_or_default(),
+            )
+                .cmp(&(
+                    rank(right),
+                    right["module_id"].as_str().unwrap_or_default(),
+                    right["module_version"].as_str().unwrap_or_default(),
+                    right["reason_code"].as_str().unwrap_or_default(),
+                ))
+        });
+        let identity = pool.routing_identity()?;
+        let mut selection = serde_json::json!({
+            "format_version":1,
+            "pool_id":identity["pool_id"],
+            "binding":identity["binding"],
+            "routes":route_evidence,
+            "unmatched_roles":unmatched_roles,
+            "excluded_candidates":excluded_candidates,
+            "eligible":!routes.is_empty(),
+            "permissions_granted":false,
+            "weights_attested":false,
+            "physical_limits_enforced":false,
+        });
+        let route_scope_sha256 = resource_route_scope(&selection)?;
+        selection["route_scope_sha256"] = serde_json::json!(route_scope_sha256);
+        if serde_json::to_vec(&selection)?.len() > 32_768 {
+            bail!("Resource route selection evidence exceeds bounds")
+        }
+        pool.record_routing_selection(task, &selection, !routes.is_empty())?;
+        Ok((
+            Arc::new(Pinned {
+                routes,
+                resource_targets: Some(targets),
+                route_backends: Some(route_backends),
+            }),
+            selection,
+        ))
     }
 }
 
 struct Pinned {
     routes: BTreeMap<String, Arc<Module>>,
+    resource_targets: Option<BTreeMap<String, crate::backend::InferenceTarget>>,
+    route_backends: Option<BTreeMap<String, Arc<dyn InferenceBackend>>>,
 }
+
+/// Restrict a restored backend to the exact roles admitted by an original
+/// resource-aware route decision. Recovery validates targets and module
+/// identity before constructing this adapter; it never searches alternatives.
+#[derive(Clone)]
+struct RestrictedRoutes {
+    backend: Arc<dyn InferenceBackend>,
+    routes: BTreeMap<String, crate::backend::InferenceTarget>,
+}
+
+pub(crate) fn restrict_inference_roles(
+    backend: Arc<dyn InferenceBackend>,
+    routes: BTreeMap<String, crate::backend::InferenceTarget>,
+) -> Result<Arc<dyn InferenceBackend>> {
+    if routes.is_empty()
+        || routes.len() > ROLES.len()
+        || routes.keys().any(|role| !ROLES.contains(&role.as_str()))
+    {
+        bail!("Saved inference route role map is invalid")
+    }
+    let pinned = backend.pin()?.unwrap_or(backend);
+    for (role, expected) in &routes {
+        if pinned.inference_target(role)?.as_ref() != Some(expected) {
+            bail!("Saved inference route target is unavailable")
+        }
+    }
+    Ok(Arc::new(RestrictedRoutes {
+        backend: pinned,
+        routes,
+    }))
+}
+
+impl InferenceBackend for RestrictedRoutes {
+    fn inference_target(&self, role: &str) -> Result<Option<crate::backend::InferenceTarget>> {
+        Ok(self.routes.get(role).cloned())
+    }
+
+    fn availability(&self) -> Availability {
+        self.backend.availability()
+    }
+
+    fn module_descriptor(&self) -> Option<&ModuleDescriptor> {
+        self.backend.module_descriptor()
+    }
+
+    fn modules(&self) -> Result<Vec<ModuleDescriptor>> {
+        let allowed = self.routes.keys().cloned().collect::<BTreeSet<_>>();
+        Ok(self
+            .backend
+            .modules()?
+            .into_iter()
+            .filter_map(|mut module| {
+                module.roles.retain(|role| allowed.contains(role));
+                (!module.roles.is_empty()).then_some(module)
+            })
+            .collect())
+    }
+
+    fn pin(&self) -> Result<Option<Arc<dyn InferenceBackend>>> {
+        Ok(Some(Arc::new(self.clone())))
+    }
+
+    fn generate<'a>(
+        &'a self,
+        role: &'a str,
+        prompt: &'a str,
+        max_tokens: usize,
+    ) -> Pin<Box<dyn Future<Output = Result<Generation>> + Send + 'a>> {
+        Box::pin(async move {
+            self.generate_for(&uuid::Uuid::new_v4().to_string(), role, prompt, max_tokens)
+                .await
+        })
+    }
+
+    fn generate_for<'a>(
+        &'a self,
+        task: &'a str,
+        role: &'a str,
+        prompt: &'a str,
+        max_tokens: usize,
+    ) -> Pin<Box<dyn Future<Output = Result<Generation>> + Send + 'a>> {
+        Box::pin(async move {
+            let expected = self
+                .routes
+                .get(role)
+                .ok_or_else(|| anyhow!("Role is absent from the saved inference route map"))?;
+            if self.backend.inference_target(role)?.as_ref() != Some(expected) {
+                bail!("Saved inference target changed")
+            }
+            self.backend
+                .generate_for(task, role, prompt, max_tokens)
+                .await
+        })
+    }
+}
+
 impl InferenceBackend for Broker {
     fn inference_target(&self, role: &str) -> Result<Option<crate::backend::InferenceTarget>> {
         self.snapshot()?.inference_target(role)
@@ -706,6 +1075,9 @@ impl InferenceBackend for Broker {
 }
 impl InferenceBackend for Pinned {
     fn inference_target(&self, role: &str) -> Result<Option<crate::backend::InferenceTarget>> {
+        if let Some(targets) = &self.resource_targets {
+            return Ok(targets.get(role).cloned());
+        }
         let module = self
             .routes
             .get(role)
@@ -777,6 +1149,10 @@ impl InferenceBackend for Pinned {
                     enqueued: std::time::Instant::now(),
                     bytes,
                     identity: header.clone(),
+                    backend: self
+                        .route_backends
+                        .as_ref()
+                        .and_then(|backends| backends.get(role).cloned()),
                     reply,
                 })
                 .map_err(|_| anyhow!("Module queue busy or unavailable"))?;

@@ -2,8 +2,29 @@
 use super::*;
 
 impl Session {
+    pub(crate) fn set_resource_route_scope(&mut self, scope: Option<String>) -> Result<()> {
+        if scope.as_ref().is_some_and(|value| {
+            value.len() != 64
+                || !value
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        }) {
+            bail!("Invalid resource route scope")
+        }
+        self.resource_route_scope = scope;
+        Ok(())
+    }
+
     pub(crate) fn policy_configuration_fingerprint(&self) -> Result<String> {
         let configuration = crate::escalation::empirical::configuration_fingerprint(&self.cfg)?;
+        if let Some(route_scope) = &self.resource_route_scope {
+            return Ok(crate::store::sha256(&serde_json::to_vec(&json!({
+                "domain":"cognitive-fabric/effective-resource-route-configuration/v1",
+                "configuration_sha256":configuration,
+                "route_scope_sha256":route_scope,
+                "verifier_provider":self.verifier_provider.as_ref().map(|provider|provider.descriptor()),
+            }))?));
+        }
         let Some(provider) = &self.verifier_provider else {
             return Ok(configuration);
         };

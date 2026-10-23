@@ -77,7 +77,7 @@ pub(super) fn canonical_working_profiles(
     Ok(canonical)
 }
 
-fn select_profile(
+pub(super) fn select_profile(
     profiles: &[WorkingProfile],
     role: &str,
     target: &crate::backend::ModelTarget,

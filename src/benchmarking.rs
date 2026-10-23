@@ -434,7 +434,7 @@ where
                 .hypothesis_diagnostics
                 .add(&identities.hypothesis_diagnostics);
             details.push(json!({"case_index":case_index,"arm_index":arm_index,"execution_position":position,"profile":profile,"configured_model":model,
-                "hypothesis_diagnostics":identities.hypothesis_diagnostics,"planning_advice":identities.planning_advice,"exploration_advice":identities.exploration_advice,"expert_advice":identities.expert_advice,"reported_models":identities.reported_models,"bound_expert_models":identities.bound_expert_models,"primary_model_snapshot":identities.primary_model_snapshot,"passed":passed,"expected":case.expected,"input":case.input,"outcome":outcome,"verification":case.verification}));
+                "hypothesis_diagnostics":identities.hypothesis_diagnostics,"planning_advice":identities.planning_advice,"exploration_advice":identities.exploration_advice,"expert_advice":identities.expert_advice,"reported_models":identities.reported_models,"bound_expert_models":identities.bound_expert_models,"primary_model_snapshot":identities.primary_model_snapshot,"resource_route_sha256":identities.resource_route_sha256,"resource_routes":identities.resource_routes,"passed":passed,"expected":case.expected,"input":case.input,"outcome":outcome,"verification":case.verification}));
             if cancelled || tokio::time::Instant::now() >= deadline {
                 stopped = true;
                 break 'cases;

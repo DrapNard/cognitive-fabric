@@ -644,6 +644,7 @@ async fn forged_identity_and_expired_work_never_reach_the_backend() {
                 enqueued: std::time::Instant::now(),
                 bytes: encode(&packet).unwrap(),
                 identity,
+                backend: None,
                 reply,
             })
             .unwrap();
@@ -694,6 +695,7 @@ async fn bounded_queue_rejects_overflow_and_drops_cancelled_inference() {
             enqueued: std::time::Instant::now(),
             bytes: encode(&request(identity.clone())).unwrap(),
             identity,
+            backend: None,
             reply,
         })
         .unwrap();
@@ -707,6 +709,7 @@ async fn bounded_queue_rejects_overflow_and_drops_cancelled_inference() {
                 enqueued: std::time::Instant::now(),
                 bytes: encode(&request(identity.clone())).unwrap(),
                 identity,
+                backend: None,
                 reply,
             })
             .unwrap();
@@ -719,6 +722,7 @@ async fn bounded_queue_rejects_overflow_and_drops_cancelled_inference() {
             enqueued: std::time::Instant::now(),
             bytes: encode(&request(identity.clone())).unwrap(),
             identity,
+            backend: None,
             reply
         })
         .is_err());

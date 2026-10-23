@@ -1,5 +1,55 @@
 # Current Rust implementation
 
+### Select eligible inference routes before pinning — 2026-10-22
+
+**Implemented and regression-tested for declared eligibility. General Jev+/Jev-R remains Partial.**
+With declared working profiles or residents, the Broker filters each supported
+role against the immutable resource catalog before choosing by existing rank,
+load and identity ordering. Ineligible preferred candidates can yield to an
+eligible peer. Selection freezes the exact backend, module version and role map;
+ordinary shared admission still controls actual capacity. Empty catalogs retain
+the legacy path. Empty eligible maps permit deterministic tasks and deny an
+actually requested inference role without provider dispatch.
+
+Required intent precedes metadata callbacks; bounded selection and fixed exclusion
+codes precede generation. Callbacks execute outside registry locks and publication
+revalidates registry identities. Route scope binds policy evidence to the selected
+role/module/target/profile map, excluding ephemeral pool identities and load
+observations. Original budgets, permissions and unknown-outcome quarantine remain
+unchanged. This is declared eligibility, not measured utility or physical residency.
+
+Versioned recovery validates saved routing records and restores the exact supported
+builtin role subset and route scope. Unmarked legacy histories retain their prior
+rules; arbitrary custom modules remain unsupported for continuation. Sources:
+`src/fabric.rs`, `src/engine.rs`, `src/resource_scheduler.rs`,
+`src/reasoning/verification.rs`, `src/recovery/resource_routes.rs`.
+Benchmark/evaluation details expose the stable route scope and bounded selected
+module/role/profile identities with hashed targets, omitting endpoints and exclusion
+errors. Empty-map recovery restores a deny-all backend only with no prior model
+dispatch; it cannot acquire new inference roles. Regression coverage: `tests/resource_route_selection.rs` (12 tests),
+`tests/resource_route_resume.rs` (3 tests), four empty-route recovery unit tests
+and four route-report metadata unit tests. Existing `tests/working_profiles.rs`
+retains direct admission audit-before-metadata and attempted-call accounting checks.
+The queue regression observes an actual waiting parallel call before registry
+replacement and verifies the original routes finish without provider fallback.
+Automatic ownership-aware loading/unloading, broader isolated module lifecycle and
+independent real-model quality/cost evaluation remain incomplete.
+
+
+
+Verification on frozen sources: `cargo fmt --all -- --check`,
+`cargo check --locked --workspace --all-targets`,
+`cargo test --locked --workspace --all-targets` (**899 passed across 57 targets**,
+zero failures or ignored tests), and
+`cargo clippy --locked --workspace --all-targets -- -D warnings` all pass.
+Initial new-test compilation/fixture errors and lint findings were corrected;
+the queue test now uses actual same-task parallel work because the Store execution
+lease prevents simultaneous task runs. Existing socket/process, migrations, mock
+inference, malformed-frame, policy-denial, cancellation and rollback tests remain
+green. Schemas/bindings are unchanged; bundled FlatBuffers pairing/integrity checks
+pass. `flatc` is unavailable, so fresh generation was not performed. Localhost
+port 1234 refused discovery; no real-model/GPU quality or speed claim is made.
+
 ### Admit heterogeneous model working sets under one resource pool — 2026-10-22
 
 **Implemented (configured admission); Partial (general module lifecycle).**

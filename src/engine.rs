@@ -289,6 +289,14 @@ impl Engine {
         let start = execution_start.instant;
         let deadline = execution_start.deadline;
         let model_registration = self.store.pin_model(&self.cfg)?;
+        let resource_route_active =
+            self.cfg
+                .resource_admission
+                .as_ref()
+                .is_some_and(|configuration| {
+                    !configuration.working_profiles.is_empty()
+                        || !configuration.residents.is_empty()
+                });
         let arithmetic = self.tools.pin()?;
         let sql = self.tools.pin_capability("sql.query")?;
         if self.cfg.arithmetic_process
@@ -305,9 +313,19 @@ impl Engine {
         {
             bail!("Managed SQL requires the default tool registry; custom modules need explicit lifecycle integration")
         }
-        let backend = self.backend.pin()?.unwrap_or_else(|| self.backend.clone());
+        // Preserve the legacy pre-task pin for empty catalogs. With resource
+        // declarations, initial target callbacks must follow a durable task
+        // anchor and routing intent, so defer the pin until after task creation.
+        let pre_task_backend = if resource_route_active {
+            None
+        } else {
+            Some(self.backend.pin()?.unwrap_or_else(|| self.backend.clone()))
+        };
         if self.process_inference {
-            let modules = backend.modules()?;
+            let modules = match &pre_task_backend {
+                Some(backend) => backend.modules()?,
+                None => self.backend.modules()?,
+            };
             if modules.len() != 1
                 || modules[0].id != "inference.local"
                 || modules[0].version != "1.0.0"
@@ -376,54 +394,123 @@ impl Engine {
         } else {
             None
         };
-        let backend: Arc<dyn InferenceBackend> = if let Some(process) = &process {
-            Arc::new(crate::fabric::Broker::with_inference(process.clone()))
-        } else {
-            backend
+        let backend_result: Result<(Arc<dyn InferenceBackend>, Option<serde_json::Value>)> =
+            if let Some(process) = &process {
+                let process_broker = crate::fabric::Broker::with_inference(process.clone());
+                if resource_route_active {
+                    match resource_pool.as_deref() {
+                        Some(pool) => process_broker
+                            .pin_resource_aware(&id, pool)
+                            .map(|(backend, selection)| (backend, Some(selection))),
+                        None => Err(anyhow::anyhow!("Configured resource pool is unavailable")),
+                    }
+                } else {
+                    Ok((Arc::new(process_broker) as Arc<dyn InferenceBackend>, None))
+                }
+            } else if resource_route_active {
+                match resource_pool.as_deref() {
+                    Some(pool) => self
+                        .broker
+                        .pin_resource_aware(&id, pool)
+                        .map(|(backend, selection)| (backend, Some(selection))),
+                    None => Err(anyhow::anyhow!("Configured resource pool is unavailable")),
+                }
+            } else {
+                Ok((
+                    pre_task_backend.expect("Legacy backend pin was prepared before task creation"),
+                    None,
+                ))
+            };
+        let (backend, resource_routes) = match backend_result {
+            Ok(value) => value,
+            Err(error) => {
+                self.store.finish_task(
+                    &id,
+                    "failed",
+                    "Initial resource-aware inference route selection failed",
+                )?;
+                return Err(error);
+            }
         };
-        let modules = backend.modules()?;
-        self.store.event(
-            &id,
-            "model_registration",
-            "runtime",
-            json!({"registration":model_registration,"weight_identity_verified":false}),
-        )?;
-        let mut session = Session::new_started(
-            self.cfg.clone(),
-            self.store.clone(),
-            backend,
-            id.clone(),
-            mode,
-            execution_start,
-        )?;
-        session.scheduler = self.scheduler.clone();
-        session.advice_profile = Some(profile);
-        session.resource_pool = resource_pool;
-        session.verifier_provider = self.verifier_provider.clone();
-        session.verification_enabled = profile != ExecutionProfile::Alone;
-        if !matches!(
-            profile,
-            ExecutionProfile::Alone | ExecutionProfile::Tools | ExecutionProfile::Recursive
-        ) {
-            session.escalator = self.escalator.clone();
-        }
+        let setup_result = (|| -> Result<Session> {
+            let modules = backend.modules()?;
+            self.store.event(
+                &id,
+                "model_registration",
+                "runtime",
+                json!({"registration":model_registration,"weight_identity_verified":false}),
+            )?;
+            let mut session = if resource_route_active {
+                Session::new_started_with_resource_routing(
+                    self.cfg.clone(),
+                    self.store.clone(),
+                    backend,
+                    id.clone(),
+                    mode,
+                    execution_start,
+                )?
+            } else {
+                Session::new_started(
+                    self.cfg.clone(),
+                    self.store.clone(),
+                    backend,
+                    id.clone(),
+                    mode,
+                    execution_start,
+                )?
+            };
+            session.scheduler = self.scheduler.clone();
+            session.advice_profile = Some(profile);
+            session.set_resource_route_scope(
+                resource_routes
+                    .as_ref()
+                    .and_then(|routes| routes["route_scope_sha256"].as_str())
+                    .map(str::to_owned),
+            )?;
+            session.resource_pool = resource_pool;
+            session.verifier_provider = self.verifier_provider.clone();
+            session.verification_enabled = profile != ExecutionProfile::Alone;
+            if !matches!(
+                profile,
+                ExecutionProfile::Alone | ExecutionProfile::Tools | ExecutionProfile::Recursive
+            ) {
+                session.escalator = self.escalator.clone();
+            }
 
-        session.restrict_deadline(deadline);
-        self.store.event(&id,"execution_options","runtime",json!({"format_version":1,
-            "profile":profile,"explain":options.explain,"conversation_ref":options.conversation_ref}))?;
-        self.store.event(
-            &id,
-            "intent",
-            "interface",
-            json!({"query":query,"mode":mode,"execution_profile":profile}),
-        )?;
-        self.store
-            .event(&id, "module_snapshot", "fabric", json!({"modules":modules}))?;
-        self.store.event(&id,"tool_modules","fabric",json!({"arithmetic":arithmetic.as_ref().map(|h|h.descriptor()),"sql":sql.as_ref().map(|h|h.descriptor()),"permissions_granted":false}))?;
-        if let Some(corpus) = &self.corpus {
+            session.restrict_deadline(deadline);
+            self.store.event(&id,"execution_options","runtime",json!({"format_version":1,
+                "profile":profile,"explain":options.explain,"conversation_ref":options.conversation_ref}))?;
+            self.store.event(
+                &id,
+                "intent",
+                "interface",
+                json!({"query":query,"mode":mode,"execution_profile":profile}),
+            )?;
+            let module_snapshot = if let Some(routes) = resource_routes {
+                json!({"modules":modules,"resource_routing_version":1,"resource_routes":routes})
+            } else {
+                json!({"modules":modules})
+            };
             self.store
-                .event(&id, "evaluation_corpus", "runtime", json!(corpus.metadata))?;
-        }
+                .event(&id, "module_snapshot", "fabric", module_snapshot)?;
+            self.store.event(&id,"tool_modules","fabric",json!({"arithmetic":arithmetic.as_ref().map(|h|h.descriptor()),"sql":sql.as_ref().map(|h|h.descriptor()),"permissions_granted":false}))?;
+            if let Some(corpus) = &self.corpus {
+                self.store
+                    .event(&id, "evaluation_corpus", "runtime", json!(corpus.metadata))?;
+            }
+            Ok(session)
+        })();
+        let mut session = match setup_result {
+            Ok(session) => session,
+            Err(error) => {
+                self.store.finish_task(
+                    &id,
+                    "failed",
+                    "Task setup or initial route audit failed",
+                )?;
+                return Err(error);
+            }
+        };
         let mut skills = Vec::new();
         let mut evidence = Vec::new();
         let execution = async {

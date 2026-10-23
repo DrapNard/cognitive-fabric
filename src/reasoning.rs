@@ -114,6 +114,9 @@ pub struct Session {
     policy: security::TaskPolicy,
     expert_processes: Vec<Arc<crate::fabric::unix::process::ProcessTask>>,
     pub(crate) resource_pool: Option<Arc<crate::resource_scheduler::ResourcePool>>,
+    /// Stable hash of a task's immutable resource-aware role routing decision.
+    /// It is absent for legacy/unconfigured routing and is never model authority.
+    pub(crate) resource_route_scope: Option<String>,
 }
 
 #[derive(Debug)]
@@ -124,6 +127,12 @@ impl std::fmt::Display for InferenceTimeout {
     }
 }
 impl std::error::Error for InferenceTimeout {}
+
+enum SettingsRecording {
+    Legacy,
+    ResourceRouting,
+    Restore,
+}
 
 impl Session {
     pub(crate) fn reference_search_admitted(&self, query: &str) -> Result<bool> {
@@ -261,7 +270,34 @@ impl Session {
         mode: &str,
         start: crate::execution_clock::ExecutionStart,
     ) -> Result<Self> {
-        Self::new_state(cfg, store, backend, task, mode, start, true)
+        Self::new_state(
+            cfg,
+            store,
+            backend,
+            task,
+            mode,
+            start,
+            SettingsRecording::Legacy,
+        )
+    }
+
+    pub(crate) fn new_started_with_resource_routing(
+        cfg: Config,
+        store: Arc<Store>,
+        backend: Arc<dyn InferenceBackend>,
+        task: String,
+        mode: &str,
+        start: crate::execution_clock::ExecutionStart,
+    ) -> Result<Self> {
+        Self::new_state(
+            cfg,
+            store,
+            backend,
+            task,
+            mode,
+            start,
+            SettingsRecording::ResourceRouting,
+        )
     }
     fn new_state(
         cfg: Config,
@@ -270,7 +306,7 @@ impl Session {
         task: String,
         mode: &str,
         start: crate::execution_clock::ExecutionStart,
-        record_settings: bool,
+        recording: SettingsRecording,
     ) -> Result<Self> {
         cfg.validate()?;
         let deadline = start.deadline;
@@ -286,19 +322,18 @@ impl Session {
         } else {
             security::TaskPolicy::reasoning(&task)?
         };
-        if record_settings {
-            store.event(
-            &task,
-            "execution_settings",
-            "runtime",
-            json!({
+        if !matches!(recording, SettingsRecording::Restore) {
+            let mut settings = json!({
                 "format_version":1,"resource_reservations_version":1,"configuration":cfg,"mode":mode,"execution_clock":start.clock,
                 "call_limit":calls.min(cfg.max_calls),"cycle_limit":cycles.min(cfg.max_cycles),
                 "backend_configuration_attested":false,"weights_attested":false,
                 "runtime_role_prompts_sha256":crate::backend::runtime_role_prompts_sha256()?,
                 "permissions_restorable_from_settings":false
-            }),
-        )?;
+            });
+            if matches!(recording, SettingsRecording::ResourceRouting) {
+                settings["resource_routing_version"] = json!(1);
+            }
+            store.event(&task, "execution_settings", "runtime", settings)?;
         }
         store.event(
             &task,
@@ -348,6 +383,7 @@ impl Session {
             policy,
             expert_processes: Vec::new(),
             resource_pool: None,
+            resource_route_scope: None,
         })
     }
 
@@ -361,7 +397,15 @@ impl Session {
     ) -> Result<Self> {
         let mut start = crate::execution_clock::ExecutionStart::new(cfg.max_wall_seconds);
         start.deadline = state.deadline;
-        let mut session = Self::new_state(cfg, store, backend, task, mode, start, false)?;
+        let mut session = Self::new_state(
+            cfg,
+            store,
+            backend,
+            task,
+            mode,
+            start,
+            SettingsRecording::Restore,
+        )?;
         session.resources = state.resources;
         session.complete_usage =
             session.resources.input_tokens.is_some() && session.resources.output_tokens.is_some();

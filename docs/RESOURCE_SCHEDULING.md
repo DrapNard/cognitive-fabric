@@ -479,3 +479,34 @@ Declared compute/host/device allocations, resident memory accounting, bounded qu
 timeouts, task authorization, cancellation and unknown-outcome quarantine remain
 independent of priority. The feature provides no physical GPU/RSS enforcement,
 provider-stop proof, cross-workspace arbitration or learned expected utility.
+
+## Initial resource-aware Broker selection
+
+Working profiles or resident declarations activate eligibility checks before a
+new task pins its inference routes. Candidates retain rank/load/identity ordering;
+only candidates whose canonical targets satisfy the declared role allocation and
+resident coverage may be selected. Missing roles remain unavailable. No inference
+is required for an otherwise deterministic task. With neither catalog configured,
+the legacy routing path and audit shape remain unchanged.
+
+`routing_resource_intent` precedes metadata callbacks and
+`routing_resource_selection` records the selected role map and bounded fixed-code
+exclusions before generation. Registry changes during observation invalidate the
+selection. Once published, routes never migrate or retry after failure. Final
+shared admission, queue bounds, deadlines and quarantine remain authoritative.
+The stable route-scope digest binds policy evidence to catalog and selected
+module/version/target/profile allocations, excluding transient pool IDs and load.
+These declarations neither load weights nor prove physical capacity or utility.
+
+Verification on frozen sources: `cargo fmt --all -- --check`,
+`cargo check --locked --workspace --all-targets`,
+`cargo test --locked --workspace --all-targets` (**899 passed across 57 targets**,
+zero failures or ignored tests), and
+`cargo clippy --locked --workspace --all-targets -- -D warnings` all pass.
+Initial new-test compilation/fixture errors and lint findings were corrected;
+the queue test now uses actual same-task parallel work because the Store execution
+lease prevents simultaneous task runs. Existing socket/process, migrations, mock
+inference, malformed-frame, policy-denial, cancellation and rollback tests remain
+green. Schemas/bindings are unchanged; bundled FlatBuffers pairing/integrity checks
+pass. `flatc` is unavailable, so fresh generation was not performed. Localhost
+port 1234 refused discovery; no real-model/GPU quality or speed claim is made.

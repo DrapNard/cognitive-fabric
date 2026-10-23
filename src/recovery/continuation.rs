@@ -27,6 +27,8 @@ mod progress_history;
 mod progress_tests;
 #[path = "continuation_resources.rs"]
 mod resource_history;
+#[path = "resource_routes.rs"]
+mod resource_routes;
 
 struct Checkpoint {
     cfg: Config,
@@ -39,6 +41,8 @@ struct Checkpoint {
     state: RestoredState,
     admission: Value,
     resource_history: Value,
+    resource_routes: Option<BTreeMap<String, crate::backend::InferenceTarget>>,
+    resource_route_scope: Option<String>,
     finite_search_history: Option<super::finite_search::Receipt>,
 }
 
@@ -251,9 +255,19 @@ fn prepare_with_policy(
         .ok_or_else(|| anyhow::anyhow!("Missing pinned modules"))?;
     let expected =
         json!([{"id":"inference.local","version":"1.0.0","roles":crate::fabric::protocol::ROLES}]);
-    if modules["modules"] != expected {
+    let empty_resource_route_snapshot = modules["modules"] == json!([])
+        && modules["resource_routing_version"] == 1
+        && modules["resource_routes"]["eligible"] == false
+        && modules["resource_routes"]["routes"]
+            .as_array()
+            .is_some_and(Vec::is_empty);
+    if modules["modules"] != expected && !empty_resource_route_snapshot {
         bail!("Unsupported pinned inference modules")
     }
+    let validated_routes = resource_routes::validate(db, task, &cfg, settings, modules)?;
+    let (resource_routes, resource_route_scope) = validated_routes
+        .map(|(routes, scope)| (Some(routes), Some(scope)))
+        .unwrap_or((None, None));
     let context = snapshots
         .get("reasoning_context")
         .ok_or_else(|| anyhow::anyhow!("Missing immutable context"))?;
@@ -509,6 +523,8 @@ fn prepare_with_policy(
     Ok(Checkpoint {
         finite_search_history,
         resource_history,
+        resource_routes,
+        resource_route_scope,
         admission: admission.clone(),
         cfg,
         query,
@@ -1001,6 +1017,7 @@ async fn resume_with_handle(
     let backend: Arc<dyn InferenceBackend> = Arc::new(
         crate::fabric::Broker::with_inference_concurrency(inference, inference_concurrency),
     );
+    let backend = resource_routes::restrict_backend(backend, checkpoint.resource_routes.clone())?;
     let mut session = Session::restored(
         checkpoint.cfg,
         store.clone(),
@@ -1009,6 +1026,7 @@ async fn resume_with_handle(
         &checkpoint.mode,
         checkpoint.state,
     )?;
+    session.set_resource_route_scope(checkpoint.resource_route_scope.clone())?;
     session.escalator = escalator;
     session.resource_pool = resource_pool;
     let execution = async {
