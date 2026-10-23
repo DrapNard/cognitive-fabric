@@ -521,11 +521,24 @@ impl AuthorizationContext {
     }
 }
 
+/// Host-created binding context for a task-owned runtime. It has no public
+/// fields or deserializer and conveys no new task capability.
+pub struct TaskBinding {
+    store: Arc<Store>,
+    ownership: Arc<crate::residency::lifecycle::Ownership>,
+}
+
 /// Trusted Rust host implementation. Implementations receive no broker, Store,
 /// credentials, task policy or filesystem/network handle through this contract.
 /// A host can still capture such resources itself, so this is not a sandbox.
 pub trait Module: Send + Sync {
     fn descriptor(&self) -> Descriptor;
+    /// Return a task-scoped adapter when runtime ownership must be rebound.
+    /// The default retains the same trusted implementation. This is metadata
+    /// setup, not permission to invoke tools or models.
+    fn bind_task(&self, _binding: &TaskBinding) -> Result<Option<Arc<dyn Module>>> {
+        Ok(None)
+    }
     /// Implementations are trusted host code and should honor cancellation and
     /// avoid detached work; dropping this future cannot prove external effects
     /// have stopped.
@@ -690,6 +703,49 @@ impl Broker {
             shutdown: Arc::new(watch::channel(false).0),
             identity: uuid::Uuid::new_v4(),
         }
+    }
+
+    /// Fork the active trusted catalog for one owned native task. Binding
+    /// callbacks run outside the source registry lock; the source is untouched.
+    pub(crate) fn fork_owned(
+        &self,
+        ownership: Arc<crate::residency::lifecycle::Ownership>,
+    ) -> Result<Arc<Self>> {
+        ownership.validate(&self.store)?;
+        let active = {
+            let registry = self
+                .registry
+                .read()
+                .map_err(|_| anyhow!("Typed module registry poisoned"))?;
+            if *self.shutdown.borrow() {
+                bail!("Typed module registry is shut down")
+            }
+            registry
+                .active
+                .values()
+                .filter(|module| module.available())
+                .map(|module| {
+                    (
+                        module.descriptor.clone(),
+                        module.implementation.clone(),
+                        module.limits,
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+        let binding = TaskBinding {
+            store: self.store.clone(),
+            ownership,
+        };
+        let fork = Arc::new(Self::new(self.store.clone()));
+        for (descriptor, original, limits) in active {
+            let implementation = original.bind_task(&binding)?.unwrap_or(original);
+            if implementation.descriptor() != descriptor {
+                bail!("Task binding changed an immutable module descriptor")
+            }
+            fork.register(implementation, limits)?;
+        }
+        Ok(fork)
     }
 
     /// Process-local identity used to bind task snapshots to this Broker

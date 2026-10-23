@@ -522,12 +522,36 @@ async fn run_internal(
     if !required.iter().all(|model| desired.contains_key(model)) {
         bail!("Approved native models must include every configured default and role model")
     }
+    if request.typed_module_worker {
+        if let Some(engine) = template {
+            if !engine.modules.discover()?.is_empty() {
+                bail!(
+                    "Automatic typed worker requires a template without preinstalled typed modules"
+                )
+            }
+        }
+    }
     setup_checkpoint(deadline, &cancel_rx).await?;
     // Model registration integrity and all local request shape checks precede
     // any provider mutation. The Engine independently pins it again at admission.
     store.pin_model(&cfg)?;
     setup_checkpoint(deadline, &cancel_rx).await?;
     let ownership = Ownership::acquire(store.clone())?;
+    let task_modules = match template {
+        Some(engine) => engine.modules.fork_owned(ownership.clone())?,
+        None => Arc::new(crate::fabric::modules::Broker::new(store.clone())),
+    };
+    if request.typed_module_worker {
+        task_modules.register(
+            Arc::new(
+                crate::fabric::modules::ProcessModule::builtin_with_ownership(
+                    store.clone(),
+                    Some(ownership.clone()),
+                )?,
+            ),
+            crate::fabric::modules::Limits::default(),
+        )?;
+    }
     setup_checkpoint(deadline, &cancel_rx).await?;
     require_no_unknown_generation(&store, &native_endpoint)?;
     // The bounded history scan is synchronous; cancellation cannot interrupt
@@ -723,20 +747,20 @@ async fn run_internal(
                 ownership.clone(),
                 factory,
                 policy_hash.clone(),
+                task_modules.clone(),
             )?
         } else {
-            let engine = Engine::with_backend(cfg.clone(), store.clone(), backend)
-                .with_managed_ownership(ownership.clone())?
-                .with_model_backend_factory(factory);
+            let engine = Engine::new(cfg.clone(), store.clone()).with_owned_native_runtime(
+                backend,
+                ownership.clone(),
+                factory,
+                policy_hash.clone(),
+                task_modules.clone(),
+            )?;
             match &verifier {
                 Some(provider) => engine.with_verifier_provider(provider.clone())?,
                 None => engine,
             }
-        };
-        let engine = if request.typed_module_worker {
-            engine.with_builtin_module_worker()?
-        } else {
-            engine
         };
         // Admission validates original resource declarations before any model
         // call, using the exact native target rather than configured HTTP guesses.

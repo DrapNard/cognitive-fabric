@@ -6,7 +6,7 @@
 use super::{
     protocol::{self, Envelope, Kind},
     AuthorizationContext, Capability, Descriptor, FiniteConstraint, FiniteCriterion, LinearTerm,
-    Module, ModuleFuture, Relation, Request, Response, SqlValue,
+    Module, ModuleFuture, Relation, Request, Response, SqlValue, TaskBinding,
 };
 use crate::{
     fabric::{
@@ -20,7 +20,7 @@ use anyhow::{bail, Context, Result};
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     path::Path,
-    sync::Arc,
+    sync::{Arc, Weak},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tokio::{
@@ -54,7 +54,7 @@ fn builtin_descriptor() -> Descriptor {
 pub struct ProcessModule {
     descriptor: Descriptor,
     store: Arc<Store>,
-    lifecycle_ownership: Option<Arc<crate::residency::lifecycle::Ownership>>,
+    lifecycle_ownership: Option<Weak<crate::residency::lifecycle::Ownership>>,
 }
 
 impl ProcessModule {
@@ -82,7 +82,7 @@ impl ProcessModule {
         Ok(Self {
             descriptor,
             store,
-            lifecycle_ownership,
+            lifecycle_ownership: lifecycle_ownership.as_ref().map(Arc::downgrade),
         })
     }
 
@@ -101,6 +101,17 @@ impl ProcessModule {
         request: Request,
     ) -> Result<Response> {
         uuid::Uuid::parse_str(task)?;
+        let lifecycle_ownership = self
+            .lifecycle_ownership
+            .as_ref()
+            .map(|weak| {
+                weak.upgrade()
+                    .context("Original native module ownership has ended")
+            })
+            .transpose()?;
+        if let Some(owner) = &lifecycle_ownership {
+            owner.validate(&self.store)?;
+        }
         let remaining = deadline.saturating_duration_since(Instant::now());
         if remaining.is_zero() || remaining > MAX_REQUEST_LIFETIME {
             bail!("Typed worker deadline is expired or exceeds the hard limit")
@@ -156,10 +167,10 @@ impl ProcessModule {
 
         let (socket, listener, socket_path) = SocketDirectory::bind_tool()?;
         socket.record(&self.store, task)?;
-        if let Some(ownership) = &self.lifecycle_ownership {
+        if let Some(ownership) = &lifecycle_ownership {
             ownership.validate(&self.store)?;
         }
-        let lease = if self.lifecycle_ownership.is_some() {
+        let lease = if lifecycle_ownership.is_some() {
             None
         } else {
             self.store.execution_lease()?
@@ -172,7 +183,7 @@ impl ProcessModule {
             ownership: Some(ownership),
             store: self.store.clone(),
             task: task.into(),
-            lifecycle_ownership: self.lifecycle_ownership.clone(),
+            lifecycle_ownership,
         };
 
         self.store.event(
@@ -305,6 +316,17 @@ impl ProcessModule {
 impl Module for ProcessModule {
     fn descriptor(&self) -> Descriptor {
         self.descriptor.clone()
+    }
+
+    fn bind_task(&self, binding: &TaskBinding) -> Result<Option<Arc<dyn Module>>> {
+        if !std::ptr::eq(self.store.as_ref(), binding.store.as_ref()) {
+            bail!("Task module binding belongs to another Store")
+        }
+        Ok(Some(Arc::new(Self::new_with_ownership(
+            self.descriptor.clone(),
+            self.store.clone(),
+            Some(binding.ownership.clone()),
+        )?)))
     }
 
     fn execute<'a>(
@@ -780,4 +802,60 @@ fn now_ms() -> u64 {
         .unwrap_or_default()
         .as_millis()
         .min(u64::MAX as u128) as u64
+}
+
+#[cfg(test)]
+mod ownership_tests {
+    use super::*;
+    use crate::fabric::modules::{Broker, Grant, Limits};
+
+    #[tokio::test]
+    async fn idle_adapter_does_not_retain_or_reacquire_ended_native_authority() {
+        let root = std::env::temp_dir().join(format!(
+            "fabric-native-module-owner-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let store = Arc::new(Store::open(&root.join("state.db")).unwrap());
+        let task = store
+            .create_task("Expired native module owner", "fast")
+            .unwrap();
+        let owner = crate::residency::lifecycle::Ownership::acquire(store.clone()).unwrap();
+        let module =
+            ProcessModule::builtin_with_ownership(store.clone(), Some(owner.clone())).unwrap();
+        drop(owner);
+        let replacement_owner =
+            crate::residency::lifecycle::Ownership::acquire(store.clone()).unwrap();
+        let broker = Broker::new(store.clone());
+        broker
+            .register(Arc::new(module), Limits::default())
+            .unwrap();
+        let pin = broker.pin(&task, "builtin.typed", "1.0.0").unwrap();
+        let policy = crate::security::TaskPolicy::reasoning(&task).unwrap();
+        let grant =
+            Grant::narrow(&task, "jev-plus", [Capability::MathEvaluate], 1, &policy).unwrap();
+        assert!(broker
+            .dispatch(
+                &pin,
+                &grant,
+                &policy,
+                "jev-plus",
+                Request::Arithmetic {
+                    expression: "6*7".into()
+                },
+                Instant::now() + Duration::from_secs(1)
+            )
+            .await
+            .is_err());
+        let trace = store.task(&task).unwrap();
+        assert!(!trace["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|event| event["kind"] == "module_process_launch"));
+        drop(pin);
+        drop(broker);
+        drop(replacement_owner);
+        drop(store);
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }

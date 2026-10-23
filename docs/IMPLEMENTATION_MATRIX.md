@@ -1,5 +1,30 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Native task worker ownership — 2026-10-23
+
+**Implemented and regression-tested.** Native lifecycle setup forks
+the template's active typed catalog before provider mutations. Task-binding
+callbacks run outside registry locks and must preserve immutable descriptors.
+Each task receives a fresh Broker identity without mutating the service template.
+Automatic builtin installation rejects conflicting preinstalled modules before
+model loading. Standalone native tasks now record the same policy digest as
+service tasks.
+
+`ProcessModule` holds only a weak reference while idle, rejects expired ownership
+before launch, and transfers a strong owner to each live child through reaping.
+This fixes retained exclusive leases and duplicate builtin registration across
+service requests. Files: `src/engine.rs`, `src/fabric/modules.rs`,
+`src/fabric/modules/process.rs`, `src/residency/lifecycle.rs`.
+The seven native lifecycle integration tests pass, including three sequential
+service tasks with distinct registry identities and a reaped arithmetic worker.
+An additional regression checks that an expired adapter cannot borrow a newly
+acquired owner. This does not implement native-owner continuation after restart,
+attest provider weights, or change task capabilities or process isolation.
+
+Combined verification: **1,007 workspace tests across 66 targets**, zero failed
+or ignored, plus **four optional Wasm tests**. Formatting, Rust 1.99 workspace
+check and strict Clippy with default and all features pass.
+
 ## Explicit retained-registry continuation — 2026-10-23
 
 **Implemented for retained host registries; cross-process reconstruction remains

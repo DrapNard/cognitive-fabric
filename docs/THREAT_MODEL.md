@@ -1109,6 +1109,14 @@ physical GPU isolation.
 
 ### Typed module lifetime and continuation identity
 
+Native task setup forks the trusted catalog and binds process adapters to that
+task's owner before provider mutation. Binding cannot change immutable descriptors
+or grant capabilities. Idle process adapters retain weak ownership only; an
+expired adapter fails before launch rather than acquiring unrelated authority.
+Active children retain strong ownership until reaping. Service templates therefore
+do not retain previous native-task leases through idle module registrations.
+Host binding callbacks remain trusted Rust code, not sandboxed plugins.
+
 Broker teardown signals its initialized workers; CLI exits await bounded process
 reapers even on cancellation/error paths. The integration test requires a cancelled
 task, durable reaped-child evidence and an absent child PID. Abrupt process death

@@ -615,3 +615,84 @@ async fn cancellation_and_original_deadline_abort_a_stalled_native_load_without_
         std::fs::remove_dir_all(home).unwrap();
     }
 }
+
+#[tokio::test]
+async fn service_reuses_native_policy_with_a_fresh_owned_worker_registry_per_task() {
+    let home = root();
+    let cfg = config(&home, 15);
+    cfg.save().unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let api_base = format!("http://{}/api/v1", listener.local_addr().unwrap());
+    let policy = write_policy(&home, &api_base, false);
+    let mut policy_json: Value = serde_json::from_slice(&std::fs::read(&policy).unwrap()).unwrap();
+    policy_json["typed_module_worker"] = json!(true);
+    std::fs::write(&policy, serde_json::to_vec(&policy_json).unwrap()).unwrap();
+    let (stop_tx, stop_rx) = tokio::sync::oneshot::channel();
+    let seen = native_fixture(listener, ChatReply::Correct, stop_rx, None).await;
+    let mut child = ChildGuard(
+        std::process::Command::new(env!("CARGO_BIN_EXE_cogfabric"))
+            .env_clear()
+            .arg("--home")
+            .arg(&home)
+            .args([
+                "--backend",
+                "openai-local",
+                "--json",
+                "--native-lifecycle-policy",
+            ])
+            .arg(&policy)
+            .args(["--approve-native-lifecycle", "serve"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
+    wait_for_socket(&cfg, &mut child.0).await;
+    let mut registries = std::collections::BTreeSet::new();
+    for (query, answer, status) in [
+        ("Say hello", "Hello from the local model.", "unverified"),
+        (
+            "Say hello again",
+            "Hello from the local model.",
+            "unverified",
+        ),
+        ("calc: 6*7", "42", "completed"),
+    ] {
+        let response = cli(&home, &["ask", query, "--mode", "fast", "--socket"]).await;
+        assert!(
+            response.status.success(),
+            "{}",
+            String::from_utf8_lossy(&response.stderr)
+        );
+        let response: Value = serde_json::from_slice(&response.stdout).unwrap();
+        assert_eq!(response["answer"], answer);
+        assert_eq!(response["status"], status);
+        let store = Store::open(&cfg.db()).unwrap();
+        let trace = store.task(response["task_id"].as_str().unwrap()).unwrap();
+        let events = trace["events"].as_array().unwrap();
+        let snapshot = events
+            .iter()
+            .find(|event| event["kind"] == "typed_module_snapshot")
+            .unwrap();
+        assert!(registries.insert(
+            snapshot["payload"]["broker_id"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        ));
+        if query.starts_with("calc:") {
+            assert!(events
+                .iter()
+                .any(|event| event["kind"] == "module_process_stopped"
+                    && event["payload"]["reaped"] == true));
+            assert_eq!(response["calls"], 0);
+        }
+    }
+    assert_eq!(seen.lock().unwrap().chats, 2);
+    assert_eq!(seen.lock().unwrap().unloads, 0);
+    let _ = child.0.kill();
+    let _ = child.0.wait();
+    let _ = stop_tx.send(());
+    tokio::time::sleep(Duration::from_millis(120)).await;
+    std::fs::remove_dir_all(home).unwrap();
+}

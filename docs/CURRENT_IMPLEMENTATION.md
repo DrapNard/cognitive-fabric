@@ -1,5 +1,19 @@
 # Current Rust implementation
 
+## Native worker ownership verification — 2026-10-23
+
+Native task catalogs are now forked from the service template before provider
+mutation. Process adapters borrow idle ownership weakly and retain it strongly
+only during child execution/reaping; expired adapters fail before launch.
+Standalone native task scopes also retain the operator policy digest. This fixes
+lease retention and duplicate worker registration across successive service tasks.
+
+The updated workspace passes **1,007 tests across 66 targets**, with no failures
+or ignored tests, and all **four optional Wasm tests** pass. Formatting, Rust 1.99
+workspace check and strict all-feature Clippy pass. These results supersede the
+previous snapshot below. Native-owner continuation after restart and real-model
+quality/performance validation remain incomplete.
+
 ## Verified integration snapshot — 2026-10-23
 
 The schema-8 recovery/archive, approved native lifecycle, typed module workers,

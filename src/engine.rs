@@ -191,6 +191,7 @@ impl Engine {
         ownership: Arc<crate::residency::lifecycle::Ownership>,
         factory: ModelBackendFactory,
         policy_digest: String,
+        modules: Arc<crate::fabric::modules::Broker>,
     ) -> Result<Self> {
         ownership.validate(&self.store)?;
         let concurrency = self
@@ -203,6 +204,8 @@ impl Engine {
             concurrency,
         ));
         let mut fork = self.clone();
+        modules.require_store(&self.store)?;
+        fork.modules = modules;
         fork.backend = broker.clone();
         fork.broker = broker;
         fork.resource_pool = Default::default();
@@ -214,22 +217,7 @@ impl Engine {
         fork.native_lifecycle_config_digest = None;
         Ok(fork)
     }
-    pub(crate) fn with_managed_ownership(
-        mut self,
-        ownership: Arc<crate::residency::lifecycle::Ownership>,
-    ) -> Result<Self> {
-        ownership.validate(&self.store)?;
-        self.managed_ownership = Some(ownership);
-        Ok(self)
-    }
-
-    pub(crate) fn with_model_backend_factory(mut self, factory: ModelBackendFactory) -> Self {
-        self.model_backend_factory = Some(factory);
-        self
-    }
-
-    /// Use the compiled typed-module worker for future task tool dispatches.
-    /// This launches the same image under task grants, never an arbitrary path.
+    /// Register the compiled same-image worker under task-scoped grants.
     pub fn with_builtin_module_worker(self) -> Result<Self> {
         let module = crate::fabric::modules::ProcessModule::builtin_with_ownership(
             self.store.clone(),
