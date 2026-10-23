@@ -60,13 +60,30 @@ Compilation has artifact/structural bounds but no hard compilation-time deadline
 
 ## Version pinning and recovery
 
-Registry pins retain compiled bytes even if the source pathname changes. Version-3
-task snapshots include module/settings hashes and the payload schema hash through
-an implementation identity. Retained-registry continuation requires an identical
-identity. Legacy version-1/2 snapshots remain supported under their existing
-rules, but cannot carry new implementation metadata. Builtin reconstruction must
-never substitute a builtin worker for a guest identity. Automatic cross-process
-Wasm reconstruction is not implemented; restore the exact original registry.
+Registry pins retain compiled bytes even if the source pathname changes. Version-4
+task snapshots include module/settings/host-source hashes and the payload schema hash through
+an implementation identity, plus exact broker queue/concurrency limits. Retained
+continuation compares those fields. Legacy version-1/2/3 snapshots retain their
+existing recovery rules and cannot carry later-version fields. Builtin
+reconstruction never substitutes a builtin worker for a guest identity.
+
+For an unfinished nonnative task with a version-4 snapshot, explicitly supply the
+original manifests after restart:
+
+```bash
+cogfabric --home /absolute/state resume-task TASK_UUID --human-approve \
+  --restore-wasm-expert /absolute/path/expert.json
+```
+
+Repeat at most eight manifests. The host compiles only these operator-supplied
+paths, then requires an exact module set, hashes, capabilities and original limits.
+An exclusive execution lease and bounded transactional history inspection precede
+the reconstruction audit. Audit failure rolls back the event; no invocation or
+permission is created by reconstruction. Ordinary continuation independently
+checks the original checkpoint, budget, absolute deadline and uncertain calls.
+Persisted metadata never supplies a path or new executable. Native-owned tasks,
+mixed builtin/guest registries and old snapshots without recorded limits are not
+reconstructed by this option. Hashes do not authenticate a hostile database owner.
 
 ## Verification
 
@@ -77,3 +94,6 @@ functions, memory growth, fuel exhaustion and invalid output ranges/frames.
 The default build tests refusal before state initialization. Recovery unit tests
 reject guest metadata on builtin reconstruction, including legacy snapshots.
 Full-workspace checks must also pass before publishing a completed change.
+Run default and feature-enabled suites serially when they share a Cargo target
+directory: CLI integration tests launch that directory's executable, which a
+concurrent build with different features can replace.

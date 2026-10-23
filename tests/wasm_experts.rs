@@ -12,6 +12,26 @@ fn wasm_expert_cli_refuses_missing_feature_before_state_initialization() {
     assert!(!home.exists());
 }
 
+#[test]
+fn wasm_restoration_without_approval_refuses_before_state_initialization() {
+    let home =
+        std::env::temp_dir().join(format!("fabric-wasm-resume-deny-{}", uuid::Uuid::new_v4()));
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_cogfabric"))
+        .arg("--home")
+        .arg(&home)
+        .args([
+            "resume-task",
+            "11111111-1111-4111-8111-111111111111",
+            "--restore-wasm-expert",
+            "missing.json",
+        ])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("explicit operator approval"));
+    assert!(!home.exists());
+}
+
 #[cfg(feature = "wasm-experts")]
 mod enabled {
     use cogfabric::{
@@ -145,6 +165,129 @@ mod enabled {
         }
     }
 
+    #[test]
+    fn reconstruction_preserves_guest_identity_and_limits_and_fails_atomically() {
+        use cogfabric::{
+            fabric::modules::Broker, recovery::continuation::reconstruct_wasm_registry,
+        };
+        for scenario in 0..16 {
+            let root = root();
+            let path = root.join("fabric.sqlite3");
+            let store = Arc::new(Store::open(&path).unwrap());
+            let task = store
+                .create_task("Restore pinned guest", "standard")
+                .unwrap();
+            let bytes = program(
+                &WasmModule::encode_result(&Response::Arithmetic { value: "42".into() }).unwrap(),
+                0,
+            );
+            let module = load(&root, &bytes).unwrap();
+            let identity = module.implementation_identity().clone();
+            let original = Broker::new(store.clone());
+            let broker_id = original.identity_id();
+            original
+                .register(
+                    Arc::new(module),
+                    Limits {
+                        queue_capacity: 1,
+                        concurrency: 1,
+                    },
+                )
+                .unwrap();
+            let mut snapshot = json!({"format_version":4,"broker_id":broker_id.to_string(),
+                "modules":[{"id":"wasm.math","version":"1.0.0","capabilities":["math.evaluate"],
+                "source_sha256":null,"implementation":identity,"limits":{"queue_capacity":1,"concurrency":1}}],
+                "permissions_granted":false});
+            match scenario {
+                2 => {
+                    snapshot["modules"][0]["implementation"]["settings_sha256"] =
+                        json!("0".repeat(64))
+                }
+                3 => snapshot["modules"][0]["version"] = json!("2.0.0"),
+                4 => snapshot["modules"][0]["capabilities"] = json!(["sql.query"]),
+                5 => snapshot["format_version"] = json!(3),
+                6 => snapshot["modules"][0]["limits"]["concurrency"] = json!(0),
+                7 => {
+                    snapshot["modules"][0]["implementation"]["module_sha256"] =
+                        json!("0".repeat(64))
+                }
+                14 => {
+                    snapshot["modules"][0]
+                        .as_object_mut()
+                        .unwrap()
+                        .remove("limits");
+                }
+                15 => snapshot["modules"][0]["limits"]["unrestricted"] = json!(true),
+                _ => {}
+            }
+            store
+                .event(&task, "typed_module_snapshot", "fabric", snapshot.clone())
+                .unwrap();
+            if scenario == 8 {
+                store
+                    .event(&task, "typed_module_snapshot", "fabric", snapshot)
+                    .unwrap();
+            }
+            if scenario == 9 {
+                store
+                    .event(&task, "native_task_scope", "security-kernel", json!({}))
+                    .unwrap();
+            }
+            if scenario == 10 {
+                rusqlite::Connection::open(&path).unwrap().execute_batch("CREATE TRIGGER deny_wasm_reconstruction BEFORE INSERT ON events WHEN NEW.kind='wasm_registry_reconstruction' BEGIN SELECT RAISE(FAIL,'fixture'); END;").unwrap();
+            }
+            if scenario == 11 {
+                rusqlite::Connection::open(&path)
+                    .unwrap()
+                    .execute("UPDATE tasks SET status='completed' WHERE id=?1", [&task])
+                    .unwrap();
+            }
+            if scenario == 12 {
+                store
+                    .event(&task, "module_dispatch_intent", "jev-plus", json!({}))
+                    .unwrap();
+            }
+            drop(original);
+            drop(store);
+            let store = Arc::new(Store::open(&path).unwrap());
+            let before = store.task(&task).unwrap();
+            let mut supplied = vec![load(&root, &bytes).unwrap()];
+            if scenario == 13 {
+                supplied.push(load(&root, &bytes).unwrap());
+            }
+            let result = reconstruct_wasm_registry(store.clone(), &task, scenario != 1, supplied);
+            if scenario == 0 {
+                let broker = result.unwrap();
+                assert_eq!(broker.identity_id(), broker_id);
+                let pin = broker.pin(&task, "wasm.math", "1.0.0").unwrap();
+                assert_eq!(
+                    pin.limits(),
+                    Limits {
+                        queue_capacity: 1,
+                        concurrency: 1
+                    }
+                );
+                let trace = store.task(&task).unwrap();
+                let events = trace["events"].as_array().unwrap();
+                let evidence = &events
+                    .iter()
+                    .find(|e| e["kind"] == "wasm_registry_reconstruction")
+                    .unwrap()["payload"];
+                assert_eq!(evidence["permissions_granted"], false);
+                assert_eq!(evidence["worker_dispatched"], false);
+                assert!(!events
+                    .iter()
+                    .any(|e| e["kind"] == "module_dispatch_intent"
+                        || e["kind"] == "tool_reservation"));
+            } else {
+                assert!(result.is_err(), "scenario {scenario}");
+                assert_eq!(store.task(&task).unwrap(), before, "scenario {scenario}");
+            }
+            drop(store);
+            std::fs::remove_dir_all(root).unwrap();
+        }
+    }
+
     #[tokio::test]
     async fn engine_executes_pinned_wasm_under_task_grants_and_independent_arithmetic_check() {
         let root = root();
@@ -186,7 +329,7 @@ mod enabled {
             .iter()
             .find(|e| e["kind"] == "typed_module_snapshot")
             .unwrap()["payload"];
-        assert_eq!(snapshot["format_version"], 3);
+        assert_eq!(snapshot["format_version"], 4);
         assert_eq!(
             snapshot["modules"][0]["implementation"]["module_sha256"],
             sha256(&bytes)

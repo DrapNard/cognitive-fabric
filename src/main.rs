@@ -127,6 +127,9 @@ enum Command {
         /// Reconstruct the fixed builtin worker from matching recorded sources.
         #[arg(long)]
         restore_builtin_worker: bool,
+        /// Reconstruct the original pinned Wasm experts from operator manifests.
+        #[arg(long, conflicts_with_all = ["restore_builtin_worker", "native_policy"])]
+        restore_wasm_expert: Vec<PathBuf>,
         /// Restore the original approved native model/instance policy.
         #[arg(long, conflicts_with = "restore_builtin_worker")]
         native_policy: Option<PathBuf>,
@@ -838,6 +841,19 @@ async fn run_cli() -> Result<()> {
     ) {
         bail!("Task continuation requires explicit operator approval")
     }
+    if let Command::ResumeTask {
+        restore_wasm_expert,
+        ..
+    } = &cli.command
+    {
+        if restore_wasm_expert.len() > 8 {
+            bail!("At most eight original Wasm expert manifests may be restored")
+        }
+        #[cfg(not(feature = "wasm-experts"))]
+        if !restore_wasm_expert.is_empty() {
+            bail!("Wasm expert restoration requires a build with the wasm-experts feature")
+        }
+    }
     let restored_policy: Option<Arc<dyn cogfabric::escalation::EscalationPolicy>> =
         match &cli.command {
             Command::ResumePreview {
@@ -956,6 +972,19 @@ async fn run_cli() -> Result<()> {
         .iter()
         .map(|path| cogfabric::fabric::modules::wasm::WasmModule::load_manifest(path))
         .collect::<Result<Vec<_>>>()?;
+    #[cfg(feature = "wasm-experts")]
+    let restored_wasm_experts = match &cli.command {
+        Command::ResumeTask {
+            restore_wasm_expert,
+            ..
+        } if !restore_wasm_expert.is_empty() => Some(
+            restore_wasm_expert
+                .iter()
+                .map(|path| cogfabric::fabric::modules::wasm::WasmModule::load_manifest(path))
+                .collect::<Result<Vec<_>>>()?,
+        ),
+        _ => None,
+    };
     let native_lifecycle = cli
         .native_lifecycle_policy
         .as_ref()
@@ -1290,6 +1319,30 @@ async fn run_cli() -> Result<()> {
                 store.clone(),
                 id,
                 *human_approve,
+            )?;
+            let runtime = cogfabric::recovery::continuation::RuntimeRestoration {
+                escalation_policy: restored_policy,
+                verifier: verifier_provider.clone(),
+                modules: Some(modules),
+            };
+            let report = cogfabric::recovery::continuation::resume_with_runtime(
+                store,
+                id,
+                *human_approve,
+                runtime,
+                cancel,
+            )
+            .await?;
+            output(&report, cli.json)?;
+            return Ok(());
+        }
+        #[cfg(feature = "wasm-experts")]
+        if let Some(experts) = restored_wasm_experts {
+            let modules = cogfabric::recovery::continuation::reconstruct_wasm_registry(
+                store.clone(),
+                id,
+                *human_approve,
+                experts,
             )?;
             let runtime = cogfabric::recovery::continuation::RuntimeRestoration {
                 escalation_policy: restored_policy,

@@ -971,6 +971,19 @@ pub fn reconstruct_builtin_registry(
     module_history::reconstruct_builtin(store, task, human_approve)
 }
 
+/// Reconstruct an original Wasm expert registry after process restart from
+/// operator-selected manifests that have already been hash-pinned and compiled.
+/// No persisted path is opened and this operation grants no module permission.
+#[cfg(feature = "wasm-experts")]
+pub fn reconstruct_wasm_registry(
+    store: Arc<Store>,
+    task: &str,
+    human_approve: bool,
+    modules: Vec<crate::fabric::modules::wasm::WasmModule>,
+) -> Result<Arc<crate::fabric::modules::Broker>> {
+    module_history::reconstruct_wasm(store, task, human_approve, modules)
+}
+
 /// Inspect using exact retained host objects. This never dispatches a module,
 /// changes activation, recreates code, or grants permissions.
 pub fn preview_with_runtime(

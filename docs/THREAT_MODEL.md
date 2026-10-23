@@ -1,5 +1,18 @@
 # Threat Model (v1.0)
 
+## Explicit Wasm registry reconstruction
+
+Only operator-supplied, already pinned manifests supply executable bytes. New v4
+task snapshots bind queue/concurrency limits alongside original identities. A
+persistent unfinished nonnative task, explicit approval, exclusive lease and
+bounded transaction are required. Missing/extra/substituted modules, altered
+limits, uncertain dispatches and audit insertion failure refuse reconstruction.
+No grants, calls or checkpoint acceptance are created by reconstruction; normal
+continuation validates its own original caps/deadline/history. Native and mixed
+registries, pre-v4 snapshots, publisher authentication and hostile database-owner
+attestation are outside this reconstruction route. Hashes remain integrity
+comparisons, not signatures or universal executable trust.
+
 ## Optional Wasm expert execution boundary
 
 Explicit operator manifests bind immutable guest bytes, not publisher identity.

@@ -11,7 +11,9 @@ struct Snapshot {
     permissions_granted: bool,
 }
 
-use crate::fabric::modules::{Broker, Capability, Descriptor, Pin};
+#[cfg(feature = "wasm-experts")]
+use crate::fabric::modules::Module;
+use crate::fabric::modules::{Broker, Capability, Descriptor, Limits, Pin};
 use serde_json::{json, Value};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -41,6 +43,8 @@ struct ModuleSnapshot {
     source_sha256: Option<String>,
     #[serde(default)]
     implementation: Option<Value>,
+    #[serde(default)]
+    limits: Option<Limits>,
 }
 
 fn capability(name: &str) -> Result<Capability> {
@@ -106,8 +110,8 @@ pub(super) fn reconstruct_builtin_owned(
         )?;
         let snapshot: Snapshot =
             serde_json::from_value(crate::strict_json::value(raw.as_bytes(), 65536)?)?;
-        if !matches!(snapshot.format_version, 2 | 3) || snapshot.modules.len() != 1 {
-            bail!("Builtin reconstruction requires one source-bound version-2 or version-3 module")
+        if !matches!(snapshot.format_version, 2..=4) || snapshot.modules.len() != 1 {
+            bail!("Builtin reconstruction requires one source-bound module snapshot")
         }
         let original: ModuleSnapshot = serde_json::from_value(snapshot.modules[0].clone())?;
         if original.source_sha256.as_deref()
@@ -155,6 +159,150 @@ pub(super) fn reconstruct_builtin_owned(
     result
 }
 
+/// Reconstruct a version-4 Wasm expert registry from already compiled,
+/// operator supplied manifests. Persisted task data is used only for comparing
+/// immutable identities; it never supplies a path, artifact, or executable.
+#[cfg(feature = "wasm-experts")]
+pub(super) fn reconstruct_wasm(
+    store: Arc<crate::store::Store>,
+    task: &str,
+    human_approve: bool,
+    modules: Vec<crate::fabric::modules::wasm::WasmModule>,
+) -> Result<Arc<Broker>> {
+    crate::security::authorize("human-cli", "task.resume")?;
+    if !human_approve {
+        bail!("Wasm registry reconstruction requires explicit operator approval")
+    }
+    uuid::Uuid::parse_str(task)?;
+    if modules.is_empty() || modules.len() > 32 {
+        bail!("Wasm registry reconstruction module count exceeds bounds")
+    }
+    let path = store.runtime_lock.as_deref().ok_or_else(|| {
+        anyhow::anyhow!("Wasm registry reconstruction requires a persistent store")
+    })?;
+    let _lease = crate::recovery::ExecutionLease::acquire(path, true)?;
+    let mut db = store.lock()?;
+    let started = std::time::Instant::now();
+    db.progress_handler(
+        1000,
+        Some(move || started.elapsed() > std::time::Duration::from_secs(5)),
+    );
+    let result = (|| -> Result<Arc<Broker>> {
+        let tx = db.transaction()?;
+        let (status, native): (String, bool) = tx.query_row(
+            "SELECT status, EXISTS(SELECT 1 FROM events WHERE task_id=?1 AND kind='native_task_scope') FROM tasks WHERE id=?1",
+            [task], |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        if !matches!(status.as_str(), "running" | "interrupted") || native {
+            bail!("Wasm registry reconstruction requires an unfinished nonnative task")
+        }
+        let mut statement = tx.prepare(
+            "SELECT CASE WHEN length(CAST(source AS BLOB))<=64 THEN source END,
+                    CASE WHEN length(CAST(payload AS BLOB))<=65536 THEN payload END,id
+             FROM events WHERE task_id=?1 AND kind='typed_module_snapshot' ORDER BY id LIMIT 2",
+        )?;
+        let mut rows = statement.query([task])?;
+        let row = rows
+            .next()?
+            .ok_or_else(|| anyhow::anyhow!("Original Wasm registry snapshot is missing"))?;
+        let source: String = row.get(0)?;
+        let raw: String = row.get(1)?;
+        let snapshot_id: i64 = row.get(2)?;
+        if rows.next()?.is_some() {
+            bail!("Wasm registry reconstruction refuses duplicate snapshots")
+        }
+        drop(rows);
+        drop(statement);
+        let snapshot: Snapshot =
+            serde_json::from_value(crate::strict_json::value(raw.as_bytes(), 65536)?)?;
+        if source != "fabric"
+            || snapshot.format_version != 4
+            || snapshot.permissions_granted
+            || snapshot.modules.is_empty()
+            || snapshot.modules.len() != modules.len()
+            || started.elapsed() > std::time::Duration::from_secs(5)
+        {
+            bail!("Wasm registry reconstruction requires one exact version-4 snapshot")
+        }
+        let identity = uuid::Uuid::parse_str(&snapshot.broker_id)?;
+
+        // Match the whole supplied registry to saved identities and limits before
+        // constructing the Broker; persisted data never supplies executable paths.
+        let mut expected = BTreeMap::<(String, String), ModuleSnapshot>::new();
+        for value in &snapshot.modules {
+            let module: ModuleSnapshot = serde_json::from_value(value.clone())?;
+            if module.source_sha256.is_some()
+                || module.implementation.is_none()
+                || module.limits.is_none()
+                || expected
+                    .insert((module.id.clone(), module.version.clone()), module)
+                    .is_some()
+            {
+                bail!("Invalid or duplicate original Wasm module identity")
+            }
+        }
+        let mut reconstructed = Vec::with_capacity(modules.len());
+        for module in modules {
+            let descriptor = module.descriptor();
+            let recorded = expected
+                .remove(&(descriptor.id.clone(), descriptor.version.clone()))
+                .ok_or_else(|| {
+                    anyhow::anyhow!("Supplied Wasm module was not in original registry")
+                })?;
+            let capabilities = descriptor
+                .capabilities
+                .iter()
+                .map(|capability| capability.as_str())
+                .collect::<BTreeSet<_>>();
+            if capabilities
+                != recorded
+                    .capabilities
+                    .iter()
+                    .map(String::as_str)
+                    .collect::<BTreeSet<_>>()
+                || capabilities.len() != recorded.capabilities.len()
+                || recorded.implementation.as_ref() != Some(module.implementation_identity())
+                || recorded
+                    .implementation
+                    .as_ref()
+                    .and_then(|identity| identity.get("runtime"))
+                    .and_then(Value::as_str)
+                    != Some("wasmi-typed-expert/v1")
+            {
+                bail!("Supplied Wasm implementation differs from the original snapshot")
+            }
+            reconstructed.push((
+                module,
+                recorded
+                    .limits
+                    .ok_or_else(|| anyhow::anyhow!("Original Wasm limits are missing"))?,
+            ));
+        }
+        if !expected.is_empty() {
+            bail!("Supplied Wasm registry is missing an original module")
+        }
+        // This checks registration validity and preserves the recorded broker UUID.
+        let broker = Broker::reconstructed_wasm(store.clone(), identity, reconstructed)?;
+
+        let restored = restore(&tx, task, Some(broker.clone()))?
+            .ok_or_else(|| anyhow::anyhow!("Missing original Wasm registry"))?;
+        crate::storage::admit(&tx)?;
+        let evidence = json!({"format_version":1,"broker_id":snapshot.broker_id,
+            "snapshot_event_id":snapshot_id,"snapshot_sha256":crate::store::sha256(raw.as_bytes()),
+            "original_registry":restored.evidence(),"permissions_granted":false,
+            "worker_dispatched":false,"resume_authorized":false,"implementation_attested":false});
+        tx.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'wasm_registry_reconstruction','human-cli',?2,unixepoch())",
+            rusqlite::params![task, evidence.to_string()])?;
+        if started.elapsed() > std::time::Duration::from_secs(5) {
+            bail!("Wasm registry reconstruction deadline exhausted")
+        }
+        tx.commit()?;
+        Ok(broker)
+    })();
+    db.progress_handler(0, None::<fn() -> bool>);
+    result
+}
+
 #[cfg(test)]
 pub(super) fn validate(db: &rusqlite::Connection, task: &str) -> Result<()> {
     restore(db, task, None).map(|_| ())
@@ -190,7 +338,7 @@ pub(super) fn restore(
     let snapshot: Snapshot =
         serde_json::from_value(crate::strict_json::value(raw.as_bytes(), 65536)?)?;
     if source != "fabric"
-        || !matches!(snapshot.format_version, 1..=3)
+        || !matches!(snapshot.format_version, 1..=4)
         || snapshot.permissions_granted
         || uuid::Uuid::parse_str(&snapshot.broker_id).is_err()
         || rows.next()?.is_some()
@@ -241,16 +389,21 @@ pub(super) fn restore(
         if snapshot.format_version == 1 && module.source_sha256.is_some() {
             bail!("Legacy module snapshot contains unsupported source identity")
         }
-        if matches!(snapshot.format_version, 2 | 3)
+        if matches!(snapshot.format_version, 2..=4)
             && pin.source_fingerprint() != module.source_sha256.as_deref()
         {
             bail!("Restored module source identity differs from original snapshot")
         }
         if (snapshot.format_version < 3 && module.implementation.is_some())
-            || (snapshot.format_version == 3
+            || (snapshot.format_version >= 3
                 && module.implementation.as_ref() != pin.implementation_identity())
         {
             bail!("Restored module implementation identity differs from original snapshot")
+        }
+        if (snapshot.format_version < 4 && module.limits.is_some())
+            || (snapshot.format_version == 4 && module.limits != Some(pin.limits()))
+        {
+            bail!("Restored module execution limits differ from original snapshot")
         }
         for cap in descriptor.capabilities {
             if pins.insert(cap, pin.clone()).is_some() {
@@ -437,7 +590,7 @@ mod tests {
                 0 => snapshot["modules"] = json!([{"id":"host.custom","version":"1.0.0"}]),
                 1 => snapshot["broker_id"] = json!("forged"),
                 2 => snapshot["permissions_granted"] = json!(true),
-                3 => snapshot["format_version"] = json!(4),
+                3 => snapshot["format_version"] = json!(5),
                 _ => {}
             }
             if scenario != 6 {

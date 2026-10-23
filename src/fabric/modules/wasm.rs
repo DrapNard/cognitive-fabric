@@ -161,6 +161,7 @@ impl WasmModule {
             "concurrent_jobs":2,"imports":"none","start_function":false,"request_identifier":"CGWI","result_identifier":"CGWO",
             "payload_schema_sha256":crate::store::sha256(include_bytes!("../../../protocol/general_module.fbs"))});
         let identity = json!({"format_version":1,"runtime":"wasmi-typed-expert/v1","module_sha256":expected_sha256,
+            "host_sources_sha256":crate::escalation::empirical::runtime_sources_fingerprint(),
             "settings_sha256":crate::store::sha256(&serde_json::to_vec(&settings)?),"permissions_granted":false});
         let mut config = Config::default();
         config

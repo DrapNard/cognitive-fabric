@@ -1,5 +1,34 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Exact Wasm registry reconstruction — 2026-10-24
+
+**Implemented and verified.**
+Architecture §6/7/9/10:
+`recovery::continuation::reconstruct_wasm_registry` restores only operator-supplied
+compiled guests matching one strict v4 snapshot. It preserves the original broker
+UUID, capabilities, implementation hashes and queue/concurrency limits. The CLI
+accepts explicit `resume-task --human-approve --restore-wasm-expert` manifests,
+compiled before state initialization. No stored pathname supplies code. Exclusive
+lease, bounded transaction/history checks and atomic audit refusal preserve the
+existing unknown-dispatch and continuation gates. Native scopes, mixed registries
+and earlier snapshots without original limits are refused by this reconstruction
+route; retained legacy continuation remains supported.
+
+New integration regressions cover reopen reconstruction with nondefault limits,
+no approval, substituted identities, wrong versions/capabilities, old snapshots,
+invalid/missing/unknown limit fields, duplicate snapshots, native scope, terminal
+tasks, extra guests, uncertain history and audit rollback. CLI approval refusal
+is checked before state initialization. See [Wasm recovery](WASM_EXPERTS.md).
+
+Final serialized suites pass **1,032 default tests** and **1,041 all-feature
+tests**, each across 71 targets, zero failed or ignored. Rust 1.99 workspace
+check and strict default/all-feature Clippy, formatting, diff checks and final
+offline CLI/socket/authenticated HTTP smoke checks pass. An earlier source-edit
+fingerprint failure and cross-feature shared-executable test conflict were
+resolved by frozen-source, serialized full reruns. Live model inference remains
+unperformed; the local endpoint probe refused connection. This entry supersedes
+the guest reconstruction limitation in the earlier milestone below.
+
 ## Optional bounded untrusted Wasm expert adapter — 2026-10-24
 
 **Implemented adapter; broader native isolation remains Partial.** Architecture

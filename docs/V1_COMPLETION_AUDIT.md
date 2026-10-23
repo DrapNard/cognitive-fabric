@@ -7,6 +7,23 @@ instructions, and the request to implement all remaining Jev+/Jev-R code. It doe
 not replace the architecture. Historical entries in `IMPLEMENTATION_MATRIX.md`
 and `CURRENT_IMPLEMENTATION.md` describe earlier snapshots and can be superseded.
 
+## Exact Wasm registry recovery — 2026-10-24
+
+Explicit operator manifests now reconstruct an unfinished nonnative task's exact
+v4 guest registry after restart, preserving broker UUID, capabilities, artifact,
+settings/host-source hashes and queue/concurrency limits. Persisted metadata
+never supplies an executable path. Existing dispatch-history gates still refuse
+uncertain calls. Native/mixed registries and snapshots lacking original limits
+are not reconstructed by this option. See [Wasm experts](WASM_EXPERTS.md).
+
+Frozen-source serialized runs pass **1,032 default tests** and **1,041 all-feature
+tests**, each across 71 targets with zero failed or ignored. Rust 1.99 workspace
+check and strict default/all-feature Clippy, formatting, diff checks and final
+offline installed CLI/HTTP smoke checks pass. Earlier editing/concurrent-build
+verification artifacts were resolved by these full reruns. No live-model,
+physical-resource, neural-safety or general native sandbox result is implied.
+The local model endpoint probe still refused connection.
+
 ## Optional Wasm expert integration — 2026-10-24
 
 `src/fabric/modules/wasm.rs` now supplies bounded no-import untrusted guest

@@ -573,7 +573,8 @@ pub trait Module: Send + Sync {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Limits {
     pub queue_capacity: usize,
     pub concurrency: usize,
@@ -701,6 +702,11 @@ impl Pin {
         &self.task
     }
 
+    /// Queue and execution limits captured by the original Broker registration.
+    pub fn limits(&self) -> Limits {
+        self.module.limits
+    }
+
     /// Local Broker instance that issued this task pin. This is provenance
     /// metadata, not a cryptographic attestation of the module implementation.
     pub fn broker_identity(&self) -> uuid::Uuid {
@@ -739,6 +745,28 @@ impl Broker {
         )?;
         Ok(Arc::new(broker))
     }
+
+    /// Rebuild an operator supplied, already compiled Wasm registry while
+    /// preserving the broker UUID recorded in an interrupted task snapshot.
+    /// This restores local routing provenance only; it does not grant task
+    /// permissions or attest the operator's artifacts beyond their load pins.
+    #[cfg(feature = "wasm-experts")]
+    pub(crate) fn reconstructed_wasm(
+        store: Arc<Store>,
+        identity: uuid::Uuid,
+        modules: Vec<(wasm::WasmModule, Limits)>,
+    ) -> Result<Arc<Self>> {
+        if modules.is_empty() || modules.len() > MAX_MODULES {
+            bail!("Wasm registry reconstruction module count exceeds bounds")
+        }
+        let mut broker = Self::new(store);
+        broker.identity = identity;
+        for (module, limits) in modules {
+            broker.register(Arc::new(module), limits)?;
+        }
+        Ok(Arc::new(broker))
+    }
+
     pub fn new(store: Arc<Store>) -> Self {
         Self {
             store,
