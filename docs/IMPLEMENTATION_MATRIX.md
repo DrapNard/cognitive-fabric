@@ -1,5 +1,34 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Explicit native-owner continuation — 2026-10-23
+
+**Implemented for supported original checkpoints and reviewed runtime objects.**
+`resume_native_with_runtime` and `resume-task --native-policy` retain the validated
+original owner, native receipt/role targets and same-boot deadline through normal
+continuation admission. The ordinary native guard still refuses missing authority;
+database metadata cannot construct the private restoration object.
+
+- `src/residency/lifecycle/restoration.rs`: sealed owner context, revalidation,
+  exact BoundBackend restoration and per-dispatch durable generation anchors.
+- `src/recovery.rs`, `continuation.rs`: explicit owned admission, preserved
+  resource configuration, original charges/routes and cancellation during setup;
+  no OpenAI-compatible fallback for a native task.
+- `src/fabric/modules.rs`, `continuation_modules.rs`: source-checked builtin
+  reconstruction under the same owner without reacquiring conflicting leases.
+- `src/residency/lifecycle.rs`: existing operator generation resolution supports
+  continuation lifecycle anchors, preserving unknown original outcomes.
+- `tests/native_lifecycle.rs`: fresh CLI resume with a real typed worker and
+  configured resource pool, no model reload/unload, exactly one new inference;
+  wrong-instance refusal, durable blocking, explicit resolution and no replay.
+
+Combined verification passes **1,014 tests across 66 workspace targets**, zero
+failed or ignored, plus **four optional Wasm tests**. Formatting, Rust 1.99 workspace
+check and strict Clippy with default and all features pass. The ten focused native
+tests include both successful and uncertain continuation. Unknown
+or incomplete original calls, unsupported checkpoints, custom callback loading,
+physical instance/weight attestation and real-model quality remain unproven or
+refused. No automatic provider mutation or neural promotion is introduced.
+
 ## Native restoration preflight — 2026-10-23
 
 **Partial: read-only receipt preflight implemented; native continuation remains

@@ -28,6 +28,15 @@ pub(crate) fn validate_verifier_recovery(
     task: &str,
     restored: Option<&crate::verification::provider::Handle>,
 ) -> Result<()> {
+    validate_verifier_recovery_with_native(db, task, restored, None)
+}
+
+pub(crate) fn validate_verifier_recovery_with_native(
+    db: &rusqlite::Connection,
+    task: &str,
+    restored: Option<&crate::verification::provider::Handle>,
+    native: Option<&crate::residency::lifecycle::restoration::NativeRuntime>,
+) -> Result<()> {
     use serde_json::Value;
     use std::collections::BTreeMap;
     let managed_native: bool = db.query_row(
@@ -35,8 +44,11 @@ pub(crate) fn validate_verifier_recovery(
         [task],
         |row| row.get(0),
     )?;
-    if managed_native {
-        bail!("Native task continuation requires restoring its exact lifecycle owner and instance bindings")
+    match (managed_native, native) {
+        (true, Some(runtime)) => runtime.validate(db, task)?,
+        (true, None) => bail!("Native task continuation requires restoring its exact lifecycle owner and instance bindings"),
+        (false, Some(_)) => bail!("Native restoration has no original native task scope"),
+        (false, None) => {}
     }
 
     let query: String = db.query_row(

@@ -1,4 +1,4 @@
-//! Read-only native restoration preflight. No provider mutation or task replay.
+//! Exact native restoration and durable continuation dispatch without replay.
 use super::*;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -9,6 +9,7 @@ struct Original {
     receipts: BTreeMap<String, managed::Receipt>,
     clock: crate::execution_clock::Snapshot,
     cfg: Config,
+    binding: Value,
 }
 
 fn one_event(db: &rusqlite::Connection, task: &str, kind: &str, source: &str) -> Result<Value> {
@@ -146,6 +147,7 @@ fn read_original(
             receipts,
             clock: clock.clone(),
             cfg: cfg.clone(),
+            binding: binding.clone(),
         });
     }
     found.ok_or_else(|| anyhow::anyhow!("Native restoration has no original lifecycle binding"))
@@ -161,11 +163,12 @@ fn remaining(clock: &crate::execution_clock::Snapshot) -> Result<u64> {
 /// Inspect original native receipt identity under exclusive local ownership.
 /// This GET-only preflight does not authorize continuation, restore callbacks,
 /// acknowledge stopped providers, reset budgets, or load/release models.
-pub async fn inspect(
+pub(crate) async fn prepare(
     store: Arc<Store>,
     task: &str,
     policy: &NativeLifecyclePolicy,
-) -> Result<Value> {
+    build_backend: bool,
+) -> Result<NativeRuntime> {
     security::authorize("human-cli", "task.resume")?;
     uuid::Uuid::parse_str(task)?;
     policy.validate()?;
@@ -227,13 +230,218 @@ pub async fn inspect(
     }
     require_no_unknown_generation(&store, &native_endpoint)?;
     let remaining_ns = remaining(&original.clock)?;
-    Ok(
-        json!({"format_version":1,"task_id":task,"lifecycle_task_id":original.parent,
+    let report = json!({"format_version":1,"task_id":task,"lifecycle_task_id":original.parent,
         "binding_event_id":original.binding_event,"binding_event_sha256":original.binding_sha256,
         "inventory_sha256":planning::fingerprint(&inventory)?,"receipt_count":original.receipts.len(),
         "receipt_identity_matches":true,"original_remaining_ns":remaining_ns,
         "resume_authorized":false,"checkpoint_validated":false,"permissions_granted":false,
         "model_mutation_performed":false,"provider_stop_proven":false,"weights_attested":false,
-        "automatic_replay":false}),
-    )
+        "automatic_replay":false});
+    let backend = if build_backend {
+        let mut cfg = original.cfg.clone();
+        cfg.api_base = policy.api_base.clone();
+        let mut targets = BTreeMap::new();
+        let mut receipts = BTreeMap::new();
+        for role in crate::fabric::protocol::ROLES {
+            let model = cfg
+                .role_profiles
+                .get(role)
+                .map(|profile| profile.model.as_str())
+                .unwrap_or(&cfg.model);
+            let receipt = original
+                .receipts
+                .get(model)
+                .ok_or_else(|| anyhow::anyhow!("Missing original role receipt"))?;
+            targets.insert(
+                role.to_owned(),
+                crate::backend::NativeModelTarget {
+                    api_base: policy.api_base.clone(),
+                    model: model.to_owned(),
+                    model_instance_id: receipt.instance_id.clone(),
+                }
+                .canonical()?,
+            );
+            receipts.insert(role.to_owned(), receipt.clone());
+        }
+        let inner = Arc::new(crate::backend::native::NativeBackend::with_role_targets(
+            cfg,
+            targets,
+            policy.authenticate,
+        )?);
+        let bound = BoundBackend {
+            inner,
+            ownership: ownership.clone(),
+            base: policy.api_base.clone(),
+            authenticate: policy.authenticate,
+            child_task: task.to_owned(),
+            receipts,
+        };
+        Some(Arc::new(ResumedBackend {
+            bound,
+            binding: original.binding.clone(),
+            endpoint: native_endpoint,
+        }))
+    } else {
+        None
+    };
+    Ok(NativeRuntime {
+        ownership,
+        task: task.to_owned(),
+        policy: policy.clone(),
+        original,
+        backend,
+        report,
+    })
+}
+
+/// Inspect native receipts without admitting continuation or dispatching inference.
+pub async fn inspect(
+    store: Arc<Store>,
+    task: &str,
+    policy: &NativeLifecyclePolicy,
+) -> Result<Value> {
+    Ok(prepare(store, task, policy, false).await?.report)
+}
+
+pub(crate) struct NativeRuntime {
+    pub(crate) ownership: Arc<Ownership>,
+    task: String,
+    policy: NativeLifecyclePolicy,
+    original: Original,
+    backend: Option<Arc<ResumedBackend>>,
+    report: Value,
+}
+impl NativeRuntime {
+    pub(crate) fn validate(&self, db: &rusqlite::Connection, task: &str) -> Result<()> {
+        if self.task != task {
+            bail!("Native restoration belongs to another task")
+        }
+        let current = read_original(db, task, &self.policy)?;
+        if current.binding_event != self.original.binding_event
+            || current.binding_sha256 != self.original.binding_sha256
+            || serde_json::to_value(&current.cfg)? != serde_json::to_value(&self.original.cfg)?
+            || serde_json::to_value(&current.clock)? != serde_json::to_value(&self.original.clock)?
+        {
+            bail!("Native restoration changed before continuation admission")
+        }
+        remaining(&self.original.clock)?;
+        Ok(())
+    }
+    pub(crate) fn backend(&self) -> Result<Arc<dyn crate::backend::InferenceBackend>> {
+        self.backend
+            .clone()
+            .map(|backend| backend as Arc<dyn crate::backend::InferenceBackend>)
+            .ok_or_else(|| anyhow::anyhow!("Native inspection has no inference backend"))
+    }
+    pub(crate) fn evidence(&self) -> Value {
+        self.report.clone()
+    }
+}
+
+#[derive(Clone)]
+struct ResumedBackend {
+    bound: BoundBackend,
+    binding: Value,
+    endpoint: String,
+}
+struct DispatchGuard {
+    store: Arc<Store>,
+    parent: String,
+    armed: bool,
+}
+impl Drop for DispatchGuard {
+    fn drop(&mut self) {
+        if self.armed {
+            let _ = self.store.finish_task(
+                &self.parent,
+                "interrupted",
+                "Native continuation generation outcome unknown; do not replay",
+            );
+        }
+    }
+}
+impl crate::backend::InferenceBackend for ResumedBackend {
+    fn inference_target(&self, role: &str) -> Result<Option<crate::backend::InferenceTarget>> {
+        self.bound.inference_target(role)
+    }
+    fn has_uncertain_dispatch(&self) -> bool {
+        self.bound.has_uncertain_dispatch()
+    }
+    fn pin(&self) -> Result<Option<Arc<dyn crate::backend::InferenceBackend>>> {
+        Ok(Some(Arc::new(self.clone())))
+    }
+    fn generate<'a>(
+        &'a self,
+        _role: &'a str,
+        _prompt: &'a str,
+        _max_tokens: usize,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<crate::backend::Generation>> + Send + 'a>,
+    > {
+        Box::pin(async { bail!("Native continuation requires original task identity") })
+    }
+    fn generate_for<'a>(
+        &'a self,
+        task: &'a str,
+        role: &'a str,
+        prompt: &'a str,
+        max_tokens: usize,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<crate::backend::Generation>> + Send + 'a>,
+    > {
+        Box::pin(async move {
+            if task != self.bound.child_task {
+                bail!("Native continuation belongs to another task")
+            }
+            let store = self.bound.ownership.store.clone();
+            let parent = store.create_task("Native continuation generation", "fast")?;
+            let mut guard = DispatchGuard {
+                store: store.clone(),
+                parent: parent.clone(),
+                armed: true,
+            };
+            let mut binding = self.binding.clone();
+            binding["continuation_dispatch"] = json!({"role":role,
+                "prompt_sha256":crate::store::sha256(prompt.as_bytes()),
+                "max_output_tokens":max_tokens,"permissions_granted":false});
+            store.event(
+                &parent,
+                "native_continuation_bindings",
+                "human-cli",
+                binding,
+            )?;
+            let digest = self.binding["bindings_sha256"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing original binding digest"))?;
+            event(
+                &store,
+                &parent,
+                "generation_started",
+                &self.endpoint,
+                task,
+                digest,
+            )?;
+            let result = self
+                .bound
+                .generate_for(task, role, prompt, max_tokens)
+                .await;
+            if result.is_ok() && !self.bound.has_uncertain_dispatch() {
+                event(
+                    &store,
+                    &parent,
+                    "generation_confirmed",
+                    &self.endpoint,
+                    task,
+                    digest,
+                )?;
+                store.finish_task(
+                    &parent,
+                    "completed",
+                    "Native continuation generation confirmed",
+                )?;
+                guard.armed = false;
+            }
+            result
+        })
+    }
 }

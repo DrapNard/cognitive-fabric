@@ -158,3 +158,10 @@ beyond locked inputs, runtime environment, or provider weights. Same-owner
 database/source tampering remains outside this guarantee. Source changes, custom
 callbacks, mixed registries, legacy snapshots, unknown dispatches and native
 lifecycle ownership remain refused; no replay, refund or capability is granted.
+
+The explicit native continuation API separately restores native ownership and
+may reconstruct the policy's original builtin worker under that same guard.
+`resume-task --human-approve --native-policy POLICY.json` uses this path; the
+standalone `--restore-builtin-worker` flag still cannot substitute native authority.
+Source/history checks and original task grants remain required. See
+[native continuation](NATIVE_LIFECYCLE.md#approved-native-continuation).

@@ -79,8 +79,19 @@ fn prepare_with_runtime(
     verifier_provider: Option<&crate::verification::provider::Handle>,
     modules: Option<Arc<crate::fabric::modules::Broker>>,
 ) -> Result<Checkpoint> {
+    prepare_with_native(db, task, escalator, verifier_provider, modules, None)
+}
+
+fn prepare_with_native(
+    db: &rusqlite::Connection,
+    task: &str,
+    escalator: &crate::escalation::Handle,
+    verifier_provider: Option<&crate::verification::provider::Handle>,
+    modules: Option<Arc<crate::fabric::modules::Broker>>,
+    native: Option<&crate::residency::lifecycle::restoration::NativeRuntime>,
+) -> Result<Checkpoint> {
     let typed_modules = module_history::restore(db, task, modules)?;
-    super::validate_verifier_recovery(db, task, verifier_provider)?;
+    super::validate_verifier_recovery_with_native(db, task, verifier_provider, native)?;
     let parallel_recorded: bool = db.query_row(
         "SELECT EXISTS(SELECT 1 FROM events WHERE task_id=?1 AND kind='subtask_parallel_schedule')",
         [task],
@@ -889,6 +900,66 @@ pub struct RuntimeRestoration {
     pub modules: Option<Arc<crate::fabric::modules::Broker>>,
 }
 
+#[derive(Default)]
+struct ResumeBindings {
+    modules: Option<Arc<crate::fabric::modules::Broker>>,
+    native: Option<crate::residency::lifecycle::restoration::NativeRuntime>,
+}
+
+/// Continue a native task using its original operator policy and instance
+/// receipts. No models are loaded or unloaded; unknown work is never replayed.
+pub async fn resume_native_with_runtime(
+    store: Arc<Store>,
+    task: &str,
+    human_approve: bool,
+    policy: &crate::residency::lifecycle::NativeLifecyclePolicy,
+    runtime: RuntimeRestoration,
+    cancel: impl std::future::Future<Output = ()>,
+) -> Result<Value> {
+    security::authorize("human-cli", "task.resume")?;
+    if !human_approve {
+        bail!("Native continuation requires explicit operator approval")
+    }
+    let escalator = runtime
+        .escalation_policy
+        .map(crate::escalation::Handle::new)
+        .transpose()?
+        .unwrap_or_default();
+    let verifier = runtime
+        .verifier
+        .map(crate::verification::provider::Handle::new)
+        .transpose()?;
+    tokio::pin!(cancel);
+    let native = tokio::select! {
+        biased;
+        _ = &mut cancel => bail!("Native continuation cancelled during setup"),
+        result = crate::residency::lifecycle::restoration::prepare(store.clone(), task, policy, true) => result?,
+    };
+    let modules = if runtime.modules.is_none() && policy.typed_module_worker {
+        Some(module_history::reconstruct_builtin_owned(
+            store.clone(),
+            task,
+            human_approve,
+            Some(native.ownership.clone()),
+        )?)
+    } else {
+        runtime.modules
+    };
+    resume_with_runtime_handles(
+        store,
+        task,
+        human_approve,
+        escalator,
+        verifier,
+        ResumeBindings {
+            modules,
+            native: Some(native),
+        },
+        cancel,
+    )
+    .await
+}
+
 /// Restore the current compiled builtin worker under its recorded source
 /// fingerprint. No worker is launched and no checkpoint is admitted here.
 /// Custom callbacks and native lifecycle tasks require their original authority.
@@ -950,7 +1021,10 @@ pub async fn resume_with_runtime(
         human_approve,
         escalator,
         verifier,
-        runtime.modules,
+        ResumeBindings {
+            modules: runtime.modules,
+            native: None,
+        },
         cancel,
     )
     .await
@@ -1202,7 +1276,7 @@ async fn resume_with_handle(
         human_approve,
         escalator,
         verifier_provider,
-        None,
+        ResumeBindings::default(),
         cancel,
     )
     .await
@@ -1214,9 +1288,10 @@ async fn resume_with_runtime_handles(
     human_approve: bool,
     escalator: crate::escalation::Handle,
     verifier_provider: Option<crate::verification::provider::Handle>,
-    modules: Option<Arc<crate::fabric::modules::Broker>>,
+    bindings: ResumeBindings,
     cancel: impl std::future::Future<Output = ()>,
 ) -> Result<Value> {
+    let ResumeBindings { modules, native } = bindings;
     security::authorize("human-cli", "task.resume")?;
     if !human_approve {
         bail!("Task continuation requires explicit operator approval")
@@ -1229,9 +1304,14 @@ async fn resume_with_runtime_handles(
         .runtime_lock
         .as_deref()
         .ok_or_else(|| anyhow::anyhow!("Continuation requires a persistent store"))?;
-    let mut lease = Some(ExecutionLease::acquire(path, true).map_err(|error| {
-        error.context("Cannot acquire exclusive runtime lease for task continuation")
-    })?);
+    let mut lease = if let Some(runtime) = &native {
+        runtime.ownership.validate(&store)?;
+        None
+    } else {
+        Some(ExecutionLease::acquire(path, true).map_err(|error| {
+            error.context("Cannot acquire exclusive runtime lease for task continuation")
+        })?)
+    };
     let admission_started = Instant::now();
     let original_configuration = {
         let mut db = store.lock()?;
@@ -1241,12 +1321,13 @@ async fn resume_with_runtime_handles(
         );
         let prepared = (|| -> Result<Config> {
             let tx = db.transaction()?;
-            Ok(prepare_with_runtime(
+            Ok(prepare_with_native(
                 &tx,
                 task,
                 &escalator,
                 verifier_provider.as_ref(),
                 modules.clone(),
+                native.as_ref(),
             )?
             .cfg)
         })();
@@ -1257,7 +1338,11 @@ async fn resume_with_runtime_handles(
         .resource_admission
         .as_ref()
         .map(|configuration| {
-            crate::resource_scheduler::ResourcePool::configured(store.clone(), configuration)
+            crate::resource_scheduler::ResourcePool::configured_owned(
+                store.clone(),
+                configuration,
+                native.as_ref().map(|runtime| runtime.ownership.clone()),
+            )
         })
         .transpose()?;
     if let Some(pool) = &resource_pool {
@@ -1285,12 +1370,13 @@ async fn resume_with_runtime_handles(
         );
         let prepared = (|| -> Result<Checkpoint> {
             let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-            let mut checkpoint = prepare_with_runtime(
+            let mut checkpoint = prepare_with_native(
                 &tx,
                 task,
                 &escalator,
                 verifier_provider.as_ref(),
                 modules.clone(),
+                native.as_ref(),
             )?;
             if serde_json::to_value(&checkpoint.cfg)?
                 != serde_json::to_value(&original_configuration)?
@@ -1300,7 +1386,9 @@ async fn resume_with_runtime_handles(
             if checkpoint.cfg.inference_process {
                 validate_worker_workspace(&mut checkpoint.cfg, path)?;
             }
-            if checkpoint.cfg.inference_process || checkpoint.typed_modules.is_some() {
+            if native.is_none()
+                && (checkpoint.cfg.inference_process || checkpoint.typed_modules.is_some())
+            {
                 // No inference or module dispatch has begun. A competing exclusive owner during conversion
                 // cannot commit recovery while this write transaction remains open.
                 lease = Some(
@@ -1336,7 +1424,7 @@ async fn resume_with_runtime_handles(
                 "UPDATE tasks SET status='running',updated=unixepoch() WHERE id=?1",
                 [task],
             )?;
-            tx.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'continuation','human-cli',?2,unixepoch())",rusqlite::params![task,json!({"state":"started","format_version":1,"original_budget_preserved":true,"prior_timing_complete":false,"subtask_results_verified":false,"reconciled_parallel_result_publications":checkpoint.reconciled_parallel_subtasks.len(),"escalation_policy":escalator.descriptor(),"verifier_provider":checkpoint.verifier_provider.as_ref().map(|provider|provider.descriptor()),"restored_typed_modules":checkpoint.typed_modules.as_ref().map(|modules|modules.evidence()),"restored_resource_pool":restored_pool,"resource_history":checkpoint.resource_history,"finite_search_history":checkpoint.finite_search_history,"parallel_history":parallel_history}).to_string()])?;
+            tx.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'continuation','human-cli',?2,unixepoch())",rusqlite::params![task,json!({"state":"started","format_version":1,"original_budget_preserved":true,"prior_timing_complete":false,"subtask_results_verified":false,"reconciled_parallel_result_publications":checkpoint.reconciled_parallel_subtasks.len(),"escalation_policy":escalator.descriptor(),"verifier_provider":checkpoint.verifier_provider.as_ref().map(|provider|provider.descriptor()),"restored_native_runtime":native.as_ref().map(|runtime|runtime.evidence()),"restored_typed_modules":checkpoint.typed_modules.as_ref().map(|modules|modules.evidence()),"restored_resource_pool":restored_pool,"resource_history":checkpoint.resource_history,"finite_search_history":checkpoint.finite_search_history,"parallel_history":parallel_history}).to_string()])?;
             if started.elapsed() > Duration::from_secs(5) {
                 bail!("Continuation admission deadline exhausted")
             }
@@ -1387,7 +1475,10 @@ async fn resume_with_runtime_handles(
     };
     let inference: Arc<dyn InferenceBackend> = match &process {
         Some(process) => process.clone(),
-        None => Arc::new(LocalBackend(checkpoint.cfg.clone())),
+        None => match &native {
+            Some(runtime) => runtime.backend()?,
+            None => Arc::new(LocalBackend(checkpoint.cfg.clone())),
+        },
     };
     let inference_concurrency = checkpoint.cfg.subtask_parallelism.unwrap_or(1);
     let backend: Arc<dyn InferenceBackend> = Arc::new(
@@ -1471,6 +1562,7 @@ async fn resume_with_runtime_handles(
         "verification_attempted":session.verification_attempted,"stop_reason":session.stop_reason,
         "restored_resource_pool":restored_pool,"resource_history":checkpoint.resource_history,
         "parallel_history":parallel_history,
+        "restored_native_runtime":native.as_ref().map(|runtime|runtime.evidence()),
         "restored_typed_modules":checkpoint.typed_modules.as_ref().map(|modules|modules.evidence()),
         "finite_search_history":checkpoint.finite_search_history,
         "new_calls":session.resources.calls-prior_calls,"charged_resources":session.resources,

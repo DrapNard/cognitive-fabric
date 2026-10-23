@@ -124,6 +124,9 @@ enum Command {
         /// Reconstruct the fixed builtin worker from matching recorded sources.
         #[arg(long)]
         restore_builtin_worker: bool,
+        /// Restore the original approved native model/instance policy.
+        #[arg(long, conflicts_with = "restore_builtin_worker")]
+        native_policy: Option<PathBuf>,
         #[arg(long, requires = "retry_thresholds")]
         retry_study: Option<PathBuf>,
         #[arg(long, requires = "retry_study")]
@@ -1162,6 +1165,7 @@ async fn run_cli() -> Result<()> {
         id,
         human_approve,
         restore_builtin_worker,
+        native_policy,
         ..
     } = &cli.command
     {
@@ -1172,6 +1176,25 @@ async fn run_cli() -> Result<()> {
         let cancel = async {
             let _ = tokio::signal::ctrl_c().await;
         };
+        if let Some(path) = native_policy {
+            let policy = cogfabric::residency::lifecycle::NativeLifecyclePolicy::load(path)?;
+            let runtime = cogfabric::recovery::continuation::RuntimeRestoration {
+                escalation_policy: restored_policy,
+                verifier: verifier_provider.clone(),
+                modules: None,
+            };
+            let report = cogfabric::recovery::continuation::resume_native_with_runtime(
+                store,
+                id,
+                *human_approve,
+                &policy,
+                runtime,
+                cancel,
+            )
+            .await?;
+            output(&report, cli.json)?;
+            return Ok(());
+        }
         if *restore_builtin_worker {
             let modules = cogfabric::recovery::continuation::reconstruct_builtin_registry(
                 store.clone(),

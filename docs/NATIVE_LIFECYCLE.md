@@ -21,13 +21,43 @@ after the observation. It does not adopt or rebase foreign/drifted instances.
 `receipt_identity_matches: true` establishes only this observed local consistency.
 The report explicitly retains `checkpoint_validated: false` and
 `resume_authorized: false`. No task audit/status, model load/unload, generation,
-stop acknowledgement, budget or permission is changed. Ordinary native task
-continuation still refuses until exact ownership/backend restoration is integrated.
+stop acknowledgement, budget or permission is changed. Ordinary continuation
+without explicit native policy restoration still refuses.
 Provider identity reuse, same-owner tampering, real weights and physical provider
 termination remain outside this preflight's proof.
 
 Library callers use
 `residency::lifecycle::restoration::inspect(store, task, &policy).await`.
+
+## Approved native continuation
+
+```sh
+cogfabric --home ./state resume-task TASK_UUID --human-approve --native-policy ./native-policy.json
+```
+
+The original policy must match the recorded digest. Setup retains the validated
+exclusive runtime/resource owner through normal checkpoint admission and execution.
+Exact native role targets and original receipts are restored. Original deadline,
+charged calls/tokens/cycles/tools, route maps and resource configuration remain
+authoritative. The original builtin worker is reconstructed only with matching
+version-2 source/history evidence and borrows this same owner. Custom callbacks
+still require retained host objects through `RuntimeRestoration`.
+
+Each new model dispatch creates a separate lifecycle task with recorded original
+receipt bindings, role/prompt hash/output ceiling and a durable generation start
+before receipt revalidation and native chat. Confirmed successful replies close
+that generation; failed/dropped/uncertain calls retain a blocking start. Existing
+operator generation resolution accepts these lifecycle task IDs after independent
+provider stop and explicit acknowledgement. Resolution grants no replay or refund:
+unresolved original inference/resource evidence still blocks retries. No model
+load, release, receipt rebasing or automatic cleanup occurs on this path.
+
+Library hosts call `recovery::continuation::resume_native_with_runtime` with the
+original policy, explicit approval and retained verifier/escalation/module objects
+when required. Cancellation covers setup and execution. Inference process
+substitution and arbitrary callback reconstruction remain refused. Logical
+resource admission and returned-instance checks do not prove physical GPU limits,
+continuous exclusive provider ownership, weight identity or general answer quality.
 
 ## Operator policy
 

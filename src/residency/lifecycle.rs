@@ -908,14 +908,17 @@ pub async fn resolve_generation(
     let _ownership = Ownership::acquire(store.clone())?;
     let (binding_raw, start_raw) = {
         let db = store.lock()?;
-        let mut statement=db.prepare("SELECT kind,CASE WHEN length(CAST(payload AS BLOB))<=16384 THEN payload END FROM events WHERE task_id=?1 AND source='human-cli' AND (kind='native_task_bindings' OR (kind='native_task_lifecycle' AND json_extract(payload,'$.state') IN ('generation_started','generation_confirmed','generation_operator_stopped'))) ORDER BY id LIMIT 4")?;
+        let mut statement=db.prepare("SELECT kind,CASE WHEN length(CAST(payload AS BLOB))<=16384 THEN payload END FROM events WHERE task_id=?1 AND source='human-cli' AND (kind IN ('native_task_bindings','native_continuation_bindings') OR (kind='native_task_lifecycle' AND json_extract(payload,'$.state') IN ('generation_started','generation_confirmed','generation_operator_stopped'))) ORDER BY id LIMIT 4")?;
         let rows = statement
             .query_map([task], |r| {
                 Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         if rows.len() != 2
-            || rows[0].0 != "native_task_bindings"
+            || !matches!(
+                rows[0].0.as_str(),
+                "native_task_bindings" | "native_continuation_bindings"
+            )
             || rows[1].0 != "native_task_lifecycle"
         {
             bail!("Native generation is missing its unique unresolved binding/admission pair")

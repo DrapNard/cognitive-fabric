@@ -60,6 +60,15 @@ pub(super) fn reconstruct_builtin(
     task: &str,
     human_approve: bool,
 ) -> Result<Arc<Broker>> {
+    reconstruct_builtin_owned(store, task, human_approve, None)
+}
+
+pub(super) fn reconstruct_builtin_owned(
+    store: Arc<crate::store::Store>,
+    task: &str,
+    human_approve: bool,
+    ownership: Option<Arc<crate::residency::lifecycle::Ownership>>,
+) -> Result<Arc<Broker>> {
     crate::security::authorize("human-cli", "task.resume")?;
     if !human_approve {
         bail!("Builtin registry reconstruction requires explicit operator approval")
@@ -68,7 +77,12 @@ pub(super) fn reconstruct_builtin(
     let path = store.runtime_lock.as_deref().ok_or_else(|| {
         anyhow::anyhow!("Builtin registry reconstruction requires a persistent store")
     })?;
-    let _lease = crate::recovery::ExecutionLease::acquire(path, true)?;
+    let _lease = if let Some(owner) = &ownership {
+        owner.validate(&store)?;
+        None
+    } else {
+        Some(crate::recovery::ExecutionLease::acquire(path, true)?)
+    };
     let mut db = store.lock()?;
     let started = std::time::Instant::now();
     db.progress_handler(
@@ -81,8 +95,8 @@ pub(super) fn reconstruct_builtin(
             "SELECT status, EXISTS(SELECT 1 FROM events WHERE task_id=?1 AND kind='native_task_scope') FROM tasks WHERE id=?1",
             [task], |row| Ok((row.get(0)?, row.get(1)?)),
         )?;
-        if !matches!(status.as_str(), "running" | "interrupted") || native {
-            bail!("Builtin reconstruction requires an unfinished task without native ownership")
+        if !matches!(status.as_str(), "running" | "interrupted") || native != ownership.is_some() {
+            bail!("Builtin reconstruction requires an unfinished task with matching native ownership scope")
         }
         let raw: String = tx.query_row(
             "SELECT CASE WHEN length(CAST(payload AS BLOB))<=65536 THEN payload END FROM events WHERE task_id=?1 AND kind='typed_module_snapshot' ORDER BY id LIMIT 1",
@@ -99,9 +113,10 @@ pub(super) fn reconstruct_builtin(
         {
             bail!("Builtin worker sources differ from the original task")
         }
-        let broker = Broker::reconstructed_builtin(
+        let broker = Broker::reconstructed_builtin_owned(
             store.clone(),
             uuid::Uuid::parse_str(&snapshot.broker_id)?,
+            ownership.clone(),
         )?;
         let compiled = broker.discover()?;
         if compiled.len() != 1

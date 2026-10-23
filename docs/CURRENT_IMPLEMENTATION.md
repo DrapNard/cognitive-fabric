@@ -1,5 +1,27 @@
 # Current Rust implementation
 
+## Native-owner continuation — 2026-10-23
+
+Supported original native checkpoints can now continue through the explicit
+`resume-task TASK_UUID --human-approve --native-policy POLICY.json` path. A private
+validated context retains exact original receipts, role targets and exclusive
+ownership through normal checkpoint/resource admission. Original charges, route
+maps and deadline remain enforced. The source-checked builtin worker borrows that
+owner rather than acquiring conflicting leases. Each new model call has a durable
+separate lifecycle anchor; unknown effects block mutation and cannot be replayed
+by an operator stop acknowledgement. This path does not load or unload models.
+
+The workspace passes **1,014 tests across 66 targets**, zero failed or ignored,
+plus **four optional Wasm tests**. Formatting, Rust 1.99 workspace check and strict
+Clippy with default and all features pass. Actual CLI/worker/loopback regressions
+cover configured resource admission, exactly one new call, no reload/unload,
+wrong-instance failure, operator resolution and refusal to replay uncertain work.
+Each call adds a local lifecycle audit and fresh inventory round trip; no latency
+or efficiency gain is claimed. The real server probe at `127.0.0.1:1234` refused
+connection, so real-model quality, performance and GPU behavior remain unverified.
+Unsupported/unknown checkpoints and arbitrary callback reconstruction still refuse;
+general v1.0 completion requires a separate requirement-by-requirement audit.
+
 ## Native restoration inspection — 2026-10-23
 
 The new read-only `native-resume-preview TASK_UUID --policy POLICY.json` checks

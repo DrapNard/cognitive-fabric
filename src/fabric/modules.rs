@@ -708,13 +708,24 @@ pub struct Status {
 impl Broker {
     /// Only reviewed recovery code may reconstruct a recorded registry UUID.
     /// This restores local provenance, not process identity or executable trust.
+    #[cfg(test)]
     pub(crate) fn reconstructed_builtin(
         store: Arc<Store>,
         identity: uuid::Uuid,
     ) -> Result<Arc<Self>> {
+        Self::reconstructed_builtin_owned(store, identity, None)
+    }
+    pub(crate) fn reconstructed_builtin_owned(
+        store: Arc<Store>,
+        identity: uuid::Uuid,
+        ownership: Option<Arc<crate::residency::lifecycle::Ownership>>,
+    ) -> Result<Arc<Self>> {
         let mut broker = Self::new(store.clone());
         broker.identity = identity;
-        broker.register(Arc::new(ProcessModule::builtin(store)?), Limits::default())?;
+        broker.register(
+            Arc::new(ProcessModule::builtin_with_ownership(store, ownership)?),
+            Limits::default(),
+        )?;
         Ok(Arc::new(broker))
     }
     pub fn new(store: Arc<Store>) -> Self {

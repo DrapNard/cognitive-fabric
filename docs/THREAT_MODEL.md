@@ -1,5 +1,19 @@
 # Threat Model (v1.0)
 
+## Explicit native continuation ownership
+
+Only private validated native runtime objects bypass the default missing-owner
+guard. Exact Store/task/policy/configuration/clock/binding checks precede ordinary
+checkpoint admission, and the original exclusive owner is shared with resource
+pools and process reapers. No model gains a residency capability or alternate
+backend. Each new inference has a durable separate lifecycle admission; uncertain
+or dropped work blocks endpoint mutation until explicit operator resolution.
+Resolution cannot reconcile unknown inference or refund reservations. Fixed
+builtin reconstruction still requires matching source and completed history;
+custom callbacks remain trusted host code. These local receipts and source hashes
+do not attest physical provider ownership, termination, weights, GPU limits or
+authenticity against a same-owner database/source edit.
+
 ## Read-only native restoration inspection
 
 The operator supplies the original policy; model text cannot choose new receipt

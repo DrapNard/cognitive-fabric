@@ -58,6 +58,8 @@ fn write_policy(root: &Path, api_base: &str, release_after: bool) -> PathBuf {
 enum ChatReply {
     Correct,
     WrongInstance,
+    Sorted,
+    SortedThenWrong,
 }
 
 #[derive(Default)]
@@ -179,14 +181,19 @@ async fn native_fixture(
                 assert_eq!(body["store"], false);
                 assert_eq!(body["integrations"], json!([]));
                 let instance = match reply {
-                    ChatReply::Correct => "alpha-instance",
+                    ChatReply::SortedThenWrong if server_seen.lock().unwrap().chats >= 3 => {
+                        "wrong-instance"
+                    }
+                    ChatReply::Correct | ChatReply::Sorted | ChatReply::SortedThenWrong => {
+                        "alpha-instance"
+                    }
                     ChatReply::WrongInstance => "wrong-instance",
                 };
                 response(
                     &mut stream,
                     json!({
                         "model_instance_id":instance,
-                        "output":[{"type":"message","content":"Hello from the local model."}],
+                        "output":[{"type":"message","content":if matches!(reply,ChatReply::Sorted | ChatReply::SortedThenWrong) { "[1,2,3]" } else { "Hello from the local model." }}],
                         "stats":{"input_tokens":3,"total_output_tokens":5}
                     }),
                 )
@@ -843,6 +850,215 @@ async fn service_reuses_native_policy_with_a_fresh_owned_worker_registry_per_tas
     assert_eq!(seen.lock().unwrap().unloads, 0);
     let _ = child.0.kill();
     let _ = child.0.wait();
+    let _ = stop_tx.send(());
+    tokio::time::sleep(Duration::from_millis(120)).await;
+    std::fs::remove_dir_all(home).unwrap();
+}
+
+#[tokio::test]
+async fn native_cli_continuation_restores_owned_instances_and_builtin_worker_without_loading() {
+    native_continuation_case(false).await;
+}
+
+#[tokio::test]
+async fn uncertain_native_continuation_is_resolvable_without_replaying_inference() {
+    native_continuation_case(true).await;
+}
+
+async fn native_continuation_case(fail: bool) {
+    let home = root();
+    let mut cfg = config(&home, 120);
+    cfg.resource_admission = Some(serde_json::from_value(json!({
+        "settings":{"label":"native.recovery","capacity":{"compute_slots":1,"host_memory_bytes":100,"device_memory_bytes":100},"max_pending":4,"max_wait_ms":5000,"max_execution_ms":5000},
+        "allocation":{"compute_slots":1,"host_memory_bytes":20,"device_memory_bytes":20},"residents":[]
+    })).unwrap());
+    cfg.save().unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let api_base = format!("http://{}/api/v1", listener.local_addr().unwrap());
+    let path = write_policy(&home, &api_base, false);
+    let mut policy: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    policy["typed_module_worker"] = json!(true);
+    std::fs::write(&path, serde_json::to_vec(&policy).unwrap()).unwrap();
+    let (stop_tx, stop_rx) = tokio::sync::oneshot::channel();
+    let seen = native_fixture(
+        listener,
+        if fail {
+            ChatReply::SortedThenWrong
+        } else {
+            ChatReply::Sorted
+        },
+        stop_rx,
+        None,
+    )
+    .await;
+    let initial = cli(
+        &home,
+        &[
+            "--native-lifecycle-policy",
+            path.to_str().unwrap(),
+            "--approve-native-lifecycle",
+            "ask",
+            r#"sort:{"values":[3,1,2]}"#,
+            "--mode",
+            "standard",
+        ],
+    )
+    .await;
+    assert!(
+        initial.status.success(),
+        "{}",
+        String::from_utf8_lossy(&initial.stderr)
+    );
+    let result: Value = serde_json::from_slice(&initial.stdout).unwrap();
+    assert_eq!(result["status"], "completed");
+    let task = result["task_id"].as_str().unwrap();
+    let db = rusqlite::Connection::open(cfg.db()).unwrap();
+    let cutoff: i64 = db
+        .query_row(
+            "SELECT min(id) FROM events WHERE task_id=?1 AND kind='reasoning_boundary'",
+            [task],
+            |r| r.get(0),
+        )
+        .unwrap();
+    db.execute(
+        "DELETE FROM events WHERE task_id=?1 AND id>?2",
+        rusqlite::params![task, cutoff],
+    )
+    .unwrap();
+    db.execute(
+        "UPDATE tasks SET status='interrupted',answer='' WHERE id=?1",
+        [task],
+    )
+    .unwrap();
+    drop(db);
+    let chats = seen.lock().unwrap().chats;
+    let requests = seen.lock().unwrap().requests.len();
+    let denied = cli(
+        &home,
+        &[
+            "resume-task",
+            task,
+            "--native-policy",
+            path.to_str().unwrap(),
+        ],
+    )
+    .await;
+    assert!(!denied.status.success());
+    assert_eq!(seen.lock().unwrap().requests.len(), requests);
+    let denied = cli(&home, &["resume-task", task, "--human-approve"]).await;
+    assert!(!denied.status.success());
+    assert_eq!(seen.lock().unwrap().requests.len(), requests);
+    let resumed = cli(
+        &home,
+        &[
+            "resume-task",
+            task,
+            "--human-approve",
+            "--native-policy",
+            path.to_str().unwrap(),
+        ],
+    )
+    .await;
+    assert!(
+        resumed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&resumed.stderr)
+    );
+    let report: Value = serde_json::from_slice(&resumed.stdout).unwrap();
+    assert_eq!(
+        report["status"],
+        if fail { "interrupted" } else { "completed" }
+    );
+    if !fail {
+        assert_eq!(report["answer"], "[1,2,3]");
+    }
+    assert_eq!(report["new_calls"], 1);
+    assert_eq!(
+        report["restored_native_runtime"]["receipt_identity_matches"],
+        true
+    );
+    assert_eq!(seen.lock().unwrap().chats, chats + 1);
+    assert_eq!(seen.lock().unwrap().unloads, 0);
+    assert_eq!(
+        seen.lock()
+            .unwrap()
+            .requests
+            .iter()
+            .filter(|request| request.starts_with("POST /api/v1/models/load "))
+            .count(),
+        1
+    );
+    let store = Store::open(&cfg.db()).unwrap();
+    let trace = store.task(task).unwrap();
+    let events = trace["events"].as_array().unwrap();
+    assert!(events
+        .iter()
+        .any(|e| e["kind"] == "builtin_registry_reconstruction"));
+    assert_eq!(
+        events
+            .iter()
+            .any(|e| e["kind"] == "module_process_stopped" && e["payload"]["reaped"] == true),
+        !fail
+    );
+    let db = rusqlite::Connection::open(cfg.db()).unwrap();
+    let count: i64 = db
+        .query_row(
+            "SELECT count(*) FROM events WHERE kind='native_continuation_bindings'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(count, 1);
+    let generation: String = db
+        .query_row(
+            "SELECT task_id FROM events WHERE kind='native_continuation_bindings'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    drop(db);
+    if fail {
+        let native_policy = NativeLifecyclePolicy::load(&path).unwrap();
+        let shared = Arc::new(store);
+        let before = seen.lock().unwrap().requests.len();
+        assert!(cogfabric::residency::lifecycle::restoration::inspect(
+            shared.clone(),
+            task,
+            &native_policy
+        )
+        .await
+        .is_err());
+        assert_eq!(seen.lock().unwrap().requests.len(), before);
+        let resolution = cogfabric::residency::lifecycle::resolve_generation(
+            shared.clone(),
+            &api_base,
+            false,
+            &generation,
+            true,
+            true,
+        )
+        .await
+        .unwrap();
+        assert_eq!(resolution["automatic_replay"], false);
+        assert_eq!(resolution["provider_stop_proven"], false);
+        assert_eq!(seen.lock().unwrap().chats, chats + 1);
+        let retry = cli(
+            &home,
+            &[
+                "resume-task",
+                task,
+                "--human-approve",
+                "--native-policy",
+                path.to_str().unwrap(),
+            ],
+        )
+        .await;
+        assert!(!retry.status.success());
+        assert_eq!(seen.lock().unwrap().chats, chats + 1);
+        drop(shared);
+    } else {
+        drop(store);
+    }
     let _ = stop_tx.send(());
     tokio::time::sleep(Duration::from_millis(120)).await;
     std::fs::remove_dir_all(home).unwrap();
