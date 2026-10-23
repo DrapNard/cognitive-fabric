@@ -80,6 +80,40 @@ It must not be passed off as independent evaluation evidence. Operators still
 supply the existing evaluator's independently reviewed query/expected-excerpt
 cases. Public examples or model-authored labels do not establish independence.
 
+## Import with durable preparation provenance
+
+New preparation reports use version 2, adding exact normalized byte lengths and
+the held-out snapshot hash. Import them with a pinned report hash:
+
+```sh
+cogfabric --home ./state --json candidate create-prepared --skill rust.s1 \
+  --bundle ./prepared-bundle --report-sha256 REPORT_SHA256 --license LICENSE_LABEL
+cogfabric --home ./state --json candidate provenance CANDIDATE_UUID
+```
+
+The importer opens fixed bundle entries relative to a retained directory
+descriptor. It verifies exact report, artifact and held-out bytes, strict report
+versions/flags, source metadata, normalized bodies, byte framing, duplicate lineage,
+split coverage and overlap checks before quarantine. Embedded Markdown headings
+remain data because byte lengths govern framing. Held-out text enters neither
+the candidate artifact nor the provenance database snapshot.
+
+Candidate registration and a metadata-only provenance task/event commit in one
+SQLite transaction; audit failure rolls back candidate/version/anchor rows. A
+content-addressed orphan quarantine blob can remain after database failure, as
+with ordinary imports, and stays subject to artifact quotas. Provenance anchors
+are protected from task-history retention. Inspection validates the saved report
+hash/candidate binding using a read-only store and reports
+`evaluation_authority: false`.
+
+The aggregate candidate license label is an explicit operator assertion; each
+original source/license declaration stays in the report. Hashes are local integrity
+evidence, not signatures or proof against same-owner edits. Prepared provenance is
+not an integrity/quality/regression evaluation and cannot promote a candidate.
+Independent evaluation and explicit approval still apply. Version-1 preparation
+bundles need re-preparation for this path; ordinary manual artifact import remains
+available without invented provenance.
+
 ## Bounds and limits
 
 Source reads use directory-relative `openat` with retained directory descriptors,

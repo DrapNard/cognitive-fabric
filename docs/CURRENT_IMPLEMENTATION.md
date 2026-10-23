@@ -1,5 +1,22 @@
 # Current Rust implementation
 
+## Prepared RAG candidate provenance — 2026-10-24
+
+`candidate create-prepared` now imports pinned version-2 preparation bundles with
+strict hash, byte-framing, metadata, duplicate and held-out split validation. The
+candidate and metadata-only provenance commit atomically; audit failure rolls back
+candidate/version/anchor rows. Original source metadata stays attached to the
+candidate and protected from task retention. `candidate provenance` is read-only.
+Provenance grants no evaluation or promotion authority; independent tests and
+explicit operator approval remain required.
+
+Focused tests cover CLI import/inspection, embedded headings, held-out exclusion,
+retention, promotion refusal, fifteen tampering cases and transaction rollback.
+Combined checks pass **1,030 tests across 70 workspace targets**, zero failed or
+ignored, plus **four optional Wasm tests**. Formatting, Rust 1.99 workspace check
+and strict Clippy with default/all features pass. Offline CLI/HTTP smoke scripts
+pass. See [source preparation](SOURCE_PREPARATION.md).
+
 ## Optional benchmark device observations — 2026-10-23
 
 `compare --observe-gpu` now samples bounded whole-device metrics during each

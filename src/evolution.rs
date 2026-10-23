@@ -1,6 +1,7 @@
 //! Operator-selected candidate artifacts are copied into read-only content-addressed quarantine.
 pub mod discovery;
 pub mod preparation;
+pub mod prepared;
 use crate::{
     config::Config,
     security,
@@ -23,7 +24,13 @@ pub fn create(
     source: &str,
     license: &str,
 ) -> Result<Candidate> {
-    create_import(cfg, store, (skill, kind), (artifact, source, license), None)
+    create_import(
+        cfg,
+        store,
+        (skill, kind),
+        (ImportArtifact::File(artifact), source, license),
+        None,
+    )
 }
 
 pub fn create_from_gap(
@@ -40,16 +47,21 @@ pub fn create_from_gap(
         cfg,
         store,
         (skill, "rag"),
-        (artifact, source, license),
+        (ImportArtifact::File(artifact), source, license),
         Some(&origin),
     )
+}
+
+enum ImportArtifact<'a> {
+    File(&'a Path),
+    Prepared(&'a [u8], &'a str),
 }
 
 fn create_import(
     cfg: &Config,
     store: &Store,
     identity: (&str, &str),
-    input: (&Path, &str, &str),
+    input: (ImportArtifact<'_>, &str, &str),
     origin: Option<&crate::gaps::Preparation>,
 ) -> Result<Candidate> {
     let (skill, kind) = identity;
@@ -59,18 +71,23 @@ fn create_import(
     if !store.skills()?.iter().any(|entry| entry.id == skill) {
         bail!("Unknown skill")
     }
-    let (bytes, extension, maximum) = match kind {
-        "rag" => (
-            security::read_reviewed_document(artifact)?.into_bytes(),
+    let (bytes, extension, maximum, preparation) = match (kind, artifact) {
+        ("rag", ImportArtifact::File(path)) => (
+            security::read_reviewed_document(path)?.into_bytes(),
             "md",
             256_000,
+            None,
         ),
-        "lora" => (
-            security::read_regular_bytes(artifact, 64_000_000)?,
+        ("lora", ImportArtifact::File(path)) => (
+            security::read_regular_bytes(path, 64_000_000)?,
             "safetensors",
             64_000_000,
+            None,
         ),
-        _ => bail!("Unsupported candidate kind"),
+        ("rag", ImportArtifact::Prepared(bytes, report)) if bytes.len() <= 256_000 => {
+            (bytes.to_vec(), "md", 256_000, Some(report))
+        }
+        _ => bail!("Unsupported candidate kind or prepared artifact bounds"),
     };
     if bytes.is_empty() {
         bail!("Candidate artifact is empty")
@@ -155,7 +172,9 @@ fn create_import(
         source,
         license,
     );
-    if origin.is_some() {
+    if let Some(report) = preparation {
+        store.create_prepared_candidate_record(metadata, report)
+    } else if origin.is_some() {
         store.create_candidate_record(metadata, origin)
     } else {
         store.create_candidate(

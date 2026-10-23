@@ -567,6 +567,19 @@ enum Command {
 #[derive(Subcommand)]
 enum CandidateAction {
     List,
+    CreatePrepared {
+        #[arg(long)]
+        skill: String,
+        #[arg(long)]
+        bundle: PathBuf,
+        #[arg(long)]
+        report_sha256: String,
+        #[arg(long)]
+        license: String,
+    },
+    Provenance {
+        id: String,
+    },
     DiscoverSources {
         #[arg(long)]
         root: PathBuf,
@@ -1178,6 +1191,16 @@ async fn run_cli() -> Result<()> {
             cli.json,
         )?;
         return Ok(());
+    }
+    if let Command::Candidate {
+        action: CandidateAction::Provenance { id },
+    } = &cli.command
+    {
+        let store = Store::open_existing_read_only(&cfg.db())?;
+        return output(
+            &cogfabric::evolution::prepared::provenance(&store, id)?,
+            cli.json,
+        );
     }
     if let Command::NativeResumePreview { id, policy } = &cli.command {
         let policy = cogfabric::residency::lifecycle::NativeLifecyclePolicy::load(policy)?;
@@ -1882,6 +1905,22 @@ async fn run_cli() -> Result<()> {
             report
         }
         Command::Candidate { action } => match action {
+            CandidateAction::CreatePrepared {
+                skill,
+                bundle,
+                report_sha256,
+                license,
+            } => serde_json::to_value(cogfabric::evolution::prepared::create(
+                &cfg,
+                &store,
+                &skill,
+                &bundle,
+                &report_sha256,
+                &license,
+            )?)?,
+            CandidateAction::Provenance { .. } => {
+                bail!("Provenance inspection must precede runtime initialization")
+            }
             CandidateAction::DiscoverSources { .. } => {
                 bail!("Source discovery must precede runtime initialization")
             }

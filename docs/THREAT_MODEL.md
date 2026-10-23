@@ -1,5 +1,18 @@
 # Threat Model (v1.0)
 
+## Prepared candidate provenance boundary
+
+Pinned report bytes bind artifact and held-out hashes plus normalized source byte
+lengths. Fixed no-follow bundle reads and snapshot import prevent a later pathname
+replacement from changing the quarantined bytes. Byte framing treats embedded
+headings as data. Strict split/duplicate checks cannot establish semantic
+independence, licensing or poisoning resistance. Metadata-only provenance commits
+with the inactive candidate and never counts as an evaluation. Failure rolls back
+database authority; an orphan immutable quarantine blob may remain within quotas.
+Retention protects association evidence, but hashes do not authenticate a hostile
+same-owner database edit. No held-out bodies, executable, new capability, automatic
+promotion or neural acceptance are stored through this provenance path.
+
 ## Optional benchmark device sampling
 
 Only explicit operator comparison options enable GPU observation; models receive

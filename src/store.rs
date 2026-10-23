@@ -883,6 +883,23 @@ impl Store {
         metadata: (&str, &str, &str, &str, &str, &str),
         origin: Option<&crate::gaps::Preparation>,
     ) -> Result<Candidate> {
+        self.create_candidate_with_lineage(metadata, origin, None)
+    }
+
+    pub(crate) fn create_prepared_candidate_record(
+        &self,
+        metadata: (&str, &str, &str, &str, &str, &str),
+        report: &str,
+    ) -> Result<Candidate> {
+        self.create_candidate_with_lineage(metadata, None, Some(report))
+    }
+
+    fn create_candidate_with_lineage(
+        &self,
+        metadata: (&str, &str, &str, &str, &str, &str),
+        origin: Option<&crate::gaps::Preparation>,
+        preparation: Option<&str>,
+    ) -> Result<Candidate> {
         let (skill, kind, artifact, checksum, source, license) = metadata;
         if kind != "rag" && kind != "lora" {
             bail!("Unsupported artifact kind")
@@ -951,6 +968,32 @@ impl Store {
         if let Some(origin) = origin {
             let payload = json!({"candidate_id":candidate.id,"candidate_checksum":candidate.checksum,"capability":skill,"gap_event_id":origin.gap_event_id,"gap_checksum":origin.gap_checksum,"automatic_promotion":false});
             db.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES (?1,'gap_candidate','human-cli',?2,?3)",params![origin.task_id,payload.to_string(),now()])?;
+        }
+        if let Some(report) = preparation {
+            if kind != "rag" || report.len() > 65_536 {
+                bail!("Prepared lineage is limited to bounded RAG reports")
+            }
+            let prepared = crate::strict_json::value(report.as_bytes(), 65_536)?;
+            if prepared["format_version"] != 2
+                || prepared["artifact_sha256"] != candidate.checksum
+                || prepared["permissions_granted"] != false
+                || prepared["model_promoted"] != false
+                || prepared["independent_review_proven"] != false
+                || prepared["untrusted_data"] != true
+            {
+                bail!("Prepared lineage cannot grant authority or change artifact identity")
+            }
+            crate::storage::admit(&db)?;
+            let task = Uuid::new_v4().to_string();
+            let payload = json!({"format_version":1,"candidate_id":candidate.id,"candidate_checksum":candidate.checksum,
+                "report_sha256":sha256(report.as_bytes()),"report_json":report,
+                "permissions_granted":false,"evaluation_authority":false,"automatic_promotion":false});
+            let raw = payload.to_string();
+            if raw.len() > 262144 {
+                bail!("Prepared lineage audit exceeds bounds")
+            }
+            db.execute("INSERT INTO tasks(id,query,mode,status,answer,created,updated) VALUES(?1,'Prepared source candidate import','fast','completed','Provenance recorded; no evaluation or promotion',?2,?2)",params![task,now()])?;
+            db.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'candidate_preparation','human-cli',?2,?3)",params![task,raw,now()])?;
         }
         db.commit()?;
         Ok(candidate)

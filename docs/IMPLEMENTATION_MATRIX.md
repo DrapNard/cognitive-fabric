@@ -1,5 +1,28 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Prepared candidate provenance transaction — 2026-10-24
+
+**Implemented for version-2 RAG bundles.** `src/evolution/prepared.rs` imports
+operator-pinned preparation reports with fixed-entry descriptor-relative reads,
+artifact/held-out hashes, exact normalized byte framing, source metadata, duplicate
+lineage and split checks. It imports a validated byte snapshot rather than
+reopening a mutable artifact pathname. `preparation.rs` now emits byte lengths and
+the held-out snapshot hash in explicitly versioned reports.
+
+`src/store.rs` atomically records the inactive candidate and non-evaluation
+provenance anchor; audit failures roll back versions/candidate/task rows. Existing
+quarantine quotas remain in force. `src/storage.rs` protects provenance anchors.
+`candidate create-prepared` imports, and `candidate provenance` opens the existing
+store read-only to inspect metadata. No quality evaluation, permissions or neural
+promotion are inferred. Version-1 bundles require re-preparation for this route.
+
+`tests/prepared_candidate.rs` covers actual CLI import/inspection, held-out
+exclusion, embedded headings, retention, unchanged promotion gates, fifteen
+tampered bundle scenarios and atomic audit-failure rollback. Combined checks pass
+**1,030 tests across 70 workspace targets**, zero failed or ignored, plus **four
+optional Wasm tests**. Formatting, Rust 1.99 workspace check and strict Clippy with
+default/all features pass. Offline CLI/HTTP smoke scripts pass.
+
 ## Bounded benchmark GPU observation windows — 2026-10-23
 
 **Implemented device observations; task-attributed physical accounting remains

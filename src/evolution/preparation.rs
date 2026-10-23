@@ -216,7 +216,7 @@ pub fn prepare(root: &Path, manifest: &Path, expected_sha256: &str) -> Result<Pr
             }
         }
         records.push(json!({"id":source.id,"path":source.path,"source":source.source,"license":source.license,
-            "split":source.split,"original_sha256":source.sha256,"normalized_sha256":hash,
+            "split":source.split,"original_sha256":source.sha256,"normalized_sha256":hash,"normalized_bytes":cleaned.len(),
             "duplicate_of":duplicate.map(|(id,_)|id)}));
     }
     if seen_splits.len() != 3 || artifact.is_empty() {
@@ -225,11 +225,11 @@ pub fn prepare(root: &Path, manifest: &Path, expected_sha256: &str) -> Result<Pr
     if started.elapsed() > Duration::from_secs(5) {
         bail!("Source preparation deadline exhausted")
     }
-    let report = json!({"format_version":1,"manifest_sha256":expected_sha256,"reviewer":parsed.reviewer,
+    let report = json!({"format_version":2,"manifest_sha256":expected_sha256,"reviewer":parsed.reviewer,
         "sources_reviewed_by_operator":true,"independent_review_proven":false,"untrusted_data":true,
         "permissions_granted":false,"candidate_created":false,"model_promoted":false,
         "artifact_sha256":sha256(artifact.as_bytes()),"artifact_bytes":artifact.len(),
-        "held_out_documents":held_out.len(),"input_bytes":total,"sources":records,
+        "held_out_documents":held_out.len(),"held_out_sha256":sha256(&serde_json::to_vec_pretty(&held_out)?),"input_bytes":total,"sources":records,
         "cleaning":"utf8-newlines-trailing-whitespace/v1","deduplication":"normalized-document-sha256/v1",
         "split_overlap_check":"exact-normalized-documents-and-paragraphs-at-least-32-bytes/v1"});
     Ok(Prepared {
