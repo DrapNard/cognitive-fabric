@@ -564,6 +564,16 @@ enum Command {
 #[derive(Subcommand)]
 enum CandidateAction {
     List,
+    PrepareSources {
+        #[arg(long)]
+        root: PathBuf,
+        #[arg(long)]
+        manifest: PathBuf,
+        #[arg(long)]
+        sha256: String,
+        #[arg(long)]
+        output: PathBuf,
+    },
     CreateFromGap {
         task: String,
         #[arg(long)]
@@ -666,6 +676,19 @@ async fn run_cli() -> Result<()> {
         if cli.typed_module_worker {
             bail!("Set typed_module_worker inside the approved native lifecycle policy")
         }
+    }
+    if let Command::Candidate {
+        action:
+            CandidateAction::PrepareSources {
+                root,
+                manifest,
+                sha256,
+                output: directory,
+            },
+    } = &cli.command
+    {
+        let prepared = cogfabric::evolution::preparation::prepare(root, manifest, sha256)?;
+        return output(&prepared.write(directory)?, cli.json);
     }
     if let Command::SecurityCorpusEvaluate { manifest, sha256 } = &cli.command {
         return output(
@@ -1829,6 +1852,9 @@ async fn run_cli() -> Result<()> {
             report
         }
         Command::Candidate { action } => match action {
+            CandidateAction::PrepareSources { .. } => {
+                bail!("Source preparation must precede runtime initialization")
+            }
             CandidateAction::List => serde_json::to_value(store.candidates()?)?,
             CandidateAction::CreateFromGap {
                 task,

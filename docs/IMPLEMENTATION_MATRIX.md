@@ -1,5 +1,24 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Bounded reviewed-source preparation — 2026-10-23
+
+**Implemented local preparation; automatic discovery and independent curation
+remain Partial.** `src/evolution/preparation.rs` prepares operator-selected,
+hash-pinned local source manifests with explicit review/provenance/license labels,
+strict bounded parsing, directory-relative no-follow reads, deterministic text
+normalization, document deduplication and exact cross-split overlap refusal.
+Reference artifacts exclude held-out text; reports retain source/split/hash lineage.
+`candidate prepare-sources` runs before runtime/database initialization and writes
+only a new private bundle. It creates/promotes no candidate or neural model.
+
+`tests/source_preparation.rs` covers CLI output/privacy, unused-home preservation,
+deduplication, held-out exclusion, no overwrite, changed input/manifest hashes and
+sixteen review/path/symlink/FIFO/control/UTF-8/size/split refusal scenarios. Combined
+checks pass **1,019 tests across 67 workspace targets**, zero failed or ignored,
+plus **four optional Wasm tests**. Formatting, Rust 1.99 workspace check and strict
+Clippy with default and all features pass. See
+[source preparation](SOURCE_PREPARATION.md).
+
 ## Completion audit and generation scan deadline — 2026-10-23
 
 **Overall Partial.** [V1_COMPLETION_AUDIT.md](V1_COMPLETION_AUDIT.md) reconciles the

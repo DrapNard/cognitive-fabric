@@ -1,0 +1,68 @@
+# Reviewed local source preparation
+
+Prepare a reproducible RAG input bundle from explicitly selected local documents:
+
+```sh
+cogfabric --json candidate prepare-sources \
+  --root ./reviewed-documents --manifest ./sources.json \
+  --sha256 MANIFEST_SHA256 --output ./prepared-bundle
+```
+
+`MANIFEST_SHA256` is the SHA-256 of the exact manifest bytes. Output must be a new
+directory. No workspace database, inference server, network crawler or training
+process is used. The operation does not create or promote a candidate.
+
+## Manifest
+
+The strict JSON object has these fields:
+
+| Field | Meaning |
+| --- | --- |
+| `format_version` | Exactly `1`. |
+| `reviewer` | Nonempty operator-selected review identity, at most 100 bytes. |
+| `sources_reviewed` | Must be `true` after the operator reviews the selected sources. This is an assertion, not independent attestation. |
+| `sources` | Between 3 and 32 source entries, with unique bounded identifier `id` values. |
+
+Each source declares `id`, `path`, `sha256`, `source`, `license`, and `split`.
+Paths name `.md` or `.txt` files relative to the selected root. Hashes refer to
+original bytes before cleaning. Provenance and license labels must be explicit;
+the preparer does not establish their legal correctness or compatibility.
+`split` is `reference`, `validation` or `test`, with all three represented.
+Unknown fields and duplicate JSON keys are refused.
+
+## Output and use
+
+- `artifact.md`: normalized, deduplicated **reference documents only**.
+- `held-out.json`: normalized validation/test documents keyed by source ID.
+- `report.json`: original/normalized hashes, split/provenance/license records,
+  duplicate lineage, output hash, cleaning version and explicit non-authority flags.
+
+The output directory is private (`0700`); files are `0600` and never overwrite an
+existing bundle. Partial writes are removed on error. The reference artifact can
+then be imported using the existing `candidate create` or `create-from-gap` flow,
+with reviewed source/license metadata. Preserve the report and its manifest hash
+as provenance. Candidate quarantine, independent evaluation, explicit approval and
+rollback gates remain separate and unchanged.
+
+`held-out.json` contains source documents, **not** an accepted quality test suite.
+It must not be passed off as independent evaluation evidence. Operators still
+supply the existing evaluator's independently reviewed query/expected-excerpt
+cases. Public examples or model-authored labels do not establish independence.
+
+## Bounds and limits
+
+Source reads use directory-relative `openat` with retained directory descriptors,
+no-follow flags and nonblocking regular-file validation. Absolute paths, traversal,
+symlinks, FIFOs, invalid UTF-8 and unsupported control characters are refused.
+Each file is at most 64 KB; total input is at most 512 KB; the manifest is at most
+32 KB; the reference artifact is at most 256 KB. Paths have at most eight components
+and 240 bytes. A five-second elapsed ceiling is checked between bounded reads;
+this cannot preempt a blocking kernel/filesystem operation.
+
+Cleaning removes a leading UTF-8 BOM, normalizes newlines and trims trailing
+whitespace. Exact normalized duplicate documents within a split are deduplicated.
+Exact duplicate documents or paragraphs of at least 32 bytes crossing splits cause
+refusal. This does not detect paraphrases, semantic leakage, factual errors,
+poisoning or malicious instructions. All content remains untrusted retrieval data.
+Automatic internet discovery and independently proven source quality remain open
+requirements; no new model filesystem/network capability is introduced.

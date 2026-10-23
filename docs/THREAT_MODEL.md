@@ -1,5 +1,18 @@
 # Threat Model (v1.0)
 
+## Reviewed-source preparation boundary
+
+Only explicitly selected local manifest/root inputs reach preparation. Hash pins,
+strict byte/count/path limits and directory-relative no-follow file descriptors
+prevent silent substitution and traversal through symlink components. Nonblocking
+opens reject special files before reads. Held-out text is excluded from reference
+artifacts; exact overlap checks are mechanical and cannot establish semantic
+independence, licensing, factual correctness or poisoning resistance. Output is a
+new private bundle, never candidate promotion or model authority. Same-owner
+filesystem changes, hard-link provenance and blocking kernel I/O remain outside
+an independent sandbox/attestation guarantee. No model filesystem/network grant,
+generated executable, crawler or neural training is introduced.
+
 ## Native generation-history scan deadline
 
 The deny-before-mutation history gate uses a five-second SQLite progress handler

@@ -1,5 +1,23 @@
 # Current Rust implementation
 
+## Reviewed local source preparation — 2026-10-23
+
+`candidate prepare-sources` prepares hash-pinned reviewed local sources without
+initializing the runtime database. It uses bounded strict manifests and retained
+directory-relative no-follow file descriptors, normalizes text, deduplicates exact
+documents and refuses exact cross-split overlap. A new private bundle contains a
+reference-only RAG artifact, separate held-out documents and provenance/split/hash
+reports. It never creates/promotes a candidate or model. Existing independent
+candidate evaluation and approval gates remain required.
+
+Focused regressions cover CLI privacy/no initialization, no overwrite, changed
+hashes, document deduplication and sixteen unsafe/ambiguous input cases. Combined
+checks pass **1,019 tests across 67 targets**, zero failed or ignored, plus **four
+optional Wasm tests**. Formatting, Rust 1.99 workspace check and strict Clippy with default and all features pass. See
+[source preparation](SOURCE_PREPARATION.md).
+Automatic discovery, semantic leakage detection, independent source curation and
+neural/physical performance evidence remain open requirements.
+
 ## Completion audit and bounded native history — 2026-10-23
 
 Read [the requirement-by-requirement audit](V1_COMPLETION_AUDIT.md) for the current
