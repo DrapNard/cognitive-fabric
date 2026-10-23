@@ -53,9 +53,7 @@ pub(crate) fn candidate_verification_request(query: &str, answer: &str) -> Resul
         }
         let goal: SortGoal =
             serde_json::from_value(crate::strict_json::value(raw.as_bytes(), 10_000)?)?;
-        let Ok(candidate) =
-            serde_json::from_value::<Vec<i64>>(crate::strict_json::value(answer.as_bytes(), 8192)?)
-        else {
+        let Some(candidate) = parse_candidate::<Vec<i64>>(answer) else {
             return Ok(None);
         };
         return Ok(Some(Request::Sort {
@@ -73,10 +71,7 @@ pub(crate) fn candidate_verification_request(query: &str, answer: &str) -> Resul
         }
         let goal: OrderGoal =
             serde_json::from_value(crate::strict_json::value(raw.as_bytes(), 10_000)?)?;
-        let Ok(candidate) = serde_json::from_value::<Vec<String>>(crate::strict_json::value(
-            answer.as_bytes(),
-            8192,
-        )?) else {
+        let Some(candidate) = parse_candidate::<Vec<String>>(answer) else {
             return Ok(None);
         };
         let nodes = goal
@@ -105,10 +100,7 @@ pub(crate) fn candidate_verification_request(query: &str, answer: &str) -> Resul
         }
         let goal: PathGoal =
             serde_json::from_value(crate::strict_json::value(raw.as_bytes(), 10_000)?)?;
-        let Ok(candidate) = serde_json::from_value::<Vec<String>>(crate::strict_json::value(
-            answer.as_bytes(),
-            8192,
-        )?) else {
+        let Some(candidate) = parse_candidate::<Vec<String>>(answer) else {
             return Ok(None);
         };
         return Ok(Some(Request::ShortestPath {
@@ -124,6 +116,13 @@ pub(crate) fn candidate_verification_request(query: &str, answer: &str) -> Resul
         }));
     }
     Ok(None)
+}
+
+// Malformed model output is a rejected candidate, not a runtime/parser failure.
+fn parse_candidate<T: serde::de::DeserializeOwned>(answer: &str) -> Option<T> {
+    crate::strict_json::value(answer.as_bytes(), 8192)
+        .ok()
+        .and_then(|value| serde_json::from_value(value).ok())
 }
 
 pub(crate) fn finite_domain_request(query: &str) -> Result<Option<Request>> {
@@ -271,4 +270,29 @@ pub(crate) fn sql_response(response: Response) -> Result<String> {
         })
         .collect::<Vec<_>>();
     Ok(json!({"columns":columns,"rows":rows}).to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn malformed_advisory_candidates_do_not_abort_compiled_verification() {
+        for query in [
+            r#"sort:{"values":[3,1,2]}"#,
+            r#"order:{"nodes":["a","b"],"before":[["a","b"]]}"#,
+            r#"path:{"nodes":["a","b"],"edges":[["a","b"]],"start":"a","goal":"b"}"#,
+        ] {
+            for candidate in ["not JSON", "[", r#"{"duplicate":1,"duplicate":2}"#, "null"] {
+                assert!(candidate_verification_request(query, candidate)
+                    .unwrap()
+                    .is_none());
+                assert!(crate::verification::Criterion::from_query(query)
+                    .unwrap()
+                    .unwrap()
+                    .check(candidate)
+                    .is_err());
+            }
+        }
+    }
 }

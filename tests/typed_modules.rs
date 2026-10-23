@@ -196,6 +196,9 @@ fn cancelling_during_a_running_sql_worker_reaps_the_owned_child() {
     }
     let output = child.0.take().unwrap().wait_with_output().unwrap();
     assert!(!output.status.success());
+    let outcome: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(outcome["status"], "cancelled");
+    assert_eq!(outcome["task_id"], task_id);
 
     let stopped_deadline = Instant::now() + Duration::from_secs(5);
     loop {

@@ -90,47 +90,48 @@ impl Session {
         let compiled = criterion.check(answer);
         // A pinned typed verifier may provide a bounded diagnostic, but its
         // claim never replaces or weakens the compiled criterion check.
-        if let (Some((broker, pins)), Some(request)) = (
-            self.typed_modules.clone(),
-            crate::reasoning::modules::candidate_verification_request(query, answer)?,
-        ) {
-            let capability = request.capability();
-            if let Some(pin) = pins.get(&capability) {
-                let module = pin.descriptor();
-                let response = self
-                    .dispatch_typed_module_pre_authorized(&broker, pin, request)
-                    .await;
-                let (claim, result_code) = match response {
-                    Ok(crate::fabric::modules::Response::SortDiagnostic { claimed_valid }) => {
-                        (Some(claimed_valid), "diagnostic")
-                    }
-                    Ok(crate::fabric::modules::Response::OrderingDiagnostic { claimed_valid }) => {
-                        (Some(claimed_valid), "diagnostic")
-                    }
-                    Ok(crate::fabric::modules::Response::PathDiagnostic { claimed_valid }) => {
-                        (Some(claimed_valid), "diagnostic")
-                    }
-                    Ok(_) => (None, "wrong_response_kind"),
-                    Err(_) => (None, "unavailable"),
-                };
-                self.store.event(
-                    &self.task,
-                    "typed_verifier_result",
-                    "fabric",
-                    json!({
-                        "format_version": 1,
-                        "module_id": module.id,
-                        "module_version": module.version,
-                        "capability": capability.as_str(),
-                        "objective_sha256": objective_hash,
-                        "candidate_sha256": answer_hash,
-                        "claim_valid": claim,
-                        "result": result_code,
-                        "compiled_checker_accepted": compiled.is_ok(),
-                        "compiled_checker_authoritative": true,
-                        "permissions_granted": false
-                    }),
-                )?;
+        if let Some((broker, pins)) = self.typed_modules.clone() {
+            if let Some(request) =
+                crate::reasoning::modules::candidate_verification_request(query, answer)?
+            {
+                let capability = request.capability();
+                if let Some(pin) = pins.get(&capability) {
+                    let module = pin.descriptor();
+                    let response = self
+                        .dispatch_typed_module_pre_authorized(&broker, pin, request)
+                        .await;
+                    let (claim, result_code) = match response {
+                        Ok(crate::fabric::modules::Response::SortDiagnostic { claimed_valid }) => {
+                            (Some(claimed_valid), "diagnostic")
+                        }
+                        Ok(crate::fabric::modules::Response::OrderingDiagnostic {
+                            claimed_valid,
+                        }) => (Some(claimed_valid), "diagnostic"),
+                        Ok(crate::fabric::modules::Response::PathDiagnostic { claimed_valid }) => {
+                            (Some(claimed_valid), "diagnostic")
+                        }
+                        Ok(_) => (None, "wrong_response_kind"),
+                        Err(_) => (None, "unavailable"),
+                    };
+                    self.store.event(
+                        &self.task,
+                        "typed_verifier_result",
+                        "fabric",
+                        json!({
+                            "format_version": 1,
+                            "module_id": module.id,
+                            "module_version": module.version,
+                            "capability": capability.as_str(),
+                            "objective_sha256": objective_hash,
+                            "candidate_sha256": answer_hash,
+                            "claim_valid": claim,
+                            "result": result_code,
+                            "compiled_checker_accepted": compiled.is_ok(),
+                            "compiled_checker_authoritative": true,
+                            "permissions_granted": false
+                        }),
+                    )?;
+                }
             }
         }
         let provider = self.verifier_provider.clone();

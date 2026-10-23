@@ -1,30 +1,41 @@
 # Current Rust implementation
 
-## Current worktree: implementation integration, not verified readiness
+## Verified integration snapshot — 2026-10-23
 
-The current source includes schema-8 managed recovery/archive, task-bound native
-lifecycle, general typed module workers, exact provider restoration, recorded-wave
-reconciliation, optional Wasm secondary verification and a manifest-driven security
-corpus runner. The owner requested committing and pushing this integration snapshot
-before final verification completed. It is not a readiness or release claim.
+The schema-8 recovery/archive, approved native lifecycle, typed module workers,
+provider pins, recorded-wave reconciliation, optional Wasm verifier and offline
+security-corpus runner have completed a combined automated verification pass.
+This is framework evidence, not a claim of trained Jev networks or real-model quality.
 
-Verification performed during integration:
+- `cargo fmt --all -- --check`: passed.
+- `cargo +1.99.0 check --locked --workspace --all-targets`: passed.
+- `cargo test --locked --workspace --all-targets --no-fail-fast`: **1,000 passed
+  across 66 targets**, no failures or ignored tests (Rust 1.97.1).
+- `cargo +1.99.0 clippy --locked --workspace --all-targets -- -D warnings`
+  and its `--all-features` variant: passed.
+- Optional Wasm target: **4 passed**, including fuel exhaustion without native
+  stack overflow and independent compiled-checker authority.
+- Exact `flatc 25.12.19` output matches all ten binding files. The reviewed-bundle
+  compatibility/corruption tests pass.
+- Offline CLI and authenticated HTTP smoke scripts pass against copied current
+  binaries using fresh temporary state; no live inference is involved.
 
-- `cargo fmt --all -- --check` and
-  `cargo check --locked --workspace --all-targets --all-features` passed on the
-  final source snapshot before commit.
-- Exact `flatc 25.12.19` regeneration matched all ten checked-in binding files.
-- The first all-feature library test run reported 735 passed and five failed.
-  Recovery/provider fixture corrections followed; those fixes need a full rerun.
-- Already-built integration binaries reported five passing security-corpus tests,
-  failures in native lifecycle and typed-worker expectations, and a stack overflow
-  in optional Wasm tests. Corrections/investigation followed; no final green result
-  is claimed.
-- The mandatory full test and lint gates remain pending on the final sources.
+Verification found and fixed malformed-candidate diagnostic failures, CLI exit
+before cancelled-worker reaping, idle Broker worker retention, and stale provider,
+protocol-count and native-service fixtures. Typed sorting/ordering/path diagnostics
+and opt-in finite assignments now have Engine-level regression tests proving
+original charges and independent compiled checking.
 
-The older dated entries below describe their own verified historical snapshots.
-Their test counts and schema numbers do not verify this integration snapshot.
+**Remaining work:** ordinary continuation refuses tasks with pinned typed modules
+until the original host registry can be explicitly restored; it never substitutes
+new implementations or replays uncertain dispatches. Native lifecycle continuation
+also requires restoring its exact owner and bindings and remains refused by default.
+A probe of `127.0.0.1:1234` found no inference server, so real model quality, GPU
+behavior and comparable-budget performance remain unverified. Novel neural Jev
+architectures and independent neural promotion remain research work.
 
+Older entries below describe their own historical snapshots. The newest evidence
+above supersedes earlier source-only and pending-verification notes.
 
 ### Track approved native loads before managed release — 2026-10-23
 

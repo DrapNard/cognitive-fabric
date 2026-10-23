@@ -1,5 +1,34 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Integrated runtime verification — 2026-10-23
+
+**Implemented and tested runtime fixes; overall scope remains Partial.**
+
+- `src/reasoning/modules.rs`, `src/reasoning/verification.rs`: malformed model
+  candidate JSON is rejected rather than aborting verification; typed diagnostics
+  remain advisory. `tests/typed_module_reasoning.rs` covers sorting, ordering,
+  shortest path, lying diagnostics, invalid JSON and opt-in finite assignments,
+  including exactly one original tool reservation per check/search.
+- `src/main.rs`: keep Tokio alive through bounded agent/collective worker drains
+  on both successful and failed CLI exits. `tests/typed_modules.rs` requires a
+  cancelled task status, exact task identity, reaped-child audit and absent PID.
+- `src/fabric/modules.rs`: dropping the Broker signals idle/active queue shutdown
+  instead of retaining the Registered/sender lifetime cycle. A weak-reference
+  regression proves initialized module implementations are released.
+- `src/recovery/continuation_modules.rs`: bounded, read-only validation refuses
+  missing/forged/duplicate module evidence and nonempty task pins when no original
+  registry is restored. Empty/legacy snapshots retain ordinary continuation.
+  **Partial:** an explicit original-registry restoration API is still to build.
+- `src/registry/provider_tests.rs`, native lifecycle and protocol bundle tests:
+  enumerate every corruption case, reject wrong Broker identity, reference real
+  historical context and validate all ten schemas.
+
+The frozen source snapshot passes 1,000 workspace tests across 66 targets plus
+four optional Wasm tests, format/check gates and Rust 1.99 all-feature strict
+Clippy. Both offline smoke scripts pass. See [current implementation](CURRENT_IMPLEMENTATION.md)
+for exact commands and limits. The local inference server was unavailable; no new
+live-model quality, physical GPU enforcement or neural safety evidence is claimed.
+
 ## Rust 1.99 CI follow-up — 2026-10-23
 
 **Implemented; workspace lint gate verified on Rust 1.99.0.** The failed GitHub
@@ -45,9 +74,9 @@ is still pending.
 
 ## Implementation phase — task lifecycle and replaceable modules
 
-**Partial / unverified source integration.** The owner requested completion of
-remaining implementation before the next final test pass. Historical passing
-counts below do not verify the newly integrated sources.
+**Partial overall; integrated paths verified by the newest entry above.**
+Historical passing counts below describe their own snapshots. Explicit registry
+and lifecycle-owner restoration and real-model measurements remain incomplete.
 
 - `src/residency/lifecycle.rs`, `src/engine.rs`, `src/reasoning.rs`: operator-approved
   task model sets, retained exclusive runtime/resource ownership, receipt-bound

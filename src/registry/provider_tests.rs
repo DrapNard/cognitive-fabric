@@ -464,7 +464,7 @@ fn task_snapshot_provider_pin_fails_closed_on_missing_duplicate_or_tampered_audi
                     )
                     .unwrap();
             }
-            6 | 9 => {}
+            0 | 6 => {}
             7 => {
                 store
                     .lock()
@@ -484,6 +484,12 @@ fn task_snapshot_provider_pin_fails_closed_on_missing_duplicate_or_tampered_audi
                         params![task, json!({"format_version":1,"broker_id":broker.identity_id().to_string(),"modules":[{"id":"typed.math","version":"1.0.0","capabilities":["math.evaluate"]}],"permissions_granted":true}).to_string()],
                     )
                     .unwrap();
+            }
+            9 => {
+                store.lock().unwrap().execute(
+                    "UPDATE events SET payload=json_set(payload,'$.broker_id',?2) WHERE task_id=?1 AND kind='typed_module_snapshot'",
+                    params![task, uuid::Uuid::new_v4().to_string()],
+                ).unwrap();
             }
             _ => unreachable!("All task snapshot corruption cases are enumerated"),
         }

@@ -353,7 +353,16 @@ async fn cli_serve_preserves_options_and_progress_and_does_not_release_reused_re
             .unwrap(),
     );
     wait_for_socket(&cfg, &mut child.0).await;
-    let conversation = uuid::Uuid::new_v4().to_string();
+    let conversation = store
+        .create_task("Earlier conversation context", "fast")
+        .unwrap();
+    store
+        .finish_task(
+            &conversation,
+            "unverified",
+            "Historical context is untrusted",
+        )
+        .unwrap();
     let ask = cli(
         &home,
         &[
@@ -456,9 +465,15 @@ async fn wrong_response_instance_quarantines_generation_and_blocks_replay_and_cl
     assert_eq!(seen.lock().unwrap().chats, 1);
     assert_eq!(seen.lock().unwrap().unloads, 0);
     let store = Store::open(&cfg.db()).unwrap();
-    let trace = store.task(task_id).unwrap();
+    let lifecycle_id: String = rusqlite::Connection::open(cfg.db()).unwrap().query_row(
+        "SELECT DISTINCT task_id FROM events WHERE kind='native_task_lifecycle' AND json_extract(payload,'$.child_task_id')=?1",
+        [task_id], |row| row.get(0),
+    ).unwrap();
+    let trace = store.task(&lifecycle_id).unwrap();
     assert!(trace["events"].as_array().unwrap().iter().any(|event| {
-        event["kind"] == "native_task_lifecycle" && event["payload"]["state"] == "outcome_unknown"
+        event["kind"] == "native_task_lifecycle"
+            && event["payload"]["state"] == "outcome_unknown"
+            && event["payload"]["child_task_id"] == task_id
     }));
     let _ = stop_tx.send(());
     tokio::time::sleep(Duration::from_millis(120)).await;

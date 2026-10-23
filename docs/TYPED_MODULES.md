@@ -1,7 +1,8 @@
 # Typed module execution
 
-Implementation integration is in progress. The new paths have not completed the
-final combined build and test pass.
+Typed dispatch, bounds, policy denials and worker cleanup are covered by the
+combined automated suite; see `CURRENT_IMPLEMENTATION.md` for exact evidence.
+These tests do not establish a sandbox for trusted native callbacks.
 
 ## Contract and task ownership
 
@@ -75,3 +76,14 @@ route and module snapshots, preserving old versions across subsequent hot swaps.
 Both require a provider snapshot audit before returning a usable pin. Session
 still enforces the original task grant and budgets at dispatch, and compiled
 checking remains independent of all module claims.
+
+## Shutdown and continuation
+
+Dropping a Broker signals shutdown so initialized queue workers release their
+implementations. CLI shutdown drains cancelled process reapers before Tokio exits;
+required audits and runtime leases remain owned until reaping is observed.
+
+Ordinary checkpoint continuation refuses nonempty typed-module snapshots and
+orphan module dispatch evidence. It cannot silently resume with a fresh registry
+or a different implementation. Explicit restoration of the original host registry
+is still incomplete; operator-selected verifier restoration is a separate API.

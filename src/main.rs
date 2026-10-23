@@ -632,6 +632,18 @@ fn output<T: Serialize>(value: T, force_json: bool) -> Result<()> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let result = run_cli().await;
+    // Cancellation drops request futures, but their workers still own process
+    // and lease cleanup. Keep the runtime alive until bounded reapers finish.
+    let agent_cleanup = cogfabric::agent::process::drain_workers().await;
+    let collective_cleanup = cogfabric::fabric::worker_cleanup::drain_workers().await;
+    result?;
+    agent_cleanup?;
+    collective_cleanup?;
+    Ok(())
+}
+
+async fn run_cli() -> Result<()> {
     let cli = Cli::parse();
     if cli.native_lifecycle_policy.is_some() {
         if !cli.approve_native_lifecycle {

@@ -1,7 +1,8 @@
 # Approved native model lifecycle
 
-The implementation is integrated in source. The combined verification pass is
-still pending; this document does not claim real model quality or GPU validation.
+CLI/loopback lifecycle, uncertainty, cancellation and receipt reuse pass the
+combined automated suite. See `CURRENT_IMPLEMENTATION.md` for exact evidence.
+Real model quality and GPU behavior remain unverified.
 
 ## Operator policy
 

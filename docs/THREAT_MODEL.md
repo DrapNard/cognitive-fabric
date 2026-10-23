@@ -1103,4 +1103,18 @@ refund inference or repeat provider mutations. Terminal archive rows remain evid
 only. Archive and resolution transactions retain task references and fail atomically
 on audit errors. Fixed row/history/payload/deadline bounds limit local work; they
 provide neither physical resource enforcement nor protection against malicious
-same-owner database/source edits. Full verification of schema-8 paths is pending.
+same-owner database/source edits. Schema-8 negative/migration/loopback tests now
+pass in the combined automated suite; this proves neither provider termination nor
+physical GPU isolation.
+
+### Typed module lifetime and continuation identity
+
+Broker teardown signals its initialized workers; CLI exits await bounded process
+reapers even on cancellation/error paths. The integration test requires a cancelled
+task, durable reaped-child evidence and an absent child PID. Abrupt process death
+still cannot guarantee audit completion or provider stop.
+
+Default continuation refuses pinned custom module registries and orphan dispatch
+history. Database descriptors cannot install code or silently replace the original
+implementation. Exact original-registry restoration remains incomplete; this is a
+fail-closed boundary, not complete crash recovery for arbitrary callbacks.

@@ -16,6 +16,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[path = "continuation_modules.rs"]
+mod module_history;
 #[path = "continuation_parallel.rs"]
 mod parallel_history;
 #[path = "continuation_path_progress.rs"]
@@ -61,6 +63,7 @@ fn prepare_with_policy(
     escalator: &crate::escalation::Handle,
     verifier_provider: Option<&crate::verification::provider::Handle>,
 ) -> Result<Checkpoint> {
+    module_history::validate(db, task)?;
     super::validate_verifier_recovery(db, task, verifier_provider)?;
     let parallel_recorded: bool = db.query_row(
         "SELECT EXISTS(SELECT 1 FROM events WHERE task_id=?1 AND kind='subtask_parallel_schedule')",

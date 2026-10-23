@@ -564,3 +564,41 @@ async fn queue_capacity_and_cancellation_are_bounded() {
     .unwrap();
     assert_eq!(calls.load(Ordering::SeqCst), 1);
 }
+
+#[tokio::test]
+async fn dropping_the_broker_releases_initialized_module_workers() {
+    let store = Arc::new(Store::in_memory().unwrap());
+    let task = store
+        .create_task("Drop module registry", "standard")
+        .unwrap();
+    let policy = TaskPolicy::reasoning(&task).unwrap();
+    let grant = Grant::narrow(&task, "jev-plus", [Capability::MathEvaluate], 1, &policy).unwrap();
+    let implementation = Arc::new(Fixture::new("1.0.0", Arc::new(AtomicUsize::new(0))));
+    let weak = Arc::downgrade(&implementation);
+    let broker = Broker::new(store);
+    broker
+        .register(implementation.clone(), Limits::default())
+        .unwrap();
+    let pin = broker.pin(&task, "fixture.math", "1.0.0").unwrap();
+    broker
+        .dispatch(
+            &pin,
+            &grant,
+            &policy,
+            "jev-plus",
+            arithmetic(),
+            Instant::now() + Duration::from_secs(1),
+        )
+        .await
+        .unwrap();
+    drop(implementation);
+    drop(pin);
+    drop(broker);
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while weak.upgrade().is_some() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("Dropped Broker must stop idle workers and release their implementations");
+}

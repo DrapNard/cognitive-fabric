@@ -1031,6 +1031,14 @@ impl Broker {
     }
 }
 
+impl Drop for Broker {
+    fn drop(&mut self) {
+        // Queue workers retain Registered (and its sender). Explicitly break
+        // that lifetime cycle when the last owning Broker goes away.
+        self.shutdown.send_replace(true);
+    }
+}
+
 impl Registered {
     fn available(&self) -> bool {
         !*self.shutdown.borrow() && self.queue.get().is_none_or(|sender| !sender.is_closed())

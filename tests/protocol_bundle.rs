@@ -39,7 +39,7 @@ fn fixture(root: &Path) -> Scratch {
 fn reviewed_bundle_matches_every_schema_and_the_exact_rust_runtime_pin() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let files = protocol::validate(root).unwrap();
-    assert_eq!(files.len(), 9);
+    assert_eq!(files.len(), 10);
     assert!(protocol::runtime_pinned(include_str!("../Cargo.toml")));
     assert!(protocol::runtime_pinned(
         r#"[dependencies.flatbuffers]
