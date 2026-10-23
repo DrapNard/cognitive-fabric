@@ -6,6 +6,8 @@
 
 pub mod process;
 mod protocol;
+#[cfg(feature = "wasm-experts")]
+pub mod wasm;
 pub use process::{worker_entrypoint, ProcessModule};
 
 use crate::{
@@ -533,6 +535,10 @@ pub struct TaskBinding {
 /// A host can still capture such resources itself, so this is not a sandbox.
 pub trait Module: Send + Sync {
     fn descriptor(&self) -> Descriptor;
+    /// Captured trusted-host implementation metadata, never task authority.
+    fn implementation_identity(&self) -> Option<serde_json::Value> {
+        None
+    }
     /// Optional compiled source identity, declared by trusted host code. This
     /// identifies sources only, not the executable, compiler or model weights.
     fn source_fingerprint(&self) -> Option<&'static str> {
@@ -646,6 +652,7 @@ struct Work {
 struct Registered {
     descriptor: Descriptor,
     source_fingerprint: Option<&'static str>,
+    implementation_identity: Option<serde_json::Value>,
     implementation: Arc<dyn Module>,
     limits: Limits,
     queue: OnceCell<mpsc::Sender<Work>>,
@@ -680,6 +687,10 @@ pub struct Pin {
 impl Pin {
     pub fn descriptor(&self) -> &Descriptor {
         &self.module.descriptor
+    }
+
+    pub fn implementation_identity(&self) -> Option<&serde_json::Value> {
+        self.module.implementation_identity.as_ref()
     }
 
     pub fn source_fingerprint(&self) -> Option<&'static str> {
@@ -762,6 +773,7 @@ impl Broker {
                         module.implementation.clone(),
                         module.limits,
                         module.source_fingerprint,
+                        module.implementation_identity.clone(),
                     )
                 })
                 .collect::<Vec<_>>()
@@ -771,10 +783,11 @@ impl Broker {
             ownership,
         };
         let fork = Arc::new(Self::new(self.store.clone()));
-        for (descriptor, original, limits, fingerprint) in active {
+        for (descriptor, original, limits, fingerprint, identity) in active {
             let implementation = original.bind_task(&binding)?.unwrap_or(original);
             if implementation.descriptor() != descriptor
                 || implementation.source_fingerprint() != fingerprint
+                || implementation.implementation_identity() != identity
             {
                 bail!("Task binding changed an immutable module descriptor")
             }
@@ -801,6 +814,13 @@ impl Broker {
     /// model response, document, or IPC actor.
     pub fn register(&self, implementation: Arc<dyn Module>, limits: Limits) -> Result<()> {
         let descriptor = implementation.descriptor();
+        let implementation_identity = implementation.implementation_identity();
+        if implementation_identity
+            .as_ref()
+            .is_some_and(|identity| identity.to_string().len() > 1024)
+        {
+            bail!("Module implementation identity exceeds bounds")
+        }
         let source_fingerprint = implementation.source_fingerprint();
         if source_fingerprint.is_some_and(|hash| {
             hash.len() != 64 || !hash.bytes().all(|byte| byte.is_ascii_hexdigit())
@@ -835,6 +855,7 @@ impl Broker {
         let module = Arc::new(Registered {
             descriptor: descriptor.clone(),
             source_fingerprint,
+            implementation_identity,
             implementation,
             limits,
             queue: OnceCell::new(),

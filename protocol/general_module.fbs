@@ -70,6 +70,19 @@ union ResultValue {
   FiniteAssignment
 }
 
+// Payload-only Wasm ABI v1 (identifiers CGWI/CGWO). Task authorization and
+// routing identities stay in the host; guest output cannot create either.
+table ExpertRequestPayload {
+  version:ushort = 1;
+  capability:Capability;
+  request:RequestValue;
+}
+table ExpertResultPayload {
+  version:ushort = 1;
+  capability:Capability;
+  result:ResultValue;
+}
+
 // The host validates every identity field against an out-of-band, one-task grant.
 // The worker never receives general filesystem, shell, network, or secret handles.
 table Packet {

@@ -149,7 +149,7 @@ fn verify_task_module_snapshot(
     let descriptor = pin.descriptor();
     let snapshot = snapshot_event(store, task_id, "typed_module_snapshot", "fabric")?;
     let broker_id = broker.identity_id().to_string();
-    if !matches!(snapshot["format_version"].as_u64(), Some(1 | 2))
+    if !matches!(snapshot["format_version"].as_u64(), Some(1..=3))
         || snapshot["permissions_granted"].as_bool() != Some(false)
         || snapshot["broker_id"].as_str() != Some(broker_id.as_str())
     {
@@ -169,10 +169,15 @@ fn verify_task_module_snapshot(
     if matches.len() != 1 {
         bail!("Task module snapshot does not contain the exact provider version")
     }
-    if snapshot["format_version"] == 2
+    if matches!(snapshot["format_version"].as_u64(), Some(2 | 3))
         && matches[0]["source_sha256"] != serde_json::to_value(pin.source_fingerprint())?
     {
         bail!("Pinned provider source identity differs from task snapshot")
+    }
+    if snapshot["format_version"] == 3
+        && matches[0]["implementation"] != serde_json::to_value(pin.implementation_identity())?
+    {
+        bail!("Pinned provider implementation identity differs from task snapshot")
     }
     let capabilities = matches[0]["capabilities"]
         .as_array()

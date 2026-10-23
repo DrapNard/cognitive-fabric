@@ -5642,6 +5642,744 @@ impl FiniteAssignmentT {
     })
   }
 }
+pub enum ExpertRequestPayloadOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct ExpertRequestPayload<'a> {
+  pub _tab: ::flatbuffers::Table<'a>,
+}
+
+impl<'a> ::flatbuffers::Follow<'a> for ExpertRequestPayload<'a> {
+  type Inner = ExpertRequestPayload<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: unsafe { ::flatbuffers::Table::new(buf, loc) } }
+  }
+}
+
+impl<'a> ExpertRequestPayload<'a> {
+  pub const VT_VERSION: ::flatbuffers::VOffsetT = 4;
+  pub const VT_CAPABILITY: ::flatbuffers::VOffsetT = 6;
+  pub const VT_REQUEST_TYPE: ::flatbuffers::VOffsetT = 8;
+  pub const VT_REQUEST: ::flatbuffers::VOffsetT = 10;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
+    ExpertRequestPayload { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: ::flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut ::flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args ExpertRequestPayloadArgs
+  ) -> ::flatbuffers::WIPOffset<ExpertRequestPayload<'bldr>> {
+    let mut builder = ExpertRequestPayloadBuilder::new(_fbb);
+    if let Some(x) = args.request { builder.add_request(x); }
+    builder.add_version(args.version);
+    builder.add_request_type(args.request_type);
+    builder.add_capability(args.capability);
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> ExpertRequestPayloadT {
+    let version = self.version();
+    let capability = self.capability();
+    let request = match self.request_type() {
+      RequestValue::NONE => RequestValueT::NONE,
+      RequestValue::ArithmeticRequest => RequestValueT::ArithmeticRequest(alloc::boxed::Box::new(
+        self.request_as_arithmetic_request()
+            .expect("Invalid union table, expected `RequestValue::ArithmeticRequest`.")
+            .unpack()
+      )),
+      RequestValue::SqlRequest => RequestValueT::SqlRequest(alloc::boxed::Box::new(
+        self.request_as_sql_request()
+            .expect("Invalid union table, expected `RequestValue::SqlRequest`.")
+            .unpack()
+      )),
+      RequestValue::SortRequest => RequestValueT::SortRequest(alloc::boxed::Box::new(
+        self.request_as_sort_request()
+            .expect("Invalid union table, expected `RequestValue::SortRequest`.")
+            .unpack()
+      )),
+      RequestValue::DependencyOrderRequest => RequestValueT::DependencyOrderRequest(alloc::boxed::Box::new(
+        self.request_as_dependency_order_request()
+            .expect("Invalid union table, expected `RequestValue::DependencyOrderRequest`.")
+            .unpack()
+      )),
+      RequestValue::ShortestPathRequest => RequestValueT::ShortestPathRequest(alloc::boxed::Box::new(
+        self.request_as_shortest_path_request()
+            .expect("Invalid union table, expected `RequestValue::ShortestPathRequest`.")
+            .unpack()
+      )),
+      RequestValue::FiniteDomainRequest => RequestValueT::FiniteDomainRequest(alloc::boxed::Box::new(
+        self.request_as_finite_domain_request()
+            .expect("Invalid union table, expected `RequestValue::FiniteDomainRequest`.")
+            .unpack()
+      )),
+      _ => RequestValueT::NONE,
+    };
+    ExpertRequestPayloadT {
+      version,
+      capability,
+      request,
+    }
+  }
+
+  #[inline]
+  pub fn version(&self) -> u16 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u16>(ExpertRequestPayload::VT_VERSION, Some(1)).unwrap()}
+  }
+  #[inline]
+  pub fn capability(&self) -> Capability {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<Capability>(ExpertRequestPayload::VT_CAPABILITY, Some(Capability::None)).unwrap()}
+  }
+  #[inline]
+  pub fn request_type(&self) -> RequestValue {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<RequestValue>(ExpertRequestPayload::VT_REQUEST_TYPE, Some(RequestValue::NONE)).unwrap()}
+  }
+  #[inline]
+  pub fn request(&self) -> Option<::flatbuffers::Table<'a>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<::flatbuffers::ForwardsUOffset<::flatbuffers::Table<'a>>>(ExpertRequestPayload::VT_REQUEST, None)}
+  }
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn request_as_arithmetic_request(&self) -> Option<ArithmeticRequest<'a>> {
+    if self.request_type() == RequestValue::ArithmeticRequest {
+      self.request().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { ArithmeticRequest::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn request_as_sql_request(&self) -> Option<SqlRequest<'a>> {
+    if self.request_type() == RequestValue::SqlRequest {
+      self.request().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { SqlRequest::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn request_as_sort_request(&self) -> Option<SortRequest<'a>> {
+    if self.request_type() == RequestValue::SortRequest {
+      self.request().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { SortRequest::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn request_as_dependency_order_request(&self) -> Option<DependencyOrderRequest<'a>> {
+    if self.request_type() == RequestValue::DependencyOrderRequest {
+      self.request().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { DependencyOrderRequest::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn request_as_shortest_path_request(&self) -> Option<ShortestPathRequest<'a>> {
+    if self.request_type() == RequestValue::ShortestPathRequest {
+      self.request().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { ShortestPathRequest::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn request_as_finite_domain_request(&self) -> Option<FiniteDomainRequest<'a>> {
+    if self.request_type() == RequestValue::FiniteDomainRequest {
+      self.request().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { FiniteDomainRequest::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+}
+
+impl ::flatbuffers::Verifiable for ExpertRequestPayload<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut ::flatbuffers::Verifier, pos: usize
+  ) -> Result<(), ::flatbuffers::InvalidFlatbuffer> {
+    v.visit_table(pos)?
+     .visit_field::<u16>("version", Self::VT_VERSION, false)?
+     .visit_field::<Capability>("capability", Self::VT_CAPABILITY, false)?
+     .visit_union::<RequestValue, _>("request_type", Self::VT_REQUEST_TYPE, "request", Self::VT_REQUEST, false, |key, v, pos| {
+        match key {
+          RequestValue::ArithmeticRequest => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<ArithmeticRequest>>("RequestValue::ArithmeticRequest", pos),
+          RequestValue::SqlRequest => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<SqlRequest>>("RequestValue::SqlRequest", pos),
+          RequestValue::SortRequest => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<SortRequest>>("RequestValue::SortRequest", pos),
+          RequestValue::DependencyOrderRequest => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<DependencyOrderRequest>>("RequestValue::DependencyOrderRequest", pos),
+          RequestValue::ShortestPathRequest => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<ShortestPathRequest>>("RequestValue::ShortestPathRequest", pos),
+          RequestValue::FiniteDomainRequest => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<FiniteDomainRequest>>("RequestValue::FiniteDomainRequest", pos),
+          _ => Ok(()),
+        }
+     })?
+     .finish();
+    Ok(())
+  }
+}
+pub struct ExpertRequestPayloadArgs {
+    pub version: u16,
+    pub capability: Capability,
+    pub request_type: RequestValue,
+    pub request: Option<::flatbuffers::WIPOffset<::flatbuffers::UnionWIPOffset>>,
+}
+impl<'a> Default for ExpertRequestPayloadArgs {
+  #[inline]
+  fn default() -> Self {
+    ExpertRequestPayloadArgs {
+      version: 1,
+      capability: Capability::None,
+      request_type: RequestValue::NONE,
+      request: None,
+    }
+  }
+}
+
+pub struct ExpertRequestPayloadBuilder<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: ::flatbuffers::WIPOffset<::flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> ExpertRequestPayloadBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_version(&mut self, version: u16) {
+    self.fbb_.push_slot::<u16>(ExpertRequestPayload::VT_VERSION, version, 1);
+  }
+  #[inline]
+  pub fn add_capability(&mut self, capability: Capability) {
+    self.fbb_.push_slot::<Capability>(ExpertRequestPayload::VT_CAPABILITY, capability, Capability::None);
+  }
+  #[inline]
+  pub fn add_request_type(&mut self, request_type: RequestValue) {
+    self.fbb_.push_slot::<RequestValue>(ExpertRequestPayload::VT_REQUEST_TYPE, request_type, RequestValue::NONE);
+  }
+  #[inline]
+  pub fn add_request(&mut self, request: ::flatbuffers::WIPOffset<::flatbuffers::UnionWIPOffset>) {
+    self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(ExpertRequestPayload::VT_REQUEST, request);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>) -> ExpertRequestPayloadBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    ExpertRequestPayloadBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> ::flatbuffers::WIPOffset<ExpertRequestPayload<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    ::flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl ::core::fmt::Debug for ExpertRequestPayload<'_> {
+  fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+    let mut ds = f.debug_struct("ExpertRequestPayload");
+      ds.field("version", &self.version());
+      ds.field("capability", &self.capability());
+      ds.field("request_type", &self.request_type());
+      match self.request_type() {
+        RequestValue::ArithmeticRequest => {
+          if let Some(x) = self.request_as_arithmetic_request() {
+            ds.field("request", &x)
+          } else {
+            ds.field("request", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        RequestValue::SqlRequest => {
+          if let Some(x) = self.request_as_sql_request() {
+            ds.field("request", &x)
+          } else {
+            ds.field("request", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        RequestValue::SortRequest => {
+          if let Some(x) = self.request_as_sort_request() {
+            ds.field("request", &x)
+          } else {
+            ds.field("request", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        RequestValue::DependencyOrderRequest => {
+          if let Some(x) = self.request_as_dependency_order_request() {
+            ds.field("request", &x)
+          } else {
+            ds.field("request", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        RequestValue::ShortestPathRequest => {
+          if let Some(x) = self.request_as_shortest_path_request() {
+            ds.field("request", &x)
+          } else {
+            ds.field("request", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        RequestValue::FiniteDomainRequest => {
+          if let Some(x) = self.request_as_finite_domain_request() {
+            ds.field("request", &x)
+          } else {
+            ds.field("request", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        _ => {
+          let x: Option<()> = None;
+          ds.field("request", &x)
+        },
+      };
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExpertRequestPayloadT {
+  pub version: u16,
+  pub capability: Capability,
+  pub request: RequestValueT,
+}
+impl Default for ExpertRequestPayloadT {
+  fn default() -> Self {
+    Self {
+      version: 1,
+      capability: Capability::None,
+      request: RequestValueT::NONE,
+    }
+  }
+}
+impl ExpertRequestPayloadT {
+  pub fn pack<'b, A: ::flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut ::flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> ::flatbuffers::WIPOffset<ExpertRequestPayload<'b>> {
+    let version = self.version;
+    let capability = self.capability;
+    let request_type = self.request.request_value_type();
+    let request = self.request.pack(_fbb);
+    ExpertRequestPayload::create(_fbb, &ExpertRequestPayloadArgs{
+      version,
+      capability,
+      request_type,
+      request,
+    })
+  }
+}
+pub enum ExpertResultPayloadOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct ExpertResultPayload<'a> {
+  pub _tab: ::flatbuffers::Table<'a>,
+}
+
+impl<'a> ::flatbuffers::Follow<'a> for ExpertResultPayload<'a> {
+  type Inner = ExpertResultPayload<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: unsafe { ::flatbuffers::Table::new(buf, loc) } }
+  }
+}
+
+impl<'a> ExpertResultPayload<'a> {
+  pub const VT_VERSION: ::flatbuffers::VOffsetT = 4;
+  pub const VT_CAPABILITY: ::flatbuffers::VOffsetT = 6;
+  pub const VT_RESULT_TYPE: ::flatbuffers::VOffsetT = 8;
+  pub const VT_RESULT: ::flatbuffers::VOffsetT = 10;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
+    ExpertResultPayload { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: ::flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut ::flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args ExpertResultPayloadArgs
+  ) -> ::flatbuffers::WIPOffset<ExpertResultPayload<'bldr>> {
+    let mut builder = ExpertResultPayloadBuilder::new(_fbb);
+    if let Some(x) = args.result { builder.add_result(x); }
+    builder.add_version(args.version);
+    builder.add_result_type(args.result_type);
+    builder.add_capability(args.capability);
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> ExpertResultPayloadT {
+    let version = self.version();
+    let capability = self.capability();
+    let result = match self.result_type() {
+      ResultValue::NONE => ResultValueT::NONE,
+      ResultValue::ArithmeticResult => ResultValueT::ArithmeticResult(alloc::boxed::Box::new(
+        self.result_as_arithmetic_result()
+            .expect("Invalid union table, expected `ResultValue::ArithmeticResult`.")
+            .unpack()
+      )),
+      ResultValue::SqlResult => ResultValueT::SqlResult(alloc::boxed::Box::new(
+        self.result_as_sql_result()
+            .expect("Invalid union table, expected `ResultValue::SqlResult`.")
+            .unpack()
+      )),
+      ResultValue::SortDiagnostic => ResultValueT::SortDiagnostic(alloc::boxed::Box::new(
+        self.result_as_sort_diagnostic()
+            .expect("Invalid union table, expected `ResultValue::SortDiagnostic`.")
+            .unpack()
+      )),
+      ResultValue::OrderingDiagnostic => ResultValueT::OrderingDiagnostic(alloc::boxed::Box::new(
+        self.result_as_ordering_diagnostic()
+            .expect("Invalid union table, expected `ResultValue::OrderingDiagnostic`.")
+            .unpack()
+      )),
+      ResultValue::PathDiagnostic => ResultValueT::PathDiagnostic(alloc::boxed::Box::new(
+        self.result_as_path_diagnostic()
+            .expect("Invalid union table, expected `ResultValue::PathDiagnostic`.")
+            .unpack()
+      )),
+      ResultValue::FiniteAssignment => ResultValueT::FiniteAssignment(alloc::boxed::Box::new(
+        self.result_as_finite_assignment()
+            .expect("Invalid union table, expected `ResultValue::FiniteAssignment`.")
+            .unpack()
+      )),
+      _ => ResultValueT::NONE,
+    };
+    ExpertResultPayloadT {
+      version,
+      capability,
+      result,
+    }
+  }
+
+  #[inline]
+  pub fn version(&self) -> u16 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u16>(ExpertResultPayload::VT_VERSION, Some(1)).unwrap()}
+  }
+  #[inline]
+  pub fn capability(&self) -> Capability {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<Capability>(ExpertResultPayload::VT_CAPABILITY, Some(Capability::None)).unwrap()}
+  }
+  #[inline]
+  pub fn result_type(&self) -> ResultValue {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<ResultValue>(ExpertResultPayload::VT_RESULT_TYPE, Some(ResultValue::NONE)).unwrap()}
+  }
+  #[inline]
+  pub fn result(&self) -> Option<::flatbuffers::Table<'a>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<::flatbuffers::ForwardsUOffset<::flatbuffers::Table<'a>>>(ExpertResultPayload::VT_RESULT, None)}
+  }
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn result_as_arithmetic_result(&self) -> Option<ArithmeticResult<'a>> {
+    if self.result_type() == ResultValue::ArithmeticResult {
+      self.result().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { ArithmeticResult::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn result_as_sql_result(&self) -> Option<SqlResult<'a>> {
+    if self.result_type() == ResultValue::SqlResult {
+      self.result().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { SqlResult::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn result_as_sort_diagnostic(&self) -> Option<SortDiagnostic<'a>> {
+    if self.result_type() == ResultValue::SortDiagnostic {
+      self.result().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { SortDiagnostic::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn result_as_ordering_diagnostic(&self) -> Option<OrderingDiagnostic<'a>> {
+    if self.result_type() == ResultValue::OrderingDiagnostic {
+      self.result().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { OrderingDiagnostic::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn result_as_path_diagnostic(&self) -> Option<PathDiagnostic<'a>> {
+    if self.result_type() == ResultValue::PathDiagnostic {
+      self.result().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { PathDiagnostic::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn result_as_finite_assignment(&self) -> Option<FiniteAssignment<'a>> {
+    if self.result_type() == ResultValue::FiniteAssignment {
+      self.result().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { FiniteAssignment::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+}
+
+impl ::flatbuffers::Verifiable for ExpertResultPayload<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut ::flatbuffers::Verifier, pos: usize
+  ) -> Result<(), ::flatbuffers::InvalidFlatbuffer> {
+    v.visit_table(pos)?
+     .visit_field::<u16>("version", Self::VT_VERSION, false)?
+     .visit_field::<Capability>("capability", Self::VT_CAPABILITY, false)?
+     .visit_union::<ResultValue, _>("result_type", Self::VT_RESULT_TYPE, "result", Self::VT_RESULT, false, |key, v, pos| {
+        match key {
+          ResultValue::ArithmeticResult => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<ArithmeticResult>>("ResultValue::ArithmeticResult", pos),
+          ResultValue::SqlResult => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<SqlResult>>("ResultValue::SqlResult", pos),
+          ResultValue::SortDiagnostic => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<SortDiagnostic>>("ResultValue::SortDiagnostic", pos),
+          ResultValue::OrderingDiagnostic => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<OrderingDiagnostic>>("ResultValue::OrderingDiagnostic", pos),
+          ResultValue::PathDiagnostic => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<PathDiagnostic>>("ResultValue::PathDiagnostic", pos),
+          ResultValue::FiniteAssignment => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<FiniteAssignment>>("ResultValue::FiniteAssignment", pos),
+          _ => Ok(()),
+        }
+     })?
+     .finish();
+    Ok(())
+  }
+}
+pub struct ExpertResultPayloadArgs {
+    pub version: u16,
+    pub capability: Capability,
+    pub result_type: ResultValue,
+    pub result: Option<::flatbuffers::WIPOffset<::flatbuffers::UnionWIPOffset>>,
+}
+impl<'a> Default for ExpertResultPayloadArgs {
+  #[inline]
+  fn default() -> Self {
+    ExpertResultPayloadArgs {
+      version: 1,
+      capability: Capability::None,
+      result_type: ResultValue::NONE,
+      result: None,
+    }
+  }
+}
+
+pub struct ExpertResultPayloadBuilder<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: ::flatbuffers::WIPOffset<::flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> ExpertResultPayloadBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_version(&mut self, version: u16) {
+    self.fbb_.push_slot::<u16>(ExpertResultPayload::VT_VERSION, version, 1);
+  }
+  #[inline]
+  pub fn add_capability(&mut self, capability: Capability) {
+    self.fbb_.push_slot::<Capability>(ExpertResultPayload::VT_CAPABILITY, capability, Capability::None);
+  }
+  #[inline]
+  pub fn add_result_type(&mut self, result_type: ResultValue) {
+    self.fbb_.push_slot::<ResultValue>(ExpertResultPayload::VT_RESULT_TYPE, result_type, ResultValue::NONE);
+  }
+  #[inline]
+  pub fn add_result(&mut self, result: ::flatbuffers::WIPOffset<::flatbuffers::UnionWIPOffset>) {
+    self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(ExpertResultPayload::VT_RESULT, result);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>) -> ExpertResultPayloadBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    ExpertResultPayloadBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> ::flatbuffers::WIPOffset<ExpertResultPayload<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    ::flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl ::core::fmt::Debug for ExpertResultPayload<'_> {
+  fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+    let mut ds = f.debug_struct("ExpertResultPayload");
+      ds.field("version", &self.version());
+      ds.field("capability", &self.capability());
+      ds.field("result_type", &self.result_type());
+      match self.result_type() {
+        ResultValue::ArithmeticResult => {
+          if let Some(x) = self.result_as_arithmetic_result() {
+            ds.field("result", &x)
+          } else {
+            ds.field("result", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        ResultValue::SqlResult => {
+          if let Some(x) = self.result_as_sql_result() {
+            ds.field("result", &x)
+          } else {
+            ds.field("result", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        ResultValue::SortDiagnostic => {
+          if let Some(x) = self.result_as_sort_diagnostic() {
+            ds.field("result", &x)
+          } else {
+            ds.field("result", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        ResultValue::OrderingDiagnostic => {
+          if let Some(x) = self.result_as_ordering_diagnostic() {
+            ds.field("result", &x)
+          } else {
+            ds.field("result", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        ResultValue::PathDiagnostic => {
+          if let Some(x) = self.result_as_path_diagnostic() {
+            ds.field("result", &x)
+          } else {
+            ds.field("result", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        ResultValue::FiniteAssignment => {
+          if let Some(x) = self.result_as_finite_assignment() {
+            ds.field("result", &x)
+          } else {
+            ds.field("result", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        _ => {
+          let x: Option<()> = None;
+          ds.field("result", &x)
+        },
+      };
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExpertResultPayloadT {
+  pub version: u16,
+  pub capability: Capability,
+  pub result: ResultValueT,
+}
+impl Default for ExpertResultPayloadT {
+  fn default() -> Self {
+    Self {
+      version: 1,
+      capability: Capability::None,
+      result: ResultValueT::NONE,
+    }
+  }
+}
+impl ExpertResultPayloadT {
+  pub fn pack<'b, A: ::flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut ::flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> ::flatbuffers::WIPOffset<ExpertResultPayload<'b>> {
+    let version = self.version;
+    let capability = self.capability;
+    let result_type = self.result.result_value_type();
+    let result = self.result.pack(_fbb);
+    ExpertResultPayload::create(_fbb, &ExpertResultPayloadArgs{
+      version,
+      capability,
+      result_type,
+      result,
+    })
+  }
+}
 pub enum PacketOffset {}
 #[derive(Copy, Clone, PartialEq)]
 

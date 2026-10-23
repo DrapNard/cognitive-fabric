@@ -569,9 +569,166 @@ pub(crate) fn response_envelope(
     Ok(request)
 }
 
+#[cfg(feature = "wasm-experts")]
+pub(crate) fn encode_expert_request(request: &Request) -> Result<Vec<u8>> {
+    request.validate_and_size()?;
+    let native = fb::ExpertRequestPayloadT {
+        version: 1,
+        capability: capability_to_fb(request.capability()),
+        request: request_to_fb(request)?,
+    };
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let root = native.pack(&mut builder);
+    builder.finish(root, Some("CGWI"));
+    let bytes = builder.finished_data().to_vec();
+    if bytes.len() > MAX_FRAME {
+        bail!("Wasm expert request exceeds frame bound")
+    }
+    Ok(bytes)
+}
+
+#[cfg(feature = "wasm-experts")]
+pub(crate) fn encode_expert_result(response: &Response) -> Result<Vec<u8>> {
+    let capability = match response {
+        Response::Arithmetic { .. } => Capability::MathEvaluate,
+        Response::Sql { .. } => Capability::SqlQuery,
+        Response::SortDiagnostic { .. } => Capability::SortingVerify,
+        Response::OrderingDiagnostic { .. } => Capability::OrderingVerify,
+        Response::PathDiagnostic { .. } => Capability::PathVerify,
+        Response::FiniteAssignment { .. } => Capability::ConstraintsSolve,
+    };
+    let native = fb::ExpertResultPayloadT {
+        version: 1,
+        capability: capability_to_fb(capability),
+        result: response_to_fb(response)?,
+    };
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let root = native.pack(&mut builder);
+    builder.finish(root, Some("CGWO"));
+    let bytes = builder.finished_data().to_vec();
+    decode_expert_result(&bytes, capability)?;
+    Ok(bytes)
+}
+
+#[cfg(feature = "wasm-experts")]
+pub(crate) fn decode_expert_result(bytes: &[u8], capability: Capability) -> Result<Response> {
+    if !(8..=MAX_FRAME).contains(&bytes.len())
+        || !flatbuffers::buffer_has_identifier(bytes, "CGWO", false)
+    {
+        bail!("Invalid Wasm expert result frame")
+    }
+    let options = flatbuffers::VerifierOptions {
+        max_depth: 16,
+        max_tables: 8192,
+        max_apparent_size: 4 * 1024 * 1024,
+        ..Default::default()
+    };
+    let root = flatbuffers::root_with_opts::<fb::ExpertResultPayload>(&options, bytes)?;
+    if root.version() != 1 || capability_from_fb(root.capability())? != capability {
+        bail!("Wasm expert result version or capability differs")
+    }
+    // Bound vectors and aggregate strings before generated object unpacking,
+    // including FlatBuffers that alias the same nested objects repeatedly.
+    if let Some(sql) = root.result_as_sql_result() {
+        let columns = sql.columns();
+        let rows = sql.rows();
+        if columns.is_empty() || columns.len() > 16 || rows.len() > 64 {
+            bail!("Wasm SQL result count exceeds bounds")
+        }
+        let mut size = 0usize;
+        for name in columns {
+            if name.is_empty() || name.len() > 128 {
+                bail!("Invalid Wasm SQL column")
+            };
+            size += name.len();
+        }
+        for row in rows {
+            let values = row.values();
+            if values.len() > 16 {
+                bail!("Wasm SQL row exceeds bounds")
+            }
+            for value in values {
+                size += if let Some(text) = value.value_as_text_value() {
+                    if text.value().len() > 2048 {
+                        bail!("Wasm SQL text exceeds bounds")
+                    };
+                    text.value().len()
+                } else {
+                    8
+                };
+                if size > super::MAX_RESULT_BYTES {
+                    bail!("Wasm SQL aggregate result exceeds bounds")
+                }
+            }
+        }
+    }
+    if let Some(result) = root.result_as_arithmetic_result() {
+        if result.value().len() > 256 {
+            bail!("Wasm arithmetic result exceeds bounds")
+        }
+    }
+    if let Some(result) = root.result_as_finite_assignment() {
+        if result.values().len() > 64
+            || result
+                .values()
+                .iter()
+                .any(|value| value.variable().len() > 64)
+        {
+            bail!("Wasm assignment exceeds bounds")
+        }
+    }
+    response_from_fb(root.unpack().result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(feature = "wasm-experts")]
+    #[test]
+    fn expert_decoder_bounds_aliased_sql_before_object_unpacking() {
+        let mut builder = flatbuffers::FlatBufferBuilder::new();
+        let text = builder.create_string(&"x".repeat(2048));
+        let text = fb::TextValue::create(&mut builder, &fb::TextValueArgs { value: Some(text) });
+        let value = fb::SqlValue::create(
+            &mut builder,
+            &fb::SqlValueArgs {
+                value_type: fb::ScalarValue::TextValue,
+                value: Some(text.as_union_value()),
+            },
+        );
+        let values = builder.create_vector(&[value; 16]);
+        let row = fb::SqlRow::create(
+            &mut builder,
+            &fb::SqlRowArgs {
+                values: Some(values),
+            },
+        );
+        let rows = builder.create_vector(&[row; 64]);
+        let name = builder.create_string("column");
+        let columns = builder.create_vector(&[name; 16]);
+        let result = fb::SqlResult::create(
+            &mut builder,
+            &fb::SqlResultArgs {
+                columns: Some(columns),
+                rows: Some(rows),
+            },
+        );
+        let root = fb::ExpertResultPayload::create(
+            &mut builder,
+            &fb::ExpertResultPayloadArgs {
+                version: 1,
+                capability: fb::Capability::SqlQuery,
+                result_type: fb::ResultValue::SqlResult,
+                result: Some(result.as_union_value()),
+            },
+        );
+        builder.finish(root, Some("CGWO"));
+        assert!(builder.finished_data().len() < MAX_FRAME);
+        let error =
+            decode_expert_result(builder.finished_data(), Capability::SqlQuery).unwrap_err();
+        assert!(error.to_string().contains("aggregate"), "{error}");
+    }
 
     #[test]
     fn decoder_rejects_unknown_flatbuffer_capability_discriminant() {

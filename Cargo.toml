@@ -11,6 +11,7 @@ build = "build.rs"
 [features]
 default = []
 wasm-verifier = ["dep:wasmi"]
+wasm-experts = ["dep:wasmi"]
 
 [[bin]]
 name = "cogfabric"

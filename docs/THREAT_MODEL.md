@@ -1,5 +1,17 @@
 # Threat Model (v1.0)
 
+## Optional Wasm expert execution boundary
+
+Explicit operator manifests bind immutable guest bytes, not publisher identity.
+No imports/start functions or host callbacks expose files/network/model/Store
+handles. Host task grants remain necessary. Memory/fuel/stack/table and shared
+worker permits bound guest work; blocking jobs retain permits after caller
+cancellation until interpreter exit. Typed output and aggregate limits precede
+object unpacking, and host criteria remain answer authority. Implementation hashes
+in v3 task snapshots prevent silent guest replacement during retained recovery.
+There is no hard compilation deadline, process isolation against interpreter bugs,
+or generic untrusted native executable sandbox. See `WASM_EXPERTS.md`.
+
 ## Prepared candidate provenance boundary
 
 Pinned report bytes bind artifact and held-out hashes plus normalized source byte

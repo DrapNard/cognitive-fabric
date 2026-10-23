@@ -1,5 +1,24 @@
 # Current Rust implementation
 
+## Optional bounded Wasm experts — 2026-10-24
+
+The optional `wasm-experts` adapter registers hash-pinned compiled guests through
+the ordinary typed broker and task grants. No imports/start functions, strict
+memory/fuel/stack/table bounds, two retained worker permits and original deadlines
+bound execution. CGWI/CGWO payloads retain FlatBuffers; responses are checked
+before unpacking and against original requests, with host acceptance criteria.
+Version-3 task snapshots bind artifact/settings identities for retained recovery;
+builtin reconstruction refuses guest substitution. CLI `ask`/`serve` accept up to
+eight strict operator manifests. Cross-process guest reconstruction remains
+unsupported. See [Wasm experts](WASM_EXPERTS.md) for ABI and limitations.
+
+The full all-feature suite passes **1,039 tests across 71 workspace targets**,
+zero failed or ignored, including alias-amplification and recovery regressions.
+Rust 1.99 workspace check and strict all-feature Clippy, formatting, exact pinned
+FlatBuffers generation and offline CLI/HTTP smoke checks pass. The repeated
+default suite passes **1,031 tests across 71 targets**, zero failed or ignored;
+strict default Clippy also passes.
+
 ## Prepared RAG candidate provenance — 2026-10-24
 
 `candidate create-prepared` now imports pinned version-2 preparation bundles with

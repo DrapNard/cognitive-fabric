@@ -1,5 +1,27 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Optional bounded untrusted Wasm expert adapter — 2026-10-24
+
+**Implemented adapter; broader native isolation remains Partial.** Architecture
+§6/7/9/10: `src/fabric/modules/wasm.rs` provides immutable hash-pinned no-import
+Wasmi guests, typed payloads, host authorization, bounded execution and retained
+permits on cancellation. `protocol/general_module.fbs` appends CGWI/CGWO payload
+roots without changing existing CGMD packets. `src/main.rs` loads operator
+manifests before state initialization; the optional feature is off by default.
+`src/engine.rs`, `src/fabric/modules.rs`, `src/recovery/continuation_modules.rs`
+and `src/registry/providers.rs` retain implementation identity in v3 snapshots,
+refusing substitution and preserving legacy snapshot rules.
+
+`tests/wasm_experts.rs` covers real CLI/engine dispatch, independent acceptance,
+artifact pinning, mutation, hostile imports/start/loops/memory/output, manifests
+and disabled-feature startup. Protocol tests cover aliased SQL aggregate bounds;
+recovery tests reject guest identities on builtin reconstruction. The full all-feature suite passes **1,039 tests across 71 targets**, zero failed
+or ignored. Rust 1.99 check/all-feature strict Clippy, formatting, exact generator
+and CLI/HTTP smoke checks pass. The repeated default suite passes **1,031 tests
+across 71 targets**, zero failed or ignored; strict default Clippy also passes. See [ABI and limits](WASM_EXPERTS.md).
+No general native executable sandbox, hard interpreter wall-clock preemption,
+automatic guest reconstruction or scientific reasoning-quality claim is made.
+
 ## Prepared candidate provenance transaction — 2026-10-24
 
 **Implemented for version-2 RAG bundles.** `src/evolution/prepared.rs` imports

@@ -39,6 +39,8 @@ struct ModuleSnapshot {
     capabilities: Vec<String>,
     #[serde(default)]
     source_sha256: Option<String>,
+    #[serde(default)]
+    implementation: Option<Value>,
 }
 
 fn capability(name: &str) -> Result<Capability> {
@@ -104,8 +106,8 @@ pub(super) fn reconstruct_builtin_owned(
         )?;
         let snapshot: Snapshot =
             serde_json::from_value(crate::strict_json::value(raw.as_bytes(), 65536)?)?;
-        if snapshot.format_version != 2 || snapshot.modules.len() != 1 {
-            bail!("Builtin reconstruction requires one source-bound version-2 module")
+        if !matches!(snapshot.format_version, 2 | 3) || snapshot.modules.len() != 1 {
+            bail!("Builtin reconstruction requires one source-bound version-2 or version-3 module")
         }
         let original: ModuleSnapshot = serde_json::from_value(snapshot.modules[0].clone())?;
         if original.source_sha256.as_deref()
@@ -188,7 +190,7 @@ pub(super) fn restore(
     let snapshot: Snapshot =
         serde_json::from_value(crate::strict_json::value(raw.as_bytes(), 65536)?)?;
     if source != "fabric"
-        || !matches!(snapshot.format_version, 1 | 2)
+        || !matches!(snapshot.format_version, 1..=3)
         || snapshot.permissions_granted
         || uuid::Uuid::parse_str(&snapshot.broker_id).is_err()
         || rows.next()?.is_some()
@@ -239,10 +241,16 @@ pub(super) fn restore(
         if snapshot.format_version == 1 && module.source_sha256.is_some() {
             bail!("Legacy module snapshot contains unsupported source identity")
         }
-        if snapshot.format_version == 2
+        if matches!(snapshot.format_version, 2 | 3)
             && pin.source_fingerprint() != module.source_sha256.as_deref()
         {
             bail!("Restored module source identity differs from original snapshot")
+        }
+        if (snapshot.format_version < 3 && module.implementation.is_some())
+            || (snapshot.format_version == 3
+                && module.implementation.as_ref() != pin.implementation_identity())
+        {
+            bail!("Restored module implementation identity differs from original snapshot")
         }
         for cap in descriptor.capabilities {
             if pins.insert(cap, pin.clone()).is_some() {
@@ -334,7 +342,7 @@ mod tests {
 
     #[test]
     fn builtin_reconstruction_denies_unsafe_or_ambiguous_state_atomically() {
-        for scenario in 0..12 {
+        for scenario in 0..14 {
             let root =
                 std::env::temp_dir().join(format!("fabric-builtin-deny-{}", uuid::Uuid::new_v4()));
             let store = Arc::new(Store::open(&root.join("fabric.sqlite3")).unwrap());
@@ -351,6 +359,11 @@ mod tests {
                 3 => snapshot["format_version"] = json!(1),
                 4 => snapshot["permissions_granted"] = json!(true),
                 5 => snapshot["modules"][0]["capabilities"] = json!(["math.evaluate"]),
+                12 => {
+                    snapshot["format_version"] = json!(3);
+                    snapshot["modules"][0]["implementation"] = json!({"runtime":"guest"});
+                }
+                13 => snapshot["modules"][0]["implementation"] = json!({"runtime":"guest"}),
                 _ => {}
             }
             store
@@ -424,7 +437,7 @@ mod tests {
                 0 => snapshot["modules"] = json!([{"id":"host.custom","version":"1.0.0"}]),
                 1 => snapshot["broker_id"] = json!("forged"),
                 2 => snapshot["permissions_granted"] = json!(true),
-                3 => snapshot["format_version"] = json!(3),
+                3 => snapshot["format_version"] = json!(4),
                 _ => {}
             }
             if scenario != 6 {

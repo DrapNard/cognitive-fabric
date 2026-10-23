@@ -26,6 +26,9 @@ struct Cli {
     /// Execute supported typed tools in the compiled same-image module worker.
     #[arg(long, global = true)]
     typed_module_worker: bool,
+    /// Install hash-pinned no-import Wasm experts (requires wasm-experts).
+    #[arg(long, global = true, conflicts_with = "typed_module_worker")]
+    wasm_expert: Vec<PathBuf>,
     /// Optional isolated secondary verifier; requires a wasm-verifier feature build.
     #[arg(long, global = true, requires = "verifier_wasm_sha256")]
     verifier_wasm: Option<PathBuf>,
@@ -692,6 +695,15 @@ async fn main() -> Result<()> {
 
 async fn run_cli() -> Result<()> {
     let cli = Cli::parse();
+    if !cli.wasm_expert.is_empty() {
+        if cli.wasm_expert.len() > 8
+            || !matches!(&cli.command, Command::Ask { .. } | Command::Serve { .. })
+        {
+            bail!("At most eight Wasm expert manifests are supported for ask and serve")
+        }
+        #[cfg(not(feature = "wasm-experts"))]
+        bail!("Wasm experts require a build with the wasm-experts feature");
+    }
     if cli.native_lifecycle_policy.is_some() {
         if !cli.approve_native_lifecycle {
             bail!("Native lifecycle policy requires explicit operator approval")
@@ -938,6 +950,12 @@ async fn run_cli() -> Result<()> {
             (None, None) => None,
             _ => bail!("Wasm verifier requires both a module file and its exact SHA-256 pin"),
         };
+    #[cfg(feature = "wasm-experts")]
+    let wasm_experts = cli
+        .wasm_expert
+        .iter()
+        .map(|path| cogfabric::fabric::modules::wasm::WasmModule::load_manifest(path))
+        .collect::<Result<Vec<_>>>()?;
     let native_lifecycle = cli
         .native_lifecycle_policy
         .as_ref()
@@ -1341,6 +1359,13 @@ async fn run_cli() -> Result<()> {
     } else {
         engine
     };
+    #[cfg(feature = "wasm-experts")]
+    for module in wasm_experts {
+        engine.modules.register(
+            Arc::new(module),
+            cogfabric::fabric::modules::Limits::default(),
+        )?;
+    }
     let engine = match workflow_router {
         Some(router) => engine.with_expert_router(router)?,
         None => engine,

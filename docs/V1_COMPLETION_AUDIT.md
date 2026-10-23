@@ -7,6 +7,18 @@ instructions, and the request to implement all remaining Jev+/Jev-R code. It doe
 not replace the architecture. Historical entries in `IMPLEMENTATION_MATRIX.md`
 and `CURRENT_IMPLEMENTATION.md` describe earlier snapshots and can be superseded.
 
+## Optional Wasm expert integration — 2026-10-24
+
+`src/fabric/modules/wasm.rs` now supplies bounded no-import untrusted guest
+execution under host task grants; see [ABI and limits](WASM_EXPERTS.md).
+The all-feature workspace suite passes **1,039 tests across 71 targets**.
+Rust 1.99 workspace check, strict default/all-feature Clippy, formatting, pinned
+FlatBuffers generation and offline CLI/HTTP smoke checks pass. The repeated
+default suite passes **1,031 tests across 71 targets**, zero failed or ignored.
+These results narrow the
+expert execution gap but do not prove generic native isolation, physical resource
+attribution, live reasoning quality, or the research objectives below.
+
 ## Evidence rules
 
 “Implemented” below means the named runtime mechanism exists with relevant
@@ -67,7 +79,7 @@ instructions explicitly place them beyond proven v1.0 functionality.
 
 ## Current decision and next work
 
-The audited source passes these checks:
+The previously pushed prepared-provenance snapshot passed these checks:
 
 - `cargo fmt --all -- --check` and `git diff --check`.
 - `cargo +1.99.0 check --locked --workspace --all-targets`.
