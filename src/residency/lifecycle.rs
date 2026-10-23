@@ -209,81 +209,104 @@ impl crate::backend::InferenceBackend for BoundBackend {
 /// or a failed quarantine write cannot turn unknown inference into release rights.
 pub(crate) fn require_no_unknown_generation(store: &Store, endpoint: &str) -> Result<()> {
     let db = store.lock()?;
-    let mut stmt = db.prepare("SELECT task_id,CASE WHEN length(CAST(payload AS BLOB))<=4096 THEN payload END FROM events WHERE kind='native_task_lifecycle' AND source='human-cli' ORDER BY id LIMIT 4097")?;
-    let rows = stmt
-        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-    if rows.len() > 4096 {
-        bail!("Native task lifecycle history exceeds its validation bound")
-    }
-    let mut phases = std::collections::BTreeMap::<String, (String, String, String, bool)>::new();
-    for (task, raw) in rows {
-        let v = crate::strict_json::value(raw.as_bytes(), 4096)?;
-        if v["format_version"] != 1
-            || v["permissions_granted"] != false
-            || v["provider_stop_proven"] != false
-        {
-            bail!("Malformed native task lifecycle evidence")
+    check_generation_history(&db, endpoint, Instant::now() + Duration::from_secs(5))
+}
+
+fn check_generation_history(
+    db: &rusqlite::Connection,
+    endpoint: &str,
+    deadline: Instant,
+) -> Result<()> {
+    db.progress_handler(1000, Some(move || Instant::now() >= deadline));
+    let result = (|| -> Result<()> {
+        if Instant::now() >= deadline {
+            bail!("Native generation history deadline exhausted")
         }
-        let state = v["state"]
-            .as_str()
-            .ok_or_else(|| anyhow::anyhow!("Missing native lifecycle phase"))?;
-        if matches!(state, "requested" | "finished" | "outcome_unknown") {
-            continue;
+        let mut stmt = db.prepare("SELECT task_id,CASE WHEN length(CAST(payload AS BLOB))<=4096 THEN payload END FROM events WHERE kind='native_task_lifecycle' AND source='human-cli' ORDER BY id LIMIT 4097")?;
+        let rows = stmt
+            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        if rows.len() > 4096 {
+            bail!("Native task lifecycle history exceeds its validation bound")
         }
-        if !matches!(
-            state,
-            "generation_started" | "generation_confirmed" | "generation_operator_stopped"
-        ) {
-            bail!("Unsupported native lifecycle phase")
-        }
-        if state == "generation_operator_stopped"
-            && (v["provider_stop_acknowledged"] != true || v["original_outcome"] != "unknown")
-        {
-            bail!("Native generation resolution lacks operator acknowledgement")
-        }
-        let base = v["endpoint"]
-            .as_str()
-            .ok_or_else(|| anyhow::anyhow!("Missing native lifecycle endpoint"))?
-            .to_owned();
-        let child = v["child_task_id"]
-            .as_str()
-            .ok_or_else(|| anyhow::anyhow!("Missing native child task"))?
-            .to_owned();
-        let hash = v["bindings_sha256"]
-            .as_str()
-            .ok_or_else(|| anyhow::anyhow!("Missing native bindings identity"))?
-            .to_owned();
-        uuid::Uuid::parse_str(&task)?;
-        uuid::Uuid::parse_str(&child)?;
-        if hash.len() != 64
-            || !hash
-                .bytes()
-                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-        {
-            bail!("Invalid native binding digest")
-        }
-        if state == "generation_started" {
-            if phases.insert(task, (base, child, hash, false)).is_some() {
-                bail!("Duplicate native generation admission")
+        let mut phases =
+            std::collections::BTreeMap::<String, (String, String, String, bool)>::new();
+        for (task, raw) in rows {
+            if Instant::now() >= deadline {
+                bail!("Native generation history deadline exhausted")
             }
-        } else {
-            let prior = phases
-                .get_mut(&task)
-                .ok_or_else(|| anyhow::anyhow!("Native generation completion lacks admission"))?;
-            if prior.0 != base || prior.1 != child || prior.2 != hash || prior.3 {
-                bail!("Native generation completion differs from admission")
+            let v = crate::strict_json::value(raw.as_bytes(), 4096)?;
+            if v["format_version"] != 1
+                || v["permissions_granted"] != false
+                || v["provider_stop_proven"] != false
+            {
+                bail!("Malformed native task lifecycle evidence")
             }
-            prior.3 = true;
+            let state = v["state"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing native lifecycle phase"))?;
+            if matches!(state, "requested" | "finished" | "outcome_unknown") {
+                continue;
+            }
+            if !matches!(
+                state,
+                "generation_started" | "generation_confirmed" | "generation_operator_stopped"
+            ) {
+                bail!("Unsupported native lifecycle phase")
+            }
+            if state == "generation_operator_stopped"
+                && (v["provider_stop_acknowledged"] != true || v["original_outcome"] != "unknown")
+            {
+                bail!("Native generation resolution lacks operator acknowledgement")
+            }
+            let base = v["endpoint"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing native lifecycle endpoint"))?
+                .to_owned();
+            let child = v["child_task_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing native child task"))?
+                .to_owned();
+            let hash = v["bindings_sha256"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing native bindings identity"))?
+                .to_owned();
+            uuid::Uuid::parse_str(&task)?;
+            uuid::Uuid::parse_str(&child)?;
+            if hash.len() != 64
+                || !hash
+                    .bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+            {
+                bail!("Invalid native binding digest")
+            }
+            if state == "generation_started" {
+                if phases.insert(task, (base, child, hash, false)).is_some() {
+                    bail!("Duplicate native generation admission")
+                }
+            } else {
+                let prior = phases.get_mut(&task).ok_or_else(|| {
+                    anyhow::anyhow!("Native generation completion lacks admission")
+                })?;
+                if prior.0 != base || prior.1 != child || prior.2 != hash || prior.3 {
+                    bail!("Native generation completion differs from admission")
+                }
+                prior.3 = true;
+            }
         }
-    }
-    if phases
-        .values()
-        .any(|(base, _, _, confirmed)| base == endpoint && !confirmed)
-    {
-        bail!("Unknown native task inference blocks lifecycle mutation; independently stop the provider and resolve the task")
-    }
-    Ok(())
+        if phases
+            .values()
+            .any(|(base, _, _, confirmed)| base == endpoint && !confirmed)
+        {
+            bail!("Unknown native task inference blocks lifecycle mutation; independently stop the provider and resolve the task")
+        }
+        if Instant::now() >= deadline {
+            bail!("Native generation history deadline exhausted")
+        }
+        Ok(())
+    })();
+    db.progress_handler(0, None::<fn() -> bool>);
+    result
 }
 
 fn event(
@@ -976,4 +999,78 @@ pub async fn resolve_generation(
     Ok(
         json!({"lifecycle_task_id":task,"child_task_id":child,"original_outcome":"unknown","provider_stop_acknowledged":true,"provider_stop_proven":false,"automatic_replay":false,"model_mutation_performed":false,"permissions_granted":false}),
     )
+}
+
+#[cfg(test)]
+mod generation_history_tests {
+    use super::*;
+
+    #[test]
+    fn expired_history_deadline_refuses_and_clears_sqlite_interrupt_handler() {
+        let store = Store::in_memory().unwrap();
+        let db = store.lock().unwrap();
+        assert!(check_generation_history(
+            &db,
+            "http://127.0.0.1:1234/api/v1/models",
+            Instant::now()
+        )
+        .is_err());
+        // A leaked expired progress handler would interrupt this longer query.
+        let sum:i64=db.query_row("WITH RECURSIVE numbers(n) AS (VALUES(1) UNION ALL SELECT n+1 FROM numbers WHERE n<10000) SELECT sum(n) FROM numbers",[],|row|row.get(0)).unwrap();
+        assert_eq!(sum, 50_005_000);
+        check_generation_history(
+            &db,
+            "http://127.0.0.1:1234/api/v1/models",
+            Instant::now() + Duration::from_secs(1),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn incomplete_or_malformed_generation_history_never_becomes_clearance() {
+        let store = Store::in_memory().unwrap();
+        let parent = store
+            .create_task("Native generation history", "fast")
+            .unwrap();
+        let child = uuid::Uuid::new_v4().to_string();
+        let base = "http://127.0.0.1:1234/api/v1/models";
+        event(
+            &store,
+            &parent,
+            "generation_started",
+            base,
+            &child,
+            &"a".repeat(64),
+        )
+        .unwrap();
+        assert!(require_no_unknown_generation(&store, base).is_err());
+        assert!(
+            require_no_unknown_generation(&store, "http://127.0.0.1:4321/api/v1/models").is_ok()
+        );
+        event(
+            &store,
+            &parent,
+            "generation_confirmed",
+            base,
+            &child,
+            &"a".repeat(64),
+        )
+        .unwrap();
+        require_no_unknown_generation(&store, base).unwrap();
+        event(
+            &store,
+            &parent,
+            "generation_confirmed",
+            base,
+            &child,
+            &"a".repeat(64),
+        )
+        .unwrap();
+        assert!(require_no_unknown_generation(&store, base).is_err());
+        let db = store.lock().unwrap();
+        let count: i64 = db
+            .query_row("SELECT count(*) FROM events", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 3);
+    }
 }

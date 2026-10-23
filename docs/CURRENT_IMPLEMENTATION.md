@@ -1,5 +1,28 @@
 # Current Rust implementation
 
+## Completion audit and bounded native history — 2026-10-23
+
+Read [the requirement-by-requirement audit](V1_COMPLETION_AUDIT.md) for the current
+completion decision and remaining obligations. The entries below are historical
+snapshots; later entries can supersede earlier implementation limitations and
+test counts. Passing framework tests does not complete the scientific roadmap.
+
+The audit found that native generation history had row/payload limits but lacked
+an independent SQLite scan deadline. Its gate now installs a five-second progress
+handler, checks elapsed time while validating rows, refuses expiry, and clears the
+handler on success or failure. New regressions cover expired deadlines, subsequent
+SQL usability, incomplete admissions and duplicate completions. Combined checks
+pass **1,016 tests across 66 targets**, zero failed or ignored, plus **four Wasm
+tests**. Formatting, Rust 1.99 workspace check, strict Clippy with default and all
+features, exact generation of all ten FlatBuffers bindings and both offline
+installed CLI/HTTP smoke scripts pass.
+
+The earlier remaining-work summaries were too narrow. Independent live evaluation,
+task-attributed physical telemetry, general untrusted expert/verifier isolation,
+automatic source preparation and the architecture's research milestones still
+have missing implementation or evidence. These gaps remain tracked in the audit;
+no full Jev+/Jev-R completion or release readiness is claimed.
+
 ## Native-owner continuation — 2026-10-23
 
 Supported original native checkpoints can now continue through the explicit

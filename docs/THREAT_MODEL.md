@@ -1,5 +1,14 @@
 # Threat Model (v1.0)
 
+## Native generation-history scan deadline
+
+The deny-before-mutation history gate uses a five-second SQLite progress handler
+plus elapsed checks during bounded record validation. Expiry is refusal, never
+evidence of absence; incomplete or duplicate admissions retain their prior deny
+behavior. Handler cleanup occurs on every result path so inspection cannot leave
+a stale interrupt hook on the shared connection. Cooperative SQLite callbacks do
+not provide hard preemption of blocking filesystem operations or trusted host code.
+
 ## Explicit native continuation ownership
 
 Only private validated native runtime objects bypass the default missing-owner

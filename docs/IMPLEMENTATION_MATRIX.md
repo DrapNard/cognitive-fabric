@@ -1,5 +1,24 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Completion audit and generation scan deadline — 2026-10-23
+
+**Overall Partial.** [V1_COMPLETION_AUDIT.md](V1_COMPLETION_AUDIT.md) reconciles the
+full canonical architecture with inspected source/tests, separating implemented
+runtime mechanisms from unproven live quality, physical resource measurements,
+untrusted executable isolation, automatic source preparation and neural research.
+Historical rows below must not be used alone as the current completion decision.
+
+**Implemented:** `src/residency/lifecycle.rs` now bounds the native generation gate
+with a five-second SQLite interrupt deadline and per-record elapsed checks, in
+addition to existing row/payload bounds. All result paths clear the handler. Two
+new regressions verify expiry does not permit clearance, later SQL still works,
+and incomplete/duplicate generation evidence remains refused. Combined quality
+checks pass **1,016 workspace tests across 66 targets**, zero failed or ignored,
+plus **four optional Wasm tests**. Formatting, Rust 1.99 check and strict Clippy
+with default/all features, exact ten-schema generator output and both installed
+CLI/HTTP smoke scripts pass. No schema, index, model permission or provider mutation
+is added. This is a cooperative SQLite bound, not hard process/I/O isolation.
+
 ## Explicit native-owner continuation — 2026-10-23
 
 **Implemented for supported original checkpoints and reviewed runtime objects.**
