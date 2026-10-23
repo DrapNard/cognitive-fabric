@@ -857,7 +857,7 @@ impl Broker {
         Ok(Pin {
             task: task.into(),
             module,
-            broker_identity: self.identity.clone(),
+            broker_identity: self.identity,
         })
     }
 
@@ -921,14 +921,20 @@ impl Broker {
         if remaining.is_zero() || remaining > MAX_DEADLINE {
             bail!("Typed module deadline is expired or exceeds the task limit")
         }
-        if grant
-            .calls
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |calls| {
-                (calls < grant.maximum_calls).then_some(calls + 1)
-            })
-            .is_err()
-        {
-            bail!("Typed module invocation allowance exhausted")
+        let mut calls = grant.calls.load(Ordering::Acquire);
+        loop {
+            if calls >= grant.maximum_calls {
+                bail!("Typed module invocation allowance exhausted")
+            }
+            match grant.calls.compare_exchange_weak(
+                calls,
+                calls + 1,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => break,
+                Err(current) => calls = current,
+            }
         }
         let correlation = uuid::Uuid::new_v4().to_string();
         let request_hash = request_digest(&request);
@@ -1027,7 +1033,7 @@ impl Broker {
 
 impl Registered {
     fn available(&self) -> bool {
-        !*self.shutdown.borrow() && self.queue.get().map_or(true, |sender| !sender.is_closed())
+        !*self.shutdown.borrow() && self.queue.get().is_none_or(|sender| !sender.is_closed())
     }
 
     async fn queue(self: &Arc<Self>) -> &mpsc::Sender<Work> {

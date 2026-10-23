@@ -143,7 +143,7 @@ fn response(store: &Store, task: &str, call: u64, role: &str, id: usize, text: &
     };
     store
         .event(
-            &task,
+            task,
             "reasoning",
             "jev-r",
             json!({

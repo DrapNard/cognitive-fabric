@@ -856,7 +856,7 @@ async fn main() -> Result<()> {
     let native_lifecycle = cli
         .native_lifecycle_policy
         .as_ref()
-        .map(|path| cogfabric::residency::lifecycle::NativeLifecyclePolicy::load(path))
+        .map(cogfabric::residency::lifecycle::NativeLifecyclePolicy::load)
         .transpose()?;
     let cfg = Config::load(cli.home, cli.backend)?;
     match &cli.command {

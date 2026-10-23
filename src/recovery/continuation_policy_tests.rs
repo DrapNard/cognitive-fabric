@@ -11,10 +11,12 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 const ORIGINAL_QUERY: &str = r#"sort:{"values":[3,1,2]}"#;
 
+type RecordedVerification = (String, String, String, String, Instant);
+
 struct Verifier {
     descriptor: crate::verification::VerifierDescriptor,
     calls: AtomicUsize,
-    requests: std::sync::Mutex<Vec<(String, String, String, String, Instant)>>,
+    requests: std::sync::Mutex<Vec<RecordedVerification>>,
 }
 
 impl Verifier {

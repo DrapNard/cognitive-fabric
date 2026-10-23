@@ -195,19 +195,17 @@ fn manifest_rejects_unknown_fields_probes_duplicate_ids_and_metadata_gate_change
             value
         },
         {
-            let value = manifest(vec![json!({
+            manifest(vec![json!({
                 "id":"fixed_gate",
                 "probe":{"kind":"strict_json","input":"{}","max_bytes":1},
                 "expected_accept":true
-            })]);
-            value
+            })])
         },
         {
-            let value = manifest(vec![
+            manifest(vec![
                 base_case.clone(),
                 global_case("one", "jev-r", "candidate.promote", false),
-            ]);
-            value
+            ])
         },
         {
             let mut value = manifest(vec![base_case]);

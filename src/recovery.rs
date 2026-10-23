@@ -107,7 +107,7 @@ pub(crate) fn validate_verifier_recovery(
                     || payload["compiled_checker_required"] != true
                     || payload["permissions_granted"] != false
                     || !valid_hash(objective)
-                    || objective != &expected_objective
+                    || objective != expected_objective
                     || pinned_criterion.as_deref() != Some(criterion)
                     || !valid_hash(answer)
                 {
@@ -147,7 +147,7 @@ pub(crate) fn validate_verifier_recovery(
                     || payload["format_version"] != 1
                     || payload["compiled_checker_required"] != true
                     || payload["permissions_granted"] != false
-                    || objective != &expected_objective
+                    || objective != expected_objective
                     || pinned_criterion.as_deref() != Some(criterion)
                     || payload["provider_accepted"].as_bool().is_none()
                     || payload["compiled_accepted"].as_bool().is_none()

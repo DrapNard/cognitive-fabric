@@ -36,11 +36,13 @@ pub(crate) struct Envelope {
 }
 
 pub(crate) fn encode(envelope: &Envelope) -> Result<Vec<u8>> {
-    let mut native = fb::PacketT::default();
-    native.version = 1;
-    native.kind = match envelope.kind {
-        Kind::Request => fb::MessageKind::Request,
-        Kind::Response => fb::MessageKind::Response,
+    let mut native = fb::PacketT {
+        version: 1,
+        kind: match envelope.kind {
+            Kind::Request => fb::MessageKind::Request,
+            Kind::Response => fb::MessageKind::Response,
+        },
+        ..Default::default()
     };
     native.correlation_id.clone_from(&envelope.correlation);
     native.task_id.clone_from(&envelope.task);
@@ -573,20 +575,22 @@ mod tests {
 
     #[test]
     fn decoder_rejects_unknown_flatbuffer_capability_discriminant() {
-        let mut packet = fb::PacketT::default();
-        packet.version = 1;
-        packet.kind = fb::MessageKind::Request;
-        packet.correlation_id = uuid::Uuid::new_v4().to_string();
-        packet.task_id = uuid::Uuid::new_v4().to_string();
-        packet.actor = "jev-plus".into();
-        packet.module_id = "fixture.module".into();
-        packet.module_version = "1.0.0".into();
-        packet.capability = fb::Capability(255);
-        packet.expires_at_ms = 1;
-        packet.request = request_to_fb(&Request::Arithmetic {
-            expression: "1+1".into(),
-        })
-        .unwrap();
+        let packet = fb::PacketT {
+            version: 1,
+            kind: fb::MessageKind::Request,
+            correlation_id: uuid::Uuid::new_v4().to_string(),
+            task_id: uuid::Uuid::new_v4().to_string(),
+            actor: "jev-plus".into(),
+            module_id: "fixture.module".into(),
+            module_version: "1.0.0".into(),
+            capability: fb::Capability(255),
+            expires_at_ms: 1,
+            request: request_to_fb(&Request::Arithmetic {
+                expression: "1+1".into(),
+            })
+            .unwrap(),
+            ..Default::default()
+        };
         let mut builder = flatbuffers::FlatBufferBuilder::new();
         let root = packet.pack(&mut builder);
         fb::finish_packet_buffer(&mut builder, root);

@@ -358,6 +358,14 @@ async fn setup_checkpoint(
     ensure_setup_active(deadline, cancel)
 }
 
+struct LifecycleRuntime<'a> {
+    human_approve: bool,
+    verifier: Option<Arc<dyn crate::verification::VerifierProvider>>,
+    template: Option<&'a Engine>,
+    execution: crate::engine::TaskExecution,
+    cancel_rx: tokio::sync::watch::Receiver<bool>,
+}
+
 /// Execute a complete task using only its approved model set. Loads and releases
 /// are fixed operator actions outside all model-controlled roles. No foreign
 /// inventory instance can be adopted; reuse requires an existing active receipt.
@@ -383,14 +391,19 @@ pub async fn run_with_verifier(
         cfg,
         store,
         request,
-        human_approve,
-        verifier,
-        None,
-        None,
-        crate::language::TaskOptions::default(),
-        crate::engine::ExecutionProfile::Full,
-        start,
-        cancel_rx,
+        LifecycleRuntime {
+            human_approve,
+            verifier,
+            template: None,
+            execution: crate::engine::TaskExecution {
+                task_id: uuid::Uuid::new_v4().to_string(),
+                options: crate::language::TaskOptions::default(),
+                profile: crate::engine::ExecutionProfile::Full,
+                execution_start: start,
+                task_precreated: false,
+            },
+            cancel_rx,
+        },
     )
     .await
 }
@@ -400,12 +413,9 @@ pub async fn run_with_verifier(
 pub(crate) async fn run_engine_task<F>(
     template: &Engine,
     policy: Arc<NativeLifecyclePolicy>,
-    task: &str,
     query: &str,
     mode: &str,
-    options: crate::language::TaskOptions,
-    profile: crate::engine::ExecutionProfile,
-    execution_start: crate::execution_clock::ExecutionStart,
+    execution: crate::engine::TaskExecution,
     cancel: F,
 ) -> Result<Outcome>
 where
@@ -427,14 +437,13 @@ where
         template.cfg.clone(),
         template.store.clone(),
         request,
-        true,
-        None,
-        Some(template),
-        Some(task.to_owned()),
-        options,
-        profile,
-        execution_start,
-        cancel_rx,
+        LifecycleRuntime {
+            human_approve: true,
+            verifier: None,
+            template: Some(template),
+            execution,
+            cancel_rx,
+        },
     );
     tokio::pin!(run);
     tokio::pin!(cancel);
@@ -452,15 +461,22 @@ async fn run_internal(
     cfg: Config,
     store: Arc<Store>,
     request: Request,
-    human_approve: bool,
-    verifier: Option<Arc<dyn crate::verification::VerifierProvider>>,
-    template: Option<&Engine>,
-    requested_child: Option<String>,
-    options: crate::language::TaskOptions,
-    profile: crate::engine::ExecutionProfile,
-    execution_start: crate::execution_clock::ExecutionStart,
-    cancel_rx: tokio::sync::watch::Receiver<bool>,
+    runtime: LifecycleRuntime<'_>,
 ) -> Result<Report> {
+    let LifecycleRuntime {
+        human_approve,
+        verifier,
+        template,
+        execution,
+        cancel_rx,
+    } = runtime;
+    let crate::engine::TaskExecution {
+        task_id: child,
+        options,
+        profile,
+        execution_start,
+        ..
+    } = execution;
     let deadline = execution_start
         .instant
         .checked_add(Duration::from_secs(request.max_lifecycle_seconds))
@@ -526,7 +542,6 @@ async fn run_internal(
         );
         return Err(error);
     }
-    let child = requested_child.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     if let Err(error) = store.create_named_task(&child, &request.query, &request.mode) {
         let _ = store.finish_task(
             &parent,
@@ -751,11 +766,13 @@ async fn run_internal(
             .run_execution_body(
                 &request.query,
                 &request.mode,
-                options,
-                child.clone(),
-                profile,
-                execution_start,
-                true,
+                crate::engine::TaskExecution {
+                    task_id: child.clone(),
+                    options,
+                    profile,
+                    execution_start,
+                    task_precreated: true,
+                },
                 cancel_future,
             )
             .await?;

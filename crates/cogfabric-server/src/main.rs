@@ -113,7 +113,7 @@ async fn main() -> Result<()> {
     let native_lifecycle = args
         .native_lifecycle_policy
         .as_ref()
-        .map(|path| cogfabric::residency::lifecycle::NativeLifecyclePolicy::load(path))
+        .map(cogfabric::residency::lifecycle::NativeLifecyclePolicy::load)
         .transpose()?;
     // Validate and pin the optional policy before loading or preparing state and
     // before constructing either inference backend. Requests cannot replace it.

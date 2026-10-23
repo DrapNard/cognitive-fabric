@@ -298,12 +298,14 @@ fn validate_label(value: &str, max_bytes: usize) -> Result<()> {
 }
 
 fn decode_hex(value: &str) -> Result<Vec<u8>> {
-    if value.len() % 2 != 0 || value.len() / 2 > MAX_WIRE_BYTES {
+    if !value.len().is_multiple_of(2) || value.len() / 2 > MAX_WIRE_BYTES {
         bail!("Invalid FlatBuffers probe length")
     }
     value
         .as_bytes()
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|pair| {
             let high = (pair[0] as char)
                 .to_digit(16)

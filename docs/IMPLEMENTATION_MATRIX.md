@@ -1,5 +1,21 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## CI lint compatibility correction — 2026-10-23
+
+**Implemented.** The reported strict-Clippy failures are corrected without
+blanket lint suppression. Host execution parameters are grouped into
+`engine::TaskExecution` and `residency::lifecycle::LifecycleRuntime`, preserving
+original task identity, policy options, deadlines and cancellation. Module grants
+reserve calls with an atomic compare/exchange loop instead of the deprecated
+`fetch_update`; limits and memory ordering remain unchanged. FlatBuffers packet
+initialization, copied UUIDs, optional queue checks, recovery comparisons, hex
+parsing, CLI closures and regression fixture types are simplified.
+
+`cargo clippy --locked --workspace --all-targets -- -D warnings` and the
+corresponding `--all-features` command pass locally with Rust 1.97.1. This corrects the supplied CI diagnostics, including newer
+compiler deprecation/chunk lints. Final runtime verification of the broader
+integration remains separate; this lint correction does not mark v1.0 ready.
+
 ## Implementation phase — task lifecycle and replaceable modules
 
 **Partial / unverified source integration.** The owner requested completion of

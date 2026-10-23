@@ -42,6 +42,16 @@ pub enum ExecutionProfile {
     Experts,
 }
 
+/// Original task identity and execution constraints retained across delegation.
+/// This host-only value is never supplied by model output or deserialized policy.
+pub(crate) struct TaskExecution {
+    pub task_id: String,
+    pub options: crate::language::TaskOptions,
+    pub profile: ExecutionProfile,
+    pub execution_start: crate::execution_clock::ExecutionStart,
+    pub task_precreated: bool,
+}
+
 pub(crate) type ModelBackendFactory =
     Arc<dyn Fn(&Config) -> Result<Arc<dyn InferenceBackend>> + Send + Sync>;
 
@@ -436,12 +446,15 @@ impl Engine {
             return crate::residency::lifecycle::run_engine_task(
                 self,
                 policy,
-                &task_id,
                 query,
                 mode,
-                options,
-                profile,
-                execution_start,
+                TaskExecution {
+                    task_id,
+                    options,
+                    profile,
+                    execution_start,
+                    task_precreated: false,
+                },
                 cancel,
             )
             .await;
@@ -449,11 +462,13 @@ impl Engine {
         self.run_execution_body(
             query,
             mode,
-            options,
-            task_id,
-            profile,
-            execution_start,
-            false,
+            TaskExecution {
+                task_id,
+                options,
+                profile,
+                execution_start,
+                task_precreated: false,
+            },
             cancel,
         )
         .await
@@ -463,16 +478,19 @@ impl Engine {
         &self,
         query: &str,
         mode: &str,
-        options: crate::language::TaskOptions,
-        task_id: String,
-        profile: ExecutionProfile,
-        execution_start: crate::execution_clock::ExecutionStart,
-        task_precreated: bool,
+        execution: TaskExecution,
         cancel: F,
     ) -> Result<Outcome>
     where
         F: std::future::Future<Output = ()>,
     {
+        let TaskExecution {
+            task_id,
+            options,
+            profile,
+            execution_start,
+            task_precreated,
+        } = execution;
         let resource_pool = self.configured_resource_pool()?;
         let start = execution_start.instant;
         let deadline = execution_start.deadline;

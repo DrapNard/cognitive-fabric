@@ -197,9 +197,8 @@ async fn malicious_imports_memory_growth_and_excessive_fuel_fail_closed() {
     );
 
     let (memory_path, memory_hash) = save_module(&dir, "memory.wasm", &wasm_module(1, 17, false));
-    match load(&memory_path, &memory_hash) {
-        Ok(provider) => assert!(provider.verify(request("[1,3,3]")).await.is_err()),
-        Err(_) => {}
+    if let Ok(provider) = load(&memory_path, &memory_hash) {
+        assert!(provider.verify(request("[1,3,3]")).await.is_err());
     }
 
     let (fuel_path, fuel_hash) = save_module(&dir, "fuel.wasm", &fuel_exhausting_module());
