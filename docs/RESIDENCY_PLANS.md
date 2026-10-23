@@ -131,3 +131,12 @@ General provider ownership, model-to-task lifecycle automation, receipt retireme
 independent utility evidence and physical resource control remain incomplete.
 Native Rust callers are trusted operator embeddings; this is not remote user
 identity authentication or an executable sandbox.
+
+## Interaction with managed receipts
+
+Explicit manual plans continue to select exact operator-approved instances and do
+not adopt them into managed ownership. Each possible manual mutation first
+quarantines active managed receipts at the endpoint, with a required audit before
+POST. A failed invalidation prevents the external mutation. A plan cannot silently
+refresh managed release authority; use the separate
+[managed load/release workflow](MANAGED_RESIDENCY.md) when local receipts are needed.

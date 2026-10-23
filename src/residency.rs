@@ -7,6 +7,7 @@ use std::{
     collections::BTreeSet,
     time::{Duration, Instant},
 };
+pub mod managed;
 pub mod planning;
 
 pub const CREDENTIAL_ENV: &str = "COGFABRIC_RESIDENCY_API_KEY";
@@ -259,6 +260,12 @@ struct Intent {
     endpoint: String,
     action: Mutation,
     external_outcome: String,
+    #[serde(default)]
+    managed: Option<bool>,
+    #[serde(default)]
+    receipt_id: Option<String>,
+    #[serde(default)]
+    permissions_granted: Option<bool>,
 }
 
 /// Observe a recorded operator intent without retrying or resolving its outcome.
@@ -296,6 +303,22 @@ pub async fn inspect_operation(
         bail!("Recorded residency intent does not match the explicit native endpoint")
     }
     validate_action(&intent.action)?;
+    match intent.managed {
+        Some(true) => {
+            if intent.permissions_granted != Some(false) {
+                bail!("Managed residency inspection found invalid permission metadata")
+            }
+            match (&intent.action, intent.receipt_id.as_deref()) {
+                (Mutation::Load { .. }, None) => {}
+                (Mutation::Unload { .. }, Some(receipt_id)) => {
+                    uuid::Uuid::parse_str(receipt_id)?;
+                }
+                _ => bail!("Managed residency intent has inconsistent receipt metadata"),
+            }
+        }
+        None if intent.receipt_id.is_none() && intent.permissions_granted.is_none() => {}
+        _ => bail!("Residency intent has unsupported managed metadata"),
+    }
     let inventory = status(base, authenticate).await?;
     let models = parse(&serde_json::to_vec(&inventory)?)?;
     let matching: Vec<&str> = match &intent.action {
@@ -441,6 +464,10 @@ async fn mutate_owned(
     }
     // Persist exact bounded operator intent before the external effect.
     store.event(&task, "model_residency", "human-cli", json!({"state":"requested","adapter":"lmstudio-native-v1","endpoint":endpoint(base)?.as_str(),"action":action,"external_outcome":"unknown"}))?;
+    // A manual provider mutation invalidates every managed receipt whose shared
+    // full-inventory baseline can no longer be advanced by a known managed
+    // transition. The invalidation is durable before the external POST.
+    managed::quarantine_before_manual_mutation(store, &task, endpoint(base)?.as_str())?;
     let started = Instant::now();
     let outcome = async {
         let response = request(base, authenticate, Some(operation), Some(body), Duration::from_secs(60)).await?;

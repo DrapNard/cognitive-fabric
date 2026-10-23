@@ -38,13 +38,18 @@ new event, new memory/reference or altered eligible task set makes it stale.
 A retained summary audit records deleted identities/counts and plan hash, without
 query/answer bodies. Failed deletion rolls back the audit and all deletions.
 
-Running tasks, every published-memory source (including revoked memory), and tasks
-referenced by stored explicit conversation events are protected. No skill,
+Running tasks, every published-memory source (including revoked memory), tasks
+referenced by stored explicit conversation events, and managed residency operation
+tasks are protected. Durable managed residency receipts also protect their load and
+release task rows through foreign keys. This includes unknown-outcome managed
+operations that have no receipt yet. No skill,
 document, dataset, candidate, model registration or memory is deleted. External
 benchmark reports and exported references are not database foreign keys: preserve
 needed task traces before approving cleanup. Deletion is intentional and permanent;
 there is no automatic cleanup or implicit archive. Retention audits cap at 10,000
-entries and remain subject to the database ceiling.
+entries and remain subject to the database ceiling. Managed residency receipts have
+a separate 1,024-row lifetime quota; reviewed task retention does not retire them,
+so operators must preserve capacity for future managed operations.
 
 Freed pages become reusable; cleanup does not promise immediate file shrinkage.
 No automatic VACUUM or WAL truncation occurs. Existing progress cursors for deleted
@@ -94,7 +99,7 @@ registry state and artifact availability before using a restored workspace.
 ## Restore into a new directory
 
 `cogfabric restore-database SNAPSHOT --checksum SAVED_SHA256 --destination NEW_HOME`
-automates the database-only procedure for current schema-6 standalone backups.
+automates the database-only procedure for current schema-7 standalone backups.
 The destination must not exist, even as an empty directory or symlink; its parent
 must already exist. No active workspace is replaced. This command runs before
 ordinary workspace initialization, so it does not create the configured source
@@ -191,8 +196,8 @@ separate work. The earlier database-only sections describe default options.
 
 ## Explicit older-schema migration
 
-`restore-database ... --migrate-schema` permits recognized schema versions 1–5.
-The default still requires current schema 6. Future schemas and unversioned/schema-0
+`restore-database ... --migrate-schema` permits recognized schema versions 1–6.
+The default still requires current schema 7. Future schemas and unversioned/schema-0
 files remain rejected even with opt-in. The source checksum is verified before
 migration; only the newly staged private copy is upgraded through the existing
 transactional Store migrations. The copy is checked again, checkpointed and
@@ -207,7 +212,7 @@ Filesystem sync and short SQLite operations are not hard real-time bounded.
 Configuration/RAG restoration can be combined only when their required metadata
 is actually present. Old snapshots do not gain missing configuration or artifacts.
 
-Regression fixtures cover versions 1–5, preserved source bytes/running state,
+Regression fixtures cover versions 1–6, preserved source bytes/running state,
 standalone output and transactional failure; the CLI fixture verifies the flag.
 Earlier notes describing older migrations as separate work are superseded by this
 explicit recognized-version option. Unknown/custom schemas still need review.

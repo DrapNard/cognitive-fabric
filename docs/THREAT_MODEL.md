@@ -1072,3 +1072,22 @@ legacy continuation from acquiring a new stopping rule. Recomputed histories,
 strict audit identities and deduplicated result proofs retain original budgets.
 These local consistency rules are not signatures against same-owner database
 editing and provide no neural quality or provider-termination guarantee.
+
+## Managed native residency receipts
+
+The operator-only managed API binds a local receipt UUID to a confirmed requested
+load and exact full-inventory transition. Intent is durable before POST; confirmed
+receipt/task/audit/cohort updates are atomic. Release requires an active receipt,
+matching endpoint/type/model/context/instance and inventory digest. Unknown effects
+and dropped futures retain blocking intent or quarantine, never success or replay
+authority. Existing manual operations quarantine active endpoint receipts before
+POST and remain explicit operator administration.
+
+Schema 7 does not adopt legacy operations or inventory. Retention protects receipt
+references and managed operations without a confirmed receipt. The indexed history
+scan has an independent SQLite deadline. No model obtains a residency capability.
+This is local evidence, not exclusive ownership or native-instance inference
+attestation. External applications and provider ID reuse can defeat continuity
+assumptions between observations. Explicit resolution/retirement, task-driven
+lifecycle and physical resource enforcement remain incomplete. See
+[managed residency](MANAGED_RESIDENCY.md).

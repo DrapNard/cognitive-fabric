@@ -1,5 +1,59 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+### Track approved native loads before managed release — 2026-10-23
+
+**Implemented and regression-tested; general lifecycle remains Partial.** Architecture sections 4, 6,
+9 and 10 require sparse model lifecycle control with independent permissions.
+A dedicated managed load/release API and CLI will bind local receipt UUIDs to
+approved native requests, exact observed instance identities and full-inventory
+digests. These receipts do not establish exclusive provider ownership, immutable
+weights or instance-bound inference. Existing explicit manual administration stays
+available; its mutations invalidate managed release eligibility before POST.
+
+Schema 7 adds bounded receipt state and retained operation references without
+adopting old provider instances. Known managed transitions atomically advance the
+active endpoint cohort; uncertain effects retain blocking evidence and cannot be
+retried through managed APIs. CLI mutation requires explicit approval and an
+existing current-schema workspace; local receipt inspection does not contact the
+provider. No model gains residency permissions or automatic cleanup authority.
+Sources: `src/residency/managed.rs`, native manual-mutation integration,
+`src/main.rs`, schema migration/restore and storage retention. See
+[managed residency](MANAGED_RESIDENCY.md). Focused tests cover schema 1–6 migration
+without adoption, atomic rollback, receipt integrity, bounded query plans and CLI/
+loopback lifecycle behavior. General autonomous lifecycle remains Partial.
+
+
+
+Verification on final frozen sources: `cargo fmt --all -- --check`,
+`cargo check --locked --workspace --all-targets`,
+`cargo test --locked --workspace --all-targets` (**940 passed across 61 targets**,
+zero failures or ignored tests), and
+`cargo clippy --locked --workspace --all-targets -- -D warnings` all pass.
+Eleven CLI/loopback integration tests cover multi-model cohorts, provider-ID reuse
+with fresh UUIDs, non-adoption, endpoint/approval/workspace gates, manual-plan
+invalidation, before/after-POST audit failures, unknown outcomes, actual client
+future cancellation during pending POSTs, resource leases, retained unknown loads
+and capacity refusal with releases still allowed. Storage/helper regressions cover
+schema 1–6 migration without adoption, atomic failure/data preservation, receipt
+integrity, retention, malformed markers, indexed queries and SQL deadline cleanup.
+
+The first full runs found historical migration fixtures requiring v7-object
+removal and a general event index causing worker-recovery timeouts. The index is
+now partial to native residency events; the unchanged 10,000-session worker gate
+passes again. Test compile/lint fixtures were corrected without removing tests.
+Malformed managed markers cannot downgrade receipt validation or erase retention
+protection. Existing socket/process, mock, malformed-frame, policy-denial,
+cancellation and candidate-rollback tests remain green. Canonical French
+architecture and protocol schemas/bindings are unchanged. Bundled FlatBuffers
+pairing/integrity checks pass; `flatc` is unavailable, so fresh generation was not
+run. Port 1234 refused local-model discovery: no real provider load/unload,
+inference quality, physical memory or efficiency result is claimed.
+
+Jev+ and Jev-R remain **Partial**. The next verifiable lifecycle milestone is
+explicit operator resolution of uncertain operations and reviewed receipt
+retirement, followed by task-to-native-instance integration. No model gains
+mutation permission and local receipts still do not prove exclusive ownership.
+
 ### Measure shortest-path revision plateaus — 2026-10-23
 
 **Implemented and regression-tested; general reasoning remains Partial.** Architecture sections 5 and 9 require
@@ -1970,7 +2024,7 @@ remains a pre-release. `QUALITY_REVIEW.md` preserves verification history.
 | 3, 7, 9, 10, 12 | External agent HTTP interoperability | Implemented / Partial | `src/agent/`, `crates/cogfabric-server/`: generation-only native solver turns and authenticated same-image workers, authenticated loopback Chat Completions/SSE, client-owned tool proposals/results, collective aliases and bounded admission; real OpenCode v2 + Qwen read/edit/read, HTTP and worker regression tests | Responses/multimodal API, independent executable provisioning and role selection, broader client compatibility and independent agentic-quality/security evaluation |
 | 7, 12 | Typed local IPC | Partial | `protocol/*.fbs`, `src/fabric.rs`, `src/events.rs`, `src/wire.rs`, `src/service.rs`: bounded verified IPC and module RPC, content-minimized typed progress subscriptions/catch-up, version-pinned inference registration/discovery, correlation/actor/destination/expiry checks, queues and cancellation; socket, spoofing, overflow, replacement and compatibility tests | General command routing, automatic independent actor provisioning and broader compatibility fixtures |
 | 3 | Language interface | Partial | `src/language.rs`, `src/backend.rs`, `src/config.rs`: strict advisory intent, clarification, original-goal preservation, explicit conversation references, optional synthesis, persistent role profiles; scripted and HTTP tests | Live interpretation and synthesis quality measurements; direct/managed/socket generation now succeeds |
-| 4, 9 | Jev+ coordination | Partial | `src/engine.rs`, `src/planning.rs`, `src/store.rs::route`, `src/resource_scheduler/`: pinned capability coverage, dependency scheduling, bounded parallel advisory waves, target/role working allocations, resource-aware per-role Broker eligibility, exact pinned route-scope recovery, original-budget completed-wave continuation and admission budgets; dependency, routing, recovery and budget tests | Automatic ownership-aware residency, calibrated measured escalation, incomplete in-flight outcome reconciliation and physical scheduling telemetry |
+| 4, 9 | Jev+ coordination | Partial | `src/engine.rs`, `src/planning.rs`, `src/store.rs::route`, `src/resource_scheduler/`: pinned capability coverage, dependency scheduling, bounded parallel advisory waves, target/role working allocations, resource-aware per-role Broker eligibility, operator-approved managed native residency receipts, exact pinned route-scope recovery, original-budget completed-wave continuation and admission budgets; dependency, routing, recovery and budget tests | Automatic ownership-aware residency, calibrated measured escalation, incomplete in-flight outcome reconciliation and physical scheduling telemetry |
 | 5 | Jev-R reasoning | Partial | `src/reasoning.rs`, `src/verification/provider.rs`: planner/solver/explorer/critic/reflector, bounded revisions/search, progress stopping, unverified subtask advice, original-goal synthesis and optional trusted host verification with a required compiled criterion | Untrusted executable verifier isolation, new criterion families, host-provider restoration and independent live-model effectiveness measurements |
 | 6 | Expert network | Partial | `src/registry.rs`: immutable semantic-versioned reference manifests, dependency/reverse-dependency checks, health, activate/disable/metadata rollback, bounded registry; lifecycle/tampering tests | General executable loading and health, measured workflow usefulness and real weight residency; trusted tool/inference rollback is implemented |
 | 7 | Persistent memory | Partial | `src/store.rs`: SQLite WAL/FTS5, schema migrations through 6, durable task/events, isolated explicit history, pinned registry/document snapshots, explicit lease-protected interrupted-task recovery, immutable versioned local model manifests and task selection snapshots, operator-published episodic snapshots, recomputed arithmetic memory, revocation and payload quotas, SQLite page ceilings, global task admission and reviewed retention; migration/isolation/tampering/deletion-rollback tests | Broader independent fact verifiers, backend model residency, physical WAL/filesystem bounds, general external/neural artifact portability and automatic checkpoint resumption |

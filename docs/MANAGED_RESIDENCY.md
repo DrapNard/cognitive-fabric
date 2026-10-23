@@ -1,0 +1,128 @@
+# Managed native residency receipts
+
+Architecture sections 4, 6, 9 and 10 require model reuse and controlled lifecycle
+changes. Managed residency adds local causal receipts for explicitly approved
+native LM Studio load requests. It is a prerequisite for lifecycle integration;
+it does not automatically activate models for reasoning tasks.
+
+## Operator workflow
+
+Initialize or explicitly migrate the workspace first. Managed commands require an
+existing current-schema database and do not bootstrap missing state. Inspect the
+provider's installed model keys with the existing `residency-status` command.
+
+```bash
+cogfabric init
+cogfabric --json residency-managed-load --model installed-model-key \
+  --context-length 4096 --api-base http://127.0.0.1:1234/api/v1 --human-approve
+cogfabric --json residency-managed-status \
+  --api-base http://127.0.0.1:1234/api/v1
+cogfabric --json residency-managed-release --receipt-id RECEIPT_UUID \
+  --api-base http://127.0.0.1:1234/api/v1 --human-approve
+```
+
+The release argument is the framework receipt UUID returned by managed load,
+not a provider instance ID. Both mutation commands require explicit approval
+before configuration/database initialization. The native endpoint is explicit on
+each invocation and must match the receipt. Optional `--authenticate` uses only
+`COGFABRIC_RESIDENCY_API_KEY`, following the existing dedicated credential adapter.
+Local managed status is read-only and never contacts the provider or adopts an
+observed instance. It reports local receipt state and whether managed work is
+blocked; it does not certify that an instance is still loaded.
+
+## Authority and transitions
+
+Only the existing compiled human operator permission permits mutations. Jev+,
+Jev-R, model output, retrieved material and plugin metadata receive no residency
+permission. Both runtime and configured-resource ownership leases must be free;
+even an idle configured pool prevents changes. These leases coordinate this
+workspace and cannot prevent another application from changing LM Studio.
+
+A managed load accepts an installed model with no loaded instances. Task and
+exact intent commit before POST. Provider response and fresh inventory must show
+only the exact requested transition. Receipt insertion, confirmation audit, task
+completion and active cohort digest changes commit together. Existing/manual
+instances and old operations never acquire receipts during migration or inspection.
+
+A managed release requires an active receipt, matching endpoint/model/type/context/
+instance identity and the exact full-inventory digest. Receipt transition to
+`release_requested`, the new task and intent commit before POST. Confirmed release
+consumes the receipt as `released`, advances the other active endpoint receipts to
+the new observed digest and completes its audit/task atomically. Known managed
+loads likewise update all previously active receipts after an exact transition,
+so several approved models can coexist without making each other's baselines stale.
+
+Unknown outcomes, cancellation, dropped futures, changed inventory or failed
+required audits never imply success or authorize replay. Pending load history can
+block the endpoint even when no receipt/instance could be established. An uncertain
+release retains a requested or quarantined receipt and cannot be retried through
+the managed API. A matching later inventory observation does not resolve history.
+Explicit reconciliation/retirement remains separate work; unresolved state can
+therefore block managed operation until such an operator workflow exists.
+
+Existing manual load/unload and reviewed residency plans preserve explicit operator
+administration of exact selected instances. Before their provider mutation, active
+managed receipts at that endpoint are durably quarantined. Failure to commit that
+invalidation prevents POST. A manual action never silently refreshes managed
+release authority. Read-only inspection leaves receipts unchanged.
+
+## Persistence and bounds
+
+Schema 7 adds bounded receipt rows with retained load/release task references,
+immutable receipt identity/details and a checksum. Active or uncertain identities
+cannot be duplicated. A confirmed released provider ID may be returned by a later
+explicitly approved fresh load, but it receives a new receipt UUID and cannot
+reactivate the old receipt. Normal retention preserves receipt-linked tasks and
+managed operation history, including unknown loads without a receipt.
+
+The current quota is 1,024 lifetime receipt rows; released rows remain tombstones.
+Loads refuse at capacity before an external effect; guarded releases still work.
+There is no automatic compaction or deletion to reset the gate. Bounded history
+reads and database quotas can independently refuse further work. These operational
+limits are not a claim of unlimited unattended service.
+
+## What receipts do not prove
+
+Reports retain `ownership_established:false`, `weights_attested:false` and
+`generation_tested:false`. Inventory is provider-reported. GET/POST/GET sampling
+cannot eliminate races, an external restart or reuse of the same instance ID for
+the same model/context. Local checksums detect inconsistency, not an owner who can
+rewrite the database and its evidence. No physical GPU/RSS or energy limit is
+established. The inference adapter currently selects endpoint/model, not an
+attested native instance; a receipt does not prove a reasoning task used it.
+
+General task-driven load/unload, provider continuity, explicit unknown-outcome
+resolution, receipt retirement and independent utility/physical measurements remain
+incomplete.
+
+## Verification
+
+Verification on final frozen sources: `cargo fmt --all -- --check`,
+`cargo check --locked --workspace --all-targets`,
+`cargo test --locked --workspace --all-targets` (**940 passed across 61 targets**,
+zero failures or ignored tests), and
+`cargo clippy --locked --workspace --all-targets -- -D warnings` all pass.
+Eleven CLI/loopback integration tests cover multi-model cohorts, provider-ID reuse
+with fresh UUIDs, non-adoption, endpoint/approval/workspace gates, manual-plan
+invalidation, before/after-POST audit failures, unknown outcomes, actual client
+future cancellation during pending POSTs, resource leases, retained unknown loads
+and capacity refusal with releases still allowed. Storage/helper regressions cover
+schema 1–6 migration without adoption, atomic failure/data preservation, receipt
+integrity, retention, malformed markers, indexed queries and SQL deadline cleanup.
+
+The first full runs found historical migration fixtures requiring v7-object
+removal and a general event index causing worker-recovery timeouts. The index is
+now partial to native residency events; the unchanged 10,000-session worker gate
+passes again. Test compile/lint fixtures were corrected without removing tests.
+Malformed managed markers cannot downgrade receipt validation or erase retention
+protection. Existing socket/process, mock, malformed-frame, policy-denial,
+cancellation and candidate-rollback tests remain green. Canonical French
+architecture and protocol schemas/bindings are unchanged. Bundled FlatBuffers
+pairing/integrity checks pass; `flatc` is unavailable, so fresh generation was not
+run. Port 1234 refused local-model discovery: no real provider load/unload,
+inference quality, physical memory or efficiency result is claimed.
+
+Jev+ and Jev-R remain **Partial**. The next verifiable lifecycle milestone is
+explicit operator resolution of uncertain operations and reviewed receipt
+retirement, followed by task-to-native-instance integration. No model gains
+mutation permission and local receipts still do not prove exclusive ownership.

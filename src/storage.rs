@@ -106,7 +106,7 @@ fn preview(db: &Connection, before: u64, limit: u32) -> Result<RetentionPlan> {
     };
     plan.checksum = plan.digest()?;
     plan.validate()?;
-    plan.task_ids=db.prepare("SELECT t.id FROM tasks t WHERE t.updated<?1 AND t.status IN ('completed','unverified','demo','failed','rejected','cancelled','exhausted','needs_clarification','interrupted') AND NOT EXISTS(SELECT 1 FROM events ge WHERE ge.task_id=t.id AND ge.kind IN ('gap_candidate','residency_plan')) AND NOT EXISTS(SELECT 1 FROM memories m WHERE m.task_id=t.id) AND NOT EXISTS(SELECT 1 FROM events e WHERE e.kind='conversation_reference' AND json_valid(e.payload) AND json_extract(e.payload,'$.task_id')=t.id) AND NOT EXISTS(SELECT 1 FROM events pe WHERE pe.kind='residency_plan_step' AND json_valid(pe.payload) AND json_extract(pe.payload,'$.operation_task_id')=t.id) ORDER BY t.updated,t.id LIMIT ?2")?
+    plan.task_ids=db.prepare("SELECT t.id FROM tasks t WHERE t.updated<?1 AND t.status IN ('completed','unverified','demo','failed','rejected','cancelled','exhausted','needs_clarification','interrupted') AND NOT EXISTS(SELECT 1 FROM events ge WHERE ge.task_id=t.id AND ge.kind IN ('gap_candidate','residency_plan')) AND NOT EXISTS(SELECT 1 FROM memories m WHERE m.task_id=t.id) AND NOT EXISTS(SELECT 1 FROM events e WHERE e.kind='conversation_reference' AND json_valid(e.payload) AND json_extract(e.payload,'$.task_id')=t.id) AND NOT EXISTS(SELECT 1 FROM events pe WHERE pe.kind='residency_plan_step' AND json_valid(pe.payload) AND json_extract(pe.payload,'$.operation_task_id')=t.id) AND NOT EXISTS(SELECT 1 FROM managed_residency_receipts mr WHERE mr.load_task_id=t.id OR mr.release_task_id=t.id) AND NOT EXISTS(SELECT 1 FROM events me WHERE me.task_id=t.id AND me.kind='model_residency' AND CASE WHEN length(CAST(me.payload AS BLOB))<=4096 AND json_valid(me.payload) THEN json_type(me.payload,'$.managed') IS NOT NULL ELSE 1 END) ORDER BY t.updated,t.id LIMIT ?2")?
         .query_map(params![before,limit],|row|row.get(0))?.collect::<rusqlite::Result<Vec<String>>>()?;
     let candidates = std::mem::take(&mut plan.task_ids);
     for id in candidates {
@@ -262,6 +262,56 @@ mod tests {
         assert!(store.retention_preview(u64::MAX, 100).is_err());
         assert!(store.retention_preview(1, 1001).is_err());
         assert!(security::authorize("jev-plus", "storage.retention").is_err());
+    }
+
+    #[test]
+    fn retention_preserves_managed_receipt_tasks_and_unresolved_managed_operations() {
+        let store = Store::in_memory().unwrap();
+        let disposable = old_task(&store, "ordinary old task");
+        let load_task = old_task(&store, "managed load source");
+        let release_task = old_task(&store, "managed release source");
+        let unknown_task = old_task(&store, "managed unknown operation");
+        let malformed_task = old_task(&store, "malformed residency audit");
+
+        let receipt_json = r#"{"format_version":1}"#;
+        let receipt_hash = sha256(receipt_json.as_bytes());
+        let inventory_hash = sha256(b"inventory");
+        store.lock().unwrap().execute(
+            "INSERT INTO managed_residency_receipts(receipt_id,endpoint,instance_id,receipt_json,receipt_sha256,current_inventory_sha256,state,load_task_id,release_task_id,created,updated) VALUES ('receipt-retention','http://127.0.0.1:1234/api/v1','instance-retention',?1,?2,?3,'released',?4,?5,1,1)",
+            params![receipt_json, receipt_hash, inventory_hash, load_task, release_task],
+        ).unwrap();
+        store.event(
+            &unknown_task,
+            "model_residency",
+            "human-cli",
+            serde_json::json!({"format_version":1,"managed":true,"state":"outcome_unknown","endpoint":"http://127.0.0.1:1234/api/v1"}),
+        ).unwrap();
+        // Malformed operation history must be retained conservatively because it
+        // cannot be proven to describe an unmanaged mutation.
+        store.lock().unwrap().execute(
+            "INSERT INTO events(task_id,kind,source,payload,created) VALUES (?1,'model_residency','human-cli','{',1)",
+            [&malformed_task],
+        ).unwrap();
+
+        for marker in [
+            serde_json::json!("true"),
+            serde_json::json!(1),
+            serde_json::Value::Null,
+            serde_json::json!(false),
+        ] {
+            let task = old_task(&store, "ambiguous managed marker");
+            store
+                .event(
+                    &task,
+                    "model_residency",
+                    "human-cli",
+                    serde_json::json!({"managed":marker,"state":"requested"}),
+                )
+                .unwrap();
+        }
+        let plan = store.retention_preview(1, 100).unwrap();
+        assert_eq!(plan.task_ids, vec![disposable]);
+        assert_eq!(plan.event_count, 0);
     }
     #[test]
     fn stale_plans_and_delete_failures_cannot_partially_remove_history() {

@@ -1,5 +1,59 @@
 # Current Rust implementation
 
+### Track approved native loads before managed release — 2026-10-23
+
+**Implemented and regression-tested; general lifecycle remains Partial.** Architecture sections 4, 6,
+9 and 10 require sparse model lifecycle control with independent permissions.
+A dedicated managed load/release API and CLI will bind local receipt UUIDs to
+approved native requests, exact observed instance identities and full-inventory
+digests. These receipts do not establish exclusive provider ownership, immutable
+weights or instance-bound inference. Existing explicit manual administration stays
+available; its mutations invalidate managed release eligibility before POST.
+
+Schema 7 adds bounded receipt state and retained operation references without
+adopting old provider instances. Known managed transitions atomically advance the
+active endpoint cohort; uncertain effects retain blocking evidence and cannot be
+retried through managed APIs. CLI mutation requires explicit approval and an
+existing current-schema workspace; local receipt inspection does not contact the
+provider. No model gains residency permissions or automatic cleanup authority.
+Sources: `src/residency/managed.rs`, native manual-mutation integration,
+`src/main.rs`, schema migration/restore and storage retention. See
+[managed residency](MANAGED_RESIDENCY.md). Focused tests cover schema 1–6 migration
+without adoption, atomic rollback, receipt integrity, bounded query plans and CLI/
+loopback lifecycle behavior. General autonomous lifecycle remains Partial.
+
+
+
+Verification on final frozen sources: `cargo fmt --all -- --check`,
+`cargo check --locked --workspace --all-targets`,
+`cargo test --locked --workspace --all-targets` (**940 passed across 61 targets**,
+zero failures or ignored tests), and
+`cargo clippy --locked --workspace --all-targets -- -D warnings` all pass.
+Eleven CLI/loopback integration tests cover multi-model cohorts, provider-ID reuse
+with fresh UUIDs, non-adoption, endpoint/approval/workspace gates, manual-plan
+invalidation, before/after-POST audit failures, unknown outcomes, actual client
+future cancellation during pending POSTs, resource leases, retained unknown loads
+and capacity refusal with releases still allowed. Storage/helper regressions cover
+schema 1–6 migration without adoption, atomic failure/data preservation, receipt
+integrity, retention, malformed markers, indexed queries and SQL deadline cleanup.
+
+The first full runs found historical migration fixtures requiring v7-object
+removal and a general event index causing worker-recovery timeouts. The index is
+now partial to native residency events; the unchanged 10,000-session worker gate
+passes again. Test compile/lint fixtures were corrected without removing tests.
+Malformed managed markers cannot downgrade receipt validation or erase retention
+protection. Existing socket/process, mock, malformed-frame, policy-denial,
+cancellation and candidate-rollback tests remain green. Canonical French
+architecture and protocol schemas/bindings are unchanged. Bundled FlatBuffers
+pairing/integrity checks pass; `flatc` is unavailable, so fresh generation was not
+run. Port 1234 refused local-model discovery: no real provider load/unload,
+inference quality, physical memory or efficiency result is claimed.
+
+Jev+ and Jev-R remain **Partial**. The next verifiable lifecycle milestone is
+explicit operator resolution of uncertain operations and reviewed receipt
+retirement, followed by task-to-native-instance integration. No model gains
+mutation permission and local receipts still do not prove exclusive ownership.
+
 ### Measure shortest-path revision plateaus — 2026-10-23
 
 **Implemented and regression-tested; general reasoning remains Partial.** Architecture sections 5 and 9 require

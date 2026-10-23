@@ -466,7 +466,7 @@ mod tests {
             .lock()
             .unwrap()
             .execute_batch(
-                "DROP TABLE model_audit; DROP TABLE model_manifests; DROP TABLE retention_audit; DROP INDEX event_conversation_task; PRAGMA user_version=4;",
+                "DROP TRIGGER managed_residency_identity_immutable; DROP INDEX managed_residency_event_scan; DROP TABLE managed_residency_receipts; DROP TABLE model_audit; DROP TABLE model_manifests; DROP TABLE retention_audit; DROP INDEX event_conversation_task; PRAGMA user_version=4;",
             )
             .unwrap();
         drop(store);

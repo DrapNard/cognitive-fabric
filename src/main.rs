@@ -187,6 +187,35 @@ enum Command {
         #[arg(long)]
         human_approve: bool,
     },
+    /// Load a model and retain an auditable managed-instance receipt.
+    ResidencyManagedLoad {
+        #[arg(long)]
+        api_base: String,
+        #[arg(long)]
+        authenticate: bool,
+        #[arg(long)]
+        model: String,
+        #[arg(long, default_value = "2048")]
+        context_length: u32,
+        #[arg(long)]
+        human_approve: bool,
+    },
+    /// Release only the instance bound to one active managed-load receipt.
+    ResidencyManagedRelease {
+        #[arg(long)]
+        api_base: String,
+        #[arg(long)]
+        authenticate: bool,
+        #[arg(long)]
+        receipt_id: String,
+        #[arg(long)]
+        human_approve: bool,
+    },
+    /// Inspect local managed receipts without contacting the provider.
+    ResidencyManagedStatus {
+        #[arg(long)]
+        api_base: String,
+    },
     ResidencyStatus {
         #[arg(long)]
         api_base: String,
@@ -539,6 +568,18 @@ async fn main() -> Result<()> {
     ) {
         bail!("Residency plan application requires explicit operator approval")
     }
+    if matches!(
+        &cli.command,
+        Command::ResidencyManagedLoad {
+            human_approve: false,
+            ..
+        } | Command::ResidencyManagedRelease {
+            human_approve: false,
+            ..
+        }
+    ) {
+        bail!("Managed residency changes require explicit operator approval")
+    }
     if let Command::ResidencyPlan {
         request,
         api_base,
@@ -665,6 +706,56 @@ async fn main() -> Result<()> {
         _ => None,
     };
     let cfg = Config::load(cli.home, cli.backend)?;
+    match &cli.command {
+        Command::ResidencyManagedLoad {
+            api_base,
+            authenticate,
+            model,
+            context_length,
+            human_approve,
+        } => {
+            let store = Store::open_existing_with_limit(&cfg.db(), cfg.max_database_bytes)?;
+            return output(
+                cogfabric::residency::managed::load(
+                    &store,
+                    api_base,
+                    *authenticate,
+                    model,
+                    *context_length,
+                    *human_approve,
+                )
+                .await?,
+                cli.json,
+            );
+        }
+        Command::ResidencyManagedRelease {
+            api_base,
+            authenticate,
+            receipt_id,
+            human_approve,
+        } => {
+            let store = Store::open_existing_with_limit(&cfg.db(), cfg.max_database_bytes)?;
+            return output(
+                cogfabric::residency::managed::release(
+                    &store,
+                    api_base,
+                    *authenticate,
+                    receipt_id,
+                    *human_approve,
+                )
+                .await?,
+                cli.json,
+            );
+        }
+        Command::ResidencyManagedStatus { api_base } => {
+            let store = Store::open_existing_read_only(&cfg.db())?;
+            return output(
+                cogfabric::residency::managed::list(&store, api_base)?,
+                cli.json,
+            );
+        }
+        _ => {}
+    }
     if let Command::ResidencyApply {
         api_base,
         authenticate,
@@ -998,7 +1089,11 @@ async fn main() -> Result<()> {
         Command::WorkflowStudyEvaluate { .. } => {
             bail!("Workflow study inspection must precede state initialization")
         }
-        Command::ResidencyPlan { .. } | Command::ResidencyApply { .. } => {
+        Command::ResidencyPlan { .. }
+        | Command::ResidencyApply { .. }
+        | Command::ResidencyManagedLoad { .. }
+        | Command::ResidencyManagedRelease { .. }
+        | Command::ResidencyManagedStatus { .. } => {
             bail!("Residency plans must run before runtime initialization")
         }
         Command::ResourceStatus | Command::ResourceRelease { .. } => {

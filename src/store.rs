@@ -50,6 +50,37 @@ CREATE TABLE IF NOT EXISTS evaluations (
 );
 "#;
 
+/// Latest schema understood by writable and read-only Store entry points.
+pub(crate) const CURRENT_SCHEMA_VERSION: i64 = 7;
+
+const MANAGED_RESIDENCY_SCHEMA: &str = r#"
+CREATE TABLE managed_residency_receipts (
+ receipt_id TEXT PRIMARY KEY CHECK(length(CAST(receipt_id AS BLOB)) BETWEEN 1 AND 64),
+ endpoint TEXT NOT NULL CHECK(length(CAST(endpoint AS BLOB)) BETWEEN 1 AND 512),
+ instance_id TEXT NOT NULL CHECK(length(CAST(instance_id AS BLOB)) BETWEEN 1 AND 256),
+ receipt_json TEXT NOT NULL CHECK(length(CAST(receipt_json AS BLOB)) BETWEEN 2 AND 8192),
+ receipt_sha256 TEXT NOT NULL CHECK(length(receipt_sha256)=64 AND receipt_sha256 NOT GLOB '*[^0-9a-f]*'),
+ current_inventory_sha256 TEXT NOT NULL CHECK(length(current_inventory_sha256)=64 AND current_inventory_sha256 NOT GLOB '*[^0-9a-f]*'),
+ state TEXT NOT NULL CHECK(state IN ('active','release_requested','released','quarantined')),
+ load_task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE RESTRICT,
+ release_task_id TEXT REFERENCES tasks(id) ON DELETE RESTRICT,
+ created REAL NOT NULL,
+ updated REAL NOT NULL
+);
+CREATE UNIQUE INDEX managed_residency_active_identity ON managed_residency_receipts(endpoint,instance_id)
+ WHERE state!='released';
+CREATE INDEX managed_residency_state ON managed_residency_receipts(state,endpoint,updated);
+CREATE INDEX managed_residency_event_scan ON events(kind,source,id)
+ WHERE kind='model_residency' AND source='human-cli';
+CREATE TRIGGER managed_residency_identity_immutable
+BEFORE UPDATE OF receipt_id,endpoint,instance_id,receipt_json,receipt_sha256,load_task_id,created
+ON managed_residency_receipts
+BEGIN
+ SELECT RAISE(ABORT,'managed residency receipt identity is immutable');
+END;
+PRAGMA user_version=7;
+"#;
+
 fn now() -> f64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -178,7 +209,7 @@ impl Store {
         let db = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
         db.busy_timeout(std::time::Duration::from_secs(5))?;
         let version: i64 = db.pragma_query_value(None, "user_version", |r| r.get(0))?;
-        if version != 6 {
+        if version != CURRENT_SCHEMA_VERSION {
             bail!("Read-only inspection requires the current database schema")
         }
         let mut store = Self::from_frozen_connection(db)?;
@@ -198,7 +229,7 @@ impl Store {
         )?;
         db.busy_timeout(std::time::Duration::from_secs(5))?;
         let version: i64 = db.pragma_query_value(None, "user_version", |r| r.get(0))?;
-        if version != 6 {
+        if version != CURRENT_SCHEMA_VERSION {
             bail!("Runtime continuation requires an existing current-schema database")
         }
         crate::storage::configure(&db, maximum_bytes)?;
@@ -260,7 +291,7 @@ impl Store {
         db.pragma_update(None, "journal_mode", "WAL")?;
         let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         let version: i64 = tx.pragma_query_value(None, "user_version", |row| row.get(0))?;
-        if version > 6 {
+        if version > CURRENT_SCHEMA_VERSION {
             bail!("Database schema is newer than this runtime")
         }
         if version == 0 {
@@ -332,6 +363,9 @@ impl Store {
         }
         if version < 6 {
             tx.execute_batch(crate::storage::SCHEMA)?;
+        }
+        if version < 7 {
+            tx.execute_batch(MANAGED_RESIDENCY_SCHEMA)?;
         }
         tx.commit()?;
         Ok(Self {
@@ -1326,7 +1360,7 @@ mod tests {
             .unwrap()
             .pragma_query_value(None, "user_version", |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 6);
+        assert_eq!(version, CURRENT_SCHEMA_VERSION);
         drop(store);
         let store = Store::open(&path).unwrap();
         assert_eq!(store.skills().unwrap().len(), 1);
@@ -1338,6 +1372,191 @@ mod tests {
         drop(store);
         assert!(Store::open(&path).is_err());
         std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn schema_seven_migration_is_atomic_and_preserves_schema_six_data() {
+        let path = database_path();
+        let store = Store::open(&path).unwrap();
+        let task = store
+            .create_task("preserve legacy history", "fast")
+            .unwrap();
+        store
+            .event(
+                &task,
+                "model_residency",
+                "human-cli",
+                json!({"state":"confirmed","adapter":"lmstudio-native-v1","action":{"operation":"load"}}),
+            )
+            .unwrap();
+        store.finish_task(&task, "completed", "preserved").unwrap();
+        {
+            let db = store.lock().unwrap();
+            db.execute_batch(
+                "DROP TRIGGER managed_residency_identity_immutable;
+                 DROP INDEX managed_residency_active_identity;
+                 DROP INDEX managed_residency_state;
+                 DROP TABLE managed_residency_receipts;
+                 CREATE INDEX managed_residency_active_identity ON tasks(id);
+                 PRAGMA user_version=6;",
+            )
+            .unwrap();
+        }
+        drop(store);
+
+        assert!(Store::open(&path).is_err());
+        let db = Connection::open(&path).unwrap();
+        let version: i64 = db
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .unwrap();
+        assert_eq!(
+            version, 6,
+            "failed migration must leave the old version intact"
+        );
+        let ledger_exists: bool = db.query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type='table' AND name='managed_residency_receipts')",
+            [],
+            |row| row.get(0),
+        ).unwrap();
+        assert!(
+            !ledger_exists,
+            "DDL before the injected index conflict must roll back"
+        );
+        let answer: String = db
+            .query_row("SELECT answer FROM tasks WHERE id=?1", [&task], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(answer, "preserved");
+        let event_count: i64 = db
+            .query_row(
+                "SELECT count(*) FROM events WHERE task_id=?1 AND kind='model_residency'",
+                [&task],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(event_count, 1);
+        drop(db);
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn managed_receipt_schema_enforces_links_immutability_and_release_reuse() {
+        let store = Store::in_memory().unwrap();
+        let load_task = store.create_task("load", "standard").unwrap();
+        let release_task = store.create_task("release", "standard").unwrap();
+        let receipt_json = r#"{"format_version":1}"#;
+        let receipt_hash = sha256(receipt_json.as_bytes());
+        let inventory_hash = sha256(b"inventory");
+        let db = store.lock().unwrap();
+
+        let insert = |db: &Connection, id: &str, instance: &str| {
+            db.execute(
+                "INSERT INTO managed_residency_receipts(receipt_id,endpoint,instance_id,receipt_json,receipt_sha256,current_inventory_sha256,state,load_task_id,release_task_id,created,updated) VALUES (?1,'http://127.0.0.1:1234/api/v1',?2,?3,?4,?5,'active',?6,NULL,1,1)",
+                params![id, instance, receipt_json, receipt_hash, inventory_hash, load_task],
+            )
+        };
+        insert(&db, "receipt-a", "provider-instance").unwrap();
+        assert!(insert(&db, "receipt-b", "provider-instance").is_err());
+        db.execute(
+            "UPDATE managed_residency_receipts SET state='quarantined' WHERE receipt_id='receipt-a'",
+            [],
+        )
+        .unwrap();
+        assert!(insert(&db, "receipt-b", "provider-instance").is_err());
+        db.execute(
+            "UPDATE managed_residency_receipts SET state='active' WHERE receipt_id='receipt-a'",
+            [],
+        )
+        .unwrap();
+        assert!(db.execute(
+            "INSERT INTO managed_residency_receipts(receipt_id,endpoint,instance_id,receipt_json,receipt_sha256,current_inventory_sha256,state,load_task_id,created,updated) VALUES ('receipt-invalid-fk','http://127.0.0.1:1234/api/v1','other-instance',?1,?2,?3,'active','missing-task',1,1)",
+            params![receipt_json, receipt_hash, inventory_hash],
+        ).is_err());
+
+        assert!(db.execute(
+            "UPDATE managed_residency_receipts SET receipt_json='{}' WHERE receipt_id='receipt-a'",
+            [],
+        ).is_err());
+        assert!(db.execute(
+            "UPDATE managed_residency_receipts SET receipt_sha256=?1 WHERE receipt_id='receipt-a'",
+            [sha256(b"tampered")],
+        ).is_err());
+        assert!(db.execute(
+            "UPDATE managed_residency_receipts SET load_task_id='missing-task' WHERE receipt_id='receipt-a'",
+            [],
+        ).is_err());
+        assert!(db.execute(
+            "UPDATE managed_residency_receipts SET state='release_requested',release_task_id='missing-task' WHERE receipt_id='receipt-a'",
+            [],
+        ).is_err());
+        assert!(db.execute(
+            "UPDATE managed_residency_receipts SET state='release_requested',release_task_id=?1 WHERE receipt_id='receipt-a'",
+            [&release_task],
+        ).is_ok());
+        assert!(db
+            .execute("DELETE FROM tasks WHERE id=?1", [&release_task])
+            .is_err());
+        assert!(db.execute(
+            "UPDATE managed_residency_receipts SET state='released' WHERE receipt_id='receipt-a'",
+            [],
+        ).is_ok());
+        insert(&db, "receipt-c", "provider-instance").unwrap();
+        assert!(db
+            .execute("DELETE FROM tasks WHERE id=?1", [&load_task])
+            .is_err());
+        drop(db);
+    }
+
+    #[test]
+    fn existing_database_readers_require_the_current_schema_seven() {
+        let path = database_path();
+        drop(Store::open(&path).unwrap());
+        drop(Store::open_existing_read_only(&path).unwrap());
+        drop(
+            Store::open_existing_with_limit(&path, crate::storage::DEFAULT_DATABASE_BYTES).unwrap(),
+        );
+
+        let db = Connection::open(&path).unwrap();
+        db.pragma_update(None, "user_version", 6).unwrap();
+        drop(db);
+        assert!(Store::open_existing_read_only(&path).is_err());
+        assert!(
+            Store::open_existing_with_limit(&path, crate::storage::DEFAULT_DATABASE_BYTES).is_err()
+        );
+
+        let db = Connection::open(&path).unwrap();
+        db.pragma_update(None, "user_version", 99).unwrap();
+        drop(db);
+        assert!(Store::open(&path).is_err());
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn managed_residency_event_history_scan_uses_the_bounded_migration_index() {
+        let store = Store::in_memory().unwrap();
+        let task = store.create_task("history index fixture", "fast").unwrap();
+        let db = store.lock().unwrap();
+        for sequence in 0..2048 {
+            db.execute(
+                "INSERT INTO events(task_id,kind,source,payload,created) VALUES (?1,'unrelated_audit','fixture','{}',?2)",
+                params![task, sequence as f64],
+            ).unwrap();
+        }
+        let plan = db.prepare(
+            "EXPLAIN QUERY PLAN SELECT CASE WHEN length(CAST(e.payload AS BLOB))<=4096 THEN e.payload END,CASE WHEN length(CAST(t.status AS BLOB))<=64 THEN t.status END,e.task_id FROM events e JOIN tasks t ON t.id=e.task_id WHERE e.kind='model_residency' AND e.source='human-cli' ORDER BY e.id LIMIT 4097",
+        ).unwrap().query_map([], |row| row.get::<_, String>(3)).unwrap()
+            .collect::<rusqlite::Result<Vec<_>>>().unwrap();
+        assert!(
+            plan.iter()
+                .any(|step| step.contains("managed_residency_event_scan")),
+            "the bounded endpoint-history scan must use its schema index; plan={plan:?}"
+        );
+        assert!(
+            plan.iter()
+                .all(|step| !step.contains("USE TEMP B-TREE FOR ORDER BY")),
+            "the ordered event scan must not sort the full audit history; plan={plan:?}"
+        );
     }
 
     #[test]

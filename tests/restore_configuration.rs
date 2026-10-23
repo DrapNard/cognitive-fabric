@@ -70,7 +70,7 @@ fn cli_backup_and_explicit_restore_preserve_settings_in_a_new_workspace() {
     use std::os::unix::fs::PermissionsExt;
     std::fs::set_permissions(&older, std::fs::Permissions::from_mode(0o600)).unwrap();
     let db = rusqlite::Connection::open(&older).unwrap();
-    db.execute_batch("DROP INDEX idx_tasks_status; DROP INDEX event_conversation_task; DROP TABLE retention_audit; PRAGMA user_version=5;").unwrap();
+    db.execute_batch("DROP TABLE managed_residency_receipts; DROP INDEX managed_residency_event_scan; DROP INDEX idx_tasks_status; DROP INDEX event_conversation_task; DROP TABLE retention_audit; PRAGMA user_version=5;").unwrap();
     drop(db);
     let checksum = cogfabric::store::sha256(&std::fs::read(&older).unwrap());
     let migrated = root.join("migrated");
@@ -91,7 +91,20 @@ fn cli_backup_and_explicit_restore_preserve_settings_in_a_new_workspace() {
     );
     let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(report["source_schema_version"], 5);
-    assert_eq!(report["schema_version"], 6);
+    assert_eq!(report["schema_version"], 7);
+    let restored_db = rusqlite::Connection::open(migrated.join("fabric.sqlite3")).unwrap();
+    let receipts: u32 = restored_db
+        .query_row(
+            "SELECT count(*) FROM managed_residency_receipts",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        receipts, 0,
+        "migration must not adopt legacy model instances"
+    );
+    drop(restored_db);
     assert!(!root.join("unused-source").exists());
     std::fs::remove_dir_all(root).unwrap();
 }

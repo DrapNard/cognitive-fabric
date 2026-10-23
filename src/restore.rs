@@ -173,8 +173,9 @@ pub fn database_with_migration(
             bail!("Snapshot failed SQLite consistency checking")
         }
         let schema: u32 = db.pragma_query_value(None, "user_version", |row| row.get(0))?;
-        if schema != 6 && (!migrate || !(1..6).contains(&schema)) {
-            bail!("Restore requires schema version 6 or explicit migration of recognized versions 1-5")
+        let current_schema = crate::store::CURRENT_SCHEMA_VERSION as u32;
+        if schema != current_schema && (!migrate || !(1..current_schema).contains(&schema)) {
+            bail!("Restore requires the current schema version or explicit migration of recognized older schema versions")
         }
         let running = db.query_row(
             "SELECT count(*) FROM tasks WHERE status='running'",
@@ -219,7 +220,7 @@ pub fn database_with_migration(
         {
             bail!("Restore directory identity changed")
         }
-        if schema != 6 {
+        if schema != current_schema {
             crate::store::Store::migrate_snapshot(&temporary, cfg.max_database_bytes, started)?;
             target.sync_all()?;
             if target.metadata()?.len() > cfg.max_database_bytes
@@ -271,7 +272,7 @@ pub fn database_with_migration(
             home: destination.into(),
             source_checksum: actual,
             bytes,
-            schema_version: 6,
+            schema_version: current_schema,
             running_tasks_not_replayed: running,
             configuration_restored: restore_configuration,
             external_artifacts_restored: false,
@@ -312,6 +313,7 @@ mod tests {
     #[test]
     fn migrates_known_older_snapshots_only_with_explicit_opt_in() {
         use std::os::unix::fs::PermissionsExt;
+        let current_schema = crate::store::CURRENT_SCHEMA_VERSION as u32;
         let root =
             std::env::temp_dir().join(format!("fabric-restore-migration-{}", uuid::Uuid::new_v4()));
         let cfg = Config {
@@ -323,12 +325,20 @@ mod tests {
         let task = store
             .create_task("Do not replay this task", "fast")
             .unwrap();
+        store
+            .event(
+                &task,
+                "model_residency",
+                "human-cli",
+                serde_json::json!({"state":"confirmed","adapter":"lmstudio-native-v1","action":{"operation":"load"}}),
+            )
+            .unwrap();
         let backup = crate::backups::create(&cfg, &store).unwrap();
-        let legacy = root.join("schema-five.db");
+        let legacy = root.join("schema-six.db");
         fs::copy(&backup.path, &legacy).unwrap();
         fs::set_permissions(&legacy, fs::Permissions::from_mode(0o600)).unwrap();
         let db = Connection::open(&legacy).unwrap();
-        db.execute_batch("DROP INDEX idx_tasks_status; DROP INDEX event_conversation_task; DROP TABLE retention_audit; PRAGMA user_version=5;").unwrap();
+        db.execute_batch("DROP TRIGGER managed_residency_identity_immutable; DROP INDEX managed_residency_active_identity; DROP INDEX managed_residency_state; DROP INDEX managed_residency_event_scan; DROP TABLE managed_residency_receipts; DROP INDEX idx_tasks_status; DROP INDEX event_conversation_task; DROP TABLE retention_audit; PRAGMA user_version=6;").unwrap();
         drop(db);
         let bytes = fs::read(&legacy).unwrap();
         let hash = crate::store::sha256(&bytes);
@@ -337,8 +347,8 @@ mod tests {
         let report =
             database_with_migration(&cfg, &legacy, &hash, &destination, false, false, true)
                 .unwrap();
-        assert_eq!(report.source_schema_version, 5);
-        assert_eq!(report.schema_version, 6);
+        assert_eq!(report.source_schema_version, 6);
+        assert_eq!(report.schema_version, current_schema);
         assert_eq!(report.running_tasks_not_replayed, 1);
         assert_eq!(fs::read(&legacy).unwrap(), bytes);
         let db = Connection::open_with_flags(
@@ -349,17 +359,39 @@ mod tests {
         let schema: u32 = db
             .pragma_query_value(None, "user_version", |r| r.get(0))
             .unwrap();
-        assert_eq!(schema, 6);
+        assert_eq!(schema, current_schema);
         let journal: String = db
             .pragma_query_value(None, "journal_mode", |r| r.get(0))
             .unwrap();
         assert_eq!(journal, "delete");
         let status: String = db
-            .query_row("SELECT status FROM tasks WHERE id=?1", [task], |r| r.get(0))
+            .query_row("SELECT status FROM tasks WHERE id=?1", [&task], |r| {
+                r.get(0)
+            })
             .unwrap();
         assert_eq!(status, "running");
+        let receipt_count: u64 = db
+            .query_row("SELECT count(*) FROM managed_residency_receipts", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(
+            receipt_count, 0,
+            "legacy provider observations must not be adopted"
+        );
+        let legacy_events: u64 = db
+            .query_row(
+                "SELECT count(*) FROM events WHERE task_id=?1 AND kind='model_residency'",
+                [&task],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            legacy_events, 1,
+            "legacy audit history is preserved verbatim"
+        );
         drop(db);
-        for version in 1..5 {
+        for version in 1..6 {
             let source = root.join(format!("schema-{version}.db"));
             fs::write(&source, &bytes).unwrap();
             let db = Connection::open(&source).unwrap();
@@ -385,7 +417,7 @@ mod tests {
             let report =
                 database_with_migration(&cfg, &source, &hash, &output, false, false, true).unwrap();
             assert_eq!(report.source_schema_version, version);
-            assert_eq!(report.schema_version, 6);
+            assert_eq!(report.schema_version, current_schema);
             assert_eq!(fs::read(&source).unwrap(), original);
             let db = Connection::open_with_flags(
                 output.join("fabric.sqlite3"),
@@ -395,11 +427,28 @@ mod tests {
             assert_eq!(
                 db.pragma_query_value(None, "user_version", |r| r.get::<_, u32>(0))
                     .unwrap(),
-                6
+                current_schema
+            );
+            assert_eq!(
+                db.query_row("SELECT count(*) FROM managed_residency_receipts", [], |r| r
+                    .get::<_, u64>(0))
+                    .unwrap(),
+                0,
+                "migration from schema {version} must not adopt manual residency history"
+            );
+            assert_eq!(
+                db.query_row(
+                    "SELECT count(*) FROM events WHERE task_id=?1 AND kind='model_residency'",
+                    [&task],
+                    |r| r.get::<_, u64>(0),
+                )
+                .unwrap(),
+                1,
+                "migration from schema {version} must preserve residency audit history"
             );
         }
         let db = Connection::open(&legacy).unwrap();
-        db.execute_batch("CREATE TABLE retention_audit(invalid TEXT);")
+        db.execute_batch("CREATE INDEX managed_residency_active_identity ON tasks(id);")
             .unwrap();
         drop(db);
         let hash = crate::store::sha256(&fs::read(&legacy).unwrap());
@@ -549,8 +598,14 @@ mod tests {
         let cfg = Config::default();
         let future = root.join("future.db");
         let db = Connection::open(&future).unwrap();
-        db.execute_batch("CREATE TABLE tasks(status TEXT); PRAGMA user_version=7;")
+        db.execute_batch("CREATE TABLE tasks(status TEXT);")
             .unwrap();
+        db.pragma_update(
+            None,
+            "user_version",
+            crate::store::CURRENT_SCHEMA_VERSION + 1,
+        )
+        .unwrap();
         drop(db);
         let checksum = crate::store::sha256(&fs::read(&future).unwrap());
         let destination = root.join("future-output");
