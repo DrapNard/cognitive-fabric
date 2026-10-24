@@ -46,7 +46,7 @@ legal compatibility, permissions for the document's instructions or promotion.
 The strict manifest is at most 32 KB, has no duplicate/unknown keys, has a nonempty
 reviewer (at most 100 bytes), and contains 1–32 unique bounded source IDs. All
 entries are validated before the first DNS query. Sources need explicit provenance
-and license labels; identifiers become flat filenames, never remote paths.
+and license labels (at most 100 and 128 raw bytes respectively, including padding); identifiers become flat filenames, never remote paths.
 
 ## Network and resource boundaries
 
@@ -177,3 +177,9 @@ The first v3 import regression exposed a stale v2-only Store gate. It was fixed
 by sharing the same report validator across import, transaction and inspection;
 the rerun passed. No full reflection suite, live public fetch or reasoning-quality
 benchmark was run for this lineage change.
+
+## Discover from a recorded capability gap
+
+`candidate discover-remote-sources` can draft this acquisition schema from a
+hash-pinned reviewed catalog and recorded missing capability. It performs no
+network and leaves approval false. See [source catalogs](SOURCE_CATALOG.md).

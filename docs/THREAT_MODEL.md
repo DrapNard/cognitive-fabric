@@ -1350,3 +1350,15 @@ include approved URLs but no held-out document bodies. Inspection never resolves
 or fetches those URLs and grants no evaluation or promotion authority. A hostile
 owner can forge new mutually consistent local records; these checks are not remote
 publisher attestation or independent license/poisoning review.
+
+## Gap-bound catalog discovery
+
+A catalog is untrusted declaration data under an explicit operator hash/review
+assertion. All entries use shared URL/digest validation before exact-capability
+selection; discovery never resolves or fetches those URLs. The original gap
+receipt and current provider availability are rechecked before publication. Stale
+or malformed gap history refuses; strict parsing rejects duplicate JSON keys and
+bounded SQLite inspection always clears its progress handler. Private output is
+an unapproved plan, not a new permission, candidate or evaluation. Registry changes
+after the check are possible and cannot authorize later acquisition automatically.
+Catalog priorities/licensing labels do not establish independent quality or safety.

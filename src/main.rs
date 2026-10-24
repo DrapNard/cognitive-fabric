@@ -644,6 +644,20 @@ enum CandidateAction {
         #[arg(long)]
         output: PathBuf,
     },
+    /// Draft remote source choices from a reviewed catalog and recorded gap.
+    DiscoverRemoteSources {
+        task: String,
+        #[arg(long)]
+        capability: String,
+        #[arg(long)]
+        catalog: PathBuf,
+        #[arg(long)]
+        sha256: String,
+        #[arg(long, default_value_t = 8)]
+        max_sources: usize,
+        #[arg(long)]
+        output: PathBuf,
+    },
     DiscoverSources {
         #[arg(long)]
         root: PathBuf,
@@ -1089,6 +1103,28 @@ async fn run_cli() -> Result<()> {
     }
     let cfg = Config::load(cli.home, cli.backend)?;
     match &cli.command {
+        Command::Candidate {
+            action:
+                CandidateAction::DiscoverRemoteSources {
+                    task,
+                    capability,
+                    catalog,
+                    sha256,
+                    max_sources,
+                    output: directory,
+                },
+        } => {
+            let store = Store::open_existing_read_only(&cfg.db())?;
+            let draft = cogfabric::evolution::catalog::discover(
+                &store,
+                task,
+                capability,
+                catalog,
+                sha256,
+                *max_sources,
+            )?;
+            return output(draft.write(directory)?, cli.json);
+        }
         Command::StorageStatus => {
             let store = Store::open_existing_with_limit(&cfg.db(), cfg.max_database_bytes)?;
             return output(store.storage_stats()?, cli.json);
@@ -2192,6 +2228,9 @@ async fn run_cli() -> Result<()> {
             }
             CandidateAction::FetchSources { .. } => {
                 bail!("Source acquisition must run before runtime initialization")
+            }
+            CandidateAction::DiscoverRemoteSources { .. } => {
+                bail!("Catalog source discovery must precede runtime initialization")
             }
             CandidateAction::DiscoverSources { .. } => {
                 bail!("Source discovery must precede runtime initialization")

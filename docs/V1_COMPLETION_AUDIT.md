@@ -12,6 +12,28 @@ and `CURRENT_IMPLEMENTATION.md` describe earlier snapshots and can be superseded
 
 
 
+
+## Gap-bound reviewed source catalogs — 2026-10-24
+
+**Implemented catalog discovery; open-web discovery remains Partial.** Architecture
+sections 4 and 8: `src/evolution/catalog.rs` validates a hash-pinned reviewed catalog,
+selects exact-capability source declarations by stable priority/ID, deduplicates
+content hashes and writes an unapproved acquisition plan. Initial/publication
+checks bind the exact recorded gap and refuse available capabilities so existing
+skills can be reused. Completed/failed gap tasks remain eligible.
+
+The human-only `candidate discover-remote-sources` CLI uses an existing read-only
+Store, no bootstrap or network. Strict catalog/history parsing, bounded source
+counts, metadata bytes and SQLite inspection deadlines govern the operation.
+`src/gaps.rs` rejects duplicate JSON keys and clears its deadline callback on
+both successful and failed inspection. Selection creates no candidate, model
+permission or evaluation result. Source priorities/review labels are assertions,
+not measured usefulness, legal assurance or independent curation. See
+[source catalogs](SOURCE_CATALOG.md). Twenty-six focused checks pass across catalog,
+gap inspection and the existing acquisition/preparation/import pipeline. Formatting,
+all-feature compilation and strict Clippy pass. Full reflection tests were not run.
+
+
 ## Acquisition lineage through candidate registration — 2026-10-24
 
 **Implemented.** Architecture sections 7, 8 and 10: acquisition drafts bind exact

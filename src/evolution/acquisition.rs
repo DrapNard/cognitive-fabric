@@ -218,7 +218,7 @@ impl Acquired {
     }
 }
 
-fn valid_sha256(value: &str) -> bool {
+pub(super) fn valid_sha256(value: &str) -> bool {
     value.len() == 64
         && value
             .bytes()
@@ -236,7 +236,7 @@ fn validate_source(source: &Source, ids: &mut BTreeSet<String>) -> Result<()> {
         bail!("Source hash must be lowercase SHA-256")
     }
     if source.source.trim().is_empty()
-        || source.source.trim().len() > 100
+        || source.source.len() > 100
         || source.license.trim().is_empty()
         || source.license.trim().len() > 128
     {
@@ -256,7 +256,7 @@ fn validate_downloaded(source: &Source, bytes: &[u8]) -> Result<String> {
     Ok(hash)
 }
 
-fn parse_source_url(raw: &str) -> Result<Url> {
+pub(super) fn parse_source_url(raw: &str) -> Result<Url> {
     if raw.len() > 2048 {
         bail!("Source URL exceeds its length limit")
     }

@@ -197,7 +197,7 @@ fn validate_payloads(plan_bytes: &[u8], report_bytes: &[u8]) -> Result<Vec<Origi
             bail!("Acquisition plan contains invalid or duplicate source metadata")
         }
         security::validate_provenance(&source.source, &source.license)?;
-        if source.source.trim().len() > 100 || source.license.trim().len() > 128 {
+        if source.source.len() > 100 || source.license.trim().len() > 128 {
             bail!("Acquisition source provenance exceeds its byte limit")
         }
         let url = parse_source_url(&source.url)?;
