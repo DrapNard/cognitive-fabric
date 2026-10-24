@@ -2,6 +2,31 @@
 
 
 
+
+## Runtime WAL growth boundary — 2026-10-24
+
+**Implemented for runtime file connections.** Architecture sections 7, 9 and 10:
+`src/storage/wal_vfs.rs` registers an explicitly selected, non-default SQLite VFS.
+WAL writes/truncations beyond 16,000,000 bytes fail before the delegated file
+operation. Preallocation hints cannot bypass the check, and WAL mmap fetch is
+disabled. Store creation/continuation/inspection/migrations, token ledgers and
+backup/restore staging select it. `storage-status` reports the actual connection's
+marker and byte ceiling; in-memory/unwrapped connections report no hard limit.
+
+Pinned-reader tests with two runtime writers stop at `SQLITE_FULL`, retain all
+committed rows and resume after checkpointing. An external oversized WAL remains
+readable and unchanged by a denied write, then recovers through checkpointing.
+The adapter adds a file-size observation per WAL write and can reject large single
+transactions. No task result is manufactured on storage failure. This bounds
+cooperating connections' WAL growth, not total disk allocation, external writers,
+SHM, backups or arbitrary artifacts. Workspace-wide physical quotas remain Partial.
+The human-only `storage-checkpoint` CLI uses a short lock wait and reports busy
+readers; inspection/maintenance avoid bootstrap writes. Focused storage, callback,
+legacy migration, backup/restore, token-ledger/managed-worker and CLI checks pass,
+with default/all-feature compilation and strict all-feature Clippy. The full
+reflection suite was not run. See [storage limits](STORAGE.md) for exact commands.
+
+
 ## Token preparation requires a live task — 2026-10-24
 
 **Implemented.** Architecture sections 7, 9 and 10: `src/token_admission.rs`

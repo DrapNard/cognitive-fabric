@@ -9,6 +9,31 @@ and `CURRENT_IMPLEMENTATION.md` describe earlier snapshots and can be superseded
 
 
 
+
+## Runtime WAL growth boundary — 2026-10-24
+
+**Implemented for runtime file connections.** Architecture sections 7, 9 and 10:
+`src/storage/wal_vfs.rs` registers an explicitly selected, non-default SQLite VFS.
+WAL writes/truncations beyond 16,000,000 bytes fail before the delegated file
+operation. Preallocation hints cannot bypass the check, and WAL mmap fetch is
+disabled. Store creation/continuation/inspection/migrations, token ledgers and
+backup/restore staging select it. `storage-status` reports the actual connection's
+marker and byte ceiling; in-memory/unwrapped connections report no hard limit.
+
+Pinned-reader tests with two runtime writers stop at `SQLITE_FULL`, retain all
+committed rows and resume after checkpointing. An external oversized WAL remains
+readable and unchanged by a denied write, then recovers through checkpointing.
+The adapter adds a file-size observation per WAL write and can reject large single
+transactions. No task result is manufactured on storage failure. This bounds
+cooperating connections' WAL growth, not total disk allocation, external writers,
+SHM, backups or arbitrary artifacts. Workspace-wide physical quotas remain Partial.
+The human-only `storage-checkpoint` CLI uses a short lock wait and reports busy
+readers; inspection/maintenance avoid bootstrap writes. Focused storage, callback,
+legacy migration, backup/restore, token-ledger/managed-worker and CLI checks pass,
+with default/all-feature compilation and strict all-feature Clippy. The full
+reflection suite was not run. See [storage limits](STORAGE.md) for exact commands.
+
+
 ## Token preparation requires a live task — 2026-10-24
 
 **Implemented.** Architecture sections 7, 9 and 10: `src/token_admission.rs`
@@ -172,7 +197,7 @@ instructions explicitly place them beyond proven v1.0 functionality.
 | Expert Network (§6) | `src/registry.rs`, `src/registry/providers.rs`, `src/models.rs`, `src/fabric/modules.rs`; activation, provider, model and typed worker tests | Implemented immutable versions, hot-swap pins, dependency graphs and reviewed provider adapters. Arbitrary executable loading/isolation and independently measured usefulness of all proposed domain experts remain Partial. |
 | Sparse native lifecycle and shared backbones (§6, §9, §12) | `src/residency/`, `src/backend/native.rs`, `tests/{managed_residency,native_lifecycle,resource_route_resume}.rs` | Implemented approved task model sets, receipt reuse/release, exact-target checks and owned continuation. Actual provider weight sharing, adapter switching, load costs and physical continuity remain unverified. |
 | Cognitive Fabric typed messaging (§7, §12) | Eleven `protocol/*.fbs` schemas, generated bundle, `src/fabric/`, `src/events/`, `src/wire.rs`; protocol corruption/socket/process tests | Implemented supported local FlatBuffers IPC and typed workers. Independent arbitrary actor provisioning, remote transport and general executable attestation are not implemented. |
-| Persistent task/episodic/semantic/skill/model/evaluation stores (§7) | `src/{store,memory,models,evaluation,storage,restore}.rs`, schema-9 migration and rollback tests | Implemented SQLite-backed logical stores, FTS retrieval, explicit publication and migrations. General external/neural artifact portability and physical filesystem/WAL bounds remain Partial. |
+| Persistent task/episodic/semantic/skill/model/evaluation stores (§7) | `src/{store,memory,models,evaluation,storage,restore}.rs`, schema-9 migration and rollback tests | Implemented SQLite-backed logical stores, FTS retrieval, explicit publication and migrations. The named runtime VFS now bounds WAL growth; general external/neural artifact portability and workspace-wide physical filesystem quotas remain Partial. |
 | Crash continuation and unknown outcomes (§7, §10) | `src/recovery/`, native restoration and typed reconstruction; resume/parallel/receipt/refusal tests | Implemented supported original checkpoint forms with retained budgets, exact callbacks or fixed source-bound workers. Unknown calls are refused, not replayed; arbitrary crash-phase resumption remains unsupported. |
 | Evolution A: reusable memory (§8) | `src/memory.rs`, `src/gaps.rs`; publication/revocation, bounded retrieval and provenance tests | Implemented explicit verified memory publication and gap evidence. Independent transfer of learned strategies remains unproven. |
 | Evolution B: RAG candidates (§8) | `src/evolution.rs`, `src/evaluation.rs`, `src/rag_archive.rs`; quarantine, deduplication, held-out, promotion and rollback tests | Implemented operator-selected candidate pipeline. Reviewed local source normalization, deduplication and split preparation now exist in `src/evolution/preparation.rs` with `tests/source_preparation.rs`. Bounded local inventory drafts now exist in `src/evolution/discovery.rs` with `tests/source_discovery.rs`, and `src/evolution/prepared.rs` atomically binds validated preparation provenance to inactive candidates with `tests/prepared_candidate.rs`; remote discovery and independently established dataset quality/poisoning resistance remain Partial. |

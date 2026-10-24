@@ -397,7 +397,7 @@ impl Store {
         if path.is_symlink() {
             bail!("Database path cannot be a symlink")
         }
-        let db = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        let db = crate::storage::wal_vfs::open(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
         db.busy_timeout(std::time::Duration::from_secs(5))?;
         let version: i64 = db.pragma_query_value(None, "user_version", |r| r.get(0))?;
         if version != CURRENT_SCHEMA_VERSION {
@@ -414,7 +414,7 @@ impl Store {
     }
     /// Open a current runtime database for mutation without creating or migrating it.
     pub fn open_existing_with_limit(path: &Path, maximum_bytes: u64) -> Result<Self> {
-        let db = Connection::open_with_flags(
+        let db = crate::storage::wal_vfs::open(
             path,
             rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE | rusqlite::OpenFlags::SQLITE_OPEN_NOFOLLOW,
         )?;
@@ -440,7 +440,10 @@ impl Store {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let mut store = Self::initialize(Connection::open(path)?, maximum_bytes)?;
+        let mut store = Self::initialize(
+            crate::storage::wal_vfs::open(path, rusqlite::OpenFlags::default())?,
+            maximum_bytes,
+        )?;
         let mut lease = path.as_os_str().to_os_string();
         lease.push(".runtime.lock");
         store.runtime_lock = Some(lease.into());
@@ -457,7 +460,7 @@ impl Store {
         maximum: u64,
         started: std::time::Instant,
     ) -> Result<()> {
-        let db = Connection::open_with_flags(
+        let db = crate::storage::wal_vfs::open(
             path,
             rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE | rusqlite::OpenFlags::SQLITE_OPEN_NOFOLLOW,
         )?;

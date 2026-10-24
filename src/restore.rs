@@ -1,7 +1,7 @@
 //! Restore an operator-reviewed database snapshot into a new workspace only.
 use crate::{config::Config, security};
 use anyhow::{bail, Result};
-use rusqlite::{Connection, OpenFlags};
+use rusqlite::OpenFlags;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::{
@@ -155,7 +155,7 @@ pub fn database_with_migration(
         {
             bail!("Restore staging file identity changed")
         }
-        let db = Connection::open_with_flags(
+        let db = crate::storage::wal_vfs::open(
             &temporary,
             OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NOFOLLOW,
         )?;
@@ -230,7 +230,7 @@ pub fn database_with_migration(
             }
         }
         let rag_artifacts_restored = if restore_rag {
-            let mut writable = Connection::open_with_flags(
+            let mut writable = crate::storage::wal_vfs::open(
                 &temporary,
                 OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NOFOLLOW,
             )?;
@@ -310,6 +310,7 @@ pub fn database_with_migration(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rusqlite::Connection;
     #[test]
     fn migrates_known_older_snapshots_only_with_explicit_opt_in() {
         use std::os::unix::fs::PermissionsExt;

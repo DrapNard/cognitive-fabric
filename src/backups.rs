@@ -3,7 +3,7 @@ use crate::{config::Config, security, store::Store};
 use anyhow::{bail, Result};
 use rusqlite::{
     backup::{Backup, StepResult},
-    Connection, OpenFlags,
+    OpenFlags,
 };
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -107,7 +107,7 @@ pub fn create_with_rag(cfg: &Config, store: &Store, include_rag: bool) -> Result
         .open(&temporary)?;
     let identity = file.metadata()?;
     let result = (|| -> Result<Snapshot> {
-        let mut target = Connection::open_with_flags(
+        let mut target = crate::storage::wal_vfs::open(
             &temporary,
             OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NOFOLLOW,
         )?;
@@ -207,6 +207,7 @@ pub fn create_with_rag(cfg: &Config, store: &Store, include_rag: bool) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rusqlite::Connection;
     #[test]
     fn backup_preserves_committed_wal_and_rejects_symlinks_and_capacity() {
         let home = std::env::temp_dir().join(format!("fabric-backup-{}", uuid::Uuid::new_v4()));

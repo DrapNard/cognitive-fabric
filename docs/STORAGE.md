@@ -14,12 +14,43 @@ until explicit recovery. Headroom reduces exhaustion risk; concurrent tasks and
 other writes can still exhaust the database. Failed durable writes are errors,
 not successful task completion. Recover interrupted work after restoring space.
 
-WAL autocheckpoint is 1,000 pages and retained-journal target is 16 MB. These are
-checkpoint/retention settings, not a hard physical WAL bound: long-lived readers
-can prevent checkpoint progress. `wal_hard_limit` is explicitly false. A strict
-physical disk budget requires an operator-configured filesystem quota, including
-SQLite WAL/SHM files, artifacts and backups. This runtime does not administer the
-host filesystem. Configured page limits also apply to migration writes.
+## Runtime WAL write boundary
+
+Runtime file connections use a named SQLite VFS adapter that refuses a WAL write
+or truncation extending beyond 16,000,000 bytes with `SQLITE_FULL`. It is selected
+explicitly for Store creation, existing/read-only connections, migrations, token
+admission, backup destinations and restore staging; SQLite's process-wide default
+VFS is unchanged. `storage-status` reports `wal_hard_limit` and `wal_limit_bytes`
+from a marker on the actual connection. In-memory/unwrapped connections do not
+report this guarantee.
+
+For explicit maintenance, run `cogfabric --json storage-checkpoint`. This
+human-only operation requests a truncating checkpoint with a 250 ms lock wait,
+then restores the connection's prior timeout. It reports busy readers instead of
+evicting them or claiming success. `storage-status` and `storage-checkpoint` open
+an existing current-schema database without bootstrap/migration writes, so they
+can inspect or recover a WAL that blocks normal runtime initialization. Checkpoint
+I/O is not a hard real-time operation. No task is replayed or deleted.
+
+The 1,000-page autocheckpoint and 16 MB retained-journal target remain maintenance
+settings. A pinned reader can now make writes fail at the WAL boundary instead of
+permitting continued growth. Failed transactions remain failures; no task success,
+refund or data deletion is inferred. Releasing the reader permits ordinary SQLite
+checkpoint/reuse. Transactions that alone need more WAL space also fail, so large
+imports or migrations may require smaller operator-reviewed batches.
+
+An already oversized WAL is preserved and remains readable. Its writes are
+refused until a successful checkpoint/truncation reduces it below the limit;
+opening the database never deletes committed history. The connection marker
+reports enforcement on future writes, not that pre-existing bytes are conformant.
+Inspect `wal_bytes` alongside `wal_limit_bytes`.
+
+The adapter bounds WAL growth for cooperating runtime connections. It does
+not cap the directory's total allocated disk blocks, SHM, backups, artifacts or
+other applications' writes. A process opening the same database with another VFS
+can bypass it. A strict workspace-wide physical budget still requires an operator
+filesystem quota. This runtime does not administer the host filesystem.
+Configured main-page limits still apply independently to migration and task writes.
 
 ## Task-history cleanup
 
@@ -220,3 +251,24 @@ Regression fixtures cover versions 1–7, preserved source bytes/running state,
 standalone output and transactional failure; the CLI fixture verifies the flag.
 Earlier notes describing older migrations as separate work are superseded by this
 explicit recognized-version option. Unknown/custom schemas still need review.
+
+## WAL boundary verification — 2026-10-24
+
+The implementation received an independent source review of the unsafe file
+layout, callback forwarding, version gates, registration lifetime and cap bypasses.
+No blocking defect was identified; this is not a proof against arbitrary VFS code.
+
+Commands and actual outcomes:
+
+- `cargo fmt --all -- --check` and `git diff --check`: passed.
+- `cargo +1.99.0 check --workspace --all-targets --locked`: passed.
+- `cargo +1.99.0 check --workspace --all-targets --all-features --locked`: passed.
+- `cargo +1.99.0 clippy --workspace --all-targets --all-features --locked -- -D warnings`: passed.
+- Focused library filters `storage::tests` (6), `storage::wal_vfs::tests` (3), `backups::tests` (1), `restore::tests` (4), `store::tests` (15 including the same four restore tests), `token_admission::tests` (7), and `security::tests::storage_checkpoint_is_human_only` (1): passed.
+- `cargo +1.99.0 test -p cogfabric --test input_token_admission --locked`: seven passed, including managed worker processes.
+- `cargo +1.99.0 test -p cogfabric --test restore_configuration --locked`: one passed.
+- `cargo +1.99.0 test -p cogfabric --test wal_checkpoint_cli --locked`: one passed. The CLI reports an oversized external WAL, returns busy without evicting its pinned reader, then checkpoints after release and preserves all 36 committed fixture rows.
+
+No full reflection test suite or reasoning benchmark was run. Filesystem-wide
+quotas, physical GPU resource enforcement and the remaining scientific/release
+requirements are not established by these storage checks.

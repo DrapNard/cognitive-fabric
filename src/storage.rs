@@ -1,4 +1,6 @@
 //! Logical database quotas and explicit reviewed task-history retention.
+pub(crate) mod wal_vfs;
+
 use crate::{
     security,
     store::{sha256, Store},
@@ -60,6 +62,7 @@ pub struct StorageStats {
     pub maximum_bytes: u64,
     pub wal_bytes: Option<u64>,
     pub wal_hard_limit: bool,
+    pub wal_limit_bytes: Option<u64>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -146,9 +149,31 @@ impl Store {
             live_page_bytes: pages.saturating_sub(free) * size,
             maximum_bytes: maximum * size,
             wal_bytes,
-            wal_hard_limit: false,
+            wal_hard_limit: wal_vfs::enforced_limit(&db).is_some(),
+            wal_limit_bytes: wal_vfs::enforced_limit(&db),
         })
     }
+    /// Explicit operator maintenance; busy readers are reported, never evicted.
+    pub fn checkpoint_wal(&self) -> Result<serde_json::Value> {
+        security::authorize("human-cli", "storage.checkpoint")?;
+        let db = self.lock()?;
+        let previous: u64 = db.pragma_query_value(None, "busy_timeout", |row| row.get(0))?;
+        db.busy_timeout(std::time::Duration::from_millis(250))?;
+        let result = db.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, i64>(2)?,
+            ))
+        });
+        let restored = db.busy_timeout(std::time::Duration::from_millis(previous));
+        let (busy, log_frames, checkpointed_frames) = result?;
+        restored?;
+        Ok(serde_json::json!({"completed":busy==0,"busy":busy!=0,
+            "log_frames":log_frames,"checkpointed_frames":checkpointed_frames,
+            "mode":"truncate","tasks_replayed":false,"readers_evicted":false}))
+    }
+
     pub fn retention_preview(&self, before: u64, limit: u32) -> Result<RetentionPlan> {
         security::authorize("human-cli", "storage.retention")?;
         let mut db = self.lock()?;
@@ -364,6 +389,158 @@ mod tests {
             .unwrap();
         assert_eq!(audit, (1, 1));
     }
+    #[test]
+    fn pinned_reader_cannot_grow_runtime_wal_past_the_write_boundary() {
+        let root = std::env::temp_dir().join(format!("fabric-wal-bound-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        let path = root.join("state.db");
+        let store = Store::open(&path).unwrap();
+        {
+            let db = store.lock().unwrap();
+            db.execute_batch(
+                "CREATE TABLE wal_bound_fixture(body BLOB); PRAGMA wal_checkpoint(TRUNCATE);",
+            )
+            .unwrap();
+        }
+        let initial = store.storage_stats().unwrap();
+        assert!(initial.wal_hard_limit);
+        let limit = initial.wal_limit_bytes.unwrap();
+        let reader = wal_vfs::open(&path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+        reader.execute_batch("BEGIN").unwrap();
+        let _: u64 = reader
+            .query_row("SELECT count(*) FROM wal_bound_fixture", [], |r| r.get(0))
+            .unwrap();
+        let second_writer =
+            wal_vfs::open(&path, rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE).unwrap();
+        let mut committed = 0u64;
+        let mut refused = false;
+        for index in 0..80 {
+            let db = store.lock().unwrap();
+            let writer = if index % 2 == 0 { &*db } else { &second_writer };
+            match writer.execute("INSERT INTO wal_bound_fixture VALUES(zeroblob(500000))", []) {
+                Ok(_) => committed += 1,
+                Err(error) => {
+                    assert_eq!(
+                        error.sqlite_error_code(),
+                        Some(rusqlite::ErrorCode::DiskFull)
+                    );
+                    refused = true;
+                    break;
+                }
+            }
+            assert!(
+                std::fs::metadata(format!("{}-wal", path.display()))
+                    .unwrap()
+                    .len()
+                    <= limit
+            );
+        }
+        assert!(refused && committed > 0);
+        assert!(store.storage_stats().unwrap().wal_bytes.unwrap() <= limit);
+        assert_eq!(store.checkpoint_wal().unwrap()["busy"], true);
+        reader.execute_batch("ROLLBACK").unwrap();
+        drop(reader);
+        drop(second_writer);
+        assert_eq!(store.checkpoint_wal().unwrap()["completed"], true);
+        {
+            let db = store.lock().unwrap();
+            db.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)").unwrap();
+            assert_eq!(
+                db.query_row("SELECT count(*) FROM wal_bound_fixture", [], |r| r
+                    .get::<_, u64>(0))
+                    .unwrap(),
+                committed
+            );
+            assert_eq!(
+                db.query_row("PRAGMA quick_check", [], |r| r.get::<_, String>(0))
+                    .unwrap(),
+                "ok"
+            );
+            db.execute("INSERT INTO wal_bound_fixture VALUES(zeroblob(500000))", [])
+                .unwrap();
+        }
+        drop(store);
+        let reopened = Store::open(&path).unwrap();
+        assert_eq!(
+            reopened
+                .lock()
+                .unwrap()
+                .query_row("SELECT count(*) FROM wal_bound_fixture", [], |r| r
+                    .get::<_, u64>(0))
+                .unwrap(),
+            committed + 1
+        );
+        drop(reopened);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn oversized_external_wal_is_preserved_and_can_be_checkpointed() {
+        let root = std::env::temp_dir().join(format!("fabric-wal-legacy-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        let path = root.join("state.db");
+        drop(Store::open(&path).unwrap());
+        // An external, unwrapped writer deliberately bypasses the runtime VFS.
+        let writer = Connection::open(&path).unwrap();
+        writer.execute_batch("PRAGMA journal_mode=WAL; CREATE TABLE legacy_wal_fixture(body BLOB); PRAGMA wal_checkpoint(TRUNCATE);").unwrap();
+        let reader = Connection::open(&path).unwrap();
+        reader.execute_batch("BEGIN").unwrap();
+        let _: u64 = reader
+            .query_row("SELECT count(*) FROM legacy_wal_fixture", [], |r| r.get(0))
+            .unwrap();
+        for _ in 0..36 {
+            writer
+                .execute(
+                    "INSERT INTO legacy_wal_fixture VALUES(zeroblob(500000))",
+                    [],
+                )
+                .unwrap();
+        }
+        let before = std::fs::metadata(format!("{}-wal", path.display()))
+            .unwrap()
+            .len();
+        let bounded = wal_vfs::open(&path, rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE).unwrap();
+        assert!(before > wal_vfs::enforced_limit(&bounded).unwrap());
+        assert_eq!(
+            bounded
+                .query_row("SELECT count(*) FROM legacy_wal_fixture", [], |r| r
+                    .get::<_, u64>(0))
+                .unwrap(),
+            36
+        );
+        let error = bounded
+            .execute("INSERT INTO legacy_wal_fixture VALUES(zeroblob(1))", [])
+            .unwrap_err();
+        assert_eq!(
+            error.sqlite_error_code(),
+            Some(rusqlite::ErrorCode::DiskFull)
+        );
+        assert_eq!(
+            std::fs::metadata(format!("{}-wal", path.display()))
+                .unwrap()
+                .len(),
+            before
+        );
+        reader.execute_batch("ROLLBACK").unwrap();
+        drop(reader);
+        drop(writer);
+        bounded
+            .execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")
+            .unwrap();
+        bounded
+            .execute("INSERT INTO legacy_wal_fixture VALUES(zeroblob(1))", [])
+            .unwrap();
+        assert_eq!(
+            bounded
+                .query_row("SELECT count(*) FROM legacy_wal_fixture", [], |r| r
+                    .get::<_, u64>(0))
+                .unwrap(),
+            37
+        );
+        drop(bounded);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn quotas_enforce_admission_and_sqlite_page_growth() {
         let store = Store::in_memory().unwrap();

@@ -180,6 +180,8 @@ enum Command {
         human_approve: bool,
     },
     StorageStatus,
+    /// Checkpoint and truncate the WAL without evicting active readers.
+    StorageCheckpoint,
     WatchTask {
         id: String,
         #[arg(long, default_value = "0")]
@@ -1066,6 +1068,15 @@ async fn run_cli() -> Result<()> {
     }
     let cfg = Config::load(cli.home, cli.backend)?;
     match &cli.command {
+        Command::StorageStatus => {
+            let store = Store::open_existing_with_limit(&cfg.db(), cfg.max_database_bytes)?;
+            return output(store.storage_stats()?, cli.json);
+        }
+        Command::StorageCheckpoint => {
+            security::authorize("human-cli", "storage.checkpoint")?;
+            let store = Store::open_existing_with_limit(&cfg.db(), cfg.max_database_bytes)?;
+            return output(store.checkpoint_wal()?, cli.json);
+        }
         Command::ProjectShow { reference } => {
             cogfabric::projects::Selection::parse(reference)?;
             let store = Store::open_existing_read_only(&cfg.db())?;
@@ -1617,7 +1628,9 @@ async fn run_cli() -> Result<()> {
         Command::CancelTask { id } => {
             json!({"task_id":id,"accepted":service::cancel_task(&cfg,&id).await?})
         }
-        Command::StorageStatus => serde_json::to_value(store.storage_stats()?)?,
+        Command::StorageStatus | Command::StorageCheckpoint => {
+            bail!("Storage maintenance must run before runtime initialization")
+        }
         Command::Backup {
             include_rag_artifacts,
         } => serde_json::to_value(cogfabric::backups::create_with_rag(

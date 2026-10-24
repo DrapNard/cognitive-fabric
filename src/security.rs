@@ -115,6 +115,7 @@ pub fn authorize(principal: &str, capability: &str) -> Result<()> {
                 | "model.select"
                 | "model.lifecycle"
                 | "storage.retention"
+                | "storage.checkpoint"
                 | "storage.backup"
                 | "storage.restore"
                 | "expert.module.evaluate"
@@ -229,6 +230,14 @@ mod tests {
     #[test]
     fn allow_knowledge_search() {
         assert!(authorize("jev-r", "knowledge.search").is_ok());
+    }
+
+    #[test]
+    fn storage_checkpoint_is_human_only() {
+        assert!(authorize("human-cli", "storage.checkpoint").is_ok());
+        for actor in ["jev-plus", "jev-r", "interface", "rust.s1"] {
+            assert!(authorize(actor, "storage.checkpoint").is_err());
+        }
     }
 
     #[test]

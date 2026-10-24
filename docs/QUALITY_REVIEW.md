@@ -4527,3 +4527,10 @@ All mandatory checks pass: formatting, offline workspace/all-target check,
 `/tmp/cogfabric-tool-health-all-tests.log`, `/tmp/cogfabric-tool-health-check.log`,
 `/tmp/cogfabric-tool-health-clippy.log`. No new grants, tool APIs, schema changes,
 provider mutation, automatic retry or native sandbox guarantee is introduced.
+
+### Runtime WAL boundary follow-up — 2026-10-24
+
+The earlier `wal_hard_limit=false` observation is superseded for named-VFS runtime
+file connections by `src/storage/wal_vfs.rs`. Unwrapped/in-memory connections still
+report false. The adapter caps future WAL writes, preserves oversized legacy WAL
+for checkpoint recovery, and does not impose a workspace-wide disk quota.

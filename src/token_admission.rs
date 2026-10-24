@@ -433,7 +433,7 @@ fn open_admission_database(
     } else {
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY
     };
-    let db = rusqlite::Connection::open_with_flags(
+    let db = crate::storage::wal_vfs::open(
         &db_path,
         access | rusqlite::OpenFlags::SQLITE_OPEN_NOFOLLOW,
     )?;

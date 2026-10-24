@@ -1304,3 +1304,21 @@ cannot obtain a new completion reservation after that recheck. This cannot revok
 requests already sent to an external provider or eliminate the interval between
 local admission and network dispatch. Missing or terminal tasks produce no native
 preparation requests in regression fixtures.
+
+## WAL growth enforcement
+
+Runtime on-disk connections explicitly select a wrapper around SQLite's platform
+VFS. WAL write/truncate lengths are checked before forwarding; size/chunk hints
+cannot preallocate beyond the check, and WAL fetch does not expose mmap writes.
+The wrapper preserves platform locking/sync behavior and advertises its marker
+only on wrapped file connections. Existing oversized WAL bytes are not silently
+deleted; further writes fail until checkpoint/truncate recovery. A read-only
+connection, backup or long-running reader may therefore cause other writes to
+fail at the cap. All durable-write errors must propagate as failures.
+
+This introduces unsafe FFI forwarding code with process-lifetime VFS registration;
+focused callback and recovery tests cover supported SQLite behavior, not arbitrary
+third-party VFS implementations. SQLite's default VFS is unchanged. A same-owner
+external process can bypass this named adapter. Total workspace/physical storage,
+SHM and artifact limits still need a host quota; no claim of hostile-owner disk
+isolation follows. See [storage limits](STORAGE.md).
