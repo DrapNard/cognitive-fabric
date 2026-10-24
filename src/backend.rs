@@ -26,6 +26,11 @@ pub struct Generation {
 }
 
 pub trait InferenceBackend: Send + Sync {
+    /// Exact operator-configured token-admission capability, when this adapter
+    /// can enforce it for every task-scoped inference request.
+    fn input_token_admission(&self) -> Option<crate::token_admission::Settings> {
+        None
+    }
     /// Trusted adapter metadata, never provider output or weight attestation.
     /// Unknown targets cannot use a nonempty resident-memory catalog.
     fn inference_target(&self, _role: &str) -> Result<Option<InferenceTarget>> {
@@ -70,6 +75,9 @@ pub trait InferenceBackend: Send + Sync {
 
 pub struct LocalBackend(pub Config);
 impl InferenceBackend for LocalBackend {
+    fn input_token_admission(&self) -> Option<crate::token_admission::Settings> {
+        self.0.input_token_admission
+    }
     fn inference_target(&self, role: &str) -> Result<Option<InferenceTarget>> {
         configured_target(&self.0, Some(role))
     }
@@ -79,7 +87,46 @@ impl InferenceBackend for LocalBackend {
         prompt: &'a str,
         max_tokens: usize,
     ) -> Pin<Box<dyn Future<Output = Result<Generation>> + Send + 'a>> {
-        Box::pin(generate_report(&self.0, role, prompt, max_tokens))
+        Box::pin(async move {
+            if self.0.input_token_admission.is_some() {
+                bail!("Token-admitted inference requires an explicit task identity")
+            }
+            generate_report(&self.0, role, prompt, max_tokens).await
+        })
+    }
+    fn generate_for<'a>(
+        &'a self,
+        task: &'a str,
+        role: &'a str,
+        prompt: &'a str,
+        max_tokens: usize,
+    ) -> Pin<Box<dyn Future<Output = Result<Generation>> + Send + 'a>> {
+        Box::pin(async move {
+            let Some(_) = self.0.input_token_admission else {
+                return generate_report(&self.0, role, prompt, max_tokens).await;
+            };
+            crate::fabric::protocol::actor(role)?;
+            if prompt.len() > 32_000 || max_tokens == 0 || max_tokens > 16_384 {
+                bail!("Inference request exceeds limits")
+            }
+            let system = system_prompt(role)?;
+            let messages = json!([
+                {"role":"system", "content":system},
+                {"role":"user", "content":prompt}
+            ]);
+            let profile = self.0.role_profiles.get(role);
+            let model = profile
+                .map(|profile| profile.model.as_str())
+                .unwrap_or(&self.0.model);
+            let temperature = profile
+                .map(|profile| profile.temperature)
+                .unwrap_or(self.0.temperature);
+            let mut task_config = self.0.clone();
+            task_config.model = model.to_string();
+            task_config.temperature = temperature;
+            crate::token_admission::generate(&task_config, task, messages, max_tokens, temperature)
+                .await
+        })
     }
 }
 
@@ -255,6 +302,9 @@ pub async fn generate_report(
     prompt: &str,
     max_tokens: usize,
 ) -> Result<Generation> {
+    if cfg.input_token_admission.is_some() {
+        bail!("Token-admitted inference requires an explicit task identity")
+    }
     let start = Instant::now();
     let system = system_prompt(role)?;
     if prompt.len() > 32_000 || max_tokens == 0 || max_tokens > 16_384 {

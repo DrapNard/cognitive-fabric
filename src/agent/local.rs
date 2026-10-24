@@ -13,12 +13,51 @@ impl ChatBackend for LocalChat {
         }
         crate::backend::configured_target(&self.0, None)
     }
+    fn input_token_admission(&self) -> Option<crate::token_admission::Settings> {
+        self.0.input_token_admission
+    }
+    fn complete_for<'a>(
+        &'a self,
+        task: &'a str,
+        request: &'a Turn,
+        tokens: usize,
+    ) -> Pin<Box<dyn Future<Output = Result<Completion>> + Send + 'a>> {
+        Box::pin(async move {
+            if self.0.input_token_admission.is_none() {
+                return self.complete(request, tokens).await;
+            }
+            if self.0.backend != "openai-local" {
+                bail!("Token-admitted agent turns require an OpenAI-compatible local backend")
+            }
+            validate_token_request(&self.0, request)?;
+            let temperature = request.temperature.unwrap_or(self.0.temperature);
+            let (generation, finish_reason) = crate::token_admission::generate_with_finish(
+                &self.0,
+                task,
+                serde_json::to_value(&request.messages)?,
+                tokens,
+                temperature,
+            )
+            .await?;
+            Ok(Completion {
+                content: Some(generation.text),
+                tool_calls: Vec::new(),
+                model: generation.model,
+                finish_reason: finish_reason.into(),
+                input_tokens: generation.input_tokens,
+                output_tokens: generation.output_tokens,
+            })
+        })
+    }
     fn complete<'a>(
         &'a self,
         request: &'a Turn,
         tokens: usize,
     ) -> Pin<Box<dyn Future<Output = Result<Completion>> + Send + 'a>> {
         Box::pin(async move {
+            if self.0.input_token_admission.is_some() {
+                bail!("Token-admitted chat requires an explicit task identity")
+            }
             if self.0.backend != "openai-local" {
                 bail!("Native agent turns require an OpenAI-compatible local backend")
             }
@@ -97,6 +136,33 @@ impl ChatBackend for LocalChat {
             })
         })
     }
+}
+
+pub(super) fn validate_token_request(cfg: &Config, request: &Turn) -> Result<()> {
+    if cfg.input_token_admission.is_none() {
+        return Ok(());
+    }
+    if !request.tools.is_empty()
+        || request
+            .tool_choice
+            .as_ref()
+            .is_some_and(|choice| choice != "none")
+        || request
+            .messages
+            .iter()
+            .any(|message| !message.tool_calls.is_empty() || message.tool_call_id.is_some())
+    {
+        bail!("Token-admitted chat supports tool-free conversations only")
+    }
+    if request
+        .reasoning_effort
+        .as_ref()
+        .or(cfg.reasoning_effort.as_ref())
+        .is_some_and(|effort| effort != "none")
+    {
+        bail!("Token-admitted chat supports reasoning effort none only")
+    }
+    Ok(())
 }
 
 #[cfg(test)]

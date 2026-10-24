@@ -362,6 +362,9 @@ impl Drop for DispatchGuard {
     }
 }
 impl crate::backend::InferenceBackend for ResumedBackend {
+    fn input_token_admission(&self) -> Option<crate::token_admission::Settings> {
+        crate::backend::InferenceBackend::input_token_admission(&self.bound)
+    }
     fn inference_target(&self, role: &str) -> Result<Option<crate::backend::InferenceTarget>> {
         self.bound.inference_target(role)
     }

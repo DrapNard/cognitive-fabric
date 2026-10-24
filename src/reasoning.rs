@@ -341,6 +341,14 @@ impl Session {
         recording: SettingsRecording,
     ) -> Result<Self> {
         cfg.validate()?;
+        if let Some(settings) = cfg.input_token_admission {
+            crate::token_admission::validate_config(&cfg)?;
+            if backend.input_token_admission() != Some(settings) {
+                bail!("Configured inference backend cannot enforce input-token admission")
+            }
+        } else if backend.input_token_admission().is_some() {
+            bail!("Inference backend token-admission capability differs from configuration")
+        }
         let deadline = start.deadline;
         let (calls, cycles) = match mode {
             "fast" => (1, 1),
@@ -838,6 +846,9 @@ impl Session {
             (None, Some(_)) => bail!("Unexpected inference resource pool"),
             (None, None) => backend,
         };
+        if backend.input_token_admission() != self.cfg.input_token_admission {
+            bail!("Selected inference backend cannot enforce configured input-token admission")
+        }
         let remaining = self
             .cfg
             .max_tokens

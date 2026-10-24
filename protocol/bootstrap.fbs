@@ -5,6 +5,12 @@ table RoleProfile {
   model:string (required);
   temperature:double;
 }
+table InputTokenAdmission {
+  format_version:uint = 1;
+  max_input_tokens:ulong;
+  max_context_tokens:uint;
+  authenticate:bool;
+}
 table Bootstrap {
   version:ushort = 1;
   task_id:string (required);
@@ -22,6 +28,7 @@ table Bootstrap {
   inference_auth_scope:string;
   reasoning_effort:string;
   max_tool_calls:uint = 4;
+  input_token_admission:InputTokenAdmission;
 }
 root_type Bootstrap;
 file_identifier "COGB";

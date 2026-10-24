@@ -289,11 +289,12 @@ impl ProcessTask {
         let socket_metadata = std::fs::symlink_metadata(&socket)?;
         guard.socket = Some((socket_metadata.dev(), socket_metadata.ino()));
         std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o600))?;
-        let credential = if self.cfg.backend == "openai-local" {
-            crate::credentials::resolve(&self.cfg)?
-        } else {
-            None
-        };
+        let credential =
+            if self.cfg.input_token_admission.is_none() && self.cfg.backend == "openai-local" {
+                crate::credentials::resolve(&self.cfg)?
+            } else {
+                None
+            };
         let mut command = tokio::process::Command::new(managed_executable()?);
         command
             .arg("--home")
@@ -308,7 +309,9 @@ impl ProcessTask {
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .kill_on_drop(true);
-        if let Some(credential) = credential {
+        if self.cfg.input_token_admission.is_some() {
+            crate::token_admission::forward_credentials(&self.cfg, &mut command)?;
+        } else if let Some(credential) = credential {
             credential.forward(&mut command);
         }
         let mut pending = self.spawn_owned(&mut command, guard, lease).await?;
@@ -353,6 +356,10 @@ impl ProcessTask {
     }
 }
 impl InferenceBackend for ProcessTask {
+    fn input_token_admission(&self) -> Option<crate::token_admission::Settings> {
+        self.cfg.input_token_admission
+    }
+
     fn inference_target(&self, role: &str) -> Result<Option<crate::backend::InferenceTarget>> {
         crate::backend::configured_target(&self.cfg, Some(role))
     }

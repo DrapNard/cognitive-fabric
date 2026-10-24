@@ -145,6 +145,9 @@ struct BoundBackend {
     receipts: std::collections::BTreeMap<String, managed::Receipt>,
 }
 impl crate::backend::InferenceBackend for BoundBackend {
+    fn input_token_admission(&self) -> Option<crate::token_admission::Settings> {
+        crate::backend::InferenceBackend::input_token_admission(self.inner.as_ref())
+    }
     fn has_uncertain_dispatch(&self) -> bool {
         self.inner.has_uncertain_dispatch()
     }
@@ -521,6 +524,9 @@ async fn run_internal(
         bail!("Managed task execution requires explicit operator approval")
     }
     cfg.validate()?;
+    if cfg.input_token_admission.is_some() {
+        bail!("Native model lifecycle does not support llama.cpp token-admission routing")
+    }
     setup_checkpoint(deadline, &cancel_rx).await?;
     let has_gpu_choice = request
         .models

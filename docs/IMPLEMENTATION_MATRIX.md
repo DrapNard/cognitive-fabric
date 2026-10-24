@@ -1,5 +1,26 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+
+## Exact wire-input token admission — 2026-10-24
+
+**Implemented for the optional llama.cpp native adapter; general provider support
+remains Partial.** `src/token_admission.rs` renders complete text history, counts
+and submits identical token IDs, and durably charges a cumulative task allowance
+before generation. Context admission includes the reserved output. Concurrent
+reservations, malformed ledger history and audit failures fail closed; failures
+never refund input. `Config.input_token_admission`, the human-only CLI setting,
+typed bootstrap v3, backend capability gates and managed credential forwarding
+preserve the limits across supported dispatch paths. Default behavior is unchanged.
+
+Five loopback/managed-worker integration tests pass. They cover exact IDs, context
+refusal, provider failure without refund, concurrent admission, audit-write failure,
+chat history, early unsupported requests and dedicated credential separation.
+See [input token admission](INPUT_TOKEN_ADMISSION.md) for commands and restrictions.
+Tools, role profiles, non-none provider effort and native LM Studio lifecycle are
+unsupported in this mode. Real llama.cpp inference, physical GPU/energy enforcement
+and reasoning quality remain unverified. No reflection campaign was run.
+
+
 ## Kernel bounds for managed workers — 2026-10-24
 
 **Implemented; focused resource-boundary verification passed.** Architecture
@@ -2620,7 +2641,7 @@ remains a pre-release. `QUALITY_REVIEW.md` preserves verification history.
 | 8 A/B | RAG evolution | Partial | `src/evolution.rs`, `src/evaluation.rs`: content-addressed quarantine, hashes/provenance/deduplication/quotas, isolated held-out retrieval, bounded cumulative approved-version regression gates and immutable accepted suites, atomic paired review records, transactional human promotion/rollback; integrity, regression, concurrency and rollback tests | Stronger poisoning/security evaluation, automatic source discovery and cleaning; dataset independence remains operator-attested |
 | 8 C | Offline neural adaptation | Experimental | `training/train_lora.py`, inactive artifact registration; neural evaluation/promotion denied | Base-model provenance and independent neural evaluation manifests, actual training and externally isolated pipeline; no hot-swap claim |
 | 8 D, 14 | Novel neural reconstruction | Not implemented | Research only; no trained Jev networks or superiority claims | Separate research and independent evaluations, beyond proven v1.0 infrastructure |
-| 9 | Resource enforcement | Partial | `src/config.rs`, `src/reasoning.rs`, `src/resource_scheduler/`: mode ceilings, calls/cycles/outputs/prompt bytes/tools/time, shared queues, resident-aware declared working profiles, cancellation/quarantine and validated parallel resource restoration; negative/pressure/recovery tests; optional provider usage and inference duration | Exact input-token preflight, model-load cost and retry metrics, process-isolated inference/GPU memory and optional energy telemetry |
+| 9 | Resource enforcement | Partial | `src/config.rs`, `src/reasoning.rs`, `src/resource_scheduler/`: mode ceilings, calls/cycles/outputs/prompt bytes/tools/time, shared queues, resident-aware declared working profiles, cancellation/quarantine and validated parallel resource restoration; negative/pressure/recovery tests; optional provider usage and inference duration | General-provider exact input-token preflight (opt-in llama.cpp supported), model-load cost and retry metrics, process-isolated inference/GPU memory and optional energy telemetry |
 | 10, 11 | Security kernel | Partial | `src/security.rs`: immutable task/actor scope intersected with global policy, per-dispatch audits, deny-default capabilities, bounded no-follow reads; replay/actor/promotion denials and artifact tampering tests | General executable attestation and isolation before untrusted experts; signatures/attestations and neural behavioral evaluator absent |
 | 13 | Reproducible evaluation | Partial | `src/evaluation.rs`, `src/benchmarking.rs`, `src/corpus.rs`: expected exact-match benchmarks, six isolated same-model ablation profiles plus optional larger baseline, per-arm resources, reviewed dataset hashes, bounded read-only corpus snapshots and durable run cancellation; profile/isolation/deadline tests | Independent review of the provisional 100-case corpus, unseen technical tasks, robustness/security studies and measured live-model comparisons |
 | 12, 14 | CLI/service | Partial | `src/main.rs`: initialization/configuration, ask, service controls, task-specific socket progress/cancellation, skill lifecycle, ingestion/search, task traces, candidates/rollback, benchmark, self-test; real socket fixtures | Generative switching and ownership-aware residency scheduling |

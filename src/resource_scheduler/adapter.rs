@@ -12,6 +12,9 @@ pub(super) struct ScheduledBackend {
     pub use_working_profiles: bool,
 }
 impl InferenceBackend for ScheduledBackend {
+    fn input_token_admission(&self) -> Option<crate::token_admission::Settings> {
+        self.backend.input_token_admission()
+    }
     fn inference_target(&self, role: &str) -> Result<Option<crate::backend::InferenceTarget>> {
         self.backend.inference_target(role)
     }

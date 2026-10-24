@@ -84,6 +84,9 @@ impl NativeBackend {
         authenticate: bool,
     ) -> Result<Self> {
         config.validate()?;
+        if config.input_token_admission.is_some() {
+            bail!("Input-token admission is unsupported by the native LM Studio adapter")
+        }
         if targets.len() != crate::fabric::protocol::ROLES.len() {
             bail!("Native adapter requires one target for every supported role")
         }

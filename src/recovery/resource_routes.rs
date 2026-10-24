@@ -343,7 +343,9 @@ pub(crate) fn restrict_backend(
     routes: Option<BTreeMap<String, InferenceTarget>>,
 ) -> Result<Arc<dyn InferenceBackend>> {
     match routes {
-        Some(routes) if routes.is_empty() => Ok(Arc::new(EmptyRouteBackend)),
+        Some(routes) if routes.is_empty() => Ok(Arc::new(EmptyRouteBackend {
+            input_token_admission: backend.input_token_admission(),
+        })),
         Some(routes) => crate::fabric::restrict_inference_roles(backend, routes),
         None => Ok(backend),
     }
@@ -352,9 +354,16 @@ pub(crate) fn restrict_backend(
 /// A checkpoint whose original selection contained no eligible inference role
 /// must not regain routes from the current registry during continuation.
 /// Attempts fail locally and never reach the reconstructed provider backend.
-struct EmptyRouteBackend;
+struct EmptyRouteBackend {
+    // Preserve the original adapter's immutable admission setting while still
+    // denying every route. This metadata cannot create a dispatch capability.
+    input_token_admission: Option<crate::token_admission::Settings>,
+}
 
 impl InferenceBackend for EmptyRouteBackend {
+    fn input_token_admission(&self) -> Option<crate::token_admission::Settings> {
+        self.input_token_admission
+    }
     fn inference_target(&self, _role: &str) -> Result<Option<InferenceTarget>> {
         Ok(None)
     }
@@ -368,7 +377,9 @@ impl InferenceBackend for EmptyRouteBackend {
     }
 
     fn pin(&self) -> Result<Option<Arc<dyn InferenceBackend>>> {
-        Ok(Some(Arc::new(Self)))
+        Ok(Some(Arc::new(Self {
+            input_token_admission: self.input_token_admission,
+        })))
     }
 
     fn generate<'a>(

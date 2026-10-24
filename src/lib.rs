@@ -41,6 +41,7 @@ pub mod store;
 pub mod strict_json;
 mod structured;
 pub mod telemetry;
+pub mod token_admission;
 pub mod verification;
 pub use verification::{
     VerificationClaim, VerificationFuture, VerificationRequest, VerifierDescriptor,

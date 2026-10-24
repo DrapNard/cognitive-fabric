@@ -54,3 +54,9 @@ loading, reasoning quality, adapter switching or a secure training pipeline.
 `configure-worker-limits --address-space-bytes BYTES --cpu-seconds SECONDS` saves
 optional Linux per-process bounds; `--clear` removes them. These do not limit the
 separate model server or GPU. See [scope, recovery and validation](WORKER_LIMITS.md).
+
+## Optional exact token admission
+
+See [input-token admission](INPUT_TOKEN_ADMISSION.md) for the human-only
+`configure-input-tokens` setting, native llama.cpp requirements, dedicated
+credential and unsupported tool/effort combinations. It defaults to disabled.

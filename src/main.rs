@@ -444,6 +444,18 @@ enum Command {
         enabled: bool,
     },
     /// Set Linux kernel limits for managed worker processes, not external model servers.
+    /// Enable exact wire-token admission through the native llama.cpp API.
+    ConfigureInputTokens {
+        #[arg(long, conflicts_with_all = ["max_input_tokens", "max_context_tokens", "authenticate"])]
+        disable: bool,
+        #[arg(long, required_unless_present = "disable")]
+        max_input_tokens: Option<u64>,
+        #[arg(long, required_unless_present = "disable")]
+        max_context_tokens: Option<u32>,
+        /// Use the separately scoped COGFABRIC_LLAMA_API_KEY for native endpoints.
+        #[arg(long)]
+        authenticate: bool,
+    },
     ConfigureWorkerLimits {
         #[arg(long, conflicts_with_all = ["address_space_bytes", "cpu_seconds"])]
         clear: bool,
@@ -1262,6 +1274,32 @@ async fn run_cli() -> Result<()> {
             cli.json,
         );
     }
+    if let Command::ConfigureInputTokens {
+        disable,
+        max_input_tokens,
+        max_context_tokens,
+        authenticate,
+    } = &cli.command
+    {
+        security::authorize("human-cli", "inference.tokens.configure")?;
+        let mut changed = cfg.clone();
+        changed.input_token_admission = if *disable {
+            None
+        } else {
+            Some(cogfabric::token_admission::Settings {
+                format_version: 1,
+                max_input_tokens: max_input_tokens.context("Missing task input-token ceiling")?,
+                max_context_tokens: max_context_tokens
+                    .context("Missing per-call context ceiling")?,
+                authenticate: *authenticate,
+            })
+        };
+        changed.save()?;
+        return output(
+            json!({"input_token_admission":changed.input_token_admission,"native_llamacpp_endpoints":true,"running_services_require_restart":true,"weights_attested":false}),
+            cli.json,
+        );
+    }
     if let Command::ConfigureResources {
         configuration,
         disable,
@@ -1648,6 +1686,9 @@ async fn run_cli() -> Result<()> {
             json!({"home":cfg.home,"backend":cfg.backend,"model":cfg.model,"inference_process":cfg.inference_process,
             "resource_admission":cfg.resource_admission,
             "skills":store.skills()?.len(),"candidates":store.candidates()?.len()})
+        }
+        Command::ConfigureInputTokens { .. } => {
+            bail!("Token admission configuration must run before runtime initialization")
         }
         Command::ConfigureResources { .. } => {
             bail!("Resource configuration must run before initialization")

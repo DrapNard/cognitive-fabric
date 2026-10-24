@@ -1,5 +1,26 @@
 # Current Rust implementation
 
+
+## Exact wire-input token admission — 2026-10-24
+
+**Implemented for the optional llama.cpp native adapter; general provider support
+remains Partial.** `src/token_admission.rs` renders complete text history, counts
+and submits identical token IDs, and durably charges a cumulative task allowance
+before generation. Context admission includes the reserved output. Concurrent
+reservations, malformed ledger history and audit failures fail closed; failures
+never refund input. `Config.input_token_admission`, the human-only CLI setting,
+typed bootstrap v3, backend capability gates and managed credential forwarding
+preserve the limits across supported dispatch paths. Default behavior is unchanged.
+
+Five loopback/managed-worker integration tests pass. They cover exact IDs, context
+refusal, provider failure without refund, concurrent admission, audit-write failure,
+chat history, early unsupported requests and dedicated credential separation.
+See [input token admission](INPUT_TOKEN_ADMISSION.md) for commands and restrictions.
+Tools, role profiles, non-none provider effort and native LM Studio lifecycle are
+unsupported in this mode. Real llama.cpp inference, physical GPU/energy enforcement
+and reasoning quality remain unverified. No reflection campaign was run.
+
+
 ## Kernel bounds for managed workers — 2026-10-24
 
 **Implemented; focused resource-boundary verification passed.** Architecture

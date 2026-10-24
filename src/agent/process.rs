@@ -128,7 +128,7 @@ impl ProcessTask {
             .as_secs()
             .saturating_add(1)
             .clamp(1, 300);
-        let credential = if cfg.backend == "openai-local" {
+        let credential = if cfg.input_token_admission.is_none() && cfg.backend == "openai-local" {
             crate::credentials::resolve(&cfg)?
         } else {
             None
@@ -147,7 +147,9 @@ impl ProcessTask {
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .kill_on_drop(true);
-        if let Some(credential) = credential {
+        if cfg.input_token_admission.is_some() {
+            crate::token_admission::forward_credentials(&cfg, &mut command)?;
+        } else if let Some(credential) = credential {
             credential.forward(&mut command);
         }
         let process_limits = self.cfg.worker_process_limits;
@@ -260,6 +262,10 @@ impl Drop for ProcessTask {
     }
 }
 impl ChatBackend for ProcessTask {
+    fn input_token_admission(&self) -> Option<crate::token_admission::Settings> {
+        self.cfg.input_token_admission
+    }
+
     fn pin(self: Arc<Self>) -> Result<Option<Arc<dyn ChatBackend>>> {
         Ok(Some(self))
     }

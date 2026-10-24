@@ -1285,3 +1285,15 @@ Database descriptors cannot install callbacks. Retained runtime identity is loca
 provenance, not binary attestation. Arbitrary callback reconstruction across process
 restarts, uncertain-call replay and native lifecycle-owner restoration remain
 unsupported; approval cannot convert unknown effects into success.
+
+## Exact input-token reservations
+
+Optional llama.cpp preparation uses the same validated loopback host with redirects
+and proxies disabled. Native routes receive only the separately authorized dedicated
+credential. Bounded complete-history rendering/tokenization precedes an immediate
+SQLite transaction; required count/hash audit commit precedes generation. Unknown
+outcomes retain charges. Corruption and concurrent exhaustion cannot grant a refund
+or dispatch. Capability gates reject unsupported adapters and requests. Logical
+wire-token limits do not prove tokenizer correctness, provider termination, immutable
+weights or physical GPU isolation. Same-owner database edits are outside audit
+integrity guarantees. See [input-token admission](INPUT_TOKEN_ADMISSION.md).

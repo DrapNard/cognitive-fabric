@@ -27,6 +27,8 @@ pub struct Config {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub worker_process_limits: Option<crate::process_limits::Limits>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_token_admission: Option<crate::token_admission::Settings>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub resource_admission: Option<crate::resource_scheduler::Configuration>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub subtask_scheduling: Option<crate::scheduling::Policy>,
@@ -71,6 +73,7 @@ impl Default for Config {
             arithmetic_process: false,
             sql_process: false,
             worker_process_limits: None,
+            input_token_admission: None,
             resource_admission: None,
             subtask_scheduling: None,
             subtask_parallelism: None,
@@ -140,6 +143,9 @@ impl Config {
     }
 
     pub fn validate(&self) -> Result<()> {
+        if self.input_token_admission.is_some() {
+            crate::token_admission::validate_config(self)?;
+        }
         if let Some(limits) = self.worker_process_limits {
             limits.validate()?;
         }

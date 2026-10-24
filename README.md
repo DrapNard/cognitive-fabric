@@ -141,3 +141,6 @@ Verifier-R supports [finite-domain constraint assignments](docs/VERIFICATION.md#
 through explicit `csp:` objectives, alongside sorting, ordering and path checks.
 
 Native lifecycle policy and uncertainty handling: [operator guide](docs/NATIVE_LIFECYCLE.md).
+
+Optional [exact input-token admission](docs/INPUT_TOKEN_ADMISSION.md) supports
+llama.cpp native text inference with persistent per-task input allowances.

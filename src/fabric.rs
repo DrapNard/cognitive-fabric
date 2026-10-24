@@ -979,6 +979,9 @@ pub(crate) fn restrict_inference_roles(
 }
 
 impl InferenceBackend for RestrictedRoutes {
+    fn input_token_admission(&self) -> Option<crate::token_admission::Settings> {
+        self.backend.input_token_admission()
+    }
     fn inference_target(&self, role: &str) -> Result<Option<crate::backend::InferenceTarget>> {
         Ok(self.routes.get(role).cloned())
     }
@@ -1043,6 +1046,18 @@ impl InferenceBackend for RestrictedRoutes {
 }
 
 impl InferenceBackend for Broker {
+    fn input_token_admission(&self) -> Option<crate::token_admission::Settings> {
+        let registry = self.registry.read().ok()?;
+        let mut settings = registry
+            .active
+            .values()
+            .map(|module| module.backend.input_token_admission());
+        let first = settings.next()?;
+        settings
+            .all(|setting| setting == first)
+            .then_some(first)
+            .flatten()
+    }
     fn inference_target(&self, role: &str) -> Result<Option<crate::backend::InferenceTarget>> {
         self.snapshot()?.inference_target(role)
     }
@@ -1054,9 +1069,11 @@ impl InferenceBackend for Broker {
         max_tokens: usize,
     ) -> Pin<Box<dyn Future<Output = Result<Generation>> + Send + 'a>> {
         Box::pin(async move {
-            self.snapshot()?
-                .generate_for(task, role, prompt, max_tokens)
-                .await
+            let snapshot = self.snapshot()?;
+            if snapshot.input_token_admission() != self.input_token_admission() {
+                bail!("Inference route token-admission capability changed before dispatch")
+            }
+            snapshot.generate_for(task, role, prompt, max_tokens).await
         })
     }
     fn modules(&self) -> Result<Vec<ModuleDescriptor>> {
@@ -1071,10 +1088,35 @@ impl InferenceBackend for Broker {
         prompt: &'a str,
         max_tokens: usize,
     ) -> Pin<Box<dyn Future<Output = Result<Generation>> + Send + 'a>> {
-        Box::pin(async move { self.snapshot()?.generate(role, prompt, max_tokens).await })
+        Box::pin(async move {
+            let snapshot = self.snapshot()?;
+            if snapshot.input_token_admission() != self.input_token_admission() {
+                bail!("Inference route token-admission capability changed before dispatch")
+            }
+            snapshot.generate(role, prompt, max_tokens).await
+        })
     }
 }
 impl InferenceBackend for Pinned {
+    fn input_token_admission(&self) -> Option<crate::token_admission::Settings> {
+        let settings = if let Some(backends) = &self.route_backends {
+            backends
+                .values()
+                .map(|backend| backend.input_token_admission())
+                .collect::<Vec<_>>()
+        } else {
+            self.routes
+                .values()
+                .map(|module| module.backend.input_token_admission())
+                .collect::<Vec<_>>()
+        };
+        let first = *settings.first()?;
+        settings
+            .iter()
+            .all(|setting| *setting == first)
+            .then_some(first)
+            .flatten()
+    }
     fn inference_target(&self, role: &str) -> Result<Option<crate::backend::InferenceTarget>> {
         if let Some(targets) = &self.resource_targets {
             return Ok(targets.get(role).cloned());
@@ -1116,6 +1158,14 @@ impl InferenceBackend for Pinned {
                 .routes
                 .get(role)
                 .context("No registered module for inference role")?;
+            let selected_backend = self
+                .route_backends
+                .as_ref()
+                .and_then(|backends| backends.get(role))
+                .unwrap_or(&module.backend);
+            if selected_backend.input_token_admission() != self.input_token_admission() {
+                bail!("Pinned inference route token-admission capability changed before dispatch")
+            }
             if *module.shutdown.borrow() {
                 bail!("Module broker shut down")
             }

@@ -92,8 +92,21 @@ impl Bootstrap {
                 },
             ));
         }
+        let input_token_admission = self.config.input_token_admission.as_ref().map(|settings| {
+            fb::InputTokenAdmission::create(
+                &mut builder,
+                &fb::InputTokenAdmissionArgs {
+                    format_version: settings.format_version,
+                    max_input_tokens: settings.max_input_tokens,
+                    max_context_tokens: settings.max_context_tokens,
+                    authenticate: settings.authenticate,
+                },
+            )
+        });
         let args = fb::BootstrapArgs {
-            version: if self.config.reasoning_effort.is_some() {
+            version: if self.config.input_token_admission.is_some() {
+                3
+            } else if self.config.reasoning_effort.is_some() {
                 2
             } else {
                 1
@@ -121,6 +134,7 @@ impl Bootstrap {
                 .reasoning_effort
                 .as_ref()
                 .map(|value| builder.create_string(value)),
+            input_token_admission,
         };
         let root = fb::Bootstrap::create(&mut builder, &args);
         builder.finish(root, Some("COGB"));
@@ -137,8 +151,20 @@ impl Bootstrap {
             bail!("Invalid worker bootstrap frame")
         }
         let packet = flatbuffers::root::<fb::Bootstrap>(bytes)?;
-        if !matches!(packet.version(), 1 | 2)
-            || (packet.version() == 2) != packet.reasoning_effort().is_some()
+        let input_token_admission =
+            packet
+                .input_token_admission()
+                .map(|settings| crate::token_admission::Settings {
+                    format_version: settings.format_version(),
+                    max_input_tokens: settings.max_input_tokens(),
+                    max_context_tokens: settings.max_context_tokens(),
+                    authenticate: settings.authenticate(),
+                });
+        if !matches!(packet.version(), 1..=3)
+            || (packet.version() == 1 && packet.reasoning_effort().is_some())
+            || (packet.version() == 2 && packet.reasoning_effort().is_none())
+            || (packet.version() < 3 && input_token_admission.is_some())
+            || (packet.version() == 3 && input_token_admission.is_none())
             || packet
                 .reasoning_effort()
                 .is_some_and(|value| value.len() > 6)
@@ -166,6 +192,7 @@ impl Bootstrap {
             max_wall_seconds: packet.max_wall_seconds(),
             inference_auth_scope: packet.inference_auth_scope().map(str::to_string),
             reasoning_effort: packet.reasoning_effort().map(str::to_string),
+            input_token_admission,
             interpret_goals: false,
             synthesize_results: false,
             max_tool_calls: packet.max_tool_calls(),
@@ -262,6 +289,7 @@ mod tests {
                 max_database_bytes: 256_000_000,
                 max_wall_seconds: if invalid == 3 { 3601 } else { 300 },
                 inference_auth_scope: None,
+                input_token_admission: None,
                 reasoning_effort: match invalid {
                     4 => Some(builder.create_string("none")),
                     5 => Some(builder.create_string("bogus")),
@@ -359,6 +387,99 @@ mod tests {
             300
         );
         assert!(!bytes.windows(18).any(|w| w == b"/private/workspace"));
+    }
+    #[test]
+    fn input_token_admission_roundtrips_only_in_v3_and_rejects_version_mismatches() {
+        let setup = Bootstrap {
+            task: uuid::Uuid::new_v4().to_string(),
+            config: Config {
+                backend: "openai-local".into(),
+                reasoning_effort: Some("none".into()),
+                input_token_admission: Some(crate::token_admission::Settings {
+                    format_version: 1,
+                    max_input_tokens: 32_768,
+                    max_context_tokens: 65_536,
+                    authenticate: true,
+                }),
+                ..Config::default()
+            },
+        };
+        let bytes = setup.encode().unwrap();
+        let decoded = Bootstrap::decode(&bytes).unwrap();
+        assert_eq!(decoded.config.reasoning_effort.as_deref(), Some("none"));
+        assert_eq!(
+            decoded
+                .config
+                .input_token_admission
+                .as_ref()
+                .unwrap()
+                .max_input_tokens,
+            32_768
+        );
+        assert_eq!(
+            decoded
+                .config
+                .input_token_admission
+                .as_ref()
+                .unwrap()
+                .max_context_tokens,
+            65_536
+        );
+        assert!(
+            decoded
+                .config
+                .input_token_admission
+                .as_ref()
+                .unwrap()
+                .authenticate
+        );
+        assert_eq!(
+            flatbuffers::root::<fb::Bootstrap>(&bytes)
+                .unwrap()
+                .version(),
+            3
+        );
+
+        for (version, include_settings) in [(1, true), (2, true), (3, false)] {
+            let mut builder = flatbuffers::FlatBufferBuilder::new();
+            let admission = include_settings.then(|| {
+                fb::InputTokenAdmission::create(
+                    &mut builder,
+                    &fb::InputTokenAdmissionArgs {
+                        format_version: 1,
+                        max_input_tokens: 32_768,
+                        max_context_tokens: 65_536,
+                        authenticate: true,
+                    },
+                )
+            });
+            let args = fb::BootstrapArgs {
+                version,
+                task_id: Some(builder.create_string(&uuid::Uuid::new_v4().to_string())),
+                backend: Some(builder.create_string("openai-local")),
+                model: Some(builder.create_string("fixture")),
+                api_base: Some(builder.create_string("http://127.0.0.1:1234/v1")),
+                temperature: 0.2,
+                timeout_seconds: 10,
+                max_calls: 4,
+                max_tool_calls: 4,
+                max_tokens: 512,
+                max_input_bytes: 4096,
+                role_profiles: None,
+                max_database_bytes: 256_000_000,
+                max_wall_seconds: 300,
+                inference_auth_scope: None,
+                reasoning_effort: if version == 2 {
+                    Some(builder.create_string("high"))
+                } else {
+                    None
+                },
+                input_token_admission: admission,
+            };
+            let root = fb::Bootstrap::create(&mut builder, &args);
+            builder.finish(root, Some("COGB"));
+            assert!(Bootstrap::decode(builder.finished_data()).is_err());
+        }
     }
     #[test]
     fn malformed_bootstrap_and_invalid_settings_are_rejected() {

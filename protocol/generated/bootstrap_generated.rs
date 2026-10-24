@@ -192,6 +192,200 @@ impl RoleProfileT {
     })
   }
 }
+pub enum InputTokenAdmissionOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct InputTokenAdmission<'a> {
+  pub _tab: ::flatbuffers::Table<'a>,
+}
+
+impl<'a> ::flatbuffers::Follow<'a> for InputTokenAdmission<'a> {
+  type Inner = InputTokenAdmission<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: unsafe { ::flatbuffers::Table::new(buf, loc) } }
+  }
+}
+
+impl<'a> InputTokenAdmission<'a> {
+  pub const VT_FORMAT_VERSION: ::flatbuffers::VOffsetT = 4;
+  pub const VT_MAX_INPUT_TOKENS: ::flatbuffers::VOffsetT = 6;
+  pub const VT_MAX_CONTEXT_TOKENS: ::flatbuffers::VOffsetT = 8;
+  pub const VT_AUTHENTICATE: ::flatbuffers::VOffsetT = 10;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
+    InputTokenAdmission { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: ::flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut ::flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args InputTokenAdmissionArgs
+  ) -> ::flatbuffers::WIPOffset<InputTokenAdmission<'bldr>> {
+    let mut builder = InputTokenAdmissionBuilder::new(_fbb);
+    builder.add_max_input_tokens(args.max_input_tokens);
+    builder.add_max_context_tokens(args.max_context_tokens);
+    builder.add_format_version(args.format_version);
+    builder.add_authenticate(args.authenticate);
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> InputTokenAdmissionT {
+    let format_version = self.format_version();
+    let max_input_tokens = self.max_input_tokens();
+    let max_context_tokens = self.max_context_tokens();
+    let authenticate = self.authenticate();
+    InputTokenAdmissionT {
+      format_version,
+      max_input_tokens,
+      max_context_tokens,
+      authenticate,
+    }
+  }
+
+  #[inline]
+  pub fn format_version(&self) -> u32 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u32>(InputTokenAdmission::VT_FORMAT_VERSION, Some(1)).unwrap()}
+  }
+  #[inline]
+  pub fn max_input_tokens(&self) -> u64 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u64>(InputTokenAdmission::VT_MAX_INPUT_TOKENS, Some(0)).unwrap()}
+  }
+  #[inline]
+  pub fn max_context_tokens(&self) -> u32 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u32>(InputTokenAdmission::VT_MAX_CONTEXT_TOKENS, Some(0)).unwrap()}
+  }
+  #[inline]
+  pub fn authenticate(&self) -> bool {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<bool>(InputTokenAdmission::VT_AUTHENTICATE, Some(false)).unwrap()}
+  }
+}
+
+impl ::flatbuffers::Verifiable for InputTokenAdmission<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut ::flatbuffers::Verifier, pos: usize
+  ) -> Result<(), ::flatbuffers::InvalidFlatbuffer> {
+    v.visit_table(pos)?
+     .visit_field::<u32>("format_version", Self::VT_FORMAT_VERSION, false)?
+     .visit_field::<u64>("max_input_tokens", Self::VT_MAX_INPUT_TOKENS, false)?
+     .visit_field::<u32>("max_context_tokens", Self::VT_MAX_CONTEXT_TOKENS, false)?
+     .visit_field::<bool>("authenticate", Self::VT_AUTHENTICATE, false)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct InputTokenAdmissionArgs {
+    pub format_version: u32,
+    pub max_input_tokens: u64,
+    pub max_context_tokens: u32,
+    pub authenticate: bool,
+}
+impl<'a> Default for InputTokenAdmissionArgs {
+  #[inline]
+  fn default() -> Self {
+    InputTokenAdmissionArgs {
+      format_version: 1,
+      max_input_tokens: 0,
+      max_context_tokens: 0,
+      authenticate: false,
+    }
+  }
+}
+
+pub struct InputTokenAdmissionBuilder<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: ::flatbuffers::WIPOffset<::flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> InputTokenAdmissionBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_format_version(&mut self, format_version: u32) {
+    self.fbb_.push_slot::<u32>(InputTokenAdmission::VT_FORMAT_VERSION, format_version, 1);
+  }
+  #[inline]
+  pub fn add_max_input_tokens(&mut self, max_input_tokens: u64) {
+    self.fbb_.push_slot::<u64>(InputTokenAdmission::VT_MAX_INPUT_TOKENS, max_input_tokens, 0);
+  }
+  #[inline]
+  pub fn add_max_context_tokens(&mut self, max_context_tokens: u32) {
+    self.fbb_.push_slot::<u32>(InputTokenAdmission::VT_MAX_CONTEXT_TOKENS, max_context_tokens, 0);
+  }
+  #[inline]
+  pub fn add_authenticate(&mut self, authenticate: bool) {
+    self.fbb_.push_slot::<bool>(InputTokenAdmission::VT_AUTHENTICATE, authenticate, false);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>) -> InputTokenAdmissionBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    InputTokenAdmissionBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> ::flatbuffers::WIPOffset<InputTokenAdmission<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    ::flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl ::core::fmt::Debug for InputTokenAdmission<'_> {
+  fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+    let mut ds = f.debug_struct("InputTokenAdmission");
+      ds.field("format_version", &self.format_version());
+      ds.field("max_input_tokens", &self.max_input_tokens());
+      ds.field("max_context_tokens", &self.max_context_tokens());
+      ds.field("authenticate", &self.authenticate());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct InputTokenAdmissionT {
+  pub format_version: u32,
+  pub max_input_tokens: u64,
+  pub max_context_tokens: u32,
+  pub authenticate: bool,
+}
+impl Default for InputTokenAdmissionT {
+  fn default() -> Self {
+    Self {
+      format_version: 1,
+      max_input_tokens: 0,
+      max_context_tokens: 0,
+      authenticate: false,
+    }
+  }
+}
+impl InputTokenAdmissionT {
+  pub fn pack<'b, A: ::flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut ::flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> ::flatbuffers::WIPOffset<InputTokenAdmission<'b>> {
+    let format_version = self.format_version;
+    let max_input_tokens = self.max_input_tokens;
+    let max_context_tokens = self.max_context_tokens;
+    let authenticate = self.authenticate;
+    InputTokenAdmission::create(_fbb, &InputTokenAdmissionArgs{
+      format_version,
+      max_input_tokens,
+      max_context_tokens,
+      authenticate,
+    })
+  }
+}
 pub enum BootstrapOffset {}
 #[derive(Copy, Clone, PartialEq)]
 
@@ -224,6 +418,7 @@ impl<'a> Bootstrap<'a> {
   pub const VT_INFERENCE_AUTH_SCOPE: ::flatbuffers::VOffsetT = 30;
   pub const VT_REASONING_EFFORT: ::flatbuffers::VOffsetT = 32;
   pub const VT_MAX_TOOL_CALLS: ::flatbuffers::VOffsetT = 34;
+  pub const VT_INPUT_TOKEN_ADMISSION: ::flatbuffers::VOffsetT = 36;
 
   #[inline]
   pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
@@ -240,6 +435,7 @@ impl<'a> Bootstrap<'a> {
     builder.add_max_input_bytes(args.max_input_bytes);
     builder.add_timeout_seconds(args.timeout_seconds);
     builder.add_temperature(args.temperature);
+    if let Some(x) = args.input_token_admission { builder.add_input_token_admission(x); }
     builder.add_max_tool_calls(args.max_tool_calls);
     if let Some(x) = args.reasoning_effort { builder.add_reasoning_effort(x); }
     if let Some(x) = args.inference_auth_scope { builder.add_inference_auth_scope(x); }
@@ -289,6 +485,9 @@ impl<'a> Bootstrap<'a> {
       alloc::string::ToString::to_string(x)
     });
     let max_tool_calls = self.max_tool_calls();
+    let input_token_admission = self.input_token_admission().map(|x| {
+      alloc::boxed::Box::new(x.unpack())
+    });
     BootstrapT {
       version,
       task_id,
@@ -306,6 +505,7 @@ impl<'a> Bootstrap<'a> {
       inference_auth_scope,
       reasoning_effort,
       max_tool_calls,
+      input_token_admission,
     }
   }
 
@@ -421,6 +621,13 @@ impl<'a> Bootstrap<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<u32>(Bootstrap::VT_MAX_TOOL_CALLS, Some(4)).unwrap()}
   }
+  #[inline]
+  pub fn input_token_admission(&self) -> Option<InputTokenAdmission<'a>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<::flatbuffers::ForwardsUOffset<InputTokenAdmission>>(Bootstrap::VT_INPUT_TOKEN_ADMISSION, None)}
+  }
 }
 
 impl ::flatbuffers::Verifiable for Bootstrap<'_> {
@@ -445,6 +652,7 @@ impl ::flatbuffers::Verifiable for Bootstrap<'_> {
      .visit_field::<::flatbuffers::ForwardsUOffset<&str>>("inference_auth_scope", Self::VT_INFERENCE_AUTH_SCOPE, false)?
      .visit_field::<::flatbuffers::ForwardsUOffset<&str>>("reasoning_effort", Self::VT_REASONING_EFFORT, false)?
      .visit_field::<u32>("max_tool_calls", Self::VT_MAX_TOOL_CALLS, false)?
+     .visit_field::<::flatbuffers::ForwardsUOffset<InputTokenAdmission>>("input_token_admission", Self::VT_INPUT_TOKEN_ADMISSION, false)?
      .finish();
     Ok(())
   }
@@ -466,6 +674,7 @@ pub struct BootstrapArgs<'a> {
     pub inference_auth_scope: Option<::flatbuffers::WIPOffset<&'a str>>,
     pub reasoning_effort: Option<::flatbuffers::WIPOffset<&'a str>>,
     pub max_tool_calls: u32,
+    pub input_token_admission: Option<::flatbuffers::WIPOffset<InputTokenAdmission<'a>>>,
 }
 impl<'a> Default for BootstrapArgs<'a> {
   #[inline]
@@ -487,6 +696,7 @@ impl<'a> Default for BootstrapArgs<'a> {
       inference_auth_scope: None,
       reasoning_effort: None,
       max_tool_calls: 4,
+      input_token_admission: None,
     }
   }
 }
@@ -561,6 +771,10 @@ impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> BootstrapBuilder<'a, 'b, A> {
     self.fbb_.push_slot::<u32>(Bootstrap::VT_MAX_TOOL_CALLS, max_tool_calls, 4);
   }
   #[inline]
+  pub fn add_input_token_admission(&mut self, input_token_admission: ::flatbuffers::WIPOffset<InputTokenAdmission<'b >>) {
+    self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<InputTokenAdmission>>(Bootstrap::VT_INPUT_TOKEN_ADMISSION, input_token_admission);
+  }
+  #[inline]
   pub fn new(_fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>) -> BootstrapBuilder<'a, 'b, A> {
     let start = _fbb.start_table();
     BootstrapBuilder {
@@ -598,6 +812,7 @@ impl ::core::fmt::Debug for Bootstrap<'_> {
       ds.field("inference_auth_scope", &self.inference_auth_scope());
       ds.field("reasoning_effort", &self.reasoning_effort());
       ds.field("max_tool_calls", &self.max_tool_calls());
+      ds.field("input_token_admission", &self.input_token_admission());
       ds.finish()
   }
 }
@@ -620,6 +835,7 @@ pub struct BootstrapT {
   pub inference_auth_scope: Option<alloc::string::String>,
   pub reasoning_effort: Option<alloc::string::String>,
   pub max_tool_calls: u32,
+  pub input_token_admission: Option<alloc::boxed::Box<InputTokenAdmissionT>>,
 }
 impl Default for BootstrapT {
   fn default() -> Self {
@@ -640,6 +856,7 @@ impl Default for BootstrapT {
       inference_auth_scope: None,
       reasoning_effort: None,
       max_tool_calls: 4,
+      input_token_admission: None,
     }
   }
 }
@@ -682,6 +899,9 @@ impl BootstrapT {
       _fbb.create_string(x)
     });
     let max_tool_calls = self.max_tool_calls;
+    let input_token_admission = self.input_token_admission.as_ref().map(|x|{
+      x.pack(_fbb)
+    });
     Bootstrap::create(_fbb, &BootstrapArgs{
       version,
       task_id,
@@ -699,6 +919,7 @@ impl BootstrapT {
       inference_auth_scope,
       reasoning_effort,
       max_tool_calls,
+      input_token_admission,
     })
   }
 }

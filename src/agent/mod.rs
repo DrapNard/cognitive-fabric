@@ -23,6 +23,11 @@ use std::{
 pub use types::*;
 
 pub trait ChatBackend: Send + Sync {
+    /// Exact operator-configured input-token admission capability. Backends
+    /// return None unless every task-scoped request is subject to that policy.
+    fn input_token_admission(&self) -> Option<crate::token_admission::Settings> {
+        None
+    }
     /// Return a stable backend snapshot for profile selection and dispatch.
     /// Implementations that cannot pin their route must leave this unsupported.
     fn pin(self: Arc<Self>) -> Result<Option<Arc<dyn ChatBackend>>> {
@@ -87,6 +92,14 @@ impl AgentRuntime {
         backend: Arc<dyn ChatBackend>,
     ) -> Result<Self> {
         cfg.validate()?;
+        if let Some(settings) = cfg.input_token_admission {
+            crate::token_admission::validate_config(&cfg)?;
+            if backend.input_token_admission() != Some(settings) {
+                bail!("Configured agent backend cannot enforce input-token admission")
+            }
+        } else if backend.input_token_admission().is_some() {
+            bail!("Agent backend token-admission capability differs from configuration")
+        }
         let resource_pool = cfg
             .resource_admission
             .as_ref()
@@ -119,12 +132,16 @@ impl AgentRuntime {
         Ok(self)
     }
     pub fn validate(&self, request: &Turn) -> Result<usize> {
+        if self.backend.input_token_admission() != self.cfg.input_token_admission {
+            bail!("Configured agent backend cannot enforce input-token admission")
+        }
         match (&self.cfg.resource_admission, &self.resource_pool) {
             (None, None) => (),
             (Some(configuration), Some(pool)) if pool.matches(&self.store, configuration) => (),
             _ => bail!("Configured agent resource pool is missing or changed"),
         }
         request.validate()?;
+        local::validate_token_request(&self.cfg, request)?;
         let bytes = serde_json::to_vec(request)?.len();
         if bytes > self.cfg.max_input_bytes || self.cfg.max_calls == 0 || self.cfg.max_cycles == 0 {
             bail!("Agent turn exceeds configured input or inference admission")

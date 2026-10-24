@@ -7,6 +7,27 @@ instructions, and the request to implement all remaining Jev+/Jev-R code. It doe
 not replace the architecture. Historical entries in `IMPLEMENTATION_MATRIX.md`
 and `CURRENT_IMPLEMENTATION.md` describe earlier snapshots and can be superseded.
 
+
+## Exact wire-input token admission — 2026-10-24
+
+**Implemented for the optional llama.cpp native adapter; general provider support
+remains Partial.** `src/token_admission.rs` renders complete text history, counts
+and submits identical token IDs, and durably charges a cumulative task allowance
+before generation. Context admission includes the reserved output. Concurrent
+reservations, malformed ledger history and audit failures fail closed; failures
+never refund input. `Config.input_token_admission`, the human-only CLI setting,
+typed bootstrap v3, backend capability gates and managed credential forwarding
+preserve the limits across supported dispatch paths. Default behavior is unchanged.
+
+Five loopback/managed-worker integration tests pass. They cover exact IDs, context
+refusal, provider failure without refund, concurrent admission, audit-write failure,
+chat history, early unsupported requests and dedicated credential separation.
+See [input token admission](INPUT_TOKEN_ADMISSION.md) for commands and restrictions.
+Tools, role profiles, non-none provider effort and native LM Studio lifecycle are
+unsupported in this mode. Real llama.cpp inference, physical GPU/energy enforcement
+and reasoning quality remain unverified. No reflection campaign was run.
+
+
 ## Kernel bounds for managed workers — 2026-10-24
 
 **Implemented; focused resource-boundary verification passed.** Architecture
@@ -151,7 +172,7 @@ instructions explicitly place them beyond proven v1.0 functionality.
 | Rust 2021 + Tokio own orchestration; Python offline only (§12) | `Cargo.toml`, `src/`, `training/`; implemented runtime split. No edition migration or Python runtime substitution. |
 | Exact FlatBuffers generator/runtime pairing | `build.rs`, `build_support/protocol.rs`, `protocol/generated/manifest.sha256`, `tests/protocol_bundle.rs`; fresh `flatc 25.12.19` output matches all eleven generated files. |
 | Safe UDS permissions, bounded messages, validation and cancellation | `src/fabric/unix*`, `src/service.rs`, `src/agent/unix*`; socket spoofing, ownership, malformed frame, cancellation and reaping tests. Local same-user threat remains. |
-| FAST/STANDARD/DEEP/RESEARCH ceilings (§9) | `src/config.rs`, `src/reasoning.rs`, resource admission and policy tests enforce supported calls/cycles/output/prompt/tool/time/queue limits. Exact input-token preflight and physical energy/GPU ceilings remain Partial. |
+| FAST/STANDARD/DEEP/RESEARCH ceilings (§9) | `src/config.rs`, `src/reasoning.rs`, resource admission and policy tests enforce supported calls/cycles/output/prompt/tool/time/queue limits. Exact input-token preflight is implemented for the opt-in llama.cpp adapter; general provider support and physical energy/GPU ceilings remain Partial. |
 | Comparable baseline arms (§13) | `src/benchmarking.rs`, `tests/{benchmark_cli,progress_ablation,progress_ablation_cli}.rs`; six same-model profiles and optional larger-model baseline exist. Equal-budget independent live results are not established. |
 | 100–200 reproducible technical/reasoning tasks (§13) | `src/benchmarking.rs::authored_v1_suite_has_bounded_unique_cases_and_checked_tool_labels` validates 100 authored cases. Independent review, unseen domain breadth, ambiguity/tool necessity and distribution robustness remain Partial. |
 | Verified success, latency, calls, regressions (§13) | Supported criterion scoring, timing/resource totals, hashes and RAG regression gates exist. These do not demonstrate a statistically meaningful collective gain. |
