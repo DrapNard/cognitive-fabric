@@ -7,6 +7,16 @@ instructions, and the request to implement all remaining Jev+/Jev-R code. It doe
 not replace the architecture. Historical entries in `IMPLEMENTATION_MATRIX.md`
 and `CURRENT_IMPLEMENTATION.md` describe earlier snapshots and can be superseded.
 
+## Current GPU implementation — 2026-10-24
+
+Optional NVML telemetry and explicit provider-confirmed KV-cache placement are
+implemented in the current source. Protocol generation now includes an eleventh
+schema, `protocol/gpu.fbs`, with the pinned 25.12.19 generator. Production-only
+all-feature workspace compilation passed after integration fixes; it does not
+establish runtime correctness. New tests, live GPU sampling and benchmarks are
+deferred at the operator's request. The historical suites below precede these
+changes. Physical GPU quotas, task attribution and model quality remain unproven.
+
 ## Explicit project tracking — 2026-10-24
 
 Architecture §3 now has explicit immutable project profiles: operator-published

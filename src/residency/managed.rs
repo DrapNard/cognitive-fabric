@@ -41,6 +41,8 @@ pub struct Receipt {
     pub model_key: String,
     pub model_type: String,
     pub context_length: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub offload_kv_cache_to_gpu: Option<bool>,
     pub instance_id: String,
     pub load_task_id: String,
     /// Inventory at receipt creation; the mutable ledger digest advances only
@@ -90,7 +92,7 @@ fn valid_digest(value: &str) -> bool {
 }
 
 fn validate_receipt(receipt: &Receipt) -> Result<()> {
-    if receipt.format_version != 1
+    if !matches!(receipt.format_version, 1 | 2)
         || receipt.adapter != "lmstudio-native-v1"
         || Uuid::parse_str(&receipt.receipt_id).is_err()
         || canonical_inventory_endpoint(&receipt.endpoint)? != receipt.endpoint
@@ -103,6 +105,10 @@ fn validate_receipt(receipt: &Receipt) -> Result<()> {
         || !identity(&receipt.instance_id)
         || Uuid::parse_str(&receipt.load_task_id).is_err()
         || !valid_digest(&receipt.initial_inventory_sha256)
+        || (receipt.format_version == 1 && receipt.offload_kv_cache_to_gpu.is_some())
+        || (receipt.format_version == 2
+            && (receipt.offload_kv_cache_to_gpu.is_none()
+                || !matches!(receipt.model_type.as_str(), "llm" | "decision")))
     {
         bail!("Invalid managed residency receipt")
     }
@@ -207,7 +213,12 @@ fn model_instance<'a>(models: &'a [Model], receipt: &Receipt) -> Option<&'a Inst
                 .iter()
                 .find(|instance| instance.id == receipt.instance_id)
         })
-        .filter(|instance| instance.config.context_length == u64::from(receipt.context_length))
+        .filter(|instance| {
+            instance.config.context_length == u64::from(receipt.context_length)
+                && receipt.offload_kv_cache_to_gpu.map_or(true, |expected| {
+                    instance.config.offload_kv_cache_to_gpu == Some(expected)
+                })
+        })
 }
 
 /// Validates every live receipt against the exact observed inventory and digest.
@@ -408,7 +419,7 @@ fn pending_endpoint_operation_with_limits(
                     anyhow::anyhow!("Managed load completion lacks a valid receipt")
                 })?;
                 validate_receipt(&receipt)?;
-                if !matches!(load_action, Mutation::Load { ref model, context_length } if model == &receipt.model_key && context_length == receipt.context_length)
+                if !matches!(load_action, Mutation::Load { ref model, context_length, offload_kv_cache_to_gpu } if model == &receipt.model_key && context_length == receipt.context_length && offload_kv_cache_to_gpu == receipt.offload_kv_cache_to_gpu)
                 {
                     bail!("Managed load completion receipt differs from the approved action")
                 }
@@ -648,23 +659,48 @@ pub async fn load(
     context_length: u32,
     human_approve: bool,
 ) -> Result<Value> {
-    load_owned(
+    load_with_gpu(
         store,
         base,
         authenticate,
         model_key,
         context_length,
-        (human_approve, None),
+        None,
+        human_approve,
     )
     .await
 }
 
-pub(crate) async fn load_owned(
+/// Explicit operator-approved load with optional provider-declared KV-cache placement.
+/// Omission retains the legacy request and receipt format.
+pub async fn load_with_gpu(
     store: &Store,
     base: &str,
     authenticate: bool,
     model_key: &str,
     context_length: u32,
+    offload_kv_cache_to_gpu: Option<bool>,
+    human_approve: bool,
+) -> Result<Value> {
+    load_owned_with_gpu(
+        store,
+        base,
+        authenticate,
+        model_key,
+        context_length,
+        offload_kv_cache_to_gpu,
+        (human_approve, None),
+    )
+    .await
+}
+
+pub(crate) async fn load_owned_with_gpu(
+    store: &Store,
+    base: &str,
+    authenticate: bool,
+    model_key: &str,
+    context_length: u32,
+    offload_kv_cache_to_gpu: Option<bool>,
     approval: (bool, Option<&super::lifecycle::Ownership>),
 ) -> Result<Value> {
     let (human_approve, ownership) = approval;
@@ -699,12 +735,20 @@ pub(crate) async fn load_owned(
     if !selected.loaded_instances.is_empty() {
         bail!("Managed load requires a model with no loaded instances; reuse requires a separate reviewed action")
     }
+    if offload_kv_cache_to_gpu.is_some() && !matches!(selected.kind.as_str(), "llm" | "decision") {
+        bail!("Explicit KV-cache GPU placement is supported only for LLM and decision models")
+    }
     let operation = "load";
     let action = Mutation::Load {
         model: model_key.to_owned(),
         context_length,
+        offload_kv_cache_to_gpu,
     };
-    let body = json!({"model":model_key,"context_length":context_length});
+    let mut body = json!({"model":model_key,"context_length":context_length});
+    if let Some(value) = offload_kv_cache_to_gpu {
+        body["offload_kv_cache_to_gpu"] = json!(value);
+        body["echo_load_config"] = json!(true);
+    }
     let task = create_managed_task(
         store,
         "Operator-approved managed native model load",
@@ -716,14 +760,24 @@ pub(crate) async fn load_owned(
         if response["status"] != "loaded" || response["type"].as_str() != Some(selected.kind.as_str()) || !response["load_time_seconds"].as_f64().is_some_and(|n| n.is_finite() && n>=0.0) || before.iter().any(|item|item.loaded_instances.iter().any(|i|i.id==instance_id)) {
             bail!("Managed load response did not identify a new exact instance")
         }
+        if let Some(expected) = offload_kv_cache_to_gpu {
+            if !matches!(selected.kind.as_str(), "llm" | "decision")
+                || response["load_config"]["offload_kv_cache_to_gpu"].as_bool() != Some(expected)
+            {
+                bail!("Managed load response did not echo the requested KV-cache GPU placement")
+            }
+        }
         let after_value = status(base,authenticate).await?;
         let after = parse(&serde_json::to_vec(&after_value)?)?;
         super::planning::validate_transition(&before,&after,&action,instance_id)?;
         let model = after.iter().find(|item|item.key==model_key).ok_or_else(|| anyhow::anyhow!("Managed loaded model disappeared from inventory"))?;
         let instance = model.loaded_instances.iter().find(|i|i.id==instance_id).ok_or_else(|| anyhow::anyhow!("Managed loaded instance is absent from fresh inventory"))?;
-        if model.kind != selected.kind || instance.config.context_length != u64::from(context_length) { bail!("Managed loaded instance identity differs from the approved request") }
+        if model.kind != selected.kind || instance.config.context_length != u64::from(context_length)
+            || offload_kv_cache_to_gpu.is_some_and(|expected| instance.config.offload_kv_cache_to_gpu != Some(expected)) {
+            bail!("Managed loaded instance identity differs from the approved request")
+        }
         let after_digest = inventory_digest(&after)?;
-        let receipt = Receipt { format_version:1, receipt_id:Uuid::new_v4().to_string(), adapter:"lmstudio-native-v1".into(), endpoint:native_endpoint.as_str().to_owned(), model_key:model_key.to_owned(), model_type:model.kind.clone(), context_length, instance_id:instance_id.to_owned(), load_task_id:task.clone(), initial_inventory_sha256:after_digest.clone() };
+        let receipt = Receipt { format_version:if offload_kv_cache_to_gpu.is_some() { 2 } else { 1 }, receipt_id:Uuid::new_v4().to_string(), adapter:"lmstudio-native-v1".into(), endpoint:native_endpoint.as_str().to_owned(), model_key:model_key.to_owned(), model_type:model.kind.clone(), context_length, offload_kv_cache_to_gpu, instance_id:instance_id.to_owned(), load_task_id:task.clone(), initial_inventory_sha256:after_digest.clone() };
         let report = json!({"receipt":receipt,"action":action,"server_confirmed":true,"before_inventory_sha256":before_digest,"after_inventory_sha256":after_digest,"elapsed_ms":started.elapsed().as_secs_f64()*1000.0,"provider_load_seconds":response.get("load_time_seconds"),"weights_attested":false,"generation_tested":false,"ownership_established":false,"physical_residency_attested":false,"automatic_cleanup":false});
         finish_load(store,&task,&receipt,&before_digest,report.clone())?;
         Ok::<_,anyhow::Error>(report)
@@ -817,6 +871,13 @@ pub(crate) async fn release_owned(
         super::planning::validate_transition(&before,&after,&action,&saved.receipt.instance_id)?;
         if model_instance(&after,&saved.receipt).is_some() { bail!("Managed instance remains loaded after release") }
         let after_digest=inventory_digest(&after)?;
+        for member in &cohort {
+            if member.receipt.receipt_id != receipt_id
+                && model_instance(&after, &member.receipt).is_none()
+            {
+                bail!("Another managed instance or its KV-cache placement changed during release")
+            }
+        }
         let report=json!({"receipt_id":receipt_id,"instance_id":saved.receipt.instance_id,"server_confirmed":true,"before_inventory_sha256":before_digest,"after_inventory_sha256":after_digest,"elapsed_ms":started.elapsed().as_secs_f64()*1000.0,"weights_attested":false,"generation_tested":false,"ownership_established":false,"physical_residency_attested":false,"automatic_retry":false,"automatic_cleanup":false});
         finish_release(store,&task,&saved,&after_digest,report.clone())?;
         Ok::<_,anyhow::Error>(report)

@@ -1,12 +1,36 @@
 //! Opt-in operator GPU observations, never task-attributed resource accounting.
+pub mod nvml;
 pub mod window;
-#[cfg(any(target_os = "linux", test))]
-use anyhow::bail;
-use anyhow::Result;
+use anyhow::{bail, Result};
 use serde::Serialize;
 use serde_json::{json, Value};
 #[cfg(any(target_os = "linux", test))]
 use std::collections::BTreeSet;
+
+/// Explicitly selected read-only GPU observation backend.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Sensor {
+    /// Preserve the existing fixed `nvidia-smi` query behavior.
+    #[default]
+    NvidiaSmi,
+    /// Query NVML in a killable same-image worker process.
+    Nvml,
+}
+impl Sensor {
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::NvidiaSmi => "nvidia-smi",
+            Self::Nvml => "nvml",
+        }
+    }
+    pub const fn compiled_support(self) -> bool {
+        match self {
+            Self::NvidiaSmi => false,
+            Self::Nvml => cfg!(feature = "nvml-gpu"),
+        }
+    }
+}
 
 #[derive(Debug, Serialize)]
 struct Device {
@@ -75,7 +99,7 @@ fn parse(text: &str) -> Result<Vec<Device>> {
 }
 
 #[cfg(target_os = "linux")]
-async fn query() -> Result<Vec<Device>> {
+async fn query_nvidia_smi() -> Result<Vec<Device>> {
     use std::{process::Stdio, time::Duration};
     // Fixed executable and arguments: no PATH search, shell, model input or setters.
     let mut command = tokio::process::Command::new("/usr/bin/nvidia-smi");
@@ -94,56 +118,215 @@ async fn query() -> Result<Vec<Device>> {
 }
 
 #[cfg(target_os = "linux")]
+async fn query_nvml() -> Result<Vec<Device>> {
+    use std::{process::Stdio, time::Duration};
+    if !cfg!(feature = "nvml-gpu") {
+        bail!("NVML support is not compiled in; enable the nvml-gpu feature")
+    }
+    // The child is the already-running program image, never a caller-selected
+    // executable. NVML calls may block inside the driver, so they must not run
+    // on an async worker thread that cannot be cancelled.
+    let mut command =
+        tokio::process::Command::new(crate::fabric::unix::process::managed_executable()?);
+    command
+        .arg("gpu-nvml-worker")
+        .env_clear()
+        .current_dir("/")
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .stdout(Stdio::piped())
+        .kill_on_drop(true);
+    let bytes = run_bounded_child(command, Duration::from_secs(2), 16384).await?;
+    nvml::decode_sample(&bytes)
+}
+
+#[cfg(not(target_os = "linux"))]
+async fn query_nvml() -> Result<Vec<Device>> {
+    bail!("NVML worker requires Linux")
+}
+
+#[cfg(target_os = "linux")]
 async fn run_query(
-    mut command: tokio::process::Command,
+    command: tokio::process::Command,
     limit: std::time::Duration,
 ) -> Result<Vec<Device>> {
+    let bytes = run_bounded_child(command, limit, 16384).await?;
+    parse(std::str::from_utf8(&bytes)?)
+}
+
+#[cfg(target_os = "linux")]
+async fn run_bounded_child(
+    mut command: tokio::process::Command,
+    limit: std::time::Duration,
+    maximum: usize,
+) -> Result<Vec<u8>> {
     use anyhow::Context;
-    use std::time::Duration;
+    use std::process::ExitStatus;
     use tokio::io::AsyncReadExt;
-    let mut child = command.spawn()?;
-    let stdout = child.stdout.take().context("Missing GPU output pipe")?;
+    let mut child = OwnedGpuChild::spawn(&mut command)?;
+    let stdout = child
+        .child_mut()
+        .stdout
+        .take()
+        .context("Missing GPU output pipe")?;
     let result = tokio::time::timeout(limit, async {
         let mut bytes = Vec::new();
-        stdout.take(16385).read_to_end(&mut bytes).await?;
-        if bytes.len() > 16384 {
+        stdout
+            .take((maximum + 1) as u64)
+            .read_to_end(&mut bytes)
+            .await?;
+        if bytes.len() > maximum {
             bail!("GPU response exceeds bounds")
         }
-        if !child.wait().await?.success() {
+        let status: ExitStatus = child.wait().await?;
+        if !status.success() {
             bail!("GPU driver query failed")
         }
-        parse(std::str::from_utf8(&bytes)?)
+        Ok(bytes)
     })
     .await;
     match result {
-        Ok(Ok(devices)) => Ok(devices),
-        failure => {
+        Ok(Ok(bytes)) => Ok(bytes),
+        Ok(Err(error)) => {
+            child.terminate_and_reap().await?;
+            Err(error)
+        }
+        Err(_) => {
+            child.terminate_and_reap().await?;
+            bail!("GPU query timeout")
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+struct OwnedGpuChild {
+    child: Option<tokio::process::Child>,
+    ownership: Option<crate::fabric::worker_cleanup::Ownership>,
+}
+
+#[cfg(target_os = "linux")]
+impl OwnedGpuChild {
+    fn spawn(command: &mut tokio::process::Command) -> Result<Self> {
+        let ownership = crate::fabric::worker_cleanup::Ownership::acquire()?;
+        let child = command.spawn()?;
+        Ok(Self {
+            child: Some(child),
+            ownership: Some(ownership),
+        })
+    }
+
+    fn child_mut(&mut self) -> &mut tokio::process::Child {
+        self.child.as_mut().expect("GPU child guard has a child")
+    }
+
+    async fn wait(&mut self) -> Result<std::process::ExitStatus> {
+        use anyhow::Context;
+        let status = self
+            .child_mut()
+            .wait()
+            .await
+            .context("Cannot reap GPU worker")?;
+        self.child.take();
+        self.ownership.take();
+        Ok(status)
+    }
+
+    async fn terminate_and_reap(&mut self) -> Result<()> {
+        use anyhow::Context;
+        use std::time::Duration;
+        use tokio::time::timeout;
+        let Some(child) = self.child.as_mut() else {
+            self.ownership.take();
+            return Ok(());
+        };
+        if child.id().is_some() {
             let _ = child.start_kill();
-            let reaped = tokio::time::timeout(Duration::from_secs(2), child.wait()).await;
-            if !matches!(reaped, Ok(Ok(_))) {
-                bail!("GPU query cleanup failed")
+        }
+        match timeout(Duration::from_secs(2), child.wait()).await {
+            Ok(Ok(_)) => {
+                self.child.take();
+                self.ownership.take();
+                Ok(())
             }
-            match failure {
-                Ok(Err(error)) => Err(error),
-                _ => bail!("GPU query timeout"),
+            Ok(Err(error)) => {
+                crate::fabric::worker_cleanup::record_failure();
+                Err(error).context("GPU worker cleanup failed")
+            }
+            Err(_) => {
+                crate::fabric::worker_cleanup::record_failure();
+                bail!("GPU worker reap deadline exhausted")
             }
         }
     }
 }
 
+#[cfg(target_os = "linux")]
+impl Drop for OwnedGpuChild {
+    fn drop(&mut self) {
+        let Some(mut child) = self.child.take() else {
+            self.ownership.take();
+            return;
+        };
+        let Some(ownership) = self.ownership.take() else {
+            crate::fabric::worker_cleanup::record_failure();
+            return;
+        };
+        let Ok(runtime) = tokio::runtime::Handle::try_current() else {
+            crate::fabric::worker_cleanup::record_failure();
+            return;
+        };
+        runtime.spawn(async move {
+            use std::time::Duration;
+            if child.id().is_some() {
+                let _ = child.start_kill();
+            }
+            let reaped = tokio::time::timeout(Duration::from_secs(2), child.wait()).await;
+            if !matches!(reaped, Ok(Ok(_))) {
+                crate::fabric::worker_cleanup::record_failure();
+            }
+            drop(ownership);
+        });
+    }
+}
+
 /// Operator-only, one-shot sampling. Failure preserves unavailable measurements.
 pub async fn sample() -> Result<Value> {
+    sample_with(Sensor::NvidiaSmi).await
+}
+
+/// Operator-only sampling with an explicit backend; unavailable NVML support
+/// is reported as unavailable and never silently falls back to another sensor.
+pub async fn sample_with(sensor: Sensor) -> Result<Value> {
     crate::security::authorize("human-cli", "telemetry.gpu")?;
-    #[cfg(target_os = "linux")]
-    let result = query().await;
-    #[cfg(not(target_os = "linux"))]
-    let result: Result<Vec<Device>> = Err(anyhow::anyhow!("GPU query requires Linux"));
+    let result = match sensor {
+        Sensor::NvidiaSmi => {
+            #[cfg(target_os = "linux")]
+            {
+                query_nvidia_smi().await
+            }
+            #[cfg(not(target_os = "linux"))]
+            {
+                Err(anyhow::anyhow!("GPU query requires Linux"))
+            }
+        }
+        Sensor::Nvml => query_nvml().await,
+    };
     Ok(match result {
         Ok(devices) => {
-            json!({"status":"sampled","devices":devices,"scope":"whole_device","task_attributed":false,"energy_joules":null})
+            let mut report = json!({"status":"sampled","devices":devices,"scope":"whole_device","task_attributed":false,"energy_joules":null});
+            if sensor != Sensor::NvidiaSmi {
+                report["sensor"] = json!(sensor.name());
+                report["sensor_compiled_support"] = json!(sensor.compiled_support());
+            }
+            report
         }
         Err(error) => {
-            json!({"status":"unavailable","devices":null,"reason":error.to_string().chars().take(200).collect::<String>(),"scope":"whole_device","task_attributed":false,"energy_joules":null})
+            let mut report = json!({"status":"unavailable","devices":null,"reason":error.to_string().chars().take(200).collect::<String>(),"scope":"whole_device","task_attributed":false,"energy_joules":null});
+            if sensor != Sensor::NvidiaSmi {
+                report["sensor"] = json!(sensor.name());
+                report["sensor_compiled_support"] = json!(sensor.compiled_support());
+            }
+            report
         }
     })
 }

@@ -21,6 +21,10 @@ pub struct Instance {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct InstanceConfig {
     pub context_length: u64,
+    /// Server-reported KV-cache placement, if this LM Studio version exposes it.
+    /// `None` means unknown/omitted and is never treated as CPU placement.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub offload_kv_cache_to_gpu: Option<bool>,
 }
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Model {
@@ -249,8 +253,15 @@ mod tests {
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Mutation {
-    Load { model: String, context_length: u32 },
-    Unload { instance_id: String },
+    Load {
+        model: String,
+        context_length: u32,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        offload_kv_cache_to_gpu: Option<bool>,
+    },
+    Unload {
+        instance_id: String,
+    },
 }
 
 #[derive(Deserialize)]
@@ -326,11 +337,17 @@ pub async fn inspect_operation(
         Mutation::Load {
             model,
             context_length,
+            offload_kv_cache_to_gpu,
         } => models
             .iter()
             .filter(|m| &m.key == model)
             .flat_map(|m| &m.loaded_instances)
-            .filter(|i| i.config.context_length == u64::from(*context_length))
+            .filter(|i| {
+                i.config.context_length == u64::from(*context_length)
+                    && offload_kv_cache_to_gpu.map_or(true, |expected| {
+                        i.config.offload_kv_cache_to_gpu == Some(expected)
+                    })
+            })
             .map(|i| i.id.as_str())
             .collect(),
         Mutation::Unload { instance_id } => models
@@ -359,6 +376,7 @@ fn validate_action(action: &Mutation) -> Result<()> {
         Mutation::Load {
             model,
             context_length,
+            ..
         } if !identity(model) || !(1..=32768).contains(context_length) => {
             bail!("Invalid load identity or context ceiling")
         }
@@ -388,7 +406,9 @@ pub async fn mutate(
 }
 
 struct MutationContext<'a> {
+    plan_version: u32,
     inventory_sha256: &'a str,
+    inventory_kv_sha256: Option<&'a str>,
     plan_task: &'a str,
     step: usize,
 }
@@ -432,11 +452,17 @@ async fn mutate_owned(
         if planning::fingerprint(&models)? != context.inventory_sha256 {
             bail!("Residency plan inventory changed before mutation")
         }
+        if let Some(digest) = context.inventory_kv_sha256 {
+            if planning::kv_fingerprint(&models)? != digest {
+                bail!("Residency plan KV-cache placement changed before mutation")
+            }
+        }
     }
     let (operation, body) = match &action {
         Mutation::Load {
             model,
             context_length,
+            offload_kv_cache_to_gpu,
         } => {
             let selected = models.iter().find(|m| &m.key == model).ok_or_else(|| {
                 anyhow::anyhow!("Load requires an installed model key from native inventory")
@@ -444,10 +470,19 @@ async fn mutate_owned(
             if !selected.loaded_instances.is_empty() {
                 bail!("Model already has loaded instances; inspect and reuse them explicitly")
             }
-            (
-                "load",
-                json!({"model":model,"context_length":context_length}),
-            )
+            if offload_kv_cache_to_gpu.is_some()
+                && !matches!(selected.kind.as_str(), "llm" | "decision")
+            {
+                bail!(
+                    "Explicit KV-cache GPU placement is supported only for LLM and decision models"
+                )
+            }
+            let mut body = json!({"model":model,"context_length":context_length});
+            if let Some(value) = offload_kv_cache_to_gpu {
+                body["offload_kv_cache_to_gpu"] = json!(value);
+                body["echo_load_config"] = json!(true);
+            }
+            ("load", body)
         }
         Mutation::Unload { instance_id } => {
             if !models
@@ -461,7 +496,7 @@ async fn mutate_owned(
     };
     let task = store.create_task("Operator native model residency change", "fast")?;
     if let Some(context) = &context {
-        store.event(context.plan_task,"residency_plan_step","human-cli",json!({"format_version":1,"step":context.step,"operation_task_id":task,"permissions_granted":false}))?;
+        store.event(context.plan_task,"residency_plan_step","human-cli",json!({"format_version":context.plan_version,"step":context.step,"operation_task_id":task,"permissions_granted":false}))?;
     }
     // Persist exact bounded operator intent before the external effect.
     store.event(&task, "model_residency", "human-cli", json!({"state":"requested","adapter":"lmstudio-native-v1","endpoint":endpoint(base)?.as_str(),"action":action,"external_outcome":"unknown"}))?;
@@ -475,10 +510,19 @@ async fn mutate_owned(
         let instance = response["instance_id"].as_str().filter(|id| identity(id))
             .ok_or_else(|| anyhow::anyhow!("Missing or invalid residency response instance ID"))?;
         match &action {
-            Mutation::Load { .. } => {
+            Mutation::Load { model, offload_kv_cache_to_gpu, .. } => {
                 if response["status"] != "loaded" || !matches!(response["type"].as_str(), Some("llm" | "embedding" | "decision"))
                     || !response["load_time_seconds"].as_f64().is_some_and(|v| v.is_finite() && v >= 0.0) {
                     bail!("Invalid native load response")
+                }
+                if let Some(expected) = offload_kv_cache_to_gpu {
+                    if !matches!(response["type"].as_str(), Some("llm" | "decision"))
+                        || !models.iter().find(|m| &m.key == model)
+                            .is_some_and(|selected| response["type"].as_str() == Some(selected.kind.as_str()))
+                        || response["load_config"]["offload_kv_cache_to_gpu"].as_bool() != Some(*expected)
+                    {
+                        bail!("Native load response did not echo the requested KV-cache GPU placement")
+                    }
                 }
                 if models.iter().any(|m| m.loaded_instances.iter().any(|i| i.id == instance)) {
                     bail!("Native load returned a pre-existing instance")
@@ -490,13 +534,16 @@ async fn mutate_owned(
         let after = status(base, authenticate).await?;
         let observed = parse(&serde_json::to_vec(&after)?)?;
         let confirmed = match &action {
-            Mutation::Load { model, context_length } => observed.iter().any(|m| &m.key == model && m.loaded_instances.iter().any(|i| i.id == instance && i.config.context_length == u64::from(*context_length))),
+            Mutation::Load { model, context_length, offload_kv_cache_to_gpu } => observed.iter().any(|m| &m.key == model && m.loaded_instances.iter().any(|i| i.id == instance && i.config.context_length == u64::from(*context_length) && offload_kv_cache_to_gpu.map_or(true, |expected| i.config.offload_kv_cache_to_gpu == Some(expected)))),
             Mutation::Unload { instance_id } => !observed.iter().any(|m| m.loaded_instances.iter().any(|i| &i.id == instance_id)),
         };
         if !confirmed { bail!("Native residency change was not confirmed by fresh inventory") }
-        if context.is_some() { planning::validate_transition(&models,&observed,&action,instance)?; }
+        if context.is_some() || matches!(&action, Mutation::Load { offload_kv_cache_to_gpu: Some(_), .. }) {
+            planning::validate_transition(&models,&observed,&action,instance)?;
+        }
         Ok::<_, anyhow::Error>(json!({"task_id":task,"operation":operation,"instance_id":instance,"server_confirmed":true,
             "after_inventory_sha256":planning::fingerprint(&observed)?,
+            "after_inventory_kv_sha256":planning::kv_fingerprint(&observed)?,
             "elapsed_ms":started.elapsed().as_secs_f64()*1000.0,"provider_load_seconds":response.get("load_time_seconds"),
             "ownership_established":false,"weights_attested":false,"generation_tested":false,"automatic_cleanup_performed":false}))
     }.await;
@@ -542,6 +589,7 @@ mod lifecycle_tests {
         let load = Mutation::Load {
             model: "installed".into(),
             context_length: 2048,
+            offload_kv_cache_to_gpu: None,
         };
         assert!(mutate(&store, base, false, load.clone(), false)
             .await
@@ -554,7 +602,8 @@ mod lifecycle_tests {
             false,
             Mutation::Load {
                 model: "installed".into(),
-                context_length: 32769
+                context_length: 32769,
+                offload_kv_cache_to_gpu: None,
             },
             true
         )

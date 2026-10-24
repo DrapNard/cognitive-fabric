@@ -4,7 +4,7 @@ Add `--observe-gpu` to the existing `compare` command to sample whole-device
 metrics during each benchmark execution window. The default comparison behavior
 and output shape remain unchanged when this option is absent.
 
-The existing fixed `/usr/bin/nvidia-smi` query is used without a shell, inherited
+By default the fixed `/usr/bin/nvidia-smi` query is used without a shell, inherited
 environment, proxy, model-selected arguments or GPU setters. Missing drivers,
 unsupported metrics and query failures remain unavailable observations; they do
 not turn into zero energy or successful task verification.
@@ -54,3 +54,23 @@ The existing unavailable task energy/GPU peak metrics remain unavailable. This
 feature does not establish Joules per solved task, GPU isolation, model identity,
 efficiency gains or equal-budget superiority. Task-attributed physical measurement
 and independent live-model evaluation remain open requirements.
+
+## Optional NVML sensor
+
+Build production binaries with `--features nvml-gpu` to enable the optional
+`nvml-wrapper` library. Select `diagnostics --probe-gpu --gpu-sensor nvml` or
+`compare --observe-gpu --gpu-sensor nvml`. Without this explicit selection the
+existing sensor and report shape are retained. Library callers can use
+`gpu::sample_with` and `benchmarking::compare_observed_with_sensor_until`.
+
+On Linux, NVML runs in a fixed same-image child with a cleared environment and
+read-only queries. Each query has a two-second deadline, 16 KiB frame bound and
+16-device bound. The versioned CGPU FlatBuffers result is verified before use.
+Cancellation retains cleanup ownership through bounded kill/reap. It does not
+start a persistent sampling service. Missing feature, driver, library or individual
+metrics remains unavailable; no automatic fallback hides an NVML failure.
+`sensor_compiled_support` describes the build feature, not runtime library health.
+
+This is telemetry, not a CUDA inference backend. GPU inference still belongs to
+the configured external model provider. NVML runtime behavior has not been tested
+for this change; tests and benchmarks were deferred at the operator's request.

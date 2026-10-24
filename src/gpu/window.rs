@@ -31,13 +31,18 @@ impl Settings {
 /// One irreversible query budget shared by every window in a comparison run.
 pub struct Meter {
     settings: Settings,
+    sensor: crate::gpu::Sensor,
     remaining: u32,
 }
 impl Meter {
     pub fn new(settings: Settings) -> Result<Self> {
+        Self::new_with_sensor(settings, crate::gpu::Sensor::NvidiaSmi)
+    }
+    pub fn new_with_sensor(settings: Settings, sensor: crate::gpu::Sensor) -> Result<Self> {
         settings.validate()?;
         Ok(Self {
             settings,
+            sensor,
             remaining: settings.max_samples,
         })
     }
@@ -45,7 +50,9 @@ impl Meter {
         self.remaining
     }
     pub async fn observe<T>(&mut self, execution: impl Future<Output = T>) -> (T, Value) {
-        self.observe_with(execution, crate::gpu::sample).await
+        let sensor = self.sensor;
+        self.observe_with(execution, move || crate::gpu::sample_with(sensor))
+            .await
     }
     async fn observe_with<T, F, S>(
         &mut self,

@@ -1,5 +1,18 @@
 # Threat Model (v1.0)
 
+## Optional GPU telemetry and placement boundary
+
+The NVML feature dynamically loads the driver library in a fixed same-image,
+read-only child. Driver/library code remains trusted host code; this process
+boundary supplies cancellation and bounded output, not a complete sandbox.
+FlatBuffers validation, device/value limits and tracked kill/reap constrain results.
+Whole-device measurements do not authorize capabilities or prove task energy.
+Explicit KV-cache placement requires existing human-approved lifecycle operations,
+applied configuration readback and pinned v2 receipts/plans. It does not establish
+exclusive ownership, physical GPU limits or model-weight identity. New GPU paths
+are implemented but not runtime-tested for this milestone.
+
+
 ## Explicit project profile boundary
 
 Only operator publication creates immutable bounded profile versions. No model

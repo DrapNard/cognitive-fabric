@@ -111,7 +111,8 @@ async fn plan_reuses_then_applies_only_explicit_release_and_missing_load_and_den
             },
             Mutation::Load {
                 model: "b".into(),
-                context_length: 4096
+                context_length: 4096,
+                offload_kv_cache_to_gpu: None,
             }
         ]
     );

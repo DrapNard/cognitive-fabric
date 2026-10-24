@@ -319,6 +319,18 @@ pub async fn compare_observed_until(
     request: Comparison<'_>,
     cancel: impl std::future::Future<Output = ()>,
 ) -> Result<Value> {
+    compare_observed_with_sensor_until(cfg, store, request, crate::gpu::Sensor::NvidiaSmi, cancel)
+        .await
+}
+
+/// Explicit sensor selection preserves the default comparison API and ceilings.
+pub async fn compare_observed_with_sensor_until(
+    cfg: &Config,
+    store: Arc<Store>,
+    request: Comparison<'_>,
+    sensor: crate::gpu::Sensor,
+    cancel: impl std::future::Future<Output = ()>,
+) -> Result<Value> {
     let Comparison {
         dataset,
         mode,
@@ -326,8 +338,11 @@ pub async fn compare_observed_until(
         review,
         gpu_observation,
     } = request;
+    if gpu_observation.is_none() && sensor != crate::gpu::Sensor::NvidiaSmi {
+        bail!("GPU sensor selection requires enabled observation")
+    }
     let mut gpu_meter = gpu_observation
-        .map(crate::gpu::window::Meter::new)
+        .map(|settings| crate::gpu::window::Meter::new_with_sensor(settings, sensor))
         .transpose()?;
     security::validate_provenance(&review.source, &review.license)?;
     if review.held_out == review.workflow_check
@@ -505,6 +520,9 @@ pub async fn compare_observed_until(
         report["gpu_observation"] = json!({"settings":gpu_observation,"remaining_run_samples":meter.remaining_samples(),
             "task_attributed":false,"measurement_overhead_excluded_from_task_metrics":false,
             "sampling_scope":"whole-device; shared workloads and query overhead are not isolated"});
+        if sensor != crate::gpu::Sensor::NvidiaSmi {
+            report["gpu_observation"]["sensor"] = json!(sensor.name());
+        }
     }
     Ok(report)
 }

@@ -51,7 +51,7 @@ impl NativeLifecyclePolicy {
     }
 
     pub fn validate(&self) -> Result<()> {
-        if self.format_version != 1
+        if !matches!(self.format_version, 1 | 2)
             || !(1..=1800).contains(&self.max_lifecycle_seconds)
             || self.models.is_empty()
             || self.models.len() > 8
@@ -60,6 +60,15 @@ impl NativeLifecyclePolicy {
         }
         endpoint(&self.api_base)?;
         let mut keys = std::collections::BTreeSet::new();
+        let has_gpu_choice = self
+            .models
+            .iter()
+            .any(|model| model.offload_kv_cache_to_gpu.is_some());
+        if (self.format_version == 1 && has_gpu_choice)
+            || (self.format_version == 2 && !has_gpu_choice)
+        {
+            bail!("Native lifecycle policy version does not match its KV-cache placement settings")
+        }
         for model in &self.models {
             if !identity(&model.model)
                 || !(1..=32768).contains(&model.context_length)
@@ -446,7 +455,7 @@ where
     F: std::future::Future<Output = ()>,
 {
     let request = Request {
-        format_version: 1,
+        format_version: policy.format_version,
         query: query.to_owned(),
         mode: mode.to_owned(),
         api_base: policy.api_base.clone(),
@@ -513,7 +522,13 @@ async fn run_internal(
     }
     cfg.validate()?;
     setup_checkpoint(deadline, &cancel_rx).await?;
-    if request.format_version != 1
+    let has_gpu_choice = request
+        .models
+        .iter()
+        .any(|model| model.offload_kv_cache_to_gpu.is_some());
+    if !matches!(request.format_version, 1 | 2)
+        || (request.format_version == 1 && has_gpu_choice)
+        || (request.format_version == 2 && !has_gpu_choice)
         || request.query.trim().is_empty()
         || request.query.len() > 12000
         || !matches!(
@@ -529,13 +544,11 @@ async fn run_internal(
         bail!("Invalid native task request, budget or backend configuration")
     }
     let native_endpoint = endpoint(&request.api_base)?.to_string();
-    let mut desired = std::collections::BTreeMap::new();
+    let mut desired = std::collections::BTreeMap::<String, planning::EnsureLoaded>::new();
     for model in &request.models {
         if !identity(&model.model)
             || !(1..=32768).contains(&model.context_length)
-            || desired
-                .insert(model.model.clone(), model.context_length)
-                .is_some()
+            || desired.insert(model.model.clone(), model.clone()).is_some()
         {
             bail!("Invalid or duplicate approved native model")
         }
@@ -633,9 +646,36 @@ async fn run_internal(
         if local["managed_lifecycle_blocked"] != false {
             bail!("Managed task endpoint needs operator reconciliation")
         }
+        // Validate every explicit GPU-placement target before loading any
+        // member of a multi-model lifecycle. A later unsupported model must
+        // not leave earlier models loaded by this request.
+        if desired
+            .values()
+            .any(|ensure| ensure.offload_kv_cache_to_gpu.is_some())
+        {
+            let preflight = tokio::select! {
+                result=async { status(&request.api_base,request.authenticate).await } => result?,
+                _=wait_for_cancel(cancel_rx.clone()) => bail!("Native lifecycle cancelled before model preflight")
+            };
+            let preflight_models = parse(&serde_json::to_vec(&preflight)?)?;
+            for ensure in desired
+                .values()
+                .filter(|ensure| ensure.offload_kv_cache_to_gpu.is_some())
+            {
+                let model = preflight_models
+                    .iter()
+                    .find(|model| model.key == ensure.model)
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("Explicit GPU-placement model is not installed")
+                    })?;
+                if !matches!(model.kind.as_str(), "llm" | "decision") {
+                    bail!("Explicit KV-cache GPU placement is supported only for LLM and decision models")
+                }
+            }
+        }
         let mut receipts = std::collections::BTreeMap::<String, managed::Receipt>::new();
         let mut newly_loaded = std::collections::BTreeSet::new();
-        for (model, context) in &desired {
+        for (model, ensure) in &desired {
             ensure_setup_active(deadline, &cancel_rx)?;
             let existing = local["receipts"]
                 .as_array()
@@ -644,7 +684,10 @@ async fn run_internal(
                 .filter(|v| {
                     v["state"] == "active"
                         && v["receipt"]["model_key"] == *model
-                        && v["receipt"]["context_length"] == *context
+                        && v["receipt"]["context_length"] == ensure.context_length
+                        && ensure.offload_kv_cache_to_gpu.map_or(true, |expected| {
+                            v["receipt"]["offload_kv_cache_to_gpu"] == expected
+                        })
                 })
                 .collect::<Vec<_>>();
             if existing.len() > 1 {
@@ -655,7 +698,7 @@ async fn run_internal(
             } else {
                 ensure_setup_active(deadline, &cancel_rx)?;
                 let loaded = tokio::select! {
-                    loaded=managed::load_owned(&store,&request.api_base,request.authenticate,model,*context,(true,Some(&ownership))) => loaded?,
+                    loaded=managed::load_owned_with_gpu(&store,&request.api_base,request.authenticate,model,ensure.context_length,ensure.offload_kv_cache_to_gpu,(true,Some(&ownership))) => loaded?,
                     _=wait_for_cancel(cancel_rx.clone()) => bail!("Native lifecycle cancelled during model load")
                 };
                 let receipt =

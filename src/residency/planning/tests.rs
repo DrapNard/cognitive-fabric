@@ -9,10 +9,12 @@ fn planner_reuses_compatible_instances_and_never_invents_unloads() {
             EnsureLoaded {
                 model: "b".into(),
                 context_length: 4096,
+                offload_kv_cache_to_gpu: None,
             },
             EnsureLoaded {
                 model: "a".into(),
                 context_length: 2048,
+                offload_kv_cache_to_gpu: None,
             },
         ],
         release_instances: vec![],
@@ -31,7 +33,8 @@ fn planner_reuses_compatible_instances_and_never_invents_unloads() {
         plan.actions,
         vec![Mutation::Load {
             model: "b".into(),
-            context_length: 4096
+            context_length: 4096,
+            offload_kv_cache_to_gpu: None,
         }]
     );
     let mut reordered = models.clone();
@@ -55,6 +58,7 @@ fn incompatible_context_requires_explicit_release_and_unloads_precede_loads() {
         ensure_loaded: vec![EnsureLoaded {
             model: "a".into(),
             context_length: 4096,
+            offload_kv_cache_to_gpu: None,
         }],
         release_instances: vec![],
     };
@@ -81,7 +85,8 @@ fn incompatible_context_requires_explicit_release_and_unloads_precede_loads() {
             },
             Mutation::Load {
                 model: "a".into(),
-                context_length: 4096
+                context_length: 4096,
+                offload_kv_cache_to_gpu: None,
             }
         ]
     );
@@ -97,6 +102,7 @@ fn malformed_duplicate_missing_and_tampered_plans_are_rejected() {
             ensure_loaded: vec![EnsureLoaded {
                 model: "missing".into(),
                 context_length: 2048,
+                offload_kv_cache_to_gpu: None,
             }],
             release_instances: vec![],
         },
@@ -104,7 +110,8 @@ fn malformed_duplicate_missing_and_tampered_plans_are_rejected() {
             ensure_loaded: vec![
                 EnsureLoaded {
                     model: "a".into(),
-                    context_length: 2048
+                    context_length: 2048,
+                    offload_kv_cache_to_gpu: None,
                 };
                 2
             ],
@@ -114,6 +121,7 @@ fn malformed_duplicate_missing_and_tampered_plans_are_rejected() {
             ensure_loaded: vec![EnsureLoaded {
                 model: "a".into(),
                 context_length: 2048,
+                offload_kv_cache_to_gpu: None,
             }],
             release_instances: vec!["unknown".into()],
         },
@@ -130,6 +138,7 @@ fn malformed_duplicate_missing_and_tampered_plans_are_rejected() {
         ensure_loaded: vec![EnsureLoaded {
             model: "a".into(),
             context_length: 2048,
+            offload_kv_cache_to_gpu: None,
         }],
         release_instances: vec![],
     };
@@ -152,6 +161,7 @@ fn plans_expire_and_reject_future_timestamps_or_unbounded_requests() {
         ensure_loaded: vec![EnsureLoaded {
             model: "a".into(),
             context_length: 2048,
+            offload_kv_cache_to_gpu: None,
         }],
         release_instances: vec![],
     };
@@ -186,6 +196,7 @@ fn corrupt_or_replayed_receipts_cannot_initialize_a_second_plan_task() {
             ensure_loaded: vec![EnsureLoaded {
                 model: "a".into(),
                 context_length: 2048,
+                offload_kv_cache_to_gpu: None,
             }],
             release_instances: vec![],
         };

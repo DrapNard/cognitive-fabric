@@ -12,6 +12,7 @@ build = "build.rs"
 default = []
 wasm-verifier = ["dep:wasmi"]
 wasm-experts = ["dep:wasmi"]
+nvml-gpu = ["dep:nvml-wrapper"]
 
 [[bin]]
 name = "cogfabric"
@@ -23,6 +24,7 @@ clap = { version = "4", features = ["derive"] }
 flatbuffers = "=25.12.19"
 hex = "0.4"
 libc = "0.2"
+nvml-wrapper = { version = "=0.13.0", optional = true }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 rusqlite = { version = "0.32", features = ["bundled", "backup", "serialize", "hooks", "limits"] }
 serde = { version = "1", features = ["derive"] }

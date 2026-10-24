@@ -80,6 +80,8 @@ enum Command {
         host_pid: u32,
     },
     Init,
+    #[command(hide = true)]
+    GpuNvmlWorker,
     /// Publish a new immutable version of an operator-declared project profile.
     ProjectPublish {
         #[arg(long)]
@@ -115,6 +117,9 @@ enum Command {
         probe_inference: bool,
         #[arg(long)]
         probe_gpu: bool,
+        /// Select the GPU sensor explicitly; NVML requires the nvml-gpu build feature.
+        #[arg(long, requires = "probe_gpu", value_parser = ["nvidia-smi", "nvml"])]
+        gpu_sensor: Option<String>,
         #[arg(long)]
         probe_registered_models: bool,
     },
@@ -227,6 +232,9 @@ enum Command {
         model: String,
         #[arg(long, default_value = "2048")]
         context_length: u32,
+        /// Explicit KV-cache placement request; this does not control model-layer placement.
+        #[arg(long)]
+        offload_kv_cache_to_gpu: Option<bool>,
         #[arg(long)]
         human_approve: bool,
     },
@@ -269,6 +277,9 @@ enum Command {
         model: String,
         #[arg(long, default_value = "2048")]
         context_length: u32,
+        /// Require provider-echoed and observed KV-cache GPU/CPU placement.
+        #[arg(long)]
+        offload_kv_cache_to_gpu: Option<bool>,
         #[arg(long)]
         human_approve: bool,
     },
@@ -537,6 +548,8 @@ enum Command {
         /// Observe shared-device GPU metrics during each execution window.
         #[arg(long)]
         observe_gpu: bool,
+        #[arg(long, requires = "observe_gpu", value_parser = ["nvidia-smi", "nvml"])]
+        gpu_sensor: Option<String>,
         #[arg(long, default_value = "deep")]
         mode: String,
         #[arg(long)]
@@ -696,6 +709,13 @@ fn output<T: Serialize>(value: T, force_json: bool) -> Result<()> {
     Ok(())
 }
 
+fn gpu_sensor_choice(sensor: Option<&str>) -> cogfabric::gpu::Sensor {
+    match sensor {
+        Some("nvml") => cogfabric::gpu::Sensor::Nvml,
+        _ => cogfabric::gpu::Sensor::NvidiaSmi,
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let result = run_cli().await;
@@ -711,6 +731,9 @@ async fn main() -> Result<()> {
 
 async fn run_cli() -> Result<()> {
     let cli = Cli::parse();
+    if matches!(&cli.command, Command::GpuNvmlWorker) {
+        return cogfabric::gpu::nvml::run_worker();
+    }
     if !cli.wasm_expert.is_empty() {
         if cli.wasm_expert.len() > 8
             || !matches!(&cli.command, Command::Ask { .. } | Command::Serve { .. })
@@ -1093,16 +1116,18 @@ async fn run_cli() -> Result<()> {
             authenticate,
             model,
             context_length,
+            offload_kv_cache_to_gpu,
             human_approve,
         } => {
             let store = Store::open_existing_with_limit(&cfg.db(), cfg.max_database_bytes)?;
             return output(
-                cogfabric::residency::managed::load(
+                cogfabric::residency::managed::load_with_gpu(
                     &store,
                     api_base,
                     *authenticate,
                     model,
                     *context_length,
+                    *offload_kv_cache_to_gpu,
                     *human_approve,
                 )
                 .await?,
@@ -1512,12 +1537,13 @@ async fn run_cli() -> Result<()> {
         Command::Diagnostics {
             probe_inference,
             probe_gpu,
+            gpu_sensor,
             probe_registered_models,
         } => {
             let mut report =
                 cogfabric::diagnostics::diagnose(&cfg, &store, probe_inference).await?;
             report["gpu_telemetry"] = if probe_gpu {
-                cogfabric::gpu::sample().await?
+                cogfabric::gpu::sample_with(gpu_sensor_choice(gpu_sensor.as_deref())).await?
             } else {
                 serde_json::json!({"status":"not_requested"})
             };
@@ -1656,6 +1682,7 @@ async fn run_cli() -> Result<()> {
             json!({"saved":true,"inference_auth_scope":settings.inference_auth_scope,"credential_environment_variable":cogfabric::credentials::ENVIRONMENT_VARIABLE,"credential_stored":false})
         }
         Command::ConfigShow => serde_json::to_value(&cfg)?,
+        Command::GpuNvmlWorker => bail!("GPU worker must run before normal initialization"),
         Command::ProjectPublish { .. } | Command::ProjectShow { .. } | Command::ProjectList => {
             bail!("Project commands must run before engine initialization")
         }
@@ -1711,6 +1738,7 @@ async fn run_cli() -> Result<()> {
             authenticate,
             model,
             context_length,
+            offload_kv_cache_to_gpu,
             human_approve,
         } => {
             cogfabric::residency::mutate(
@@ -1720,6 +1748,7 @@ async fn run_cli() -> Result<()> {
                 cogfabric::residency::Mutation::Load {
                     model,
                     context_length,
+                    offload_kv_cache_to_gpu,
                 },
                 human_approve,
             )
@@ -1960,6 +1989,7 @@ async fn run_cli() -> Result<()> {
         Command::Compare {
             file,
             observe_gpu,
+            gpu_sensor,
             mode,
             larger_model,
             source,
@@ -1970,7 +2000,7 @@ async fn run_cli() -> Result<()> {
             workflow_check,
             max_run_seconds,
         } => {
-            let report = cogfabric::benchmarking::compare_observed_until(
+            let report = cogfabric::benchmarking::compare_observed_with_sensor_until(
                 &cfg,
                 store.clone(),
                 cogfabric::benchmarking::Comparison {
@@ -1988,6 +2018,7 @@ async fn run_cli() -> Result<()> {
                     },
                     gpu_observation: observe_gpu.then_some(Default::default()),
                 },
+                gpu_sensor_choice(gpu_sensor.as_deref()),
                 async {
                     let _ = tokio::signal::ctrl_c().await;
                 },

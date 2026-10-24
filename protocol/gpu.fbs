@@ -1,0 +1,22 @@
+// Read-only, one-shot device observations from the isolated NVML worker.
+namespace Telemetry.Gpu;
+
+table Device {
+  uuid:string (required);
+  memory_total_bytes:ulong;
+  has_memory_total:bool;
+  memory_used_bytes:ulong;
+  has_memory_used:bool;
+  utilization_percent:double;
+  has_utilization:bool;
+  power_watts:double;
+  has_power:bool;
+}
+
+table Sample {
+  version:ushort = 1;
+  devices:[Device] (required);
+}
+
+root_type Sample;
+file_identifier "CGPU";

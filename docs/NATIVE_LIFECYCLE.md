@@ -1,5 +1,23 @@
 # Approved native model lifecycle
 
+## Explicit KV-cache GPU placement
+
+`residency-load` and `residency-managed-load` accept
+`--offload-kv-cache-to-gpu true|false`. Plan requests (`ensure_loaded` entries) and
+native lifecycle model policies accept optional `offload_kv_cache_to_gpu`.
+Omitting the field preserves provider defaults and legacy serialization.
+
+Only LLM/decision models permit an explicit setting. Applied load configuration
+must echo the requested boolean, and fresh inventory must agree before success.
+Explicit settings produce v2 plans/receipts with KV-placement binding; restoration,
+reuse and release reject disagreement. V1 durable inventory hashes intentionally
+exclude the newly exposed field and cannot authorize explicit GPU settings.
+
+This controls provider-reported KV-cache placement only. It does not request a
+model-layer offload ratio, prove physical GPU residency, enforce GPU quotas or
+establish speed gains. Runtime tests of this new path are deferred.
+
+
 CLI/loopback lifecycle, uncertainty, cancellation and receipt reuse pass the
 combined automated suite. See `CURRENT_IMPLEMENTATION.md` for exact evidence.
 Real model quality and GPU behavior remain unverified.

@@ -1,5 +1,25 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## GPU sensor and explicit KV-cache placement — 2026-10-24
+
+**Implemented; runtime verification deferred at the operator's request.**
+Optional `nvml-gpu` adds a read-only dynamically loaded NVML sensor. Diagnostics
+and comparison observations accept `--gpu-sensor nvml`; the default remains
+`nvidia-smi`. A fixed same-image child returns a bounded, versioned FlatBuffers
+frame (`protocol/gpu.fbs`). Both sensor children have time/output/device limits
+and tracked cancellation cleanup. Missing metrics stay unknown; observations are
+whole-device and do not establish task-attributed energy or direct CUDA inference.
+
+Explicit `offload_kv_cache_to_gpu` is supported in approved residency loads,
+plans and native lifecycle policies for LLM/decision models. The provider must
+echo and subsequently report the requested boolean. Explicit settings use v2
+receipts/plans, pin KV placement and reject drift; legacy v1 inventory hashes
+retain their original field projection. This controls KV cache, not model-layer
+placement, GPU isolation or physical resource enforcement. See
+[GPU observations](GPU_OBSERVATIONS.md) and [native lifecycle](NATIVE_LIFECYCLE.md).
+No new test, live GPU query, benchmark or readiness claim accompanies this work.
+
+
 ## Explicit immutable project profiles — 2026-10-24
 
 **Implemented and verified.** Architecture §3 now has explicit

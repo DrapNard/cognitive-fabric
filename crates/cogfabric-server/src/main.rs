@@ -64,6 +64,9 @@ enum Worker {
         #[arg(long)]
         host_pid: u32,
     },
+    /// Internal one-shot read-only NVML sampler.
+    #[command(hide = true, name = "gpu-nvml-worker")]
+    GpuNvml,
 }
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -79,6 +82,9 @@ async fn main() -> Result<()> {
         }
         if let Worker::Module { socket, host_pid } = &worker {
             return cogfabric::fabric::modules::worker_entrypoint(socket, *host_pid).await;
+        }
+        if matches!(&worker, Worker::GpuNvml) {
+            return cogfabric::gpu::nvml::run_worker();
         }
         let home = args
             .home
@@ -100,6 +106,7 @@ async fn main() -> Result<()> {
                 cogfabric::fabric::tools::unix::process::run_worker(home, &socket, host_pid, true)
                     .await
             }
+            Worker::GpuNvml => unreachable!("GPU worker returned above"),
         };
     }
     if args.native_lifecycle_policy.is_some() && !args.approve_native_lifecycle {

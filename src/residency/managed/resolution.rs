@@ -33,6 +33,8 @@ struct Record {
     model_key: Option<String>,
     model_type: Option<String>,
     context_length: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    offload_kv_cache_to_gpu: Option<bool>,
     receipt_id: Option<String>,
     instance_id: Option<String>,
     operator_approved: bool,
@@ -112,7 +114,7 @@ fn members_digest(members: &[Member]) -> Result<String> {
     Ok(sha256(&serde_json::to_vec(members)?))
 }
 fn event(record: &Record, state: &str, digest: &str) -> Value {
-    json!({"format_version":1,"state":state,"resolution_id":record.resolution_id,
+    json!({"format_version":record.format_version,"state":state,"resolution_id":record.resolution_id,
         "resolver_task_id":record.resolver_task_id,"original_task_id":record.original_task_id,
         "payload_sha256":digest,"provider_contacted":true,"model_mutation_performed":false,
         "original_outcome":"unknown","provider_stop_proven":false,"permissions_granted":false})
@@ -152,7 +154,7 @@ fn validated(store: &Store, task: &str) -> Result<Option<Record>> {
     let original = original_db(&db, task)?;
     if serde_json::to_string(&record)? != raw
         || sha256(raw.as_bytes()) != digest
-        || record.format_version != 1
+        || !matches!(record.format_version, 1 | 2)
         || record.original_task_id != task
         || record.resolver_task_id != resolver
         || record.endpoint != endpoint
@@ -180,10 +182,18 @@ fn validated(store: &Store, task: &str) -> Result<Option<Record>> {
         Mutation::Load {
             ref model,
             context_length,
+            offload_kv_cache_to_gpu,
         } => {
             if record.operation != "load_absent"
+                || record.format_version
+                    != if offload_kv_cache_to_gpu.is_some() {
+                        2
+                    } else {
+                        1
+                    }
                 || record.model_key.as_ref() != Some(model)
                 || record.context_length != Some(context_length)
+                || record.offload_kv_cache_to_gpu != offload_kv_cache_to_gpu
                 || !matches!(
                     record.model_type.as_deref(),
                     Some("llm" | "embedding" | "decision")
@@ -202,6 +212,7 @@ fn validated(store: &Store, task: &str) -> Result<Option<Record>> {
                 || record.model_key.is_some()
                 || record.model_type.is_some()
                 || record.context_length.is_some()
+                || record.offload_kv_cache_to_gpu.is_some()
             {
                 bail!("Resolution differs from original release")
             }
@@ -360,6 +371,7 @@ pub async fn resolve(
         model_key: None,
         model_type: None,
         context_length: None,
+        offload_kv_cache_to_gpu: None,
         receipt_id: None,
         instance_id: None,
         operator_approved: true,
@@ -374,6 +386,7 @@ pub async fn resolve(
         Mutation::Load {
             model,
             context_length,
+            offload_kv_cache_to_gpu,
         } => {
             let model = inventory.iter().find(|m| &m.key == model).ok_or_else(|| {
                 anyhow::anyhow!("Original model is missing from native inventory")
@@ -385,6 +398,12 @@ pub async fn resolve(
             record.model_key = Some(model.key.clone());
             record.model_type = Some(model.kind.clone());
             record.context_length = Some(*context_length);
+            record.offload_kv_cache_to_gpu = *offload_kv_cache_to_gpu;
+            record.format_version = if offload_kv_cache_to_gpu.is_some() {
+                2
+            } else {
+                1
+            };
             None
         }
         Mutation::Unload { instance_id } => {

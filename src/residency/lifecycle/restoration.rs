@@ -99,6 +99,7 @@ fn read_original(
                 .ok_or_else(|| anyhow::anyhow!("Native restoration model is missing"))?;
             if receipt.model_key != model.model
                 || receipt.context_length != model.context_length
+                || receipt.offload_kv_cache_to_gpu != model.offload_kv_cache_to_gpu
                 || !instances.insert(receipt.instance_id.clone())
             {
                 bail!("Native restoration model/context mapping changed")
