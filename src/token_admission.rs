@@ -4,7 +4,7 @@
 //! It does not attest tokenizer correctness or immutable model weights.
 
 use crate::{
-    backend::{self, Generation},
+    backend::{self, Generation, ProviderMetricSource, ProviderMetrics},
     config::Config,
 };
 use anyhow::{bail, Context, Result};
@@ -232,6 +232,7 @@ pub(crate) async fn generate_with_finish(
         bail!("llama.cpp completion exceeded the reserved output-token count")
     }
     let reported_input = optional_u64(&response, "tokens_evaluated")?;
+    let provider_metrics = llama_cpp_provider_metrics(response.get("timings"))?;
     let finish = match response.get("stop_type").and_then(Value::as_str) {
         Some("eos" | "word") => "stop",
         Some("limit") => "length",
@@ -245,9 +246,42 @@ pub(crate) async fn generate_with_finish(
             output_tokens,
             elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
             queue_wait_ms: None,
+            provider_metrics,
         },
         finish,
     ))
+}
+
+fn llama_cpp_provider_metrics(timings: Option<&Value>) -> Result<Option<ProviderMetrics>> {
+    let Some(timings) = timings.filter(|value| !value.is_null()) else {
+        return Ok(None);
+    };
+    let timings = timings
+        .as_object()
+        .context("llama.cpp timings must be an object")?;
+    let mut metrics = ProviderMetrics::new(ProviderMetricSource::LlamaCppNative);
+    metrics.prompt_processing_ms = optional_timing(timings, "prompt_ms")?;
+    metrics.generation_ms = optional_timing(timings, "predicted_ms")?;
+    metrics.output_tokens_per_second = optional_timing(timings, "predicted_per_second")?;
+    if metrics.prompt_processing_ms.is_none()
+        && metrics.generation_ms.is_none()
+        && metrics.output_tokens_per_second.is_none()
+    {
+        return Ok(None);
+    }
+    metrics.validate()?;
+    Ok(Some(metrics))
+}
+
+fn optional_timing(timings: &serde_json::Map<String, Value>, name: &str) -> Result<Option<f64>> {
+    timings
+        .get(name)
+        .map(|value| {
+            value
+                .as_f64()
+                .with_context(|| format!("llama.cpp timing {name} must be a number"))
+        })
+        .transpose()
 }
 
 fn validate_messages(messages: &Value) -> Result<()> {
@@ -822,6 +856,38 @@ mod tests {
             assert!(charge_fixture(&cfg, &task, &api, settings, 1).is_err());
             drop(store);
             std::fs::remove_dir_all(root).unwrap();
+        }
+    }
+}
+
+#[cfg(test)]
+mod provider_timing_tests {
+    use super::*;
+
+    #[test]
+    fn llama_metrics_preserve_missing_values_and_reject_invalid_numbers() {
+        for value in [None, Some(json!(null)), Some(json!({"other": 1}))] {
+            assert!(llama_cpp_provider_metrics(value.as_ref())
+                .unwrap()
+                .is_none());
+        }
+        let metrics = llama_cpp_provider_metrics(Some(&json!({
+            "prompt_ms": 2.5, "predicted_ms": 8.0, "predicted_per_second": 125.0
+        })))
+        .unwrap()
+        .unwrap();
+        assert_eq!(metrics.prompt_processing_ms, Some(2.5));
+        assert_eq!(metrics.generation_ms, Some(8.0));
+        assert_eq!(metrics.output_tokens_per_second, Some(125.0));
+        assert_eq!(metrics.model_load_ms, None);
+        for value in [
+            json!([]),
+            json!({"prompt_ms": null}),
+            json!({"prompt_ms": "1"}),
+            json!({"predicted_ms": -1}),
+            json!({"predicted_per_second": 1000000001_u64}),
+        ] {
+            assert!(llama_cpp_provider_metrics(Some(&value)).is_err());
         }
     }
 }

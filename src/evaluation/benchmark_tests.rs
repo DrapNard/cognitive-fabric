@@ -33,6 +33,7 @@ impl InferenceBackend for Fixture {
                 output_tokens: Some(1),
                 elapsed_ms: 0.0,
                 queue_wait_ms: None,
+                provider_metrics: None,
             })
         })
     }
@@ -256,6 +257,7 @@ impl InferenceBackend for Pending {
                     output_tokens: Some(1),
                     elapsed_ms: 0.0,
                     queue_wait_ms: None,
+                    provider_metrics: None,
                 })
             });
         }

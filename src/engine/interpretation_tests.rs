@@ -40,6 +40,7 @@ fn generation(text: String) -> Generation {
         output_tokens: Some(1),
         elapsed_ms: 0.0,
         queue_wait_ms: Some(0.0),
+        provider_metrics: None,
     }
 }
 fn cfg() -> Config {

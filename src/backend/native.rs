@@ -3,7 +3,10 @@
 //! The adapter has no provider integrations or tool execution path. The loaded
 //! instance ID is pinned by the host and checked against every native response;
 //! it is not an attestation of model weights or provider identity.
-use super::{system_prompt, Generation, InferenceBackend, InferenceTarget, NativeModelTarget};
+use super::{
+    system_prompt, Generation, InferenceBackend, InferenceTarget, NativeModelTarget,
+    ProviderMetricSource, ProviderMetrics,
+};
 use crate::{config::Config, credentials::Bearer};
 use anyhow::{bail, Result};
 use serde::Deserialize;
@@ -275,6 +278,12 @@ impl NativeBackend {
         }) {
             bail!("Native inference returned invalid usage metrics")
         }
+        let provider_metrics = response
+            .stats
+            .as_ref()
+            .map(lm_studio_provider_metrics)
+            .transpose()?
+            .flatten();
         if response
             .stats
             .as_ref()
@@ -296,10 +305,28 @@ impl NativeBackend {
                 .and_then(|stats| stats.total_output_tokens),
             elapsed_ms: start.elapsed().as_secs_f64() * 1000.0,
             queue_wait_ms: None,
+            provider_metrics,
         };
         self.dispatch.confirmed.fetch_add(1, Ordering::SeqCst);
         Ok(generation)
     }
+}
+
+fn lm_studio_provider_metrics(stats: &NativeStats) -> Result<Option<ProviderMetrics>> {
+    let mut metrics = ProviderMetrics::new(ProviderMetricSource::LmStudioNative);
+    metrics.output_tokens_per_second = stats.tokens_per_second;
+    metrics.time_to_first_token_ms = stats
+        .time_to_first_token_seconds
+        .map(|value| value * 1000.0);
+    metrics.model_load_ms = stats.model_load_time_seconds.map(|value| value * 1000.0);
+    if metrics.output_tokens_per_second.is_none()
+        && metrics.time_to_first_token_ms.is_none()
+        && metrics.model_load_ms.is_none()
+    {
+        return Ok(None);
+    }
+    metrics.validate()?;
+    Ok(Some(metrics))
 }
 
 impl InferenceBackend for NativeBackend {
@@ -372,4 +399,31 @@ struct NativeStats {
     time_to_first_token_seconds: Option<f64>,
     #[serde(default)]
     model_load_time_seconds: Option<f64>,
+}
+
+#[cfg(test)]
+mod metric_tests {
+    use super::*;
+
+    #[test]
+    fn native_metrics_preserve_absence_and_convert_seconds_to_milliseconds() {
+        let empty: NativeStats = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert!(lm_studio_provider_metrics(&empty).unwrap().is_none());
+        let stats: NativeStats = serde_json::from_value(serde_json::json!({
+            "tokens_per_second": 12.5,
+            "time_to_first_token_seconds": 0.125,
+            "model_load_time_seconds": 2.0
+        }))
+        .unwrap();
+        let metrics = lm_studio_provider_metrics(&stats).unwrap().unwrap();
+        assert_eq!(metrics.time_to_first_token_ms, Some(125.0));
+        assert_eq!(metrics.model_load_ms, Some(2000.0));
+        assert_eq!(metrics.output_tokens_per_second, Some(12.5));
+        assert_eq!(metrics.generation_ms, None);
+        for value in [-1.0, f64::INFINITY, f64::NAN, 86401.0] {
+            let mut invalid: NativeStats = serde_json::from_value(serde_json::json!({})).unwrap();
+            invalid.model_load_time_seconds = Some(value);
+            assert!(lm_studio_provider_metrics(&invalid).is_err());
+        }
+    }
 }

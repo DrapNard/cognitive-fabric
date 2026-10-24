@@ -1761,6 +1761,7 @@ mod tests {
                     output_tokens: Some(10),
                     elapsed_ms: 1.0,
                     queue_wait_ms: None,
+                    provider_metrics: None,
                 })
             })
         }

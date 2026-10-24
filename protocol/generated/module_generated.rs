@@ -111,6 +111,94 @@ impl<'a> ::flatbuffers::Verifiable for Role {
 }
 
 impl ::flatbuffers::SimpleToVerifyInSlice for Role {}
+#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
+pub const ENUM_MIN_PROVIDER_METRIC_SOURCE: u8 = 0;
+#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
+pub const ENUM_MAX_PROVIDER_METRIC_SOURCE: u8 = 2;
+#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
+#[allow(non_camel_case_types)]
+pub const ENUM_VALUES_PROVIDER_METRIC_SOURCE: [ProviderMetricSource; 3] = [
+  ProviderMetricSource::Unknown,
+  ProviderMetricSource::LmStudioNative,
+  ProviderMetricSource::LlamaCppNative,
+];
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[repr(transparent)]
+pub struct ProviderMetricSource(pub u8);
+#[allow(non_upper_case_globals)]
+impl ProviderMetricSource {
+  pub const Unknown: Self = Self(0);
+  pub const LmStudioNative: Self = Self(1);
+  pub const LlamaCppNative: Self = Self(2);
+
+  pub const ENUM_MIN: u8 = 0;
+  pub const ENUM_MAX: u8 = 2;
+  pub const ENUM_VALUES: &'static [Self] = &[
+    Self::Unknown,
+    Self::LmStudioNative,
+    Self::LlamaCppNative,
+  ];
+  /// Returns the variant's name or "" if unknown.
+  pub fn variant_name(self) -> Option<&'static str> {
+    match self {
+      Self::Unknown => Some("Unknown"),
+      Self::LmStudioNative => Some("LmStudioNative"),
+      Self::LlamaCppNative => Some("LlamaCppNative"),
+      _ => None,
+    }
+  }
+}
+impl ::core::fmt::Debug for ProviderMetricSource {
+  fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
+    if let Some(name) = self.variant_name() {
+      f.write_str(name)
+    } else {
+      f.write_fmt(format_args!("<UNKNOWN {:?}>", self.0))
+    }
+  }
+}
+impl<'a> ::flatbuffers::Follow<'a> for ProviderMetricSource {
+  type Inner = Self;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    let b = unsafe { ::flatbuffers::read_scalar_at::<u8>(buf, loc) };
+    Self(b)
+  }
+}
+
+impl ::flatbuffers::Push for ProviderMetricSource {
+    type Output = ProviderMetricSource;
+    #[inline]
+    unsafe fn push(&self, dst: &mut [u8], _written_len: usize) {
+        unsafe { ::flatbuffers::emplace_scalar::<u8>(dst, self.0) };
+    }
+}
+
+impl ::flatbuffers::EndianScalar for ProviderMetricSource {
+  type Scalar = u8;
+  #[inline]
+  fn to_little_endian(self) -> u8 {
+    self.0.to_le()
+  }
+  #[inline]
+  #[allow(clippy::wrong_self_convention)]
+  fn from_little_endian(v: u8) -> Self {
+    let b = u8::from_le(v);
+    Self(b)
+  }
+}
+
+impl<'a> ::flatbuffers::Verifiable for ProviderMetricSource {
+  #[inline]
+  fn run_verifier(
+    v: &mut ::flatbuffers::Verifier, pos: usize
+  ) -> Result<(), ::flatbuffers::InvalidFlatbuffer> {
+    u8::run_verifier(v, pos)
+  }
+}
+
+impl ::flatbuffers::SimpleToVerifyInSlice for ProviderMetricSource {}
 pub enum InferenceRequestOffset {}
 #[derive(Copy, Clone, PartialEq)]
 
@@ -289,6 +377,269 @@ impl InferenceRequestT {
     })
   }
 }
+pub enum ProviderMetricsOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct ProviderMetrics<'a> {
+  pub _tab: ::flatbuffers::Table<'a>,
+}
+
+impl<'a> ::flatbuffers::Follow<'a> for ProviderMetrics<'a> {
+  type Inner = ProviderMetrics<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: unsafe { ::flatbuffers::Table::new(buf, loc) } }
+  }
+}
+
+impl<'a> ProviderMetrics<'a> {
+  pub const VT_FORMAT_VERSION: ::flatbuffers::VOffsetT = 4;
+  pub const VT_SOURCE: ::flatbuffers::VOffsetT = 6;
+  pub const VT_MODEL_LOAD_MS: ::flatbuffers::VOffsetT = 8;
+  pub const VT_TIME_TO_FIRST_TOKEN_MS: ::flatbuffers::VOffsetT = 10;
+  pub const VT_PROMPT_PROCESSING_MS: ::flatbuffers::VOffsetT = 12;
+  pub const VT_GENERATION_MS: ::flatbuffers::VOffsetT = 14;
+  pub const VT_OUTPUT_TOKENS_PER_SECOND: ::flatbuffers::VOffsetT = 16;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
+    ProviderMetrics { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: ::flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut ::flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args ProviderMetricsArgs
+  ) -> ::flatbuffers::WIPOffset<ProviderMetrics<'bldr>> {
+    let mut builder = ProviderMetricsBuilder::new(_fbb);
+    if let Some(x) = args.output_tokens_per_second { builder.add_output_tokens_per_second(x); }
+    if let Some(x) = args.generation_ms { builder.add_generation_ms(x); }
+    if let Some(x) = args.prompt_processing_ms { builder.add_prompt_processing_ms(x); }
+    if let Some(x) = args.time_to_first_token_ms { builder.add_time_to_first_token_ms(x); }
+    if let Some(x) = args.model_load_ms { builder.add_model_load_ms(x); }
+    builder.add_format_version(args.format_version);
+    builder.add_source(args.source);
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> ProviderMetricsT {
+    let format_version = self.format_version();
+    let source = self.source();
+    let model_load_ms = self.model_load_ms();
+    let time_to_first_token_ms = self.time_to_first_token_ms();
+    let prompt_processing_ms = self.prompt_processing_ms();
+    let generation_ms = self.generation_ms();
+    let output_tokens_per_second = self.output_tokens_per_second();
+    ProviderMetricsT {
+      format_version,
+      source,
+      model_load_ms,
+      time_to_first_token_ms,
+      prompt_processing_ms,
+      generation_ms,
+      output_tokens_per_second,
+    }
+  }
+
+  #[inline]
+  pub fn format_version(&self) -> u16 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u16>(ProviderMetrics::VT_FORMAT_VERSION, Some(1)).unwrap()}
+  }
+  #[inline]
+  pub fn source(&self) -> ProviderMetricSource {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<ProviderMetricSource>(ProviderMetrics::VT_SOURCE, Some(ProviderMetricSource::Unknown)).unwrap()}
+  }
+  #[inline]
+  pub fn model_load_ms(&self) -> Option<f64> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<f64>(ProviderMetrics::VT_MODEL_LOAD_MS, None)}
+  }
+  #[inline]
+  pub fn time_to_first_token_ms(&self) -> Option<f64> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<f64>(ProviderMetrics::VT_TIME_TO_FIRST_TOKEN_MS, None)}
+  }
+  #[inline]
+  pub fn prompt_processing_ms(&self) -> Option<f64> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<f64>(ProviderMetrics::VT_PROMPT_PROCESSING_MS, None)}
+  }
+  #[inline]
+  pub fn generation_ms(&self) -> Option<f64> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<f64>(ProviderMetrics::VT_GENERATION_MS, None)}
+  }
+  #[inline]
+  pub fn output_tokens_per_second(&self) -> Option<f64> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<f64>(ProviderMetrics::VT_OUTPUT_TOKENS_PER_SECOND, None)}
+  }
+}
+
+impl ::flatbuffers::Verifiable for ProviderMetrics<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut ::flatbuffers::Verifier, pos: usize
+  ) -> Result<(), ::flatbuffers::InvalidFlatbuffer> {
+    v.visit_table(pos)?
+     .visit_field::<u16>("format_version", Self::VT_FORMAT_VERSION, false)?
+     .visit_field::<ProviderMetricSource>("source", Self::VT_SOURCE, false)?
+     .visit_field::<f64>("model_load_ms", Self::VT_MODEL_LOAD_MS, false)?
+     .visit_field::<f64>("time_to_first_token_ms", Self::VT_TIME_TO_FIRST_TOKEN_MS, false)?
+     .visit_field::<f64>("prompt_processing_ms", Self::VT_PROMPT_PROCESSING_MS, false)?
+     .visit_field::<f64>("generation_ms", Self::VT_GENERATION_MS, false)?
+     .visit_field::<f64>("output_tokens_per_second", Self::VT_OUTPUT_TOKENS_PER_SECOND, false)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct ProviderMetricsArgs {
+    pub format_version: u16,
+    pub source: ProviderMetricSource,
+    pub model_load_ms: Option<f64>,
+    pub time_to_first_token_ms: Option<f64>,
+    pub prompt_processing_ms: Option<f64>,
+    pub generation_ms: Option<f64>,
+    pub output_tokens_per_second: Option<f64>,
+}
+impl<'a> Default for ProviderMetricsArgs {
+  #[inline]
+  fn default() -> Self {
+    ProviderMetricsArgs {
+      format_version: 1,
+      source: ProviderMetricSource::Unknown,
+      model_load_ms: None,
+      time_to_first_token_ms: None,
+      prompt_processing_ms: None,
+      generation_ms: None,
+      output_tokens_per_second: None,
+    }
+  }
+}
+
+pub struct ProviderMetricsBuilder<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: ::flatbuffers::WIPOffset<::flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> ProviderMetricsBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_format_version(&mut self, format_version: u16) {
+    self.fbb_.push_slot::<u16>(ProviderMetrics::VT_FORMAT_VERSION, format_version, 1);
+  }
+  #[inline]
+  pub fn add_source(&mut self, source: ProviderMetricSource) {
+    self.fbb_.push_slot::<ProviderMetricSource>(ProviderMetrics::VT_SOURCE, source, ProviderMetricSource::Unknown);
+  }
+  #[inline]
+  pub fn add_model_load_ms(&mut self, model_load_ms: f64) {
+    self.fbb_.push_slot_always::<f64>(ProviderMetrics::VT_MODEL_LOAD_MS, model_load_ms);
+  }
+  #[inline]
+  pub fn add_time_to_first_token_ms(&mut self, time_to_first_token_ms: f64) {
+    self.fbb_.push_slot_always::<f64>(ProviderMetrics::VT_TIME_TO_FIRST_TOKEN_MS, time_to_first_token_ms);
+  }
+  #[inline]
+  pub fn add_prompt_processing_ms(&mut self, prompt_processing_ms: f64) {
+    self.fbb_.push_slot_always::<f64>(ProviderMetrics::VT_PROMPT_PROCESSING_MS, prompt_processing_ms);
+  }
+  #[inline]
+  pub fn add_generation_ms(&mut self, generation_ms: f64) {
+    self.fbb_.push_slot_always::<f64>(ProviderMetrics::VT_GENERATION_MS, generation_ms);
+  }
+  #[inline]
+  pub fn add_output_tokens_per_second(&mut self, output_tokens_per_second: f64) {
+    self.fbb_.push_slot_always::<f64>(ProviderMetrics::VT_OUTPUT_TOKENS_PER_SECOND, output_tokens_per_second);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>) -> ProviderMetricsBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    ProviderMetricsBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> ::flatbuffers::WIPOffset<ProviderMetrics<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    ::flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl ::core::fmt::Debug for ProviderMetrics<'_> {
+  fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+    let mut ds = f.debug_struct("ProviderMetrics");
+      ds.field("format_version", &self.format_version());
+      ds.field("source", &self.source());
+      ds.field("model_load_ms", &self.model_load_ms());
+      ds.field("time_to_first_token_ms", &self.time_to_first_token_ms());
+      ds.field("prompt_processing_ms", &self.prompt_processing_ms());
+      ds.field("generation_ms", &self.generation_ms());
+      ds.field("output_tokens_per_second", &self.output_tokens_per_second());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProviderMetricsT {
+  pub format_version: u16,
+  pub source: ProviderMetricSource,
+  pub model_load_ms: Option<f64>,
+  pub time_to_first_token_ms: Option<f64>,
+  pub prompt_processing_ms: Option<f64>,
+  pub generation_ms: Option<f64>,
+  pub output_tokens_per_second: Option<f64>,
+}
+impl Default for ProviderMetricsT {
+  fn default() -> Self {
+    Self {
+      format_version: 1,
+      source: ProviderMetricSource::Unknown,
+      model_load_ms: None,
+      time_to_first_token_ms: None,
+      prompt_processing_ms: None,
+      generation_ms: None,
+      output_tokens_per_second: None,
+    }
+  }
+}
+impl ProviderMetricsT {
+  pub fn pack<'b, A: ::flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut ::flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> ::flatbuffers::WIPOffset<ProviderMetrics<'b>> {
+    let format_version = self.format_version;
+    let source = self.source;
+    let model_load_ms = self.model_load_ms;
+    let time_to_first_token_ms = self.time_to_first_token_ms;
+    let prompt_processing_ms = self.prompt_processing_ms;
+    let generation_ms = self.generation_ms;
+    let output_tokens_per_second = self.output_tokens_per_second;
+    ProviderMetrics::create(_fbb, &ProviderMetricsArgs{
+      format_version,
+      source,
+      model_load_ms,
+      time_to_first_token_ms,
+      prompt_processing_ms,
+      generation_ms,
+      output_tokens_per_second,
+    })
+  }
+}
 pub enum InferenceResponseOffset {}
 #[derive(Copy, Clone, PartialEq)]
 
@@ -311,6 +662,7 @@ impl<'a> InferenceResponse<'a> {
   pub const VT_OUTPUT_TOKENS: ::flatbuffers::VOffsetT = 10;
   pub const VT_ELAPSED_MS: ::flatbuffers::VOffsetT = 12;
   pub const VT_QUEUE_WAIT_MS: ::flatbuffers::VOffsetT = 14;
+  pub const VT_PROVIDER_METRICS: ::flatbuffers::VOffsetT = 16;
 
   #[inline]
   pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
@@ -326,6 +678,7 @@ impl<'a> InferenceResponse<'a> {
     builder.add_elapsed_ms(args.elapsed_ms);
     if let Some(x) = args.output_tokens { builder.add_output_tokens(x); }
     if let Some(x) = args.input_tokens { builder.add_input_tokens(x); }
+    if let Some(x) = args.provider_metrics { builder.add_provider_metrics(x); }
     if let Some(x) = args.model { builder.add_model(x); }
     if let Some(x) = args.text { builder.add_text(x); }
     builder.finish()
@@ -344,6 +697,9 @@ impl<'a> InferenceResponse<'a> {
     let output_tokens = self.output_tokens();
     let elapsed_ms = self.elapsed_ms();
     let queue_wait_ms = self.queue_wait_ms();
+    let provider_metrics = self.provider_metrics().map(|x| {
+      alloc::boxed::Box::new(x.unpack())
+    });
     InferenceResponseT {
       text,
       model,
@@ -351,6 +707,7 @@ impl<'a> InferenceResponse<'a> {
       output_tokens,
       elapsed_ms,
       queue_wait_ms,
+      provider_metrics,
     }
   }
 
@@ -396,6 +753,13 @@ impl<'a> InferenceResponse<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<f64>(InferenceResponse::VT_QUEUE_WAIT_MS, None)}
   }
+  #[inline]
+  pub fn provider_metrics(&self) -> Option<ProviderMetrics<'a>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<::flatbuffers::ForwardsUOffset<ProviderMetrics>>(InferenceResponse::VT_PROVIDER_METRICS, None)}
+  }
 }
 
 impl ::flatbuffers::Verifiable for InferenceResponse<'_> {
@@ -410,6 +774,7 @@ impl ::flatbuffers::Verifiable for InferenceResponse<'_> {
      .visit_field::<u64>("output_tokens", Self::VT_OUTPUT_TOKENS, false)?
      .visit_field::<f64>("elapsed_ms", Self::VT_ELAPSED_MS, false)?
      .visit_field::<f64>("queue_wait_ms", Self::VT_QUEUE_WAIT_MS, false)?
+     .visit_field::<::flatbuffers::ForwardsUOffset<ProviderMetrics>>("provider_metrics", Self::VT_PROVIDER_METRICS, false)?
      .finish();
     Ok(())
   }
@@ -421,6 +786,7 @@ pub struct InferenceResponseArgs<'a> {
     pub output_tokens: Option<u64>,
     pub elapsed_ms: f64,
     pub queue_wait_ms: Option<f64>,
+    pub provider_metrics: Option<::flatbuffers::WIPOffset<ProviderMetrics<'a>>>,
 }
 impl<'a> Default for InferenceResponseArgs<'a> {
   #[inline]
@@ -432,6 +798,7 @@ impl<'a> Default for InferenceResponseArgs<'a> {
       output_tokens: None,
       elapsed_ms: 0.0,
       queue_wait_ms: None,
+      provider_metrics: None,
     }
   }
 }
@@ -466,6 +833,10 @@ impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> InferenceResponseBuilder<'a, 
     self.fbb_.push_slot_always::<f64>(InferenceResponse::VT_QUEUE_WAIT_MS, queue_wait_ms);
   }
   #[inline]
+  pub fn add_provider_metrics(&mut self, provider_metrics: ::flatbuffers::WIPOffset<ProviderMetrics<'b >>) {
+    self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<ProviderMetrics>>(InferenceResponse::VT_PROVIDER_METRICS, provider_metrics);
+  }
+  #[inline]
   pub fn new(_fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>) -> InferenceResponseBuilder<'a, 'b, A> {
     let start = _fbb.start_table();
     InferenceResponseBuilder {
@@ -491,6 +862,7 @@ impl ::core::fmt::Debug for InferenceResponse<'_> {
       ds.field("output_tokens", &self.output_tokens());
       ds.field("elapsed_ms", &self.elapsed_ms());
       ds.field("queue_wait_ms", &self.queue_wait_ms());
+      ds.field("provider_metrics", &self.provider_metrics());
       ds.finish()
   }
 }
@@ -503,6 +875,7 @@ pub struct InferenceResponseT {
   pub output_tokens: Option<u64>,
   pub elapsed_ms: f64,
   pub queue_wait_ms: Option<f64>,
+  pub provider_metrics: Option<alloc::boxed::Box<ProviderMetricsT>>,
 }
 impl Default for InferenceResponseT {
   fn default() -> Self {
@@ -513,6 +886,7 @@ impl Default for InferenceResponseT {
       output_tokens: None,
       elapsed_ms: 0.0,
       queue_wait_ms: None,
+      provider_metrics: None,
     }
   }
 }
@@ -533,6 +907,9 @@ impl InferenceResponseT {
     let output_tokens = self.output_tokens;
     let elapsed_ms = self.elapsed_ms;
     let queue_wait_ms = self.queue_wait_ms;
+    let provider_metrics = self.provider_metrics.as_ref().map(|x|{
+      x.pack(_fbb)
+    });
     InferenceResponse::create(_fbb, &InferenceResponseArgs{
       text,
       model,
@@ -540,6 +917,7 @@ impl InferenceResponseT {
       output_tokens,
       elapsed_ms,
       queue_wait_ms,
+      provider_metrics,
     })
   }
 }

@@ -68,6 +68,7 @@ impl InferenceBackend for OriginalBackend {
                 output_tokens: Some(2),
                 elapsed_ms: 0.1,
                 queue_wait_ms: Some(0.0),
+                provider_metrics: None,
             })
         })
     }

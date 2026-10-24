@@ -369,7 +369,11 @@ impl Session {
                             && report.elapsed_ms >= 0.0
                             && report
                                 .queue_wait_ms
-                                .is_none_or(|ms| ms.is_finite() && (0.0..=300_000.0).contains(&ms));
+                                .is_none_or(|ms| ms.is_finite() && (0.0..=300_000.0).contains(&ms))
+                            && report
+                                .provider_metrics
+                                .as_ref()
+                                .is_none_or(|metrics| metrics.validate().is_ok());
                         if !valid {
                             self.mark_parallel_subtask_failed(call.subtask_index, elapsed_ms)?;
                             wave_error.get_or_insert_with(|| {
@@ -400,6 +404,12 @@ impl Session {
                             content_hash: crate::store::sha256(report.text.as_bytes()),
                         };
                         self.store.event(&self.task,"reasoning","jev-r",json!({"call":call.call,"node":node,"text":report.text,"input_tokens":report.input_tokens,"output_tokens":report.output_tokens,"inference_ms":report.elapsed_ms,"queue_wait_ms":report.queue_wait_ms}))?;
+                        self.record_provider_metrics(
+                            call.call,
+                            &call.role,
+                            &node,
+                            report.provider_metrics.as_ref(),
+                        )?;
                         self.nodes.push(node);
                         self.subtask_event(call.subtask_index)?;
                         self.store.event(&self.task, "subtask_resources", "jev-plus", json!({

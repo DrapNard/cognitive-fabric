@@ -87,6 +87,7 @@ impl InferenceBackend for Gate {
                 output_tokens: Some(1),
                 elapsed_ms: 0.0,
                 queue_wait_ms: None,
+                provider_metrics: None,
             })
         })
     }
@@ -397,6 +398,7 @@ async fn target_audit_failure_blocks_queries_or_execution_and_empty_catalog_pres
                     output_tokens: None,
                     elapsed_ms: 0.0,
                     queue_wait_ms: None,
+                    provider_metrics: None,
                 })
             })
         }
@@ -508,6 +510,7 @@ async fn replacing_routes_during_target_observation_cannot_substitute_the_checke
                     output_tokens: None,
                     elapsed_ms: 0.0,
                     queue_wait_ms: None,
+                    provider_metrics: None,
                 })
             })
         }

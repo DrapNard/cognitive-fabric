@@ -1,6 +1,6 @@
 //! Bounded Jev-R role graph. Critique is advisory; evidence verification is independent.
 use crate::{
-    backend::{Generation, InferenceBackend},
+    backend::{Generation, InferenceBackend, ProviderMetrics},
     config::Config,
     planning::{Plan, Subtask},
     security,
@@ -911,6 +911,10 @@ impl Session {
             || report
                 .queue_wait_ms
                 .is_some_and(|ms| !ms.is_finite() || !(0.0..=300_000.0).contains(&ms))
+            || report
+                .provider_metrics
+                .as_ref()
+                .is_some_and(|metrics| metrics.validate().is_err())
         {
             bail!("Invalid bounded inference result")
         }
@@ -949,8 +953,44 @@ impl Session {
             content_hash: crate::store::sha256(report.text.as_bytes()),
         };
         self.store.event(&self.task,"reasoning","jev-r",json!({"call":self.resources.calls,"node":node,"text":report.text,"input_tokens":report.input_tokens,"output_tokens":report.output_tokens,"inference_ms":report.elapsed_ms,"queue_wait_ms":report.queue_wait_ms}))?;
+        self.record_provider_metrics(
+            self.resources.calls,
+            role,
+            &node,
+            report.provider_metrics.as_ref(),
+        )?;
         self.nodes.push(node);
         Ok(Some(report.text))
+    }
+
+    /// Persist provider-reported timings separately from the strict reasoning
+    /// result event. These values are descriptive only and never grant authority.
+    pub(crate) fn record_provider_metrics(
+        &self,
+        call: u32,
+        role: &str,
+        node: &Node,
+        metrics: Option<&ProviderMetrics>,
+    ) -> Result<()> {
+        let Some(metrics) = metrics else {
+            return Ok(());
+        };
+        metrics.validate()?;
+        self.store.event(
+            &self.task,
+            "inference_provider_metrics",
+            "runtime",
+            json!({
+                "format_version": 1,
+                "call": call,
+                "role": role,
+                "answer_sha256": node.content_hash,
+                "provider_reported": true,
+                "physical_resource_measurement": false,
+                "result_verified": false,
+                "metrics": metrics,
+            }),
+        )
     }
 
     pub(crate) async fn workflow_advice(
@@ -2051,6 +2091,7 @@ mod tests {
                         output_tokens: Some(5),
                         elapsed_ms: 1.0,
                         queue_wait_ms: None,
+                        provider_metrics: None,
                     })
                 })
             }
@@ -2162,6 +2203,7 @@ mod tests {
                         output_tokens: Some(5),
                         elapsed_ms: 1.0,
                         queue_wait_ms: None,
+                        provider_metrics: None,
                     })
                 })
             }
@@ -2283,6 +2325,7 @@ mod tests {
                         output_tokens: Some(5),
                         elapsed_ms: 1.0,
                         queue_wait_ms: None,
+                        provider_metrics: None,
                     })
                 })
             }
@@ -2329,6 +2372,7 @@ mod tests {
                         output_tokens: None,
                         elapsed_ms: 0.0,
                         queue_wait_ms: None,
+                        provider_metrics: None,
                     })
                 })
             }
@@ -2395,6 +2439,7 @@ mod tests {
                         output_tokens: None,
                         elapsed_ms: 0.0,
                         queue_wait_ms: None,
+                        provider_metrics: None,
                     })
                 })
             }
@@ -2588,6 +2633,7 @@ mod tests {
                         output_tokens: Some(5),
                         elapsed_ms: 1.0,
                         queue_wait_ms: None,
+                        provider_metrics: None,
                     })
                 })
             }
@@ -2695,6 +2741,7 @@ mod tests {
                         output_tokens: Some(5),
                         elapsed_ms: 1.0,
                         queue_wait_ms: None,
+                        provider_metrics: None,
                     })
                 })
             }
@@ -2931,6 +2978,7 @@ mod tests {
                             output_tokens: Some(5),
                             elapsed_ms: 1.0,
                             queue_wait_ms: None,
+                            provider_metrics: None,
                         });
                     }
                     assert_eq!(call, usize::from(self.structured));
@@ -3278,6 +3326,7 @@ mod tests {
                     output_tokens: Some(10),
                     elapsed_ms: 1.0,
                     queue_wait_ms: None,
+                    provider_metrics: None,
                 })
             })
         }
@@ -3757,9 +3806,78 @@ mod tests {
                     output_tokens: Some(10),
                     elapsed_ms: 1.0,
                     queue_wait_ms: None,
+                    provider_metrics: None,
                 })
             })
         }
+    }
+
+    #[test]
+    fn provider_metrics_are_separate_unverified_hash_linked_events() {
+        let store = Arc::new(Store::in_memory().unwrap());
+        let task = store.create_task("Provider metrics trace", "deep").unwrap();
+        let backend = Arc::new(Script(Mutex::new(VecDeque::new())));
+        let session = Session::new(
+            Config::default(),
+            store.clone(),
+            backend,
+            task.clone(),
+            "deep",
+        )
+        .unwrap();
+        let node = Node {
+            id: 0,
+            parent: None,
+            role: "solver".into(),
+            cycle: 0,
+            model: "fixture/v1".into(),
+            content_hash: crate::store::sha256(b"answer"),
+        };
+        let mut metrics =
+            ProviderMetrics::new(crate::backend::ProviderMetricSource::LmStudioNative);
+        metrics.time_to_first_token_ms = Some(12.5);
+
+        session
+            .record_provider_metrics(1, "solver", &node, Some(&metrics))
+            .unwrap();
+        let events = store.task(&task).unwrap()["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|event| event["kind"] == "inference_provider_metrics")
+            .cloned()
+            .collect::<Vec<_>>();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0]["kind"], "inference_provider_metrics");
+        assert_eq!(events[0]["source"], "runtime");
+        assert_eq!(events[0]["payload"]["call"], 1);
+        assert_eq!(events[0]["payload"]["role"], "solver");
+        assert_eq!(events[0]["payload"]["answer_sha256"], node.content_hash);
+        assert_eq!(events[0]["payload"]["provider_reported"], true);
+        assert_eq!(events[0]["payload"]["physical_resource_measurement"], false);
+        assert_eq!(events[0]["payload"]["result_verified"], false);
+        assert_eq!(
+            events[0]["payload"]["metrics"]["time_to_first_token_ms"],
+            12.5
+        );
+        assert!(events[0]["payload"].get("text").is_none());
+
+        metrics.format_version = 2;
+        assert!(session
+            .record_provider_metrics(2, "solver", &node, Some(&metrics))
+            .is_err());
+        session
+            .record_provider_metrics(2, "solver", &node, None)
+            .unwrap();
+        assert_eq!(
+            store.task(&task).unwrap()["events"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|event| event["kind"] == "inference_provider_metrics")
+                .count(),
+            1
+        );
     }
 
     async fn execute(
@@ -3950,6 +4068,7 @@ mod configured_resource_tests {
                         output_tokens: Some(1),
                         elapsed_ms: 0.0,
                         queue_wait_ms: None,
+                        provider_metrics: None,
                     })
                 })
             }

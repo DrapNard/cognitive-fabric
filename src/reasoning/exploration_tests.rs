@@ -120,6 +120,7 @@ impl InferenceBackend for Script {
                 output_tokens: Some(1),
                 elapsed_ms: 0.0,
                 queue_wait_ms: Some(0.0),
+                provider_metrics: None,
             })
         })
     }
@@ -259,6 +260,7 @@ async fn malformed_structured_output_is_not_downgraded_to_legacy_strategy() {
                     output_tokens: Some(1),
                     elapsed_ms: 0.0,
                     queue_wait_ms: Some(0.0),
+                    provider_metrics: None,
                 })
             })
         }

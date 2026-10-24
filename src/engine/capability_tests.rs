@@ -38,6 +38,7 @@ impl InferenceBackend for Backend {
                 output_tokens: Some(5),
                 elapsed_ms: 1.0,
                 queue_wait_ms: None,
+                provider_metrics: None,
             })
         })
     }
@@ -123,6 +124,7 @@ async fn large_capability_metadata_skips_optional_interpretation_without_losing_
                     output_tokens: Some(5),
                     elapsed_ms: 1.0,
                     queue_wait_ms: None,
+                    provider_metrics: None,
                 })
             })
         }
@@ -185,6 +187,7 @@ async fn capability_binding_audit_distinguishes_available_from_route_selected() 
                     output_tokens: Some(5),
                     elapsed_ms: 1.0,
                     queue_wait_ms: None,
+                    provider_metrics: None,
                 })
             })
         }

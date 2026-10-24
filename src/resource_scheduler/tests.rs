@@ -82,6 +82,7 @@ impl InferenceBackend for Gate {
                 output_tokens: Some(1),
                 elapsed_ms: 1.0,
                 queue_wait_ms: Some(99999.0),
+                provider_metrics: None,
             })
         })
     }

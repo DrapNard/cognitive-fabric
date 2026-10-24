@@ -9,6 +9,22 @@ table InferenceRequest {
   max_tokens:uint;
 }
 
+enum ProviderMetricSource:ubyte {
+  Unknown = 0,
+  LmStudioNative = 1,
+  LlamaCppNative = 2
+}
+
+table ProviderMetrics {
+  format_version:ushort = 1;
+  source:ProviderMetricSource = Unknown;
+  model_load_ms:double = null;
+  time_to_first_token_ms:double = null;
+  prompt_processing_ms:double = null;
+  generation_ms:double = null;
+  output_tokens_per_second:double = null;
+}
+
 table InferenceResponse {
   text:string (required);
   model:string (required);
@@ -16,6 +32,7 @@ table InferenceResponse {
   output_tokens:ulong = null;
   elapsed_ms:double;
   queue_wait_ms:double = null;
+  provider_metrics:ProviderMetrics;
 }
 
 table Packet {

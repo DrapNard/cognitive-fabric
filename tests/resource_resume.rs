@@ -42,6 +42,7 @@ impl InferenceBackend for Script {
                 output_tokens: Some(1),
                 elapsed_ms: 0.0,
                 queue_wait_ms: None,
+                provider_metrics: None,
             })
         })
     }

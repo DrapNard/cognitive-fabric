@@ -211,6 +211,7 @@ impl InferenceBackend for Fixed {
                 output_tokens: Some(1),
                 elapsed_ms: 1.0,
                 queue_wait_ms: None,
+                provider_metrics: None,
             })
         })
     }
@@ -262,6 +263,7 @@ impl InferenceBackend for TaskEcho {
                 output_tokens: None,
                 elapsed_ms: 0.0,
                 queue_wait_ms: None,
+                provider_metrics: None,
             })
         })
     }
@@ -307,6 +309,7 @@ fn queue_metrics_preserve_absence_and_reject_invalid_values() {
                 output_tokens: None,
                 elapsed_ms: 1.0,
                 queue_wait_ms: wait,
+                provider_metrics: None,
             }),
         };
         let decoded = decode(&encode(&packet).unwrap());
@@ -345,6 +348,7 @@ impl InferenceBackend for Gated {
                 output_tokens: None,
                 elapsed_ms: 1.0,
                 queue_wait_ms: Some(999_999.0),
+                provider_metrics: None,
             })
         })
     }

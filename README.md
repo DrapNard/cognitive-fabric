@@ -62,6 +62,11 @@ executes tools. See [chat setup and limits](docs/CHAT.md) and
 model provider, then run `cogfabric-opencode`; see the
 [startup and troubleshooting guide](docs/OPENCODE.md).
 
+Inside the chat, use `/effort` to show the current reasoning setting, or
+`/effort low`, `/effort medium`, `/effort high`, `/effort none`, and
+`/effort default` to change it for subsequent turns. The model stays the same.
+OpenCode uses per-request reasoning effort through its configured variants.
+
 ### Build and try the demo backend
 
 ```sh

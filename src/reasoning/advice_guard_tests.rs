@@ -270,6 +270,7 @@ impl InferenceBackend for SlowPlanner {
                 output_tokens: Some(1),
                 elapsed_ms: 0.0,
                 queue_wait_ms: Some(0.0),
+                provider_metrics: None,
             })
         })
     }
@@ -370,6 +371,7 @@ async fn decision_and_observation_audit_failures_prevent_followup_inference() {
                     output_tokens: Some(1),
                     elapsed_ms: 0.0,
                     queue_wait_ms: Some(0.0),
+                    provider_metrics: None,
                 })
             })
         }
@@ -468,6 +470,7 @@ async fn exploration_history_does_not_suppress_successful_planning() {
                     output_tokens: Some(1),
                     elapsed_ms: 0.0,
                     queue_wait_ms: Some(0.0),
+                    provider_metrics: None,
                 })
             })
         }

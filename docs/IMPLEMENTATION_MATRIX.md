@@ -5502,3 +5502,17 @@ proof, native sandbox or residency operation is introduced.
   terminal archives, and unknown release resolution/archiving regression coverage.
 - Remaining gate: complete negative/migration tests and mandatory frozen-source
   checks. Automatic task-to-native-instance lifecycle remains separate work.
+
+### Optional provider-reported role inference timings
+
+**Implemented — focused fixture verification; live accuracy unverified.**
+
+- `src/backend/metrics.rs`, `src/backend/native.rs`, `src/token_admission.rs`:
+  optional validated native timing/rate reports; missing remains absent.
+- `protocol/module.fbs`, `src/fabric/protocol.rs`: optional typed metrics,
+  version/source/range validation and malformed-frame regression coverage;
+  reviewed bindings generated with flatc 25.12.19.
+- `src/reasoning.rs`, `src/reasoning/parallel.rs`: separate per-call audit events;
+  observations do not authorize tools, verify results or increase budgets.
+- `docs/PROVIDER_METRICS.md`: supported fields and measurement limitations.
+- Physical CPU/GPU/energy attribution and real timing accuracy remain unproven.
