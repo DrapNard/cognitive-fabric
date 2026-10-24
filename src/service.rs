@@ -187,6 +187,7 @@ async fn handle(
             query,
             mode,
             conversation_ref,
+            project_ref,
             explain,
         })) => {
             let Ok(_permit) = controls.execution.try_acquire() else {
@@ -223,6 +224,7 @@ async fn handle(
                     &mode,
                     crate::language::TaskOptions {
                         conversation_ref,
+                        project_ref,
                         explain,
                     },
                     cancel,
@@ -660,11 +662,13 @@ pub async fn request_with_options(
             let mut message = wire::new_request(query, mode);
             if let Message::Ask {
                 conversation_ref,
+                project_ref,
                 explain,
                 ..
             } = &mut message
             {
                 *conversation_ref = options.conversation_ref;
+                *project_ref = options.project_ref;
                 *explain = options.explain;
             }
             let id = match &message {

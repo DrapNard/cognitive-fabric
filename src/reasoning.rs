@@ -129,6 +129,9 @@ pub struct Session {
         Arc<crate::fabric::modules::Broker>,
         BTreeMap<crate::fabric::modules::Capability, crate::fabric::modules::Pin>,
     )>,
+    /// Checksum of the exact profile snapshot selected by this task. It binds
+    /// later reasoning-context events to the profile captured at task start.
+    pub(crate) project_profile_sha256: Option<String>,
 }
 
 #[derive(Debug)]
@@ -422,6 +425,7 @@ impl Session {
             resource_pool: None,
             resource_route_scope: None,
             typed_modules: None,
+            project_profile_sha256: None,
         })
     }
 
@@ -457,6 +461,10 @@ impl Session {
 
     pub(crate) fn set_path_progress_enabled(&mut self, enabled: bool) {
         self.path_progress_enabled = enabled;
+    }
+
+    pub(crate) fn set_project_profile_sha256(&mut self, checksum: Option<String>) {
+        self.project_profile_sha256 = checksum;
     }
 
     fn subtask_event(&self, index: usize) -> Result<()> {
@@ -1371,6 +1379,9 @@ impl Session {
             "calls_before":self.resources.calls,"cycles_before":self.resources.cycles,
             "untrusted_data":true,"permissions_restorable":false
         });
+        if self.project_profile_sha256.is_some() {
+            context_event["project_profile_sha256"] = json!(self.project_profile_sha256.as_deref());
+        }
         if self.path_progress_enabled
             && criterion
                 .as_ref()
@@ -3204,6 +3215,7 @@ mod tests {
                     crate::language::TaskOptions {
                         explain: true,
                         conversation_ref: None,
+                        project_ref: None,
                     },
                     std::future::pending::<()>(),
                 )

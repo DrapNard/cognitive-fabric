@@ -118,6 +118,8 @@ pub fn authorize(principal: &str, capability: &str) -> Result<()> {
                 | "expert.module.evaluate"
                 | "task.observe"
                 | "skill.inspect"
+                | "project.publish"
+                | "project.read"
                 | "task.recover"
                 | "task.resume"
                 | "worker.recover"
@@ -225,6 +227,16 @@ mod tests {
     #[test]
     fn allow_knowledge_search() {
         assert!(authorize("jev-r", "knowledge.search").is_ok());
+    }
+
+    #[test]
+    fn project_profiles_are_human_managed_only() {
+        assert!(authorize("human-cli", "project.publish").is_ok());
+        assert!(authorize("human-cli", "project.read").is_ok());
+        for actor in ["jev-r", "jev-plus", "interface", "rust.s1"] {
+            assert!(authorize(actor, "project.publish").is_err());
+            assert!(authorize(actor, "project.read").is_err());
+        }
     }
 }
 

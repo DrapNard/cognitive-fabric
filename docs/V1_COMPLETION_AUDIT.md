@@ -7,6 +7,20 @@ instructions, and the request to implement all remaining Jev+/Jev-R code. It doe
 not replace the architecture. Historical entries in `IMPLEMENTATION_MATRIX.md`
 and `CURRENT_IMPLEMENTATION.md` describe earlier snapshots and can be superseded.
 
+## Explicit project tracking — 2026-10-24
+
+Architecture §3 now has explicit immutable project profiles: operator-published
+goals and typed presentation preferences selected by exact version for each task.
+The optional FlatBuffers selector, SQLite schema-9 registry, CLI/socket path,
+pre-inference snapshots and exact snapshot continuation are implemented in the
+current source. Final serialized suites pass **1,048 default tests** and **1,057
+all-feature tests**, each across 72 targets, zero failed or ignored. Formatting,
+Rust 1.99 workspace check and strict default/all-feature Clippy pass. CLI/socket
+profile workflows are covered by the completed tests. No further test or installed
+smoke run was started after the operator requested implementation work.
+No inferred preference learning or live-model style-adherence result is claimed.
+See [project profiles](PROJECT_PROFILES.md).
+
 ## Exact Wasm registry recovery — 2026-10-24
 
 Explicit operator manifests now reconstruct an unfinished nonnative task's exact
@@ -51,7 +65,7 @@ instructions explicitly place them beyond proven v1.0 functionality.
 | Requirement | Current evidence inspected | Assessment and remaining obligation |
 | --- | --- | --- |
 | Language: original goals, constraints, ambiguity and clarification (§3) | `src/language.rs`, `src/engine/interpretation_tests.rs`, `src/reasoning/interpretation.rs`; bounded structured parsing, original-goal retention and clarification tests | Implemented mechanisms; natural-language accuracy remains unmeasured on independent live tasks. |
-| Language: explanations, preferences and conversation context (§3) | `src/language.rs`, `src/engine.rs`, `src/config.rs`; explicit conversation references, synthesis option and role profiles; language and native service tests | Partial: explicit context/configuration works; no demonstrated general preference-learning or explanation-quality result. |
+| Language: explanations, preferences and conversation context (§3) | `src/language.rs`, `src/engine.rs`, `src/config.rs`; explicit conversation references, synthesis option and role profiles; language and native service tests | Explicit immutable profile tracking is implemented in `src/projects.rs`, schema-9 registry and task/recovery snapshots with CLI/UDS coverage. Model adherence and explanation quality remain unmeasured; no inferred preference learning is claimed. |
 | Jev+ Router (§4) | `src/routing.rs`, `src/routing/{workflow,empirical}.rs`, `src/capabilities/cover.rs`; `tests/{capability_cover,workflow_router,resource_route_selection}.rs` | Implemented bounded replaceable routing, version filters, declared coverage and fallback; calibrated usefulness remains unproven. |
 | Jev+ Scheduler (§4, §9) | `src/resource_scheduler/`, `src/scheduling.rs`; `tests/{configured_resources,resource_scheduling,working_profiles,critical_path_scheduling}.rs` | Implemented logical resource/queue/dependency admission; physical GPU/CPU/memory enforcement and attribution are not proven. |
 | Jev+ Evaluator (§4) | `src/verification.rs`, `src/evaluation.rs`, `src/reasoning/verification.rs`; criterion and candidate regression tests | Implemented independent compiled criteria for supported structured tasks. General factual/technical answer verification remains Partial. |

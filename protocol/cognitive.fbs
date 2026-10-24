@@ -12,6 +12,7 @@ table AskRequest {
   mode:ReasoningMode = Standard;
   conversation_ref:string;
   explain:bool;
+  project_ref:string;
 }
 
 table ResourceUsage {

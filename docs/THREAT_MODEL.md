@@ -1,5 +1,18 @@
 # Threat Model (v1.0)
 
+## Explicit project profile boundary
+
+Only operator publication creates immutable bounded profile versions. No model
+actor has project read/publish management capabilities. An explicit task selector
+permits a trusted runtime lookup, then binds its exact canonical snapshot and
+context hash before inference. Project goals remain quoted untrusted background;
+closed presentation preferences cannot express tools, budgets, model settings or
+acceptance criteria. Default tasks load no profile. Resume validates the original
+snapshot, not a later registry lookup; unknown outcomes retain existing refusal
+rules. SQLite immutability/checksums provide local integrity, not authenticity
+against a hostile database owner or proof of model adherence. Publication stores
+text and is not suitable for secrets. All original resource limits remain active.
+
 ## Explicit Wasm registry reconstruction
 
 Only operator-supplied, already pinned manifests supply executable bytes. New v4

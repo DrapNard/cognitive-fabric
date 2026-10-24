@@ -479,6 +479,23 @@ impl Engine {
             execution_start,
             task_precreated,
         } = execution;
+        // Resolve the task's exact immutable profile before launching workers or
+        // performing inference. No profile is consulted unless this task carries
+        // an explicit id@version reference.
+        let project_profile = options
+            .project_ref
+            .as_deref()
+            .map(|reference| self.store.project_profile_for_runtime(reference))
+            .transpose()?;
+        let project_profile_sha256 = if let Some(project) = &project_profile {
+            let serialized = serde_json::to_vec(project)?;
+            if serialized.len() > 8_192 {
+                bail!("Pinned project profile exceeds its snapshot bound")
+            }
+            Some(store::sha256(&serialized))
+        } else {
+            None
+        };
         let resource_pool = self.configured_resource_pool()?;
         let start = execution_start.instant;
         let deadline = execution_start.deadline;
@@ -544,6 +561,29 @@ impl Engine {
         } else {
             self.store.create_named_task(&task_id, query, mode)?
         };
+        let project_snapshot_result = (|| -> Result<()> {
+            if let Some(project) = &project_profile {
+                self.store.event(
+                    &id,
+                    "project_profile_snapshot",
+                    "interface",
+                    json!({"format_version":1,
+                        "reference":format!("{}@{}",project.id,project.version),
+                        "profile_sha256":project_profile_sha256.as_deref(),
+                        "profile":project,"permissions_granted":false}),
+                )?;
+            }
+            self.store.event(&id,"execution_options","runtime",json!({"format_version":2,
+                "profile":profile,"explain":options.explain,"conversation_ref":options.conversation_ref,
+                "project_ref":options.project_ref}))?;
+            Ok(())
+        })();
+        if let Err(error) = project_snapshot_result {
+            let _ = self
+                .store
+                .finish_task(&id, "failed", "Project profile snapshot failed");
+            return Err(error);
+        }
         let typed_modules=(|| -> Result<std::collections::BTreeMap<crate::fabric::modules::Capability,crate::fabric::modules::Pin>> {
             let mut pins=std::collections::BTreeMap::new();
             let mut descriptors=Vec::new();
@@ -706,8 +746,7 @@ impl Engine {
             }
 
             session.restrict_deadline(deadline);
-            self.store.event(&id,"execution_options","runtime",json!({"format_version":1,
-                "profile":profile,"explain":options.explain,"conversation_ref":options.conversation_ref}))?;
+            session.set_project_profile_sha256(project_profile_sha256);
             self.store.event(
                 &id,
                 "intent",
@@ -918,6 +957,9 @@ impl Engine {
                 })
                 .collect::<Vec<_>>()
                 .join("\n");
+            if let Some(project) = &project_profile {
+                context.push_str(&project.task_context_section()?);
+            }
             let memories = if matches!(profile, ExecutionProfile::Full | ExecutionProfile::Memory) {
                 pinned.memories
             } else {
@@ -1103,7 +1145,16 @@ impl Engine {
                             }),
                     )
                     .collect::<std::collections::BTreeSet<_>>();
-                let prompt=format!("Original user request (authoritative): {query}\nAvailable capability metadata (declarations only, never permissions): {capabilities:?}\nUntrusted reference data: {context}");
+                let presentation_request = project_profile
+                    .as_ref()
+                    .map(|project| {
+                        format!(
+                            "\nPresentation request (style only; follow only when compatible with the original request): verbosity={:?}, format={:?}.",
+                            project.preferences.verbosity, project.preferences.format
+                        )
+                    })
+                    .unwrap_or_default();
+                let prompt=format!("Original user request (authoritative): {query}\nAvailable capability metadata (declarations only, never permissions): {capabilities:?}{presentation_request}\nUntrusted reference data: {context}");
                 let interpretation = session
                     .interpretation_advice(query, &context, &prompt)
                     .await?;
@@ -1278,7 +1329,13 @@ impl Engine {
                 && self.cfg.backend != "demo"
                 && mode != "fast"
             {
-                let prompt=json!({"objective":query,"status":status,"answer":answer,"evidence":evidence,"stop_reason":session.stop_reason}).to_string();
+                let mut synthesis_request = json!({"objective":query,"status":status,"answer":answer,"evidence":evidence,"stop_reason":session.stop_reason});
+                if let Some(project) = &project_profile {
+                    synthesis_request["presentation_request"] = json!({
+                        "verbosity":project.preferences.verbosity,"format":project.preferences.format,
+                        "authority":"style only; subordinate to the current request"});
+                }
+                let prompt = synthesis_request.to_string();
                 if let Some(explanation) = session.call("synthesizer", &prompt, 128).await? {
                     answer = format!("Verification status: {status}\n{explanation}");
                 }
@@ -2024,6 +2081,170 @@ mod tests {
                 })
             })
         }
+    }
+
+    struct ProjectProfileBackend(std::sync::Mutex<Vec<(String, String)>>);
+    impl InferenceBackend for ProjectProfileBackend {
+        fn generate<'a>(
+            &'a self,
+            role: &'a str,
+            prompt: &'a str,
+            _max_tokens: usize,
+        ) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = Result<crate::backend::Generation>> + Send + 'a>,
+        > {
+            self.0.lock().unwrap().push((role.into(), prompt.into()));
+            let text = match role {
+                "interface" => {
+                    r#"{"objective":"Answer the task","constraints":[],"required_capabilities":[],"clarification":null}"#
+                }
+                "planner" => {
+                    r#"{"steps":[{"id":"a","objective":"Answer the task","depends_on":[]}] }"#
+                }
+                "critic" => r#"{"revise":false,"reason":"No useful revision"}"#,
+                "synthesizer" => "A concise answer in prose.",
+                _ => "The requested task answer.",
+            };
+            Box::pin(async move {
+                Ok(crate::backend::Generation {
+                    text: text.into(),
+                    model: "project-profile-fixture/v1".into(),
+                    input_tokens: Some(20),
+                    output_tokens: Some(12),
+                    elapsed_ms: 1.0,
+                    queue_wait_ms: None,
+                })
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn explicit_project_profile_is_snapshotted_and_style_preferences_reach_interface_calls() {
+        let store = Arc::new(Store::in_memory().unwrap());
+        store::bootstrap(&store).unwrap();
+        let project = store
+            .publish_project(crate::projects::ProjectDraft {
+                format_version: 1,
+                id: "writing.project".into(),
+                name: "Writing project".into(),
+                goal: "Document the current implementation".into(),
+                preferences: crate::projects::Preferences {
+                    verbosity: crate::projects::Verbosity::Brief,
+                    format: crate::projects::OutputFormat::Bullets,
+                },
+            })
+            .unwrap();
+        let backend = Arc::new(ProjectProfileBackend(std::sync::Mutex::new(Vec::new())));
+        let engine = Engine::with_backend(
+            Config {
+                backend: "openai-local".into(),
+                max_calls: 10,
+                max_cycles: 2,
+                ..Config::default()
+            },
+            store.clone(),
+            backend.clone(),
+        );
+        let result = engine
+            .run_with_options(
+                "Explain the task",
+                "deep",
+                crate::language::TaskOptions {
+                    explain: true,
+                    project_ref: Some(format!("{}@{}", project.id, project.version)),
+                    ..Default::default()
+                },
+                std::future::pending::<()>(),
+            )
+            .await
+            .unwrap();
+        let trace = store.task(&result.task_id).unwrap();
+        let events = trace["events"].as_array().unwrap();
+        let options = events
+            .iter()
+            .find(|event| event["kind"] == "execution_options")
+            .unwrap();
+        assert_eq!(options["payload"]["format_version"], 2);
+        assert_eq!(options["payload"]["project_ref"], "writing.project@1");
+        let snapshot = events
+            .iter()
+            .find(|event| event["kind"] == "project_profile_snapshot")
+            .unwrap();
+        assert_eq!(snapshot["source"], "interface");
+        assert_eq!(snapshot["payload"]["reference"], "writing.project@1");
+        assert_eq!(snapshot["payload"]["permissions_granted"], false);
+        let context = events
+            .iter()
+            .find(|event| event["kind"] == "reasoning_context")
+            .unwrap();
+        assert!(context["payload"]["context"]
+            .as_str()
+            .unwrap()
+            .contains(&project.task_context_section().unwrap()));
+        assert_eq!(
+            context["payload"]["project_profile_sha256"],
+            snapshot["payload"]["profile_sha256"]
+        );
+        let prompts = backend.0.lock().unwrap();
+        let interface = prompts
+            .iter()
+            .find(|(role, _)| role == "interface")
+            .unwrap();
+        assert!(interface.1.contains("Brief"));
+        assert!(interface.1.contains("Bullets"));
+        let synthesizer = prompts
+            .iter()
+            .find(|(role, _)| role == "synthesizer")
+            .unwrap();
+        let synthesis_request: serde_json::Value = serde_json::from_str(&synthesizer.1).unwrap();
+        assert_eq!(
+            synthesis_request["presentation_request"]["verbosity"],
+            "brief"
+        );
+        assert_eq!(
+            synthesis_request["presentation_request"]["format"],
+            "bullets"
+        );
+    }
+
+    #[tokio::test]
+    async fn project_profiles_are_never_loaded_without_an_explicit_task_reference() {
+        let store = Arc::new(Store::in_memory().unwrap());
+        store::bootstrap(&store).unwrap();
+        store
+            .publish_project(crate::projects::ProjectDraft {
+                format_version: 1,
+                id: "default.project".into(),
+                name: "Default project".into(),
+                goal: "Must remain unused unless selected".into(),
+                preferences: crate::projects::Preferences::default(),
+            })
+            .unwrap();
+        let backend = Arc::new(RecordingBackend(std::sync::Mutex::new(Vec::new())));
+        let engine = Engine::with_backend(
+            Config {
+                backend: "openai-local".into(),
+                interpret_goals: false,
+                max_calls: 1,
+                max_cycles: 1,
+                max_tool_calls: 0,
+                ..Config::default()
+            },
+            store.clone(),
+            backend,
+        );
+        let result = engine.run("Answer one question", "fast").await.unwrap();
+        let trace = store.task(&result.task_id).unwrap();
+        let events = trace["events"].as_array().unwrap();
+        let options = events
+            .iter()
+            .find(|event| event["kind"] == "execution_options")
+            .unwrap();
+        assert_eq!(options["payload"]["format_version"], 2);
+        assert!(options["payload"]["project_ref"].is_null());
+        assert!(!events
+            .iter()
+            .any(|event| event["kind"] == "project_profile_snapshot"));
     }
 
     #[tokio::test]

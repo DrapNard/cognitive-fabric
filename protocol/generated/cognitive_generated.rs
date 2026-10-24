@@ -427,6 +427,7 @@ impl<'a> AskRequest<'a> {
   pub const VT_MODE: ::flatbuffers::VOffsetT = 6;
   pub const VT_CONVERSATION_REF: ::flatbuffers::VOffsetT = 8;
   pub const VT_EXPLAIN: ::flatbuffers::VOffsetT = 10;
+  pub const VT_PROJECT_REF: ::flatbuffers::VOffsetT = 12;
 
   #[inline]
   pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
@@ -438,6 +439,7 @@ impl<'a> AskRequest<'a> {
     args: &'args AskRequestArgs<'args>
   ) -> ::flatbuffers::WIPOffset<AskRequest<'bldr>> {
     let mut builder = AskRequestBuilder::new(_fbb);
+    if let Some(x) = args.project_ref { builder.add_project_ref(x); }
     if let Some(x) = args.conversation_ref { builder.add_conversation_ref(x); }
     if let Some(x) = args.query { builder.add_query(x); }
     builder.add_explain(args.explain);
@@ -455,11 +457,15 @@ impl<'a> AskRequest<'a> {
       alloc::string::ToString::to_string(x)
     });
     let explain = self.explain();
+    let project_ref = self.project_ref().map(|x| {
+      alloc::string::ToString::to_string(x)
+    });
     AskRequestT {
       query,
       mode,
       conversation_ref,
       explain,
+      project_ref,
     }
   }
 
@@ -491,6 +497,13 @@ impl<'a> AskRequest<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<bool>(AskRequest::VT_EXPLAIN, Some(false)).unwrap()}
   }
+  #[inline]
+  pub fn project_ref(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<::flatbuffers::ForwardsUOffset<&str>>(AskRequest::VT_PROJECT_REF, None)}
+  }
 }
 
 impl ::flatbuffers::Verifiable for AskRequest<'_> {
@@ -503,6 +516,7 @@ impl ::flatbuffers::Verifiable for AskRequest<'_> {
      .visit_field::<ReasoningMode>("mode", Self::VT_MODE, false)?
      .visit_field::<::flatbuffers::ForwardsUOffset<&str>>("conversation_ref", Self::VT_CONVERSATION_REF, false)?
      .visit_field::<bool>("explain", Self::VT_EXPLAIN, false)?
+     .visit_field::<::flatbuffers::ForwardsUOffset<&str>>("project_ref", Self::VT_PROJECT_REF, false)?
      .finish();
     Ok(())
   }
@@ -512,6 +526,7 @@ pub struct AskRequestArgs<'a> {
     pub mode: ReasoningMode,
     pub conversation_ref: Option<::flatbuffers::WIPOffset<&'a str>>,
     pub explain: bool,
+    pub project_ref: Option<::flatbuffers::WIPOffset<&'a str>>,
 }
 impl<'a> Default for AskRequestArgs<'a> {
   #[inline]
@@ -521,6 +536,7 @@ impl<'a> Default for AskRequestArgs<'a> {
       mode: ReasoningMode::Standard,
       conversation_ref: None,
       explain: false,
+      project_ref: None,
     }
   }
 }
@@ -547,6 +563,10 @@ impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> AskRequestBuilder<'a, 'b, A> 
     self.fbb_.push_slot::<bool>(AskRequest::VT_EXPLAIN, explain, false);
   }
   #[inline]
+  pub fn add_project_ref(&mut self, project_ref: ::flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(AskRequest::VT_PROJECT_REF, project_ref);
+  }
+  #[inline]
   pub fn new(_fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>) -> AskRequestBuilder<'a, 'b, A> {
     let start = _fbb.start_table();
     AskRequestBuilder {
@@ -569,6 +589,7 @@ impl ::core::fmt::Debug for AskRequest<'_> {
       ds.field("mode", &self.mode());
       ds.field("conversation_ref", &self.conversation_ref());
       ds.field("explain", &self.explain());
+      ds.field("project_ref", &self.project_ref());
       ds.finish()
   }
 }
@@ -579,6 +600,7 @@ pub struct AskRequestT {
   pub mode: ReasoningMode,
   pub conversation_ref: Option<alloc::string::String>,
   pub explain: bool,
+  pub project_ref: Option<alloc::string::String>,
 }
 impl Default for AskRequestT {
   fn default() -> Self {
@@ -587,6 +609,7 @@ impl Default for AskRequestT {
       mode: ReasoningMode::Standard,
       conversation_ref: None,
       explain: false,
+      project_ref: None,
     }
   }
 }
@@ -604,11 +627,15 @@ impl AskRequestT {
       _fbb.create_string(x)
     });
     let explain = self.explain;
+    let project_ref = self.project_ref.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
     AskRequest::create(_fbb, &AskRequestArgs{
       query,
       mode,
       conversation_ref,
       explain,
+      project_ref,
     })
   }
 }

@@ -1,5 +1,37 @@
 # Current Rust implementation
 
+## Explicit immutable project profiles — 2026-10-24
+
+**Implemented and verified.** Architecture §3 now has explicit
+operator-declared project goals and typed presentation preferences, selected only
+by exact `id@version`. `src/projects.rs` defines bounded strict manifests,
+checksums and context; `src/store.rs` migrates SQLite to schema 9 and provides
+immutable versioned publication/read/list APIs with fixed quotas. Management
+permissions remain human-only. No preference inference or automatic learning is
+claimed.
+
+`project-publish`, `project-show`, `project-list` and `ask --project` expose the
+feature. The optional FlatBuffers AskRequest field is propagated through the UDS
+service. `src/engine.rs` records the exact selected profile before inference,
+preserves default prompts when absent and conveys compatible presentation
+requests without changing the original query or verification criteria.
+`src/recovery/continuation.rs` validates v2 execution options and restores the
+original bounded snapshot independently of later registry versions. Legacy tasks
+retain their original continuation rules.
+
+New store, wire, engine, recovery and CLI/socket regressions cover bounds,
+immutability, quotas, schema migration, tampering, explicit selection, unchanged
+deterministic answers, original prompt caps and exact snapshot continuation.
+See [project profiles](PROJECT_PROFILES.md). Nineteen focused unit tests and four
+CLI/socket integration tests pass, including exact recovery and prompt budgets.
+Final serialized suites pass **1,048 default tests** and **1,057 all-feature
+tests**, each across 72 targets, zero failed or ignored. Formatting, Rust 1.99
+workspace check and strict default/all-feature Clippy pass. The suites completed
+before the operator requested stopping further tests. Installed smoke scripts were
+not rerun for this change; CLI/socket workflows are covered by the completed
+integration suites;
+no live-model adherence or general preference learning is proven.
+
 ## Exact Wasm registry reconstruction — 2026-10-24
 
 **Implemented and verified.**

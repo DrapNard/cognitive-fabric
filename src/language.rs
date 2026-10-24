@@ -49,6 +49,8 @@ impl Interpretation {
 #[derive(Clone, Debug, Default)]
 pub struct TaskOptions {
     pub conversation_ref: Option<String>,
+    /// Explicit immutable project profile selection in `id@version` form.
+    pub project_ref: Option<String>,
     pub explain: bool,
 }
 
@@ -396,6 +398,7 @@ mod integration_tests {
                 "standard",
                 TaskOptions {
                     conversation_ref: Some(prior),
+                    project_ref: None,
                     explain: false,
                 },
                 std::future::pending(),

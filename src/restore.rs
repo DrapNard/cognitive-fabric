@@ -338,7 +338,7 @@ mod tests {
         fs::copy(&backup.path, &legacy).unwrap();
         fs::set_permissions(&legacy, fs::Permissions::from_mode(0o600)).unwrap();
         let db = Connection::open(&legacy).unwrap();
-        db.execute_batch("DROP INDEX native_task_lifecycle_history; DROP TABLE managed_residency_resolution_members; DROP TABLE managed_residency_resolutions; DROP TABLE managed_residency_receipt_archive; DROP TRIGGER managed_residency_hot_no_archive_duplicate; DROP TRIGGER managed_residency_identity_immutable; DROP INDEX managed_residency_active_identity; DROP INDEX managed_residency_state; DROP INDEX managed_residency_event_scan; DROP TABLE managed_residency_receipts; DROP INDEX idx_tasks_status; DROP INDEX event_conversation_task; DROP TABLE retention_audit; PRAGMA user_version=6;").unwrap();
+        db.execute_batch("DROP TABLE project_profiles; DROP INDEX native_task_lifecycle_history; DROP TABLE managed_residency_resolution_members; DROP TABLE managed_residency_resolutions; DROP TABLE managed_residency_receipt_archive; DROP TRIGGER managed_residency_hot_no_archive_duplicate; DROP TRIGGER managed_residency_identity_immutable; DROP INDEX managed_residency_active_identity; DROP INDEX managed_residency_state; DROP INDEX managed_residency_event_scan; DROP TABLE managed_residency_receipts; DROP INDEX idx_tasks_status; DROP INDEX event_conversation_task; DROP TABLE retention_audit; PRAGMA user_version=6;").unwrap();
         drop(db);
         let bytes = fs::read(&legacy).unwrap();
         let hash = crate::store::sha256(&bytes);

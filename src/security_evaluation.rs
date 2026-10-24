@@ -139,6 +139,7 @@ pub fn run() -> Result<Value> {
         query: "Explain ownership".into(),
         mode: "fast".into(),
         conversation_ref: None,
+        project_ref: None,
         explain: false,
     };
     let valid = wire::encode(&message)?;

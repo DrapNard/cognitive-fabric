@@ -152,6 +152,7 @@ pub enum Message {
         query: String,
         mode: String,
         conversation_ref: Option<String>,
+        project_ref: Option<String>,
         explain: bool,
     },
     Reply {
@@ -202,6 +203,7 @@ pub fn encode(message: &Message) -> Result<Vec<u8>> {
     if let Message::Ask {
         query,
         conversation_ref,
+        project_ref,
         ..
     } = message
     {
@@ -210,6 +212,9 @@ pub fn encode(message: &Message) -> Result<Vec<u8>> {
         }
         if let Some(reference) = conversation_ref {
             uuid::Uuid::parse_str(reference)?;
+        }
+        if let Some(reference) = project_ref {
+            crate::projects::Selection::parse(reference)?;
         }
     }
     let mut builder = flatbuffers::FlatBufferBuilder::with_capacity(4096);
@@ -398,6 +403,7 @@ pub fn encode(message: &Message) -> Result<Vec<u8>> {
             query,
             mode,
             conversation_ref,
+            project_ref,
             explain,
             ..
         } => {
@@ -413,6 +419,9 @@ pub fn encode(message: &Message) -> Result<Vec<u8>> {
             let reference = conversation_ref
                 .as_ref()
                 .map(|reference| builder.create_string(reference));
+            let project_ref = project_ref
+                .as_ref()
+                .map(|reference| builder.create_string(reference));
             let ask = fb::AskRequest::create(
                 &mut builder,
                 &fb::AskRequestArgs {
@@ -420,6 +429,7 @@ pub fn encode(message: &Message) -> Result<Vec<u8>> {
                     mode,
                     conversation_ref: reference,
                     explain: *explain,
+                    project_ref,
                 },
             );
             args.request = Some(ask);
@@ -707,6 +717,10 @@ pub fn decode(body: &[u8]) -> Result<Message> {
             if let Some(reference) = req.conversation_ref() {
                 uuid::Uuid::parse_str(reference)?;
             }
+            let project_ref = req.project_ref().map(str::to_string);
+            if let Some(reference) = project_ref.as_deref() {
+                crate::projects::Selection::parse(reference)?;
+            }
             let mode = match req.mode() {
                 fb::ReasoningMode::Fast => "fast",
                 fb::ReasoningMode::Standard => "standard",
@@ -719,6 +733,7 @@ pub fn decode(body: &[u8]) -> Result<Message> {
                 query: req.query().to_string(),
                 mode: mode.to_string(),
                 conversation_ref: req.conversation_ref().map(str::to_string),
+                project_ref,
                 explain: req.explain(),
             })
         }
@@ -811,6 +826,7 @@ pub fn new_request(query: String, mode: String) -> Message {
         query,
         mode,
         conversation_ref: None,
+        project_ref: None,
         explain: false,
     }
 }
@@ -1433,21 +1449,53 @@ mod tests {
         assert!(decode(builder.finished_data()).is_err());
     }
     #[test]
-    fn conversation_and_explanation_options_roundtrip() {
+    fn conversation_project_and_explanation_options_roundtrip() {
         let reference = uuid::Uuid::new_v4().to_string();
         let mut message = new_request("Explain previous result".into(), "standard".into());
         if let Message::Ask {
             conversation_ref,
+            project_ref,
             explain,
             ..
         } = &mut message
         {
             *conversation_ref = Some(reference.clone());
+            *project_ref = Some("demo@3".into());
             *explain = true;
         }
         assert!(
-            matches!(decode(&encode(&message).unwrap()).unwrap(),Message::Ask{conversation_ref:Some(id),explain:true,..} if id==reference)
+            matches!(decode(&encode(&message).unwrap()).unwrap(),Message::Ask{conversation_ref:Some(id),project_ref:Some(project),explain:true,..} if id==reference && project=="demo@3")
         );
+    }
+
+    #[test]
+    fn project_selection_is_optional_compatible_and_exactly_validated() {
+        // Older v1 senders omit the additive field and decode to no profile selection.
+        let legacy = new_request("Explain previous result".into(), "standard".into());
+        assert!(matches!(
+            decode(&encode(&legacy).unwrap()).unwrap(),
+            Message::Ask {
+                project_ref: None,
+                ..
+            }
+        ));
+
+        for invalid in [
+            "demo",
+            "demo@latest",
+            "demo@3@extra",
+            "../demo@3",
+            "demo@01.2.3",
+        ] {
+            let mut message = new_request("Explain previous result".into(), "standard".into());
+            if let Message::Ask { project_ref, .. } = &mut message {
+                *project_ref = Some(invalid.into());
+            }
+            assert!(
+                encode(&message).is_err(),
+                "accepted invalid selection {invalid:?}"
+            );
+        }
     }
 
     #[test]

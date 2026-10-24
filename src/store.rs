@@ -51,7 +51,7 @@ CREATE TABLE IF NOT EXISTS evaluations (
 "#;
 
 /// Latest schema understood by writable and read-only Store entry points.
-pub(crate) const CURRENT_SCHEMA_VERSION: i64 = 8;
+pub(crate) const CURRENT_SCHEMA_VERSION: i64 = 9;
 
 const MANAGED_RESIDENCY_SCHEMA: &str = r#"
 CREATE TABLE managed_residency_receipts (
@@ -200,6 +200,28 @@ END;
 PRAGMA user_version=8;
 "#;
 
+const PROJECT_PROFILE_SCHEMA_V9: &str = r#"
+CREATE TABLE project_profiles (
+ id TEXT NOT NULL CHECK(length(CAST(id AS BLOB)) BETWEEN 3 AND 100),
+ version INTEGER NOT NULL CHECK(version BETWEEN 1 AND 32),
+ format_version INTEGER NOT NULL CHECK(format_version=1),
+ name TEXT NOT NULL CHECK(length(CAST(name AS BLOB)) BETWEEN 1 AND 120),
+ goal TEXT NOT NULL CHECK(length(CAST(goal AS BLOB)) BETWEEN 1 AND 2000),
+ preferences_json TEXT NOT NULL CHECK(length(CAST(preferences_json AS BLOB)) BETWEEN 2 AND 128),
+ checksum TEXT NOT NULL CHECK(length(checksum)=64 AND checksum NOT GLOB '*[^0-9a-f]*'),
+ created REAL NOT NULL,
+ PRIMARY KEY(id,version)
+);
+CREATE INDEX project_profiles_inventory ON project_profiles(id,version);
+CREATE TRIGGER project_profiles_no_update BEFORE UPDATE ON project_profiles BEGIN
+ SELECT RAISE(ABORT,'project profile versions are immutable');
+END;
+CREATE TRIGGER project_profiles_no_delete BEFORE DELETE ON project_profiles BEGIN
+ SELECT RAISE(ABORT,'project profile versions are immutable');
+END;
+PRAGMA user_version=9;
+"#;
+
 pub(crate) const MAX_MANAGED_RESIDENCY_RESOLUTIONS: u64 = 1024;
 pub(crate) const MAX_MANAGED_RESIDENCY_ARCHIVE: u64 = 8192;
 
@@ -233,6 +255,29 @@ fn now() -> f64 {
         .unwrap_or_default()
         .as_secs_f64()
 }
+
+fn project_profile_from_row(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<crate::projects::ProjectProfile> {
+    let version: i64 = row.get(1)?;
+    let format_version: i64 = row.get(2)?;
+    let preferences_json: String = row.get(5)?;
+    let preferences = serde_json::from_str(&preferences_json).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(5, rusqlite::types::Type::Text, Box::new(error))
+    })?;
+    Ok(crate::projects::ProjectProfile {
+        id: row.get(0)?,
+        version: u64::try_from(version)
+            .map_err(|_| rusqlite::Error::IntegralValueOutOfRange(1, version))?,
+        format_version: u16::try_from(format_version)
+            .map_err(|_| rusqlite::Error::IntegralValueOutOfRange(2, format_version))?,
+        name: row.get(3)?,
+        goal: row.get(4)?,
+        preferences,
+        checksum: row.get(6)?,
+    })
+}
+
 pub fn sha256(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
 }
@@ -516,6 +561,9 @@ impl Store {
         if version < 8 {
             tx.execute_batch(MANAGED_RESIDENCY_SCHEMA_V8)?;
         }
+        if version < 9 {
+            tx.execute_batch(PROJECT_PROFILE_SCHEMA_V9)?;
+        }
         tx.commit()?;
         Ok(Self {
             db: Mutex::new(db),
@@ -531,6 +579,112 @@ impl Store {
             events: crate::events::Hub::default(),
         })
     }
+    /// Publish a new immutable version of an operator-managed project profile.
+    /// The untrusted project goal never changes task permissions or authority.
+    pub fn publish_project(
+        &self,
+        draft: crate::projects::ProjectDraft,
+    ) -> Result<crate::projects::ProjectProfile> {
+        crate::security::authorize("human-cli", "project.publish")?;
+        draft.validate()?;
+        let mut db = self.lock()?;
+        let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        crate::storage::admit(&tx)?;
+        let (total_profiles, registered_projects): (u64, u64) = tx.query_row(
+            "SELECT (SELECT count(*) FROM (SELECT 1 FROM project_profiles LIMIT ?1)),(SELECT count(*) FROM (SELECT DISTINCT id FROM project_profiles ORDER BY id LIMIT ?2))",
+            params![crate::projects::MAX_PROJECTS as u64 * crate::projects::MAX_VERSIONS + 1, crate::projects::MAX_PROJECTS as u64 + 1],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        let total_limit = crate::projects::MAX_PROJECTS as u64 * crate::projects::MAX_VERSIONS;
+        if total_profiles > total_limit
+            || registered_projects > crate::projects::MAX_PROJECTS as u64
+        {
+            bail!("Stored project profile registry exceeds its bounds")
+        }
+        if total_profiles >= total_limit {
+            bail!("Project profile registry is full")
+        }
+        let (count, maximum): (u64, Option<u64>) = tx.query_row(
+            "SELECT count(*),max(version) FROM (SELECT version FROM project_profiles WHERE id=?1 ORDER BY version DESC LIMIT ?2)",
+            params![draft.id, crate::projects::MAX_VERSIONS + 1],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        let version = count
+            .checked_add(1)
+            .ok_or_else(|| anyhow!("Project profile version overflow"))?;
+        if count >= crate::projects::MAX_VERSIONS || maximum.is_some_and(|current| current != count)
+        {
+            bail!("Project profile version history is full or inconsistent")
+        }
+        if count == 0 && registered_projects >= crate::projects::MAX_PROJECTS as u64 {
+            bail!("Project profile registry is full")
+        }
+        let profile = crate::projects::ProjectProfile::from_draft(draft, version)?;
+        let preferences = serde_json::to_string(&profile.preferences)?;
+        tx.execute(
+            "INSERT INTO project_profiles(id,version,format_version,name,goal,preferences_json,checksum,created) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+            params![profile.id,profile.version,profile.format_version,profile.name,profile.goal,preferences,profile.checksum,now()],
+        )?;
+        tx.commit()?;
+        Ok(profile)
+    }
+
+    /// Read one explicit immutable project profile version (`id@version`).
+    pub fn project_profile(&self, reference: &str) -> Result<crate::projects::ProjectProfile> {
+        crate::security::authorize("human-cli", "project.read")?;
+        self.project_profile_for_runtime(reference)
+    }
+
+    /// Resolve an explicitly selected immutable profile for task construction.
+    /// This trusted runtime read grants no actor capability; management reads use
+    /// the human-only `project_profile` API above.
+    pub(crate) fn project_profile_for_runtime(
+        &self,
+        reference: &str,
+    ) -> Result<crate::projects::ProjectProfile> {
+        let selection = crate::projects::Selection::parse(reference)?;
+        let db = self.lock()?;
+        let profile = db
+            .query_row(
+                "SELECT CASE WHEN length(CAST(id AS BLOB))<=100 THEN id END,version,format_version,CASE WHEN length(CAST(name AS BLOB))<=120 THEN name END,CASE WHEN length(CAST(goal AS BLOB))<=2000 THEN goal END,CASE WHEN length(CAST(preferences_json AS BLOB))<=128 THEN preferences_json END,CASE WHEN length(CAST(checksum AS BLOB))=64 THEN checksum END FROM project_profiles WHERE id=?1 AND version=?2",
+                params![selection.id(), selection.version()],
+                project_profile_from_row,
+            )
+            .optional()?
+            .ok_or_else(|| anyhow!("Project profile version not found"))?;
+        profile.validate()?;
+        Ok(profile)
+    }
+
+    /// Return the bounded, fully validated project profile inventory.
+    pub fn projects(&self) -> Result<Vec<crate::projects::ProjectProfile>> {
+        crate::security::authorize("human-cli", "project.read")?;
+        let db = self.lock()?;
+        let project_count: u64 = db.query_row(
+            "SELECT count(*) FROM (SELECT DISTINCT id FROM project_profiles ORDER BY id LIMIT ?1)",
+            [crate::projects::MAX_PROJECTS as u64 + 1],
+            |row| row.get(0),
+        )?;
+        if project_count > crate::projects::MAX_PROJECTS as u64 {
+            bail!("Stored project profile registry exceeds its bound")
+        }
+        let maximum = crate::projects::MAX_PROJECTS * crate::projects::MAX_VERSIONS as usize;
+        let mut statement = db.prepare(
+            "SELECT CASE WHEN length(CAST(id AS BLOB))<=100 THEN id END,version,format_version,CASE WHEN length(CAST(name AS BLOB))<=120 THEN name END,CASE WHEN length(CAST(goal AS BLOB))<=2000 THEN goal END,CASE WHEN length(CAST(preferences_json AS BLOB))<=128 THEN preferences_json END,CASE WHEN length(CAST(checksum AS BLOB))=64 THEN checksum END FROM project_profiles ORDER BY id,version LIMIT ?1",
+        )?;
+        let mut rows = statement.query([(maximum + 1) as i64])?;
+        let mut profiles = Vec::new();
+        while let Some(row) = rows.next()? {
+            if profiles.len() >= maximum {
+                bail!("Stored project profile inventory exceeds its bound")
+            }
+            let profile = project_profile_from_row(row)?;
+            profile.validate()?;
+            profiles.push(profile);
+        }
+        Ok(profiles)
+    }
+
     pub fn create_task(&self, query: &str, mode: &str) -> Result<String> {
         self.create_named_task(&Uuid::new_v4().to_string(), query, mode)
     }
@@ -1585,7 +1739,8 @@ mod tests {
         {
             let db = store.lock().unwrap();
             db.execute_batch(
-                "DROP INDEX native_task_lifecycle_history; DROP TABLE managed_residency_resolution_members; DROP TABLE managed_residency_resolutions; DROP TABLE managed_residency_receipt_archive; DROP TRIGGER managed_residency_hot_no_archive_duplicate; DROP TRIGGER managed_residency_identity_immutable;
+                "DROP TRIGGER project_profiles_no_update; DROP TRIGGER project_profiles_no_delete; DROP INDEX project_profiles_inventory; DROP TABLE project_profiles;
+                 DROP INDEX native_task_lifecycle_history; DROP TABLE managed_residency_resolution_members; DROP TABLE managed_residency_resolutions; DROP TABLE managed_residency_receipt_archive; DROP TRIGGER managed_residency_hot_no_archive_duplicate; DROP TRIGGER managed_residency_identity_immutable;
                  DROP INDEX managed_residency_active_identity;
                  DROP INDEX managed_residency_state;
                  DROP TABLE managed_residency_receipts;
@@ -1701,7 +1856,7 @@ mod tests {
     }
 
     #[test]
-    fn existing_database_readers_require_the_current_schema_eight() {
+    fn existing_database_readers_require_the_current_schema_nine() {
         let path = database_path();
         drop(Store::open(&path).unwrap());
         drop(Store::open_existing_read_only(&path).unwrap());

@@ -56,6 +56,8 @@ struct Checkpoint {
     path_progress_enabled: bool,
     verifier_provider: Option<crate::verification::provider::Handle>,
     typed_modules: Option<module_history::Restored>,
+    project_profile: Option<crate::projects::ProjectProfile>,
+    project_profile_sha256: Option<String>,
     reconciled_parallel_subtasks: Vec<Subtask>,
 }
 
@@ -152,7 +154,10 @@ fn prepare_with_native(
     let mut bytes = 0usize;
     let mut contexts = 0usize;
     let mut policy_snapshots = 0usize;
-    let mut stmt = db.prepare("SELECT kind,CASE WHEN length(CAST(source AS BLOB))<=64 THEN source END,CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN payload END,id FROM events WHERE task_id=?1 AND kind IN ('execution_settings','execution_options','model_registration','module_snapshot','escalation_policy','reasoning_context','reasoning') ORDER BY id LIMIT 86")?;
+    let mut execution_options_event_id = None;
+    let mut project_profile_event_id = None;
+    let mut original_context_event_id = None;
+    let mut stmt = db.prepare("SELECT kind,CASE WHEN length(CAST(source AS BLOB))<=64 THEN source END,CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN payload END,id FROM events WHERE task_id=?1 AND kind IN ('execution_settings','execution_options','model_registration','module_snapshot','escalation_policy','project_profile_snapshot','reasoning_context','reasoning') ORDER BY id LIMIT 87")?;
     let mut rows = stmt.query([task])?;
     let mut count = 0;
     while let Some(row) = rows.next()? {
@@ -161,7 +166,7 @@ fn prepare_with_native(
         let source: String = row.get(1)?;
         let raw: String = row.get(2)?;
         bytes += raw.len();
-        if count > 85 || bytes > 8_000_000 {
+        if count > 86 || bytes > 8_000_000 {
             bail!("Checkpoint exceeds bounded history")
         }
         let payload = crate::strict_json::value(raw.as_bytes(), 262144)?;
@@ -209,8 +214,15 @@ fn prepare_with_native(
             }
             nodes.push(node);
         } else {
+            let event_id: i64 = row.get(3)?;
+            match kind.as_str() {
+                "execution_options" => execution_options_event_id = Some(event_id),
+                "project_profile_snapshot" => project_profile_event_id = Some(event_id),
+                _ => {}
+            }
             let expected = match kind.as_str() {
                 "module_snapshot" => "fabric",
+                "project_profile_snapshot" => "interface",
                 "reasoning_context" => "jev-r",
                 _ => "runtime",
             };
@@ -226,6 +238,7 @@ fn prepare_with_native(
                     bail!("Invalid or excessive context history")
                 }
                 let event_id: u64 = row.get(3)?;
+                original_context_event_id.get_or_insert(event_id as i64);
                 let (calls,cycles):(u64,u64)=db.query_row("SELECT (SELECT count(*) FROM events WHERE task_id=?1 AND id<?2 AND kind='model_dispatch'),(SELECT count(*) FROM events WHERE task_id=?1 AND id<?2 AND kind='cycle_reservation')",rusqlite::params![task,event_id],|r|Ok((r.get(0)?,r.get(1)?)))?;
                 if payload["calls_before"] != calls || payload["cycles_before"] != cycles {
                     bail!("Context counters differ from chronological reservations")
@@ -238,6 +251,7 @@ fn prepare_with_native(
                         "objective_hash",
                         "context_hash",
                         "prompt_base_hash",
+                        "project_profile_sha256",
                         "untrusted_data",
                         "permissions_restorable",
                     ] {
@@ -292,12 +306,95 @@ fn prepare_with_native(
     let options = snapshots
         .get("execution_options")
         .ok_or_else(|| anyhow::anyhow!("Missing execution options"))?;
-    if options["format_version"] != 1
-        || !matches!(options["profile"].as_str(), Some("full" | "collective"))
+    let options_version = options["format_version"]
+        .as_u64()
+        .ok_or_else(|| anyhow::anyhow!("Missing execution options version"))?;
+    let options_object = options
+        .as_object()
+        .ok_or_else(|| anyhow::anyhow!("Execution options are not an object"))?;
+    let expected_option_keys: &[&str] = match options_version {
+        1 => &["format_version", "profile", "explain", "conversation_ref"],
+        2 => &[
+            "format_version",
+            "profile",
+            "explain",
+            "conversation_ref",
+            "project_ref",
+        ],
+        _ => bail!("Unsupported continuation execution options"),
+    };
+    if options_object.len() != expected_option_keys.len()
+        || expected_option_keys
+            .iter()
+            .any(|key| !options_object.contains_key(*key))
+    {
+        bail!("Execution options contain missing or unknown fields")
+    }
+    let project_ref = match options_version {
+        1 => None,
+        2 => match options
+            .get("project_ref")
+            .ok_or_else(|| anyhow::anyhow!("Missing pinned project reference field"))?
+        {
+            Value::Null => None,
+            Value::String(reference) => Some(reference.clone()),
+            _ => bail!("Invalid project reference in execution options"),
+        },
+        _ => unreachable!("Version was validated"),
+    };
+    if !matches!(options["profile"].as_str(), Some("full" | "collective"))
         || options["explain"] != false
         || !options["conversation_ref"].is_null()
     {
         bail!("Unsupported continuation execution options")
+    }
+    let profile_snapshot = snapshots.get("project_profile_snapshot");
+    let (project_profile, project_profile_sha256) = match (project_ref.as_deref(), profile_snapshot)
+    {
+        (None, None) => (None, None),
+        (Some(reference), Some(snapshot)) => {
+            let selection = crate::projects::Selection::parse(reference)?;
+            let profile: crate::projects::ProjectProfile =
+                serde_json::from_value(snapshot["profile"].clone())?;
+            profile.validate()?;
+            let serialized = serde_json::to_vec(&profile)?;
+            if serialized.len() > 8_192 {
+                bail!("Pinned project profile exceeds its snapshot bound")
+            }
+            let profile_sha256 = sha256(&serialized);
+            let expected = json!({"format_version":1,"reference":reference,
+                    "profile_sha256":profile_sha256.as_str(),"profile":&profile,
+                    "permissions_granted":false});
+            if snapshot != &expected
+                || selection.id() != profile.id.as_str()
+                || selection.version() != profile.version
+            {
+                bail!("Pinned project profile differs from its exact execution reference")
+            }
+            (Some(profile), Some(profile_sha256))
+        }
+        (Some(_), None) => bail!("Selected project profile snapshot is missing"),
+        (None, Some(_)) => {
+            bail!("Unexpected project profile snapshot without an explicit selection")
+        }
+    };
+    let first_dispatch: Option<i64> = db.query_row(
+        "SELECT min(id) FROM events WHERE task_id=?1 AND kind='model_dispatch'",
+        [task],
+        |row| row.get(0),
+    )?;
+    // A task can be interrupted after creating its immutable setup snapshots but
+    // before its first provider call (for example, a FAST-mode limit receipt).
+    // In that case anchor setup ordering to the first original context event.
+    // Whenever dispatch exists, keep the stronger dispatch ordering check too.
+    let setup_anchor = first_dispatch
+        .or(original_context_event_id)
+        .ok_or_else(|| anyhow::anyhow!("Missing original setup ordering anchor"))?;
+    if execution_options_event_id.is_none_or(|id| id >= setup_anchor)
+        || (project_profile.is_some()
+            && project_profile_event_id.is_none_or(|id| id >= setup_anchor))
+    {
+        bail!("Project and execution snapshots must precede the original context or first inference dispatch")
     }
     let modules = snapshots
         .get("module_snapshot")
@@ -323,6 +420,18 @@ fn prepare_with_native(
     let text = context["context"]
         .as_str()
         .ok_or_else(|| anyhow::anyhow!("Missing context bytes"))?;
+    if let Some(profile) = &project_profile {
+        if !text.contains(&profile.task_context_section()?)
+            || context["project_profile_sha256"].as_str() != project_profile_sha256.as_deref()
+        {
+            bail!("Saved reasoning context is missing its exact selected project profile")
+        }
+    } else if context
+        .get("project_profile_sha256")
+        .is_some_and(|saved| !saved.is_null())
+    {
+        bail!("Reasoning context names an unselected project profile")
+    }
     if context["prompt_base_hash"] != sha256(Session::prompt_base(&query, text, true)?.as_bytes()) {
         bail!("Unsupported or altered saved reasoning prompt; recovery cannot substitute a different prompt format")
     }
@@ -585,6 +694,8 @@ fn prepare_with_native(
         path_progress_enabled,
         verifier_provider: verifier_provider.cloned(),
         typed_modules,
+        project_profile,
+        project_profile_sha256,
         resource_history,
         resource_routes,
         resource_route_scope,
@@ -1165,6 +1276,10 @@ fn preview_with_runtime_handles(
             "escalation_policy":escalator.descriptor(),"policy_implementation_attested":false,
             "verifier_provider":checkpoint.verifier_provider.as_ref().map(|provider|provider.descriptor()),
             "verifier_implementation_attested":false,
+            "project_profile":checkpoint.project_profile.as_ref().map(|project|json!({
+                "reference":format!("{}@{}",project.id,project.version),
+                "profile_sha256":checkpoint.project_profile_sha256.as_deref(),
+                "preferences":&project.preferences,"authority":"style only"})),
             "restored_typed_modules":checkpoint.typed_modules.as_ref().map(|modules|modules.evidence()),
             "managed_worker":checkpoint.cfg.inference_process,
             "resource_history":checkpoint.resource_history,
@@ -1437,7 +1552,7 @@ async fn resume_with_runtime_handles(
                 "UPDATE tasks SET status='running',updated=unixepoch() WHERE id=?1",
                 [task],
             )?;
-            tx.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'continuation','human-cli',?2,unixepoch())",rusqlite::params![task,json!({"state":"started","format_version":1,"original_budget_preserved":true,"prior_timing_complete":false,"subtask_results_verified":false,"reconciled_parallel_result_publications":checkpoint.reconciled_parallel_subtasks.len(),"escalation_policy":escalator.descriptor(),"verifier_provider":checkpoint.verifier_provider.as_ref().map(|provider|provider.descriptor()),"restored_native_runtime":native.as_ref().map(|runtime|runtime.evidence()),"restored_typed_modules":checkpoint.typed_modules.as_ref().map(|modules|modules.evidence()),"restored_resource_pool":restored_pool,"resource_history":checkpoint.resource_history,"finite_search_history":checkpoint.finite_search_history,"parallel_history":parallel_history}).to_string()])?;
+            tx.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'continuation','human-cli',?2,unixepoch())",rusqlite::params![task,json!({"state":"started","format_version":1,"original_budget_preserved":true,"prior_timing_complete":false,"subtask_results_verified":false,"reconciled_parallel_result_publications":checkpoint.reconciled_parallel_subtasks.len(),"escalation_policy":escalator.descriptor(),"verifier_provider":checkpoint.verifier_provider.as_ref().map(|provider|provider.descriptor()),"project_profile":checkpoint.project_profile.as_ref().map(|project|json!({"reference":format!("{}@{}",project.id,project.version),"profile_sha256":checkpoint.project_profile_sha256.as_deref(),"preferences":&project.preferences,"authority":"style only"})),"restored_native_runtime":native.as_ref().map(|runtime|runtime.evidence()),"restored_typed_modules":checkpoint.typed_modules.as_ref().map(|modules|modules.evidence()),"restored_resource_pool":restored_pool,"resource_history":checkpoint.resource_history,"finite_search_history":checkpoint.finite_search_history,"parallel_history":parallel_history}).to_string()])?;
             if started.elapsed() > Duration::from_secs(5) {
                 bail!("Continuation admission deadline exhausted")
             }
@@ -1506,6 +1621,7 @@ async fn resume_with_runtime_handles(
         &checkpoint.mode,
         checkpoint.state,
     )?;
+    session.set_project_profile_sha256(checkpoint.project_profile_sha256.clone());
     session.typed_modules = checkpoint
         .typed_modules
         .as_ref()
@@ -1571,6 +1687,10 @@ async fn resume_with_runtime_handles(
     })?;
     let report = json!({"format_version":1,"task_id":task,"status":status,"answer":answer,
         "escalation_policy":session.escalator.descriptor(),"policy_implementation_attested":false,
+        "project_profile":checkpoint.project_profile.as_ref().map(|project|json!({
+            "reference":format!("{}@{}",project.id,project.version),
+            "profile_sha256":checkpoint.project_profile_sha256.as_deref(),
+            "preferences":&project.preferences,"authority":"style only"})),
         "verified":session.verified,"criterion":session.verified_criterion,
         "verification_attempted":session.verification_attempted,"stop_reason":session.stop_reason,
         "restored_resource_pool":restored_pool,"resource_history":checkpoint.resource_history,
@@ -1659,6 +1779,14 @@ mod tests {
         custom_order: bool,
         policy: Option<crate::escalation::Descriptor>,
     ) -> (Arc<Store>, String) {
+        fixture_in_with_profile(store, custom_order, policy, None).await
+    }
+    async fn fixture_in_with_profile(
+        store: Arc<Store>,
+        custom_order: bool,
+        policy: Option<crate::escalation::Descriptor>,
+        project_profile: Option<crate::projects::ProjectProfile>,
+    ) -> (Arc<Store>, String) {
         const INDEPENDENT_PLAN: &str = r#"{"steps":[{"id":"a","objective":"Inspect input","depends_on":[]},{"id":"b","objective":"Independent advice","depends_on":[]}]}"#;
         let plan_text = if custom_order { INDEPENDENT_PLAN } else { PLAN };
         let first = if custom_order { 1 } else { 0 };
@@ -1676,9 +1804,39 @@ mod tests {
         if let Some(policy) = policy {
             store.event(&task, "escalation_policy", "jev-plus", json!({"format_version":1,"policy":policy,"permissions_granted":false,"implementation_attested":false})).unwrap();
         }
-        store.event(&task,"execution_options","runtime",json!({"format_version":1,"profile":"full","explain":false,"conversation_ref":null})).unwrap();
+        let project_profile_sha256 = if let Some(profile) = &project_profile {
+            let profile_sha256 = sha256(&serde_json::to_vec(profile).unwrap());
+            store.event(&task,"project_profile_snapshot","interface",json!({"format_version":1,
+                "reference":format!("{}@{}",profile.id,profile.version),"profile_sha256":profile_sha256,
+                "profile":profile,"permissions_granted":false})).unwrap();
+            Some(profile_sha256)
+        } else {
+            None
+        };
+        let options = if let Some(profile) = &project_profile {
+            json!({"format_version":2,"profile":"full","explain":false,"conversation_ref":null,
+                "project_ref":format!("{}@{}",profile.id,profile.version)})
+        } else {
+            json!({"format_version":1,"profile":"full","explain":false,"conversation_ref":null})
+        };
+        store
+            .event(&task, "execution_options", "runtime", options)
+            .unwrap();
         store.event(&task,"module_snapshot","fabric",json!({"modules":[{"id":"inference.local","version":"1.0.0","roles":crate::fabric::protocol::ROLES}]})).unwrap();
-        store.event(&task,"reasoning_context","jev-r",json!({"format_version":1,"objective":QUERY,"context":"","objective_hash":sha256(QUERY.as_bytes()),"context_hash":sha256(b""),"prompt_base_hash":sha256(Session::prompt_base(QUERY,"",true).unwrap().as_bytes()),"calls_before":0,"cycles_before":0,"untrusted_data":true,"permissions_restorable":false})).unwrap();
+        let context = project_profile
+            .as_ref()
+            .map(|profile| profile.task_context_section().unwrap())
+            .unwrap_or_default();
+        let mut context_event = json!({"format_version":1,"prompt_format":crate::reasoning::PROMPT_FORMAT,
+            "objective":QUERY,"context":context,"objective_hash":sha256(QUERY.as_bytes()),
+            "context_hash":sha256(context.as_bytes()),"prompt_base_hash":sha256(Session::prompt_base(QUERY,&context,true).unwrap().as_bytes()),
+            "calls_before":0,"cycles_before":0,"untrusted_data":true,"permissions_restorable":false});
+        if project_profile_sha256.is_some() {
+            context_event["project_profile_sha256"] = json!(project_profile_sha256.as_deref());
+        }
+        store
+            .event(&task, "reasoning_context", "jev-r", context_event)
+            .unwrap();
         session
             .call("planner", "planning", 256)
             .await
@@ -1728,6 +1886,109 @@ mod tests {
             .unwrap();
         store.finish_task(&task, "interrupted", "").unwrap();
         (store, task)
+    }
+
+    #[tokio::test]
+    async fn exact_project_profile_snapshot_survives_edits_and_tampering_is_refused() {
+        let root = std::env::temp_dir().join(format!(
+            "fabric-project-profile-continuation-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let store = Arc::new(Store::open(&root.join("state.db")).unwrap());
+        let original = store
+            .publish_project(crate::projects::ProjectDraft {
+                format_version: 1,
+                id: "continuation.project".into(),
+                name: "Pinned project".into(),
+                goal: "Original untrusted project goal".into(),
+                preferences: crate::projects::Preferences {
+                    verbosity: crate::projects::Verbosity::Detailed,
+                    format: crate::projects::OutputFormat::Bullets,
+                },
+            })
+            .unwrap();
+        let (store, task) =
+            fixture_in_with_profile(store, false, None, Some(original.clone())).await;
+        let revised = store
+            .publish_project(crate::projects::ProjectDraft {
+                format_version: 1,
+                id: original.id.clone(),
+                name: "Edited project".into(),
+                goal: "Later version must not replace a task snapshot".into(),
+                preferences: crate::projects::Preferences::default(),
+            })
+            .unwrap();
+        assert_eq!(revised.version, original.version + 1);
+        let checkpoint = prepare(&store.lock().unwrap(), &task).unwrap();
+        assert_eq!(checkpoint.project_profile.as_ref(), Some(&original));
+        let expected_hash = sha256(&serde_json::to_vec(&original).unwrap());
+        assert_eq!(
+            checkpoint.project_profile_sha256.as_deref(),
+            Some(expected_hash.as_str())
+        );
+        let preview = preview(&store, &task).unwrap();
+        assert_eq!(
+            preview["project_profile"]["reference"],
+            "continuation.project@1"
+        );
+        let resumed = resume(store.clone(), &task, true, std::future::ready(()))
+            .await
+            .unwrap();
+        assert_eq!(resumed["status"], "interrupted");
+        let trace = store.task(&task).unwrap();
+        let continuation = trace["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .rev()
+            .find(|event| event["kind"] == "continuation" && event["payload"]["state"] == "started")
+            .unwrap()
+            .clone();
+        assert_eq!(
+            continuation["payload"]["project_profile"]["reference"],
+            "continuation.project@1"
+        );
+        drop(trace);
+        drop(resumed);
+        drop(preview);
+        drop(checkpoint);
+        drop(store);
+        std::fs::remove_dir_all(&root).unwrap();
+
+        for variant in 0..6 {
+            let store = Arc::new(Store::in_memory().unwrap());
+            let profile = store
+                .publish_project(crate::projects::ProjectDraft {
+                    format_version: 1,
+                    id: "tamper.project".into(),
+                    name: "Pinned project".into(),
+                    goal: "Untrusted project goal".into(),
+                    preferences: crate::projects::Preferences::default(),
+                })
+                .unwrap();
+            let (store, task) = fixture_in_with_profile(store, false, None, Some(profile)).await;
+            match variant {
+                0 => {
+                    store.lock().unwrap().execute("UPDATE events SET payload=json_set(payload,'$.project_ref','tamper.project@2') WHERE task_id=?1 AND kind='execution_options'",[&task]).unwrap();
+                }
+                1 => {
+                    store.lock().unwrap().execute("UPDATE events SET payload=json_set(payload,'$.profile.goal','forged') WHERE task_id=?1 AND kind='project_profile_snapshot'",[&task]).unwrap();
+                }
+                2 => {
+                    store.lock().unwrap().execute("UPDATE events SET payload=json_set(payload,'$.profile_sha256',?2) WHERE task_id=?1 AND kind='project_profile_snapshot'",rusqlite::params![task,"0".repeat(64)]).unwrap();
+                }
+                3 => {
+                    store.lock().unwrap().execute("DELETE FROM events WHERE task_id=?1 AND kind='project_profile_snapshot'",[&task]).unwrap();
+                }
+                4 => {
+                    store.lock().unwrap().execute("UPDATE events SET payload=json_set(payload,'$.project_profile_sha256',?2) WHERE task_id=?1 AND kind='reasoning_context'",rusqlite::params![task,"0".repeat(64)]).unwrap();
+                }
+                _ => {
+                    store.lock().unwrap().execute("UPDATE events SET payload=json_set(payload,'$.context','different context') WHERE task_id=?1 AND kind='reasoning_context'",[&task]).unwrap();
+                }
+            }
+            assert!(prepare(&store.lock().unwrap(), &task).is_err());
+        }
     }
 
     async fn unpublished_parallel_result_fixture(store: Arc<Store>) -> (Arc<Store>, String) {
@@ -2606,7 +2867,7 @@ mod tests {
             "json_set(payload,'$.execution_clock.started_ns',0,'$.execution_clock.deadline_ns',json_extract(payload,'$.configuration.max_wall_seconds')*1000000000)",
 
         ] {
-            let (store,task)=fixture().await;
+        let (store,task)=fixture().await;
             store.lock().unwrap().execute(&format!("UPDATE events SET payload={mutation} WHERE task_id=?1 AND kind='execution_settings'"),[&task]).unwrap();
             assert!(prepare(&store.lock().unwrap(),&task).is_err(),"Accepted {mutation}");
         }

@@ -15,10 +15,10 @@ Cognitive Fabric is a local, resource-bounded framework for coordinating languag
 - Connects to local OpenAI-compatible inference servers through a replaceable adapter, with an offline demonstration backend for deterministic workflows.
 - Provides bounded FAST, STANDARD, DEEP, and RESEARCH task modes, optional expert workflows, structured checking, and task recovery.
 - Stores task state, versioned skill metadata, and reviewed knowledge in SQLite.
-- Includes operator-approved task model lifecycle, native response-instance checks, versioned typed modules, and optional Wasm secondary-verifier source paths. These additions are undergoing implementation integration; their final combined verification is pending.
+- Includes operator-approved task model lifecycle, native response-instance checks, versioned typed modules, bounded Wasm experts and secondary verifiers, and immutable project profiles. See the implementation snapshot for verification evidence and remaining limits.
 - Offers an optional loopback HTTP server for OpenAI-compatible clients. It proposes client tool calls; the connected client remains responsible for executing and authorizing those tools.
 
-See [typed modules](docs/TYPED_MODULES.md), [optional Wasm experts](docs/WASM_EXPERTS.md), [managed residency](docs/MANAGED_RESIDENCY.md), and [verification](docs/VERIFICATION.md) for the new interfaces and trust boundaries.
+See [typed modules](docs/TYPED_MODULES.md), [optional Wasm experts](docs/WASM_EXPERTS.md), [project profiles](docs/PROJECT_PROFILES.md), [managed residency](docs/MANAGED_RESIDENCY.md), and [verification](docs/VERIFICATION.md) for the new interfaces and trust boundaries.
 
 The design retains separate language interface, Jev+, Jev-R, expert, memory/fabric, evolution, and security/evaluation responsibilities. See the [architecture](docs/ARCHITECTURE.md) and the [current implementation snapshot](docs/CURRENT_IMPLEMENTATION.md) for the target design and what exists today.
 
@@ -53,6 +53,19 @@ cargo run -- ask 'Explain Rust ownership briefly.' --mode standard
 ```
 
 For OpenAI-compatible clients, see the [HTTP API and client setup](docs/HTTP_API.md). For credentials, managed workers, socket service use, and complete installation workflows, follow [configuration](docs/CONFIGURATION.md), [authentication](docs/AUTHENTICATION.md), [workers](docs/WORKERS.md), and [installation validation](docs/INSTALLATION_VALIDATION.md).
+
+## CPU and GPU execution
+
+Jev+ coordination, Jev-R orchestration, deterministic verification, memory and IPC
+run on CPU. CUDA is not required for the default build or offline workflows.
+For model-backed reasoning, the configured inference server owns CPU/GPU
+execution and offloading; the Rust runtime does not implement CUDA inference.
+
+`diagnostics --probe-gpu` and `compare --observe-gpu` provide optional NVIDIA
+device observations. These do not prove GPU inference, task-attributed energy or
+physical GPU quota enforcement. See [GPU observations](docs/GPU_OBSERVATIONS.md).
+CPU execution support is distinct from the still-unproven live reasoning and
+efficiency claims.
 
 ## Security and deployment scope
 

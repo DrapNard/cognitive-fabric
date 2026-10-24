@@ -80,6 +80,16 @@ enum Command {
         host_pid: u32,
     },
     Init,
+    /// Publish a new immutable version of an operator-declared project profile.
+    ProjectPublish {
+        #[arg(long)]
+        manifest: PathBuf,
+    },
+    /// Inspect one explicitly selected id@version profile without modifying state.
+    ProjectShow {
+        reference: String,
+    },
+    ProjectList,
     Status,
     SelfTest,
     SecurityEval,
@@ -434,6 +444,9 @@ enum Command {
         socket: bool,
         #[arg(long)]
         conversation: Option<String>,
+        /// Select an immutable project profile using id@version.
+        #[arg(long)]
+        project: Option<String>,
         #[arg(long)]
         explain: bool,
         /// Use reviewed workflow utility evidence for this direct task.
@@ -990,7 +1003,44 @@ async fn run_cli() -> Result<()> {
         .as_ref()
         .map(cogfabric::residency::lifecycle::NativeLifecyclePolicy::load)
         .transpose()?;
+    let project_draft = if let Command::ProjectPublish { manifest } = &cli.command {
+        security::authorize("human-cli", "project.publish")?;
+        let bytes = security::read_regular_bytes(manifest, 8192)?;
+        let draft: cogfabric::projects::ProjectDraft =
+            serde_json::from_value(cogfabric::strict_json::value(&bytes, 8192)?)?;
+        draft.validate()?;
+        Some(draft)
+    } else {
+        None
+    };
+    if let Command::Ask {
+        project: Some(reference),
+        ..
+    } = &cli.command
+    {
+        cogfabric::projects::Selection::parse(reference)?;
+    }
     let cfg = Config::load(cli.home, cli.backend)?;
+    match &cli.command {
+        Command::ProjectShow { reference } => {
+            cogfabric::projects::Selection::parse(reference)?;
+            let store = Store::open_existing_read_only(&cfg.db())?;
+            return output(store.project_profile(reference)?, cli.json);
+        }
+        Command::ProjectList => {
+            let store = Store::open_existing_read_only(&cfg.db())?;
+            return output(store.projects()?, cli.json);
+        }
+        Command::ProjectPublish { .. } => {
+            cfg.prepare()?;
+            let store = Store::open_with_limit(&cfg.db(), cfg.max_database_bytes)?;
+            return output(
+                store.publish_project(project_draft.expect("Validated project draft"))?,
+                cli.json,
+            );
+        }
+        _ => {}
+    }
     match &cli.command {
         Command::ResidencyRun {
             request,
@@ -1606,6 +1656,9 @@ async fn run_cli() -> Result<()> {
             json!({"saved":true,"inference_auth_scope":settings.inference_auth_scope,"credential_environment_variable":cogfabric::credentials::ENVIRONMENT_VARIABLE,"credential_stored":false})
         }
         Command::ConfigShow => serde_json::to_value(&cfg)?,
+        Command::ProjectPublish { .. } | Command::ProjectShow { .. } | Command::ProjectList => {
+            bail!("Project commands must run before engine initialization")
+        }
         Command::SecurityCorpusEvaluate { .. } => {
             bail!("Security corpus evaluation must precede state initialization")
         }
@@ -1717,11 +1770,13 @@ async fn run_cli() -> Result<()> {
             mode,
             socket,
             conversation,
+            project,
             explain,
             ..
         } => {
             let options = cogfabric::language::TaskOptions {
                 conversation_ref: conversation,
+                project_ref: project,
                 explain: explain || cfg.synthesize_results,
             };
             let outcome = if socket {
