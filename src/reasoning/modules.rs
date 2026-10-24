@@ -1,36 +1,70 @@
 //! General module dispatch retains the original Session policy and tool ledger.
 use super::*;
-use crate::fabric::modules::{Broker, Grant, Pin, Request, Response, SqlTable, SqlValue};
+use crate::fabric::modules::{
+    Broker, DispatchReservation, Grant, PinSet, Request, Response, SqlTable, SqlValue,
+};
 
 impl Session {
     pub(crate) async fn dispatch_typed_module(
         &mut self,
         broker: &Broker,
-        module: &Pin,
+        modules: &PinSet,
         request: Request,
-    ) -> Result<Response> {
+    ) -> Result<(crate::fabric::modules::Pin, Response)> {
         let capability = request.capability();
         let actor = capability.actor();
+        if modules.task() != self.task {
+            bail!("Typed module candidate set belongs to another task")
+        }
+        self.policy
+            .authorize(&self.task, actor, capability.as_str())?;
+        crate::security::authorize(actor, capability.as_str())?;
+        let deadline = self.module_deadline();
+        let reservation = broker
+            .reserve_candidate(modules, capability, deadline)
+            .await?;
         self.authorize_tool_as(actor, capability.as_str())?;
-        self.dispatch_typed_module_pre_authorized(broker, module, request)
+        self.dispatch_reserved_module(broker, reservation, request, deadline)
             .await
     }
 
     pub(crate) async fn dispatch_typed_module_pre_authorized(
         &mut self,
         broker: &Broker,
-        module: &Pin,
+        module: &PinSet,
         request: Request,
-    ) -> Result<Response> {
+    ) -> Result<(crate::fabric::modules::Pin, Response)> {
+        if module.task() != self.task {
+            bail!("Typed module candidate set belongs to another task")
+        }
+        let deadline = self.module_deadline();
+        let reservation = broker
+            .reserve_candidate(module, request.capability(), deadline)
+            .await?;
+        self.dispatch_reserved_module(broker, reservation, request, deadline)
+            .await
+    }
+
+    fn module_deadline(&self) -> Instant {
+        self.deadline
+            .min(Instant::now() + Duration::from_secs(self.cfg.timeout_seconds.min(300)))
+    }
+
+    async fn dispatch_reserved_module(
+        &self,
+        broker: &Broker,
+        reservation: DispatchReservation,
+        request: Request,
+        deadline: Instant,
+    ) -> Result<(crate::fabric::modules::Pin, Response)> {
         let capability = request.capability();
         let actor = capability.actor();
+        let selected = reservation.pin().clone();
         let grant = Grant::narrow(&self.task, actor, [capability], 1, &self.policy)?;
-        let deadline = self
-            .deadline
-            .min(Instant::now() + Duration::from_secs(self.cfg.timeout_seconds.min(300)));
-        broker
-            .dispatch(module, &grant, &self.policy, actor, request, deadline)
-            .await
+        let response = broker
+            .dispatch_reserved(reservation, &grant, &self.policy, actor, request, deadline)
+            .await?;
+        Ok((selected, response))
     }
 }
 

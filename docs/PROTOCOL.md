@@ -568,3 +568,16 @@ processing work; existing task pins are unchanged. Schemas/bindings were regener
 with exact flatc 25.12.19 (upstream commit
 `7e163021e59cca4f8e1e35a7c828b5c6b7915953`), alongside the reviewed hash manifest.
 Typed dispatch and all existing authentication/frame limits remain in force.
+
+
+### Typed module task snapshot version 5
+
+New engine tasks persist all admitted typed module identities in deterministic
+identity order, including multiple providers for a capability. Their ordered
+candidate sets come from the same registry read as the persisted module metadata.
+Per-dispatch intent/outcome messages still name one exact module ID/version; no
+post-intent provider substitution is permitted. Source/implementation identities
+and execution limits retain their existing meaning. Recovery accepts overlapping
+providers only in v5; v1–v4 remain single-provider snapshots. Closed retained
+identities may be validated in v5 without being dispatchable. The internal typed
+module FlatBuffers request/response protocol is unchanged by this snapshot version.

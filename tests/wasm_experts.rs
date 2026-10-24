@@ -329,7 +329,7 @@ mod enabled {
             .iter()
             .find(|e| e["kind"] == "typed_module_snapshot")
             .unwrap()["payload"];
-        assert_eq!(snapshot["format_version"], 4);
+        assert_eq!(snapshot["format_version"], 5);
         assert_eq!(
             snapshot["modules"][0]["implementation"]["module_sha256"],
             sha256(&bytes)

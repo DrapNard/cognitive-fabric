@@ -95,23 +95,31 @@ impl Session {
                 crate::reasoning::modules::candidate_verification_request(query, answer)?
             {
                 let capability = request.capability();
-                if let Some(pin) = pins.get(&capability) {
-                    let module = pin.descriptor();
+                if let Some(candidates) = pins.get(&capability) {
                     let response = self
-                        .dispatch_typed_module_pre_authorized(&broker, pin, request)
+                        .dispatch_typed_module_pre_authorized(&broker, candidates, request)
                         .await;
-                    let (claim, result_code) = match response {
-                        Ok(crate::fabric::modules::Response::SortDiagnostic { claimed_valid }) => {
-                            (Some(claimed_valid), "diagnostic")
+                    let (selected_identity, claim, result_code) = match response {
+                        Ok((pin, response)) => {
+                            let identity = Some((
+                                pin.descriptor().id.clone(),
+                                pin.descriptor().version.clone(),
+                            ));
+                            let (claim, result) = match response {
+                                crate::fabric::modules::Response::SortDiagnostic {
+                                    claimed_valid,
+                                }
+                                | crate::fabric::modules::Response::OrderingDiagnostic {
+                                    claimed_valid,
+                                }
+                                | crate::fabric::modules::Response::PathDiagnostic {
+                                    claimed_valid,
+                                } => (Some(claimed_valid), "diagnostic"),
+                                _ => (None, "wrong_response_kind"),
+                            };
+                            (identity, claim, result)
                         }
-                        Ok(crate::fabric::modules::Response::OrderingDiagnostic {
-                            claimed_valid,
-                        }) => (Some(claimed_valid), "diagnostic"),
-                        Ok(crate::fabric::modules::Response::PathDiagnostic { claimed_valid }) => {
-                            (Some(claimed_valid), "diagnostic")
-                        }
-                        Ok(_) => (None, "wrong_response_kind"),
-                        Err(_) => (None, "unavailable"),
+                        Err(_) => (None, None, "unavailable"),
                     };
                     self.store.event(
                         &self.task,
@@ -119,8 +127,8 @@ impl Session {
                         "fabric",
                         json!({
                             "format_version": 1,
-                            "module_id": module.id,
-                            "module_version": module.version,
+                            "module_id": selected_identity.as_ref().map(|identity|&identity.0),
+                            "module_version": selected_identity.as_ref().map(|identity|&identity.1),
                             "capability": capability.as_str(),
                             "objective_sha256": objective_hash,
                             "candidate_sha256": answer_hash,

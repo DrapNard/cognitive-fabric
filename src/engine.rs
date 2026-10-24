@@ -585,22 +585,19 @@ impl Engine {
                 .finish_task(&id, "failed", "Project profile snapshot failed");
             return Err(error);
         }
-        let typed_modules=(|| -> Result<std::collections::BTreeMap<crate::fabric::modules::Capability,crate::fabric::modules::Pin>> {
-            let mut pins=std::collections::BTreeMap::new();
-            let mut descriptors=Vec::new();
-            for descriptor in self.modules.discover()? {
-                let pin=self.modules.pin(&id,&descriptor.id,&descriptor.version)?;
+        let typed_modules = (|| -> Result<crate::fabric::modules::TaskRoutes> {
+            let (pins, routes) = self.modules.pin_active_routes(&id)?;
+            let mut descriptors = Vec::with_capacity(pins.len());
+            for pin in pins {
+                let descriptor = pin.descriptor();
                 descriptors.push(json!({"id":descriptor.id,"version":descriptor.version,
                     "capabilities":descriptor.capabilities.iter().map(|capability|capability.as_str()).collect::<Vec<_>>(),
                     "source_sha256":pin.source_fingerprint(),"implementation":pin.implementation_identity(),"limits":pin.limits() }));
-                for capability in &descriptor.capabilities {
-                    if pins.insert(*capability,pin.clone()).is_some() { bail!("Conflicting pinned typed module capability") }
-                }
             }
             if !descriptors.is_empty() {
-                self.store.event(&id,"typed_module_snapshot","fabric",json!({"format_version":4,"broker_id":self.modules.identity_id().to_string(),"modules":descriptors,"permissions_granted":false}))?;
+                self.store.event(&id,"typed_module_snapshot","fabric",json!({"format_version":5,"broker_id":self.modules.identity_id().to_string(),"modules":descriptors,"permissions_granted":false}))?;
             }
-            Ok(pins)
+            Ok(routes)
         })();
         let typed_modules = match typed_modules {
             Ok(pins) => pins,
@@ -878,16 +875,16 @@ impl Engine {
                         let available = provider.capabilities.iter().all(|capability| {
                             typed_modules
                                 .get(&capability.module_capability())
+                                .and_then(|set| {
+                                    set.exact(&provider.module_id, &provider.module_version)
+                                })
                                 .is_some_and(|pin| {
-                                    let descriptor = pin.descriptor();
-                                    descriptor.id == provider.module_id
-                                        && descriptor.version == provider.module_version
-                                        && descriptor.capabilities
-                                            == provider
-                                                .capabilities
-                                                .iter()
-                                                .map(|capability| capability.module_capability())
-                                                .collect()
+                                    pin.descriptor().capabilities
+                                        == provider
+                                            .capabilities
+                                            .iter()
+                                            .map(|capability| capability.module_capability())
+                                            .collect()
                                 })
                         });
                         if !available {
@@ -898,7 +895,10 @@ impl Engine {
                         for capability in &provider.capabilities {
                             let pin = typed_modules
                                 .get(&capability.module_capability())
-                                .expect("Validated task provider capability");
+                                .and_then(|set| {
+                                    set.exact(&provider.module_id, &provider.module_version)
+                                })
+                                .expect("Validated task provider candidate");
                             crate::registry::providers::pin_task_snapshot_provider(
                                 &self.store,
                                 manifest,
@@ -1032,7 +1032,7 @@ impl Engine {
                         )
                         .await?
                     {
-                        crate::fabric::modules::Response::Arithmetic { value } => Ok(value),
+                        (_, crate::fabric::modules::Response::Arithmetic { value }) => Ok(value),
                         _ => bail!("Typed arithmetic module returned another response kind"),
                     }
                 } else {
@@ -1076,7 +1076,7 @@ impl Engine {
                 let typed = typed_modules.get(&crate::fabric::modules::Capability::SqlQuery);
                 let routed = if let Some(pin) = typed {
                     let request = crate::reasoning::modules::sql_request(raw)?;
-                    let response = session
+                    let (_, response) = session
                         .dispatch_typed_module(&self.modules, pin, request)
                         .await?;
                     crate::reasoning::modules::sql_response(response)

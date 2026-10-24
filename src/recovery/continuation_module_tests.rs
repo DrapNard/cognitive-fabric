@@ -31,6 +31,38 @@ impl Module for SortingModule {
         })
     }
 }
+
+struct SecondarySortingModule;
+impl Module for SecondarySortingModule {
+    fn descriptor(&self) -> Descriptor {
+        Descriptor {
+            id: "fixture.sorting.secondary".into(),
+            version: "1.0.0".into(),
+            capabilities: [Capability::SortingVerify].into(),
+        }
+    }
+    fn execute<'a>(&'a self, _: &'a str, _: Instant, _: Request) -> ModuleFuture<'a> {
+        Box::pin(async {
+            Ok(Response::SortDiagnostic {
+                claimed_valid: false,
+            })
+        })
+    }
+}
+
+struct PanickingSortingModule;
+impl Module for PanickingSortingModule {
+    fn descriptor(&self) -> Descriptor {
+        Descriptor {
+            id: "fixture.sorting".into(),
+            version: "1.0.0".into(),
+            capabilities: [Capability::SortingVerify].into(),
+        }
+    }
+    fn execute<'a>(&'a self, _: &'a str, _: Instant, _: Request) -> ModuleFuture<'a> {
+        Box::pin(async { panic!("fixture provider crash") })
+    }
+}
 fn registry(store: Arc<Store>) -> (Arc<Broker>, Arc<AtomicUsize>) {
     let broker = Arc::new(Broker::new(store.clone()));
     let calls = Arc::new(AtomicUsize::new(0));
@@ -98,7 +130,7 @@ async fn exact_registry_restores_retained_versions_without_dispatch_or_activatio
         .unwrap()
         .unwrap();
     assert_eq!(
-        restored.pins[&Capability::SortingVerify]
+        restored.pins[&Capability::SortingVerify].candidates()[0]
             .descriptor()
             .version,
         "1.0.0"
@@ -194,6 +226,161 @@ async fn another_registry_store_or_retired_version_is_not_a_restoration() {
     original.deactivate("fixture.sorting").unwrap();
     original.retire("fixture.sorting", "1.0.0").unwrap();
     assert!(module_history::restore(&store.lock().unwrap(), &task, Some(original)).is_err());
+}
+
+#[test]
+fn v5_restores_ordered_overlapping_candidates_while_v4_stays_single_provider() {
+    for (version, include_second) in [(4, false), (4, true), (5, true)] {
+        let store = Arc::new(Store::in_memory().unwrap());
+        let task = store
+            .create_task("Restore provider candidates", "standard")
+            .unwrap();
+        let broker = Arc::new(Broker::new(store.clone()));
+        broker
+            .register(
+                Arc::new(SortingModule {
+                    version: "1.0.0",
+                    calls: Arc::new(AtomicUsize::new(0)),
+                    store: store.clone(),
+                }),
+                Limits::default(),
+            )
+            .unwrap();
+        broker
+            .register(Arc::new(SecondarySortingModule), Limits::default())
+            .unwrap();
+        let first = broker.pin(&task, "fixture.sorting", "1.0.0").unwrap();
+        let second = broker
+            .pin(&task, "fixture.sorting.secondary", "1.0.0")
+            .unwrap();
+        let make_module = |pin: &crate::fabric::modules::Pin| {
+            json!({
+                "id": pin.descriptor().id,
+                "version": pin.descriptor().version,
+                "capabilities": pin.descriptor().capabilities.iter().map(|c|c.as_str()).collect::<Vec<_>>(),
+                "source_sha256": pin.source_fingerprint(),
+                "implementation": pin.implementation_identity(),
+                "limits": pin.limits()
+            })
+        };
+        let snapshot = json!({
+            "format_version":version,
+            "broker_id":broker.identity_id().to_string(),
+            "modules":if include_second {json!([make_module(&first),make_module(&second)])} else {json!([make_module(&first)])},
+            "permissions_granted":false
+        });
+        store
+            .event(&task, "typed_module_snapshot", "fabric", snapshot)
+            .unwrap();
+        let before = store.task(&task).unwrap();
+        let restored = module_history::restore(&store.lock().unwrap(), &task, Some(broker.clone()));
+        if version == 4 && include_second {
+            assert!(restored.is_err());
+            assert_eq!(store.task(&task).unwrap(), before);
+        } else {
+            let restored = restored.unwrap().unwrap();
+            let candidates = restored.pins[&Capability::SortingVerify].candidates();
+            assert_eq!(candidates.len(), if include_second { 2 } else { 1 });
+            assert_eq!(candidates[0].descriptor().id, "fixture.sorting");
+            if include_second {
+                assert_eq!(candidates[1].descriptor().id, "fixture.sorting.secondary");
+            }
+            assert_eq!(store.task(&task).unwrap(), before);
+        }
+    }
+}
+
+#[tokio::test]
+async fn v5_restores_closed_candidate_and_reserves_healthy_original_alternate() {
+    let store = Arc::new(Store::in_memory().unwrap());
+    let target = store
+        .create_task("Restore closed provider", "standard")
+        .unwrap();
+    let crash_task = store
+        .create_task("Crash provider worker", "standard")
+        .unwrap();
+    let broker = Arc::new(Broker::new(store.clone()));
+    broker
+        .register(Arc::new(PanickingSortingModule), Limits::default())
+        .unwrap();
+    broker
+        .register(Arc::new(SecondarySortingModule), Limits::default())
+        .unwrap();
+
+    let (modules, _) = broker.pin_active_routes(&target).unwrap();
+    let snapshot_modules = modules
+        .iter()
+        .map(|pin| {
+            json!({
+                "id": pin.descriptor().id,
+                "version": pin.descriptor().version,
+                "capabilities": pin.descriptor().capabilities.iter().map(|cap| cap.as_str()).collect::<Vec<_>>(),
+                "source_sha256": pin.source_fingerprint(),
+                "implementation": pin.implementation_identity(),
+                "limits": pin.limits()
+            })
+        })
+        .collect::<Vec<_>>();
+    store
+        .event(
+            &target,
+            "typed_module_snapshot",
+            "fabric",
+            json!({
+                "format_version": 5,
+                "broker_id": broker.identity_id().to_string(),
+                "modules": snapshot_modules,
+                "permissions_granted": false
+            }),
+        )
+        .unwrap();
+
+    let pin = broker.pin(&crash_task, "fixture.sorting", "1.0.0").unwrap();
+    let policy = TaskPolicy::reasoning(&crash_task).unwrap();
+    let grant = Grant::narrow(
+        &crash_task,
+        "jev-plus",
+        [Capability::SortingVerify],
+        1,
+        &policy,
+    )
+    .unwrap();
+    assert!(broker
+        .dispatch(
+            &pin,
+            &grant,
+            &policy,
+            "jev-plus",
+            Request::Sort {
+                values: vec![3, 1, 2],
+                candidate: vec![1, 2, 3],
+                descending: false,
+            },
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .is_err());
+
+    let restored = module_history::restore(&store.lock().unwrap(), &target, Some(broker.clone()))
+        .unwrap()
+        .unwrap();
+    let candidates = restored.pins[&Capability::SortingVerify].candidates();
+    assert_eq!(candidates.len(), 2);
+    assert_eq!(candidates[0].descriptor().id, "fixture.sorting");
+    assert_eq!(candidates[1].descriptor().id, "fixture.sorting.secondary");
+
+    let reservation = broker
+        .reserve_candidate(
+            &restored.pins[&Capability::SortingVerify],
+            Capability::SortingVerify,
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        reservation.pin().descriptor().id,
+        "fixture.sorting.secondary"
+    );
 }
 
 #[tokio::test]

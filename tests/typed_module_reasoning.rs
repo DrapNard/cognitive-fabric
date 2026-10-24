@@ -251,3 +251,84 @@ async fn typed_finite_solver_requires_explicit_operator_setting_and_preserves_re
         }
     }
 }
+
+struct ArithmeticProvider {
+    id: &'static str,
+    calls: Arc<std::sync::atomic::AtomicUsize>,
+}
+impl Module for ArithmeticProvider {
+    fn descriptor(&self) -> Descriptor {
+        Descriptor {
+            id: self.id.into(),
+            version: "1.0.0".into(),
+            capabilities: [Capability::MathEvaluate].into(),
+        }
+    }
+    fn execute<'a>(&'a self, _: &'a str, _: Instant, request: Request) -> ModuleFuture<'a> {
+        self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Box::pin(async move {
+            assert!(matches!(request, Request::Arithmetic { .. }));
+            Ok(Response::Arithmetic { value: "42".into() })
+        })
+    }
+}
+
+#[tokio::test]
+async fn engine_uses_an_original_alternate_provider_when_first_queue_is_full() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let fixture = Fixture::new("unused", false, false, false);
+    let first_calls = Arc::new(AtomicUsize::new(0));
+    let second_calls = Arc::new(AtomicUsize::new(0));
+    for (id, calls) in [
+        ("fixture.alpha", first_calls.clone()),
+        ("fixture.beta", second_calls.clone()),
+    ] {
+        fixture
+            .engine
+            .modules
+            .register(
+                Arc::new(ArithmeticProvider { id, calls }),
+                Limits {
+                    queue_capacity: 1,
+                    concurrency: 1,
+                },
+            )
+            .unwrap();
+    }
+    let hold_task = fixture
+        .store
+        .create_task("Hold queue capacity", "fast")
+        .unwrap();
+    let first = fixture
+        .engine
+        .modules
+        .pin(&hold_task, "fixture.alpha", "1.0.0")
+        .unwrap();
+    let held = fixture
+        .engine
+        .modules
+        .reserve_exact(&first, Instant::now() + std::time::Duration::from_secs(10))
+        .await
+        .unwrap();
+    let result = fixture.engine.run("calc:6*7", "fast").await.unwrap();
+    drop(held);
+    assert_eq!(result.status, "completed");
+    assert_eq!(result.answer, "42");
+    assert_eq!(result.resources.calls, 0);
+    assert_eq!(first_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(second_calls.load(Ordering::SeqCst), 1);
+    let events = fixture.events(&result.task_id);
+    let snapshot = &events
+        .iter()
+        .find(|event| event["kind"] == "typed_module_snapshot")
+        .unwrap()["payload"];
+    assert_eq!(snapshot["format_version"], 5);
+    assert_eq!(snapshot["modules"].as_array().unwrap().len(), 2);
+    let intents = events
+        .iter()
+        .filter(|event| event["kind"] == "module_dispatch_intent")
+        .collect::<Vec<_>>();
+    assert_eq!(intents.len(), 1);
+    assert_eq!(intents[0]["payload"]["module_id"], "fixture.beta");
+    assert_eq!(fixture.reservations(&result.task_id, "math.evaluate"), 1);
+}

@@ -9,9 +9,13 @@ struct Fixture {
 
 impl Fixture {
     fn new(version: &str, calls: Arc<AtomicUsize>) -> Self {
+        Self::named("fixture.math", version, calls)
+    }
+
+    fn named(id: &str, version: &str, calls: Arc<AtomicUsize>) -> Self {
         Self {
             descriptor: Descriptor {
-                id: "fixture.math".into(),
+                id: id.into(),
                 version: version.into(),
                 capabilities: [Capability::MathEvaluate].into_iter().collect(),
             },
@@ -251,6 +255,240 @@ async fn a_task_pin_keeps_its_version_across_hot_swap() {
     assert_eq!(old_calls.load(Ordering::SeqCst), 1);
     assert_eq!(new_calls.load(Ordering::SeqCst), 1);
     assert_eq!(old_pin.descriptor().version, "1.0.0");
+}
+
+#[tokio::test]
+async fn overlapping_active_capabilities_skip_a_full_candidate_before_intent() {
+    let (broker, task, policy, grant) = setup();
+    let first_calls = Arc::new(AtomicUsize::new(0));
+    let second_calls = Arc::new(AtomicUsize::new(0));
+    broker
+        .register(
+            Arc::new(Fixture::named(
+                "fixture.alpha",
+                "1.0.0",
+                first_calls.clone(),
+            )),
+            Limits {
+                queue_capacity: 1,
+                concurrency: 1,
+            },
+        )
+        .unwrap();
+    broker
+        .register(
+            Arc::new(Fixture::named(
+                "fixture.beta",
+                "1.0.0",
+                second_calls.clone(),
+            )),
+            Limits::default(),
+        )
+        .unwrap();
+    let (snapshot_pins, routes) = broker.pin_active_routes(&task).unwrap();
+    assert_eq!(snapshot_pins.len(), 2);
+    let candidates = routes.get(&Capability::MathEvaluate).unwrap();
+    assert_eq!(
+        candidates
+            .candidates()
+            .iter()
+            .map(|pin| pin.descriptor().id.as_str())
+            .collect::<Vec<_>>(),
+        ["fixture.alpha", "fixture.beta"]
+    );
+    broker
+        .register(
+            Arc::new(Fixture::named(
+                "fixture.gamma",
+                "1.0.0",
+                Arc::new(AtomicUsize::new(0)),
+            )),
+            Limits::default(),
+        )
+        .unwrap();
+    assert_eq!(snapshot_pins.len(), 2);
+    assert_eq!(candidates.candidates().len(), 2);
+
+    // Occupy alpha's only bounded queue slot without creating dispatch intent.
+    let alpha = candidates.exact("fixture.alpha", "1.0.0").unwrap();
+    let occupied = broker
+        .reserve_exact(alpha, Instant::now() + Duration::from_secs(2))
+        .await
+        .unwrap();
+    let selected = broker
+        .reserve_candidate(
+            candidates,
+            Capability::MathEvaluate,
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .unwrap();
+    assert_eq!(selected.pin().descriptor().id, "fixture.beta");
+    drop(occupied);
+
+    let response = broker
+        .dispatch_reserved(
+            selected,
+            &grant,
+            &policy,
+            "jev-plus",
+            arithmetic(),
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response, Response::Arithmetic { value: "42".into() });
+    assert_eq!(first_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(second_calls.load(Ordering::SeqCst), 1);
+    let trace = broker.store.task(&task).unwrap();
+    let intents = trace["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|event| event["kind"] == "module_dispatch_intent")
+        .collect::<Vec<_>>();
+    assert_eq!(intents.len(), 1);
+    assert_eq!(intents[0]["payload"]["module_id"], "fixture.beta");
+}
+
+#[tokio::test]
+async fn a_candidate_reservation_cannot_be_reused_for_another_capability() {
+    let (broker, task, policy, grant) = setup();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let mut module = Fixture::new("1.0.0", calls.clone());
+    module.descriptor.capabilities.insert(Capability::SqlQuery);
+    broker
+        .register(Arc::new(module), Limits::default())
+        .unwrap();
+    let candidates = broker
+        .pin_candidates(&task, Capability::MathEvaluate)
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let reservation = broker
+        .reserve_candidate(&candidates, Capability::MathEvaluate, deadline)
+        .await
+        .unwrap();
+    let error = broker
+        .dispatch_reserved(
+            reservation,
+            &grant,
+            &policy,
+            "jev-plus",
+            Request::Sql {
+                query: "SELECT 1".into(),
+                tables: vec![],
+            },
+            deadline,
+        )
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("reserved capability"));
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    assert!(!broker.store.task(&task).unwrap()["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|event| event["kind"] == "module_dispatch_intent"));
+}
+
+#[tokio::test]
+async fn a_reserved_slot_cannot_extend_its_original_deadline() {
+    let (broker, task, policy, grant) = setup();
+    let calls = Arc::new(AtomicUsize::new(0));
+    broker
+        .register(
+            Arc::new(Fixture::new("1.0.0", calls.clone())),
+            Limits::default(),
+        )
+        .unwrap();
+    let pin = broker.pin(&task, "fixture.math", "1.0.0").unwrap();
+    let reservation = broker
+        .reserve_exact(&pin, Instant::now() + Duration::from_millis(20))
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(30)).await;
+    assert!(broker
+        .dispatch_reserved(
+            reservation,
+            &grant,
+            &policy,
+            "jev-plus",
+            arithmetic(),
+            Instant::now() + Duration::from_secs(2)
+        )
+        .await
+        .is_err());
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    assert!(!broker.store.task(&task).unwrap()["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|event| event["kind"] == "module_dispatch_intent"));
+}
+
+#[tokio::test]
+async fn a_dispatched_provider_failure_never_retries_an_alternate() {
+    let (broker, task, policy, grant) = setup();
+    let failed_calls = Arc::new(AtomicUsize::new(0));
+    let alternate_calls = Arc::new(AtomicUsize::new(0));
+    broker
+        .register(
+            Arc::new(Fixture {
+                descriptor: Descriptor {
+                    id: "fixture.alpha".into(),
+                    version: "1.0.0".into(),
+                    capabilities: [Capability::MathEvaluate].into(),
+                },
+                calls: failed_calls.clone(),
+                panic: true,
+            }),
+            Limits::default(),
+        )
+        .unwrap();
+    broker
+        .register(
+            Arc::new(Fixture::named(
+                "fixture.beta",
+                "1.0.0",
+                alternate_calls.clone(),
+            )),
+            Limits::default(),
+        )
+        .unwrap();
+    let candidates = broker
+        .pin_candidates(&task, Capability::MathEvaluate)
+        .unwrap();
+    let reservation = broker
+        .reserve_candidate(
+            &candidates,
+            Capability::MathEvaluate,
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .unwrap();
+    assert_eq!(reservation.pin().descriptor().id, "fixture.alpha");
+    assert!(broker
+        .dispatch_reserved(
+            reservation,
+            &grant,
+            &policy,
+            "jev-plus",
+            arithmetic(),
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .is_err());
+    assert_eq!(failed_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(alternate_calls.load(Ordering::SeqCst), 0);
+    let trace = broker.store.task(&task).unwrap();
+    let intents = trace["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|event| event["kind"] == "module_dispatch_intent")
+        .collect::<Vec<_>>();
+    assert_eq!(intents.len(), 1);
+    assert_eq!(intents[0]["payload"]["module_id"], "fixture.alpha");
 }
 
 #[tokio::test]

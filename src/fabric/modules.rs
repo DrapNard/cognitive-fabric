@@ -28,6 +28,7 @@ use std::{
 use tokio::sync::{mpsc, oneshot, watch, OnceCell};
 
 const MAX_MODULES: usize = 32;
+const MAX_CANDIDATES_PER_CAPABILITY: usize = MAX_MODULES;
 const MAX_VERSIONS: usize = 128;
 const MAX_QUEUE: usize = 16;
 const MAX_CONCURRENCY: usize = 4;
@@ -685,6 +686,61 @@ pub struct Pin {
     broker_identity: uuid::Uuid,
 }
 
+/// Bounded, ordered implementations captured for one task capability. The
+/// order is fixed when the task starts; dispatch may select only a currently
+/// healthy candidate with queue capacity and never substitutes after intent.
+#[derive(Clone)]
+pub struct PinSet {
+    task: String,
+    capability: Capability,
+    candidates: Vec<Pin>,
+    broker_identity: uuid::Uuid,
+}
+
+impl PinSet {
+    pub fn capability(&self) -> Capability {
+        self.capability
+    }
+
+    pub fn task(&self) -> &str {
+        &self.task
+    }
+
+    pub fn candidates(&self) -> &[Pin] {
+        &self.candidates
+    }
+
+    pub fn exact(&self, id: &str, version: &str) -> Option<&Pin> {
+        self.candidates
+            .iter()
+            .find(|pin| pin.descriptor().id == id && pin.descriptor().version == version)
+    }
+}
+
+enum CandidateAdmissionError {
+    Capacity,
+    Unavailable,
+    Fatal(anyhow::Error),
+}
+
+pub type TaskRoutes = BTreeMap<Capability, PinSet>;
+
+/// Queue capacity reserved for one exact task-pinned implementation. Holding
+/// this token does not execute the module; consuming it records the dispatch
+/// intent and enqueues exactly once.
+pub struct DispatchReservation {
+    pin: Pin,
+    permit: mpsc::OwnedPermit<Work>,
+    deadline: Instant,
+    capability: Option<Capability>,
+}
+
+impl DispatchReservation {
+    pub fn pin(&self) -> &Pin {
+        &self.pin
+    }
+}
+
 impl Pin {
     pub fn descriptor(&self) -> &Descriptor {
         &self.module.descriptor
@@ -880,15 +936,6 @@ impl Broker {
         if !registry.active.contains_key(&descriptor.id) && registry.active.len() >= MAX_MODULES {
             bail!("Typed module active capacity exhausted")
         }
-        if descriptor.capabilities.iter().any(|capability| {
-            registry.active.values().any(|active| {
-                active.available()
-                    && active.descriptor.id != descriptor.id
-                    && active.descriptor.capabilities.contains(capability)
-            })
-        }) {
-            bail!("Conflicting active typed module capability")
-        }
         let module = Arc::new(Registered {
             descriptor: descriptor.clone(),
             source_fingerprint,
@@ -924,15 +971,6 @@ impl Broker {
             .context("Unknown typed module version")?;
         if !module.available() {
             bail!("Cannot activate a closed typed module version")
-        }
-        if module.descriptor.capabilities.iter().any(|capability| {
-            registry.active.values().any(|active| {
-                active.available()
-                    && active.descriptor.id != id
-                    && active.descriptor.capabilities.contains(capability)
-            })
-        }) {
-            bail!("Conflicting active typed module capability")
         }
         registry.active.insert(id.into(), module);
         Ok(())
@@ -1017,6 +1055,91 @@ impl Broker {
         })
     }
 
+    /// Pin the active trusted candidates for one capability in stable identity
+    /// order. Registration remains host-only; task metadata cannot add routes.
+    pub fn pin_candidates(&self, task: &str, capability: Capability) -> Result<PinSet> {
+        uuid::Uuid::parse_str(task)?;
+        let registry = self
+            .registry
+            .read()
+            .map_err(|_| anyhow!("Typed module registry poisoned"))?;
+        if *self.shutdown.borrow() {
+            bail!("Typed module broker shut down")
+        }
+        let candidates = registry
+            .active
+            .values()
+            .filter(|module| {
+                module.available() && module.descriptor.capabilities.contains(&capability)
+            })
+            .take(MAX_CANDIDATES_PER_CAPABILITY + 1)
+            .map(|module| Pin {
+                task: task.into(),
+                module: module.clone(),
+                broker_identity: self.identity,
+            })
+            .collect::<Vec<_>>();
+        if candidates.len() > MAX_CANDIDATES_PER_CAPABILITY {
+            bail!("Typed module candidate set exceeds its bound")
+        }
+        if candidates.is_empty() {
+            bail!("No active typed provider declares the requested capability")
+        }
+        Ok(PinSet {
+            task: task.into(),
+            capability,
+            candidates,
+            broker_identity: self.identity,
+        })
+    }
+
+    /// Atomically capture the active identities and every per-capability
+    /// candidate set. This is the task-start snapshot API; callers must persist
+    /// the returned exact module list alongside these routes.
+    pub fn pin_active_routes(&self, task: &str) -> Result<(Vec<Pin>, TaskRoutes)> {
+        uuid::Uuid::parse_str(task)?;
+        let registry = self
+            .registry
+            .read()
+            .map_err(|_| anyhow!("Typed module registry poisoned"))?;
+        if *self.shutdown.borrow() {
+            bail!("Typed module broker shut down")
+        }
+        let modules = registry
+            .active
+            .values()
+            .filter(|module| module.available())
+            .take(MAX_MODULES + 1)
+            .map(|module| Pin {
+                task: task.into(),
+                module: module.clone(),
+                broker_identity: self.identity,
+            })
+            .collect::<Vec<_>>();
+        if modules.len() > MAX_MODULES {
+            bail!("Typed module active registry exceeds its bound")
+        }
+        let mut candidates = BTreeMap::<Capability, Vec<Pin>>::new();
+        for pin in &modules {
+            for capability in &pin.descriptor().capabilities {
+                candidates.entry(*capability).or_default().push(pin.clone());
+            }
+        }
+        let mut routes = TaskRoutes::new();
+        for (capability, pins) in candidates {
+            let _ = routes.insert(
+                capability,
+                PinSet {
+                    task: task.into(),
+                    capability,
+                    candidates: pins,
+                    broker_identity: self.identity,
+                },
+            );
+        }
+        Ok((modules, routes))
+    }
+
     /// Restoration uses the same Store object and retained registered code;
     /// metadata can neither construct a Broker nor replace its implementation.
     pub(crate) fn require_store(&self, store: &Store) -> Result<()> {
@@ -1027,6 +1150,20 @@ impl Broker {
     }
 
     pub(crate) fn pin_retained(&self, task: &str, descriptor: &Descriptor) -> Result<Pin> {
+        let pin = self.pin_retained_candidate(task, descriptor)?;
+        if !pin.module.available() {
+            bail!("Original typed module version is not available")
+        }
+        Ok(pin)
+    }
+
+    /// Restore immutable identity without asserting queue health. Version-5
+    /// candidate routing checks current availability when reserving a slot.
+    pub(crate) fn pin_retained_candidate(
+        &self,
+        task: &str,
+        descriptor: &Descriptor,
+    ) -> Result<Pin> {
         uuid::Uuid::parse_str(task)?;
         descriptor.validate()?;
         let module = self
@@ -1035,12 +1172,43 @@ impl Broker {
             .map_err(|_| anyhow!("Typed module registry poisoned"))?
             .versions
             .get(&(descriptor.id.clone(), descriptor.version.clone()))
-            .filter(|module| module.descriptor == *descriptor && module.available())
+            .filter(|module| module.descriptor == *descriptor)
             .cloned()
-            .context("Original typed module version is not retained and available")?;
+            .context("Original typed module version is not retained")?;
         Ok(Pin {
             task: task.into(),
             module,
+            broker_identity: self.identity,
+        })
+    }
+
+    pub(crate) fn retained_candidate_set(
+        &self,
+        task: &str,
+        capability: Capability,
+        candidates: Vec<Pin>,
+    ) -> Result<PinSet> {
+        uuid::Uuid::parse_str(task)?;
+        if candidates.is_empty() || candidates.len() > MAX_CANDIDATES_PER_CAPABILITY {
+            bail!("Original typed candidate set exceeds its bound")
+        }
+        let mut identities = BTreeSet::new();
+        for pin in &candidates {
+            if pin.task != task
+                || !self.owns_pin(pin)
+                || !pin.descriptor().capabilities.contains(&capability)
+                || !identities.insert((
+                    pin.descriptor().id.clone(),
+                    pin.descriptor().version.clone(),
+                ))
+            {
+                bail!("Original typed candidate set contains an invalid or duplicate pin")
+            }
+        }
+        Ok(PinSet {
+            task: task.into(),
+            capability,
+            candidates,
             broker_identity: self.identity,
         })
     }
@@ -1080,6 +1248,134 @@ impl Broker {
         request: Request,
         deadline: Instant,
     ) -> Result<Response> {
+        let reservation = self.reserve_exact(pin, deadline).await?;
+        self.dispatch_reserved(reservation, grant, policy, actor, request, deadline)
+            .await
+    }
+
+    /// Reserve a free queue slot on the first healthy, task-pinned candidate.
+    /// Queue admission happens before tool authorization and durable dispatch
+    /// intent, so a full first candidate can be skipped without side effects.
+    pub async fn reserve_candidate(
+        &self,
+        candidates: &PinSet,
+        capability: Capability,
+        deadline: Instant,
+    ) -> Result<DispatchReservation> {
+        if candidates.capability != capability
+            || candidates.broker_identity != self.identity
+            || candidates.task.is_empty()
+        {
+            bail!("Typed candidate set does not match the requested route")
+        }
+        let now = Instant::now();
+        let remaining = deadline.saturating_duration_since(now);
+        if remaining.is_zero() || remaining > MAX_DEADLINE {
+            bail!("Typed module deadline is expired or exceeds the task limit")
+        }
+        if candidates
+            .candidates
+            .iter()
+            .any(|pin| pin.task != candidates.task || !self.owns_pin(pin))
+        {
+            bail!("Typed candidate set contains a pin for another task or broker")
+        }
+        for pin in &candidates.candidates {
+            if !pin.descriptor().capabilities.contains(&capability) {
+                continue;
+            }
+            match self.try_reserve_exact(pin, deadline).await {
+                Ok(mut reservation) => {
+                    reservation.capability = Some(capability);
+                    return Ok(reservation);
+                }
+                Err(CandidateAdmissionError::Capacity | CandidateAdmissionError::Unavailable) => {}
+                Err(CandidateAdmissionError::Fatal(error)) => return Err(error),
+            }
+        }
+        bail!("No healthy pinned typed provider has queue capacity")
+    }
+
+    pub async fn reserve_exact(&self, pin: &Pin, deadline: Instant) -> Result<DispatchReservation> {
+        if !self.owns_pin(pin) {
+            bail!("Typed module pin was issued by another broker")
+        }
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() || remaining > MAX_DEADLINE {
+            bail!("Typed module deadline is expired or exceeds the task limit")
+        }
+        if !pin.module.available() {
+            bail!("Pinned typed module is unavailable")
+        }
+        let queue = pin.module.queue().await;
+        let permit = tokio::time::timeout_at(
+            tokio::time::Instant::from_std(deadline),
+            queue.clone().reserve_owned(),
+        )
+        .await
+        .map_err(|_| anyhow!("Typed module queue deadline exhausted"))?
+        .map_err(|_| anyhow!("Typed module queue is unavailable"))?;
+        Ok(DispatchReservation {
+            pin: pin.clone(),
+            permit,
+            deadline,
+            capability: None,
+        })
+    }
+
+    async fn try_reserve_exact(
+        &self,
+        pin: &Pin,
+        deadline: Instant,
+    ) -> std::result::Result<DispatchReservation, CandidateAdmissionError> {
+        if !self.owns_pin(pin) {
+            return Err(CandidateAdmissionError::Fatal(anyhow!(
+                "Typed module pin was issued by another broker"
+            )));
+        }
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() || remaining > MAX_DEADLINE {
+            return Err(CandidateAdmissionError::Fatal(anyhow!(
+                "Typed module deadline is expired or exceeds the task limit"
+            )));
+        }
+        if !pin.module.available() {
+            return Err(CandidateAdmissionError::Unavailable);
+        }
+        let queue = pin.module.queue().await;
+        match queue.clone().try_reserve_owned() {
+            Ok(permit) => Ok(DispatchReservation {
+                pin: pin.clone(),
+                permit,
+                deadline,
+                capability: None,
+            }),
+            Err(mpsc::error::TrySendError::Full(_)) => Err(CandidateAdmissionError::Capacity),
+            Err(mpsc::error::TrySendError::Closed(_)) => Err(CandidateAdmissionError::Unavailable),
+        }
+    }
+
+    /// Consume a pre-reserved slot and execute exactly that implementation.
+    /// All validation and durable authorization precede enqueue; once enqueued,
+    /// uncertainty is never handled by selecting another provider.
+    pub async fn dispatch_reserved(
+        &self,
+        reservation: DispatchReservation,
+        grant: &Grant,
+        policy: &TaskPolicy,
+        actor: &str,
+        request: Request,
+        deadline: Instant,
+    ) -> Result<Response> {
+        // A retained permit cannot renew the deadline admitted with its slot.
+        let deadline = deadline.min(reservation.deadline);
+        if reservation
+            .capability
+            .is_some_and(|capability| capability != request.capability())
+        {
+            bail!("Typed request differs from its reserved capability")
+        }
+        let pin = &reservation.pin;
         if !self.owns_pin(pin) {
             bail!("Typed module pin was issued by another broker")
         }
@@ -1150,7 +1446,6 @@ impl Broker {
             correlation.clone(),
         );
 
-        let module = pin.module.clone();
         let (reply, result) = oneshot::channel();
         let work = Work {
             task: task.into(),
@@ -1159,11 +1454,7 @@ impl Broker {
             authorization,
             reply,
         };
-        let queue = module.queue().await;
-        tokio::time::timeout_at(tokio::time::Instant::from_std(deadline), queue.send(work))
-            .await
-            .map_err(|_| anyhow!("Typed module queue deadline exhausted"))?
-            .map_err(|_| anyhow!("Typed module queue is closed"))?;
+        reservation.permit.send(work);
         let received =
             match tokio::time::timeout_at(tokio::time::Instant::from_std(deadline), result).await {
                 Err(_) => Err("deadline_unknown"),

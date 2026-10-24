@@ -33,14 +33,12 @@ fn identity(value: &Value, pins: &Pins) -> Result<(String, String, String, Strin
     let id = text(value, "module_id")?;
     let version = text(value, "module_version")?;
     let capability = text(value, "capability")?;
-    let pinned = pins.values().any(|pin| {
-        let descriptor = pin.descriptor();
-        descriptor.id == id
-            && descriptor.version == version
-            && descriptor
-                .capabilities
-                .iter()
-                .any(|cap| cap.as_str() == capability)
+    let pinned = pins.iter().any(|(route, candidates)| {
+        route.as_str() == capability
+            && candidates.candidates().iter().any(|pin| {
+                let descriptor = pin.descriptor();
+                descriptor.id == id && descriptor.version == version
+            })
     });
     if value["format_version"] != 1 || !pinned {
         bail!("Typed dispatch differs from original pinned registry")
@@ -133,7 +131,12 @@ pub(super) fn validate(
             let pin = pins
                 .iter()
                 .find(|(cap, _)| cap.as_str() == capability)
-                .map(|(_, pin)| pin)
+                .and_then(|(_, candidates)| {
+                    candidates.exact(
+                        value["module_id"].as_str()?,
+                        value["module_version"].as_str()?,
+                    )
+                })
                 .ok_or_else(|| anyhow!("Expert provider has no original module pin"))?;
             let descriptor = pin.descriptor();
             let capabilities = value["capabilities"]

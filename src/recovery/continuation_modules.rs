@@ -20,7 +20,7 @@ use std::{
     sync::Arc,
 };
 
-pub(super) type Pins = BTreeMap<Capability, Pin>;
+pub(super) type Pins = crate::fabric::modules::TaskRoutes;
 #[derive(Clone)]
 pub(super) struct Restored {
     pub broker: Arc<Broker>,
@@ -116,7 +116,7 @@ pub(super) fn reconstruct_builtin_owned(
         )?;
         let snapshot: Snapshot =
             serde_json::from_value(crate::strict_json::value(raw.as_bytes(), 65536)?)?;
-        if !matches!(snapshot.format_version, 2..=4) || snapshot.modules.len() != 1 {
+        if !matches!(snapshot.format_version, 2..=5) || snapshot.modules.len() != 1 {
             bail!("Builtin reconstruction requires one source-bound module snapshot")
         }
         let original: ModuleSnapshot = serde_json::from_value(snapshot.modules[0].clone())?;
@@ -237,7 +237,7 @@ pub(super) fn reconstruct_wasm(
         let snapshot: Snapshot =
             serde_json::from_value(crate::strict_json::value(raw.as_bytes(), 65536)?)?;
         if source != "fabric"
-            || snapshot.format_version != 4
+            || !matches!(snapshot.format_version, 4..=5)
             || snapshot.permissions_granted
             || snapshot.modules.is_empty()
             || snapshot.modules.len() != modules.len()
@@ -359,7 +359,7 @@ pub(super) fn restore(
     let snapshot: Snapshot =
         serde_json::from_value(crate::strict_json::value(raw.as_bytes(), 65536)?)?;
     if source != "fabric"
-        || !matches!(snapshot.format_version, 1..=4)
+        || !matches!(snapshot.format_version, 1..=5)
         || snapshot.permissions_granted
         || uuid::Uuid::parse_str(&snapshot.broker_id).is_err()
         || rows.next()?.is_some()
@@ -383,16 +383,23 @@ pub(super) fn restore(
     if broker.identity_id().to_string() != snapshot.broker_id {
         bail!("Restored typed registry is not the original Broker instance")
     }
-    let mut pins = Pins::new();
+    let mut restored_candidates = BTreeMap::<Capability, Vec<Pin>>::new();
     let mut ids = BTreeSet::new();
+    let mut previous_identity: Option<(String, String)> = None;
     for value in snapshot.modules {
         let module: ModuleSnapshot = serde_json::from_value(value)?;
+        let identity = (module.id.clone(), module.version.clone());
         if !ids.insert(module.id.clone())
+            || (snapshot.format_version >= 5
+                && previous_identity
+                    .as_ref()
+                    .is_some_and(|previous| previous >= &identity))
             || module.capabilities.is_empty()
             || module.capabilities.len() > 6
         {
             bail!("Invalid original module identity or capability count")
         }
+        previous_identity = Some(identity);
         let capabilities = module
             .capabilities
             .iter()
@@ -406,11 +413,15 @@ pub(super) fn restore(
             version: module.version,
             capabilities,
         };
-        let pin = broker.pin_retained(task, &descriptor)?;
+        let pin = if snapshot.format_version >= 5 {
+            broker.pin_retained_candidate(task, &descriptor)?
+        } else {
+            broker.pin_retained(task, &descriptor)?
+        };
         if snapshot.format_version == 1 && module.source_sha256.is_some() {
             bail!("Legacy module snapshot contains unsupported source identity")
         }
-        if matches!(snapshot.format_version, 2..=4)
+        if matches!(snapshot.format_version, 2..=5)
             && pin.source_fingerprint() != module.source_sha256.as_deref()
         {
             bail!("Restored module source identity differs from original snapshot")
@@ -422,15 +433,30 @@ pub(super) fn restore(
             bail!("Restored module implementation identity differs from original snapshot")
         }
         if (snapshot.format_version < 4 && module.limits.is_some())
-            || (snapshot.format_version == 4 && module.limits != Some(pin.limits()))
+            || (snapshot.format_version >= 4 && module.limits != Some(pin.limits()))
         {
             bail!("Restored module execution limits differ from original snapshot")
         }
         for cap in descriptor.capabilities {
-            if pins.insert(cap, pin.clone()).is_some() {
-                bail!("Conflicting original module capability pins")
-            }
+            restored_candidates
+                .entry(cap)
+                .or_default()
+                .push(pin.clone());
         }
+    }
+    if snapshot.format_version < 5
+        && restored_candidates
+            .values()
+            .any(|candidates| candidates.len() != 1)
+    {
+        bail!("Legacy typed snapshots cannot contain overlapping capability providers")
+    }
+    let mut pins = Pins::new();
+    for (capability, candidates) in restored_candidates {
+        let _ = pins.insert(
+            capability,
+            broker.retained_candidate_set(task, capability, candidates)?,
+        );
     }
     let completed = super::module_dispatch_history::validate(
         db,
@@ -510,6 +536,7 @@ mod tests {
                 assert!(restored
                     .pins
                     .values()
+                    .flat_map(|set| set.candidates())
                     .all(|pin| pin.implementation_identity()
                         == Some(&json!({"process_limits":limits}))));
             } else {
@@ -666,7 +693,7 @@ mod tests {
                 0 => snapshot["modules"] = json!([{"id":"host.custom","version":"1.0.0"}]),
                 1 => snapshot["broker_id"] = json!("forged"),
                 2 => snapshot["permissions_granted"] = json!(true),
-                3 => snapshot["format_version"] = json!(5),
+                3 => snapshot["format_version"] = json!(6),
                 _ => {}
             }
             if scenario != 6 {

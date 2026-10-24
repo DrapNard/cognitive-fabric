@@ -127,7 +127,7 @@ pub struct Session {
     /// Session. These are host registrations, not model supplied authority.
     pub(crate) typed_modules: Option<(
         Arc<crate::fabric::modules::Broker>,
-        BTreeMap<crate::fabric::modules::Capability, crate::fabric::modules::Pin>,
+        crate::fabric::modules::TaskRoutes,
     )>,
     /// Checksum of the exact profile snapshot selected by this task. It binds
     /// later reasoning-context events to the profile captured at task start.
@@ -1473,19 +1473,23 @@ impl Session {
                     // retain the bounded deterministic fallback below.
                     let typed_assignment = if let Some((broker, pins)) = self.typed_modules.clone()
                     {
-                        if let Some(pin) =
+                        if let Some(candidates) =
                             pins.get(&crate::fabric::modules::Capability::ConstraintsSolve)
                         {
                             let request = crate::reasoning::modules::finite_domain_request(query)?;
                             if let Some(request) = request {
-                                let module = pin.descriptor();
                                 let response = self
-                                    .dispatch_typed_module_pre_authorized(&broker, pin, request)
+                                    .dispatch_typed_module_pre_authorized(
+                                        &broker, candidates, request,
+                                    )
                                     .await;
                                 match response {
-                                    Ok(crate::fabric::modules::Response::FiniteAssignment {
-                                        values,
-                                    }) => {
+                                    Ok((
+                                        module,
+                                        crate::fabric::modules::Response::FiniteAssignment {
+                                            values,
+                                        },
+                                    )) => {
                                         let answer = serde_json::to_string(&values)?;
                                         let valid = criterion.check(&answer).is_ok();
                                         self.store.event(
@@ -1494,8 +1498,8 @@ impl Session {
                                             "fabric",
                                             json!({
                                                 "format_version":1,
-                                                "module_id":module.id,
-                                                "module_version":module.version,
+                                                "module_id":module.descriptor().id,
+                                                "module_version":module.descriptor().version,
                                                 "objective_sha256":crate::store::sha256(query.as_bytes()),
                                                 "candidate_sha256":crate::store::sha256(answer.as_bytes()),
                                                 "compiled_checker_accepted":valid,

@@ -1,6 +1,34 @@
 # Implementation matrix — 1.1.0-alpha.1
 
 
+## Task-pinned alternate typed expert providers — 2026-10-24
+
+**Implemented for trusted typed modules; broader adaptive scheduling remains
+Partial.** Architecture sections 4, 6, 7 and 9: `src/fabric/modules.rs` permits
+multiple active identities per capability and atomically captures a task's ordered
+candidate sets. Engine snapshot v5 records exactly those pins. Queue reservations
+precede dispatch intent; full/closed candidates may be skipped only before intent.
+Reservations bind their original deadline and, for candidate routing, capability.
+After intent, errors never trigger an alternate-provider retry. Exact-pin dispatch
+retains deadline-bounded queue waiting and ordinary authorization remains required.
+
+`src/recovery/continuation_modules.rs` and dispatch-history validation restore
+original v5 identities, including retained closed candidates without treating them
+as healthy; missing/retired/mismatched identities still refuse. Versions 1–4 retain
+single-provider rules. Explicit expert bindings remain exact; verifier diagnostics
+record the selected identity without replacing compiled acceptance criteria.
+This supersedes the earlier single-provider limitation for trusted typed modules.
+
+Fifty-one focused broker, recovery, registry, engine, CLI worker and Wasm checks
+pass, including full-queue selection, atomic snapshot retention, no retry, grant
+limits, cancellation and v4/v5 compatibility. Default/all-feature all-target build
+checks, strict all-feature Clippy and formatting pass. The full all-target test
+suite and reflection/live-model campaigns were not run. Selection probes at most
+32 candidates, adds no model call or permission, and is not calibrated quality
+ranking, executable isolation or automatic model residency. See
+[typed provider selection](TYPED_PROVIDER_SELECTION.md).
+
+
 ## Per-call provider timing inspection — 2026-10-24
 
 **Implemented; 16 focused unit/CLI checks passed.** Architecture sections 4, 7 and 9:

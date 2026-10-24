@@ -1,5 +1,20 @@
 # Threat Model (v1.0)
 
+
+## Task-pinned alternate typed providers
+
+Only the trusted host registers implementations. One registry read captures the
+exact task identities and candidate order; later publication cannot add a task
+candidate. A bounded queue permit binds the chosen implementation and its admitted
+deadline, plus capability for alternate routing. Ordinary task/actor authorization
+still precedes intent and execution. Full/closed providers are skipped only before
+intent; errors or ambiguous outcomes never cause an alternate retry. Version-5
+recovery retains closed identities for validation while dispatch refuses them;
+missing or substituted identities remain fatal. Older snapshots keep their original
+single-provider semantics. These are trusted local implementations, not isolated
+untrusted executables or an attested provider set. See
+[typed provider selection](TYPED_PROVIDER_SELECTION.md).
+
 ## Optional managed-worker kernel bounds
 
 Linux managed workers can opt into independent CPU-time and virtual-address-space
