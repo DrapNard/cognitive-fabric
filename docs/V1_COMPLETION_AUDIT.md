@@ -7,6 +7,15 @@ instructions, and the request to implement all remaining Jev+/Jev-R code. It doe
 not replace the architecture. Historical entries in `IMPLEMENTATION_MATRIX.md`
 and `CURRENT_IMPLEMENTATION.md` describe earlier snapshots and can be superseded.
 
+## Installation and chat additions — 2026-10-24
+
+A source installer with curl instructions and a separate bounded, tool-free
+`cogfabric-chat` client are implemented. Shell syntax validation passes; an actual
+source installation, live chat and concurrent OpenCode session have not been run
+for these changes. Rust 1.99 default/all-feature production workspace compilation
+and formatting pass. These conveniences do not close the reasoning, isolation or
+physical resource evidence gaps below. No release approval is implied.
+
 ## Current GPU implementation — 2026-10-24
 
 Optional NVML telemetry and explicit provider-confirmed KV-cache placement are

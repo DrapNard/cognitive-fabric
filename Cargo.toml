@@ -18,6 +18,10 @@ nvml-gpu = ["dep:nvml-wrapper"]
 name = "cogfabric"
 path = "src/main.rs"
 
+[[bin]]
+name = "cogfabric-chat"
+path = "src/bin/cogfabric-chat.rs"
+
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }

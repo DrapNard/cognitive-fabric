@@ -26,12 +26,39 @@ The design retains separate language interface, Jev+, Jev-R, expert, memory/fabr
 
 ### Requirements
 
-- Rust stable (the repository pins a toolchain in `rust-toolchain.toml`)
+- Rust stable (the repository selects the stable channel in `rust-toolchain.toml`; it does not pin an exact compiler release)
 - A C toolchain and linker for SQLite and native dependencies
 - Linux or another supported Unix-like system for Unix socket workflows
 - An OpenAI-compatible local inference server for model-backed tasks; optional for the demo backend
 
 FlatBuffers Rust bindings are committed and checked against the pinned runtime version. `flatc` is optional for ordinary builds; see [protocol generation](docs/PROTOCOL.md) to regenerate them.
+
+### Install the command-line tools
+
+The repository does not currently publish binary release assets. Download and
+review the installer and selected revision before running it. This inspect-first
+command builds the standard CLI, chat CLI, and optional HTTP server into
+`$HOME/.local` without `sudo`:
+
+```sh
+curl -fsSLo setup.sh https://raw.githubusercontent.com/DrapNard/cognitive-fabric/develop/v1.0/scripts/setup.sh
+less setup.sh
+sh setup.sh --ref develop/v1.0 --prefix "$HOME/.local"
+```
+
+The development branch can move; for a reproducible build, use the same full
+reviewed commit ID in the script URL and `--ref`. Existing binaries are
+preserved unless `--replace` is explicitly supplied. See the complete
+[installation guide](docs/INSTALL.md) for prerequisites, revision pinning, and
+verification steps. If you trust the current development branch and want the
+one-line form, see that guide for the `curl | sh` command.
+
+### Chat alongside an agentic client
+
+Use `cogfabric-chat` for text-only conversation while OpenCode or another agentic
+client uses the same local server. It keeps bounded multi-turn context and never
+executes tools. See [chat setup and limits](docs/CHAT.md) and
+[OpenCode configuration](docs/HTTP_API.md#opencode-v2-configuration).
 
 ### Build and try the demo backend
 

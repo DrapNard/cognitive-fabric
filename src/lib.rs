@@ -49,5 +49,6 @@ pub mod wire;
 
 pub mod gpu;
 
+pub mod chat_client;
 pub mod credentials;
 mod rag_archive;

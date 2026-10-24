@@ -1,5 +1,30 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Source setup and standalone chat — 2026-10-24
+
+**Implemented; live installation/chat verification deferred.** `scripts/setup.sh`
+builds the main CLI, `cogfabric-chat` and HTTP server from a selected source ref
+with locked dependencies, no sudo and an explicit replacement flag. It preserves
+runtime state and supports optional NVML observation. README and
+[installation guide](INSTALL.md) document curl download, review and revision
+pinning. This is a source installer, not a published binary release.
+
+`src/bin/cogfabric-chat.rs` and `src/chat_client.rs` implement bounded interactive
+multi-turn text chat through the authenticated loopback HTTP API. Tools are never
+advertised or executed; tool proposals are refused. Context, input, output-token
+reservation, HTTP response and session time limits apply. Nonblocking input permits
+cancellation without a blocking stdin thread; terminal control characters in model
+text are escaped. `/reset` clears context without refunding session budgets.
+Chat and external agentic clients can use the service in separate processes,
+subject to shared admission limits. See [chat guide](CHAT.md).
+
+Shell syntax and formatting checks pass. Rust 1.99 production workspace checks
+(`cargo check --workspace --bins --locked`, default and all features) pass.
+No installer run, live chat or new test suite has
+been executed for this milestone. Release readiness and model quality remain
+unproven; see [completion audit](V1_COMPLETION_AUDIT.md).
+
+
 ## GPU sensor and explicit KV-cache placement — 2026-10-24
 
 **Implemented; runtime verification deferred at the operator's request.**
