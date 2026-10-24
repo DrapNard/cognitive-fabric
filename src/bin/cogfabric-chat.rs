@@ -3,9 +3,6 @@ use clap::Parser;
 use cogfabric::{chat_client, config::Config};
 use std::{collections::VecDeque, io::Write, os::fd::RawFd, path::PathBuf, time::Duration};
 
-const MAX_SESSION_USER_BYTES: usize = 32 * 1024;
-const MAX_OUTPUT_RESERVATION: usize = 4096;
-
 #[derive(Parser)]
 #[command(
     name = "cogfabric-chat",
@@ -14,20 +11,68 @@ const MAX_OUTPUT_RESERVATION: usize = 4096;
 )]
 struct Args {
     /// Cognitive Fabric HTTP server base URL. Must be numeric loopback or localhost.
-    #[arg(long, default_value = "http://127.0.0.1:8234/v1")]
+    #[arg(
+        long,
+        env = "COGFABRIC_CHAT_SERVER",
+        default_value = "http://127.0.0.1:8234/v1"
+    )]
     server: String,
     /// Private Cognitive Fabric settings directory.
-    #[arg(long)]
+    #[arg(long, env = "COGFABRIC_CHAT_HOME")]
     home: Option<PathBuf>,
     /// Maximum number of chat turns in this process.
-    #[arg(long, default_value_t = 16)]
+    #[arg(long, env = "COGFABRIC_CHAT_MAX_TURNS", default_value_t = 16)]
     max_turns: usize,
     /// Reserved model output tokens per turn.
-    #[arg(long, default_value_t = 256)]
+    #[arg(long, env = "COGFABRIC_CHAT_MAX_TOKENS", default_value_t = 256)]
     max_tokens: usize,
     /// Maximum wall time for the interactive session in seconds.
-    #[arg(long, default_value_t = 3600, value_parser = clap::value_parser!(u64).range(60..=28_800))]
+    #[arg(long, env = "COGFABRIC_CHAT_SESSION_SECONDS", default_value_t = 3600, value_parser = clap::value_parser!(u64).range(1..=86_400))]
     session_seconds: u64,
+    /// Served chat model alias (collective aliases do not support multi-turn chat).
+    #[arg(long, env = "COGFABRIC_CHAT_MODEL", default_value = "cogfabric-agent")]
+    model: String,
+    /// Environment variable containing the server API key; never pass a key value.
+    #[arg(
+        long,
+        env = "COGFABRIC_CHAT_API_KEY_ENV",
+        default_value = "COGFABRIC_SERVER_API_KEY"
+    )]
+    api_key_env: String,
+    /// Per-request timeout; defaults to saved configuration, capped at 120 seconds.
+    #[arg(long, env = "COGFABRIC_CHAT_TIMEOUT_SECONDS")]
+    timeout_seconds: Option<u64>,
+    /// Generation temperature; defaults to the saved configuration.
+    #[arg(long, env = "COGFABRIC_CHAT_TEMPERATURE")]
+    temperature: Option<f64>,
+    #[arg(
+        long,
+        env = "COGFABRIC_CHAT_MAX_SESSION_USER_BYTES",
+        default_value_t = 32768
+    )]
+    max_session_user_bytes: usize,
+    #[arg(
+        long,
+        env = "COGFABRIC_CHAT_MAX_OUTPUT_RESERVATION",
+        default_value_t = 4096
+    )]
+    max_output_reservation: usize,
+    #[arg(long, env = "COGFABRIC_CHAT_MAX_MESSAGE_BYTES", default_value_t = 8192)]
+    max_message_bytes: usize,
+    #[arg(
+        long,
+        env = "COGFABRIC_CHAT_MAX_TRANSCRIPT_BYTES",
+        default_value_t = 32768
+    )]
+    max_transcript_bytes: usize,
+    #[arg(long, env = "COGFABRIC_CHAT_MAX_MESSAGES", default_value_t = 32)]
+    max_messages: usize,
+    #[arg(
+        long,
+        env = "COGFABRIC_CHAT_MAX_HTTP_RESPONSE_BYTES",
+        default_value_t = 262144
+    )]
+    max_http_response_bytes: usize,
 }
 
 enum InputLine {
@@ -46,19 +91,46 @@ async fn main() {
 
 async fn run() -> Result<()> {
     let args = Args::parse();
-    if !(1..=16).contains(&args.max_turns) || !(16..=512).contains(&args.max_tokens) {
-        bail!("Chat limits require 1–16 turns and 16–512 output tokens per turn")
+    if !(1..=1024).contains(&args.max_turns)
+        || !(1..=16384).contains(&args.max_tokens)
+        || !(1..=16 * 1024 * 1024).contains(&args.max_session_user_bytes)
+        || !(1..=1_048_576).contains(&args.max_output_reservation)
+        || args
+            .max_turns
+            .checked_mul(args.max_tokens)
+            .is_none_or(|total| total > args.max_output_reservation)
+    {
+        bail!("Invalid chat session limits or total reserved output budget exceeded")
     }
-    let reserved = args.max_turns.saturating_mul(args.max_tokens);
-    if reserved > MAX_OUTPUT_RESERVATION {
-        bail!("The total reserved output budget must be at most {MAX_OUTPUT_RESERVATION} tokens")
+    let limits = chat_client::Limits {
+        http_response_bytes: args.max_http_response_bytes,
+        transcript_bytes: args.max_transcript_bytes,
+        message_bytes: args.max_message_bytes,
+        messages: args.max_messages,
+    };
+    limits.validate()?;
+    let config = Config::load(args.home.clone(), None)?;
+    let timeout = Duration::from_secs(
+        args.timeout_seconds
+            .unwrap_or(config.timeout_seconds.min(120)),
+    );
+    let temperature = args.temperature.unwrap_or(config.temperature);
+    if !temperature.is_finite() || !(0.0..=2.0).contains(&temperature) {
+        bail!("Chat temperature must be finite and between 0 and 2")
     }
-    let config = Config::load(args.home, None)?;
-    let timeout = Duration::from_secs(config.timeout_seconds.min(120));
-    let client = chat_client::ClientApi::new(&args.server, timeout, args.max_tokens)?;
+    let client = chat_client::ClientApi::with_options(
+        &args.server,
+        timeout,
+        args.max_tokens,
+        chat_client::Options {
+            model: args.model.clone(),
+            api_key_env: args.api_key_env.clone(),
+            limits: limits.clone(),
+        },
+    )?;
     match tokio::time::timeout(
         Duration::from_secs(args.session_seconds),
-        run_session(client, config.temperature, args.max_turns),
+        run_session(client, temperature, &args, &limits),
     )
     .await
     {
@@ -73,7 +145,8 @@ async fn run() -> Result<()> {
 async fn run_session(
     client: chat_client::ClientApi,
     temperature: f64,
-    max_turns: usize,
+    args: &Args,
+    limits: &chat_client::Limits,
 ) -> Result<()> {
     let mut input = NonblockingInput::new()?;
     let mut transcript = Vec::<chat_client::Message>::new();
@@ -82,13 +155,13 @@ async fn run_session(
 
     println!(
         "Cognitive Fabric chat (model: {}). Type /help for commands.",
-        chat_client::MODEL_ALIAS
+        args.model
     );
     loop {
         print!("you> ");
         std::io::stdout().flush()?;
         let line = tokio::select! {
-            result = read_bounded_line(&mut input, chat_client::MAX_MESSAGE_BYTES) => result?,
+            result = read_bounded_line(&mut input, limits.message_bytes) => result?,
             _ = tokio::signal::ctrl_c() => {
                 println!("\nGoodbye.");
                 return Ok(());
@@ -100,7 +173,10 @@ async fn run_session(
                 return Ok(());
             }
             InputLine::TooLong => {
-                println!("Input is too long; one message is limited to 8 KiB.");
+                println!(
+                    "Input is too long; one message is limited to {} bytes.",
+                    limits.message_bytes
+                );
                 continue;
             }
             InputLine::Text(text) => text,
@@ -125,22 +201,25 @@ async fn run_session(
             }
             _ => {}
         }
-        if turns >= max_turns {
+        if turns >= args.max_turns {
             println!("Session turn limit reached.");
             return Ok(());
         }
         let input_bytes = text.len();
-        if input_bytes > chat_client::MAX_MESSAGE_BYTES
-            || total_user_bytes.saturating_add(input_bytes) > MAX_SESSION_USER_BYTES
+        if input_bytes > limits.message_bytes
+            || total_user_bytes.saturating_add(input_bytes) > args.max_session_user_bytes
         {
-            println!("Session input limit reached (32 KiB total user text).");
+            println!(
+                "Session input limit reached ({} total user bytes).",
+                args.max_session_user_bytes
+            );
             return Ok(());
         }
 
         total_user_bytes += input_bytes;
         turns += 1;
         transcript.push(chatfabric_user_message(text));
-        trim_transcript(&mut transcript)?;
+        trim_transcript(&mut transcript, limits)?;
 
         let completion = tokio::select! {
             result = client.complete(&transcript, temperature) => Some(result),
@@ -154,7 +233,7 @@ async fn run_session(
             Ok(reply) => {
                 println!("assistant> {}", safe_terminal_text(&reply));
                 transcript.push(chatfabric_assistant_message(&reply));
-                trim_transcript(&mut transcript)?;
+                trim_transcript(&mut transcript, limits)?;
             }
             Err(error) => {
                 transcript.pop();
@@ -197,9 +276,12 @@ fn chatfabric_assistant_message(content: &str) -> chat_client::Message {
 }
 
 /// Retains the newest complete exchanges and never splits a user/assistant pair.
-fn trim_transcript(transcript: &mut Vec<chat_client::Message>) -> Result<()> {
-    while transcript.len() > 32
-        || serde_json::to_vec(transcript)?.len() > chat_client::MAX_TRANSCRIPT_BYTES
+fn trim_transcript(
+    transcript: &mut Vec<chat_client::Message>,
+    limits: &chat_client::Limits,
+) -> Result<()> {
+    while transcript.len() > limits.messages
+        || serde_json::to_vec(transcript)?.len() > limits.transcript_bytes
     {
         if transcript.len() < 3
             || !matches!(

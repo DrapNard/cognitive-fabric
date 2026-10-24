@@ -1,5 +1,19 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Configurable chat frontend — 2026-10-24
+
+**Implemented; production compilation and strict chat-binary Clippy pass.** Chat model, endpoint, credential
+variable name, timeout, temperature, turn/token/session budgets and input/history/
+response capacities accept CLI flags and `COGFABRIC_CHAT_*` environment variables.
+Flags take precedence; existing defaults remain. `src/chat_client.rs` exposes
+validated `Options`/`Limits` while retaining the default constructor. The frontend
+uses those same capacities for bounded input, history trimming and response reads;
+its messages display the selected limits. Checked total token reservation, finite
+outer bounds, loopback validation and tool refusal remain enforced independently
+of the model. No server budget is raised by client settings. See [chat](CHAT.md).
+No live chat or new test suite was run for this configuration-only milestone.
+
+
 ## OpenCode startup and real-client coverage — 2026-10-24
 
 **Implemented; compatibility verified within the stated scope.** The local
