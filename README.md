@@ -123,7 +123,7 @@ This repository is an actively developed alpha. Neural adaptation is optional an
 
 Optional [empirical Jev+ retry evaluation](docs/EMPIRICAL_ESCALATION.md) lets trusted hosts apply reviewed success/cost evidence within the existing runtime limits. It remains experimental and requires reviewed measurements.
 
-Trusted Rust hosts can share [inference resource pools](docs/RESOURCE_SCHEDULING.md) across backends to bound concurrent operations and declared memory allocations. Configure normal CLI and service use with `configure-resources FILE`. Optional resident-backbone declarations reserve shared model memory separately and reject unlisted configured inference targets. Physical GPU enforcement and measured residency remain incomplete. The [reviewed residency planner](docs/RESIDENCY_PLANS.md) reuses loaded contexts and proposes explicit model-set changes for operator approval.
+Trusted Rust hosts can share [inference resource pools](docs/RESOURCE_SCHEDULING.md) across backends to bound concurrent operations and declared memory allocations. Configure normal CLI and service use with `configure-resources FILE`. Optional resident-backbone declarations reserve shared model memory separately and reject unlisted configured inference targets. Optional Linux [worker kernel limits](docs/WORKER_LIMITS.md) constrain CPU time and virtual address space of managed Cognitive Fabric processes. Physical GPU enforcement and measured residency remain incomplete. The [reviewed residency planner](docs/RESIDENCY_PLANS.md) reuses loaded contexts and proposes explicit model-set changes for operator approval.
 
 ## License
 

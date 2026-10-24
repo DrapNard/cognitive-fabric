@@ -55,6 +55,7 @@ pub struct ProcessModule {
     descriptor: Descriptor,
     store: Arc<Store>,
     lifecycle_ownership: Option<Weak<crate::residency::lifecycle::Ownership>>,
+    process_limits: Option<crate::process_limits::Limits>,
 }
 
 impl ProcessModule {
@@ -83,7 +84,21 @@ impl ProcessModule {
             descriptor,
             store,
             lifecycle_ownership: lifecycle_ownership.as_ref().map(Arc::downgrade),
+            process_limits: None,
         })
+    }
+
+    /// Apply explicitly configured kernel limits to each managed worker child.
+    /// The limits are immutable module identity and are preserved by task binding.
+    pub fn with_process_limits(
+        mut self,
+        limits: Option<crate::process_limits::Limits>,
+    ) -> Result<Self> {
+        if let Some(limits) = limits {
+            limits.validate()?;
+        }
+        self.process_limits = limits;
+        Ok(self)
     }
 
     pub(crate) fn builtin_with_ownership(
@@ -161,6 +176,7 @@ impl ProcessModule {
                 "capability":capability.as_str(),
                 "request_sha256":request_hash,
                 "request_bytes":request.validate_and_size()?,
+                "process_limits":self.process_limits,
                 "permissions_granted":false
             }),
         )?;
@@ -198,6 +214,7 @@ impl ProcessModule {
                 "correlation_id":correlation,
                 "request_sha256":request_hash,
                 "sandboxed":false,
+                "process_limits":self.process_limits,
                 "calls_granted":1
             }),
         )?;
@@ -213,6 +230,7 @@ impl ProcessModule {
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .kill_on_drop(true);
+        crate::process_limits::apply(&mut command, self.process_limits)?;
         owner.child = Some(command.spawn()?);
         let pid = owner
             .child
@@ -322,15 +340,22 @@ impl Module for ProcessModule {
         Some(crate::escalation::empirical::runtime_sources_fingerprint())
     }
 
+    fn implementation_identity(&self) -> Option<serde_json::Value> {
+        self.process_limits
+            .map(|limits| serde_json::json!({"process_limits": limits}))
+    }
+
     fn bind_task(&self, binding: &TaskBinding) -> Result<Option<Arc<dyn Module>>> {
         if !std::ptr::eq(self.store.as_ref(), binding.store.as_ref()) {
             bail!("Task module binding belongs to another Store")
         }
-        Ok(Some(Arc::new(Self::new_with_ownership(
+        let module = Self::new_with_ownership(
             self.descriptor.clone(),
             self.store.clone(),
             Some(binding.ownership.clone()),
-        )?)))
+        )?
+        .with_process_limits(self.process_limits)?;
+        Ok(Some(Arc::new(module)))
     }
 
     fn execute<'a>(

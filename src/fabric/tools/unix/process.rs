@@ -355,12 +355,18 @@ impl ProcessTask {
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .kill_on_drop(true);
-        self.store.event(
-            &self.task,
-            "tool_worker_launch",
-            "fabric",
-            serde_json::json!({"calls_granted":1,"seconds_granted":seconds,"sandboxed":false}),
-        )?;
+        let process_limits = self.config.worker_process_limits;
+        crate::process_limits::apply(&mut command, process_limits)?;
+        let mut launch_audit = serde_json::json!({
+            "calls_granted":1,
+            "seconds_granted":seconds,
+            "sandboxed":false
+        });
+        if let Some(limits) = process_limits.as_ref() {
+            launch_audit["process_limits"] = serde_json::to_value(limits)?;
+        }
+        self.store
+            .event(&self.task, "tool_worker_launch", "fabric", launch_audit)?;
         let mut pending = self.starting.lock().await;
         if pending.is_some() {
             bail!("An unfinished tool worker startup cannot be retried")
@@ -372,7 +378,17 @@ impl ProcessTask {
             directory: guard,
             lease,
         });
-        self.store.event(&self.task, "tool_worker_process", "fabric", serde_json::json!({"pid":pid,"calls_granted":1,"seconds_granted":seconds,"sandboxed":false}))?;
+        let mut owned_audit = serde_json::json!({
+            "pid":pid,
+            "calls_granted":1,
+            "seconds_granted":seconds,
+            "sandboxed":false
+        });
+        if let Some(limits) = process_limits.as_ref() {
+            owned_audit["process_limits"] = serde_json::to_value(limits)?;
+        }
+        self.store
+            .event(&self.task, "tool_worker_process", "fabric", owned_audit)?;
         let starting = pending.as_mut().context("Tool startup ownership missing")?;
         let mut stream = tokio::select! {
             result = tokio::time::timeout(Duration::from_secs(5), listener.accept()) => result.context("Tool worker connect deadline exhausted")??.0,

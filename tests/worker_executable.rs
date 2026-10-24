@@ -37,6 +37,10 @@ fn running_service_keeps_its_worker_image_after_path_replacement() {
     let home = root.join("state");
     let cfg = Config {
         home: home.clone(),
+        worker_process_limits: Some(cogfabric::process_limits::Limits {
+            address_space_bytes: 8 * 1024 * 1024 * 1024,
+            cpu_seconds: 60,
+        }),
         inference_process: true,
         arithmetic_process: true,
         sql_process: true,
@@ -100,6 +104,14 @@ fn running_service_keeps_its_worker_image_after_path_replacement() {
         let trace = store.task(result["task_id"].as_str().unwrap()).unwrap();
         let events = trace["events"].as_array().unwrap();
         assert_eq!(events.iter().filter(|e| e["kind"] == kind).count(), 1);
+        let limit_kind = if kind == "worker_process" {
+            "worker_process_owned"
+        } else {
+            kind
+        };
+        assert!(events.iter().any(|event| event["kind"] == limit_kind
+            && event["payload"]["process_limits"]
+                == serde_json::to_value(cfg.worker_process_limits).unwrap()));
         let stopped = format!("{kind}_stopped");
         let stops = events
             .iter()

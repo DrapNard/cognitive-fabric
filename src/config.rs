@@ -25,6 +25,8 @@ pub struct Config {
     pub arithmetic_process: bool,
     pub sql_process: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub worker_process_limits: Option<crate::process_limits::Limits>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub resource_admission: Option<crate::resource_scheduler::Configuration>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub subtask_scheduling: Option<crate::scheduling::Policy>,
@@ -68,6 +70,7 @@ impl Default for Config {
             inference_process: false,
             arithmetic_process: false,
             sql_process: false,
+            worker_process_limits: None,
             resource_admission: None,
             subtask_scheduling: None,
             subtask_parallelism: None,
@@ -137,6 +140,9 @@ impl Config {
     }
 
     pub fn validate(&self) -> Result<()> {
+        if let Some(limits) = self.worker_process_limits {
+            limits.validate()?;
+        }
         if let Some(settings) = &self.advice_guard {
             settings.validate()?;
         }
@@ -359,5 +365,27 @@ mod tests {
         std::os::unix::fs::symlink("/dev/null", root.join("config.json")).unwrap();
         assert!(Config::load(Some(root.clone()), None).is_err());
         std::fs::remove_dir_all(root).unwrap();
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod worker_limit_tests {
+    use super::*;
+    #[test]
+    fn process_limits_are_optional_strict_and_preserved_in_configuration() {
+        let mut cfg = Config::default();
+        assert!(serde_json::to_value(&cfg)
+            .unwrap()
+            .get("worker_process_limits")
+            .is_none());
+        cfg.worker_process_limits = Some(crate::process_limits::Limits {
+            address_space_bytes: 536870912,
+            cpu_seconds: 10,
+        });
+        cfg.validate().unwrap();
+        let decoded: Config = serde_json::from_value(serde_json::to_value(&cfg).unwrap()).unwrap();
+        assert_eq!(decoded.worker_process_limits, cfg.worker_process_limits);
+        cfg.worker_process_limits.as_mut().unwrap().cpu_seconds = 0;
+        assert!(cfg.validate().is_err());
     }
 }

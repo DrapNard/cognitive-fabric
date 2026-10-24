@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use cogfabric::{
     config::Config,
@@ -442,6 +442,15 @@ enum Command {
     ConfigureSqlWorker {
         #[arg(long, action = clap::ArgAction::Set)]
         enabled: bool,
+    },
+    /// Set Linux kernel limits for managed worker processes, not external model servers.
+    ConfigureWorkerLimits {
+        #[arg(long, conflicts_with_all = ["address_space_bytes", "cpu_seconds"])]
+        clear: bool,
+        #[arg(long, required_unless_present = "clear")]
+        address_space_bytes: Option<u64>,
+        #[arg(long, required_unless_present = "clear")]
+        cpu_seconds: Option<u64>,
     },
     ConfigureWorker {
         #[arg(long, action = clap::ArgAction::Set)]
@@ -1720,6 +1729,27 @@ async fn run_cli() -> Result<()> {
             changed.sql_process = enabled;
             changed.save()?;
             json!({"sql_process":enabled,"sandboxed":false})
+        }
+        Command::ConfigureWorkerLimits {
+            clear,
+            address_space_bytes,
+            cpu_seconds,
+        } => {
+            security::authorize("human-cli", "workers.limits.configure")?;
+            let mut changed = cfg.clone();
+            changed.worker_process_limits = if clear {
+                None
+            } else {
+                let limits = cogfabric::process_limits::Limits {
+                    address_space_bytes: address_space_bytes
+                        .context("Missing address-space bound")?,
+                    cpu_seconds: cpu_seconds.context("Missing CPU-seconds bound")?,
+                };
+                limits.validate()?;
+                Some(limits)
+            };
+            changed.save()?;
+            json!({"worker_process_limits":changed.worker_process_limits,"running_services_require_restart":true,"external_provider_limited":false,"sandboxed":false})
         }
         Command::ConfigureWorker { enabled } => {
             security::authorize("human-cli", "inference.worker.configure")?;

@@ -230,13 +230,15 @@ impl ProcessTask {
         socket: SocketDirectory,
         lease: Option<crate::recovery::ExecutionLease>,
     ) -> Result<tokio::sync::MutexGuard<'_, Option<Starting>>> {
+        let process_limits = self.cfg.worker_process_limits;
+        crate::process_limits::apply(command, process_limits)?;
         socket.record(&self.store, &self.task)?;
-        self.store.event(
-            &self.task,
-            "worker_process_launch",
-            "fabric",
-            serde_json::json!({"sandboxed":false}),
-        )?;
+        let mut launch_audit = serde_json::json!({"sandboxed":false});
+        if let Some(limits) = process_limits.as_ref() {
+            launch_audit["process_limits"] = serde_json::to_value(limits)?;
+        }
+        self.store
+            .event(&self.task, "worker_process_launch", "fabric", launch_audit)?;
         let mut pending = self.starting.lock().await;
         if pending.is_some() {
             bail!("An unfinished inference worker startup cannot be retried")
@@ -248,12 +250,12 @@ impl ProcessTask {
             socket,
             lease,
         });
-        self.store.event(
-            &self.task,
-            "worker_process_owned",
-            "fabric",
-            serde_json::json!({"pid":pid,"sandboxed":false}),
-        )?;
+        let mut owned_audit = serde_json::json!({"pid":pid,"sandboxed":false});
+        if let Some(limits) = process_limits.as_ref() {
+            owned_audit["process_limits"] = serde_json::to_value(limits)?;
+        }
+        self.store
+            .event(&self.task, "worker_process_owned", "fabric", owned_audit)?;
         Ok(pending)
     }
     async fn launch(&self) -> Result<Managed> {

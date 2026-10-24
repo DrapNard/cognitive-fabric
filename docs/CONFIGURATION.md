@@ -48,3 +48,9 @@ Restart the service after changing settings. Existing tasks retain a cloned
 configuration and backend handle. Runtime model labels are not cryptographic
 attestations of external server weights. Configuration does not prove GPU model
 loading, reasoning quality, adapter switching or a secure training pipeline.
+
+## Managed worker kernel limits
+
+`configure-worker-limits --address-space-bytes BYTES --cpu-seconds SECONDS` saves
+optional Linux per-process bounds; `--clear` removes them. These do not limit the
+separate model server or GPU. See [scope, recovery and validation](WORKER_LIMITS.md).

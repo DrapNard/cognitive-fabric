@@ -107,6 +107,7 @@ pub fn authorize(principal: &str, capability: &str) -> Result<()> {
                 | "telemetry.gpu"
                 | "inference.diagnose"
                 | "inference.worker.configure"
+                | "workers.limits.configure"
                 | "tool.worker.configure"
                 | "inference.auth.configure"
                 | "model.register"
@@ -227,6 +228,14 @@ mod tests {
     #[test]
     fn allow_knowledge_search() {
         assert!(authorize("jev-r", "knowledge.search").is_ok());
+    }
+
+    #[test]
+    fn worker_limit_configuration_is_human_only() {
+        assert!(authorize("human-cli", "workers.limits.configure").is_ok());
+        for actor in ["jev-plus", "jev-r", "interface", "rust.s1"] {
+            assert!(authorize(actor, "workers.limits.configure").is_err());
+        }
     }
 
     #[test]

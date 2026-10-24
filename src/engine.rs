@@ -222,7 +222,8 @@ impl Engine {
         let module = crate::fabric::modules::ProcessModule::builtin_with_ownership(
             self.store.clone(),
             self.managed_ownership.clone(),
-        )?;
+        )?
+        .with_process_limits(self.cfg.worker_process_limits)?;
         self.modules
             .register(Arc::new(module), crate::fabric::modules::Limits::default())?;
         Ok(self)

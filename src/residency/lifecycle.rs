@@ -584,7 +584,8 @@ async fn run_internal(
                 crate::fabric::modules::ProcessModule::builtin_with_ownership(
                     store.clone(),
                     Some(ownership.clone()),
-                )?,
+                )?
+                .with_process_limits(cfg.worker_process_limits)?,
             ),
             crate::fabric::modules::Limits::default(),
         )?;

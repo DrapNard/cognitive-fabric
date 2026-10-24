@@ -152,6 +152,12 @@ async fn run(mode: Mode) {
         api_base: endpoint.clone(),
         inference_auth_scope: Some(endpoint.clone()),
         inference_process: true,
+        worker_process_limits: cfg!(target_os = "linux").then_some(
+            cogfabric::process_limits::Limits {
+                address_space_bytes: 8 * 1024 * 1024 * 1024,
+                cpu_seconds: 60,
+            },
+        ),
         max_tokens: 128,
         max_tool_calls: 1,
         max_wall_seconds: 15,

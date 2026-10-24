@@ -1,5 +1,17 @@
 # Threat Model (v1.0)
 
+## Optional managed-worker kernel bounds
+
+Linux managed workers can opt into independent CPU-time and virtual-address-space
+ceilings before exec; core dumps are disabled for these bounded children. Limits
+never raise tighter inherited values and do not affect the parent. Only human
+configuration enables or clears them. Task settings and typed implementation
+identities retain original limits during continuation. See [worker limits](WORKER_LIMITS.md).
+These are per-process bounds on reviewed Cognitive Fabric workers, not limits on
+the external inference server, GPU or task aggregate, and not RSS/filesystem/network
+isolation. Existing task grants, deadlines and owned child cleanup remain required.
+
+
 ## Optional GPU telemetry and placement boundary
 
 The NVML feature dynamically loads the driver library in a fixed same-image,

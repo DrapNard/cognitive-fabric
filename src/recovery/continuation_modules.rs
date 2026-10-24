@@ -47,6 +47,12 @@ struct ModuleSnapshot {
     limits: Option<Limits>,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BuiltinImplementationIdentity {
+    process_limits: crate::process_limits::Limits,
+}
+
 fn capability(name: &str) -> Result<Capability> {
     Ok(match name {
         "math.evaluate" => Capability::MathEvaluate,
@@ -119,10 +125,25 @@ pub(super) fn reconstruct_builtin_owned(
         {
             bail!("Builtin worker sources differ from the original task")
         }
-        let broker = Broker::reconstructed_builtin_owned(
+        let process_limits = match original.implementation.as_ref() {
+            None => None,
+            Some(identity) if snapshot.format_version >= 3 => {
+                let identity: BuiltinImplementationIdentity =
+                    serde_json::from_value(identity.clone())?;
+                Some(identity.process_limits)
+            }
+            Some(_) => {
+                bail!("Legacy builtin snapshot contains unsupported implementation identity")
+            }
+        };
+        if let Some(limits) = process_limits {
+            limits.validate()?;
+        }
+        let broker = Broker::reconstructed_builtin_owned_with_process_limits(
             store.clone(),
             uuid::Uuid::parse_str(&snapshot.broker_id)?,
             ownership.clone(),
+            process_limits,
         )?;
         let compiled = broker.discover()?;
         if compiled.len() != 1
@@ -443,6 +464,61 @@ mod tests {
             "capabilities":descriptor.capabilities.iter().map(|c|c.as_str()).collect::<Vec<_>>(),
             "source_sha256":crate::escalation::empirical::runtime_sources_fingerprint()}],
             "permissions_granted":false})
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn builtin_recovery_preserves_original_kernel_limits_and_rejects_malformed_identity() {
+        for scenario in ["valid", "invalid_cpu", "unknown_field"] {
+            let root = std::env::temp_dir()
+                .join(format!("fabric-limited-restart-{}", uuid::Uuid::new_v4()));
+            let store = Arc::new(Store::open(&root.join("fabric.sqlite3")).unwrap());
+            let task = store
+                .create_task("Restore limited worker", "standard")
+                .unwrap();
+            let limits = crate::process_limits::Limits {
+                address_space_bytes: 536870912,
+                cpu_seconds: 10,
+            };
+            let original = Broker::reconstructed_builtin_owned_with_process_limits(
+                store.clone(),
+                uuid::Uuid::new_v4(),
+                None,
+                Some(limits),
+            )
+            .unwrap();
+            let mut snapshot = builtin_snapshot(&original);
+            snapshot["format_version"] = json!(3);
+            snapshot["modules"][0]["implementation"] = json!({"process_limits":limits});
+            if scenario == "invalid_cpu" {
+                snapshot["modules"][0]["implementation"]["process_limits"]["cpu_seconds"] =
+                    json!(0);
+            }
+            if scenario == "unknown_field" {
+                snapshot["modules"][0]["implementation"]["unexpected"] = json!(true);
+            }
+            store
+                .event(&task, "typed_module_snapshot", "fabric", snapshot)
+                .unwrap();
+            let result = reconstruct_builtin(store.clone(), &task, true);
+            if scenario == "valid" {
+                let broker = result.unwrap();
+                let restored = restore(&store.lock().unwrap(), &task, Some(broker))
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(restored.pins.len(), 6);
+                assert!(restored
+                    .pins
+                    .values()
+                    .all(|pin| pin.implementation_identity()
+                        == Some(&json!({"process_limits":limits}))));
+            } else {
+                assert!(result.is_err());
+            }
+            drop(original);
+            drop(store);
+            std::fs::remove_dir_all(root).unwrap();
+        }
     }
 
     #[test]

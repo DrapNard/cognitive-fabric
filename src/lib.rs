@@ -22,6 +22,7 @@ pub mod memory;
 pub mod models;
 pub mod module_tasks;
 pub mod planning;
+pub mod process_limits;
 pub mod projects;
 pub mod reasoning;
 pub mod recovery;

@@ -1,5 +1,31 @@
 # Current Rust implementation
 
+## Kernel bounds for managed workers — 2026-10-24
+
+**Implemented; focused resource-boundary verification passed.** Architecture
+sections 4, 9 and 10 now have optional Linux per-process virtual address-space and
+CPU-time limits for managed native chat, inference, arithmetic, SQL and compiled
+typed workers. `src/process_limits.rs` restricts only the child before exec,
+preserves stricter inherited limits, disables child core dumps and refuses setup
+failure. `Config.worker_process_limits` defaults to None; the human-only
+`configure-worker-limits` command validates and saves it. Existing services require
+restart, and existing tasks preserve their admitted settings.
+
+Typed module identities and reconstruction retain exact original limits. New
+launch/ownership audits report requested bounds without claiming physical usage
+measurement. See [worker limits](WORKER_LIMITS.md). This does not constrain an
+external model provider, GPU, total task CPU, RSS, filesystem or network, and is
+not a full sandbox. The logical scheduler's allocation declarations remain distinct.
+
+Four subprocess regressions pass (one ignored fixture is explicitly invoked by
+them), along with two configuration/permission tests, one original-limit recovery
+test, seven bounded native-worker tests and the executable-upgrade worker test.
+A temporary CLI workflow verifies typed arithmetic under limits and clearing the
+setting. Default and all-feature workspace all-target checks and strict Clippy pass.
+The NVML feature check also exposed and fixed an unnecessary return. No reflection, live reasoning-quality or
+performance benchmark was run for this milestone.
+
+
 ## Same-model per-turn reasoning effort — 2026-10-24
 
 **Implemented and focused verification passed.** Native `cogfabric-agent` requests

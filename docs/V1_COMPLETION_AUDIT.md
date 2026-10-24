@@ -7,6 +7,31 @@ instructions, and the request to implement all remaining Jev+/Jev-R code. It doe
 not replace the architecture. Historical entries in `IMPLEMENTATION_MATRIX.md`
 and `CURRENT_IMPLEMENTATION.md` describe earlier snapshots and can be superseded.
 
+## Kernel bounds for managed workers — 2026-10-24
+
+**Implemented; focused resource-boundary verification passed.** Architecture
+sections 4, 9 and 10 now have optional Linux per-process virtual address-space and
+CPU-time limits for managed native chat, inference, arithmetic, SQL and compiled
+typed workers. `src/process_limits.rs` restricts only the child before exec,
+preserves stricter inherited limits, disables child core dumps and refuses setup
+failure. `Config.worker_process_limits` defaults to None; the human-only
+`configure-worker-limits` command validates and saves it. Existing services require
+restart, and existing tasks preserve their admitted settings.
+
+Typed module identities and reconstruction retain exact original limits. New
+launch/ownership audits report requested bounds without claiming physical usage
+measurement. See [worker limits](WORKER_LIMITS.md). This does not constrain an
+external model provider, GPU, total task CPU, RSS, filesystem or network, and is
+not a full sandbox. The logical scheduler's allocation declarations remain distinct.
+
+Four subprocess regressions pass (one ignored fixture is explicitly invoked by
+them), along with two configuration/permission tests, one original-limit recovery
+test, seven bounded native-worker tests and the executable-upgrade worker test.
+A temporary CLI workflow verifies typed arithmetic under limits and clearing the
+setting. Default and all-feature workspace all-target checks and strict Clippy pass.
+The NVML feature check also exposed and fixed an unnecessary return. No reflection, live reasoning-quality or
+performance benchmark was run for this milestone.
+
 ## OpenCode compatibility follow-up — 2026-10-24
 
 Focused integration verification resumed at the operator's explicit request to
@@ -110,8 +135,8 @@ instructions explicitly place them beyond proven v1.0 functionality.
 | Jev-R recursion and evidence-aware stopping (§5, §9) | `src/reasoning/{convergence,progress,finite_search}.rs`; convergence, progress, pruning and recovery tests | Implemented hard ceilings and structured stopping/search. Heuristic stopping does not prove unsatisfiability or general reasoning quality. |
 | Expert Network (§6) | `src/registry.rs`, `src/registry/providers.rs`, `src/models.rs`, `src/fabric/modules.rs`; activation, provider, model and typed worker tests | Implemented immutable versions, hot-swap pins, dependency graphs and reviewed provider adapters. Arbitrary executable loading/isolation and independently measured usefulness of all proposed domain experts remain Partial. |
 | Sparse native lifecycle and shared backbones (§6, §9, §12) | `src/residency/`, `src/backend/native.rs`, `tests/{managed_residency,native_lifecycle,resource_route_resume}.rs` | Implemented approved task model sets, receipt reuse/release, exact-target checks and owned continuation. Actual provider weight sharing, adapter switching, load costs and physical continuity remain unverified. |
-| Cognitive Fabric typed messaging (§7, §12) | Ten `protocol/*.fbs` schemas, generated bundle, `src/fabric/`, `src/events/`, `src/wire.rs`; protocol corruption/socket/process tests | Implemented supported local FlatBuffers IPC and typed workers. Independent arbitrary actor provisioning, remote transport and general executable attestation are not implemented. |
-| Persistent task/episodic/semantic/skill/model/evaluation stores (§7) | `src/{store,memory,models,evaluation,storage,restore}.rs`, schema-8 migration and rollback tests | Implemented SQLite-backed logical stores, FTS retrieval, explicit publication and migrations. General external/neural artifact portability and physical filesystem/WAL bounds remain Partial. |
+| Cognitive Fabric typed messaging (§7, §12) | Eleven `protocol/*.fbs` schemas, generated bundle, `src/fabric/`, `src/events/`, `src/wire.rs`; protocol corruption/socket/process tests | Implemented supported local FlatBuffers IPC and typed workers. Independent arbitrary actor provisioning, remote transport and general executable attestation are not implemented. |
+| Persistent task/episodic/semantic/skill/model/evaluation stores (§7) | `src/{store,memory,models,evaluation,storage,restore}.rs`, schema-9 migration and rollback tests | Implemented SQLite-backed logical stores, FTS retrieval, explicit publication and migrations. General external/neural artifact portability and physical filesystem/WAL bounds remain Partial. |
 | Crash continuation and unknown outcomes (§7, §10) | `src/recovery/`, native restoration and typed reconstruction; resume/parallel/receipt/refusal tests | Implemented supported original checkpoint forms with retained budgets, exact callbacks or fixed source-bound workers. Unknown calls are refused, not replayed; arbitrary crash-phase resumption remains unsupported. |
 | Evolution A: reusable memory (§8) | `src/memory.rs`, `src/gaps.rs`; publication/revocation, bounded retrieval and provenance tests | Implemented explicit verified memory publication and gap evidence. Independent transfer of learned strategies remains unproven. |
 | Evolution B: RAG candidates (§8) | `src/evolution.rs`, `src/evaluation.rs`, `src/rag_archive.rs`; quarantine, deduplication, held-out, promotion and rollback tests | Implemented operator-selected candidate pipeline. Reviewed local source normalization, deduplication and split preparation now exist in `src/evolution/preparation.rs` with `tests/source_preparation.rs`. Bounded local inventory drafts now exist in `src/evolution/discovery.rs` with `tests/source_discovery.rs`, and `src/evolution/prepared.rs` atomically binds validated preparation provenance to inactive candidates with `tests/prepared_candidate.rs`; remote discovery and independently established dataset quality/poisoning resistance remain Partial. |
@@ -124,7 +149,7 @@ instructions explicitly place them beyond proven v1.0 functionality.
 | Requirement | Evidence / status |
 | --- | --- |
 | Rust 2021 + Tokio own orchestration; Python offline only (§12) | `Cargo.toml`, `src/`, `training/`; implemented runtime split. No edition migration or Python runtime substitution. |
-| Exact FlatBuffers generator/runtime pairing | `build.rs`, `build_support/protocol.rs`, `protocol/generated/manifest.sha256`, `tests/protocol_bundle.rs`; fresh `flatc 25.12.19` output matches all ten generated files. |
+| Exact FlatBuffers generator/runtime pairing | `build.rs`, `build_support/protocol.rs`, `protocol/generated/manifest.sha256`, `tests/protocol_bundle.rs`; fresh `flatc 25.12.19` output matches all eleven generated files. |
 | Safe UDS permissions, bounded messages, validation and cancellation | `src/fabric/unix*`, `src/service.rs`, `src/agent/unix*`; socket spoofing, ownership, malformed frame, cancellation and reaping tests. Local same-user threat remains. |
 | FAST/STANDARD/DEEP/RESEARCH ceilings (§9) | `src/config.rs`, `src/reasoning.rs`, resource admission and policy tests enforce supported calls/cycles/output/prompt/tool/time/queue limits. Exact input-token preflight and physical energy/GPU ceilings remain Partial. |
 | Comparable baseline arms (§13) | `src/benchmarking.rs`, `tests/{benchmark_cli,progress_ablation,progress_ablation_cli}.rs`; six same-model profiles and optional larger-model baseline exist. Equal-budget independent live results are not established. |
@@ -164,6 +189,6 @@ has an independent SQLite deadline as well as row/payload bounds. Regression tes
 verify that expired inspection cannot become clearance or leak an interrupt hook.
 Continue the remaining runtime/measurement requirements above without turning
 optional neural research into a claim of trained models. Live experiments require
-an available operator-configured model server; the last loopback probe refused
-connection. No model download, training run, release tag or repository visibility
+an available operator-configured model server; the scoped OpenCode follow-up demonstrated local Qwen inference and tool
+conversation after an operator-approved context reload. No model download, training run, release tag or repository visibility
 change is implied by this audit.

@@ -150,11 +150,17 @@ impl ProcessTask {
         if let Some(credential) = credential {
             credential.forward(&mut command);
         }
+        let process_limits = self.cfg.worker_process_limits;
+        crate::process_limits::apply(&mut command, process_limits)?;
+        let mut launch_audit = json!({"sandboxed":false,"calls_granted":1});
+        if let Some(limits) = process_limits.as_ref() {
+            launch_audit["process_limits"] = serde_json::to_value(limits)?;
+        }
         self.store.event(
             &self.task,
             "native_worker_process_launch",
             "fabric",
-            json!({"sandboxed":false,"calls_granted":1}),
+            launch_audit,
         )?;
         let mut owned = self.owned.lock().await;
         let child = command.spawn()?;
@@ -167,11 +173,15 @@ impl ProcessTask {
             _socket: socket,
             _lease: lease,
         });
+        let mut owned_audit = json!({"pid":pid,"sandboxed":false});
+        if let Some(limits) = process_limits.as_ref() {
+            owned_audit["process_limits"] = serde_json::to_value(limits)?;
+        }
         self.store.event(
             &self.task,
             "native_worker_process_owned",
             "fabric",
-            json!({"pid":pid,"sandboxed":false}),
+            owned_audit,
         )?;
         let child = &mut owned.as_mut().unwrap().child;
         let (stream, _) = tokio::select! {result=tokio::time::timeout_at(tokio::time::Instant::from_std(self.deadline.min(Instant::now()+Duration::from_secs(10))),listener.accept())=>result.context("Native worker connection deadline exhausted")??,result=child.wait()=>bail!("Native child exited before connection: {:?}",result?)};

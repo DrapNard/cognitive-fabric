@@ -732,17 +732,26 @@ impl Broker {
     ) -> Result<Arc<Self>> {
         Self::reconstructed_builtin_owned(store, identity, None)
     }
+    #[cfg(test)]
     pub(crate) fn reconstructed_builtin_owned(
         store: Arc<Store>,
         identity: uuid::Uuid,
         ownership: Option<Arc<crate::residency::lifecycle::Ownership>>,
     ) -> Result<Arc<Self>> {
+        Self::reconstructed_builtin_owned_with_process_limits(store, identity, ownership, None)
+    }
+
+    pub(crate) fn reconstructed_builtin_owned_with_process_limits(
+        store: Arc<Store>,
+        identity: uuid::Uuid,
+        ownership: Option<Arc<crate::residency::lifecycle::Ownership>>,
+        process_limits: Option<crate::process_limits::Limits>,
+    ) -> Result<Arc<Self>> {
         let mut broker = Self::new(store.clone());
         broker.identity = identity;
-        broker.register(
-            Arc::new(ProcessModule::builtin_with_ownership(store, ownership)?),
-            Limits::default(),
-        )?;
+        let module = ProcessModule::builtin_with_ownership(store, ownership)?
+            .with_process_limits(process_limits)?;
+        broker.register(Arc::new(module), Limits::default())?;
         Ok(Arc::new(broker))
     }
 

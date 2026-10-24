@@ -44,7 +44,7 @@ pub fn run_worker() -> Result<()> {
         }
         use std::io::Write;
         std::io::stdout().lock().write_all(bytes)?;
-        return Ok(());
+        Ok(())
     }
     #[cfg(not(feature = "nvml-gpu"))]
     bail!("NVML support is not compiled in")
