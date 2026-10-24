@@ -1,5 +1,32 @@
 # Current Rust implementation
 
+## Same-model per-turn reasoning effort — 2026-10-24
+
+**Implemented and focused verification passed.** Native `cogfabric-agent` requests
+accept `reasoning_effort` (`none`, `low`, `medium`, `high`). `Turn` validates and
+pins it; `protocol/agent.fbs` appends a typed enum with an unspecified legacy
+default. Direct and managed adapters forward explicit effort over the saved
+configuration default while retaining the same model and token/call/time ceilings.
+Invalid values fail before inference; provider rejection does not trigger a model
+switch. Collective aliases retain their separate single-goal contract.
+
+Chat exposes `--reasoning-effort`, `COGFABRIC_CHAT_REASONING_EFFORT`, and interactive
+`/effort` display/change/default commands. `/reset` preserves the selected effort
+and spent budgets. OpenCode variants on the single `cogfabric-agent` model use
+`settings.reasoningEffort`; the launcher accepts configured variant suffixes.
+The existing local OpenCode config was extended without changing permissions.
+See [chat](CHAT.md), [API](HTTP_API.md) and [OpenCode](OPENCODE.md).
+
+Verification: pinned FlatBuffers 25.12.19 regeneration, workspace all-target check,
+strict workspace all-target Clippy, formatting, five protocol tests, two provider
+fixture tests, eleven HTTP tests, seven managed worker tests and the explicit
+installed OpenCode high-variant read/edit/read regression pass. The latter checks
+that tool turns carry `high` while the same API model remains selected. A local
+chat command-only session verified environment selection, runtime changes, reset
+preservation and return to the server default. No new live-model reasoning-quality
+comparison was run; effort effectiveness depends on the configured provider/model.
+
+
 ## Configurable chat frontend — 2026-10-24
 
 **Implemented; production compilation and strict chat-binary Clippy pass.** Chat model, endpoint, credential

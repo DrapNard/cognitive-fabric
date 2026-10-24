@@ -208,7 +208,8 @@ async fn installed_opencode_v2_executes_read_edit_read_against_the_api() {
                 "models": {
                     "cogfabric-agent": {
                         "capabilities": {"tools": true, "input": ["text"], "output": ["text"]},
-                        "limit": {"context": 32768, "output": 1024}
+                        "limit": {"context": 32768, "output": 1024},
+                        "variants": [{"id":"high", "settings":{"reasoningEffort":"high"}}]
                     }
                 }
             }
@@ -247,7 +248,7 @@ async fn installed_opencode_v2_executes_read_edit_read_against_the_api() {
         .arg("--agent")
         .arg("fabric-test")
         .arg("--model")
-        .arg("cogfabric/cogfabric-agent")
+        .arg("cogfabric/cogfabric-agent#high")
         .arg("--format")
         .arg("json")
         .arg("Read fixture.txt, change Status: before to Status: after, read it again, and report the status.")
@@ -312,6 +313,16 @@ async fn installed_opencode_v2_executes_read_edit_read_against_the_api() {
                 .any(|tool| matches!(tool.function.name.as_str(), "read" | "edit"))
         })
         .collect();
+    assert!(
+        !tool_requests.is_empty(),
+        "OpenCode must send tool requests"
+    );
+    assert!(
+        tool_requests
+            .iter()
+            .all(|request| request.reasoning_effort.as_deref() == Some("high")),
+        "OpenCode high variant must send reasoning_effort on the same model"
+    );
     let observed_tools: Vec<Vec<String>> = requests
         .iter()
         .map(|request| {

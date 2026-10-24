@@ -26,7 +26,8 @@ Or run the built executable:
 target/debug/cogfabric-chat --server http://127.0.0.1:8234/v1
 ```
 
-The client accepts `/help`, `/reset`, and `/quit` (also `/exit`). `/reset` drops
+The client accepts `/help`, `/reset`, `/quit` (also `/exit`), and
+`/effort [default|none|low|medium|high]`. `/reset` drops
 conversation context but does not restore the session input or output-token
 budget. The server URL must be HTTP on numeric loopback or `localhost`; requests
 disable proxies and redirects. By default the key is read only from
@@ -43,6 +44,7 @@ The prefix for the environment suffixes below is `COGFABRIC_CHAT_`.
 | --- | --- | --- |
 | `--server` | `SERVER` | `http://127.0.0.1:8234/v1` |
 | `--model` | `MODEL` | `cogfabric-agent` |
+| `--reasoning-effort` | `REASONING_EFFORT` | Saved server default |
 | `--home` | `HOME` | Existing `COGFABRIC_RUST_HOME` / standard state directory |
 | `--api-key-env` | `API_KEY_ENV` | `COGFABRIC_SERVER_API_KEY` (variable name) |
 | `--timeout-seconds` | `TIMEOUT_SECONDS` | Saved timeout, capped at 120 |
@@ -89,3 +91,20 @@ The server and client have independent processes, and the HTTP server still
 enforces its own admission, time, body and inference limits. Concurrent use does
 not guarantee scheduling priority or a dedicated model instance. Responses are
 native model output and are not independently verified by this client.
+
+## Change reasoning effort without changing models
+
+```sh
+cogfabric-chat --reasoning-effort high
+# Or:
+COGFABRIC_CHAT_REASONING_EFFORT=medium cogfabric-chat
+```
+
+During chat, `/effort` displays the current request setting; `/effort low` changes
+it for later turns. `/effort default` removes the override and uses the server's
+saved setting. `/reset` clears context but preserves effort and spent budgets.
+The model stays the same. Effort is a provider request, not a different Jev model,
+a proof of better reasoning, or a larger token allocation. A backend can reject an
+unsupported effort; the client does not silently switch models or hide rejection.
+Higher effort may consume the existing output budget before producing an answer;
+choose `--max-tokens` within the server's configured ceiling when necessary.

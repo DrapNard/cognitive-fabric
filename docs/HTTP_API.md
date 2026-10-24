@@ -108,10 +108,18 @@ client's own schema validation and permission checks before execution.
 
 Supported options: `max_tokens` **or** `max_completion_tokens`, `temperature`,
 `tools`, `tool_choice` (`auto`, `none`, `required`, or a named function),
-`parallel_tool_calls`, `stream`, `stream_options.include_usage`, and `store:false`.
+`parallel_tool_calls`, `reasoning_effort` (`none`, `low`, `medium`, `high`), `stream`, `stream_options.include_usage`, and `store:false`.
 Unknown options and `store:true` are rejected. There is no server-side conversation
 storage/replay API; each request supplies its explicit history. Authentication
 and client-supplied system text never grant core file, shell or network tools.
+
+For OpenCode, keep `cogfabric-agent` selected and use its reasoning-effort
+variants; see [effort selection](OPENCODE.md). The same model and tool history
+remain active. Explicit effort overrides the saved provider default for that turn;
+omission preserves the saved setting. Direct and managed adapters carry it through
+the typed agent protocol without raising calls, output tokens, deadlines or tool
+permissions. Provider support is required. This native path does not invoke the
+full Jev-R collective or establish measured reasoning improvement.
 
 Collective aliases accept exactly one user text goal (up to 12,000 bytes), without
 client function definitions, generation overrides or conversational history.

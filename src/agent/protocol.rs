@@ -92,6 +92,26 @@ fn choice(turn: &Turn) -> Result<(fb::Choice, Option<String>)> {
         }
     })
 }
+fn reasoning_effort(value: Option<&str>) -> Result<fb::ReasoningEffort> {
+    Ok(match value {
+        None => fb::ReasoningEffort::Unspecified,
+        Some("none") => fb::ReasoningEffort::None,
+        Some("low") => fb::ReasoningEffort::Low,
+        Some("medium") => fb::ReasoningEffort::Medium,
+        Some("high") => fb::ReasoningEffort::High,
+        Some(_) => bail!("Unsupported provider reasoning effort"),
+    })
+}
+fn reasoning_effort_value(value: fb::ReasoningEffort) -> Result<Option<String>> {
+    Ok(match value {
+        fb::ReasoningEffort::Unspecified => None,
+        fb::ReasoningEffort::None => Some("none".into()),
+        fb::ReasoningEffort::Low => Some("low".into()),
+        fb::ReasoningEffort::Medium => Some("medium".into()),
+        fb::ReasoningEffort::High => Some("high".into()),
+        _ => bail!("Unknown native reasoning effort"),
+    })
+}
 pub fn encode(packet: &Packet) -> Result<Vec<u8>> {
     if packet.identity.correlation.len() > 64 || packet.identity.task.len() > 64 {
         bail!("Native identity exceeds bounds")
@@ -169,6 +189,7 @@ pub fn encode(packet: &Packet) -> Result<Vec<u8>> {
                     max_tokens: turn.max_tokens.map(u32::try_from).transpose()?,
                     temperature: turn.temperature,
                     parallel_tool_calls: turn.parallel_tool_calls,
+                    reasoning_effort: reasoning_effort(turn.reasoning_effort.as_deref())?,
                 }),
             }));
         }
@@ -301,6 +322,7 @@ pub fn decode(bytes: &[u8]) -> Result<Packet> {
             max_tokens: t.max_tokens().map(|n| n as usize),
             temperature: t.temperature(),
             parallel_tool_calls: t.parallel_tool_calls(),
+            reasoning_effort: reasoning_effort_value(t.reasoning_effort())?,
         };
         turn.validate()?;
         if turn

@@ -62,6 +62,12 @@ replaces project configuration.
       "models": {
         "cogfabric-agent": {
           "capabilities": {"tools": true, "input": ["text"], "output": ["text"]},
+          "variants": [
+            {"id": "none", "settings": {"reasoningEffort": "none"}},
+            {"id": "low", "settings": {"reasoningEffort": "low"}},
+            {"id": "medium", "settings": {"reasoningEffort": "medium"}},
+            {"id": "high", "settings": {"reasoningEffort": "high"}}
+          ],
           "limit": {"context": 32768, "output": 1024}
         }
       }
@@ -74,6 +80,22 @@ Set OpenCode's shell and edit permissions to ask before allowing actions. Review
 those permissions for each project: file edits and commands run with the local
 user's authority. The `cogfabric-agent` endpoint proposes tool calls to OpenCode;
 the Cognitive Fabric HTTP conversation path does not itself execute them.
+
+### Choose reasoning effort
+
+All four effort choices use the same `cogfabric/cogfabric-agent` model. In the
+OpenCode TUI, press **Ctrl+T** to cycle the model's variants. Select `none`,
+`low`, `medium`, or `high`; the selected effort is sent with each model request
+as `reasoning_effort`. You can select a variant directly for one run too:
+
+```sh
+opencode run --model cogfabric/cogfabric-agent#high "Review this project"
+```
+
+For a normal TUI session, choose the model once with `/models`, then press
+Ctrl+T to change its effort without switching model aliases. These choices
+control the backend's configured reasoning effort; they do not select Jev+
+workflow aliases such as `cogfabric-deep` or `cogfabric-research`.
 
 ## Start OpenCode
 
@@ -161,3 +183,8 @@ operator-approved reload at 32768 context and one parallel slot, OpenCode execut
 placement failed to load that configuration on this host; `--gpu 0.35` succeeded.
 That ratio is a host-specific working configuration, not a general recommendation
 or a speed measurement. The helper never applies it automatically.
+
+To retain a default effort in project configuration, set `model` to
+`"cogfabric/cogfabric-agent#medium"` (or another defined effort variant). The
+startup helper accepts these variant selections. This still sends the model ID
+`cogfabric-agent` to the API; the suffix selects the request setting, not weights.

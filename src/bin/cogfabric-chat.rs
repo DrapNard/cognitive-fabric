@@ -32,6 +32,9 @@ struct Args {
     /// Served chat model alias (collective aliases do not support multi-turn chat).
     #[arg(long, env = "COGFABRIC_CHAT_MODEL", default_value = "cogfabric-agent")]
     model: String,
+    /// Provider reasoning effort; omission uses the server's saved default.
+    #[arg(long, env = "COGFABRIC_CHAT_REASONING_EFFORT", value_parser = ["none", "low", "medium", "high"])]
+    reasoning_effort: Option<String>,
     /// Environment variable containing the server API key; never pass a key value.
     #[arg(
         long,
@@ -124,6 +127,7 @@ async fn run() -> Result<()> {
         args.max_tokens,
         chat_client::Options {
             model: args.model.clone(),
+            reasoning_effort: args.reasoning_effort.clone(),
             api_key_env: args.api_key_env.clone(),
             limits: limits.clone(),
         },
@@ -143,7 +147,7 @@ async fn run() -> Result<()> {
 }
 
 async fn run_session(
-    client: chat_client::ClientApi,
+    mut client: chat_client::ClientApi,
     temperature: f64,
     args: &Args,
     limits: &chat_client::Limits,
@@ -152,6 +156,7 @@ async fn run_session(
     let mut transcript = Vec::<chat_client::Message>::new();
     let mut total_user_bytes = 0usize;
     let mut turns = 0usize;
+    let mut effort = args.reasoning_effort.clone();
 
     println!(
         "Cognitive Fabric chat (model: {}). Type /help for commands.",
@@ -185,13 +190,39 @@ async fn run_session(
         if text.is_empty() {
             continue;
         }
+        if text == "/effort" {
+            println!(
+                "Reasoning effort: {}",
+                effort.as_deref().unwrap_or("server default")
+            );
+            continue;
+        }
+        if let Some(value) = text.strip_prefix("/effort ") {
+            let value = value.trim();
+            let next = if value == "default" {
+                None
+            } else {
+                Some(value)
+            };
+            match client.set_reasoning_effort(next) {
+                Ok(()) => {
+                    effort = next.map(str::to_owned);
+                    println!(
+                        "Reasoning effort: {}",
+                        effort.as_deref().unwrap_or("server default")
+                    );
+                }
+                Err(_) => println!("Use /effort default, none, low, medium or high."),
+            }
+            continue;
+        }
         match text {
             "/quit" | "/exit" => {
                 println!("Goodbye.");
                 return Ok(());
             }
             "/help" => {
-                println!("Commands: /help, /reset, /quit. Each chat turn is text-only; no tools are advertised or run.");
+                println!("Commands: /help, /reset, /quit, /effort [default|none|low|medium|high]. Each chat turn is text-only; no tools are advertised or run.");
                 continue;
             }
             "/reset" => {

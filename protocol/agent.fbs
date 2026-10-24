@@ -3,6 +3,7 @@ namespace Agent;
 enum Role:ubyte { System, Developer, User, Assistant, Tool }
 enum Choice:ubyte { Unspecified, Auto, None, Required, Named }
 enum Finish:ubyte { Stop, Length, ToolCalls }
+enum ReasoningEffort:ubyte { Unspecified, None, Low, Medium, High }
 table FunctionCall { name:string (required); arguments:string (required); }
 table ToolCall { id:string (required); function:FunctionCall (required); }
 table Message { role:Role; content:string; tool_calls:[ToolCall]; tool_call_id:string; }
@@ -17,6 +18,7 @@ table Turn {
   max_tokens:uint = null;
   temperature:double = null;
   parallel_tool_calls:bool = null;
+  reasoning_effort:ReasoningEffort = Unspecified;
 }
 table Request { turn:Turn (required); allocation:uint; }
 table Response {

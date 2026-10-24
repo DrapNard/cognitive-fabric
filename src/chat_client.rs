@@ -58,6 +58,7 @@ impl Limits {
 #[derive(Clone, Debug)]
 pub struct Options {
     pub model: String,
+    pub reasoning_effort: Option<String>,
     /// Name of the environment variable holding the secret, never its value.
     pub api_key_env: String,
     pub limits: Limits,
@@ -67,6 +68,7 @@ impl Default for Options {
     fn default() -> Self {
         Self {
             model: MODEL_ALIAS.into(),
+            reasoning_effort: None,
             api_key_env: "COGFABRIC_SERVER_API_KEY".into(),
             limits: Limits::default(),
         }
@@ -154,6 +156,7 @@ impl ClientApi {
         options: Options,
     ) -> Result<Self> {
         options.limits.validate()?;
+        validate_effort(options.reasoning_effort.as_deref())?;
         if timeout < Duration::from_secs(1)
             || timeout > Duration::from_secs(3600)
             || !(1..=16384).contains(&max_output_tokens)
@@ -182,6 +185,13 @@ impl ClientApi {
         })
     }
 
+    /// Changes only the requested provider effort; model and resource ceilings stay pinned.
+    pub fn set_reasoning_effort(&mut self, effort: Option<&str>) -> Result<()> {
+        validate_effort(effort)?;
+        self.options.reasoning_effort = effort.map(str::to_owned);
+        Ok(())
+    }
+
     /// Makes one bounded completion request without advertising or accepting tools.
     pub async fn complete(&self, messages: &[Message], temperature: f64) -> Result<String> {
         if messages.is_empty()
@@ -197,7 +207,7 @@ impl ClientApi {
             bail!("Chat transcript or generation settings exceed supported limits")
         }
 
-        let request_body = json!({
+        let mut request_body = json!({
             "model": self.options.model,
             "messages": messages,
             "max_tokens": self.max_output_tokens,
@@ -205,6 +215,9 @@ impl ClientApi {
             "stream": false,
             "store": false
         });
+        if let Some(effort) = &self.options.reasoning_effort {
+            request_body["reasoning_effort"] = json!(effort);
+        }
         let request = self
             .client
             .post(self.endpoint.clone())
@@ -269,4 +282,11 @@ impl ClientApi {
             .ok_or_else(|| anyhow::anyhow!("Chat server returned no bounded text reply"))?;
         Ok(content.to_owned())
     }
+}
+
+fn validate_effort(effort: Option<&str>) -> Result<()> {
+    if effort.is_some_and(|value| !crate::agent::valid_reasoning_effort(value)) {
+        bail!("Reasoning effort must be none, low, medium or high")
+    }
+    Ok(())
 }

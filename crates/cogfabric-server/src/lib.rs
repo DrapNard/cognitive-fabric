@@ -169,6 +169,8 @@ struct ChatRequest {
     #[serde(default)]
     temperature: Option<f64>,
     #[serde(default)]
+    reasoning_effort: Option<String>,
+    #[serde(default)]
     n: Option<u32>,
     #[serde(default)]
     parallel_tool_calls: Option<bool>,
@@ -227,6 +229,7 @@ fn normalize(raw: ChatRequest) -> anyhow::Result<(String, Turn, bool, bool)> {
         tool_choice: raw.tool_choice,
         max_tokens: raw.max_tokens.or(raw.max_completion_tokens),
         temperature: raw.temperature,
+        reasoning_effort: raw.reasoning_effort,
         parallel_tool_calls: raw.parallel_tool_calls,
     };
     request.validate()?;
@@ -309,6 +312,7 @@ fn validate_collective_request(request: &Turn) -> anyhow::Result<()> {
             .is_none_or(|s| s.trim().is_empty() || s.len() > 12000)
         || request.max_tokens.is_some()
         || request.temperature.is_some()
+        || request.reasoning_effort.is_some()
         || request.tool_choice.as_ref().is_some_and(|v| v != "none")
     {
         anyhow::bail!("Collective models accept one user goal and operator-configured budgets; use cogfabric-agent for conversations and tools")

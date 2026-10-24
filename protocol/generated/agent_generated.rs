@@ -287,6 +287,102 @@ impl<'a> ::flatbuffers::Verifiable for Finish {
 }
 
 impl ::flatbuffers::SimpleToVerifyInSlice for Finish {}
+#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
+pub const ENUM_MIN_REASONING_EFFORT: u8 = 0;
+#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
+pub const ENUM_MAX_REASONING_EFFORT: u8 = 4;
+#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
+#[allow(non_camel_case_types)]
+pub const ENUM_VALUES_REASONING_EFFORT: [ReasoningEffort; 5] = [
+  ReasoningEffort::Unspecified,
+  ReasoningEffort::None,
+  ReasoningEffort::Low,
+  ReasoningEffort::Medium,
+  ReasoningEffort::High,
+];
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[repr(transparent)]
+pub struct ReasoningEffort(pub u8);
+#[allow(non_upper_case_globals)]
+impl ReasoningEffort {
+  pub const Unspecified: Self = Self(0);
+  pub const None: Self = Self(1);
+  pub const Low: Self = Self(2);
+  pub const Medium: Self = Self(3);
+  pub const High: Self = Self(4);
+
+  pub const ENUM_MIN: u8 = 0;
+  pub const ENUM_MAX: u8 = 4;
+  pub const ENUM_VALUES: &'static [Self] = &[
+    Self::Unspecified,
+    Self::None,
+    Self::Low,
+    Self::Medium,
+    Self::High,
+  ];
+  /// Returns the variant's name or "" if unknown.
+  pub fn variant_name(self) -> Option<&'static str> {
+    match self {
+      Self::Unspecified => Some("Unspecified"),
+      Self::None => Some("None"),
+      Self::Low => Some("Low"),
+      Self::Medium => Some("Medium"),
+      Self::High => Some("High"),
+      _ => None,
+    }
+  }
+}
+impl ::core::fmt::Debug for ReasoningEffort {
+  fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
+    if let Some(name) = self.variant_name() {
+      f.write_str(name)
+    } else {
+      f.write_fmt(format_args!("<UNKNOWN {:?}>", self.0))
+    }
+  }
+}
+impl<'a> ::flatbuffers::Follow<'a> for ReasoningEffort {
+  type Inner = Self;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    let b = unsafe { ::flatbuffers::read_scalar_at::<u8>(buf, loc) };
+    Self(b)
+  }
+}
+
+impl ::flatbuffers::Push for ReasoningEffort {
+    type Output = ReasoningEffort;
+    #[inline]
+    unsafe fn push(&self, dst: &mut [u8], _written_len: usize) {
+        unsafe { ::flatbuffers::emplace_scalar::<u8>(dst, self.0) };
+    }
+}
+
+impl ::flatbuffers::EndianScalar for ReasoningEffort {
+  type Scalar = u8;
+  #[inline]
+  fn to_little_endian(self) -> u8 {
+    self.0.to_le()
+  }
+  #[inline]
+  #[allow(clippy::wrong_self_convention)]
+  fn from_little_endian(v: u8) -> Self {
+    let b = u8::from_le(v);
+    Self(b)
+  }
+}
+
+impl<'a> ::flatbuffers::Verifiable for ReasoningEffort {
+  #[inline]
+  fn run_verifier(
+    v: &mut ::flatbuffers::Verifier, pos: usize
+  ) -> Result<(), ::flatbuffers::InvalidFlatbuffer> {
+    u8::run_verifier(v, pos)
+  }
+}
+
+impl ::flatbuffers::SimpleToVerifyInSlice for ReasoningEffort {}
 pub enum FunctionCallOffset {}
 #[derive(Copy, Clone, PartialEq)]
 
@@ -1187,6 +1283,7 @@ impl<'a> Turn<'a> {
   pub const VT_MAX_TOKENS: ::flatbuffers::VOffsetT = 12;
   pub const VT_TEMPERATURE: ::flatbuffers::VOffsetT = 14;
   pub const VT_PARALLEL_TOOL_CALLS: ::flatbuffers::VOffsetT = 16;
+  pub const VT_REASONING_EFFORT: ::flatbuffers::VOffsetT = 18;
 
   #[inline]
   pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
@@ -1203,6 +1300,7 @@ impl<'a> Turn<'a> {
     if let Some(x) = args.choice_name { builder.add_choice_name(x); }
     if let Some(x) = args.tools { builder.add_tools(x); }
     if let Some(x) = args.messages { builder.add_messages(x); }
+    builder.add_reasoning_effort(args.reasoning_effort);
     if let Some(x) = args.parallel_tool_calls { builder.add_parallel_tool_calls(x); }
     builder.add_choice(args.choice);
     builder.finish()
@@ -1223,6 +1321,7 @@ impl<'a> Turn<'a> {
     let max_tokens = self.max_tokens();
     let temperature = self.temperature();
     let parallel_tool_calls = self.parallel_tool_calls();
+    let reasoning_effort = self.reasoning_effort();
     TurnT {
       messages,
       tools,
@@ -1231,6 +1330,7 @@ impl<'a> Turn<'a> {
       max_tokens,
       temperature,
       parallel_tool_calls,
+      reasoning_effort,
     }
   }
 
@@ -1283,6 +1383,13 @@ impl<'a> Turn<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<bool>(Turn::VT_PARALLEL_TOOL_CALLS, None)}
   }
+  #[inline]
+  pub fn reasoning_effort(&self) -> ReasoningEffort {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<ReasoningEffort>(Turn::VT_REASONING_EFFORT, Some(ReasoningEffort::Unspecified)).unwrap()}
+  }
 }
 
 impl ::flatbuffers::Verifiable for Turn<'_> {
@@ -1298,6 +1405,7 @@ impl ::flatbuffers::Verifiable for Turn<'_> {
      .visit_field::<u32>("max_tokens", Self::VT_MAX_TOKENS, false)?
      .visit_field::<f64>("temperature", Self::VT_TEMPERATURE, false)?
      .visit_field::<bool>("parallel_tool_calls", Self::VT_PARALLEL_TOOL_CALLS, false)?
+     .visit_field::<ReasoningEffort>("reasoning_effort", Self::VT_REASONING_EFFORT, false)?
      .finish();
     Ok(())
   }
@@ -1310,6 +1418,7 @@ pub struct TurnArgs<'a> {
     pub max_tokens: Option<u32>,
     pub temperature: Option<f64>,
     pub parallel_tool_calls: Option<bool>,
+    pub reasoning_effort: ReasoningEffort,
 }
 impl<'a> Default for TurnArgs<'a> {
   #[inline]
@@ -1322,6 +1431,7 @@ impl<'a> Default for TurnArgs<'a> {
       max_tokens: None,
       temperature: None,
       parallel_tool_calls: None,
+      reasoning_effort: ReasoningEffort::Unspecified,
     }
   }
 }
@@ -1360,6 +1470,10 @@ impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> TurnBuilder<'a, 'b, A> {
     self.fbb_.push_slot_always::<bool>(Turn::VT_PARALLEL_TOOL_CALLS, parallel_tool_calls);
   }
   #[inline]
+  pub fn add_reasoning_effort(&mut self, reasoning_effort: ReasoningEffort) {
+    self.fbb_.push_slot::<ReasoningEffort>(Turn::VT_REASONING_EFFORT, reasoning_effort, ReasoningEffort::Unspecified);
+  }
+  #[inline]
   pub fn new(_fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>) -> TurnBuilder<'a, 'b, A> {
     let start = _fbb.start_table();
     TurnBuilder {
@@ -1385,6 +1499,7 @@ impl ::core::fmt::Debug for Turn<'_> {
       ds.field("max_tokens", &self.max_tokens());
       ds.field("temperature", &self.temperature());
       ds.field("parallel_tool_calls", &self.parallel_tool_calls());
+      ds.field("reasoning_effort", &self.reasoning_effort());
       ds.finish()
   }
 }
@@ -1398,6 +1513,7 @@ pub struct TurnT {
   pub max_tokens: Option<u32>,
   pub temperature: Option<f64>,
   pub parallel_tool_calls: Option<bool>,
+  pub reasoning_effort: ReasoningEffort,
 }
 impl Default for TurnT {
   fn default() -> Self {
@@ -1409,6 +1525,7 @@ impl Default for TurnT {
       max_tokens: None,
       temperature: None,
       parallel_tool_calls: None,
+      reasoning_effort: ReasoningEffort::Unspecified,
     }
   }
 }
@@ -1431,6 +1548,7 @@ impl TurnT {
     let max_tokens = self.max_tokens;
     let temperature = self.temperature;
     let parallel_tool_calls = self.parallel_tool_calls;
+    let reasoning_effort = self.reasoning_effort;
     Turn::create(_fbb, &TurnArgs{
       messages,
       tools,
@@ -1439,6 +1557,7 @@ impl TurnT {
       max_tokens,
       temperature,
       parallel_tool_calls,
+      reasoning_effort,
     })
   }
 }

@@ -36,7 +36,11 @@ impl ChatBackend for LocalChat {
             if let Some(parallel) = request.parallel_tool_calls {
                 body["parallel_tool_calls"] = json!(parallel);
             }
-            if let Some(effort) = &self.0.reasoning_effort {
+            if let Some(effort) = request
+                .reasoning_effort
+                .as_ref()
+                .or(self.0.reasoning_effort.as_ref())
+            {
                 body["reasoning_effort"] = json!(effort);
             }
             let credential = crate::credentials::resolve(&self.0)?;
@@ -155,6 +159,7 @@ mod duplicate_provider_tests {
                 max_tokens: None,
                 temperature: None,
                 parallel_tool_calls: None,
+                reasoning_effort: None,
             };
             let result = tokio::time::timeout(Duration::from_secs(3), backend.complete(&turn, 128))
                 .await
@@ -169,5 +174,73 @@ mod duplicate_provider_tests {
             }
             server.await.unwrap();
         }
+    }
+
+    #[tokio::test]
+    async fn per_turn_effort_overrides_config_and_omission_uses_config_without_changing_model_or_budget(
+    ) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}/v1", listener.local_addr().unwrap());
+        let provider = tokio::spawn(async move {
+            for expected_effort in ["high", "low"] {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut bytes = Vec::new();
+                loop {
+                    let mut chunk = [0; 4096];
+                    let n = socket.read(&mut chunk).await.unwrap();
+                    assert!(n > 0);
+                    bytes.extend_from_slice(&chunk[..n]);
+                    assert!(bytes.len() < 65536);
+                    if let Some(end) = bytes.windows(4).position(|w| w == b"\r\n\r\n") {
+                        let headers = String::from_utf8_lossy(&bytes[..end]);
+                        let length = headers
+                            .lines()
+                            .find_map(|line| {
+                                line.to_ascii_lowercase()
+                                    .strip_prefix("content-length: ")
+                                    .and_then(|n| n.parse::<usize>().ok())
+                            })
+                            .unwrap();
+                        if bytes.len() >= end + 4 + length {
+                            let request: Value =
+                                serde_json::from_slice(&bytes[end + 4..end + 4 + length]).unwrap();
+                            assert_eq!(request["model"], "same-configured-model");
+                            assert_eq!(request["max_tokens"], 128);
+                            assert_eq!(request["reasoning_effort"], expected_effort);
+                            break;
+                        }
+                    }
+                }
+                let body = r#"{"model":"same-configured-model","choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}"#;
+                socket
+                    .write_all(
+                        format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",body.len(),body).as_bytes(),
+                    )
+                    .await
+                    .unwrap();
+            }
+        });
+        let backend = LocalChat(Config {
+            backend: "openai-local".into(),
+            api_base: endpoint,
+            model: "same-configured-model".into(),
+            reasoning_effort: Some("low".into()),
+            ..Config::default()
+        });
+
+        for per_turn_effort in [Some("high"), None] {
+            let turn: Turn = serde_json::from_value(json!({
+                "messages":[{"role":"user","content":"Answer"}],
+                "reasoning_effort":per_turn_effort,
+            }))
+            .unwrap();
+            let completion =
+                tokio::time::timeout(Duration::from_secs(3), backend.complete(&turn, 128))
+                    .await
+                    .unwrap()
+                    .unwrap();
+            assert_eq!(completion.model, "same-configured-model");
+        }
+        provider.await.unwrap();
     }
 }

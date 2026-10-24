@@ -81,6 +81,32 @@ fn native_turns_and_tool_only_completions_preserve_typed_fields() {
     assert_eq!(c.tool_calls[0].function.arguments, "{\"path\":\"new.txt\"}");
 }
 #[test]
+fn native_turns_preserve_supported_reasoning_effort_and_reject_unknown_values() {
+    for effort in ["none", "low", "medium", "high"] {
+        let mut request_turn = turn();
+        request_turn.reasoning_effort = Some(effort.into());
+        let packet = Packet {
+            identity: identity(),
+            payload: Payload::Request {
+                turn: request_turn,
+                allocation: 128,
+            },
+        };
+        let Payload::Request { turn, .. } = decode(&encode(&packet).unwrap()).unwrap().payload
+        else {
+            panic!("Expected typed request")
+        };
+        assert_eq!(turn.reasoning_effort.as_deref(), Some(effort));
+    }
+    let mut invalid = turn();
+    invalid.reasoning_effort = Some("xhigh".into());
+    assert!(invalid.validate().is_err());
+
+    let mut root = root();
+    root.request.as_mut().unwrap().turn.reasoning_effort = fb::ReasoningEffort(255);
+    assert!(decode(&raw(root)).is_err());
+}
+#[test]
 fn native_packets_reject_conflicts_unknown_enums_and_invalid_allocations() {
     for variant in 0..10 {
         let mut root = root();

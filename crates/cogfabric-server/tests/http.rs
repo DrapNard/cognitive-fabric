@@ -18,6 +18,7 @@ use std::{
 const KEY: &str = "fixture-server-token-12345678901234567890";
 struct Fixture {
     calls: AtomicUsize,
+    efforts: std::sync::Mutex<Vec<Option<String>>>,
     pending: bool,
     entered: tokio::sync::Notify,
     exited: AtomicUsize,
@@ -35,6 +36,10 @@ impl ChatBackend for Fixture {
         _: usize,
     ) -> Pin<Box<dyn Future<Output = anyhow::Result<Completion>> + Send + 'a>> {
         self.calls.fetch_add(1, Ordering::SeqCst);
+        self.efforts
+            .lock()
+            .unwrap()
+            .push(r.reasoning_effort.clone());
         self.entered.notify_one();
         Box::pin(async move {
             let _active = Active(&self.exited);
@@ -81,6 +86,7 @@ async fn setup(
     let store = Arc::new(Store::in_memory().unwrap());
     let fixture = Arc::new(Fixture {
         calls: AtomicUsize::new(0),
+        efforts: std::sync::Mutex::new(Vec::new()),
         pending,
         entered: tokio::sync::Notify::new(),
         exited: AtomicUsize::new(0),
@@ -567,5 +573,49 @@ async fn unknown_named_tool_and_text_part_fields_fail_before_inference() {
     assert_eq!(response.status(), 200);
     assert_eq!(fixture.calls.load(Ordering::SeqCst), 1);
     stop.send(()).unwrap();
+    handle.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn reasoning_effort_uses_same_agent_alias_and_rejects_invalid_values() {
+    let (base, _store, fixture, stop, handle) = setup(false).await;
+    let client = reqwest::Client::new();
+    for effort in ["none", "low", "medium", "high"] {
+        let mut request = body();
+        request["reasoning_effort"] = json!(effort);
+        let response = client
+            .post(format!("{base}/v1/chat/completions"))
+            .bearer_auth(KEY)
+            .json(&request)
+            .send()
+            .await
+            .unwrap();
+        assert!(response.status().is_success());
+        let response: Value = response.json().await.unwrap();
+        assert_eq!(response["model"], MODEL);
+    }
+    assert_eq!(
+        *fixture.efforts.lock().unwrap(),
+        ["none", "low", "medium", "high"].map(|s| Some(s.to_string()))
+    );
+    for invalid in [
+        json!("ultra"),
+        json!("HIGH"),
+        json!(true),
+        json!({"effort":"high"}),
+    ] {
+        let mut request = body();
+        request["reasoning_effort"] = invalid;
+        let response = client
+            .post(format!("{base}/v1/chat/completions"))
+            .bearer_auth(KEY)
+            .json(&request)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
+    }
+    assert_eq!(fixture.calls.load(Ordering::SeqCst), 4);
+    let _ = stop.send(());
     handle.await.unwrap().unwrap();
 }

@@ -36,6 +36,7 @@ async fn infer(
     assert_eq!(headers["authorization"], format!("Bearer {UPSTREAM_KEY}"));
     assert_eq!(body["model"], "native-worker-fixture");
     assert_eq!(body["max_tokens"], 128);
+    assert_eq!(body["reasoning_effort"], "high");
     assert_eq!(body["tools"][0]["function"]["name"], "read");
     assert!(!body.to_string().contains(KEY));
     p.calls.fetch_add(1, Ordering::SeqCst);
@@ -49,7 +50,7 @@ async fn infer(
     )
 }
 fn request(stream: bool) -> Value {
-    json!({"model":"cogfabric-agent","stream":stream,"max_tokens":128,"messages":[{"role":"user","content":"Read client data"}],"tools":[{"type":"function","function":{"name":"read","parameters":{"type":"object"}}}]})
+    json!({"model":"cogfabric-agent","reasoning_effort":"high","stream":stream,"max_tokens":128,"messages":[{"role":"user","content":"Read client data"}],"tools":[{"type":"function","function":{"name":"read","parameters":{"type":"object"}}}]})
 }
 struct Owned(Child);
 impl Drop for Owned {

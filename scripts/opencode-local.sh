@@ -69,7 +69,8 @@ fi
 [[ -f opencode.json && ! -L opencode.json ]] || die "No regular opencode.json in '$PWD'. Copy /path/to/cognitive-fabric/opencode.example.json to this project, then merge its provider fields if a config already exists. The helper never creates or overwrites project configuration."
 jq -e --arg api "$API_URL" --arg model "$PROVIDER_MODEL" \
     --argjson context "$CONTEXT_LIMIT" --argjson output "$OUTPUT_LIMIT" '
-      .model == $model
+      .model as $selected
+      | ($selected == $model or any(["none", "low", "medium", "high"][]; $selected == ($model + "#" + .)))
       and .providers.cogfabric.settings.baseURL == $api
       and .providers.cogfabric.package == "@opencode/ai/providers/openai-compatible"
       and ((.providers.cogfabric.env // []) | index("COGFABRIC_SERVER_API_KEY") != null)

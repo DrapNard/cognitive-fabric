@@ -59,6 +59,10 @@ pub struct Turn {
     pub temperature: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parallel_tool_calls: Option<bool>,
+    /// Per-turn provider reasoning hint. This selects an effort level for the
+    /// configured model; it never selects a different model or changes budgets.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort: Option<String>,
 }
 #[derive(Clone, Debug)]
 pub struct Completion {
@@ -68,6 +72,11 @@ pub struct Completion {
     pub finish_reason: String,
     pub input_tokens: Option<u64>,
     pub output_tokens: Option<u64>,
+}
+/// Supported request hints for OpenAI-compatible provider effort controls.
+/// Provider compatibility remains an upstream concern and errors are surfaced.
+pub fn valid_reasoning_effort(effort: &str) -> bool {
+    matches!(effort, "none" | "low" | "medium" | "high")
 }
 fn name(s: &str) -> bool {
     !s.is_empty()
@@ -100,6 +109,13 @@ impl Turn {
                 .is_some_and(|n| !n.is_finite() || !(0.0..=2.0).contains(&n))
         {
             bail!("Conversation exceeds limits")
+        }
+        if self
+            .reasoning_effort
+            .as_deref()
+            .is_some_and(|effort| !valid_reasoning_effort(effort))
+        {
+            bail!("Unsupported provider reasoning effort")
         }
         let mut tools = BTreeSet::new();
         for t in &self.tools {
@@ -275,6 +291,7 @@ mod duplicate_argument_tests {
             max_tokens: None,
             temperature: None,
             parallel_tool_calls: None,
+            reasoning_effort: None,
         };
         for args in [
             r#"{"path":"a","path":"b"}"#,
