@@ -167,12 +167,144 @@ fn acquisition_bundle_preserves_pins_and_requires_review_before_preparation() {
     manifest["sources"][2]["split"] = "test".into();
     let reviewed = serde_json::to_vec(&manifest).unwrap();
     std::fs::write(&manifest_path, &reviewed).unwrap();
+    // A claimed origin cannot be replaced by a newly hashed source label/path.
+    for key in ["id", "path", "source", "license", "sha256"] {
+        let mut changed: Value = serde_json::from_slice(&reviewed).unwrap();
+        changed["sources"][0][key] = match key {
+            "id" => json!("other.source"),
+            "path" => json!("other.txt"),
+            "sha256" => json!("0".repeat(64)),
+            _ => json!("changed-origin"),
+        };
+        let changed = serde_json::to_vec(&changed).unwrap();
+        std::fs::write(&manifest_path, &changed).unwrap();
+        assert!(preparation::prepare(&bundle, &manifest_path, &sha256(&changed)).is_err());
+    }
+    std::fs::write(&manifest_path, &reviewed).unwrap();
+    let acquisition_path = bundle.join("acquisition.json");
+    let original_acquisition = std::fs::read(&acquisition_path).unwrap();
+    let mut forged: Value = serde_json::from_slice(&original_acquisition).unwrap();
+    forged["candidate_created"] = true.into();
+    let forged = serde_json::to_vec(&forged).unwrap();
+    std::fs::write(&acquisition_path, &forged).unwrap();
+    let mut rebound: Value = serde_json::from_slice(&reviewed).unwrap();
+    rebound["acquisition"]["report_sha256"] = sha256(&forged).into();
+    let rebound = serde_json::to_vec(&rebound).unwrap();
+    std::fs::write(&manifest_path, &rebound).unwrap();
+    assert!(preparation::prepare(&bundle, &manifest_path, &sha256(&rebound)).is_err());
+    std::fs::write(&acquisition_path, &original_acquisition).unwrap();
+    std::fs::write(&manifest_path, &reviewed).unwrap();
+    let saved_path = bundle.join("saved-acquisition.json");
+    std::fs::rename(&acquisition_path, &saved_path).unwrap();
+    std::os::unix::fs::symlink(&saved_path, &acquisition_path).unwrap();
+    assert!(preparation::prepare(&bundle, &manifest_path, &sha256(&reviewed)).is_err());
+    std::fs::remove_file(&acquisition_path).unwrap();
+    std::fs::rename(&saved_path, &acquisition_path).unwrap();
     let prepared = preparation::prepare(&bundle, &manifest_path, &sha256(&reviewed)).unwrap();
     prepared.write(&root.join("prepared")).unwrap();
-    let artifact = std::fs::read_to_string(root.join("prepared/artifact.md")).unwrap();
+    let report_path = root.join("prepared/report.json");
+    let original_prepared = std::fs::read(&report_path).unwrap();
+    let valid_report: Value = serde_json::from_slice(&original_prepared).unwrap();
+    assert_eq!(valid_report["format_version"], 3);
+    assert_eq!(
+        valid_report["acquisition"]["plan_json"],
+        String::from_utf8(manifest_bytes.clone()).unwrap()
+    );
+    let cfg = crate::config::Config {
+        home: root.join("state"),
+        backend: "demo".into(),
+        ..Default::default()
+    };
+    cfg.save().unwrap();
+    let store = crate::store::Store::open(&cfg.db()).unwrap();
+    store
+        .ensure_skill("rust.s1", "Acquired provenance fixture", &["rust".into()])
+        .unwrap();
+    for case in 0..11 {
+        let mut forged = valid_report.clone();
+        match case {
+            0 => forged["format_version"] = 2.into(),
+            1 => {
+                forged.as_object_mut().unwrap().remove("acquisition");
+            }
+            2 => forged["acquisition"]["plan_sha256"] = "0".repeat(64).into(),
+            3 => forged["acquisition"]["report_sha256"] = "0".repeat(64).into(),
+            4 => forged["sources"][0]["original_sha256"] = "0".repeat(64).into(),
+            5 => forged["sources"][0]["path"] = "untracked.txt".into(),
+            6 => forged["sources"][0]["source"] = "different origin".into(),
+            7 => forged["sources"][0]["license"] = "MIT".into(),
+            8 => forged["input_bytes"] = 1.into(),
+            9 => forged["acquisition"]["evaluation_authority"] = true.into(),
+            10 => {
+                forged["format_version"] = 2.into();
+                forged["acquisition"] = Value::Null;
+            }
+            _ => unreachable!(),
+        }
+        let bytes = serde_json::to_vec(&forged).unwrap();
+        std::fs::write(&report_path, &bytes).unwrap();
+        assert!(
+            crate::evolution::prepared::create(
+                &cfg,
+                &store,
+                "rust.s1",
+                &root.join("prepared"),
+                &sha256(&bytes),
+                "GPL-3.0-only"
+            )
+            .is_err(),
+            "accepted forged case {case}"
+        );
+        assert!(store.candidates().unwrap().is_empty());
+    }
+    std::fs::write(&report_path, &original_prepared).unwrap();
+    let db = rusqlite::Connection::open(cfg.db()).unwrap();
+    db.execute_batch("CREATE TRIGGER deny_acquired_provenance BEFORE INSERT ON events WHEN NEW.kind='candidate_preparation' BEGIN SELECT RAISE(FAIL,'fixture'); END;").unwrap();
+    assert!(crate::evolution::prepared::create(
+        &cfg,
+        &store,
+        "rust.s1",
+        &root.join("prepared"),
+        &sha256(&original_prepared),
+        "GPL-3.0-only"
+    )
+    .is_err());
+    assert!(store.candidates().unwrap().is_empty());
+    assert_eq!(
+        db.query_row(
+            "SELECT count(*) FROM events WHERE kind='candidate_preparation'",
+            [],
+            |row| row.get::<_, u64>(0)
+        )
+        .unwrap(),
+        0
+    );
+    db.execute_batch("DROP TRIGGER deny_acquired_provenance")
+        .unwrap();
+    drop(db);
+    let candidate = crate::evolution::prepared::create(
+        &cfg,
+        &store,
+        "rust.s1",
+        &root.join("prepared"),
+        &sha256(&original_prepared),
+        "GPL-3.0-only",
+    )
+    .unwrap();
+    assert!(acquired.write(&bundle).is_err());
+    std::fs::remove_dir_all(&bundle).unwrap();
+    std::fs::remove_dir_all(root.join("prepared")).unwrap();
+    let provenance = crate::evolution::prepared::provenance(&store, &candidate.id).unwrap();
+    assert_eq!(
+        provenance["prepared_provenance"]["acquisition"],
+        valid_report["acquisition"]
+    );
+    assert_eq!(provenance["evaluation_authority"], false);
+    assert!(crate::evaluation::promote(&store, &candidate.id, true).is_err());
+    drop(store);
+    let artifact = std::fs::read_to_string(&candidate.artifact).unwrap();
     assert!(artifact.contains("Reference documentation"));
     assert!(!artifact.contains("Validation document") && !artifact.contains("Held-out test"));
-    assert!(acquired.write(&bundle).is_err());
     std::fs::remove_dir_all(root).unwrap();
 }
 

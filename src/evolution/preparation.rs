@@ -23,6 +23,8 @@ struct Manifest {
     reviewer: String,
     sources_reviewed: bool,
     sources: Vec<Source>,
+    #[serde(default)]
+    acquisition: Option<crate::evolution::acquisition::lineage::Binding>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -103,6 +105,34 @@ fn read_beneath(root: &File, path: &str) -> Result<Vec<u8>> {
     bail!("Missing source file")
 }
 
+fn read_fixed_beneath(root: &File, name: &str, maximum: usize) -> Result<Vec<u8>> {
+    if !matches!(name, "acquisition-plan.json" | "acquisition.json") {
+        bail!("Unsupported acquisition evidence filename")
+    }
+    let name = CString::new(name)?;
+    let fd = unsafe {
+        libc::openat(
+            root.as_raw_fd(),
+            name.as_ptr(),
+            libc::O_RDONLY | libc::O_CLOEXEC | libc::O_NOFOLLOW | libc::O_NONBLOCK,
+        )
+    };
+    if fd < 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    let file = unsafe { File::from_raw_fd(fd) };
+    let metadata = file.metadata()?;
+    if !metadata.is_file() || metadata.len() > maximum as u64 {
+        bail!("Acquisition evidence must be a regular file no larger than 32 KB")
+    }
+    let mut bytes = Vec::with_capacity(metadata.len() as usize);
+    file.take(maximum as u64 + 1).read_to_end(&mut bytes)?;
+    if bytes.is_empty() || bytes.len() > maximum {
+        bail!("Acquisition evidence is empty or oversized")
+    }
+    Ok(bytes)
+}
+
 pub(super) fn normalize(bytes: &[u8]) -> Result<String> {
     let text = std::str::from_utf8(bytes)?
         .trim_start_matches('\u{feff}')
@@ -149,6 +179,28 @@ pub fn prepare(root: &Path, manifest: &Path, expected_sha256: &str) -> Result<Pr
         .read(true)
         .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC)
         .open(root)?;
+    let acquisition_evidence = parsed
+        .acquisition
+        .as_ref()
+        .map(|binding| {
+            let plan = read_fixed_beneath(&root, "acquisition-plan.json", 32_000)?;
+            let acquisition = read_fixed_beneath(&root, "acquisition.json", 32_000)?;
+            let evidence = crate::evolution::acquisition::lineage::validate_binding(
+                binding,
+                &plan,
+                &acquisition,
+            )?;
+            let origins = evidence.validate()?;
+            let evidence_value = json!({
+                "format_version": evidence.format_version,
+                "plan_sha256": evidence.plan_sha256,
+                "report_sha256": evidence.report_sha256,
+                "plan_json": evidence.plan_json,
+                "report_json": evidence.report_json
+            });
+            Ok::<_, anyhow::Error>((evidence_value, origins))
+        })
+        .transpose()?;
     let mut ids = BTreeSet::new();
     let mut documents = BTreeMap::<String, (String, Split)>::new();
     let mut paragraphs = BTreeMap::<String, Split>::new();
@@ -169,6 +221,22 @@ pub fn prepare(root: &Path, manifest: &Path, expected_sha256: &str) -> Result<Pr
         }
         security::validate_provenance(&source.source, &source.license)?;
         let bytes = read_beneath(&root, &source.path)?;
+        if let Some((_, origins)) = &acquisition_evidence {
+            let origin = origins
+                .iter()
+                .find(|origin| origin.id == source.id)
+                .ok_or_else(|| {
+                    anyhow::anyhow!("Selected source is absent from acquisition evidence")
+                })?;
+            if source.path != format!("{}.txt", origin.id)
+                || source.sha256 != origin.original_sha256
+                || source.source != origin.source
+                || source.license != origin.license
+                || bytes.len() != origin.bytes
+            {
+                bail!("Selected source does not match its acquired origin")
+            }
+        }
         total += bytes.len();
         if total > 512_000 || sha256(&bytes) != source.sha256 {
             bail!("Source hash or total input bound failed")
@@ -225,13 +293,20 @@ pub fn prepare(root: &Path, manifest: &Path, expected_sha256: &str) -> Result<Pr
     if started.elapsed() > Duration::from_secs(5) {
         bail!("Source preparation deadline exhausted")
     }
-    let report = json!({"format_version":2,"manifest_sha256":expected_sha256,"reviewer":parsed.reviewer,
+    let mut report = json!({"format_version":2,"manifest_sha256":expected_sha256,"reviewer":parsed.reviewer,
         "sources_reviewed_by_operator":true,"independent_review_proven":false,"untrusted_data":true,
         "permissions_granted":false,"candidate_created":false,"model_promoted":false,
         "artifact_sha256":sha256(artifact.as_bytes()),"artifact_bytes":artifact.len(),
         "held_out_documents":held_out.len(),"held_out_sha256":sha256(&serde_json::to_vec_pretty(&held_out)?),"input_bytes":total,"sources":records,
         "cleaning":"utf8-newlines-trailing-whitespace/v1","deduplication":"normalized-document-sha256/v1",
         "split_overlap_check":"exact-normalized-documents-and-paragraphs-at-least-32-bytes/v1"});
+    if let Some((evidence, _)) = acquisition_evidence {
+        report["format_version"] = json!(3);
+        report["acquisition"] = evidence;
+    }
+    if serde_json::to_vec_pretty(&report)?.len() > 65_536 {
+        bail!("Preparation report exceeds the 64 KB publication limit")
+    }
     Ok(Prepared {
         artifact,
         held_out,
@@ -243,10 +318,14 @@ impl Prepared {
     /// Create a new private bundle; never overwrite existing operator files.
     /// The artifact excludes validation/test text, which is stored separately.
     pub fn write(&self, output: &Path) -> Result<Value> {
+        let report_bytes = serde_json::to_vec_pretty(&self.report)?;
+        if report_bytes.len() > 65_536 {
+            bail!("Preparation report exceeds the 64 KB publication limit")
+        }
         let payloads = vec![
             ("artifact.md", self.artifact.as_bytes().to_vec()),
             ("held-out.json", serde_json::to_vec_pretty(&self.held_out)?),
-            ("report.json", serde_json::to_vec_pretty(&self.report)?),
+            ("report.json", report_bytes),
         ];
         write_bundle(output, payloads)?;
         Ok(self.report.clone())

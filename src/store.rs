@@ -1130,16 +1130,10 @@ impl Store {
             if kind != "rag" || report.len() > 65_536 {
                 bail!("Prepared lineage is limited to bounded RAG reports")
             }
-            let prepared = crate::strict_json::value(report.as_bytes(), 65_536)?;
-            if prepared["format_version"] != 2
-                || prepared["artifact_sha256"] != candidate.checksum
-                || prepared["permissions_granted"] != false
-                || prepared["model_promoted"] != false
-                || prepared["independent_review_proven"] != false
-                || prepared["untrusted_data"] != true
-            {
-                bail!("Prepared lineage cannot grant authority or change artifact identity")
-            }
+            crate::evolution::prepared::validate_report_snapshot(
+                report.as_bytes(),
+                &candidate.checksum,
+            )?;
             crate::storage::admit(&db)?;
             let task = Uuid::new_v4().to_string();
             let payload = json!({"format_version":1,"candidate_id":candidate.id,"candidate_checksum":candidate.checksum,

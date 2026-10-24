@@ -135,3 +135,18 @@ requirements; no new model filesystem/network capability is introduced.
 Remote hash-pinned text can first be fetched with `candidate fetch-sources`; see
 [source acquisition](SOURCE_ACQUISITION.md). Its generated draft still requires
 explicit review and independent split assignment before this preparation step.
+
+## Acquisition-bound report version 3
+
+Downloaded source drafts now include an optional `acquisition` object containing
+`plan_sha256` and `report_sha256`. When present, preparation validates fixed
+`acquisition-plan.json` and `acquisition.json` files beneath the selected root,
+then matches all selected documents to their acquired origins. Subsets are allowed;
+untracked mixed sources and changed hashes/labels/paths are refused. The output
+report is version 3 and retains exact acquisition JSON as metadata. Candidate
+import and durable inspection revalidate it offline with no DNS or HTTP requests.
+
+Unbound local preparation keeps version 2 and its existing shape. Neither version
+grants evaluation authority. Both complete reports are capped at 65,536 bytes;
+oversized lineage fails before publication. See [source acquisition](SOURCE_ACQUISITION.md)
+for provenance scope and the acquisition review steps.

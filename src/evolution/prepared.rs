@@ -62,6 +62,8 @@ struct Report {
     cleaning: String,
     deduplication: String,
     split_overlap_check: String,
+    #[serde(default)]
+    acquisition: Option<super::acquisition::lineage::Evidence>,
 }
 fn digest(hash: &str) -> bool {
     hash.len() == 64
@@ -92,8 +94,12 @@ fn read_file(directory: &File, name: &CStr, maximum: usize) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 fn report(raw: &[u8]) -> Result<Report> {
-    let report: Report = serde_json::from_value(crate::strict_json::value(raw, 65_536)?)?;
-    if report.format_version != 2
+    let value = crate::strict_json::value(raw, 65_536)?;
+    let has_acquisition = value.get("acquisition").is_some();
+    let report: Report = serde_json::from_value(value)?;
+    if !matches!(report.format_version, 2 | 3)
+        || (report.format_version == 2 && has_acquisition)
+        || (report.format_version == 3 && report.acquisition.is_none())
         || !digest(&report.manifest_sha256)
         || report.reviewer.trim().is_empty()
         || report.reviewer.len() > 100
@@ -120,7 +126,44 @@ fn report(raw: &[u8]) -> Result<Report> {
     {
         bail!("Prepared source report version, identity, bounds or non-authority flags are invalid")
     }
+    if let Some(evidence) = &report.acquisition {
+        let origins = evidence
+            .validate()?
+            .into_iter()
+            .map(|origin| (origin.id.clone(), origin))
+            .collect::<BTreeMap<_, _>>();
+        let mut ids = BTreeSet::new();
+        let mut original_bytes = 0usize;
+        for source in &report.sources {
+            let origin = origins
+                .get(&source.id)
+                .ok_or_else(|| anyhow::anyhow!("Prepared source has no acquired origin"))?;
+            if !ids.insert(&source.id)
+                || source.path != origin.path
+                || source.original_sha256 != origin.original_sha256
+                || source.source != origin.source
+                || source.license != origin.license
+            {
+                bail!("Prepared source acquisition lineage differs")
+            }
+            original_bytes = original_bytes
+                .checked_add(origin.bytes)
+                .ok_or_else(|| anyhow::anyhow!("Acquisition lineage byte count overflow"))?;
+        }
+        if original_bytes != report.input_bytes {
+            bail!("Prepared source input bytes differ from acquisition lineage")
+        }
+    }
     Ok(report)
+}
+
+/// Recheck metadata at the transactional storage boundary, using the same
+/// version/lineage rules as preparation import and durable inspection.
+pub(crate) fn validate_report_snapshot(raw: &[u8], checksum: &str) -> Result<()> {
+    if report(raw)?.artifact_sha256 != checksum {
+        bail!("Prepared lineage cannot change artifact identity")
+    }
+    Ok(())
 }
 
 /// Import a prepared artifact snapshot; original document metadata remains

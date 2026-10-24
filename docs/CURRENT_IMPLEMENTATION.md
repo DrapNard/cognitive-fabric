@@ -4,6 +4,35 @@
 
 
 
+
+## Acquisition lineage through candidate registration — 2026-10-24
+
+**Implemented.** Architecture sections 7, 8 and 10: acquisition drafts bind exact
+plan/report hashes; `src/evolution/acquisition/lineage.rs` strictly validates
+bounded offline origin metadata without network access. Preparation reads fixed
+metadata files through its retained directory descriptor, matches every selected
+source to its acquired ID/path/hash/labels/bytes, and emits report version 3 with
+exact acquisition snapshots. Unbound local reports retain version 2.
+
+`src/evolution/prepared.rs` validates report-version/evidence consistency and source
+correspondence during import and durable inspection; `src/store.rs` invokes that
+same validator at transactional candidate registration. Existing audit failure
+rolls back registration and its anchor. Complete reports remain capped at 65,536
+bytes; metadata-heavy bundles can be refused before publication. This preserves
+origin metadata, not held-out document text, across source-bundle removal.
+
+Focused acquisition/pipeline, local preparation/import and persistence checks pass;
+formatting, all-feature compilation and strict Clippy pass. The pipeline regression
+also removes original/prepared bundles before reading durable provenance. The first
+v3 import exposed a stale v2-only Store gate, fixed through the shared validator.
+No full reflection suite was run.
+
+No new tool/network permission, evaluation authority, neural promotion or model
+call is introduced. Hash-bound local records are not proof of remote contact or
+independent licensing/quality review against a hostile owner. See
+[source acquisition](SOURCE_ACQUISITION.md) and [preparation](SOURCE_PREPARATION.md).
+
+
 ## Operator-selected remote source acquisition — 2026-10-24
 
 **Implemented bounded acquisition; remote discovery and independent curation

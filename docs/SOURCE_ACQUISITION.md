@@ -127,3 +127,53 @@ independent poisoning/neural-safety evaluation was run for this change.
 No full reflection suite or reasoning benchmark was run. The private response
 fixture permits HTTP only inside the private executor test; no public API exposes
 that test path. Production manifest validation still rejects every non-HTTPS URL.
+
+## Retaining origins through candidate import
+
+New acquisition drafts include an `acquisition` binding with `plan_sha256` and
+`report_sha256`, calculated from the exact two retained acquisition files. Keep
+those files beside the downloaded documents when reviewing `sources.json`.
+Preparation reads their fixed filenames relative to the retained root directory
+without following final symlinks, validates both hashes and strict schemas, and
+matches every selected source's ID, filename, original hash, provenance, license
+and original byte count. Selecting a subset is allowed; mixing untracked local
+sources into a claimed acquisition is refused.
+
+Bound preparation reports use format version **3**. They embed the exact approved
+plan/report JSON and their hashes under `acquisition`; unchanged local preparation
+without a binding still emits version **2**. The complete prepared report remains
+limited to 65,536 bytes. A metadata-heavy batch can therefore exceed the report
+limit even when its downloads fit the byte allowance; preparation refuses before
+publishing an output bundle.
+
+`candidate create-prepared` and transactional database insertion use the same
+version and lineage validator. Version 2 cannot claim acquisition evidence;
+version 3 requires it. Source correspondence and original input-byte totals are
+rechecked before registration. Candidate inspection revalidates that embedded
+snapshot, so origin URLs and approval assertions survive after the source bundle
+is moved or removed. The existing candidate/provenance transaction, retention
+protection and independent evaluation/promotion gates still apply.
+
+These are consistent, hash-bound operator records. They do not prove a remote
+server was contacted, a publisher's identity, a license's legal validity, or
+independent review against a malicious owner who can construct new local records.
+No held-out document text is added to the candidate artifact or origin snapshot.
+
+Older acquisition drafts without a binding continue through the local v2 path;
+they do not acquire origin claims automatically. An operator can explicitly add
+the two exact file hashes after reviewing and preserving the matching plan and
+report. No original source body is recovered from a hash or fetched during import.
+
+### Lineage verification — 2026-10-24
+
+- Formatting and `git diff --check`: passed.
+- `cargo +1.99.0 check --workspace --all-targets --all-features --locked`: passed.
+- `cargo +1.99.0 clippy --workspace --all-targets --all-features --locked -- -D warnings`: passed.
+- `cargo +1.99.0 test -p cogfabric --lib evolution::acquisition --locked`: nine passed. The pipeline test exercises valid v3 import, changed origins, rehashed invalid approval flags, symlink refusal, version/evidence downgrade refusal, audit rollback, no-evaluation promotion denial and durable inspection after bundle removal.
+- `cargo +1.99.0 test -p cogfabric --test source_acquisition --test source_discovery --test source_preparation --test prepared_candidate --locked`: nine passed, including legacy local v2 workflows.
+- `cargo +1.99.0 test -p cogfabric --lib store::tests --locked`: fifteen passed, including existing migration and restore checks.
+
+The first v3 import regression exposed a stale v2-only Store gate. It was fixed
+by sharing the same report validator across import, transaction and inspection;
+the rerun passed. No full reflection suite, live public fetch or reasoning-quality
+benchmark was run for this lineage change.

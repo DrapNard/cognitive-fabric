@@ -17,6 +17,8 @@ use std::{
 use tokio::sync::Semaphore;
 use url::Url;
 
+pub(crate) mod lineage;
+
 const MAX_MANIFEST_BYTES: usize = 32_000;
 const MAX_DOCUMENT_BYTES: usize = 64_000;
 const MAX_TOTAL_BYTES: usize = 512_000;
@@ -177,12 +179,6 @@ impl Acquired {
                 "bytes": source.bytes.len()
             }));
         }
-        let draft = json!({
-            "format_version": 1,
-            "reviewer": "",
-            "sources_reviewed": false,
-            "sources": draft_sources
-        });
         let acquisition = json!({
             "format_version": 1,
             "manifest_sha256": self.manifest_sha256,
@@ -196,6 +192,19 @@ impl Acquired {
             "model_promoted": false,
             "sources": provenance
         });
+        let plan_sha256 = sha256(&self.manifest_bytes);
+        let report_bytes = serde_json::to_vec_pretty(&acquisition)?;
+        let binding = lineage::Binding {
+            plan_sha256,
+            report_sha256: sha256(&report_bytes),
+        };
+        let draft = json!({
+            "format_version": 1,
+            "reviewer": "",
+            "sources_reviewed": false,
+            "acquisition": binding,
+            "sources": draft_sources
+        });
         let mut payloads = filenames
             .iter()
             .zip(documents)
@@ -203,7 +212,7 @@ impl Acquired {
             .collect::<Vec<_>>();
         payloads.push(("sources.json", serde_json::to_vec_pretty(&draft)?));
         payloads.push(("acquisition-plan.json", self.manifest_bytes.clone()));
-        payloads.push(("acquisition.json", serde_json::to_vec_pretty(&acquisition)?));
+        payloads.push(("acquisition.json", report_bytes));
         preparation::write_bundle(output, payloads)?;
         Ok(acquisition)
     }

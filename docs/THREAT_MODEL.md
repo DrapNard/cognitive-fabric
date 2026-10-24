@@ -1337,3 +1337,16 @@ processes require host quotas. External content retains data status; no source
 instruction can confer capabilities, review assertions, evaluation or promotion.
 License/reviewer labels are operator claims, not independent attestation. See
 [source acquisition](SOURCE_ACQUISITION.md).
+
+## Prepared acquisition lineage
+
+Optional acquisition bindings are checked through fixed descriptor-relative metadata
+reads, strict bounded raw JSON snapshots and exact hashes. Report v3 requires
+acquisition evidence, while v2 cannot carry it. Every selected source must match
+the original acquired metadata and input-byte totals. Import, transactional Store
+registration and durable inspection share one version/lineage validator. Required
+audit failure rolls back the candidate and provenance anchor. Metadata snapshots
+include approved URLs but no held-out document bodies. Inspection never resolves
+or fetches those URLs and grants no evaluation or promotion authority. A hostile
+owner can forge new mutually consistent local records; these checks are not remote
+publisher attestation or independent license/poisoning review.
