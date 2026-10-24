@@ -1,6 +1,23 @@
 # Current Rust implementation
 
 
+## Per-call provider timing inspection — 2026-10-24
+
+**Implemented; 16 focused unit/CLI checks passed.** Architecture sections 4, 7 and 9:
+`src/recovery/inference_metrics.rs` links optional reported metrics to validated
+call reservations and preceding reasoning hashes in the public operator audit.
+Missing reports remain null; coverage is explicit and timings/rates are not summed.
+`src/recovery/inference.rs` uses one read transaction and a shared five-second
+cooperative deadline, clearing SQLite's progress handler after errors and success.
+`src/main.rs` runs `inference-audit` against an existing read-only current-schema
+Store before bootstrap, migration or engine construction. Recovery admission still
+uses the original ledger validator, independent of advisory metrics.
+
+No call is retried, refunded, verified or authorized by inspection. Physical
+measurement attribution, provider accuracy and calibrated scheduling remain Partial.
+See [provider metrics](PROVIDER_METRICS.md) for field coverage and boundaries.
+
+
 
 
 

@@ -113,6 +113,11 @@ do not require full-trace allocation merely to report model configurations.
 
 ## Inference reservation audit
 
+The public operator command also exposes validated optional per-call provider
+metrics and explicit coverage; see [provider metrics](PROVIDER_METRICS.md).
+Inspection opens existing state read-only without bootstrap or migration. Its
+shared five-second cooperative deadline is cleared on every result path.
+
 `cogfabric --json inference-audit TASK_UUID` reconstructs the recorded reservation
 ledger in one read transaction. New reasoning results carry their charged `call`
 number, correlating them with prior model_dispatch reservations. The summary exposes

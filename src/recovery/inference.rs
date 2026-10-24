@@ -5,16 +5,34 @@ use crate::{
 };
 use anyhow::{bail, Result};
 use serde_json::{json, Value};
-use std::collections::BTreeMap;
+use std::{
+    collections::BTreeMap,
+    time::{Duration, Instant},
+};
+#[path = "inference_metrics.rs"]
+mod metrics;
 impl Store {
     pub fn inference_audit(&self, task: &str) -> Result<Value> {
         security::authorize("human-cli", "task.observe")?;
         uuid::Uuid::parse_str(task)?;
+        let deadline = Instant::now() + Duration::from_secs(5);
         let mut db = self.lock()?;
-        let tx = db.transaction()?;
-        let report = audit_from(&tx, task)?;
-        tx.commit()?;
-        Ok(report)
+        if Instant::now() >= deadline {
+            bail!("Inference audit deadline exhausted")
+        }
+        db.progress_handler(1000, Some(move || Instant::now() >= deadline));
+        let result = (|| -> Result<Value> {
+            let tx = db.transaction()?;
+            let mut report = audit_from(&tx, task)?;
+            metrics::attach(&tx, task, &mut report, deadline)?;
+            if Instant::now() >= deadline {
+                bail!("Inference audit deadline exhausted")
+            }
+            tx.commit()?;
+            Ok(report)
+        })();
+        db.progress_handler(0, None::<fn() -> bool>);
+        result
     }
 }
 
@@ -267,6 +285,38 @@ mod tests {
     fn response(call: u64) -> Value {
         json!({"call":call,"node":{"role":"solver","model":"fixture","content_hash":sha256(b"private answer")},"text":"private answer","input_tokens":7,"output_tokens":3})
     }
+    #[test]
+    fn malformed_advisory_metrics_do_not_change_recovery_ledger_authority() {
+        let store = Store::in_memory().unwrap();
+        let task = store.create_task("private goal", "fast").unwrap();
+        dispatch(&store, &task, 1);
+        store
+            .event(&task, "reasoning", "jev-r", response(1))
+            .unwrap();
+        store
+            .event(
+                &task,
+                "inference_provider_metrics",
+                "runtime",
+                json!({"format_version":99}),
+            )
+            .unwrap();
+        assert!(store.inference_audit(&task).is_err());
+        let db = store.lock().unwrap();
+        let ledger = audit_from(&db, &task).unwrap();
+        assert_eq!(ledger["reserved_calls"], 1);
+        assert_eq!(ledger["resume_authorized"], false);
+        assert_eq!(
+            db.query_row(
+                "SELECT count(*) FROM events WHERE task_id=?1",
+                [&task],
+                |row| row.get::<_, i64>(0)
+            )
+            .unwrap(),
+            3
+        );
+    }
+
     #[test]
     fn pairs_reservations_without_inventing_legacy_or_unrecorded_usage() {
         let store = Store::in_memory().unwrap();

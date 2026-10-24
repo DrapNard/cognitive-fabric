@@ -34,3 +34,36 @@ setting without a live server. Workspace all-target/all-feature compilation,
 strict Clippy, formatting and diff checks are used for this slice. The full
 all-target test suite and live-provider timing measurements are not part of this
 verification run; no release-readiness or reasoning-quality claim follows.
+
+## Inspect per-call observations
+
+```sh
+cogfabric --json inference-audit TASK_UUID
+```
+
+The operator report adds `provider_metrics` to each charged call (null when no
+record was published) and `provider_metrics_coverage` counts. Coverage is complete
+only when every reserved call has a recorded result and validated metrics, with
+no legacy uncorrelated results. Partial records retain their individual missing
+fields. No latency or throughput totals are inferred from overlapping values.
+
+Inspection uses an existing current-schema database without runtime bootstrap,
+migrations or model requests. One read transaction and a shared five-second
+cooperative inspection deadline cover the reservation ledger and metric history.
+At most 64 metric records are accepted. Each must follow exactly one recorded
+reasoning result and match its call, role and answer hash; duplicate, orphan,
+malformed or authority-claiming records are refused. A failed inspection does not
+rewrite events or grant continuation/replay authority. Recovery admission uses
+its existing ledger validator independently of these optional observations.
+
+The report contains model IDs, counters, timings and content hashes, without the
+original goal, prompts or answer bodies. Local hashes and audit records do not
+provide authenticity against a hostile same-owner database edit.
+
+
+Inspection verification passed: 14 `recovery::inference` unit regressions and two
+`inference_audit_cli` integration checks (all features). Cases include complete,
+missing and legacy coverage, malformed/duplicate/orphan/early/hash-substituted
+records, bounded histories/payloads, unchanged recovery authority and CLI refusal
+without state creation. The CLI fixture supplies an absent verifier module path,
+proving the inspection command does not load unrelated executable options.

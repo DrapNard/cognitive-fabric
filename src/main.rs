@@ -780,6 +780,12 @@ async fn run_cli() -> Result<()> {
     if matches!(&cli.command, Command::GpuNvmlWorker) {
         return cogfabric::gpu::nvml::run_worker();
     }
+    if let Command::InferenceAudit { id } = &cli.command {
+        // Observation must not load executable providers or initialize runtime state.
+        let cfg = Config::load(cli.home.clone(), cli.backend.clone())?;
+        let store = Store::open_existing_read_only(&cfg.db())?;
+        return output(store.inference_audit(id)?, cli.json);
+    }
     if !cli.wasm_expert.is_empty() {
         if cli.wasm_expert.len() > 8
             || !matches!(&cli.command, Command::Ask { .. } | Command::Serve { .. })
@@ -2110,7 +2116,9 @@ async fn run_cli() -> Result<()> {
         Command::Task { id } => store.task(&id)?,
         Command::TaskEvents { id, after } => store.task_events_since(&id, after)?,
         Command::GraphAudit { id } => store.graph_audit(&id)?,
-        Command::InferenceAudit { id } => store.inference_audit(&id)?,
+        Command::InferenceAudit { .. } => {
+            bail!("Inference audit must run before runtime initialization")
+        }
         Command::Bench {
             file,
             mode,
