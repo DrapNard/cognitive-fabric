@@ -1297,3 +1297,10 @@ or dispatch. Capability gates reject unsupported adapters and requests. Logical
 wire-token limits do not prove tokenizer correctness, provider termination, immutable
 weights or physical GPU isolation. Same-owner database edits are outside audit
 integrity guarantees. See [input-token admission](INPUT_TOKEN_ADMISSION.md).
+
+Exact-token preparation now checks task liveness before sending prompt history,
+then independently rechecks it under the reservation transaction. A stopped task
+cannot obtain a new completion reservation after that recheck. This cannot revoke
+requests already sent to an external provider or eliminate the interval between
+local admission and network dispatch. Missing or terminal tasks produce no native
+preparation requests in regression fixtures.

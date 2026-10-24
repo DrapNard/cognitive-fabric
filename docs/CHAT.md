@@ -108,3 +108,10 @@ a proof of better reasoning, or a larger token allocation. A backend can reject 
 unsupported effort; the client does not silently switch models or hide rejection.
 Higher effort may consume the existing output budget before producing an answer;
 choose `--max-tokens` within the server's configured ceiling when necessary.
+
+### CLI command regression
+
+`cargo +1.99.0 test -p cogfabric --test chat_effort_cli --locked` passes.
+It exercises `/effort`, every supported setting, invalid input, `/reset`
+preservation and `/quit` through the chat executable with no inference server.
+This verifies local command handling; provider effort support is separate.

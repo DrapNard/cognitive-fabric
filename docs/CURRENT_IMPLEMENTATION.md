@@ -1,6 +1,21 @@
 # Current Rust implementation
 
 
+
+## Token preparation requires a live task — 2026-10-24
+
+**Implemented.** Architecture sections 7, 9 and 10: `src/token_admission.rs`
+checks the task status through a bounded read-only database connection before
+rendering or tokenization can expose a prompt to the provider. Missing and
+terminal identities fail without native HTTP requests. The independent immediate
+write transaction still rechecks status before reserving tokens and dispatching
+generation; a task stopped during preparation cannot obtain that reservation.
+Two new regressions in `tests/input_token_admission.rs` cover both boundaries.
+This adds one local database read per admitted attempt, grants no permissions and
+makes no claim that cancellation stops already-started remote preparation.
+The WAL hard-size bound remains an open storage requirement.
+
+
 ## Exact wire-input token admission — 2026-10-24
 
 **Implemented for the optional llama.cpp native adapter; general provider support

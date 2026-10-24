@@ -83,3 +83,19 @@ reasoning quality, physical GPU/energy bounds, provider stopping nor neural safe
 The full all-target test suite was not run for this milestone, respecting the
 operator's instruction to stop reflection testing. This is a focused implementation
 record, not completion of the full v1.0 release gate.
+
+## Early task-state gate — 2026-10-24
+
+A bounded read-only check now requires an existing running task before either
+preparation endpoint is contacted. The write transaction independently rechecks
+status before the durable reservation. Seven focused integration tests pass,
+including no HTTP for missing/terminal tasks and cancellation during tokenization
+without a completion reservation. Preparation already in flight may still finish;
+this gate does not prove provider termination. It adds one local database read
+per attempt. Full reflection/release tests and live llama.cpp inference remain
+outside this focused verification.
+
+Early-gate verification commands: formatting and `git diff --check` passed;
+`cargo +1.99.0 check --workspace --all-targets --locked` and strict all-feature
+workspace Clippy passed. The seven token-admission unit tests and seven native
+integration tests passed. No full reflection suite was run.

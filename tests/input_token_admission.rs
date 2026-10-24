@@ -31,6 +31,8 @@ impl Drop for Root {
     }
 }
 
+type PreparationHook = Box<dyn FnMut(&str) + Send>;
+
 struct Fixture {
     base: String,
     requests: Arc<Mutex<Vec<(String, Value)>>>,
@@ -39,6 +41,14 @@ struct Fixture {
 }
 impl Fixture {
     async fn new(token_count: usize, expected_key: Option<&str>, completion_fails: bool) -> Self {
+        Self::with_hook(token_count, expected_key, completion_fails, None).await
+    }
+    async fn with_hook(
+        token_count: usize,
+        expected_key: Option<&str>,
+        completion_fails: bool,
+        mut hook: Option<PreparationHook>,
+    ) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let base = format!("http://{}/v1", listener.local_addr().unwrap());
         let requests = Arc::new(Mutex::new(Vec::new()));
@@ -94,6 +104,9 @@ impl Fixture {
                     key.as_ref().map(|value| format!("Bearer {value}"))
                 );
                 captured.lock().unwrap().push((path.clone(), body.clone()));
+                if let Some(hook) = &mut hook {
+                    hook(&path);
+                }
                 let response = match path.as_str() {
                     "/apply-template" => {
                         assert!(body["messages"].is_array());
@@ -348,5 +361,77 @@ async fn tool_free_chat_preserves_history_and_rejects_unsupported_requests_befor
     effort_request.reasoning_effort = Some("high".into());
     assert!(runtime.validate(&effort_request).is_err());
     assert_eq!(fixture.requests.lock().unwrap().len(), received.len());
+    fixture.close().await;
+}
+
+#[tokio::test]
+async fn missing_and_terminal_tasks_never_contact_native_preparation() {
+    let root = Root::new();
+    let fixture = Fixture::new(4, None, false).await;
+    let cfg = config(&root, &fixture, 1000);
+    let store = Store::open(&cfg.db()).unwrap();
+    let backend = LocalBackend(cfg);
+    let missing = uuid::Uuid::new_v4().to_string();
+    assert!(backend
+        .generate_for(&missing, "solver", "private prompt", 16)
+        .await
+        .is_err());
+    for status in ["completed", "cancelled", "failed", "interrupted"] {
+        let task = store.create_task("Stopped task", "fast").unwrap();
+        store.finish_task(&task, status, "").unwrap();
+        assert!(backend
+            .generate_for(&task, "solver", "private prompt", 16)
+            .await
+            .is_err());
+        assert!(!store.task(&task).unwrap()["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|event| event["kind"] == "input_token_admission"));
+    }
+    assert!(fixture.requests.lock().unwrap().is_empty());
+    fixture.close().await;
+}
+
+#[tokio::test]
+async fn task_stopped_during_preparation_cannot_obtain_a_completion_reservation() {
+    let root = Root::new();
+    let mut cfg = Config {
+        home: root.0.clone(),
+        ..Config::default()
+    };
+    let store = Store::open(&cfg.db()).unwrap();
+    let task = store.create_task("Cancellation race", "fast").unwrap();
+    let db_path = cfg.db();
+    let task_to_stop = task.clone();
+    let fixture = Fixture::with_hook(
+        4,
+        None,
+        false,
+        Some(Box::new(move |path| {
+            if path == "/tokenize" {
+                rusqlite::Connection::open(&db_path)
+                    .unwrap()
+                    .execute(
+                        "UPDATE tasks SET status='cancelled' WHERE id=?1",
+                        [&task_to_stop],
+                    )
+                    .unwrap();
+            }
+        })),
+    )
+    .await;
+    cfg = config(&root, &fixture, 1000);
+    assert!(LocalBackend(cfg)
+        .generate_for(&task, "solver", "original prompt", 16)
+        .await
+        .is_err());
+    assert_eq!(fixture.requests.lock().unwrap().len(), 2);
+    assert_eq!(fixture.completion_count(), 0);
+    assert!(!store.task(&task).unwrap()["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|event| event["kind"] == "input_token_admission"));
     fixture.close().await;
 }

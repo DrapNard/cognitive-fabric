@@ -132,6 +132,7 @@ pub(crate) async fn generate_with_finish(
 
     let started = Instant::now();
     let deadline = started + Duration::from_secs(cfg.timeout_seconds);
+    validate_task_before_preparation(cfg, task, deadline)?;
     let api = canonical_v1_base(&cfg.api_base)?;
     let client = reqwest::Client::builder()
         .no_proxy()
@@ -388,6 +389,63 @@ struct AdmissionEvent {
     event_sha256: String,
 }
 
+// Preparation can expose the full prompt and consume provider work. Refuse
+// stale task identities before contacting either native preparation endpoint.
+// This read is advisory: record_admission rechecks status under its write lock.
+fn validate_task_before_preparation(cfg: &Config, task: &str, deadline: Instant) -> Result<()> {
+    let db = open_admission_database(cfg, deadline, false)?;
+    let schema: i64 = db.pragma_query_value(None, "user_version", |row| row.get(0))?;
+    if schema != crate::store::CURRENT_SCHEMA_VERSION {
+        bail!("Token admission requires the current database schema")
+    }
+    let status: Option<String> = db
+        .query_row("SELECT status FROM tasks WHERE id=?1", [task], |row| {
+            row.get(0)
+        })
+        .optional()?;
+    if status.as_deref() != Some("running") {
+        bail!("Token preparation requires an existing running task")
+    }
+    if Instant::now() >= deadline {
+        bail!("Token preparation deadline exhausted during task inspection")
+    }
+    Ok(())
+}
+
+fn open_admission_database(
+    cfg: &Config,
+    deadline: Instant,
+    writable: bool,
+) -> Result<rusqlite::Connection> {
+    if Instant::now() >= deadline {
+        bail!("Token admission deadline exhausted before database open")
+    }
+    let db_path = cfg.db();
+    let metadata = std::fs::symlink_metadata(&db_path)?;
+    if !metadata.is_file()
+        || metadata.file_type().is_symlink()
+        || metadata.len() > cfg.max_database_bytes
+    {
+        bail!("Token-admission database is not a bounded regular file")
+    }
+    let access = if writable {
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE
+    } else {
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY
+    };
+    let db = rusqlite::Connection::open_with_flags(
+        &db_path,
+        access | rusqlite::OpenFlags::SQLITE_OPEN_NOFOLLOW,
+    )?;
+    let remaining = deadline.saturating_duration_since(Instant::now());
+    if remaining.is_zero() {
+        bail!("Token admission deadline exhausted while opening database")
+    }
+    db.busy_timeout(remaining.min(Duration::from_millis(250)))?;
+    db.progress_handler(1000, Some(move || Instant::now() >= deadline));
+    Ok(db)
+}
+
 struct Reservation<'a> {
     cfg: &'a Config,
     task: &'a str,
@@ -412,37 +470,16 @@ fn record_admission(reservation: Reservation<'_>) -> Result<u64> {
         ids,
         deadline,
     } = reservation;
-    if Instant::now() >= deadline {
-        bail!("Token admission deadline exhausted before database open")
-    }
-    let db_path = cfg.db();
-    let maximum_bytes = cfg.max_database_bytes;
     let api_base = api.as_str().trim_end_matches('/').to_owned();
     let model = model.to_owned();
     let ids_sha256 = hex::encode(Sha256::digest(serde_json::to_vec(ids)?));
     let task = task.to_owned();
-    let metadata = std::fs::symlink_metadata(&db_path)?;
-    if !metadata.is_file() || metadata.file_type().is_symlink() || metadata.len() > maximum_bytes {
-        bail!("Token-admission database is not a bounded regular file")
-    }
-    if Instant::now() >= deadline {
-        bail!("Token admission deadline exhausted before database open")
-    }
-    let mut db = rusqlite::Connection::open_with_flags(
-        &db_path,
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE | rusqlite::OpenFlags::SQLITE_OPEN_NOFOLLOW,
-    )?;
-    let remaining = deadline.saturating_duration_since(Instant::now());
-    if remaining.is_zero() {
-        bail!("Token admission deadline exhausted while opening database")
-    }
-    db.busy_timeout(remaining.min(Duration::from_millis(250)))?;
-    db.progress_handler(1000, Some(move || Instant::now() >= deadline));
+    let mut db = open_admission_database(cfg, deadline, true)?;
     let result = (|| -> Result<u64> {
         if Instant::now() >= deadline {
             bail!("Token admission deadline exhausted after database open")
         }
-        crate::storage::configure(&db, maximum_bytes)?;
+        crate::storage::configure(&db, cfg.max_database_bytes)?;
         db.pragma_update(None, "foreign_keys", "ON")?;
         let schema: i64 = db.pragma_query_value(None, "user_version", |row| row.get(0))?;
         if schema != crate::store::CURRENT_SCHEMA_VERSION {
