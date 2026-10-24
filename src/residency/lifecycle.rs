@@ -685,7 +685,7 @@ async fn run_internal(
                     v["state"] == "active"
                         && v["receipt"]["model_key"] == *model
                         && v["receipt"]["context_length"] == ensure.context_length
-                        && ensure.offload_kv_cache_to_gpu.map_or(true, |expected| {
+                        && ensure.offload_kv_cache_to_gpu.is_none_or(|expected| {
                             v["receipt"]["offload_kv_cache_to_gpu"] == expected
                         })
                 })

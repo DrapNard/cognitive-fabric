@@ -348,9 +348,9 @@ fn build(base: &str, request: &Request, models: &[Model], created_unix: u64) -> 
             .iter()
             .filter(|i| {
                 i.config.context_length == u64::from(ensure.context_length)
-                    && ensure.offload_kv_cache_to_gpu.map_or(true, |expected| {
-                        i.config.offload_kv_cache_to_gpu == Some(expected)
-                    })
+                    && ensure
+                        .offload_kv_cache_to_gpu
+                        .is_none_or(|expected| i.config.offload_kv_cache_to_gpu == Some(expected))
             })
             .min_by(|a, b| a.id.cmp(&b.id))
         {
@@ -569,7 +569,7 @@ pub async fn apply(
                     })?;
                 if !model.loaded_instances.iter().any(|instance| {
                     instance.config.context_length == u64::from(ensure.context_length)
-                        && ensure.offload_kv_cache_to_gpu.map_or(true, |expected| {
+                        && ensure.offload_kv_cache_to_gpu.is_none_or(|expected| {
                             instance.config.offload_kv_cache_to_gpu == Some(expected)
                         })
                 }) {

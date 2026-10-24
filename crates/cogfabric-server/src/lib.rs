@@ -385,7 +385,7 @@ async fn chat(State(server): State<Server>, headers: HeaderMap, bytes: Bytes) ->
             }
             _ => error(
                 StatusCode::BAD_GATEWAY,
-                "Core inference did not produce a valid completion",
+                "Core inference did not produce a valid completion; check provider context length, model availability and operator limits",
             ),
         };
     }
@@ -452,7 +452,7 @@ async fn chat(State(server): State<Server>, headers: HeaderMap, bytes: Bytes) ->
                     }
                 }
                 _ => {
-                    let _=tx.send(json!({"error":{"message":"Core inference did not produce a valid completion","type":"server_error"}}).to_string()).await;
+                    let _=tx.send(json!({"error":{"message":"Core inference did not produce a valid completion; check provider context length, model availability and operator limits","type":"server_error"}}).to_string()).await;
                 }
             }
             let _ = tx.send("[DONE]".into()).await;

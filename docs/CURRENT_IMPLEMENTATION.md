@@ -1,5 +1,41 @@
 # Current Rust implementation
 
+## OpenCode startup and real-client coverage — 2026-10-24
+
+**Implemented; compatibility verified within the stated scope.** The local
+provider configuration incorrectly used a credential value in OpenCode's `env`
+list; the local file now references `COGFABRIC_SERVER_API_KEY`. Local OpenCode
+config files are ignored by Git and `opencode.example.json` contains no secrets.
+After reboot, neither API service was running. LM Studio was restarted on
+loopback only; the helper starts/reuses an authenticated Cognitive Fabric API.
+
+`scripts/opencode-local.sh` (installed as `cogfabric-opencode`) validates the
+provider, saved backend/ceilings and upstream discovery, creates an ephemeral key
+for its own service, passes the key to OpenCode and cleans up only that owned
+service. Configurations and model weights are not automatically rewritten.
+Private logs support diagnosis. See [OpenCode startup](OPENCODE.md).
+
+The installed OpenCode **v2.0.32** completed **read → edit → read** with the real
+local Qwen3-8B model in the isolated permission-limited smoke fixture
+(`/tmp/cogfabric-opencode-smoke.GUS5Vt`). The new explicit opt-in regression
+`crates/cogfabric-server/tests/opencode_client.rs` also passes against the real
+OpenCode executable with a deterministic in-process backend. All **10 HTTP
+compatibility regressions** pass. This proves the tested tool/stream/history path,
+not general model quality or compatibility with every agent client.
+
+A normal repository session additionally exposed a provider-context mismatch:
+Qwen was actually loaded with 4096 context while OpenCode declared 32768. Model
+advertisement alone is insufficient. The launcher now checks provider-reported
+loaded context when native inventory is available and refuses a smaller value.
+Unknown native inventory is reported explicitly for other providers. After explicit
+operator approval, the same Qwen model was reloaded with 32768 context, one parallel
+slot and partial GPU offload (automatic placement failed). The normal repository
+OpenCode session then returned READY and successfully executed a Cargo.toml read
+and answered with the correct package name. Ten HTTP tests and strict server
+Clippy pass; GPU-option map simplifications fix warnings exposed by that check.
+No general release-readiness or performance claim follows.
+
+
 ## Source setup and standalone chat — 2026-10-24
 
 **Implemented; live installation/chat verification deferred.** `scripts/setup.sh`

@@ -5,6 +5,20 @@ OpenCode. It is a separate workspace crate built on the `cogfabric` library.
 The core does not depend on Axum or the HTTP server. The existing CLI and typed
 Unix socket service continue to work independently.
 
+## OpenCode after a restart
+
+Use the [OpenCode startup guide](OPENCODE.md) and `cogfabric-opencode` (installed
+by the source setup script), or `bash scripts/opencode-local.sh` from a checkout.
+The helper validates the provider and configured upstream, creates a fresh key
+for its own local API process and passes that same key to OpenCode. It shuts down
+only the API process it started. Start your model provider separately first.
+
+In OpenCode's `env` array use the literal variable **name**
+`"COGFABRIC_SERVER_API_KEY"`, never an actual key value. A key exported in a prior
+terminal is not retained after a reboot. Use `cogfabric-agent` for tool workflows;
+collective aliases do not accept client tool conversations. See the checked-in
+[credential-free example](../opencode.example.json).
+
 ## Start the server
 
 Install the optional server separately from the core CLI:
@@ -121,7 +135,7 @@ live upstream token delivery. Stream errors contain a sanitized error object.
 Dropping either a streaming response or a pending non-streaming request cancels
 local inference; an external model server may continue work after disconnect.
 Responses API, embeddings, images, audio, remote HTTP access and multi-tenant
-isolation are not implemented. Compatibility is tested with OpenCode v2.0.26,
+isolation are not implemented. Compatibility is tested with OpenCode v2.0.32 (read/edit/read, deterministic and local Qwen backend),
 not asserted for every OpenAI client.
 
 ### Reviewed collective workflow policy

@@ -9,3 +9,7 @@
 *.sqlite3-shm
 *.sqlite3-wal
 *.sock
+
+# Local agent client settings may contain operator credentials or private endpoints.
+/opencode.json
+/opencode.jsonc

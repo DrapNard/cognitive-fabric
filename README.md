@@ -58,7 +58,9 @@ one-line form, see that guide for the `curl | sh` command.
 Use `cogfabric-chat` for text-only conversation while OpenCode or another agentic
 client uses the same local server. It keeps bounded multi-turn context and never
 executes tools. See [chat setup and limits](docs/CHAT.md) and
-[OpenCode configuration](docs/HTTP_API.md#opencode-v2-configuration).
+[OpenCode configuration](docs/HTTP_API.md#opencode-v2-configuration). After a reboot, start your
+model provider, then run `cogfabric-opencode`; see the
+[startup and troubleshooting guide](docs/OPENCODE.md).
 
 ### Build and try the demo backend
 

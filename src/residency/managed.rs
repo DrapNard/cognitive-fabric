@@ -215,7 +215,7 @@ fn model_instance<'a>(models: &'a [Model], receipt: &Receipt) -> Option<&'a Inst
         })
         .filter(|instance| {
             instance.config.context_length == u64::from(receipt.context_length)
-                && receipt.offload_kv_cache_to_gpu.map_or(true, |expected| {
+                && receipt.offload_kv_cache_to_gpu.is_none_or(|expected| {
                     instance.config.offload_kv_cache_to_gpu == Some(expected)
                 })
         })

@@ -7,6 +7,17 @@ instructions, and the request to implement all remaining Jev+/Jev-R code. It doe
 not replace the architecture. Historical entries in `IMPLEMENTATION_MATRIX.md`
 and `CURRENT_IMPLEMENTATION.md` describe earlier snapshots and can be superseded.
 
+## OpenCode compatibility follow-up — 2026-10-24
+
+Focused integration verification resumed at the operator's explicit request to
+fix OpenCode. OpenCode v2.0.32 completed a local-Qwen read/edit/read smoke and a
+deterministic real-client regression. Ten HTTP regressions and strict server
+Clippy pass. After operator-approved Qwen reload from 4096 to 32768 context, a
+normal project session executed a real read tool and returned the correct package
+name; the startup helper exited cleanly and reaped its own server. This updates
+the earlier untested OpenCode startup status only. It does not prove broad coding
+quality, physical quotas, isolation or full release readiness.
+
 ## Installation and chat additions — 2026-10-24
 
 A source installer with curl instructions and a separate bounded, tool-free

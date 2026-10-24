@@ -62,7 +62,10 @@ sh setup.sh --ref COMMIT_ID --prefix "$HOME/.local"
 The installer accepts `--prefix PATH`, `--ref BRANCH_OR_COMMIT`, `--replace`,
 and `--nvml-gpu`. The default prefix is `$HOME/.local`; add its `bin` directory
 to `PATH` if needed. Existing `cogfabric`, `cogfabric-chat`, or
-`cogfabric-server` binaries in that prefix cause the script to stop. Pass
+`cogfabric-server` binaries in that prefix cause the script to stop. The installer also adds `cogfabric-opencode`,
+a startup helper for the local API and OpenCode (requires Bash, jq, curl, GNU
+timeout and OpenSSL at runtime; OpenCode is installed separately). See
+[OpenCode startup](OPENCODE.md). Pass
 `--replace` only when you intend to replace them. The build is locked by
 `Cargo.lock`; optional features such as
 `wasm-experts` remain disabled. `--nvml-gpu` enables NVML device observation in

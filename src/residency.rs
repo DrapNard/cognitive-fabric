@@ -344,9 +344,8 @@ pub async fn inspect_operation(
             .flat_map(|m| &m.loaded_instances)
             .filter(|i| {
                 i.config.context_length == u64::from(*context_length)
-                    && offload_kv_cache_to_gpu.map_or(true, |expected| {
-                        i.config.offload_kv_cache_to_gpu == Some(expected)
-                    })
+                    && offload_kv_cache_to_gpu
+                        .is_none_or(|expected| i.config.offload_kv_cache_to_gpu == Some(expected))
             })
             .map(|i| i.id.as_str())
             .collect(),
@@ -534,7 +533,7 @@ async fn mutate_owned(
         let after = status(base, authenticate).await?;
         let observed = parse(&serde_json::to_vec(&after)?)?;
         let confirmed = match &action {
-            Mutation::Load { model, context_length, offload_kv_cache_to_gpu } => observed.iter().any(|m| &m.key == model && m.loaded_instances.iter().any(|i| i.id == instance && i.config.context_length == u64::from(*context_length) && offload_kv_cache_to_gpu.map_or(true, |expected| i.config.offload_kv_cache_to_gpu == Some(expected)))),
+            Mutation::Load { model, context_length, offload_kv_cache_to_gpu } => observed.iter().any(|m| &m.key == model && m.loaded_instances.iter().any(|i| i.id == instance && i.config.context_length == u64::from(*context_length) && offload_kv_cache_to_gpu.is_none_or(|expected| i.config.offload_kv_cache_to_gpu == Some(expected)))),
             Mutation::Unload { instance_id } => !observed.iter().any(|m| m.loaded_instances.iter().any(|i| &i.id == instance_id)),
         };
         if !confirmed { bail!("Native residency change was not confirmed by fresh inventory") }

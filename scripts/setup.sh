@@ -14,6 +14,7 @@ usage() {
 Usage: setup.sh [--prefix PATH] [--ref GIT_REF_OR_COMMIT] [--replace] [--nvml-gpu]
 
 Build and install cogfabric, cogfabric-chat, and cogfabric-server from source.
+Also install the cogfabric-opencode startup helper.
 The default prefix is $HOME/.local and the default source ref is develop/v1.0.
 --replace allows replacing existing binaries with the same package version.
 --nvml-gpu builds the core CLI with the optional NVML observation feature.
@@ -88,7 +89,7 @@ prefix=$(CDPATH= cd "$prefix" && pwd)
 mkdir -p "$prefix/bin"
 
 if [ "$replace" -ne 1 ]; then
-    for binary in cogfabric cogfabric-chat cogfabric-server; do
+    for binary in cogfabric cogfabric-chat cogfabric-server cogfabric-opencode; do
         if [ -e "$prefix/bin/$binary" ] || [ -L "$prefix/bin/$binary" ]; then
             echo "An executable already exists at $prefix/bin/$binary." >&2
             echo 'Re-run with --replace after reviewing the source if you intend to replace it.' >&2
@@ -139,5 +140,9 @@ else
     cargo install --locked --path "$source_dir/crates/cogfabric-server" --root "$prefix"
 fi
 
-printf '\nInstalled binaries:\n  %s\n  %s\n  %s\n' "$prefix/bin/cogfabric" "$prefix/bin/cogfabric-chat" "$prefix/bin/cogfabric-server"
+helper_tmp=$(mktemp "$prefix/bin/.cogfabric-opencode.XXXXXX")
+cp "$source_dir/scripts/opencode-local.sh" "$helper_tmp"
+chmod 755 "$helper_tmp"
+mv -f "$helper_tmp" "$prefix/bin/cogfabric-opencode"
+printf '\nInstalled commands:\n  %s\n  %s\n  %s\n  %s\n' "$prefix/bin/cogfabric" "$prefix/bin/cogfabric-chat" "$prefix/bin/cogfabric-server" "$prefix/bin/cogfabric-opencode"
 echo "Add $prefix/bin to PATH if it is not already present."
