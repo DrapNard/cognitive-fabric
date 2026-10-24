@@ -26,8 +26,8 @@ plan: at most 256 entries, 32 documents, eight path components, 240-byte paths,
 64 KB per document, 512 KB total and five seconds between bounded operations.
 Symlinks, special files, invalid UTF-8, unsafe content and exhausted bounds refuse.
 Output follows the same private/no-overwrite rules as preparation. No network,
-runtime initialization, candidate creation or promotion occurs. Remote discovery
-and independent curation remain unsupported.
+runtime initialization, candidate creation or promotion occurs. Operator-selected remote fetching is available through [source acquisition](SOURCE_ACQUISITION.md);
+remote discovery and independent curation remain unsupported.
 
 ## Prepare reviewed sources
 
@@ -131,3 +131,7 @@ refusal. This does not detect paraphrases, semantic leakage, factual errors,
 poisoning or malicious instructions. All content remains untrusted retrieval data.
 Automatic internet discovery and independently proven source quality remain open
 requirements; no new model filesystem/network capability is introduced.
+
+Remote hash-pinned text can first be fetched with `candidate fetch-sources`; see
+[source acquisition](SOURCE_ACQUISITION.md). Its generated draft still requires
+explicit review and independent split assignment before this preparation step.

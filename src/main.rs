@@ -635,6 +635,15 @@ enum CandidateAction {
     Provenance {
         id: String,
     },
+    /// Fetch hash-pinned HTTPS text sources into an unreviewed local bundle.
+    FetchSources {
+        #[arg(long)]
+        manifest: PathBuf,
+        #[arg(long)]
+        sha256: String,
+        #[arg(long)]
+        output: PathBuf,
+    },
     DiscoverSources {
         #[arg(long)]
         root: PathBuf,
@@ -776,6 +785,18 @@ async fn run_cli() -> Result<()> {
         if cli.typed_module_worker {
             bail!("Set typed_module_worker inside the approved native lifecycle policy")
         }
+    }
+    if let Command::Candidate {
+        action:
+            CandidateAction::FetchSources {
+                manifest,
+                sha256,
+                output: directory,
+            },
+    } = &cli.command
+    {
+        let acquired = cogfabric::evolution::acquisition::acquire(manifest, sha256).await?;
+        return output(&acquired.write(directory)?, cli.json);
     }
     if let Command::Candidate {
         action:
@@ -2168,6 +2189,9 @@ async fn run_cli() -> Result<()> {
             )?)?,
             CandidateAction::Provenance { .. } => {
                 bail!("Provenance inspection must precede runtime initialization")
+            }
+            CandidateAction::FetchSources { .. } => {
+                bail!("Source acquisition must run before runtime initialization")
             }
             CandidateAction::DiscoverSources { .. } => {
                 bail!("Source discovery must precede runtime initialization")

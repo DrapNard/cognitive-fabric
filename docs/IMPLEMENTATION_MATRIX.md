@@ -3,6 +3,29 @@
 
 
 
+
+## Operator-selected remote source acquisition — 2026-10-24
+
+**Implemented bounded acquisition; remote discovery and independent curation
+remain Partial.** Architecture section 8: `src/evolution/acquisition.rs` fetches
+approved hash-pinned HTTPS text into a private unreviewed source bundle. Entire
+manifest preflight, public-only DNS validation/pinning, no proxies/redirects/auth,
+strict framing, exact body hashes and document/aggregate/deadline limits govern
+network work. At most four independent resolver threads retain permits through
+libc completion; timeouts cannot trigger a later HTTP request. The original plan,
+reviewer assertion, hashes and labels remain in private provenance files.
+
+The human-only `candidate fetch-sources` command runs before runtime initialization.
+Generated preparation drafts have no review or held-out assertions. Existing
+preparation, quarantine, independent evaluation, promotion and rollback gates
+remain required. No model network capability or new active weights are introduced.
+Focused URL/DNS/framing/pin, private HTTP, bundle/preparation and CLI-refusal
+checks cover supported mechanics; public HTTPS acquisition and independent
+licensing/poisoning resistance remain unverified. Each source uses a separate
+bounded resolution/client; this adds network/TLS work only when the operator
+invokes acquisition. See [source acquisition](SOURCE_ACQUISITION.md).
+
+
 ## Runtime WAL growth boundary — 2026-10-24
 
 **Implemented for runtime file connections.** Architecture sections 7, 9 and 10:

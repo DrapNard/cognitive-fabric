@@ -144,3 +144,6 @@ Native lifecycle policy and uncertainty handling: [operator guide](docs/NATIVE_L
 
 Optional [exact input-token admission](docs/INPUT_TOKEN_ADMISSION.md) supports
 llama.cpp native text inference with persistent per-task input allowances.
+
+Operator-approved [remote source acquisition](docs/SOURCE_ACQUISITION.md) fetches
+hash-pinned HTTPS text into unreviewed local preparation bundles.

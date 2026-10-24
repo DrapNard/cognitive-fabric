@@ -10,6 +10,29 @@ and `CURRENT_IMPLEMENTATION.md` describe earlier snapshots and can be superseded
 
 
 
+
+## Operator-selected remote source acquisition — 2026-10-24
+
+**Implemented bounded acquisition; remote discovery and independent curation
+remain Partial.** Architecture section 8: `src/evolution/acquisition.rs` fetches
+approved hash-pinned HTTPS text into a private unreviewed source bundle. Entire
+manifest preflight, public-only DNS validation/pinning, no proxies/redirects/auth,
+strict framing, exact body hashes and document/aggregate/deadline limits govern
+network work. At most four independent resolver threads retain permits through
+libc completion; timeouts cannot trigger a later HTTP request. The original plan,
+reviewer assertion, hashes and labels remain in private provenance files.
+
+The human-only `candidate fetch-sources` command runs before runtime initialization.
+Generated preparation drafts have no review or held-out assertions. Existing
+preparation, quarantine, independent evaluation, promotion and rollback gates
+remain required. No model network capability or new active weights are introduced.
+Focused URL/DNS/framing/pin, private HTTP, bundle/preparation and CLI-refusal
+checks cover supported mechanics; public HTTPS acquisition and independent
+licensing/poisoning resistance remain unverified. Each source uses a separate
+bounded resolution/client; this adds network/TLS work only when the operator
+invokes acquisition. See [source acquisition](SOURCE_ACQUISITION.md).
+
+
 ## Runtime WAL growth boundary — 2026-10-24
 
 **Implemented for runtime file connections.** Architecture sections 7, 9 and 10:
@@ -200,7 +223,7 @@ instructions explicitly place them beyond proven v1.0 functionality.
 | Persistent task/episodic/semantic/skill/model/evaluation stores (§7) | `src/{store,memory,models,evaluation,storage,restore}.rs`, schema-9 migration and rollback tests | Implemented SQLite-backed logical stores, FTS retrieval, explicit publication and migrations. The named runtime VFS now bounds WAL growth; general external/neural artifact portability and workspace-wide physical filesystem quotas remain Partial. |
 | Crash continuation and unknown outcomes (§7, §10) | `src/recovery/`, native restoration and typed reconstruction; resume/parallel/receipt/refusal tests | Implemented supported original checkpoint forms with retained budgets, exact callbacks or fixed source-bound workers. Unknown calls are refused, not replayed; arbitrary crash-phase resumption remains unsupported. |
 | Evolution A: reusable memory (§8) | `src/memory.rs`, `src/gaps.rs`; publication/revocation, bounded retrieval and provenance tests | Implemented explicit verified memory publication and gap evidence. Independent transfer of learned strategies remains unproven. |
-| Evolution B: RAG candidates (§8) | `src/evolution.rs`, `src/evaluation.rs`, `src/rag_archive.rs`; quarantine, deduplication, held-out, promotion and rollback tests | Implemented operator-selected candidate pipeline. Reviewed local source normalization, deduplication and split preparation now exist in `src/evolution/preparation.rs` with `tests/source_preparation.rs`. Bounded local inventory drafts now exist in `src/evolution/discovery.rs` with `tests/source_discovery.rs`, and `src/evolution/prepared.rs` atomically binds validated preparation provenance to inactive candidates with `tests/prepared_candidate.rs`; remote discovery and independently established dataset quality/poisoning resistance remain Partial. |
+| Evolution B: RAG candidates (§8) | `src/evolution.rs`, `src/evaluation.rs`, `src/rag_archive.rs`; quarantine, deduplication, held-out, promotion and rollback tests | Implemented operator-selected candidate pipeline. Reviewed local source normalization, deduplication and split preparation now exist in `src/evolution/preparation.rs` with `tests/source_preparation.rs`. Bounded local inventory drafts now exist in `src/evolution/discovery.rs` with `tests/source_discovery.rs`, and `src/evolution/prepared.rs` atomically binds validated preparation provenance to inactive candidates with `tests/prepared_candidate.rs`; Operator-selected HTTPS acquisition is implemented in `src/evolution/acquisition.rs`; remote discovery and independently established dataset quality/poisoning resistance remain Partial. |
 | Evolution C: offline LoRA (§8) | `training/train_lora.py`, inactive candidate import, deterministic neural-promotion denial | Experimental, as allowed by owner instructions. Actual isolated training, base-model provenance, independent neural evaluation and validated adapter promotion are not proven. |
 | Evolution D/new trained Jev networks (§5, §8, §14) | No trained Jev network or self-rebuilding active weights are claimed | Not implemented: explicit future neural research. RAG tests must not be used to promote neural weights. |
 | Independent Security Kernel (§10) | `src/security.rs`, task grants, protocol validation, worker cleanup, candidate gates, `src/security_evaluation/corpus.rs`; denial/tampering/cancellation tests | Implemented deny-default supported capabilities and local boundaries. Same-image processes and trusted Rust callbacks are not a hardened untrusted-code sandbox. |

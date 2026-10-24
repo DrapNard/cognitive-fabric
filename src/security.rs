@@ -132,6 +132,7 @@ pub fn authorize(principal: &str, capability: &str) -> Result<()> {
                 | "memory.search"
                 | "candidate.create"
                 | "candidate.prepare"
+                | "candidate.acquire"
                 | "candidate.evaluate"
                 | "evaluation.security"
                 | "evaluation.retry"
@@ -230,6 +231,14 @@ mod tests {
     #[test]
     fn allow_knowledge_search() {
         assert!(authorize("jev-r", "knowledge.search").is_ok());
+    }
+
+    #[test]
+    fn remote_acquisition_is_operator_only() {
+        assert!(authorize("human-cli", "candidate.acquire").is_ok());
+        for actor in ["jev-plus", "jev-r", "interface", "rust.s1", "unknown"] {
+            assert!(authorize(actor, "candidate.acquire").is_err());
+        }
     }
 
     #[test]

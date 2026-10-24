@@ -1322,3 +1322,18 @@ third-party VFS implementations. SQLite's default VFS is unchanged. A same-owner
 external process can bypass this named adapter. Total workspace/physical storage,
 SHM and artifact limits still need a host quota; no claim of hostile-owner disk
 isolation follows. See [storage limits](STORAGE.md).
+
+## Operator-only remote text acquisition
+
+Only `candidate.acquire` on the human CLI can fetch approved source plans. Entire
+strict manifest/URL preflight precedes DNS, all bounded answers must be public,
+and HTTP is pinned to those addresses with TLS hostname verification. Redirects,
+proxies, credentials, query/fragment inputs and compressed/ambiguous responses are
+refused. Hash pins and byte/deadline limits precede a private unpublished bundle.
+Four resolver permits remain owned until libc resolution ends; timeout cannot
+dispatch HTTP or block Tokio shutdown through its blocking pool. Host filesystem
+stalls and OS resolver termination remain outside the logical timer; separate
+processes require host quotas. External content retains data status; no source
+instruction can confer capabilities, review assertions, evaluation or promotion.
+License/reviewer labels are operator claims, not independent attestation. See
+[source acquisition](SOURCE_ACQUISITION.md).
