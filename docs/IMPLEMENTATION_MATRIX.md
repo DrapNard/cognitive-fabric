@@ -2,7 +2,7 @@
 
 ## OpenCode cache placement after live VRAM failure — 2026-10-25
 
-**Implemented; live loading pending validation.** Architecture sections 6 and 9:
+**Implemented; live CPU-cache loading verified.** Architecture sections 6 and 9:
 new launcher loads request CPU KV caching through the existing Rust native adapter,
 which validates echoed configuration and fresh inventory before issuing a receipt.
 `COGFABRIC_OPENCODE_KV_GPU=true|false` selects placement (default false); this does
@@ -14,7 +14,13 @@ stop acknowledgement/resolution; no automatic retry or history reset was added.
 All ten launcher scenarios passed, including explicit GPU selection and invalid
 settings. Shell syntax, formatting, all-target compilation and strict all-target
 Clippy passed. Full all-target/reflection tests were not run, following the
-operator's restriction. Live retry awaits explicit stop acknowledgement.
+operator's restriction. After explicit operator stop acknowledgement, the original
+failed task was resolved without changing its unknown outcome. One corrected live
+load succeeded in 17.087 provider-reported seconds; echoed configuration and fresh
+inventory confirmed Qwen3-8B at 32768 tokens with CPU KV caching. The installed
+launcher then passed live discovery/context checks, started its authenticated
+HTTP server, reached a non-interactive substitute client, and cleaned up its own
+server. This checks startup, not interactive OpenCode inference or model quality.
 
 
 ## OpenCode startup model activation — 2026-10-25
