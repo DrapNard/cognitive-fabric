@@ -5561,3 +5561,60 @@ proof, native sandbox or residency operation is introduced.
   observations do not authorize tools, verify results or increase budgets.
 - `docs/PROVIDER_METRICS.md`: supported fields and measurement limitations.
 - Physical CPU/GPU/energy attribution and real timing accuracy remain unproven.
+
+## Client-owned MCP, skills and web workflow — 2026-10-25
+
+**Implemented:** `cogfabric-agent` preserves client function descriptions/schemas,
+correlated tool results/errors, client skill text and same-model reasoning effort.
+The shared native/FlatBuffers catalog limit is 128, with existing aggregate byte,
+frame and output-proposal limits retained. `agent_client_capabilities` audits each
+turn's names and description/schema hashes before inference; audit failure prevents
+inference. Catalog metadata grants no kernel rights and client results remain
+unverified. A removed historical tool may retain its correlated result; new calls
+must target the current catalog.
+
+The agentic client owns MCP, skill loading, web connections, credentials,
+permissions and execution. OpenCode is one interoperability fixture, not a
+required dependency or a special core code path. No native MCP client/server is
+introduced. The shared API is documented in `docs/AGENT_CLIENTS.md`. Source: `src/agent/{types,
+mod,protocol,local}.rs`; tests: agent validation/IPC/audit tests and opt-in
+`crates/cogfabric-server/tests/opencode_mcp_client.rs`. See `docs/OPENCODE.md`.
+Verification results are recorded below. **Partial:** broader
+client APIs and multimodal results; full Jev-R orchestration through this endpoint
+is not implemented. Synthetic MCP fixtures establish transport behavior, not real
+REA/web capability or model quality.
+
+Verification for this change:
+
+- `cargo fmt --all -- --check`: passed.
+- `cargo +1.99.0 check --locked --workspace --all-targets`: passed.
+- `cargo +1.99.0 clippy --locked --workspace --all-targets -- -D warnings`: passed.
+- `cargo +1.99.0 test --locked -p cogfabric agent:: --lib`: 30 passed.
+- `cargo +1.99.0 test --locked -p cogfabric-server --test http --test native_worker`:
+  11 HTTP and 7 managed-worker tests passed.
+- Socket-dependent tests required execution outside the restricted socket sandbox;
+  the initial restricted run was not treated as a passing result. Two new fixture
+  assertion errors were corrected before the successful rerun.
+- The full all-target test suite was not run, preserving the operator's request to
+  stop reflection tests. No live-model quality/performance benchmark was run.
+- FlatBuffers schemas/generated bindings were unchanged. Typed IPC count,
+  malformed-message and socket regressions passed; the exact generator pairing
+  was not revalidated because `flatc` is absent in this environment (Rust runtime
+  remains pinned to 25.12.19). Migration and rollback suites were not rerun.
+
+Security/performance: catalogs remain bounded; expanding the count can increase
+model context use, while audit hashing adds work bounded by existing request
+limits. This does not broaden kernel capabilities or establish verified success.
+
+Installed-client verification:
+`cargo +1.99.0 test --locked -p cogfabric-server --test opencode_mcp_client -- --ignored --nocapture`
+passed (1 test, installed OpenCode v2.0.32, 2.02 seconds). OpenCode loaded the
+project skill with its actual `id` parameter, advertised `skill` and `execute`,
+discovered the fixture MCP functions through Code Mode `search`, invoked both
+synthetic REA/web tools and returned the results to CGF. Earlier fixture/config
+probes failed and are not counted as passing evidence; direct MCP function
+exposure with `codemode:false` was not established. This verifies a client-owned
+Code Mode workflow, not live REA/web access or arbitrary client compatibility.
+The total focused successful regression count is 49. Full Jev-R orchestration
+through the model endpoint and additional client protocol adapters remain the
+next separate engineering milestones.

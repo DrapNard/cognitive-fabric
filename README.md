@@ -86,7 +86,7 @@ cargo run -- configure-local \
 cargo run -- ask 'Explain Rust ownership briefly.' --mode standard
 ```
 
-For OpenAI-compatible clients, see the [HTTP API and client setup](docs/HTTP_API.md). For credentials, managed workers, socket service use, and complete installation workflows, follow [configuration](docs/CONFIGURATION.md), [authentication](docs/AUTHENTICATION.md), [workers](docs/WORKERS.md), and [installation validation](docs/INSTALLATION_VALIDATION.md).
+For OpenAI-compatible agentic clients, see [client-independent integration](docs/AGENT_CLIENTS.md) and the [HTTP API](docs/HTTP_API.md). For credentials, managed workers, socket service use, and complete installation workflows, follow [configuration](docs/CONFIGURATION.md), [authentication](docs/AUTHENTICATION.md), [workers](docs/WORKERS.md), and [installation validation](docs/INSTALLATION_VALIDATION.md).
 
 ## CPU and GPU execution
 

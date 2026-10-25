@@ -5,6 +5,14 @@ OpenCode. It is a separate workspace crate built on the `cogfabric` library.
 The core does not depend on Axum or the HTTP server. The existing CLI and typed
 Unix socket service continue to work independently.
 
+## Client-independent integration
+
+The implementation is shared by all clients using the supported text/function
+Chat Completions protocol. There is no OpenCode-specific routing in the core.
+See [agent client integration](AGENT_CLIENTS.md) for MCP, skills, web tools,
+conversation correlation, permissions and compatibility boundaries. OpenCode is
+one tested client, not a required intermediary for other applications.
+
 ## OpenCode after a restart
 
 Use the [OpenCode startup guide](OPENCODE.md) and `cogfabric-opencode` (installed
@@ -217,7 +225,7 @@ typed Rust values. Internal IPC remains versioned FlatBuffers, not HTTP JSON.
 
 Native turns are FAST, one solver call and one cycle. Input bytes, reserved output,
 wall time and tool-proposal counts obey existing operator configuration. Native
-requests allow at most 256 messages and 64 definitions; returned proposals are
+requests allow at most 256 messages and 128 definitions; returned proposals are
 capped at 16 and `max_tool_calls`, with one when parallel calls are disabled.
 Function arguments are limited to 32,000 bytes and must decode to a JSON object.
 Provider HTTP responses are limited to 256 KiB, without redirects, proxies or
@@ -226,7 +234,7 @@ lifetime. Each client turn is a separate task; client session-wide step limits
 remain the client's responsibility.
 
 Native tasks use the existing global SQLite task admission and runtime leases.
-`agent_admission`, policy and `agent_result` events record request/content hashes,
+`agent_client_capabilities`, `agent_admission`, policy and `agent_result` events record request/content hashes,
 reserved resources, actual reported usage, model identity and registration
 snapshot (with weight identity explicitly unverified), elapsed time and
 proposal counts. Raw client conversations, function arguments and output bodies

@@ -215,6 +215,12 @@ impl AgentRuntime {
             let policy = TaskPolicy::agent(&task)?;
             policy.authorize(&task,"jev-r","llm.generate")?;
             self.store.event(&task,"agent_admission","jev-plus",json!({"format_version":1,"request_hash":sha256(&bytes),"prompt_bytes":bytes.len(),"reserved_output_tokens":tokens,"calls":1,"cycles":1,"max_wall_seconds":self.cfg.max_wall_seconds,"model":self.cfg.model,"client_tools_executed":false,"verification":"unverified"}))?;
+            self.store.event(
+                &task,
+                "agent_client_capabilities",
+                "jev-plus",
+                client_capability_audit(&request)?,
+            )?;
             self.store.event(&task,"policy","security-kernel",json!({"actor":"jev-r","capability":"llm.generate","allowed":true}))?;
             if start.elapsed() >= Duration::from_secs(self.cfg.max_wall_seconds) {
                 self.store.finish_task(&task,"exhausted","")?; guard.finished=true;
@@ -267,6 +273,36 @@ impl AgentRuntime {
         result
     }
 }
+
+/// Record only hashes of client supplied descriptions and schemas. The catalog
+/// is advisory model input: the client retains execution and the kernel grants
+/// no tool rights based on these declarations.
+fn client_capability_audit(request: &Turn) -> Result<serde_json::Value> {
+    let functions = request
+        .tools
+        .iter()
+        .map(|tool| {
+            Ok(json!({
+                "name": tool.function.name,
+                "description_sha256": sha256(tool.function.description.as_bytes()),
+                "schema_sha256": sha256(&serde_json::to_vec(&tool.function.parameters)?),
+                "strict": tool.function.strict,
+            }))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let catalog_hash = sha256(&serde_json::to_vec(&functions)?);
+    Ok(json!({
+        "format_version": 1,
+        "catalog_count": functions.len(),
+        "catalog_sha256": catalog_hash,
+        "functions": functions,
+        "catalog_source": "client_supplied_untrusted_metadata",
+        "client_owns_execution": true,
+        "kernel_permissions_granted": false,
+        "client_results_verified": false,
+    }))
+}
+
 pub struct TurnResult {
     pub task_id: String,
     pub completion: Completion,

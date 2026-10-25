@@ -267,7 +267,10 @@ pub fn decode(bytes: &[u8]) -> Result<Packet> {
         let t = r.turn();
         let messages = t.messages();
         let tools = t.tools();
-        if messages.is_empty() || messages.len() > 256 || tools.is_some_and(|v| v.len() > 64) {
+        if messages.is_empty()
+            || messages.len() > 256
+            || tools.is_some_and(|v| v.len() > super::MAX_CLIENT_TOOLS)
+        {
             bail!("Native vector count exceeds limits")
         }
         let messages = messages

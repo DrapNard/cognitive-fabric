@@ -273,6 +273,19 @@ mod duplicate_provider_tests {
                             assert_eq!(request["model"], "same-configured-model");
                             assert_eq!(request["max_tokens"], 128);
                             assert_eq!(request["reasoning_effort"], expected_effort);
+                            assert_eq!(request["tools"][0]["function"]["name"], "rea_inspect");
+                            assert_eq!(
+                                request["tools"][0]["function"]["parameters"]["$defs"]["target"]
+                                    ["type"],
+                                "string"
+                            );
+                            assert_eq!(
+                                request["messages"][0]["content"],
+                                "Client skill instructions"
+                            );
+                            assert_eq!(request["messages"][3]["content"], "{\"isError\":true,\"content\":[{\"type\":\"text\",\"text\":\"Web lookup unavailable\"}]}");
+                            assert_eq!(request["messages"][3]["tool_call_id"], "web_previous");
+                            assert_eq!(request["parallel_tool_calls"], false);
                             break;
                         }
                     }
@@ -296,7 +309,17 @@ mod duplicate_provider_tests {
 
         for per_turn_effort in [Some("high"), None] {
             let turn: Turn = serde_json::from_value(json!({
-                "messages":[{"role":"user","content":"Answer"}],
+                "messages":[
+                    {"role":"system","content":"Client skill instructions"},
+                    {"role":"user","content":"Inspect with REA after checking the web"},
+                    {"role":"assistant","tool_calls":[{"id":"web_previous","type":"function","function":{"name":"removed_web_tool","arguments":"{}"}}]},
+                    {"role":"tool","tool_call_id":"web_previous","content":"{\"isError\":true,\"content\":[{\"type\":\"text\",\"text\":\"Web lookup unavailable\"}]}"}
+                ],
+                "tools":[{"type":"function","function":{
+                    "name":"rea_inspect","description":"Client-owned MCP inspection",
+                    "parameters":{"type":"object","$defs":{"target":{"type":"string"}},"properties":{"target":{"$ref":"#/$defs/target"}}}
+                }}],
+                "parallel_tool_calls":false,
                 "reasoning_effort":per_turn_effort,
             }))
             .unwrap();

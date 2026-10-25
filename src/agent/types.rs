@@ -3,6 +3,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 
+/// Maximum number of client-owned function definitions accepted in one turn.
+/// The catalog is forwarded to the configured model; it grants no kernel rights.
+pub const MAX_CLIENT_TOOLS: usize = 128;
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FunctionCall {
@@ -102,7 +106,7 @@ impl Turn {
     pub fn validate(&self) -> Result<()> {
         if self.messages.is_empty()
             || self.messages.len() > 256
-            || self.tools.len() > 64
+            || self.tools.len() > MAX_CLIENT_TOOLS
             || serde_json::to_vec(self)?.len() > 512 * 1024
             || self
                 .temperature
@@ -361,5 +365,36 @@ mod tool_choice_shape_tests {
             turn.tool_choice = Some(choice);
             assert!(turn.validate().is_err());
         }
+    }
+}
+
+#[cfg(test)]
+mod client_tool_catalog_limits {
+    use super::*;
+
+    fn turn_with_tools(count: usize) -> Turn {
+        let mut turn: Turn = serde_json::from_value(serde_json::json!({
+            "messages": [{"role":"user","content":"Use the available tools"}]
+        }))
+        .unwrap();
+        turn.tools = (0..count)
+            .map(|index| Tool {
+                kind: "function".into(),
+                function: Function {
+                    name: format!("tool_{index}"),
+                    description: "Client supplied capability".into(),
+                    parameters: serde_json::json!({"type":"object"}),
+                    strict: None,
+                },
+            })
+            .collect();
+        turn
+    }
+
+    #[test]
+    fn accepts_the_full_client_tool_catalog_and_rejects_the_next_entry() {
+        assert_eq!(MAX_CLIENT_TOOLS, 128);
+        assert!(turn_with_tools(MAX_CLIENT_TOOLS).validate().is_ok());
+        assert!(turn_with_tools(MAX_CLIENT_TOOLS + 1).validate().is_err());
     }
 }

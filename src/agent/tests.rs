@@ -31,6 +31,27 @@ impl ChatBackend for Fixed {
         Box::pin(async { Ok(completion()) })
     }
 }
+
+struct ContentOnly(AtomicUsize);
+impl ChatBackend for ContentOnly {
+    fn complete<'a>(
+        &'a self,
+        _: &'a Turn,
+        _: usize,
+    ) -> Pin<Box<dyn Future<Output = Result<Completion>> + Send + 'a>> {
+        self.0.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async {
+            Ok(Completion {
+                content: Some("Client-side workflow response".into()),
+                tool_calls: vec![],
+                model: "fixture/v1".into(),
+                finish_reason: "stop".into(),
+                input_tokens: Some(10),
+                output_tokens: Some(5),
+            })
+        })
+    }
+}
 #[tokio::test]
 async fn agent_proposes_without_executing_and_enforces_budget_before_dispatch() {
     let store = Arc::new(Store::in_memory().unwrap());
@@ -73,6 +94,183 @@ async fn agent_proposes_without_executing_and_enforces_budget_before_dispatch() 
         )
         .unwrap(),
         1
+    );
+}
+
+#[tokio::test]
+async fn client_tool_catalog_is_audited_privately_and_can_change_between_turns() {
+    let store = Arc::new(Store::in_memory().unwrap());
+    let backend = Arc::new(ContentOnly(AtomicUsize::new(0)));
+    let runtime =
+        AgentRuntime::with_backend(Config::default(), store.clone(), backend.clone()).unwrap();
+    let mut first = turn();
+    first.tool_choice = None;
+    first.tools[0].function.description = "PRIVATE_DESCRIPTION_SENTINEL".into();
+    first.tools[0].function.parameters = json!({
+        "type":"object",
+        "properties":{"secret_field":{"type":"string"}}
+    });
+    first.tools[0].function.strict = Some(true);
+    let first_result = runtime
+        .run_until(first, std::future::pending())
+        .await
+        .unwrap();
+
+    let mut second = turn();
+    second.tool_choice = None;
+    second.tools.clear();
+    second.tools.push(Tool {
+        kind: "function".into(),
+        function: Function {
+            name: "search_web".into(),
+            description: "PRIVATE_SECOND_DESCRIPTION".into(),
+            parameters: json!({"type":"object","properties":{"PRIVATE_QUERY_PROPERTY_SENTINEL":{"type":"string"}}}),
+            strict: None,
+        },
+    });
+    second.tools.push(Tool {
+        kind: "function".into(),
+        function: Function {
+            name: "fetch_page".into(),
+            description: "PRIVATE_FETCH_DESCRIPTION".into(),
+            parameters: json!({"type":"object","properties":{"PRIVATE_URL_PROPERTY_SENTINEL":{"type":"string"}}}),
+            strict: None,
+        },
+    });
+    second.messages = vec![
+        Message {
+            role: "user".into(),
+            content: Some("Previous client turn".into()),
+            tool_calls: vec![],
+            tool_call_id: None,
+        },
+        Message {
+            role: "assistant".into(),
+            content: None,
+            tool_calls: vec![ToolCall {
+                id: "historical_call".into(),
+                kind: "function".into(),
+                function: FunctionCall {
+                    name: "removed_from_current_catalog".into(),
+                    arguments: "{}".into(),
+                },
+            }],
+            tool_call_id: None,
+        },
+        Message {
+            role: "tool".into(),
+            content: Some("PRIVATE_HISTORICAL_CLIENT_RESULT".into()),
+            tool_calls: vec![],
+            tool_call_id: Some("historical_call".into()),
+        },
+        Message {
+            role: "user".into(),
+            content: Some("Search the web now".into()),
+            tool_calls: vec![],
+            tool_call_id: None,
+        },
+    ];
+    let second_result = runtime
+        .run_until(second, std::future::pending())
+        .await
+        .unwrap();
+
+    let first_trace = store.task(&first_result.task_id).unwrap();
+    let second_trace = store.task(&second_result.task_id).unwrap();
+    let first_audit = first_trace["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|event| event["kind"] == "agent_client_capabilities")
+        .unwrap();
+    let second_audit = second_trace["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|event| event["kind"] == "agent_client_capabilities")
+        .unwrap();
+    let first_payload = &first_audit["payload"];
+    let second_payload = &second_audit["payload"];
+    assert_eq!(first_payload["catalog_count"], 1);
+    assert_eq!(second_payload["catalog_count"], 2);
+    assert_ne!(
+        first_payload["catalog_sha256"],
+        second_payload["catalog_sha256"]
+    );
+    assert_eq!(first_payload["functions"][0]["name"], "read");
+    assert_eq!(
+        first_payload["functions"][0]["description_sha256"],
+        sha256(b"PRIVATE_DESCRIPTION_SENTINEL")
+    );
+    assert_eq!(
+        first_payload["functions"][0]["schema_sha256"],
+        sha256(
+            &serde_json::to_vec(&json!({
+                "type":"object",
+                "properties":{"secret_field":{"type":"string"}}
+            }))
+            .unwrap()
+        )
+    );
+    assert_eq!(first_payload["functions"][0]["strict"], true);
+    assert_eq!(first_payload["client_owns_execution"], true);
+    assert_eq!(first_payload["kernel_permissions_granted"], false);
+    assert_eq!(first_payload["client_results_verified"], false);
+    assert_eq!(
+        first_payload["catalog_source"],
+        "client_supplied_untrusted_metadata"
+    );
+    let traces = format!("{first_trace}{second_trace}");
+    for private_value in [
+        "PRIVATE_DESCRIPTION_SENTINEL",
+        "PRIVATE_SECOND_DESCRIPTION",
+        "PRIVATE_FETCH_DESCRIPTION",
+        "PRIVATE_HISTORICAL_CLIENT_RESULT",
+        "secret_field",
+        "PRIVATE_QUERY_PROPERTY_SENTINEL",
+        "PRIVATE_URL_PROPERTY_SENTINEL",
+        "removed_from_current_catalog",
+    ] {
+        assert!(!traces.contains(private_value));
+    }
+    assert_eq!(backend.0.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn client_capability_audit_failure_stops_before_backend_inference() {
+    let store = Arc::new(Store::in_memory().unwrap());
+    store
+        .lock()
+        .unwrap()
+        .execute_batch(
+            "CREATE TRIGGER reject_client_capability_audit BEFORE INSERT ON events
+             WHEN NEW.kind = 'agent_client_capabilities'
+             BEGIN SELECT RAISE(ABORT, 'fixture capability audit failure'); END;",
+        )
+        .unwrap();
+    let backend = Arc::new(Fixed(AtomicUsize::new(0)));
+    let runtime =
+        AgentRuntime::with_backend(Config::default(), store.clone(), backend.clone()).unwrap();
+    assert!(runtime
+        .run_until(turn(), std::future::pending())
+        .await
+        .is_err());
+    assert_eq!(backend.0.load(Ordering::SeqCst), 0);
+    let db = store.lock().unwrap();
+    assert_eq!(
+        db.query_row("SELECT status FROM tasks", [], |row| row
+            .get::<_, String>(0))
+            .unwrap(),
+        "failed"
+    );
+    assert_eq!(
+        db.query_row(
+            "SELECT count(*) FROM events WHERE kind = 'agent_client_capabilities'",
+            [],
+            |row| row.get::<_, u64>(0),
+        )
+        .unwrap(),
+        0
     );
 }
 #[test]

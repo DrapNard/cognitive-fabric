@@ -6,6 +6,48 @@ the server process it started. If an authenticated Cognitive Fabric server is
 already listening, it reuses that process and leaves it running after OpenCode
 exits. The helper never starts an inference provider or loads model weights.
 
+## MCP, skills and web connections
+
+OpenCode owns MCP connections, skill discovery, web access, credentials and tool
+permissions. Use `cogfabric/cogfabric-agent` as its model: CGF forwards the current
+function names, descriptions and JSON Schemas to the configured inference backend.
+The backend proposes calls; OpenCode authorizes and executes them, then sends their
+results back in the conversation. A REA MCP connection belongs in OpenCode's
+configuration, alongside any other MCP servers; CGF needs no separate REA connection.
+
+The same path carries client-loaded skill text, web results and tool errors. These
+remain untrusted conversation data, never kernel permissions or independently
+verified evidence. CGF preserves correlated historical results even when a tool is
+removed from the current catalog, but new proposals must use the current catalog.
+Reasoning effort applies to the same configured model throughout the loop.
+
+Each turn accepts up to 128 function definitions, subject to the existing request,
+per-schema and typed IPC frame limits. A large catalog can exhaust those limits
+before reaching 128 tools; enable only relevant client tools and keep schemas and
+results compact. Output proposals still obey the configured tool-call limit.
+The audit stores catalog names and description/schema hashes, not raw skill text,
+schemas or result bodies. Names can themselves be sensitive; avoid secrets in names.
+
+This is bounded text/function Chat Completions compatibility, not support for every
+client API or multimodal MCP result. The agent endpoint performs one model turn at
+a time; it does not run the full Jev-R collective. The inference model still needs
+reliable tool-calling ability. Collective workflow aliases do not accept client
+history and tool catalogs.
+
+An opt-in installed OpenCode test exercises project skill loading and synthetic
+REA/web MCP tools through an isolated loopback fixture:
+
+```sh
+cargo test -p cogfabric-server --test opencode_mcp_client -- --ignored
+```
+
+The installed v2.0.32 fixture uses Code Mode: OpenCode exposes `skill` and
+`execute`, discovers MCP functions with `search`, and executes the discovered
+functions inside the client. Direct MCP function exposure was not verified.
+It proves protocol interoperability with its deterministic backend, not real REA
+analysis, live web access or reasoning quality. MCP and permission configuration
+is client-version specific; see the [OpenCode v2 MCP documentation](https://dev.opencode.ai/v2/docs/mcp-servers/).
+
 ## One-time setup
 
 Install `cogfabric`, `cogfabric-server`, and OpenCode v2. The helper needs Bash,

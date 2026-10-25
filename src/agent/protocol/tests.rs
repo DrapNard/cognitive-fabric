@@ -80,6 +80,63 @@ fn native_turns_and_tool_only_completions_preserve_typed_fields() {
     assert_eq!(c.output_tokens, Some(12));
     assert_eq!(c.tool_calls[0].function.arguments, "{\"path\":\"new.txt\"}");
 }
+
+#[test]
+fn native_protocol_roundtrips_128_client_tools_and_rejects_129_on_encode_and_decode() {
+    let mut turn = turn();
+    turn.tools = (0..super::super::MAX_CLIENT_TOOLS)
+        .map(|index| super::super::Tool {
+            kind: "function".into(),
+            function: super::super::Function {
+                name: format!("tool_{index}"),
+                description: "Client supplied function".into(),
+                parameters: json!({"type":"object"}),
+                strict: None,
+            },
+        })
+        .collect();
+    turn.tool_choice = None;
+    let packet = Packet {
+        identity: identity(),
+        payload: Payload::Request {
+            turn,
+            allocation: 128,
+        },
+    };
+    let encoded = encode(&packet).unwrap();
+    assert!(encoded.len() <= MAX_FRAME);
+    let Payload::Request { turn, .. } = decode(&encoded).unwrap().payload else {
+        panic!("Expected native request")
+    };
+    assert_eq!(turn.tools.len(), super::super::MAX_CLIENT_TOOLS);
+
+    let mut oversized = flatbuffers::root::<fb::Packet>(&encoded).unwrap().unpack();
+    let tools = oversized
+        .request
+        .as_mut()
+        .unwrap()
+        .turn
+        .tools
+        .as_mut()
+        .unwrap();
+    let extra = tools[0].clone();
+    tools.push(extra);
+    assert_eq!(tools.len(), super::super::MAX_CLIENT_TOOLS + 1);
+    assert!(decode(&raw(oversized)).is_err());
+
+    let Payload::Request { mut turn, .. } = packet.payload else {
+        unreachable!()
+    };
+    turn.tools.push(turn.tools[0].clone());
+    let oversized_packet = Packet {
+        identity: identity(),
+        payload: Payload::Request {
+            turn,
+            allocation: 128,
+        },
+    };
+    assert!(encode(&oversized_packet).is_err());
+}
 #[test]
 fn native_turns_preserve_supported_reasoning_effort_and_reject_unknown_values() {
     for effort in ["none", "low", "medium", "high"] {
