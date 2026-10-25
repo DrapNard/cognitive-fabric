@@ -170,6 +170,7 @@ async fn workflow_loopback_ablation_measures_saved_calls_and_an_observed_regress
             },
             residents: Vec::new(),
             working_profiles: Vec::new(),
+            gpu_observation: None,
         }),
         ..Config::default()
     };

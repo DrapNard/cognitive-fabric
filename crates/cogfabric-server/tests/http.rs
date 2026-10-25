@@ -337,6 +337,125 @@ async fn collective_alias_uses_existing_core_verification() {
 }
 
 #[tokio::test]
+async fn collective_alias_pins_explicit_project_profile_from_client_extension() {
+    let (base, store, fixture, stop, handle) = setup(false).await;
+    let profile = store
+        .publish_project(cogfabric::projects::ProjectDraft {
+            format_version: 1,
+            id: "http.project".into(),
+            name: "HTTP fixture".into(),
+            goal: "Keep explanations concise for this project.".into(),
+            preferences: cogfabric::projects::Preferences::default(),
+        })
+        .unwrap();
+    let response = reqwest::Client::new()
+        .post(format!("{base}/v1/chat/completions"))
+        .bearer_auth(KEY)
+        .json(&json!({
+            "model":"cogfabric-fast",
+            "cgf_project":format!("{}@{}", profile.id, profile.version),
+            "messages":[{"role":"user","content":"calc:6*7"}]
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    let response: Value = response.json().await.unwrap();
+    assert_eq!(response["choices"][0]["message"]["content"], "42");
+    let task = response["id"]
+        .as_str()
+        .unwrap()
+        .strip_prefix("chatcmpl-")
+        .unwrap();
+    let trace = store.task(task).unwrap();
+    assert_eq!(trace["task"]["status"], "completed");
+    let snapshot = trace["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|event| event["kind"] == "project_profile_snapshot")
+        .expect("selected profile must be snapshotted on the Engine task");
+    assert_eq!(snapshot["payload"]["reference"], "http.project@1");
+    assert_eq!(snapshot["payload"]["profile"]["goal"], profile.goal);
+    assert_eq!(snapshot["payload"]["permissions_granted"], false);
+    assert_eq!(fixture.calls.load(Ordering::SeqCst), 0);
+    stop.send(()).unwrap();
+    handle.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn project_profile_extension_is_scoped_and_invalid_profiles_are_rejected() {
+    let (base, _store, fixture, stop, handle) = setup(false).await;
+    let client = reqwest::Client::new();
+    let url = format!("{base}/v1/chat/completions");
+    let mut request = json!({
+        "model":"cogfabric-fast",
+        "messages":[{"role":"user","content":"calc:6*7"}]
+    });
+    request["cgf_project"] = json!("http.project@01");
+    assert_eq!(
+        client
+            .post(&url)
+            .bearer_auth(KEY)
+            .json(&request)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        400
+    );
+
+    request["cgf_project"] = json!("missing.project@1");
+    assert_eq!(
+        client
+            .post(&url)
+            .bearer_auth(KEY)
+            .json(&request)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        400
+    );
+
+    request["model"] = json!(MODEL);
+    request["cgf_project"] = json!("valid.project@1");
+    request["tools"] = json!([]);
+    assert_eq!(
+        client
+            .post(&url)
+            .bearer_auth(KEY)
+            .json(&request)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        400
+    );
+
+    request["model"] = json!("cogfabric-fast");
+    request["messages"] = json!([
+        {"role":"user","content":"calc:6*7"},
+        {"role":"assistant","content":"42"}
+    ]);
+    request["cgf_project"] = json!("valid.project@1");
+    assert_eq!(
+        client
+            .post(&url)
+            .bearer_auth(KEY)
+            .json(&request)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        400
+    );
+    assert_eq!(fixture.calls.load(Ordering::SeqCst), 0);
+    stop.send(()).unwrap();
+    handle.await.unwrap().unwrap();
+}
+
+#[tokio::test]
 async fn server_binary_relaunches_core_math_and_sql_workers() {
     use std::process::{Command, Stdio};
     let home = std::env::temp_dir().join(format!("fabric-http-workers-{}", std::process::id()));

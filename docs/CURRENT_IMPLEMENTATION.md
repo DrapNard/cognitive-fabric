@@ -3687,3 +3687,35 @@ Native GPU placement echo/inventory disagreement remains an unknown load rather
 than successful GPU execution. Initial native integration failures were fixed and
 the final 20-test target is green. No full reflection/all-target test campaign or
 live GPU measurement was run. See the matrix for exact commands and limitations.
+
+## Explicit Engine project requests and observed GPU admission — 2026-10-25
+
+**Implemented; physical GPU enforcement and full conversational expert execution
+remain Partial.** The existing one-goal HTTP Engine aliases accept optional
+`cgf_project: "id@version"`. Strict parsing and registry preflight reject malformed
+or unknown profiles before task admission; `cogfabric-agent` refuses this override.
+The selection reaches existing `TaskOptions` and records an immutable context
+snapshot/version/checksum before inference. Native lifecycle validates project
+selection before it can load models, including library and CLI use.
+
+`Configuration.gpu_observation` is an opt-in resource setting with exact device
+UUID, selected sensor and `headroom_bytes`. Shared resource admission checks fresh
+reported total/used memory against declared working device bytes plus headroom
+before provider invocation. It adds no model call, permission or queue retry.
+Default configuration and serialization stay unchanged. Guarded histories bind
+the declaration and require matching successful observation/dispatch evidence at
+continuation. Eager native policies are refused with this setting, so first-use
+loads use version 3 behind the guarded call.
+
+Missing drivers, devices or required metrics deny guarded work. Observations do
+not independently estimate model-weight/KV requirements or enforce physical VRAM;
+external clients can allocate after a sample. The NVIDIA driver and local model
+endpoint remain unavailable in this environment, so deterministic fixtures verify
+mechanics and no live GPU performance result is claimed. See the implementation
+matrix for final checks and the resource scheduling guide for configuration.
+
+Focused verification for this addition passes: 38 scheduler, 3 GPU-history,
+21 native lifecycle, 13 HTTP, 8 worker, 1 HTTP shared-capacity, and 9 route/profile
+continuation tests. Formatting, default/all-feature all-target compilation and
+strict all-feature Clippy pass. Full all-target/reflection tests and live GPU
+benchmarks were not run; exact commands and limits are in the latest matrix entry.

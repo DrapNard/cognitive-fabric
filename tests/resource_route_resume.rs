@@ -54,6 +54,7 @@ fn configuration(endpoint: &str) -> Configuration {
             device_memory_bytes: 8,
         },
         residents: Vec::new(),
+        gpu_observation: None,
         working_profiles: vec![
             WorkingProfile {
                 id: "planner_route".into(),

@@ -1433,3 +1433,31 @@ collective tools, select a model, change the objective or replace compiled
 verification. Checkpoints can include private project text, so they and backups
 remain sensitive local data. They are not encrypted. Full Engine executable expert
 routing and native lifecycle management are not exposed as client-selected tools.
+
+## Explicit Engine profile requests and observed GPU admission — 2026-10-25
+
+The authenticated loopback Engine aliases may accept `cgf_project` as an exact
+immutable profile version. It is background context, never a capability, model
+selector, budget change or alternate acceptance rule. It is refused on the client
+conversation alias, whose profile remains operator configured. Registry lookup
+precedes task/provider admission, and the Engine records its own bounded snapshot
+after task creation and before inference. Native lifecycle prevalidation prevents
+invalid project context from causing weight loads. Profiles are local stored text,
+not a secret store or multi-tenant access-control boundary.
+
+An optional operator-configured GPU observation gate reads the selected device
+before inference. Exact UUID/sensor/headroom settings and each successful check
+are bound to resource audit history and continuation validation. Unavailable,
+malformed, missing or insufficient observations deny work without invoking the
+provider. Ordinary preflight denial releases only the unstarted reservation; an
+audit already committed as dispatch can remain conservatively quarantined after a
+late stale/inactive check. Existing task reservations are not refunded.
+
+Measurements are shared-device observations with a race between sampling and
+provider allocation. The threshold covers declared working device bytes plus
+headroom, not an independently calculated model-weight/load requirement. This does
+not impose VRAM quotas, stop external clients or prove provider termination.
+Eager native lifecycle policies are refused when this gate is configured; approved
+version-3 first-use activation remains behind the guarded call. Manual operator
+residency changes and weights already managed by an external provider remain
+outside this gate. Defaults introduce no GPU query or additional model grant.

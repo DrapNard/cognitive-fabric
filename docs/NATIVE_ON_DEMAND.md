@@ -80,3 +80,9 @@ continuation, cancellation and wrong-instance refusal; see the implementation
 matrix for current results. The separate KV-cache placement fixture tests both
 boolean settings and rejects mismatched load echoes or inventory without claiming
 physical residency.
+
+An operator can also enable [observed GPU admission](RESOURCE_SCHEDULING.md#optional-gpu-observation-admission)
+in the resource configuration. The sample precedes the lazy inference/load call;
+eager lifecycle policy versions 1 and 2 are refused with that setting. The gate
+checks declared working allocation plus headroom, not an independent estimate of
+new weight/KV memory, and cannot guarantee that a model will fit.

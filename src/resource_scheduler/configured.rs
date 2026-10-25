@@ -58,6 +58,7 @@ impl ResourcePool {
             configuration.settings.clone(),
             configuration.residents.clone(),
             configuration.working_profiles.clone(),
+            configuration.gpu_observation.clone(),
         )?;
         Arc::get_mut(&mut pool)
             .expect("Fresh pool is uniquely owned")

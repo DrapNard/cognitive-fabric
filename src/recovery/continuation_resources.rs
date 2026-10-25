@@ -134,7 +134,9 @@ pub(super) fn validate(db: &rusqlite::Connection, task: &str, cfg: &Config) -> R
     let profile_events = u8::from(profiled) * 2;
     let target_events = u8::from(nonempty_residents) * 2;
     let resource_intent_stage = profile_events + target_events;
-    let resource_complete_stage = resource_intent_stage + 4;
+    let gpu_observation = configuration.and_then(|resources| resources.gpu_observation.as_ref());
+    let gpu_observation_events = u8::from(gpu_observation.is_some());
+    let resource_complete_stage = resource_intent_stage + 4 + gpu_observation_events;
 
     while let Some(row) = rows.next()? {
         count += 1;
@@ -358,6 +360,12 @@ pub(super) fn validate(db: &rusqlite::Connection, task: &str, cfg: &Config) -> R
                 {
                     bail!("Original resource allocation differs from its pinned configuration")
                 }
+                match &cfg_resources.gpu_observation {
+                    Some(expected)
+                        if value["gpu_observation"] == serde_json::to_value(expected)? => {}
+                    None if value.get("gpu_observation").is_none() => {}
+                    _ => bail!("Original GPU observation admission changed"),
+                }
                 let legacy_empty = !nonempty_residents
                     && !profiled
                     && [
@@ -380,7 +388,74 @@ pub(super) fn validate(db: &rusqlite::Connection, task: &str, cfg: &Config) -> R
                 }
                 history.stage += 1;
             }
-            "resource_admitted" if history.stage == resource_intent_stage + 1 => {
+            "resource_gpu_observation"
+                if gpu_observation.is_some() && history.stage == resource_intent_stage + 1 =>
+            {
+                let configured = gpu_observation.unwrap();
+                let allocation = expected_allocation(cfg_resources, history.profile.as_ref());
+                let expected_minimum = allocation
+                    .device_memory_bytes
+                    .checked_add(configured.headroom_bytes)
+                    .ok_or_else(|| anyhow::anyhow!("GPU observation threshold overflow"))?;
+                let total = value["memory_total_bytes"]
+                    .as_u64()
+                    .filter(|bytes| *bytes > 0 && *bytes <= (1 << 60))
+                    .ok_or_else(|| anyhow::anyhow!("Invalid saved GPU memory total"))?;
+                let used = value["memory_used_bytes"]
+                    .as_u64()
+                    .filter(|bytes| *bytes <= total)
+                    .ok_or_else(|| anyhow::anyhow!("Invalid saved GPU memory use"))?;
+                let available = total - used;
+                let query_duration_ms = value["sample_query_elapsed_ms"]
+                    .as_f64()
+                    .filter(|ms| ms.is_finite() && (0.0..=5000.0).contains(ms))
+                    .ok_or_else(|| anyhow::anyhow!("Invalid saved GPU query duration"))?;
+                let sample_age_ms = value["sample_age_ms_at_observation"]
+                    .as_f64()
+                    .filter(|ms| ms.is_finite() && (0.0..=2000.0).contains(ms))
+                    .ok_or_else(|| anyhow::anyhow!("Invalid saved GPU sample age"))?;
+                let exact_keys = [
+                    "format_version",
+                    "pool_id",
+                    "reservation_id",
+                    "role",
+                    "sensor",
+                    "device_uuid",
+                    "allocation",
+                    "headroom_bytes",
+                    "memory_total_bytes",
+                    "memory_used_bytes",
+                    "memory_available_bytes",
+                    "minimum_available_bytes",
+                    "sample_query_elapsed_ms",
+                    "sample_age_ms_at_observation",
+                    "sampled",
+                    "provider_dispatched",
+                    "physical_limits_enforced",
+                ];
+                if value.as_object().is_none_or(|object| {
+                    object.len() != exact_keys.len()
+                        || exact_keys.iter().any(|key| !object.contains_key(*key))
+                }) || value["sensor"] != configured.sensor.name()
+                    || value["device_uuid"] != configured.device_uuid
+                    || value["allocation"] != serde_json::to_value(allocation)?
+                    || value["headroom_bytes"] != configured.headroom_bytes
+                    || value["memory_available_bytes"] != available
+                    || value["minimum_available_bytes"] != expected_minimum
+                    || available < expected_minimum
+                    || value["sampled"] != true
+                    || value["provider_dispatched"] != false
+                    || value["physical_limits_enforced"] != false
+                    || query_duration_ms > 5000.0
+                    || sample_age_ms > 2000.0
+                {
+                    bail!("Original GPU observation decision is invalid or changed")
+                }
+                history.stage += 1;
+            }
+            "resource_admitted"
+                if history.stage == resource_intent_stage + 1 + gpu_observation_events =>
+            {
                 cfg_resources
                     .settings
                     .validate_queue_audit(role, &value, true)?;
@@ -397,13 +472,30 @@ pub(super) fn validate(db: &rusqlite::Connection, task: &str, cfg: &Config) -> R
                 history.stage += 1;
             }
             "resource_dispatch"
-                if history.stage == resource_intent_stage + 2
+                if history.stage == resource_intent_stage + 2 + gpu_observation_events
                     && value["provider_stop_proven"] == false =>
             {
-                history.stage += 1
+                match gpu_observation {
+                    Some(_) => {
+                        let age_ms = value["sample_age_ms_at_dispatch_audit"]
+                            .as_f64()
+                            .filter(|ms| ms.is_finite() && (0.0..=2000.0).contains(ms))
+                            .ok_or_else(|| {
+                                anyhow::anyhow!("Original GPU sample was stale at dispatch audit")
+                            })?;
+                        if value.as_object().is_none_or(|object| object.len() != 5)
+                            || age_ms > 2000.0
+                        {
+                            bail!("Original GPU dispatch audit is invalid")
+                        }
+                    }
+                    None if value.get("sample_age_ms_at_dispatch_audit").is_none() => {}
+                    None => bail!("Unexpected GPU sample in an unguarded dispatch"),
+                }
+                history.stage += 1;
             }
             "resource_completed"
-                if history.stage == resource_intent_stage + 3
+                if history.stage == resource_intent_stage + 3 + gpu_observation_events
                     && value["provider_request_completed"] == true
                     && value["physical_limits_enforced"] == false =>
             {
@@ -434,4 +526,216 @@ pub(super) fn validate(db: &rusqlite::Connection, task: &str, cfg: &Config) -> R
         "permissions_granted":false,
         "physical_limits_enforced":false
     }))
+}
+
+#[cfg(test)]
+mod gpu_observation_tests {
+    use super::*;
+    use crate::{
+        resource_scheduler::{Allocation, Configuration, GpuObservationAdmission, Settings},
+        store::Store,
+    };
+
+    fn fixture(guarded: bool, include_observation: bool) -> (Store, String, Config) {
+        let store = Store::in_memory().unwrap();
+        let task = store
+            .create_task("GPU continuation fixture", "standard")
+            .unwrap();
+        let allocation = Allocation {
+            compute_slots: 1,
+            host_memory_bytes: 64,
+            device_memory_bytes: 100,
+        };
+        let settings = Settings {
+            label: "gpu.resume".into(),
+            capacity: Allocation {
+                compute_slots: 1,
+                host_memory_bytes: 1024,
+                device_memory_bytes: 2048,
+            },
+            max_pending: 4,
+            max_wait_ms: 1000,
+            max_execution_ms: 5000,
+            scheduling: None,
+        };
+        let gpu_observation = guarded.then_some(GpuObservationAdmission {
+            device_uuid: "GPU-deadbeef".into(),
+            sensor: crate::gpu::Sensor::NvidiaSmi,
+            headroom_bytes: 10,
+        });
+        let resources = Configuration {
+            settings: settings.clone(),
+            allocation,
+            residents: Vec::new(),
+            working_profiles: Vec::new(),
+            gpu_observation: gpu_observation.clone(),
+        };
+        let cfg = Config {
+            resource_admission: Some(resources.clone()),
+            ..Default::default()
+        };
+        let binding = ResourcePool::configuration_binding(&resources).unwrap();
+        let pool_id = uuid::Uuid::new_v4().to_string();
+        let reservation_id = uuid::Uuid::new_v4().to_string();
+        store
+            .event(&task, "model_dispatch", "jev-r", json!({"role":"solver"}))
+            .unwrap();
+        let mut intent = json!({
+            "format_version":1,"pool_id":pool_id,"reservation_id":reservation_id,
+            "settings":settings,"allocation":allocation,"role":"solver",
+            "permissions_granted":false,"resident_allocated":binding["resident_allocated"],
+            "resident_catalog_sha256":binding["resident_catalog_sha256"],
+            "residency_attested":false,"physical_limits_enforced":false,
+        });
+        if let Some(observation) = &gpu_observation {
+            intent["gpu_observation"] = serde_json::to_value(observation).unwrap();
+        }
+        store
+            .event(&task, "resource_intent", "jev-plus", intent)
+            .unwrap();
+        if include_observation {
+            store
+                .event(
+                    &task,
+                    "resource_gpu_observation",
+                    "jev-plus",
+                    json!({
+                        "format_version":1,"pool_id":pool_id,"reservation_id":reservation_id,
+                        "role":"solver","sensor":"nvidia-smi","device_uuid":"GPU-deadbeef",
+                        "allocation":allocation,"headroom_bytes":10,"memory_total_bytes":1000,
+                        "memory_used_bytes":100,"memory_available_bytes":900,"minimum_available_bytes":110,
+                        "sample_query_elapsed_ms":12.0,"sample_age_ms_at_observation":0.01,
+                        "sampled":true,"provider_dispatched":false,"physical_limits_enforced":false,
+                    }),
+                )
+                .unwrap();
+        }
+        store
+            .event(
+                &task,
+                "resource_admitted",
+                "jev-plus",
+                json!({
+                    "format_version":1,"pool_id":pool_id,"reservation_id":reservation_id,
+                    "allocation":allocation,"role":"solver","wait_ms":1.0,"provider_dispatched":false,
+                }),
+            )
+            .unwrap();
+        let mut dispatch = json!({
+            "format_version":1,"pool_id":pool_id,"reservation_id":reservation_id,
+            "provider_stop_proven":false,
+        });
+        if guarded {
+            dispatch["sample_age_ms_at_dispatch_audit"] = json!(0.2);
+        }
+        store
+            .event(&task, "resource_dispatch", "jev-plus", dispatch)
+            .unwrap();
+        store
+            .event(
+                &task,
+                "resource_completed",
+                "jev-plus",
+                json!({
+                    "format_version":1,"pool_id":pool_id,"reservation_id":reservation_id,
+                    "provider_request_completed":true,"physical_limits_enforced":false,
+                }),
+            )
+            .unwrap();
+        store
+            .event(
+                &task,
+                "reasoning_context",
+                "jev-r",
+                json!({"format_version":1}),
+            )
+            .unwrap();
+        (store, task, cfg)
+    }
+
+    fn validate_fixture(store: &Store, task: &str, cfg: &Config) -> Result<Value> {
+        let db = store.lock()?;
+        validate(&db, task, cfg)
+    }
+
+    #[test]
+    fn guarded_and_legacy_resource_histories_resume_only_with_exact_observation_chain() {
+        let (store, task, cfg) = fixture(true, true);
+        assert!(validate_fixture(&store, &task, &cfg).is_ok());
+
+        let (store, task, cfg) = fixture(false, false);
+        assert!(validate_fixture(&store, &task, &cfg).is_ok());
+
+        let (store, task, cfg) = fixture(true, false);
+        assert!(validate_fixture(&store, &task, &cfg).is_err());
+
+        let (store, task, cfg) = fixture(false, true);
+        assert!(validate_fixture(&store, &task, &cfg).is_err());
+    }
+
+    #[test]
+    fn guarded_resource_history_rejects_mutated_gpu_observation_evidence() {
+        for mutation in 0..7 {
+            let (store, task, cfg) = fixture(true, true);
+            let db = store.lock().unwrap();
+            let raw: String = db
+                .query_row(
+                    "SELECT payload FROM events WHERE task_id=?1 AND kind='resource_gpu_observation'",
+                    [&task],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            let mut observation: Value = serde_json::from_str(&raw).unwrap();
+            match mutation {
+                0 => observation["device_uuid"] = json!("GPU-other"),
+                1 => observation["sensor"] = json!("nvml"),
+                2 => observation["headroom_bytes"] = json!(11),
+                3 => observation["allocation"]["device_memory_bytes"] = json!(101),
+                4 => observation["minimum_available_bytes"] = json!(109),
+                5 => observation["memory_used_bytes"] = json!(950),
+                _ => observation["unexpected"] = json!(true),
+            }
+            db.execute(
+                "UPDATE events SET payload=?1 WHERE task_id=?2 AND kind='resource_gpu_observation'",
+                rusqlite::params![observation.to_string(), task],
+            )
+            .unwrap();
+            drop(db);
+            assert!(validate_fixture(&store, &task, &cfg).is_err());
+        }
+    }
+
+    #[test]
+    fn dispatch_sample_age_is_required_only_for_guarded_resource_history() {
+        for mutation in 0..3 {
+            let guarded = mutation != 2;
+            let (store, task, cfg) = fixture(guarded, guarded);
+            let db = store.lock().unwrap();
+            let raw: String = db
+                .query_row(
+                    "SELECT payload FROM events WHERE task_id=?1 AND kind='resource_dispatch'",
+                    [&task],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            let mut dispatch: Value = serde_json::from_str(&raw).unwrap();
+            match mutation {
+                0 => {
+                    dispatch
+                        .as_object_mut()
+                        .unwrap()
+                        .remove("sample_age_ms_at_dispatch_audit");
+                }
+                1 => dispatch["sample_age_ms_at_dispatch_audit"] = json!(2000.01),
+                _ => dispatch["sample_age_ms_at_dispatch_audit"] = json!(0.1),
+            };
+            db.execute(
+                "UPDATE events SET payload=?1 WHERE task_id=?2 AND kind='resource_dispatch'",
+                rusqlite::params![dispatch.to_string(), task],
+            )
+            .unwrap();
+            drop(db);
+            assert!(validate_fixture(&store, &task, &cfg).is_err());
+        }
+    }
 }

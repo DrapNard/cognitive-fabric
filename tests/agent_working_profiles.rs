@@ -45,6 +45,7 @@ fn configuration() -> Config {
             },
             allocation,
             residents: vec![],
+            gpu_observation: None,
             working_profiles: ["old", "new"]
                 .into_iter()
                 .map(|model| WorkingProfile {

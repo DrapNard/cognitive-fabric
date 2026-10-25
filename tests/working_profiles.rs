@@ -53,6 +53,7 @@ fn configuration(capacity: Allocation, profiles: Vec<WorkingProfile>) -> Configu
         allocation: alloc(1, 1, 1),
         residents: Vec::new(),
         working_profiles: profiles,
+        gpu_observation: None,
     }
 }
 

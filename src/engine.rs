@@ -142,6 +142,15 @@ impl Engine {
         }
         policy.validate()?;
         self.cfg.validate()?;
+        if !policy.on_demand()
+            && self
+                .cfg
+                .resource_admission
+                .as_ref()
+                .is_some_and(|resources| resources.gpu_observation.is_some())
+        {
+            bail!("GPU observation admission requires on-demand native lifecycle policy version 3")
+        }
         if !self.native_lifecycle_eligible
             || self.cfg.backend != "openai-local"
             || self.cfg.inference_process
@@ -435,6 +444,11 @@ impl Engine {
                     != Some(current_config_digest.as_str())
             {
                 bail!("Native lifecycle policy no longer matches the approved Engine configuration")
+            }
+            // Validate explicit context before the lifecycle can load weights.
+            // The immutable version is captured again at task admission.
+            if let Some(reference) = &options.project_ref {
+                self.store.project_profile_for_runtime(reference)?;
             }
             return crate::residency::lifecycle::run_engine_task(
                 self,

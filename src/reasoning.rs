@@ -4092,6 +4092,7 @@ mod configured_resource_tests {
             resource_admission: Some(Configuration {
                 residents: serde_json::from_value(json!([{"id":"backbone.expert_fixture","version":"1.0.0","weights_sha256":"a".repeat(64),"host_memory_bytes":10,"device_memory_bytes":20,"consumers":[{"api_base":"http://127.0.0.1:1234/v1","model":"fixture"}]}])).unwrap(),
                 working_profiles: Vec::new(),
+                gpu_observation: None,
                 settings: Settings {
                     label: "gpu.experts".into(),
                     capacity: Allocation { compute_slots:1, host_memory_bytes:20, device_memory_bytes:40 },

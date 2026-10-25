@@ -114,3 +114,17 @@ is available to both installed packages through the setup feature flag.
 client endpoint, dynamic measured VRAM scheduling, physical GPU isolation and live
 GPU performance/quality evidence. Client tools remain client-owned. Optional
 multimodal work retains its final-phase priority above.
+
+## Observed GPU admission and explicit Engine project selection — 2026-10-25
+
+One-goal Engine HTTP aliases now accept an exact `cgf_project` version through
+the existing task options and snapshot mechanism. The conversational agent alias
+retains its operator-selected profile and client-owned tools. An optional resource
+configuration can refuse inference when a selected GPU's observed free memory is
+unavailable or below declared working allocation plus headroom. Guarded native
+loads require version-3 on-demand lifecycle policies.
+
+This narrows the integration gap; model-aware weight/KV requirement estimation,
+physical GPU limits, independent live measurements and arbitrary Engine expert
+execution through client conversations remain Partial. Multimodal priorities stay
+unchanged.

@@ -76,6 +76,14 @@ the configured external model provider. The bounded frame, missing-metric and ch
 Live GPU measurements still require a working NVIDIA driver and visible device;
 fixture tests do not establish CUDA inference or measured GPU performance.
 
+Resource admission can separately opt into a one-shot GPU memory observation
+before dispatch. It requires an operator-selected UUID and sensor and compares
+observed free bytes with the call's declared device allocation plus headroom. It
+is a best-effort fail-closed preflight, not GPU memory enforcement, model-load
+fit prediction, or task attribution. See
+[optional GPU observation admission](RESOURCE_SCHEDULING.md#optional-gpu-observation-admission)
+for exact limits and recovery behavior.
+
 `scripts/setup.sh --nvml-gpu` propagates the feature to both the core CLI and
 the HTTP server. For a direct server build use
 `cargo build --locked -p cogfabric-server --features nvml-gpu`. This flag enables

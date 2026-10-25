@@ -273,6 +273,7 @@ async fn actual_role_dispatch_records_priority_before_provider_and_validates_liv
         allocation: allocation(10),
         residents: Vec::new(),
         working_profiles: Vec::new(),
+        gpu_observation: None,
     };
     assert!(p.matches(&p.store, &configuration));
     configuration

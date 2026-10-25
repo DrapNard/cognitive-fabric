@@ -82,6 +82,49 @@ are cooperative Rust future deadlines: trusted synchronous callbacks cannot be
 preempted. Shutdown blocks new dispatch, wakes pending callers and leaves already
 executing provider requests under their existing deadlines.
 
+## Optional GPU observation admission
+
+An operator may add `resource_admission.gpu_observation` to require one fresh
+whole-device sample before each configured provider dispatch:
+
+```json
+"gpu_observation": {
+  "device_uuid": "GPU-0123456789abcdef",
+  "sensor": "nvidia-smi",
+  "headroom_bytes": 536870912
+}
+```
+
+Replace the example UUID with one returned by `diagnostics --probe-gpu`. Add
+this field to your existing resource configuration and apply it with
+`configure-resources FILE`; running services require a restart. The sensor is
+explicit (`nvidia-smi` or `nvml`); no fallback is attempted. The
+runtime waits for the shared logical pool reservation, samples the selected
+device, and requires its measured `total - used` bytes to be at least the
+dispatch's declared `allocation.device_memory_bytes` plus operator headroom.
+Missing devices or metrics, malformed/duplicate identities, unavailable sensors,
+insufficient headroom, and a query completed more than two seconds before
+dispatch all fail closed. Query duration is recorded separately; the driver does
+not supply an independently verified measurement timestamp. Sampling is bounded by the existing GPU child timeout/cleanup and is
+cancellable by the original task deadline. A pre-dispatch denial releases the
+Reserved logical slot and retains the task's already charged model call. If the
+sample ages out during the synchronous dispatch audit write, the provider is not
+invoked, but the persisted dispatch remains quarantined until operator
+reconciliation because process interruption could leave an ambiguous boundary.
+
+This is a best-effort preflight, not a CUDA quota, reservation in the driver,
+cross-process arbitration, or proof of provider stop. The check covers only the
+operator-declared working allocation for this call plus headroom. It does not
+estimate or subtract loaded model weights, KV cache, other process memory, or
+future load requirements; a successful sample does not prove a first-use model
+will fit. It applies before inference and supported lazy v3 activation, not manual
+operator load commands or models loaded externally. Eager native policy versions
+1 and 2 are refused when the guard is enabled; select version 3 for guarded
+first-use activation. The default `None` omits the
+setting from saved configuration and status, preserving legacy behavior. Exact
+sensor, UUID and headroom are pinned into resource bindings and checked during
+continuation; prior observations are never recreated by re-sampling.
+
 ## Audit and uncertain outcomes
 
 `resource_intent` records the runtime pool UUID, immutable settings, allocation,

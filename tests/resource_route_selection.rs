@@ -76,6 +76,7 @@ fn resources_with_residents(
         allocation: allocation(1, 128, 128),
         residents,
         working_profiles,
+        gpu_observation: None,
     }
 }
 

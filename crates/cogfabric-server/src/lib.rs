@@ -153,6 +153,9 @@ async fn models() -> Json<Value> {
 #[serde(deny_unknown_fields)]
 struct ChatRequest {
     model: String,
+    /// Optional immutable project context for one-goal Engine aliases only.
+    #[serde(default)]
+    cgf_project: Option<String>,
     messages: Vec<Value>,
     #[serde(default)]
     tools: Vec<Tool>,
@@ -177,7 +180,7 @@ struct ChatRequest {
     #[serde(default)]
     store: Option<bool>,
 }
-fn normalize(raw: ChatRequest) -> anyhow::Result<(String, Turn, bool, bool)> {
+fn normalize(raw: ChatRequest) -> anyhow::Result<(String, Turn, bool, bool, Option<String>)> {
     if raw.store == Some(true)
         || raw.n.is_some_and(|n| n != 1)
         || (raw.max_tokens.is_some() && raw.max_completion_tokens.is_some())
@@ -197,6 +200,9 @@ fn normalize(raw: ChatRequest) -> anyhow::Result<(String, Turn, bool, bool)> {
         .stream_options
         .as_ref()
         .is_some_and(|v| v["include_usage"] == true);
+    if let Some(reference) = &raw.cgf_project {
+        cogfabric::projects::Selection::parse(reference)?;
+    }
     let mut messages = Vec::new();
     for mut m in raw.messages {
         if m.get("tool_calls").is_some_and(Value::is_null) {
@@ -233,7 +239,13 @@ fn normalize(raw: ChatRequest) -> anyhow::Result<(String, Turn, bool, bool)> {
         parallel_tool_calls: raw.parallel_tool_calls,
     };
     request.validate()?;
-    Ok((raw.model, request, raw.stream, usage && raw.stream))
+    Ok((
+        raw.model,
+        request,
+        raw.stream,
+        usage && raw.stream,
+        raw.cgf_project,
+    ))
 }
 fn timestamp() -> u64 {
     SystemTime::now()
@@ -259,6 +271,7 @@ async fn execute(
     server: &Server,
     model: &str,
     request: Turn,
+    project_ref: Option<String>,
     cancel: impl std::future::Future<Output = ()>,
 ) -> anyhow::Result<TurnResult> {
     let mut stopped = server.stop.subscribe();
@@ -269,6 +282,9 @@ async fn execute(
         tokio::select! { _ = cancel => (), _ = stopped.changed() => () }
     };
     if model == MODEL {
+        if project_ref.is_some() {
+            anyhow::bail!("Project selection is supported only by collective Engine aliases")
+        }
         return server.agent.run_until(request, cancel).await;
     }
     let mode = model
@@ -278,9 +294,14 @@ async fn execute(
     validate_collective_request(&request)?;
     let result = server
         .engine
-        .run_until(
+        .run_with_options(
             request.messages[0].content.as_deref().unwrap_or(""),
             mode,
+            cogfabric::language::TaskOptions {
+                project_ref,
+                explain: server.engine.cfg.synthesize_results,
+                ..Default::default()
+            },
             cancel,
         )
         .await?;
@@ -343,7 +364,7 @@ async fn chat(State(server): State<Server>, headers: HeaderMap, bytes: Bytes) ->
         }
     };
     let parallel = raw.parallel_tool_calls.unwrap_or(true);
-    let (model, request, stream, include_usage) = match normalize(raw) {
+    let (model, request, stream, include_usage, project_ref) = match normalize(raw) {
         Ok(v) => v,
         Err(_) => {
             return error(
@@ -369,8 +390,22 @@ async fn chat(State(server): State<Server>, headers: HeaderMap, bytes: Bytes) ->
             "Request exceeds core admission limits",
         );
     }
+    if model == MODEL && project_ref.is_some() {
+        return error(
+            StatusCode::BAD_REQUEST,
+            "cgf_project is supported only by one-goal collective Engine aliases",
+        );
+    }
     if model != MODEL && validate_collective_request(&request).is_err() {
         return error(StatusCode::BAD_REQUEST,"Collective models accept one user goal with operator-configured budgets; use cogfabric-agent for conversations and tools");
+    }
+    if let Some(reference) = project_ref.as_deref() {
+        if server.engine.store.project_profile(reference).is_err() {
+            return error(
+                StatusCode::BAD_REQUEST,
+                "Unknown or invalid cgf_project profile",
+            );
+        }
     }
     let permit = match server.admission.clone().try_acquire_owned() {
         Ok(p) => p,
@@ -383,7 +418,7 @@ async fn chat(State(server): State<Server>, headers: HeaderMap, bytes: Bytes) ->
     };
     if !stream {
         let _permit = permit;
-        return match execute(&server, &model, request, std::future::pending()).await {
+        return match execute(&server, &model, request, project_ref, std::future::pending()).await {
             Ok(r) if parallel || r.completion.tool_calls.len() <= 1 => {
                 Json(response(r, &model)).into_response()
             }
@@ -396,7 +431,7 @@ async fn chat(State(server): State<Server>, headers: HeaderMap, bytes: Bytes) ->
     let (tx, rx) = mpsc::channel::<String>(4);
     tokio::spawn(async move {
         let _permit = permit;
-        let result = execute(&server, &model, request, tx.closed()).await;
+        let result = execute(&server, &model, request, project_ref, tx.closed()).await;
         let produce = async {
             match result {
                 Ok(r) if parallel || r.completion.tool_calls.len() <= 1 => {

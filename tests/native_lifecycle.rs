@@ -1104,6 +1104,29 @@ async fn approval_and_changed_engine_configuration_fail_before_provider_io() {
     engine = engine
         .with_approved_native_lifecycle(policy_data, true)
         .unwrap();
+    let invalid_profile = engine.run_with_options(
+        "Say hello",
+        "fast",
+        cogfabric::language::TaskOptions {
+            project_ref: Some("missing.project@1".into()),
+            ..Default::default()
+        },
+        std::future::pending(),
+    );
+    assert!(
+        tokio::time::timeout(Duration::from_secs(1), invalid_profile)
+            .await
+            .expect("Unknown project context must be refused before native provider I/O")
+            .is_err()
+    );
+    let tasks: i64 = rusqlite::Connection::open(cfg.db())
+        .unwrap()
+        .query_row("SELECT count(*) FROM tasks", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(
+        tasks, 0,
+        "Invalid project context must not create a lifecycle task"
+    );
     engine.cfg.model = "changed-after-approval".into();
     assert!(engine.run("Say hello", "fast").await.is_err());
     assert!(
@@ -1117,6 +1140,56 @@ async fn approval_and_changed_engine_configuration_fail_before_provider_io() {
         "rejected policy drift must not contact the native provider"
     );
     std::fs::remove_dir_all(outer).unwrap();
+}
+
+#[tokio::test]
+async fn observed_gpu_admission_requires_lazy_lifecycle_before_any_provider_io() {
+    let home = root();
+    let mut cfg = config(&home, 10);
+    cfg.resource_admission = Some(serde_json::from_value(json!({
+        "settings":{"label":"gpu.observed","capacity":{"compute_slots":1,"host_memory_bytes":100,"device_memory_bytes":100},"max_pending":1,"max_wait_ms":100,"max_execution_ms":100},
+        "allocation":{"compute_slots":1,"host_memory_bytes":1,"device_memory_bytes":1},
+        "gpu_observation":{"device_uuid":"GPU-abcd","sensor":"nvidia-smi","headroom_bytes":0}
+    })).unwrap());
+    cfg.save().unwrap();
+    let store = Arc::new(Store::open(&cfg.db()).unwrap());
+    store::bootstrap(&store).unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}/api/v1", listener.local_addr().unwrap());
+    let mut policy = NativeLifecyclePolicy::load(write_policy(&home, &base, false)).unwrap();
+    assert!(Engine::new(cfg.clone(), store.clone())
+        .with_approved_native_lifecycle(policy.clone(), true)
+        .is_err());
+    let request = cogfabric::residency::lifecycle::Request {
+        format_version: 1,
+        query: "Say hello".into(),
+        mode: "fast".into(),
+        api_base: base,
+        authenticate: false,
+        models: policy.models.clone(),
+        release_after: false,
+        typed_module_worker: false,
+        max_lifecycle_seconds: 10,
+    };
+    assert!(
+        cogfabric::residency::lifecycle::run(cfg.clone(), store.clone(), request, true)
+            .await
+            .is_err()
+    );
+    policy.format_version = 2;
+    policy.models[0].offload_kv_cache_to_gpu = Some(true);
+    assert!(Engine::new(cfg.clone(), store.clone())
+        .with_approved_native_lifecycle(policy.clone(), true)
+        .is_err());
+    policy.format_version = 3;
+    Engine::new(cfg, store)
+        .with_approved_native_lifecycle(policy, true)
+        .unwrap();
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), listener.accept())
+            .await
+            .is_err()
+    );
 }
 
 #[tokio::test]

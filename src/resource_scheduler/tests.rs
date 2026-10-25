@@ -32,6 +32,277 @@ fn pool(capacity: Allocation) -> Arc<ResourcePool> {
 fn task(pool: &ResourcePool) -> String {
     pool.store.create_task("fixture objective", "fast").unwrap()
 }
+
+fn gpu_admission() -> GpuObservationAdmission {
+    GpuObservationAdmission {
+        device_uuid: "GPU-deadbeef".into(),
+        sensor: crate::gpu::Sensor::NvidiaSmi,
+        headroom_bytes: 10,
+    }
+}
+
+fn gpu_sample(identity: &str, total: Value, used: Value) -> Value {
+    json!({
+        "status":"sampled","scope":"whole_device","task_attributed":false,
+        "devices":[{"uuid":identity,"memory_total_bytes":total,"memory_used_bytes":used}]
+    })
+}
+
+fn gpu_pool(sample: Value) -> (Arc<ResourcePool>, String, Arc<AtomicUsize>) {
+    let store = Arc::new(Store::in_memory().unwrap());
+    let mut pool = ResourcePool::with_profiles(
+        "human-cli",
+        store.clone(),
+        Settings {
+            label: "gpu.observe".into(),
+            capacity: allocation(1, 100, 100),
+            max_pending: 4,
+            max_wait_ms: 1000,
+            max_execution_ms: 1000,
+            scheduling: None,
+        },
+        Vec::new(),
+        Vec::new(),
+        Some(gpu_admission()),
+    )
+    .unwrap();
+    let observations = Arc::new(AtomicUsize::new(0));
+    let observed = observations.clone();
+    Arc::get_mut(&mut pool).unwrap().gpu_observer = Some(Arc::new(move |_| {
+        let sample = sample.clone();
+        let observed = observed.clone();
+        Box::pin(async move {
+            observed.fetch_add(1, Ordering::SeqCst);
+            Ok(sample)
+        })
+    }));
+    let task = store.create_task("GPU guard objective", "fast").unwrap();
+    (pool, task, observations)
+}
+
+#[tokio::test]
+async fn gpu_observation_guard_denies_before_dispatch_and_releases_reserved_capacity() {
+    for sample in [
+        json!({"status":"unavailable","devices":null,"scope":"whole_device"}),
+        gpu_sample("GPU-acde", json!(1000), json!(0)),
+        gpu_sample("GPU-deadbeef", Value::Null, json!(0)),
+        gpu_sample("GPU-deadbeef", json!(0), json!(0)),
+        gpu_sample("GPU-deadbeef", json!(1000), Value::Null),
+        gpu_sample("GPU-deadbeef", json!(1000), json!(1001)),
+        gpu_sample("GPU-deadbeef", json!(1000), json!(-1)),
+        gpu_sample("GPU-deadbeef", json!(1000), json!(0.5)),
+        gpu_sample("GPU-deadbeef", json!(100), json!(50)),
+        json!({"status":"sampled","scope":"whole_device","sensor":"nvml","devices":[
+            {"uuid":"GPU-deadbeef","memory_total_bytes":1000,"memory_used_bytes":0}
+        ]}),
+        json!({"status":"sampled","scope":"whole_device","devices":[
+            {"uuid":"GPU-deadbeef","memory_total_bytes":1000,"memory_used_bytes":0},
+            {"uuid":"GPU-deadbeef","memory_total_bytes":1000,"memory_used_bytes":0}
+        ]}),
+    ] {
+        let (pool, task, observations) = gpu_pool(sample);
+        let called = Arc::new(AtomicUsize::new(0));
+        let invoke = called.clone();
+        let result = pool
+            .execute(
+                &task,
+                "solver",
+                allocation(1, 0, 90),
+                || Ok(None),
+                move || async move {
+                    invoke.fetch_add(1, Ordering::SeqCst);
+                    Ok("should not dispatch")
+                },
+            )
+            .await;
+        assert!(result.is_err());
+        assert_eq!(called.load(Ordering::SeqCst), 0);
+        assert_eq!(observations.load(Ordering::SeqCst), 1);
+        assert!(pool.snapshot().unwrap().reservations.is_empty());
+        let events = pool.store.task(&task).unwrap()["events"]
+            .as_array()
+            .unwrap()
+            .clone();
+        assert!(events.iter().any(|event| {
+            event["kind"] == "resource_refused" && event["payload"]["provider_dispatched"] == false
+        }));
+        assert!(!events
+            .iter()
+            .any(|event| event["kind"] == "resource_dispatch"));
+    }
+}
+
+#[tokio::test]
+async fn gpu_observation_guard_dispatches_once_when_fresh_threshold_passes() {
+    let (pool, task, observations) = gpu_pool(gpu_sample("GPU-deadbeef", json!(1000), json!(100)));
+    let result = pool
+        .execute(
+            &task,
+            "solver",
+            allocation(1, 0, 90),
+            || Ok(None),
+            || async { Ok("accepted") },
+        )
+        .await
+        .unwrap();
+    assert_eq!(result.0, "accepted");
+    assert_eq!(observations.load(Ordering::SeqCst), 1);
+    let events = pool.store.task(&task).unwrap()["events"]
+        .as_array()
+        .unwrap()
+        .clone();
+    let observation = events
+        .iter()
+        .position(|event| event["kind"] == "resource_gpu_observation")
+        .unwrap();
+    let dispatch = events
+        .iter()
+        .position(|event| event["kind"] == "resource_dispatch")
+        .unwrap();
+    assert!(observation < dispatch);
+    assert_eq!(
+        events[observation]["payload"]["memory_available_bytes"],
+        900
+    );
+    assert_eq!(
+        events[observation]["payload"]["minimum_available_bytes"],
+        100
+    );
+    assert_eq!(
+        events[observation]["payload"]["physical_limits_enforced"],
+        false
+    );
+}
+
+#[test]
+fn gpu_observation_is_optional_pinned_operator_configuration() {
+    let legacy = configured();
+    assert!(serde_json::to_value(&legacy)
+        .unwrap()
+        .get("gpu_observation")
+        .is_none());
+    assert_eq!(
+        serde_json::from_value::<Configuration>(serde_json::to_value(&legacy).unwrap()).unwrap(),
+        legacy
+    );
+    let mut guarded = legacy.clone();
+    guarded.gpu_observation = Some(gpu_admission());
+    guarded.validate().unwrap();
+    assert_eq!(
+        serde_json::from_value::<Configuration>(serde_json::to_value(&guarded).unwrap()).unwrap(),
+        guarded
+    );
+    let store = Arc::new(Store::in_memory().unwrap());
+    let pool = ResourcePool::configured(store.clone(), &guarded).unwrap();
+    let mut changed = guarded.clone();
+    changed.gpu_observation.as_mut().unwrap().headroom_bytes += 1;
+    assert!(ResourcePool::configured(store.clone(), &changed).is_err());
+    changed = guarded.clone();
+    changed.gpu_observation.as_mut().unwrap().sensor = crate::gpu::Sensor::Nvml;
+    assert!(ResourcePool::configured(store, &changed).is_err());
+    assert_eq!(
+        pool.snapshot().unwrap().gpu_observation,
+        guarded.gpu_observation
+    );
+    for invalid in ["GPU-", "GPU-xyz!", "gpu-deadbeef"] {
+        let mut configuration = guarded.clone();
+        configuration.gpu_observation.as_mut().unwrap().device_uuid = invalid.into();
+        assert!(configuration.validate().is_err());
+    }
+}
+
+#[tokio::test]
+async fn cancellation_during_gpu_observation_releases_unstarted_reservation() {
+    let (mut pool, task, _) = gpu_pool(gpu_sample("GPU-deadbeef", json!(1000), json!(0)));
+    let started = Arc::new(AtomicUsize::new(0));
+    let entered = Arc::new(Notify::new());
+    let signal = started.clone();
+    let notify = entered.clone();
+    Arc::get_mut(&mut pool).unwrap().gpu_observer = Some(Arc::new(move |_| {
+        let signal = signal.clone();
+        let notify = notify.clone();
+        Box::pin(async move {
+            signal.store(1, Ordering::SeqCst);
+            notify.notify_one();
+            std::future::pending::<Result<Value>>().await
+        })
+    }));
+    let called = Arc::new(AtomicUsize::new(0));
+    let invoke = called.clone();
+    let run_pool = pool.clone();
+    let run_task = task.clone();
+    let execution = tokio::spawn(async move {
+        run_pool
+            .execute(
+                &run_task,
+                "solver",
+                allocation(1, 0, 90),
+                || Ok(None),
+                move || async move {
+                    invoke.fetch_add(1, Ordering::SeqCst);
+                    Ok("not invoked")
+                },
+            )
+            .await
+    });
+    tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            let notified = entered.notified();
+            if started.load(Ordering::SeqCst) == 1 {
+                return;
+            }
+            notified.await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(pool.snapshot().unwrap().reservations.len(), 1);
+    execution.abort();
+    let _ = execution.await;
+    assert_eq!(pool.snapshot().unwrap().reservations.len(), 0);
+    assert_eq!(called.load(Ordering::SeqCst), 0);
+    let events = pool.store.task(&task).unwrap()["events"]
+        .as_array()
+        .unwrap()
+        .clone();
+    assert!(!events
+        .iter()
+        .any(|event| event["kind"] == "resource_dispatch"));
+}
+
+#[tokio::test]
+async fn gpu_audit_failure_prevents_provider_invocation() {
+    let (pool, task, observations) = gpu_pool(gpu_sample("GPU-deadbeef", json!(1000), json!(0)));
+    pool.store.lock().unwrap().execute_batch(
+        "CREATE TRIGGER refuse_gpu_audit BEFORE INSERT ON events WHEN NEW.kind='resource_gpu_observation' BEGIN SELECT RAISE(ABORT,'audit unavailable'); END;",
+    ).unwrap();
+    let called = Arc::new(AtomicUsize::new(0));
+    let invoke = called.clone();
+    assert!(pool
+        .execute(
+            &task,
+            "solver",
+            allocation(1, 0, 90),
+            || Ok(None),
+            move || async move {
+                invoke.fetch_add(1, Ordering::SeqCst);
+                Ok("must not run")
+            },
+        )
+        .await
+        .is_err());
+    assert_eq!(observations.load(Ordering::SeqCst), 1);
+    assert_eq!(called.load(Ordering::SeqCst), 0);
+    assert!(pool.snapshot().unwrap().reservations.is_empty());
+    let events = pool.store.task(&task).unwrap()["events"]
+        .as_array()
+        .unwrap()
+        .clone();
+    assert!(!events
+        .iter()
+        .any(|event| event["kind"] == "resource_dispatch"));
+}
+
 struct Gate {
     entered: AtomicUsize,
     changed: Notify,
@@ -173,6 +444,7 @@ fn native_targets_keep_instance_identity_while_resources_match_only_canonical_ba
             device_memory_bytes: 25,
             consumers: vec![resource_target.clone()],
         }],
+        gpu_observation: None,
         working_profiles: vec![WorkingProfile {
             id: "native.solver".into(),
             target: resource_target,
@@ -776,6 +1048,7 @@ fn configured() -> Configuration {
         },
         allocation: allocation(1, 40, 60),
         working_profiles: Vec::new(),
+        gpu_observation: None,
     }
 }
 #[tokio::test]

@@ -710,6 +710,14 @@ async fn run_internal(
         bail!("Managed task execution requires explicit operator approval")
     }
     cfg.validate()?;
+    if request.format_version != 3
+        && cfg
+            .resource_admission
+            .as_ref()
+            .is_some_and(|resources| resources.gpu_observation.is_some())
+    {
+        bail!("GPU observation admission requires on-demand native lifecycle policy version 3")
+    }
     if cfg.input_token_admission.is_some() {
         bail!("Native model lifecycle does not support llama.cpp token-admission routing")
     }

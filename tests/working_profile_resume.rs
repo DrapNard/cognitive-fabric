@@ -150,6 +150,7 @@ fn configuration(endpoint: &str, with_profiles: bool) -> Configuration {
         },
         residents: Vec::new(),
         working_profiles,
+        gpu_observation: None,
     }
 }
 

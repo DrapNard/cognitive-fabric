@@ -487,6 +487,7 @@ mod tests {
             },
             allocation,
             residents: Vec::new(),
+            gpu_observation: None,
             working_profiles: vec![WorkingProfile {
                 id: "configured-solver".into(),
                 target: crate::backend::ModelTarget {
@@ -578,6 +579,7 @@ mod tests {
             },
             allocation,
             residents: Vec::new(),
+            gpu_observation: None,
             working_profiles: vec![WorkingProfile {
                 id: "native-solver".into(),
                 target: native.resource_target().unwrap(),

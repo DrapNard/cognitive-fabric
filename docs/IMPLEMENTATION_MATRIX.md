@@ -5846,3 +5846,69 @@ response echoes, rejected fresh-inventory disagreement, version-2 receipts and
 unknown-outcome mutation blocking. This verifies the adapter contract, not actual
 GPU placement. No new live OpenCode run was made for this milestone; the previous
 installed-client evidence remains recorded separately.
+
+## Observed GPU admission and Engine HTTP project selection — 2026-10-25
+
+**Implemented:** explicit immutable project selection on the one-goal Engine HTTP
+aliases, plus optional observed-memory inference admission. **Partial:** physical
+GPU quotas, model-weight/KV fit estimation, independent live GPU measurements and
+full Engine expert execution through conversational client turns.
+
+- `crates/cogfabric-server/src/lib.rs` accepts strict `cgf_project: "id@version"`
+  only for Engine aliases. Registry preflight rejects invalid/missing versions;
+  normal `TaskOptions` preserves exact context/version/checksum. The agent alias,
+  multi-turn history, tools and generation overrides retain their existing
+  restrictions. HTTP tests verify actual task snapshot evidence and early denials.
+- `src/engine.rs` validates selected project context before native lifecycle can
+  load weights. `src/residency/lifecycle.rs` and the Engine policy constructor
+  refuse eager native policies when observed GPU admission is enabled; v3 remains
+  supported. `tests/native_lifecycle.rs` checks both no-I/O boundaries.
+- `src/resource_scheduler.rs`, `admission.rs` and `configured.rs` pin optional
+  `gpu_observation.{device_uuid,sensor,headroom_bytes}`, preserve omitted defaults,
+  expose the setting in snapshots, and check one selected-device observation per
+  dispatch. Invalid/unavailable/missing/insufficient metrics refuse provider work.
+  Declared memory plus headroom is the threshold; no model-load estimate is inferred.
+- GPU evidence is recorded before dispatch. Query-completion age and task state
+  are checked again after the synchronous dispatch audit. A late failure invokes
+  no provider and conservatively quarantines the recorded dispatch. Ordinary
+  preflight refusals release only unstarted logical allocations; original model
+  reservations remain charged. `src/recovery/continuation_resources.rs` requires
+  exact guard intent, observation values/order and dispatch-age evidence, while
+  preserving unguarded legacy histories. Tests mutate/drop/invent that evidence.
+
+Security/performance: the host chooses the device and sensor; models gain no
+telemetry, model-change or execution capability. Every enabled dispatch adds a
+bounded sensor query and audit work while holding its logical allocation. Sampling
+and other processes' allocations can race, and no physical VRAM/energy isolation
+is established. Unknown late boundaries may require operator reconciliation.
+Defaults add no GPU query. Project context is bounded untrusted data and remains
+inside existing inference/context budgets. Documentation updates: HTTP API,
+resource scheduling, GPU observations, threat model, current snapshot and roadmap.
+
+Verification (Rust 1.99.0, existing lockfile):
+
+- `cargo fmt --all -- --check`: passed.
+- `cargo +1.99.0 check --locked --workspace --all-targets`: passed.
+- `cargo +1.99.0 check --locked --workspace --all-targets --all-features`: passed.
+- `cargo +1.99.0 clippy --locked --workspace --all-targets --all-features -- -D warnings`:
+  passed after correcting one new test initializer style issue.
+- `cargo +1.99.0 test --locked -p cogfabric --lib resource_scheduler::`: 38 passed.
+- `cargo +1.99.0 test --locked -p cogfabric --lib recovery::continuation::resource_history::`:
+  3 passed, including guarded/legacy, missing/altered/unexpected observation, and
+  required/altered/unexpected dispatch-age evidence.
+- `cargo +1.99.0 test --locked -p cogfabric --test native_lifecycle`: 21 passed.
+- `cargo +1.99.0 test --locked -p cogfabric-server --test http --test native_worker --test resource_scheduling`:
+  13 HTTP, 8 worker and 1 shared-capacity test passed.
+- `cargo +1.99.0 test --locked -p cogfabric --test resource_route_resume --test working_profile_resume --test agent_working_profiles`:
+  3 tests in each target passed; original route/profile and legacy continuations
+  remain verified. An earlier command used the server test target in the core
+  package and an unmatched filter; those selections are not passing evidence.
+
+The full all-target test/reflection campaign was not run, preserving operator
+scope. New GPU admission tests use a private deterministic observer; this is not
+live GPU validation. Read-only checks still found no working NVIDIA driver or
+local model endpoint. No quality/speed benchmark, GPU driver modification,
+FlatBuffers schema change, database migration or new rollback campaign was made.
+Reviewed binding integrity is checked by the build; `flatc` is unavailable for
+fresh generation. The next live milestone requires a usable driver/provider;
+physical memory enforcement and model-aware capacity planning remain separate work.

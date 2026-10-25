@@ -117,6 +117,16 @@ client's own schema validation and permission checks before execution.
 Supported options: `max_tokens` **or** `max_completion_tokens`, `temperature`,
 `tools`, `tool_choice` (`auto`, `none`, `required`, or a named function),
 `parallel_tool_calls`, `reasoning_effort` (`none`, `low`, `medium`, `high`), `stream`, `stream_options.include_usage`, and `store:false`.
+The `cgf_project` extension accepts one canonical, immutable `id@version`
+reference on `cogfabric-fast`, `cogfabric-standard`, `cogfabric-deep`, and
+`cogfabric-research`. The selected version must already exist. The Engine resolves
+the exact profile during preflight before task creation, then records its
+snapshot after task creation and before inference; its reference and checksum
+appear in the task trace. The project goal and preferences
+remain untrusted context and grant no permissions. `cogfabric-agent` rejects this
+field because its profile is operator-pinned. Collective aliases still reject
+history, tool definitions and generation overrides when `cgf_project` is present.
+
 Unknown options and `store:true` are rejected. Each request supplies its explicit
 history. When the optional collective is enabled, CGF stores a bounded, hash-bound
 reasoning checkpoint and tool-call correlation ledger, not a raw conversation
@@ -139,8 +149,10 @@ They use operator-configured Engine budgets and existing independent checkers.
 Use `cogfabric-agent` for an external application's multi-turn tool workflow.
 The native agent path runs the collective only when the operator enables it. The
 collective pins and resumes a bounded root task through standard tool-call IDs;
-the operator may configure a default immutable project profile for new sessions,
-but clients cannot select one through request fields. Matching active expert
+the operator may configure a default immutable project profile for new sessions.
+For one-goal Engine aliases, clients may select an exact immutable project
+profile using `cgf_project`; the operator-pinned default on `cogfabric-agent`
+cannot be overridden. Matching active expert
 manifests contribute bounded pinned advice only; they do not execute. The API
 still does not expose every Engine expert, custom model selector or general
 `resume-task` workflow. Most client answers remain unverified.
@@ -346,3 +358,17 @@ other fields are explicitly rejected rather than silently removed while flatteni
 text. These unsupported shapes return 400 before inference. Valid named choices
 and ordinary text arrays remain supported. No tool execution, permission, budget,
 conversation role or FlatBuffers schema is added.
+
+For a published [project profile](PROJECT_PROFILES.md), an Engine request can use:
+
+```json
+{
+  "model": "cogfabric-standard",
+  "cgf_project": "example.project@1",
+  "messages": [{"role": "user", "content": "Review the project plan."}]
+}
+```
+
+Replace the example reference with an existing immutable version. This optional
+vendor extension selects context only; it does not select another inference model
+or grant the request extra tools or resources.

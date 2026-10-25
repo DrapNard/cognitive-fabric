@@ -96,10 +96,41 @@ pub struct Configuration {
     /// Empty preserves the historical uniform-allocation behavior.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub working_profiles: Vec<WorkingProfile>,
+    /// Optional fresh shared-device observation before each provider dispatch.
+    /// This is a fail-closed admission hint, not physical VRAM enforcement.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gpu_observation: Option<GpuObservationAdmission>,
+}
+
+/// Explicit operator-selected GPU identity and conservative free-memory margin.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GpuObservationAdmission {
+    pub device_uuid: String,
+    pub sensor: crate::gpu::Sensor,
+    pub headroom_bytes: u64,
+}
+impl GpuObservationAdmission {
+    fn validate(&self) -> Result<()> {
+        let suffix = self.device_uuid.strip_prefix("GPU-").unwrap_or("");
+        if !(5..=80).contains(&self.device_uuid.len())
+            || suffix.is_empty()
+            || !suffix
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit() || byte == b'-')
+            || self.headroom_bytes > (1 << 60)
+        {
+            bail!("Invalid GPU observation admission settings")
+        }
+        Ok(())
+    }
 }
 impl Configuration {
     pub fn validate(&self) -> Result<()> {
         self.settings.validate()?;
+        if let Some(observation) = &self.gpu_observation {
+            observation.validate()?;
+        }
         let (_, resident) = resident::canonical(&self.residents, self.settings.capacity)?;
         canonical_working_profiles(&self.working_profiles, self.settings.capacity, resident)?;
         if self.allocation.compute_slots == 0
@@ -156,6 +187,8 @@ pub struct Snapshot {
     pub resident_allocated: Allocation,
     pub working_allocated: Allocation,
     pub residents: Vec<ResidentAllocation>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gpu_observation: Option<GpuObservationAdmission>,
     pub resident_catalog_sha256: String,
     pub residency_attested: bool,
     pub closed: bool,
@@ -176,8 +209,89 @@ pub struct ResourcePool {
     resident_catalog_sha256: String,
     working_profiles: Vec<WorkingProfile>,
     working_profiles_sha256: Option<String>,
+    gpu_observation: Option<GpuObservationAdmission>,
+    #[cfg(test)]
+    gpu_observer: Option<Arc<dyn Fn(crate::gpu::Sensor) -> GpuObservationFuture + Send + Sync>>,
     _workspace_lease: Option<crate::recovery::ExecutionLease>,
     _managed_ownership: Option<Arc<crate::residency::lifecycle::Ownership>>,
+}
+
+#[cfg(test)]
+type GpuObservationFuture =
+    std::pin::Pin<Box<dyn std::future::Future<Output = Result<Value>> + Send + 'static>>;
+
+struct GpuMemoryMetrics {
+    total: u64,
+    used: u64,
+    available: u64,
+    required: u64,
+}
+
+fn validate_gpu_observation(
+    admission: &GpuObservationAdmission,
+    allocation: Allocation,
+    sample: &Value,
+) -> std::result::Result<GpuMemoryMetrics, &'static str> {
+    if sample["status"] != "sampled" || sample["scope"] != "whole_device" {
+        return Err("gpu_observation_unavailable");
+    }
+    if sample
+        .get("sensor")
+        .and_then(Value::as_str)
+        .is_some_and(|sensor| sensor != admission.sensor.name())
+        || (admission.sensor == crate::gpu::Sensor::Nvml
+            && sample.get("sensor").and_then(Value::as_str) != Some(admission.sensor.name()))
+    {
+        return Err("gpu_sensor_mismatch");
+    }
+    let devices = sample["devices"]
+        .as_array()
+        .filter(|devices| (1..=16).contains(&devices.len()))
+        .ok_or("gpu_metrics_invalid")?;
+    let mut identities = std::collections::BTreeSet::new();
+    let mut selected = None;
+    for device in devices {
+        let Some(identity) = device.get("uuid").and_then(Value::as_str) else {
+            return Err("gpu_metrics_invalid");
+        };
+        let suffix = identity.strip_prefix("GPU-").unwrap_or("");
+        if !(5..=80).contains(&identity.len())
+            || suffix.is_empty()
+            || !suffix
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit() || byte == b'-')
+            || !identities.insert(identity)
+        {
+            return Err("gpu_metrics_invalid");
+        }
+        if identity == admission.device_uuid {
+            selected = Some(device);
+        }
+    }
+    let device = selected.ok_or("gpu_device_missing")?;
+    let total = device["memory_total_bytes"]
+        .as_u64()
+        .filter(|value| *value > 0 && *value <= (1 << 60))
+        .ok_or("gpu_metrics_invalid")?;
+    let used = device["memory_used_bytes"]
+        .as_u64()
+        .filter(|value| *value <= total)
+        .ok_or("gpu_metrics_invalid")?;
+    let available = total - used;
+    let required = allocation
+        .device_memory_bytes
+        .checked_add(admission.headroom_bytes)
+        .filter(|value| *value <= (1 << 60))
+        .ok_or("gpu_metrics_invalid")?;
+    if available < required {
+        return Err("gpu_headroom_insufficient");
+    }
+    Ok(GpuMemoryMetrics {
+        total,
+        used,
+        available,
+        required,
+    })
 }
 
 pub(crate) struct RoutingCandidate {
@@ -241,7 +355,20 @@ impl ResourcePool {
         if let Some(digest) = &self.working_profiles_sha256 {
             binding["working_profiles_sha256"] = json!(digest);
         }
+        if let Some(observation) = &self.gpu_observation {
+            binding["gpu_observation"] = serde_json::to_value(observation)?;
+        }
         Ok(binding)
+    }
+
+    async fn observe_gpu(&self, sensor: crate::gpu::Sensor) -> Result<Value> {
+        #[cfg(test)]
+        if let Some(observer) = &self.gpu_observer {
+            return tokio::time::timeout(Duration::from_secs(5), observer(sensor))
+                .await
+                .map_err(|_| anyhow!("GPU observation timed out"))?;
+        }
+        crate::gpu::sample_with(sensor).await
     }
 
     /// Resolve a candidate target against the existing canonical operator
@@ -362,6 +489,7 @@ impl ResourcePool {
                 self.resident_allocated,
             )
             .is_ok_and(|profiles| profiles == self.working_profiles)
+            && configuration.gpu_observation == self.gpu_observation
     }
     pub(crate) fn configuration_binding(configuration: &Configuration) -> Result<Value> {
         let (residents, allocated) =
@@ -375,6 +503,10 @@ impl ResourcePool {
         if !profiles.is_empty() {
             binding["working_profiles_sha256"] =
                 json!(crate::store::sha256(&serde_json::to_vec(&profiles)?));
+        }
+        if let Some(observation) = &configuration.gpu_observation {
+            observation.validate()?;
+            binding["gpu_observation"] = serde_json::to_value(observation)?;
         }
         Ok(binding)
     }
@@ -399,7 +531,7 @@ impl ResourcePool {
         settings: Settings,
         residents: Vec<ResidentAllocation>,
     ) -> Result<Arc<Self>> {
-        Self::with_profiles(actor, store, settings, residents, Vec::new())
+        Self::with_profiles(actor, store, settings, residents, Vec::new(), None)
     }
     fn with_profiles(
         actor: &str,
@@ -407,12 +539,16 @@ impl ResourcePool {
         settings: Settings,
         residents: Vec<ResidentAllocation>,
         working_profiles: Vec<WorkingProfile>,
+        gpu_observation: Option<GpuObservationAdmission>,
     ) -> Result<Arc<Self>> {
         security::authorize(actor, "resources.configure")?;
         settings.validate()?;
         let (residents, resident_allocated) = resident::canonical(&residents, settings.capacity)?;
         let working_profiles =
             canonical_working_profiles(&working_profiles, settings.capacity, resident_allocated)?;
+        if let Some(observation) = &gpu_observation {
+            observation.validate()?;
+        }
         let working_profiles_sha256 = if working_profiles.is_empty() {
             None
         } else {
@@ -434,6 +570,9 @@ impl ResourcePool {
             resident_catalog_sha256,
             working_profiles,
             working_profiles_sha256,
+            gpu_observation,
+            #[cfg(test)]
+            gpu_observer: None,
             _workspace_lease: None,
             _managed_ownership: None,
         }))
@@ -453,6 +592,7 @@ impl ResourcePool {
             resident_allocated: self.resident_allocated,
             working_allocated: state.used.available(self.resident_allocated),
             residents: self.residents.clone(),
+            gpu_observation: self.gpu_observation.clone(),
             resident_catalog_sha256: self.resident_catalog_sha256.clone(),
             residency_attested: false,
             closed: state.closed,
