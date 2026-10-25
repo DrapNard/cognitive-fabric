@@ -1,0 +1,94 @@
+//! Launcher policy tests; native HTTP mutation/receipt validation is covered separately.
+#![cfg(unix)]
+use std::{fs, os::unix::fs::PermissionsExt, process::Command};
+
+#[test]
+fn launcher_loads_only_the_installed_configured_model_and_preserves_other_instances() {
+    for scenario in [
+        "unloaded", "loaded", "small", "missing", "disabled", "unknown", "blocked", "offline",
+    ] {
+        let root = std::env::temp_dir().join(format!("cgf-autoload-{}", uuid::Uuid::new_v4()));
+        fs::create_dir(&root).unwrap();
+        fs::set_permissions(&root, fs::Permissions::from_mode(0o700)).unwrap();
+        fs::write(root.join("config.json"), "{}").unwrap();
+        fs::set_permissions(root.join("config.json"), fs::Permissions::from_mode(0o600)).unwrap();
+        fs::copy(
+            concat!(env!("CARGO_MANIFEST_DIR"), "/opencode.example.json"),
+            root.join("opencode.json"),
+        )
+        .unwrap();
+        let fixture = r##"#!/bin/bash
+set -eu
+if [[ "$1" == --version ]]; then echo 'opencode v2.0.32'; exit 0; fi
+for arg in "$@"; do
+case "$arg" in
+config-show) echo '{"backend":"openai-local","api_base":"http://127.0.0.1:1234/v1","model":"selected","max_tokens":1600,"max_tool_calls":4}'; exit 0;;
+residency-managed-status)
+ if [[ "$SCENARIO" == blocked ]]; then echo '{"managed_lifecycle_blocked":true,"unresolved_provider_operation":true}'; else echo '{"managed_lifecycle_blocked":false,"unresolved_provider_operation":false}'; fi; exit 0;;
+residency-status)
+ [[ "$SCENARIO" != offline ]] || exit 1
+ context=32768; [[ "$SCENARIO" != small ]] || context=4096
+ instances='[]'; if [[ "$SCENARIO" == loaded || "$SCENARIO" == small || -f "$FIXTURE_ROOT/did-load" ]]; then instances="[{\"id\":\"selected-instance\",\"config\":{\"context_length\":$context}}]"; fi
+ key=selected; [[ "$SCENARIO" != missing ]] || key=another
+ printf '{"adapter":"lmstudio-native-v1","models":[{"key":"%s","type":"llm","loaded_instances":%s},{"key":"unrelated","type":"llm","loaded_instances":[{"id":"keep","config":{"context_length":4096}}]}]}\n' "$key" "$instances"; exit 0;;
+residency-managed-load)
+ printf '%s\n' "$*" >> "$FIXTURE_ROOT/load-calls"
+ [[ "$SCENARIO" != unknown ]] || exit 1
+ touch "$FIXTURE_ROOT/did-load"
+ echo '{"server_confirmed":true,"receipt":{"model_key":"selected","context_length":32768}}'; exit 0;;
+diagnostics) touch "$FIXTURE_ROOT/reached-diagnostics"; exit 1;;
+esac
+done
+exit 99
+"##;
+        let binary = root.join("fixture");
+        fs::write(&binary, fixture).unwrap();
+        fs::set_permissions(&binary, fs::Permissions::from_mode(0o700)).unwrap();
+        let output = Command::new("bash")
+            .arg(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/scripts/opencode-local.sh"
+            ))
+            .current_dir(&root)
+            .env_clear()
+            .env("PATH", "/usr/bin:/bin")
+            .env("HOME", &root)
+            .env("TMPDIR", &root)
+            .env("COGFABRIC_HOME", &root)
+            .env("COGFABRIC_BIN", &binary)
+            .env("COGFABRIC_SERVER_BIN", &binary)
+            .env("OPENCODE_BIN", &binary)
+            .env("FIXTURE_ROOT", &root)
+            .env("SCENARIO", scenario)
+            .env(
+                "COGFABRIC_OPENCODE_AUTO_LOAD",
+                if scenario == "disabled" { "0" } else { "1" },
+            )
+            .output()
+            .unwrap();
+        assert!(
+            !output.status.success(),
+            "fixture intentionally stops before inference"
+        );
+        let loaded = root.join("load-calls").exists();
+        assert_eq!(
+            loaded,
+            matches!(scenario, "unloaded" | "unknown"),
+            "{scenario}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            root.join("reached-diagnostics").exists(),
+            matches!(scenario, "unloaded" | "loaded" | "offline"),
+            "{scenario}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        if loaded {
+            let calls = fs::read_to_string(root.join("load-calls")).unwrap();
+            assert_eq!(calls.lines().count(), 1);
+            assert!(calls.contains("--model selected --context-length 32768 --human-approve"));
+            assert!(!calls.contains("--authenticate"));
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+}

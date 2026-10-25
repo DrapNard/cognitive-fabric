@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 # Start only the Cognitive Fabric HTTP server owned by this invocation, then
 # run OpenCode in the current project directory. The upstream inference server
-# (for example LM Studio) is managed separately by the operator.
+# must already be running. Installed LM Studio models can be loaded via Core.
 
 readonly API_URL="http://127.0.0.1:8234/v1"
 readonly SERVER_URL="http://127.0.0.1:8234"
@@ -30,11 +30,14 @@ OPENCODE_BIN="${OPENCODE_BIN:-opencode}"
 SERVER_PID=""
 TMP_DIR=""
 API_KEY="${COGFABRIC_SERVER_API_KEY:-}"
+AUTO_LOAD="${COGFABRIC_OPENCODE_AUTO_LOAD:-1}"
 
 die() {
     printf 'cognitive-fabric: %s\n' "$*" >&2
     exit 1
 }
+
+[[ "$AUTO_LOAD" == 0 || "$AUTO_LOAD" == 1 ]] || die 'COGFABRIC_OPENCODE_AUTO_LOAD must be 0 or 1.'
 
 command -v bash >/dev/null 2>&1 || die 'Bash is required.'
 for required in jq curl timeout openssl; do
@@ -96,7 +99,7 @@ home_mode="$(stat -c '%a' -- "$CF_HOME" 2>/dev/null)" || die "Cannot inspect per
 (( (8#$home_mode & 077) == 0 )) || die "State directory $CF_HOME must be private (run chmod 700 '$CF_HOME')."
 
 config_file="$CF_HOME/config.json"
-[[ -f "$config_file" && ! -L "$config_file" ]] || die "No configured Cognitive Fabric workspace at $CF_HOME. Configure it as described in docs/OPENCODE.md; this helper does not select or load a model."
+[[ -f "$config_file" && ! -L "$config_file" ]] || die "No configured Cognitive Fabric workspace at $CF_HOME. Configure it as described in docs/OPENCODE.md; this helper only loads the model already selected in that configuration."
 config_mode="$(stat -c '%a' -- "$config_file" 2>/dev/null)" || die "Cannot inspect permissions on $config_file"
 (( (8#$config_mode & 077) == 0 )) || die "Configuration $config_file must be private (run chmod 600 '$config_file')."
 
@@ -135,7 +138,8 @@ on_exit() {
     cleanup_server
     if [[ -n "$TMP_DIR" ]]; then
         rm -f -- "$CURL_CONFIG"
-        rm -f -- "$TMP_DIR/config.json" "$TMP_DIR/diagnostics.json" "$TMP_DIR/models.json"
+        rm -f -- "$TMP_DIR/config.json" "$TMP_DIR/diagnostics.json" "$TMP_DIR/models.json" \
+            "$TMP_DIR/residency.json" "$TMP_DIR/residency.log" "$TMP_DIR/managed-status.json" "$TMP_DIR/load.json"
         if (( result != 0 )) && [[ -s "$CHECK_LOG" ]]; then
             printf 'Private diagnostic log: %s\n' "$CHECK_LOG" >&2
         else
@@ -162,19 +166,12 @@ jq -e '.backend == "openai-local" and (.max_tokens | type == "number" and . >= 1
     "$TMP_DIR/config.json" >/dev/null 2>&1 \
     || die 'This workspace must use backend openai-local, max_tokens of at least 1024, and max_tool_calls of at least 1. Inspect it with cogfabric --home <path> config-show; no configuration was changed.'
 
-if ! timeout 20 "$CF_BIN" --home "$CF_HOME" --json diagnostics --probe-inference >"$TMP_DIR/diagnostics.json" 2>"$CHECK_LOG"; then
-    die "The configured upstream inference service did not pass diagnostics. Start it and load the configured model, then retry. No model was installed or loaded. See docs/OPENCODE.md and the private diagnostic log: $CHECK_LOG"
-fi
-jq -e '.inference_discovery.status == "responded" and .inference_discovery.all_configured_models_advertised == true' \
-    "$TMP_DIR/diagnostics.json" >/dev/null 2>&1 \
-    || die "The configured upstream server is not advertising every configured model. Start the model server and load the configured model; no model was installed or loaded. See the private diagnostic log: $CHECK_LOG"
-
 # LM Studio's native inventory reports the context length of each currently
 # loaded instance. Check it when that endpoint is available; generic
 # OpenAI-compatible providers do not have a common context-inventory API.
 configured_api_base="$(jq -r '.api_base // empty' "$TMP_DIR/config.json")"
 configured_model="$(jq -r '.model // empty' "$TMP_DIR/config.json")"
-native_authority="$(jq -r '.api_base | try capture("^http://(?<authority>[^/]+)/v1/?$").authority catch empty' "$TMP_DIR/config.json" 2>/dev/null || true)"
+native_authority="$(jq -r '.api_base | try capture("^http://(?<authority>[^/]+)/(?:api/)?v1/?$").authority catch empty' "$TMP_DIR/config.json" 2>/dev/null || true)"
 if [[ -n "$native_authority" ]]; then
     native_api_base="http://${native_authority}/api/v1"
     native_args=(--home "$CF_HOME" --json residency-status --api-base "$native_api_base")
@@ -185,8 +182,33 @@ if [[ -n "$native_authority" ]]; then
         if jq -e '.adapter == "lmstudio-native-v1" and (.models | type == "array")' "$TMP_DIR/residency.json" >/dev/null 2>&1; then
             loaded_contexts="$(jq -c --arg model "$configured_model" '[.models[] | if .key == $model then .loaded_instances[] else .loaded_instances[] | select(.id == $model) end | .config.context_length]' "$TMP_DIR/residency.json")"
             loaded_count="$(jq 'length' <<<"$loaded_contexts")"
+            if [[ "$AUTO_LOAD" == 1 ]]; then
+                if ! timeout 12 "$CF_BIN" --home "$CF_HOME" --json residency-managed-status --api-base "$native_api_base" >"$TMP_DIR/managed-status.json" 2>"$CHECK_LOG"; then
+                    die "Could not inspect managed model history. See $CHECK_LOG"
+                fi
+                jq -e '.managed_lifecycle_blocked == false and .unresolved_provider_operation == false' "$TMP_DIR/managed-status.json" >/dev/null \
+                    || die 'Unresolved model lifecycle history requires operator reconciliation; no load or inference was attempted.'
+            fi
             if (( loaded_count == 0 )); then
-                die "LM Studio reports no loaded instance for configured model '$configured_model'. Load that model manually, then rerun; the helper does not load models."
+                [[ "$AUTO_LOAD" == 1 ]] || die "Configured model '$configured_model' is unloaded. Load it manually or set COGFABRIC_OPENCODE_AUTO_LOAD=1."
+                jq -e --arg model "$configured_model" 'any(.models[]; .key == $model and .type == "llm" and (.loaded_instances | length) == 0)' "$TMP_DIR/residency.json" >/dev/null \
+                    || die 'The configured model is not an installed native LLM key; select an installed model in Core configuration. No download was attempted.'
+                load_args=(--home "$CF_HOME" --json residency-managed-load --api-base "$native_api_base" --model "$configured_model" --context-length "$CONTEXT_LIMIT" --human-approve)
+                if [[ -n "${COGFABRIC_RESIDENCY_API_KEY:-}" ]]; then
+                    load_args+=(--authenticate)
+                fi
+                printf 'Loading configured LM Studio model %s with %s tokens of context.\n' "$configured_model" "$CONTEXT_LIMIT"
+                if ! timeout 90 "$CF_BIN" "${load_args[@]}" >"$TMP_DIR/load.json" 2>"$CHECK_LOG"; then
+                    die "Model load failed or its outcome is unknown. No retry or unload was attempted; inspect managed residency history and $CHECK_LOG before retrying."
+                fi
+                jq -e --arg model "$configured_model" --argjson context "$CONTEXT_LIMIT" '.server_confirmed == true and .receipt.model_key == $model and .receipt.context_length == $context' "$TMP_DIR/load.json" >/dev/null \
+                    || die 'Model load was not confirmed; inspect managed residency history. No retry was attempted.'
+                # Re-observe after the confirmed API call, before any inference.
+                timeout 8 "$CF_BIN" "${native_args[@]}" >"$TMP_DIR/residency.json" 2>"$CHECK_LOG" \
+                    || die 'Could not observe the loaded model; no inference was attempted.'
+                loaded_contexts="$(jq -c --arg model "$configured_model" '[.models[] | select(.key == $model) | .loaded_instances[] | .config.context_length]' "$TMP_DIR/residency.json")"
+                loaded_count="$(jq 'length' <<<"$loaded_contexts")"
+                (( loaded_count > 0 )) || die 'The configured model is still unloaded after the load call.'
             fi
             smallest_context="$(jq 'min' <<<"$loaded_contexts")"
             if (( smallest_context < CONTEXT_LIMIT )); then
@@ -202,6 +224,13 @@ if [[ -n "$native_authority" ]]; then
 else
     printf 'Warning: configured API base %s does not expose the standard LM Studio /v1 path; actual loaded context is unknown. Continuing with the configured %s-token OpenCode declaration.\n' "$configured_api_base" "$CONTEXT_LIMIT" >&2
 fi
+
+if ! timeout 20 "$CF_BIN" --home "$CF_HOME" --json diagnostics --probe-inference >"$TMP_DIR/diagnostics.json" 2>"$CHECK_LOG"; then
+    die "The configured upstream inference service did not pass diagnostics. Start the inference server, then retry. Automatic loading requires the native LM Studio API. See docs/OPENCODE.md and the private diagnostic log: $CHECK_LOG"
+fi
+jq -e '.inference_discovery.status == "responded" and .inference_discovery.all_configured_models_advertised == true' \
+    "$TMP_DIR/diagnostics.json" >/dev/null 2>&1 \
+    || die "The configured upstream server is not advertising every configured model. Start the model server and check its configured model; automatic loading requires the native LM Studio API. See the private diagnostic log: $CHECK_LOG"
 
 # Configure a private curl file so the bearer key does not appear in process
 # arguments. It is deleted after the one local service probe.

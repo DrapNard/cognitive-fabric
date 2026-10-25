@@ -1,5 +1,29 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## OpenCode startup model activation — 2026-10-25
+
+**Implemented for installed LM Studio models; live loading unverified.** Architecture
+sections 4, 6, 9 and 10: `scripts/opencode-local.sh` invokes the existing audited
+Rust `residency-managed-load` API for the exact configured unloaded LLM at 32K
+context before inference diagnostics. Compatible instances are reused, unrelated
+instances remain intact, missing models are not downloaded, and undersized loaded
+instances require manual reload. `COGFABRIC_OPENCODE_AUTO_LOAD=0` disables activation.
+Dedicated residency credentials remain separate from inference/client credentials.
+Pending/blocked lifecycle history refuses activation/reuse in automatic mode;
+uncertain calls are never retried or unloaded. Confirmed models remain resident
+on exit, consuming provider-managed memory. No model or client tool receives
+residency authority; no physical GPU quota or weight attestation is implied.
+
+`tests/opencode_autoload.rs` covers unloaded/reused/undersized/missing models,
+disabled activation, unknown load outcomes, blocked history and offline providers.
+All eight launcher scenarios and 14 existing managed-residency HTTP integration
+tests passed (the latter require loopback access outside the restricted sandbox).
+Shell syntax, formatting, all-target compilation and strict all-target Clippy passed.
+The installed launcher reached live LM Studio and refused the existing 4096-token
+Qwen instance; live loading was not exercised. Full all-target/reflection tests
+were not run, following the operator's restriction on reflection testing. See [OpenCode setup](OPENCODE.md).
+
+
 
 ## Task-pinned alternate typed expert providers — 2026-10-24
 

@@ -4,7 +4,8 @@
 `127.0.0.1:8234`, launches OpenCode in the current project, and shuts down only
 the server process it started. If an authenticated Cognitive Fabric server is
 already listening, it reuses that process and leaves it running after OpenCode
-exits. The helper never starts an inference provider or loads model weights.
+exits. The helper requires a running inference provider and can load the
+configured installed LM Studio model automatically.
 
 ## MCP, skills and web connections
 
@@ -60,7 +61,7 @@ export PATH="$HOME/.local/bin:$PATH"
 ```
 
 Configure a private Cognitive Fabric state directory and select the model that
-is already loaded in your local inference server. This example uses LM Studio
+is already downloaded in your local inference server. This example uses LM Studio
 at its standard local API address; model selection does not install or load
 weights:
 
@@ -72,13 +73,23 @@ chmod 700 "$HOME/.local/share/cogfabric-http"
 chmod 600 "$HOME/.local/share/cogfabric-http/config.json"
 ```
 
-Start the inference provider yourself, bind it to loopback, and load the model
-whose identifier matches `config.json`. For LM Studio, start its local server
-with bind address `127.0.0.1` and port `1234`. The launcher checks model
-discovery with `cogfabric diagnostics --probe-inference`; it stops with an
-actionable error if the provider is unavailable or the configured model is not
-advertised. It does not download a model, start LM Studio, or cause model weight
-loading.
+Start the inference provider yourself and bind it to loopback. For LM Studio,
+start its local server on `127.0.0.1:1234`. Running `cogfabric-opencode` authorizes
+loading the exact configured installed LLM through Core's audited
+`residency-managed-load` command when no matching instance is loaded. The native
+API request is `POST /api/v1/models/load` with the configured model key and
+`context_length: 32768`. Existing compatible instances are reused. Other instances
+are never unloaded; a matching instance with insufficient context requires an
+explicit manual reload.
+
+Set `COGFABRIC_OPENCODE_AUTO_LOAD=0` to disable loading (default: `1`). A load is
+attempted once, bounded by Core's 60-second HTTP deadline and a 90-second launcher
+timeout. Failed/uncertain operations are never retried automatically; inspect
+`residency-managed-status` and resolve unknown history explicitly before retrying.
+A confirmed load is recorded in the existing workspace database and remains loaded
+after OpenCode exits. The launcher never downloads weights or starts LM Studio.
+Generic OpenAI-compatible providers without the native API still require manual
+loading. Discovery and context checks run before OpenCode starts.
 
 ## Project OpenCode configuration
 
@@ -167,7 +178,7 @@ itself still enforces its configured request, tool, wall-time, and connection
 limits.
 
 For an authenticated LM Studio native inventory, set its separate
-`COGFABRIC_RESIDENCY_API_KEY`; the helper uses it only for this read-only check.
+`COGFABRIC_RESIDENCY_API_KEY`; the helper uses it for native inventory and approved model loading only.
 The upstream inference key and the Cognitive Fabric HTTP server key are not
 forwarded to this endpoint.
 
@@ -187,7 +198,7 @@ started; it does not shut down a pre-existing service.
 ## Troubleshooting
 
 - **Upstream unavailable / model missing:** start the local inference server,
-  load the configured model, and confirm `api_base` and the exact model ID with
+  ensure the configured model is installed (or load it manually for non-LM Studio providers), and confirm `api_base` and the exact model ID with
   `cogfabric --home "$HOME/.local/share/cogfabric-http" config-show`.
 - **Port 8234 responds with 401/403:** provide that server's
   `COGFABRIC_SERVER_API_KEY`; the launcher will verify `GET /v1/models` with the
