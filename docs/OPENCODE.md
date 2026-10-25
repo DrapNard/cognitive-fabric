@@ -78,7 +78,11 @@ start its local server on `127.0.0.1:1234`. Running `cogfabric-opencode` authori
 loading the exact configured installed LLM through Core's audited
 `residency-managed-load` command when no matching instance is loaded. The native
 API request is `POST /api/v1/models/load` with the configured model key and
-`context_length: 32768`. Existing compatible instances are reused. Other instances
+`context_length: 32768` and `offload_kv_cache_to_gpu: false`, with configuration
+confirmation enabled. The context cache defaults to CPU RAM to reduce VRAM demand;
+model-layer placement remains controlled by LM Studio. Set
+`COGFABRIC_OPENCODE_KV_GPU=true` to request GPU caching on a subsequent new load.
+Only literal `true` and `false` are accepted. Existing compatible instances are reused. Other instances
 are never unloaded; a matching instance with insufficient context requires an
 explicit manual reload.
 
@@ -196,6 +200,21 @@ removed after the API check. The helper only signals and reaps the server PID it
 started; it does not shut down a pre-existing service.
 
 ## Troubleshooting
+
+- **Unknown load after CUDA out of memory:** inspect LM Studio's log and native
+  inventory first. After independently confirming the failed operation has stopped
+  and the selected model is unloaded, explicitly resolve its retained task:
+
+  ```sh
+  cogfabric --home "$HOME/.local/share/cogfabric-http" residency-managed-resolve \
+    --api-base http://127.0.0.1:1234/api/v1 --task-id TASK_UUID \
+    --human-approve --provider-stop-acknowledged
+  cogfabric-opencode
+  ```
+
+  Resolution preserves the original unknown outcome; it does not retry the load.
+  The next launcher invocation requests CPU context caching by default. Do not
+  acknowledge provider stop while loading or inference is still active.
 
 - **Upstream unavailable / model missing:** start the local inference server,
   ensure the configured model is installed (or load it manually for non-LM Studio providers), and confirm `api_base` and the exact model ID with

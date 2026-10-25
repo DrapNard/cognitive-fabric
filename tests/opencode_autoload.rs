@@ -6,6 +6,7 @@ use std::{fs, os::unix::fs::PermissionsExt, process::Command};
 fn launcher_loads_only_the_installed_configured_model_and_preserves_other_instances() {
     for scenario in [
         "unloaded", "loaded", "small", "missing", "disabled", "unknown", "blocked", "offline",
+        "gpu", "bad-gpu",
     ] {
         let root = std::env::temp_dir().join(format!("cgf-autoload-{}", uuid::Uuid::new_v4()));
         fs::create_dir(&root).unwrap();
@@ -35,7 +36,8 @@ residency-managed-load)
  printf '%s\n' "$*" >> "$FIXTURE_ROOT/load-calls"
  [[ "$SCENARIO" != unknown ]] || exit 1
  touch "$FIXTURE_ROOT/did-load"
- echo '{"server_confirmed":true,"receipt":{"model_key":"selected","context_length":32768}}'; exit 0;;
+ gpu=false; [[ "$SCENARIO" != gpu ]] || gpu=true
+ printf '{"server_confirmed":true,"receipt":{"model_key":"selected","context_length":32768,"offload_kv_cache_to_gpu":%s}}\n' "$gpu"; exit 0;;
 diagnostics) touch "$FIXTURE_ROOT/reached-diagnostics"; exit 1;;
 esac
 done
@@ -61,6 +63,14 @@ exit 99
             .env("FIXTURE_ROOT", &root)
             .env("SCENARIO", scenario)
             .env(
+                "COGFABRIC_OPENCODE_KV_GPU",
+                match scenario {
+                    "gpu" => "true",
+                    "bad-gpu" => "invalid",
+                    _ => "false",
+                },
+            )
+            .env(
                 "COGFABRIC_OPENCODE_AUTO_LOAD",
                 if scenario == "disabled" { "0" } else { "1" },
             )
@@ -73,20 +83,26 @@ exit 99
         let loaded = root.join("load-calls").exists();
         assert_eq!(
             loaded,
-            matches!(scenario, "unloaded" | "unknown"),
+            matches!(scenario, "unloaded" | "unknown" | "gpu"),
             "{scenario}: {}",
             String::from_utf8_lossy(&output.stderr)
         );
         assert_eq!(
             root.join("reached-diagnostics").exists(),
-            matches!(scenario, "unloaded" | "loaded" | "offline"),
+            matches!(scenario, "unloaded" | "loaded" | "offline" | "gpu"),
             "{scenario}: {}",
             String::from_utf8_lossy(&output.stderr)
         );
         if loaded {
             let calls = fs::read_to_string(root.join("load-calls")).unwrap();
             assert_eq!(calls.lines().count(), 1);
-            assert!(calls.contains("--model selected --context-length 32768 --human-approve"));
+            assert!(calls.contains("--model selected --context-length 32768"));
+            assert!(calls.contains("--human-approve"));
+            assert!(calls.contains(if scenario == "gpu" {
+                "--offload-kv-cache-to-gpu true"
+            } else {
+                "--offload-kv-cache-to-gpu false"
+            }));
             assert!(!calls.contains("--authenticate"));
         }
         fs::remove_dir_all(root).unwrap();

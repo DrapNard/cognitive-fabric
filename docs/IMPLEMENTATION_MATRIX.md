@@ -1,5 +1,22 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## OpenCode cache placement after live VRAM failure — 2026-10-25
+
+**Implemented; live loading pending validation.** Architecture sections 6 and 9:
+new launcher loads request CPU KV caching through the existing Rust native adapter,
+which validates echoed configuration and fresh inventory before issuing a receipt.
+`COGFABRIC_OPENCODE_KV_GPU=true|false` selects placement (default false); this does
+not alter model-layer GPU placement or reconfigure existing instances. CPU caching
+reduces VRAM demand but increases host RAM use and may reduce inference speed.
+Live LM Studio logs showed a 32768-token/four-slot load failing to allocate a
+4608 MiB CUDA KV buffer. Uncertainty remains recorded and requires explicit operator
+stop acknowledgement/resolution; no automatic retry or history reset was added.
+All ten launcher scenarios passed, including explicit GPU selection and invalid
+settings. Shell syntax, formatting, all-target compilation and strict all-target
+Clippy passed. Full all-target/reflection tests were not run, following the
+operator's restriction. Live retry awaits explicit stop acknowledgement.
+
+
 ## OpenCode startup model activation — 2026-10-25
 
 **Implemented for installed LM Studio models; live loading unverified.** Architecture

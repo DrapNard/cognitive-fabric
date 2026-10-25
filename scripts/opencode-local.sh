@@ -31,6 +31,7 @@ SERVER_PID=""
 TMP_DIR=""
 API_KEY="${COGFABRIC_SERVER_API_KEY:-}"
 AUTO_LOAD="${COGFABRIC_OPENCODE_AUTO_LOAD:-1}"
+KV_GPU="${COGFABRIC_OPENCODE_KV_GPU:-false}"
 
 die() {
     printf 'cognitive-fabric: %s\n' "$*" >&2
@@ -38,6 +39,7 @@ die() {
 }
 
 [[ "$AUTO_LOAD" == 0 || "$AUTO_LOAD" == 1 ]] || die 'COGFABRIC_OPENCODE_AUTO_LOAD must be 0 or 1.'
+[[ "$KV_GPU" == true || "$KV_GPU" == false ]] || die 'COGFABRIC_OPENCODE_KV_GPU must be true or false.'
 
 command -v bash >/dev/null 2>&1 || die 'Bash is required.'
 for required in jq curl timeout openssl; do
@@ -193,15 +195,15 @@ if [[ -n "$native_authority" ]]; then
                 [[ "$AUTO_LOAD" == 1 ]] || die "Configured model '$configured_model' is unloaded. Load it manually or set COGFABRIC_OPENCODE_AUTO_LOAD=1."
                 jq -e --arg model "$configured_model" 'any(.models[]; .key == $model and .type == "llm" and (.loaded_instances | length) == 0)' "$TMP_DIR/residency.json" >/dev/null \
                     || die 'The configured model is not an installed native LLM key; select an installed model in Core configuration. No download was attempted.'
-                load_args=(--home "$CF_HOME" --json residency-managed-load --api-base "$native_api_base" --model "$configured_model" --context-length "$CONTEXT_LIMIT" --human-approve)
+                load_args=(--home "$CF_HOME" --json residency-managed-load --api-base "$native_api_base" --model "$configured_model" --context-length "$CONTEXT_LIMIT" --offload-kv-cache-to-gpu "$KV_GPU" --human-approve)
                 if [[ -n "${COGFABRIC_RESIDENCY_API_KEY:-}" ]]; then
                     load_args+=(--authenticate)
                 fi
-                printf 'Loading configured LM Studio model %s with %s tokens of context.\n' "$configured_model" "$CONTEXT_LIMIT"
+                printf 'Loading configured LM Studio model %s with %s tokens of context (KV cache on GPU: %s).\n' "$configured_model" "$CONTEXT_LIMIT" "$KV_GPU"
                 if ! timeout 90 "$CF_BIN" "${load_args[@]}" >"$TMP_DIR/load.json" 2>"$CHECK_LOG"; then
                     die "Model load failed or its outcome is unknown. No retry or unload was attempted; inspect managed residency history and $CHECK_LOG before retrying."
                 fi
-                jq -e --arg model "$configured_model" --argjson context "$CONTEXT_LIMIT" '.server_confirmed == true and .receipt.model_key == $model and .receipt.context_length == $context' "$TMP_DIR/load.json" >/dev/null \
+                jq -e --arg model "$configured_model" --argjson context "$CONTEXT_LIMIT" --argjson gpu "$KV_GPU" '.server_confirmed == true and .receipt.model_key == $model and .receipt.context_length == $context and .receipt.offload_kv_cache_to_gpu == $gpu' "$TMP_DIR/load.json" >/dev/null \
                     || die 'Model load was not confirmed; inspect managed residency history. No retry was attempted.'
                 # Re-observe after the confirmed API call, before any inference.
                 timeout 8 "$CF_BIN" "${native_args[@]}" >"$TMP_DIR/residency.json" 2>"$CHECK_LOG" \
