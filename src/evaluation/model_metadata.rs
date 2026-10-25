@@ -264,7 +264,7 @@ fn resource_routes(
 }
 
 fn canonical_target(value: &Value) -> Result<crate::backend::InferenceTarget> {
-    use crate::backend::{InferenceTarget, ModelTarget, NativeModelTarget};
+    use crate::backend::{InferenceTarget, ManagedNativeTarget, ModelTarget, NativeModelTarget};
     let target = match value["kind"].as_str() {
         Some("deterministic") if value.as_object().is_some_and(|object| object.len() == 1) => {
             InferenceTarget::Deterministic
@@ -301,6 +301,22 @@ fn canonical_target(value: &Value) -> Result<crate::backend::InferenceTarget> {
             }
             InferenceTarget::Native(target)
         }
+        Some("managed_native")
+            if value
+                .as_object()
+                .is_some_and(|object| object.len() == 2 && object.contains_key("target")) =>
+        {
+            let target: ManagedNativeTarget = serde_json::from_value(value["target"].clone())?;
+            let canonical = target.canonical()?;
+            if canonical != target
+                || value["target"]
+                    .as_object()
+                    .is_none_or(|object| object.len() != 3)
+            {
+                bail!("Selected managed native route target is not canonical")
+            }
+            InferenceTarget::ManagedNative(target)
+        }
         _ => bail!("Malformed selected route target"),
     };
     if serde_json::to_value(&target)? != *value {
@@ -329,6 +345,27 @@ fn require_exact_keys(value: &Value, expected: &[&str]) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn managed_native_route_projection_accepts_only_canonical_policy_bound_targets() {
+        let target = crate::backend::ManagedNativeTarget {
+            api_base: "http://127.0.0.1:1234/api/v1".into(),
+            model: "approved-model".into(),
+            policy_sha256: "e".repeat(64),
+        };
+        let value = serde_json::to_value(crate::backend::InferenceTarget::ManagedNative(
+            target.clone(),
+        ))
+        .unwrap();
+        assert_eq!(
+            canonical_target(&value).unwrap(),
+            crate::backend::InferenceTarget::ManagedNative(target)
+        );
+
+        let mut invalid = value;
+        invalid["target"]["policy_sha256"] = json!("E".repeat(64));
+        assert!(canonical_target(&invalid).is_err());
+    }
+
     #[test]
     fn planning_and_exploration_counts_are_task_scoped_and_content_minimized() {
         let store = Store::in_memory().unwrap();

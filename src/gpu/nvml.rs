@@ -148,3 +148,92 @@ pub(super) fn decode_sample(bytes: &[u8]) -> Result<Vec<Device>> {
     }
     Ok(devices)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn device() -> fb::DeviceT {
+        fb::DeviceT {
+            uuid: "GPU-01234567-abcd".into(),
+            memory_total_bytes: 12 * 1024 * 1024 * 1024,
+            has_memory_total: true,
+            memory_used_bytes: 1024 * 1024 * 1024,
+            has_memory_used: true,
+            utilization_percent: 37.0,
+            has_utilization: true,
+            power_watts: 45.125,
+            has_power: true,
+        }
+    }
+
+    fn encode(version: u16, devices: Vec<fb::DeviceT>) -> Vec<u8> {
+        let sample = fb::SampleT { version, devices };
+        let mut builder = flatbuffers::FlatBufferBuilder::new();
+        let root = sample.pack(&mut builder);
+        fb::finish_sample_buffer(&mut builder, root);
+        builder.finished_data().to_vec()
+    }
+
+    #[test]
+    fn typed_gpu_samples_preserve_units_and_unavailable_metrics() {
+        let decoded = decode_sample(&encode(1, vec![device()])).unwrap();
+        assert_eq!(decoded[0].memory_total_bytes, Some(12 * 1024 * 1024 * 1024));
+        assert_eq!(decoded[0].utilization_percent, Some(37.0));
+        assert_eq!(decoded[0].power_watts, Some(45.125));
+        let mut absent = device();
+        absent.has_memory_total = false;
+        absent.has_memory_used = false;
+        absent.has_power = false;
+        absent.has_utilization = false;
+        let decoded = decode_sample(&encode(1, vec![absent])).unwrap();
+        assert!(decoded[0].memory_total_bytes.is_none());
+        assert!(decoded[0].memory_used_bytes.is_none());
+        assert!(decoded[0].power_watts.is_none());
+        assert!(decoded[0].utilization_percent.is_none());
+    }
+
+    #[test]
+    fn typed_gpu_samples_reject_malformed_frames_and_unknown_versions() {
+        let valid = encode(1, vec![device()]);
+        for length in 0..valid.len() {
+            // FlatBuffers permits unused alignment padding at the end; a
+            // truncated frame must never yield corrupt or partial device data.
+            if let Ok(devices) = decode_sample(&valid[..length]) {
+                assert_eq!(devices.len(), 1);
+                assert_eq!(devices[0].uuid, "GPU-01234567-abcd");
+                assert_eq!(devices[0].power_watts, Some(45.125));
+            }
+        }
+        let mut wrong_identifier = valid;
+        wrong_identifier[4] ^= 0xff;
+        assert!(decode_sample(&wrong_identifier).is_err());
+        assert!(decode_sample(&vec![0; MAX_FRAME + 1]).is_err());
+        assert!(decode_sample(&encode(2, vec![device()])).is_err());
+        assert!(decode_sample(&encode(1, vec![])).is_err());
+        assert!(decode_sample(&encode(1, vec![device(); MAX_DEVICES + 1])).is_err());
+    }
+
+    #[test]
+    fn typed_gpu_samples_reject_invalid_values_and_duplicate_identities() {
+        assert!(decode_sample(&encode(1, vec![device(), device()])).is_err());
+        for index in 0..9 {
+            let mut raw = device();
+            match index {
+                0 => raw.uuid = "not-a-gpu".into(),
+                1 => raw.uuid = format!("GPU-{}", "a".repeat(80)),
+                2 => raw.memory_total_bytes = MAX_MEMORY_BYTES + 1,
+                3 => raw.memory_used_bytes = raw.memory_total_bytes + 1,
+                4 => raw.utilization_percent = f64::NAN,
+                5 => raw.utilization_percent = 101.0,
+                6 => raw.power_watts = f64::INFINITY,
+                7 => raw.power_watts = -1.0,
+                _ => raw.power_watts = 10_001.0,
+            }
+            assert!(
+                decode_sample(&encode(1, vec![raw])).is_err(),
+                "case {index}"
+            );
+        }
+    }
+}

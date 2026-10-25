@@ -208,6 +208,45 @@ fn native_targets_keep_instance_identity_while_resources_match_only_canonical_ba
         serde_json::to_value(crate::backend::InferenceTarget::Native(target.clone())).unwrap()
     );
 
+    let managed = crate::backend::ManagedNativeTarget {
+        api_base: target.api_base.clone(),
+        model: target.model.clone(),
+        policy_sha256: "b".repeat(64),
+    };
+    let managed_selected = pool
+        .routing_candidate(
+            "solver",
+            Some(crate::backend::InferenceTarget::ManagedNative(
+                managed.clone(),
+            )),
+        )
+        .unwrap();
+    assert_eq!(
+        managed_selected.target,
+        crate::backend::InferenceTarget::ManagedNative(managed.clone())
+    );
+    assert_eq!(managed_selected.metadata["profile_id"], "native.solver");
+    assert_eq!(
+        managed_selected.metadata["resident_coverage"]["target"],
+        serde_json::to_value(crate::backend::InferenceTarget::ManagedNative(
+            managed.clone()
+        ))
+        .unwrap()
+    );
+    let invalid_policy = crate::backend::ManagedNativeTarget {
+        policy_sha256: "B".repeat(64),
+        ..managed
+    };
+    assert!(matches!(
+        pool.routing_candidate(
+            "solver",
+            Some(crate::backend::InferenceTarget::ManagedNative(
+                invalid_policy
+            ))
+        ),
+        Err(RoutingRejection::MetadataError)
+    ));
+
     let other_instance = crate::backend::NativeModelTarget {
         model_instance_id: "model-instance-b".into(),
         ..target.clone()

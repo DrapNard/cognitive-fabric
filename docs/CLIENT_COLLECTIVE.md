@@ -96,6 +96,24 @@ same configured model. Catalogs, client prompts, tool results and model advice
 cannot create permissions. Client tool execution remains the client's
 responsibility.
 
+An operator may set `agent_project_profile` to an exact published `id@version`
+with `cogfabric configure-agent-project --profile example.project@1`. The
+immutable project snapshot is resolved inside the root session's database
+transaction, added as explicitly untrusted project context and pinned by
+version/checksum. It applies only to new sessions; changing the configured
+reference requires restarting the service and prevents old continuations from
+resuming under changed configuration. Publishing a later profile version does
+not change an existing session. Use `--clear` to remove the setting. Project
+context can be included even when local retrieval is disabled, and grants no
+model, tool, budget, acceptance or execution authority.
+
+When local retrieval is enabled, up to three active Expert Network manifests
+with lexical matches against the original objective can contribute bounded
+metadata and workflow advice. The session pins each selected manifest's exact
+version and hash. This is quoted advisory context through the configured model;
+the client collective does not dispatch the expert, execute its workflow, load a
+bound model/provider, or receive declared capabilities as permissions.
+
 Only a small set of pure, compiled checks over the original root goal—including
 supported sort/order/path constraints and related deterministic criteria—can
 complete independently as verified. Client-supplied tool results remain untrusted.
@@ -124,9 +142,11 @@ user-only follow-up after closure unless the request includes the echoed history
 ## Integration boundaries
 
 This endpoint persists and resumes its bounded role graph during client tool-loop
-conversations. It does not expose the Engine's full expert registry, custom expert
-execution, project-profile/model selectors or general task recovery workflow
-through this API. Those remain separate Engine capabilities. The client catalog
-may change between turns; every advertised function still requires the client's
-own permission and schema checks. Existing collective aliases retain their
+conversations. Project context is configured by the operator for new sessions;
+clients cannot select profiles per request. The endpoint still does not expose
+the Engine's full expert execution, custom executable bindings, alternate model
+selection or general task recovery workflow. Matching experts contribute only
+the pinned advisory context described above. The client catalog may change
+between turns; every advertised function still requires the client's own
+permission and schema checks. Existing collective aliases retain their
 goal-only contract.

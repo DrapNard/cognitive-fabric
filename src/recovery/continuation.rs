@@ -1621,6 +1621,9 @@ async fn resume_with_runtime_handles(
         &checkpoint.mode,
         checkpoint.state,
     )?;
+    session.model_backend_factory = native
+        .as_ref()
+        .and_then(|runtime| runtime.model_backend_factory());
     session.set_project_profile_sha256(checkpoint.project_profile_sha256.clone());
     session.typed_modules = checkpoint
         .typed_modules
@@ -1632,6 +1635,9 @@ async fn resume_with_runtime_handles(
     session.resource_pool = resource_pool;
     if let Some(provider) = checkpoint.verifier_provider.clone() {
         session.restore_verifier_provider(provider);
+    }
+    if let Some(native) = &native {
+        native.begin_continuation()?;
     }
     let execution = async {
         if let Some(boundary) = &checkpoint.boundary {
@@ -1685,6 +1691,10 @@ async fn resume_with_runtime_handles(
     } else {
         status
     })?;
+    let native_lifecycle = match &native {
+        Some(runtime) => runtime.finish_continuation(status).await?,
+        None => Value::Null,
+    };
     let report = json!({"format_version":1,"task_id":task,"status":status,"answer":answer,
         "escalation_policy":session.escalator.descriptor(),"policy_implementation_attested":false,
         "project_profile":checkpoint.project_profile.as_ref().map(|project|json!({
@@ -1696,6 +1706,7 @@ async fn resume_with_runtime_handles(
         "restored_resource_pool":restored_pool,"resource_history":checkpoint.resource_history,
         "parallel_history":parallel_history,
         "restored_native_runtime":native.as_ref().map(|runtime|runtime.evidence()),
+        "native_lifecycle":native_lifecycle,
         "restored_typed_modules":checkpoint.typed_modules.as_ref().map(|modules|modules.evidence()),
         "finite_search_history":checkpoint.finite_search_history,
         "new_calls":session.resources.calls-prior_calls,"charged_resources":session.resources,

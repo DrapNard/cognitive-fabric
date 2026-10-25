@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use clap::{Parser, Subcommand};
 use cogfabric::{
     config::Config,
@@ -427,6 +427,13 @@ enum Command {
     ConfigureAgentCollective {
         #[arg(long, action = clap::ArgAction::Set)]
         enabled: bool,
+    },
+    /// Pin an immutable operator project profile to newly created agent sessions.
+    ConfigureAgentProject {
+        #[arg(long, required_unless_present = "clear", conflicts_with = "clear")]
+        profile: Option<String>,
+        #[arg(long)]
+        clear: bool,
     },
     ConfigShow,
     ResourceStatus,
@@ -1127,6 +1134,30 @@ async fn run_cli() -> Result<()> {
             cli.json,
         );
     }
+    if let Command::ConfigureAgentProject { profile, clear } = &cli.command {
+        security::authorize("human-cli", "resources.configure")?;
+        let mut changed = cfg.clone();
+        if *clear {
+            changed.agent_project_profile = None;
+        } else {
+            let reference = profile
+                .as_deref()
+                .ok_or_else(|| anyhow!("Specify --profile id@version or --clear"))?;
+            cogfabric::projects::Selection::parse(reference)?;
+            let store = Store::open_existing_read_only(&changed.db())?;
+            store.project_profile(reference)?;
+            changed.agent_project_profile = Some(reference.to_owned());
+        }
+        changed.save()?;
+        return output(
+            json!({
+                "agent_project_profile": changed.agent_project_profile,
+                "new_sessions_only": true,
+                "running_services_require_restart": true
+            }),
+            cli.json,
+        );
+    }
     match &cli.command {
         Command::Candidate {
             action:
@@ -1780,6 +1811,7 @@ async fn run_cli() -> Result<()> {
         Command::Status => {
             json!({"home":cfg.home,"backend":cfg.backend,"model":cfg.model,"inference_process":cfg.inference_process,
             "resource_admission":cfg.resource_admission,"agent_collective_enabled":cfg.agent_collective,
+            "agent_project_profile":cfg.agent_project_profile,
             "skills":store.skills()?.len(),"candidates":store.candidates()?.len()})
         }
         Command::ConfigureInputTokens { .. } => {
@@ -1790,6 +1822,9 @@ async fn run_cli() -> Result<()> {
         }
         Command::ConfigureAgentCollective { .. } => {
             bail!("Agent collective configuration must run before runtime initialization")
+        }
+        Command::ConfigureAgentProject { .. } => {
+            bail!("Agent project configuration must run before runtime initialization")
         }
         Command::ConfigureLocal {
             model,

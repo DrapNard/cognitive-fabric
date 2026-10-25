@@ -1412,3 +1412,24 @@ not factual verification. The collective grants no file, shell, network or clien
 tool permission. Managed role workers retain one-use grants and owned cleanup;
 cancellation does not prove provider GPU termination. See [client collective](CLIENT_COLLECTIVE.md)
 for session limits and integration boundaries.
+
+## First-use native activation and client Engine context — 2026-10-25
+
+An explicitly approved version-3 native lifecycle policy fixes the provider and
+allowed model keys. Stable pre-load target identity has no fabricated instance
+ID. Loading and generation use the retained workspace owner and original clock;
+resource admission precedes activation. Confirmed receipts bind actual instances,
+including fresh inventory and response identity checks. Failed/dropped operations
+retain uncertainty and block replay or unsafe mutation. Only newly loaded instances
+may be automatically released after safe confirmed work; existing instances are
+kept. Continuation restores exact policy, role/model bindings and remaining
+same-boot lifecycle time. These checks do not establish physical GPU ownership,
+VRAM enforcement, immutable weights or external provider termination.
+
+Client collective project context is selected by the operator's immutable
+`id@version` setting. Its snapshot and checksum are captured once. Expert manifest
+workflow advice is bounded, hash-pinned reference data; it cannot grant the client
+collective tools, select a model, change the objective or replace compiled
+verification. Checkpoints can include private project text, so they and backups
+remain sensitive local data. They are not encrypted. Full Engine executable expert
+routing and native lifecycle management are not exposed as client-selected tools.

@@ -72,5 +72,11 @@ metrics remains unavailable; no automatic fallback hides an NVML failure.
 `sensor_compiled_support` describes the build feature, not runtime library health.
 
 This is telemetry, not a CUDA inference backend. GPU inference still belongs to
-the configured external model provider. NVML runtime behavior has not been tested
-for this change; tests and benchmarks were deferred at the operator's request.
+the configured external model provider. The bounded frame, missing-metric and child cleanup paths have focused tests.
+Live GPU measurements still require a working NVIDIA driver and visible device;
+fixture tests do not establish CUDA inference or measured GPU performance.
+
+`scripts/setup.sh --nvml-gpu` propagates the feature to both the core CLI and
+the HTTP server. For a direct server build use
+`cargo build --locked -p cogfabric-server --features nvml-gpu`. This flag enables
+read-only observation; configure model offloading in the inference provider.

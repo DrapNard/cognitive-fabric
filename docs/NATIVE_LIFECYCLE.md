@@ -15,7 +15,8 @@ exclude the newly exposed field and cannot authorize explicit GPU settings.
 
 This controls provider-reported KV-cache placement only. It does not request a
 model-layer offload ratio, prove physical GPU residency, enforce GPU quotas or
-establish speed gains. Runtime tests of this new path are deferred.
+establish speed gains. Live GPU placement remains unverified; local fixture
+coverage is recorded in the implementation matrix.
 
 
 CLI/loopback lifecycle, uncertainty, cancellation and receipt reuse pass the
@@ -76,6 +77,13 @@ when required. Cancellation covers setup and execution. Inference process
 substitution and arbitrary callback reconstruction remain refused. Logical
 resource admission and returned-instance checks do not prove physical GPU limits,
 continuous exclusive provider ownership, weight identity or general answer quality.
+
+## First-use model activation
+
+Policy version 3 adds [on-demand activation](NATIVE_ON_DEMAND.md): the approved
+set is an allowlist, and a role/expert loads its model only when inference reaches
+that model. Versions 1 and 2 preserve eager activation. Deterministic tasks load
+no models. Existing validated receipts are reused and never automatically released.
 
 ## Operator policy
 

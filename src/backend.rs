@@ -168,6 +168,10 @@ impl ModelTarget {
 pub enum InferenceTarget {
     LocalHttp(ModelTarget),
     Native(NativeModelTarget),
+    /// An operator-approved native model key whose managed instance is loaded
+    /// on first use. This is a stable policy-bound destination, not a claim
+    /// that a provider instance is currently loaded.
+    ManagedNative(ManagedNativeTarget),
     Deterministic,
 }
 
@@ -206,6 +210,53 @@ impl NativeModelTarget {
 
     /// Resource catalogs describe the model key; the instance remains part of
     /// the selected native adapter identity and is checked on every response.
+    pub fn resource_target(&self) -> Result<ModelTarget> {
+        let target = self.canonical()?;
+        Ok(ModelTarget {
+            api_base: target.api_base,
+            model: target.model,
+        })
+    }
+}
+
+/// Stable identity for a model approved by an on-demand native lifecycle
+/// policy. Unlike `NativeModelTarget`, this deliberately has no instance ID:
+/// the instance is bound only after a successful managed activation.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ManagedNativeTarget {
+    pub api_base: String,
+    pub model: String,
+    pub policy_sha256: String,
+}
+
+impl ManagedNativeTarget {
+    /// Validate the exact LM Studio native API endpoint and the immutable
+    /// approval digest that authorized this model.
+    pub fn canonical(&self) -> Result<Self> {
+        let target = ModelTarget {
+            api_base: self.api_base.clone(),
+            model: self.model.clone(),
+        }
+        .canonical()?;
+        let digest = self.policy_sha256.as_bytes();
+        if Url::parse(&target.api_base)?.path() != "/api/v1"
+            || digest.len() != 64
+            || !digest
+                .iter()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(byte))
+        {
+            bail!("Invalid managed native inference target")
+        }
+        Ok(Self {
+            api_base: target.api_base,
+            model: target.model,
+            policy_sha256: self.policy_sha256.clone(),
+        })
+    }
+
+    /// Resource profiles and resident catalogs describe the approved model
+    /// key. They do not imply that the model has already been loaded.
     pub fn resource_target(&self) -> Result<ModelTarget> {
         let target = self.canonical()?;
         Ok(ModelTarget {
@@ -456,6 +507,48 @@ mod tests {
             "http://localhost/v1#fragment",
         ] {
             assert!(local_endpoint(base).is_err(), "{base}");
+        }
+    }
+
+    #[test]
+    fn managed_native_target_is_stable_policy_bound_and_has_no_instance_placeholder() {
+        let target = ManagedNativeTarget {
+            api_base: "http://127.0.0.1:1234/api/v1".into(),
+            model: "approved-model-key".into(),
+            policy_sha256: "a".repeat(64),
+        };
+        let canonical = target.canonical().unwrap();
+        assert_eq!(canonical, target);
+        assert_eq!(
+            canonical.resource_target().unwrap(),
+            ModelTarget {
+                api_base: "http://127.0.0.1:1234/api/v1".into(),
+                model: "approved-model-key".into(),
+            }
+        );
+        let serialized = serde_json::to_value(InferenceTarget::ManagedNative(target)).unwrap();
+        assert_eq!(serialized["kind"], "managed_native");
+        assert!(serialized["target"].get("model_instance_id").is_none());
+
+        for invalid in [
+            ManagedNativeTarget {
+                policy_sha256: "A".repeat(64),
+                ..canonical.clone()
+            },
+            ManagedNativeTarget {
+                policy_sha256: "a".repeat(63),
+                ..canonical.clone()
+            },
+            ManagedNativeTarget {
+                api_base: "http://127.0.0.1:1234/v1".into(),
+                ..canonical.clone()
+            },
+            ManagedNativeTarget {
+                api_base: "http://example.com:1234/api/v1".into(),
+                ..canonical.clone()
+            },
+        ] {
+            assert!(invalid.canonical().is_err());
         }
     }
 

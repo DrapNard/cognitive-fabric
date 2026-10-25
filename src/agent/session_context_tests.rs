@@ -51,7 +51,7 @@ fn client_reference_is_bounded_utf8_safe_and_pins_only_provenance() {
         context.expert_models.is_empty(),
         "client context must not load expert models"
     );
-    let (reference, pins) = session_context::capture(&tx, query).unwrap();
+    let (reference, pins) = session_context::capture(&tx, query, None, true).unwrap();
     tx.commit().unwrap();
     drop(db);
 
@@ -111,7 +111,7 @@ fn captured_reference_remains_pinned_after_active_skill_version_changes() {
         let tx = db
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .unwrap();
-        let result = session_context::capture(&tx, "orchidvector").unwrap();
+        let result = session_context::capture(&tx, "orchidvector", None, true).unwrap();
         tx.commit().unwrap();
         result
     };
@@ -135,4 +135,113 @@ fn captured_reference_remains_pinned_after_active_skill_version_changes() {
         captured_reference
     );
     assert_eq!(captured.1, captured_pins);
+}
+
+#[test]
+fn configured_project_profile_and_matching_expert_workflow_are_pinned_as_advice() {
+    let store = Store::in_memory().unwrap();
+    let profile = store
+        .publish_project(crate::projects::ProjectDraft {
+            format_version: 1,
+            id: "demo.project".into(),
+            name: "Rust service".into(),
+            goal: "Maintain a Tokio service safely".into(),
+            preferences: crate::projects::Preferences::default(),
+        })
+        .unwrap();
+    let manifest = crate::registry::Manifest {
+        id: "rust.async.s1".into(),
+        version: "1.0.0".into(),
+        kind: "workflow".into(),
+        checker: None,
+        description: "Tokio async Rust workflow advice".into(),
+        tags: vec!["rust".into(), "tokio".into()],
+        capabilities: vec![crate::registry::Capability {
+            id: "rust.review".into(),
+            version: "1.0.0".into(),
+        }],
+        dependencies: Vec::new(),
+        source: "fixture".into(),
+        license: "CC0-1.0".into(),
+        workflow: Some("Check cancellation and bound each task.".into()),
+        workflow_steps: None,
+        model: None,
+        provider: None,
+    };
+    crate::registry::register(&store, &manifest).unwrap();
+    crate::registry::activate(&store, &manifest.id, &manifest.version).unwrap();
+
+    let captured = {
+        let mut db = store.lock().unwrap();
+        let tx = db
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .unwrap();
+        let captured = session_context::capture(
+            &tx,
+            "Help with Tokio async Rust",
+            Some("demo.project@1"),
+            true,
+        )
+        .unwrap();
+        tx.commit().unwrap();
+        captured
+    };
+    let reference: Value = serde_json::from_str(&captured.0).unwrap();
+    assert_eq!(reference["project_profile"]["reference"], "demo.project@1");
+    assert_eq!(reference["project_profile"]["project_goal"], profile.goal);
+    let expert = &reference["expert_advice"][0];
+    assert_eq!(expert["id"], manifest.id);
+    assert_eq!(expert["version"], manifest.version);
+    assert_eq!(
+        expert["workflow_advice"]["text"],
+        "Check cancellation and bound each task."
+    );
+    assert_eq!(expert["permissions_granted"], false);
+    assert_eq!(expert["executable_by_client_collective"], false);
+    assert_eq!(captured.1["project_profile"]["sha256"], profile.checksum);
+    assert_eq!(captured.1["manifests"][0]["id"], manifest.id);
+    assert_eq!(
+        captured.1["manifests"][0]["sha256"],
+        sha256(&serde_json::to_vec(&manifest).unwrap())
+    );
+
+    let mut revised = crate::projects::ProjectDraft {
+        format_version: 1,
+        id: "demo.project".into(),
+        name: "Rust service".into(),
+        goal: "A new later version".into(),
+        preferences: crate::projects::Preferences::default(),
+    };
+    revised.goal.push('!');
+    store.publish_project(revised).unwrap();
+    let current = store.project_profile("demo.project@1").unwrap();
+    assert_eq!(current.checksum, profile.checksum);
+    assert_eq!(
+        serde_json::from_str::<Value>(&captured.0).unwrap(),
+        reference
+    );
+}
+
+#[test]
+fn project_context_is_available_without_enabling_local_retrieval() {
+    let store = Store::in_memory().unwrap();
+    let profile = store
+        .publish_project(crate::projects::ProjectDraft {
+            format_version: 1,
+            id: "demo.project".into(),
+            name: "Project".into(),
+            goal: "Persistent project goal".into(),
+            preferences: crate::projects::Preferences::default(),
+        })
+        .unwrap();
+    let db = store.lock().unwrap();
+    let (reference, pins) =
+        session_context::capture(&db, "unmatched words", Some("demo.project@1"), false).unwrap();
+    let decoded: Value = serde_json::from_str(&reference).unwrap();
+    assert_eq!(decoded["project_profile"]["reference"], "demo.project@1");
+    assert!(decoded["documents"].as_array().unwrap().is_empty());
+    assert!(decoded["memories"].as_array().unwrap().is_empty());
+    assert!(decoded["expert_advice"].as_array().unwrap().is_empty());
+    assert_eq!(pins["project_profile"]["sha256"], profile.checksum);
+    assert_eq!(pins["permissions_granted"], false);
 }

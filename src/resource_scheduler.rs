@@ -261,6 +261,12 @@ impl ResourcePool {
                 Ok(target) => crate::backend::InferenceTarget::Native(target),
                 Err(_) => return Err(RoutingRejection::MetadataError),
             },
+            Some(crate::backend::InferenceTarget::ManagedNative(target)) => {
+                match target.canonical() {
+                    Ok(target) => crate::backend::InferenceTarget::ManagedNative(target),
+                    Err(_) => return Err(RoutingRejection::MetadataError),
+                }
+            }
             Some(crate::backend::InferenceTarget::Deterministic) => {
                 crate::backend::InferenceTarget::Deterministic
             }
@@ -278,6 +284,17 @@ impl ResourcePool {
                     }
                 }
                 crate::backend::InferenceTarget::Native(target) => {
+                    let resource_target = match target.resource_target() {
+                        Ok(target) => target,
+                        Err(_) => return Err(RoutingRejection::MetadataError),
+                    };
+                    match profiles::select_profile(&self.working_profiles, role, &resource_target) {
+                        Ok(Some(profile)) => profile,
+                        Ok(None) => return Err(RoutingRejection::UnlistedProfile),
+                        Err(_) => return Err(RoutingRejection::MetadataError),
+                    }
+                }
+                crate::backend::InferenceTarget::ManagedNative(target) => {
                     let resource_target = match target.resource_target() {
                         Ok(target) => target,
                         Err(_) => return Err(RoutingRejection::MetadataError),

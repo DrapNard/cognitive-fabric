@@ -673,10 +673,18 @@ impl Store {
         &self,
         reference: &str,
     ) -> Result<crate::projects::ProjectProfile> {
-        let selection = crate::projects::Selection::parse(reference)?;
         let db = self.lock()?;
-        let profile = db
-            .query_row(
+        Self::project_profile_from(&db, reference)
+    }
+
+    /// Resolve an immutable project version from an existing transaction so a
+    /// client session can pin profile context with its opening retrieval view.
+    pub(crate) fn project_profile_from(
+        db: &Connection,
+        reference: &str,
+    ) -> Result<crate::projects::ProjectProfile> {
+        let selection = crate::projects::Selection::parse(reference)?;
+        let profile = db.query_row(
                 "SELECT CASE WHEN length(CAST(id AS BLOB))<=100 THEN id END,version,format_version,CASE WHEN length(CAST(name AS BLOB))<=120 THEN name END,CASE WHEN length(CAST(goal AS BLOB))<=2000 THEN goal END,CASE WHEN length(CAST(preferences_json AS BLOB))<=128 THEN preferences_json END,CASE WHEN length(CAST(checksum AS BLOB))=64 THEN checksum END FROM project_profiles WHERE id=?1 AND version=?2",
                 params![selection.id(), selection.version()],
                 project_profile_from_row,

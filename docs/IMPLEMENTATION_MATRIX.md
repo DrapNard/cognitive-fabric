@@ -5752,3 +5752,97 @@ reasoning-quality benchmark or real REA/web connection was run. FlatBuffers file
 were unchanged; the generator pairing could not be checked because `flatc` was
 unavailable. This does not establish full seven-subsystem integration or general
 agentic-client/protocol compatibility.
+
+## Engine context and on-demand native GPU/provider lifecycle — 2026-10-25
+
+**Implemented:** operator-selected client project context, pinned expert workflow
+advice, approved Engine first-use activation, resource-route/restoration support,
+and optional NVML package installation. **Partial:** full Engine client execution,
+measured/physical GPU scheduling and live-provider validation.
+
+- `src/config.rs`, `src/main.rs`, `src/store.rs`, `src/agent/{sessions,
+  session_context}.rs`: immutable profile selection/capture, bounded matching
+  expert advice, version/hash pins and configuration drift refusal. Tests in
+  `session_context_tests.rs`, `sessions_tests.rs` and `tests/client_agent_project_config.rs`.
+- `src/residency/lifecycle/{lazy,restoration}.rs`, `src/residency/lifecycle.rs`,
+  `src/backend.rs`, `src/engine.rs`: policy-v3 activation, stable unloaded model
+  identity, exact managed receipts, unknown-outcome gates, configured role and
+  expert binding validation, same-boot cutoffs, safe release and approved resume.
+  `tests/native_lifecycle.rs` covers actual CLI/service/worker and loopback native
+  provider interactions; `tests/native_policy_inputs.rs` covers special-file,
+  symlink, duplicate-field and policy-size refusal.
+- `src/resource_scheduler/*`, `src/recovery/{continuation,
+  continuation_resources,resource_routes}.rs`, `src/evaluation/model_metadata.rs`:
+  managed targets retain policy scope through admission, evaluation projection and
+  recovery without claiming a loaded instance. Exact expert Config identities
+  reuse cached adapters under a bounded registry.
+- `src/gpu/nvml.rs`, `tests/gpu_observation.rs`, `tests/setup_install.rs`,
+  `crates/cogfabric-server/Cargo.toml`, `scripts/setup.sh`, CI: typed protocol
+  negative tests, missing-driver diagnostics, feature propagation and GPU build checks.
+
+Security/performance: first-use loading reduces unnecessary resident activation,
+but load latency remains inside resource/time admission. Activation is serialized
+under the approved coordinator and only confirmed newly loaded instances are
+eligible for automatic release. Loading/inference errors can deliberately leave
+capacity quarantined until operator reconciliation. Extra project/advisory context
+uses the original prompt budget and may displace lower-priority references; it
+creates no extra inference call by itself. Provider-reported placement/telemetry
+is not a physical VRAM limit, task-attributed energy or proof of GPU termination.
+The NVIDIA driver/device is unavailable in this environment; no live GPU speed,
+quality or memory result is claimed. Optional image/audio/video work remains last
+on the roadmap. The canonical French architecture is unchanged.
+
+### Verification for the Engine/GPU milestone
+
+All commands use Rust 1.99.0 and the existing lockfile. Successful focused library
+checks used `cargo +1.99.0 test --locked -p cogfabric --lib FILTER`:
+
+| Filter | Passed |
+| --- | ---: |
+| `agent::` | 57 |
+| `resource_scheduler::` | 33 |
+| `residency::` | 17 |
+| `backend::` | 11 |
+| `recovery::continuation::resource_routes::` | 7 |
+| `managed_native` (overlaps the groups above) | 3 |
+| `config::tests::client_project_profile_is_optional_canonical_and_roundtrips` | 1 |
+
+`cargo +1.99.0 test --locked -p cogfabric --test native_lifecycle --test native_policy_inputs`
+passed 20 lifecycle and 2 policy-input tests on the corrected implementation.
+Earlier runs exposed and corrected native API versus inventory URL confusion,
+restoration URL comparison, missing main-backend uncertainty after adapter-cache
+refactoring, and a root-only unknown-outcome mutation gate. Fixture corrections
+use a real managed receipt before testing reuse, distinguish the on-demand root
+journal from eager continuation journals, and use the required native policy URL.
+A new negative case still refuses unreceipted foreign instances; successful
+newly-loaded cleanup has its own regression. No assertion was replaced with a
+success stub, and uncertain provider work remains blocked.
+
+No full all-target test campaign or reflection campaign was run, respecting the
+operator's earlier direction. The focused native continuation tests exercise
+continuation without launching a new reflection campaign. No live-provider quality,
+speed/VRAM benchmark, GPU driver repair, new FlatBuffers schema or SQLite migration
+was performed. The build validates the pinned reviewed binding bundle; `flatc` is
+absent, so fresh compiler generation was not revalidated. Default and optional
+NVML parser checks preserve unknown/unavailable measurements rather than zero.
+
+Additional successful checks:
+
+- `cargo fmt --all -- --check` and `git diff --check`: passed.
+- `cargo +1.99.0 check --locked --workspace --all-targets`: passed.
+- `cargo +1.99.0 check --locked --workspace --all-targets --all-features`: passed.
+- `cargo +1.99.0 clippy --locked --workspace --all-targets --all-features -- -D warnings`:
+  passed after correcting the lifecycle code and on the final test source.
+- `cargo +1.99.0 test --locked -p cogfabric-server --test http --test native_worker`:
+  11 HTTP and 8 managed-worker tests passed.
+- `cargo +1.99.0 test --locked --features nvml-gpu -p cogfabric --lib gpu::`:
+  12 passed (also passed in the default build).
+- `cargo +1.99.0 test --locked --features nvml-gpu --test gpu_observation --test setup_install --test client_agent_project_config`:
+  2 observation, 1 installer and 1 project CLI tests passed.
+- `sh -n scripts/setup.sh`: passed.
+
+The GPU placement regression covers requested true and false values, rejected
+response echoes, rejected fresh-inventory disagreement, version-2 receipts and
+unknown-outcome mutation blocking. This verifies the adapter contract, not actual
+GPU placement. No new live OpenCode run was made for this milestone; the previous
+installed-client evidence remains recorded separately.

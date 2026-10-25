@@ -157,6 +157,23 @@ pub(super) fn coverage(
                 declared_consumer_matched: true,
             })
         }
+        Some(InferenceTarget::ManagedNative(target)) => {
+            let target = target.canonical()?;
+            let resource_target = target.resource_target()?;
+            let matches = residents
+                .iter()
+                .filter(|resident| resident.consumers.binary_search(&resource_target).is_ok())
+                .map(|resident| format!("{}@{}", resident.id, resident.version))
+                .collect::<Vec<_>>();
+            if matches.is_empty() {
+                bail!("Inference target is absent from the resident catalog")
+            }
+            Ok(ResidentCoverage {
+                target: InferenceTarget::ManagedNative(target),
+                resident_identities: matches,
+                declared_consumer_matched: true,
+            })
+        }
         None => bail!("Inference target is unknown for the resident catalog"),
     }
 }

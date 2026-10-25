@@ -114,6 +114,9 @@ impl ResourcePool {
         let target = match target {
             Some(crate::backend::InferenceTarget::LocalHttp(target)) => target.canonical()?,
             Some(crate::backend::InferenceTarget::Native(target)) => target.resource_target()?,
+            Some(crate::backend::InferenceTarget::ManagedNative(target)) => {
+                target.resource_target()?
+            }
             Some(crate::backend::InferenceTarget::Deterministic) | None => {
                 bail!("Configured working profiles require a known local model target")
             }

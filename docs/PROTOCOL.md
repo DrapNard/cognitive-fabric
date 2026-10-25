@@ -581,3 +581,12 @@ and execution limits retain their existing meaning. Recovery accepts overlapping
 providers only in v5; v1–v4 remain single-provider snapshots. Closed retained
 identities may be validated in v5 without being dispatchable. The internal typed
 module FlatBuffers request/response protocol is unchanged by this snapshot version.
+
+## Deferred native target identity
+
+On-demand native lifecycle policies use the serialized `managed_native` inference
+target in task/resource audit metadata. It binds canonical native endpoint, approved
+model key and policy SHA-256 before an instance exists; it intentionally has no
+placeholder instance ID. Activation records subsequently bind the real managed
+receipt and observed instance. This is metadata for host admission and restoration,
+not a new model-granted command or a change to the FlatBuffers wire schemas.

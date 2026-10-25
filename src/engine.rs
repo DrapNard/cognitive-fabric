@@ -75,6 +75,7 @@ pub struct Engine {
     native_lifecycle_policy: Option<Arc<crate::residency::lifecycle::NativeLifecyclePolicy>>,
     native_lifecycle_eligible: bool,
     native_lifecycle_digest: Option<String>,
+    native_lifecycle_activation: Option<String>,
     native_lifecycle_config_digest: Option<String>,
 }
 impl Engine {
@@ -123,6 +124,7 @@ impl Engine {
             native_lifecycle_policy: None,
             native_lifecycle_eligible: false,
             native_lifecycle_digest: None,
+            native_lifecycle_activation: None,
             native_lifecycle_config_digest: None,
         }
     }
@@ -191,6 +193,7 @@ impl Engine {
         ownership: Arc<crate::residency::lifecycle::Ownership>,
         factory: ModelBackendFactory,
         policy_digest: String,
+        activation: Option<&str>,
         modules: Arc<crate::fabric::modules::Broker>,
     ) -> Result<Self> {
         ownership.validate(&self.store)?;
@@ -214,6 +217,7 @@ impl Engine {
         fork.native_lifecycle_policy = None;
         fork.native_lifecycle_eligible = false;
         fork.native_lifecycle_digest = Some(policy_digest);
+        fork.native_lifecycle_activation = activation.map(str::to_owned);
         fork.native_lifecycle_config_digest = None;
         Ok(fork)
     }
@@ -733,7 +737,13 @@ impl Engine {
             session.verifier_provider = self.verifier_provider.clone();
             session.model_backend_factory = self.model_backend_factory.clone();
             if self.managed_ownership.is_some() {
-                self.store.event(&id,"native_task_scope","security-kernel",json!({"format_version":1,"instance_binding_required":true,"policy_sha256":self.native_lifecycle_digest,"permissions_granted":false}))?;
+                let scope = if self.native_lifecycle_activation.as_deref() == Some("on_demand") {
+                    json!({"format_version":2,"instance_binding_required":true,"activation":"on_demand","policy_sha256":self.native_lifecycle_digest,"permissions_granted":false})
+                } else {
+                    json!({"format_version":1,"instance_binding_required":true,"policy_sha256":self.native_lifecycle_digest,"permissions_granted":false})
+                };
+                self.store
+                    .event(&id, "native_task_scope", "security-kernel", scope)?;
             }
             session.verification_enabled = profile != ExecutionProfile::Alone;
             if !matches!(

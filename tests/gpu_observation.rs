@@ -70,3 +70,47 @@ fn gpu_window_reporting_is_explicit_optional_and_never_claims_task_energy() {
     }
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn explicit_nvml_diagnostics_preserve_missing_driver_as_unavailable() {
+    let root = std::env::temp_dir().join(format!("fabric-nvml-probe-{}", uuid::Uuid::new_v4()));
+    let cfg = Config {
+        home: root.clone(),
+        ..Default::default()
+    };
+    cfg.save().unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_cogfabric"))
+        .env_clear()
+        .arg("--home")
+        .arg(&root)
+        .args([
+            "--json",
+            "diagnostics",
+            "--probe-gpu",
+            "--gpu-sensor",
+            "nvml",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let probe = &report["gpu_telemetry"];
+    assert_eq!(probe["sensor"], "nvml");
+    assert_eq!(probe["sensor_compiled_support"], cfg!(feature = "nvml-gpu"));
+    assert_eq!(probe["scope"], "whole_device");
+    assert_eq!(probe["task_attributed"], false);
+    assert!(probe["energy_joules"].is_null());
+    match probe["status"].as_str().unwrap() {
+        "sampled" => assert!(!probe["devices"].as_array().unwrap().is_empty()),
+        "unavailable" => {
+            assert!(probe["devices"].is_null());
+            assert!(!probe["reason"].as_str().unwrap().is_empty());
+        }
+        other => panic!("Unexpected GPU probe status: {other}"),
+    }
+    std::fs::remove_dir_all(root).unwrap();
+}

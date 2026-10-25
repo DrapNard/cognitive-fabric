@@ -97,7 +97,11 @@ execution and offloading; the Rust runtime does not implement CUDA inference.
 
 `diagnostics --probe-gpu` and `compare --observe-gpu` provide optional NVIDIA
 device observations. These do not prove GPU inference, task-attributed energy or
-physical GPU quota enforcement. See [GPU observations](docs/GPU_OBSERVATIONS.md).
+physical GPU quota enforcement. Build optional NVML support with
+`--features nvml-gpu` or install using `setup.sh --nvml-gpu`. See
+[GPU observations](docs/GPU_OBSERVATIONS.md). Approved Engine
+[lifecycle policies](docs/NATIVE_ON_DEMAND.md) can load models on first use, reuse
+validated instances and release only instances loaded by that lifecycle.
 CPU execution support is distinct from the still-unproven live reasoning and
 efficiency claims.
 

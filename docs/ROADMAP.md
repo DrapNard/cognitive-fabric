@@ -7,8 +7,8 @@ that planned items are implemented.
 
 ## Core completion: client-driven Jev-R orchestration
 
-**Status: Implemented for bounded client tool-loop orchestration; verification
-evidence for this milestone is being recorded.** The opt-in
+**Status: Implemented for bounded client tool-loop orchestration; focused
+verification evidence is recorded in the implementation matrix.** The opt-in
 [client collective](CLIENT_COLLECTIVE.md) now carries one root task across ordinary
 client tool-call requests. Opaque CGF-issued tool IDs bind the exact correlated
 history to a durable checkpoint. Calls, cycles, input/output reservations,
@@ -101,3 +101,16 @@ automatic active-weight changes and autonomous capability growth remain separate
 research programs. They are not implied by protocol compatibility, modality
 adapters or successful orchestration tests. Any such work needs independent
 evaluation and the gates in the canonical architecture and threat model.
+
+## Engine and GPU lifecycle integration — 2026-10-25
+
+Operator-selected immutable project profiles and bounded expert workflow advice
+now reach client collective sessions. Approved Engine native lifecycle policy v3
+supports on-demand model activation with validated instance reuse and conditional
+release; see [first-use activation](NATIVE_ON_DEMAND.md). Optional NVML observation
+is available to both installed packages through the setup feature flag.
+
+**Partial:** arbitrary Engine expert execution/project/model selection through the
+client endpoint, dynamic measured VRAM scheduling, physical GPU isolation and live
+GPU performance/quality evidence. Client tools remain client-owned. Optional
+multimodal work retains its final-phase priority above.

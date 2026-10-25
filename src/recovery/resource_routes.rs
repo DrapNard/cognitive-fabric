@@ -24,9 +24,10 @@ pub(crate) fn validate(
     let mut intent: Option<(i64, String, Value)> = None;
     let mut selection: Option<(i64, String, Value)> = None;
     let mut snapshot_id = None;
+    let mut native_scope: Option<(String, Value)> = None;
     let mut first_dispatch = None;
     let mut stmt = db.prepare(
-        "SELECT id,kind,CASE WHEN length(CAST(source AS BLOB))<=64 THEN source END,CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN payload END FROM events WHERE task_id=?1 AND kind IN ('routing_resource_intent','routing_resource_selection','module_snapshot','model_dispatch') ORDER BY id LIMIT 4097",
+        "SELECT id,kind,CASE WHEN length(CAST(source AS BLOB))<=64 THEN source END,CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN payload END FROM events WHERE task_id=?1 AND kind IN ('routing_resource_intent','routing_resource_selection','module_snapshot','model_dispatch','native_task_scope') ORDER BY id LIMIT 4097",
     )?;
     let mut rows = stmt.query([task])?;
     let mut seen = 0usize;
@@ -61,6 +62,11 @@ pub(crate) fn validate(
                 }
             }
             "module_snapshot" => {}
+            "native_task_scope" => {
+                if native_scope.replace((source, payload)).is_some() {
+                    bail!("Repeated native task scope")
+                }
+            }
             _ => unreachable!(),
         }
     }
@@ -240,6 +246,21 @@ pub(crate) fn validate(
                 // The instance ID is not a Config field. Exact host reconstitution
                 // is enforced by restrict_backend before the route is usable.
             }
+            InferenceTarget::ManagedNative(managed) => {
+                let (source, scope) = native_scope.as_ref().ok_or_else(|| {
+                    anyhow!("Managed native route has no original lazy lifecycle scope")
+                })?;
+                if source != "security-kernel"
+                    || scope["format_version"] != 2
+                    || scope["activation"] != "on_demand"
+                    || scope["policy_sha256"] != managed.policy_sha256
+                    || managed.canonical()? != *managed
+                    || scope["instance_binding_required"] != true
+                    || scope["permissions_granted"] != false
+                {
+                    bail!("Managed native route differs from its original lazy lifecycle scope")
+                }
+            }
             InferenceTarget::Deterministic => {
                 bail!("A deterministic target cannot be selected as an inference route")
             }
@@ -306,6 +327,19 @@ fn target_from_value(value: &Value) -> Result<InferenceTarget> {
                 bail!("Saved native route identity is not canonical")
             }
             Ok(InferenceTarget::Native(target))
+        }
+        Some("managed_native") if value.as_object().is_some_and(|object| object.len() == 2) => {
+            let target: crate::backend::ManagedNativeTarget =
+                serde_json::from_value(value["target"].clone())?;
+            if target.canonical()? != target
+                || value["target"]
+                    .as_object()
+                    .is_none_or(|object| object.len() != 3)
+                || serde_json::to_value(InferenceTarget::ManagedNative(target.clone()))? != *value
+            {
+                bail!("Saved managed native route identity is not canonical")
+            }
+            Ok(InferenceTarget::ManagedNative(target))
         }
         Some("deterministic") if value.as_object().is_some_and(|object| object.len() == 1) => {
             Ok(InferenceTarget::Deterministic)
@@ -624,6 +658,62 @@ mod tests {
         )
     }
 
+    fn managed_native_fixture() -> (Fixture, crate::backend::ManagedNativeTarget) {
+        let (mut fixture, native) = native_fixture();
+        let target = crate::backend::ManagedNativeTarget {
+            api_base: native.api_base,
+            model: native.model,
+            policy_sha256: "c".repeat(64),
+        };
+        let resources = fixture.cfg.resource_admission.as_ref().unwrap();
+        let mut selection = fixture.selection.clone();
+        selection["routes"][0]["resource"] = expected_resource_metadata(
+            resources,
+            "solver",
+            InferenceTarget::ManagedNative(target.clone()),
+        )
+        .unwrap();
+        selection["route_scope_sha256"] = json!("");
+        selection["route_scope_sha256"] =
+            json!(crate::fabric::resource_route_scope(&selection).unwrap());
+        let snapshot = json!({
+            "modules":[{
+                "id":BUILTIN_ID,
+                "version":BUILTIN_VERSION,
+                "roles":crate::fabric::protocol::ROLES
+            }],
+            "resource_routing_version":1,
+            "resource_routes":selection,
+        });
+        fixture.db.execute(
+            "UPDATE events SET payload=?1 WHERE task_id=?2 AND kind='routing_resource_selection'",
+            rusqlite::params![selection.to_string(), TASK],
+        ).unwrap();
+        fixture
+            .db
+            .execute(
+                "UPDATE events SET payload=?1 WHERE task_id=?2 AND kind='module_snapshot'",
+                rusqlite::params![snapshot.to_string(), TASK],
+            )
+            .unwrap();
+        insert_event(
+            &fixture.db,
+            4,
+            "native_task_scope",
+            "security-kernel",
+            &json!({
+                "format_version":2,
+                "activation":"on_demand",
+                "policy_sha256":target.policy_sha256,
+                "instance_binding_required":true,
+                "permissions_granted":false,
+            }),
+        );
+        fixture.snapshot = snapshot;
+        fixture.selection = selection;
+        (fixture, target)
+    }
+
     fn insert_event(db: &rusqlite::Connection, id: i64, kind: &str, source: &str, payload: &Value) {
         db.execute(
             "INSERT INTO events(id,task_id,kind,source,payload) VALUES(?1,?2,?3,?4,?5)",
@@ -717,6 +807,68 @@ mod tests {
             admission.routing_candidate("solver", Some(InferenceTarget::Native(wrong_protocol))),
             Err(crate::resource_scheduler::RoutingRejection::MetadataError)
         ));
+    }
+
+    #[test]
+    fn managed_native_route_requires_matching_on_demand_scope_digest() {
+        let (fixture, target) = managed_native_fixture();
+        let (routes, _) = validate(
+            &fixture.db,
+            TASK,
+            &fixture.cfg,
+            &fixture.settings,
+            &fixture.snapshot,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            routes.get("solver"),
+            Some(&InferenceTarget::ManagedNative(target.clone()))
+        );
+
+        let missing_scope = managed_native_fixture().0;
+        missing_scope
+            .db
+            .execute(
+                "DELETE FROM events WHERE task_id=?1 AND kind='native_task_scope'",
+                [TASK],
+            )
+            .unwrap();
+        assert!(validate(
+            &missing_scope.db,
+            TASK,
+            &missing_scope.cfg,
+            &missing_scope.settings,
+            &missing_scope.snapshot,
+        )
+        .is_err());
+
+        let mismatched_scope = managed_native_fixture().0;
+        mismatched_scope
+            .db
+            .execute(
+                "UPDATE events SET payload=?1 WHERE task_id=?2 AND kind='native_task_scope'",
+                rusqlite::params![
+                    json!({
+                        "format_version": 2,
+                        "activation": "on_demand",
+                        "policy_sha256": "d".repeat(64),
+                        "instance_binding_required": true,
+                        "permissions_granted": false,
+                    })
+                    .to_string(),
+                    TASK
+                ],
+            )
+            .unwrap();
+        assert!(validate(
+            &mismatched_scope.db,
+            TASK,
+            &mismatched_scope.cfg,
+            &mismatched_scope.settings,
+            &mismatched_scope.snapshot,
+        )
+        .is_err());
     }
 
     fn replace_snapshot(fixture: &Fixture, snapshot: &Value) {

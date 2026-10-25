@@ -54,6 +54,24 @@ fn write_policy(root: &Path, api_base: &str, release_after: bool) -> PathBuf {
     path
 }
 
+fn write_lazy_policy(root: &Path, api_base: &str, release_after: bool, models: &[&str]) -> PathBuf {
+    let path = root.join("native-lazy-policy.json");
+    std::fs::write(
+        &path,
+        serde_json::to_vec(&json!({
+            "format_version": 3,
+            "api_base": api_base,
+            "authenticate": false,
+            "models": models.iter().map(|model| json!({"model":model,"context_length":2048})).collect::<Vec<_>>(),
+            "release_after": release_after,
+            "max_lifecycle_seconds": 20
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    path
+}
+
 #[derive(Clone, Copy)]
 enum ChatReply {
     Correct,
@@ -67,6 +85,7 @@ struct Seen {
     requests: Vec<String>,
     unloads: usize,
     chats: usize,
+    loads: BTreeMap<String, usize>,
 }
 
 async fn http_request(stream: &mut tokio::net::TcpStream) -> (String, Value) {
@@ -124,12 +143,22 @@ async fn native_fixture(
     stop: tokio::sync::oneshot::Receiver<()>,
     stalled_load: Option<tokio::sync::oneshot::Sender<()>>,
 ) -> Arc<Mutex<Seen>> {
+    native_fixture_with_preloaded(listener, reply, stop, stalled_load, BTreeMap::new()).await
+}
+
+async fn native_fixture_with_preloaded(
+    listener: tokio::net::TcpListener,
+    reply: ChatReply,
+    stop: tokio::sync::oneshot::Receiver<()>,
+    stalled_load: Option<tokio::sync::oneshot::Sender<()>>,
+    preloaded: BTreeMap<String, Vec<(String, u64)>>,
+) -> Arc<Mutex<Seen>> {
     let seen = Arc::new(Mutex::new(Seen::default()));
     let server_seen = seen.clone();
     tokio::spawn(async move {
         let mut stop = Box::pin(stop);
         let mut stalled_load = stalled_load;
-        let mut loaded = BTreeMap::<String, Vec<(String, u64)>>::new();
+        let mut loaded = preloaded;
         loop {
             let accepted = tokio::select! {
                 _ = &mut stop => break,
@@ -146,24 +175,31 @@ async fn native_fixture(
             let path = head.lines().next().unwrap_or_default().to_owned();
             server_seen.lock().unwrap().requests.push(path.clone());
             if path.starts_with("GET /api/v1/models ") {
-                let inventory = json!({"models":[{
-                    "key":"alpha","type":"llm","loaded_instances":loaded.get("alpha").cloned().unwrap_or_default().into_iter().map(|(id,context_length)|json!({"id":id,"config":{"context_length":context_length}})).collect::<Vec<_>>()
-                }]});
+                let models = ["alpha", "beta"].into_iter().map(|model|json!({
+                    "key":model,"type":"llm","loaded_instances":loaded.get(model).cloned().unwrap_or_default().into_iter().map(|(id,context_length)|json!({"id":id,"config":{"context_length":context_length}})).collect::<Vec<_>>()
+                })).collect::<Vec<_>>();
+                let inventory = json!({"models":models});
                 response(&mut stream, inventory).await;
             } else if path.starts_with("POST /api/v1/models/load ") {
                 if let Some(sender) = stalled_load.take() {
                     let _ = sender.send(());
                     let mut byte = [0u8; 1];
                     let _ = stream.read(&mut byte).await;
-                    return;
+                    continue;
                 }
                 let model = body["model"].as_str().unwrap().to_owned();
                 let context = body["context_length"].as_u64().unwrap();
-                let instance = "alpha-instance";
+                let instance = format!("{model}-instance");
+                *server_seen
+                    .lock()
+                    .unwrap()
+                    .loads
+                    .entry(model.clone())
+                    .or_default() += 1;
                 loaded
                     .entry(model)
                     .or_default()
-                    .push((instance.into(), context));
+                    .push((instance.clone(), context));
                 response(&mut stream, json!({
                     "status":"loaded","type":"llm","instance_id":instance,"load_time_seconds":0.01
                 })).await;
@@ -176,7 +212,8 @@ async fn native_fixture(
                 response(&mut stream, json!({"instance_id":instance})).await;
             } else if path.starts_with("POST /api/v1/chat ") {
                 server_seen.lock().unwrap().chats += 1;
-                assert_eq!(body["model"], "alpha");
+                let model = body["model"].as_str().unwrap();
+                assert!(matches!(model, "alpha" | "beta"));
                 assert_eq!(body["stream"], false);
                 assert_eq!(body["store"], false);
                 assert_eq!(body["integrations"], json!([]));
@@ -185,7 +222,11 @@ async fn native_fixture(
                         "wrong-instance"
                     }
                     ChatReply::Correct | ChatReply::Sorted | ChatReply::SortedThenWrong => {
-                        "alpha-instance"
+                        if model == "alpha" {
+                            "alpha-instance"
+                        } else {
+                            "beta-instance"
+                        }
                     }
                     ChatReply::WrongInstance => "wrong-instance",
                 };
@@ -207,7 +248,7 @@ async fn native_fixture(
 }
 
 async fn cli(home: &Path, args: &[&str]) -> Output {
-    tokio::process::Command::new(env!("CARGO_BIN_EXE_cogfabric"))
+    let output = tokio::process::Command::new(env!("CARGO_BIN_EXE_cogfabric"))
         .env_clear()
         .arg("--home")
         .arg(home)
@@ -217,7 +258,14 @@ async fn cli(home: &Path, args: &[&str]) -> Output {
         .args(args)
         .output()
         .await
-        .unwrap()
+        .unwrap();
+    if !output.status.success() {
+        eprintln!(
+            "Fixture CLI result: {}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+    }
+    output
 }
 
 struct ChildGuard(Child);
@@ -454,6 +502,378 @@ async fn native_restoration_preflight_is_read_only_and_refuses_policy_or_binding
 }
 
 #[tokio::test]
+async fn lazy_native_restoration_loads_only_used_models_and_binds_activation_origin() {
+    let home = root();
+    let cfg = config(&home, 120);
+    cfg.save().unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let api_base = format!("http://{}/api/v1", listener.local_addr().unwrap());
+    let path = write_lazy_policy(&home, &api_base, false, &["alpha", "beta"]);
+    let policy = NativeLifecyclePolicy::load(&path).unwrap();
+    let (stop_tx, stop_rx) = tokio::sync::oneshot::channel();
+    let seen = native_fixture(listener, ChatReply::Correct, stop_rx, None).await;
+
+    let output = cli(
+        &home,
+        &[
+            "--native-lifecycle-policy",
+            path.to_str().unwrap(),
+            "--approve-native-lifecycle",
+            "ask",
+            "Say hello",
+            "--mode",
+            "fast",
+        ],
+    )
+    .await;
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let task = result["task_id"].as_str().unwrap();
+    assert_eq!(seen.lock().unwrap().loads.get("alpha"), Some(&1));
+    assert_eq!(seen.lock().unwrap().loads.get("beta"), None);
+
+    let store = Arc::new(Store::open(&cfg.db()).unwrap());
+    store.finish_task(task, "interrupted", "").unwrap();
+    let report =
+        cogfabric::residency::lifecycle::restoration::inspect(store.clone(), task, &policy)
+            .await
+            .unwrap();
+    assert_eq!(report["receipt_count"], 1);
+    assert_eq!(
+        report["activation_receipt_origins"]["alpha"],
+        "newly_loaded"
+    );
+    assert_eq!(seen.lock().unwrap().loads.get("beta"), None);
+
+    let lifecycle_task = report["lifecycle_task_id"].as_str().unwrap();
+    let db = rusqlite::Connection::open(cfg.db()).unwrap();
+    let (event_id, raw): (i64, String) = db
+        .query_row(
+            "SELECT id,payload FROM events WHERE task_id=?1 AND kind='native_task_model_binding' AND source='security-kernel'",
+            [lifecycle_task],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    let mut binding: Value = serde_json::from_str(&raw).unwrap();
+    binding["origin"] = json!("reused");
+    let mut unsigned = binding.clone();
+    unsigned
+        .as_object_mut()
+        .unwrap()
+        .remove("activation_binding_sha256");
+    binding["activation_binding_sha256"] = json!(cogfabric::store::sha256(
+        &serde_json::to_vec(&unsigned).unwrap()
+    ));
+    db.execute(
+        "UPDATE events SET payload=?2 WHERE id=?1",
+        rusqlite::params![event_id, binding.to_string()],
+    )
+    .unwrap();
+    drop(db);
+    let requests = seen.lock().unwrap().requests.len();
+    assert!(
+        cogfabric::residency::lifecycle::restoration::inspect(store, task, &policy)
+            .await
+            .is_err(),
+        "origin mutation must be caught by the lifecycle commitment"
+    );
+    assert_eq!(seen.lock().unwrap().requests.len(), requests);
+    let _ = stop_tx.send(());
+}
+
+#[tokio::test]
+async fn lazy_native_reuses_existing_instance_without_releasing_it() {
+    let home = root();
+    let cfg = config(&home, 120);
+    cfg.save().unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let api_base = format!("http://{}/api/v1", listener.local_addr().unwrap());
+    let path = write_lazy_policy(&home, &api_base, true, &["alpha"]);
+    let (stop_tx, stop_rx) = tokio::sync::oneshot::channel();
+    let seen = native_fixture(listener, ChatReply::Correct, stop_rx, None).await;
+    let store = Store::open(&cfg.db()).unwrap();
+    store::bootstrap(&store).unwrap();
+    cogfabric::residency::managed::load(&store, &api_base, false, "alpha", 2048, true)
+        .await
+        .unwrap();
+
+    let output = cli(
+        &home,
+        &[
+            "--native-lifecycle-policy",
+            path.to_str().unwrap(),
+            "--approve-native-lifecycle",
+            "ask",
+            "Say hello",
+            "--mode",
+            "fast",
+        ],
+    )
+    .await;
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(seen.lock().unwrap().loads.get("alpha"), Some(&1));
+    assert_eq!(seen.lock().unwrap().unloads, 0);
+    let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let db = rusqlite::Connection::open(cfg.db()).unwrap();
+    let lifecycle_task: String = db
+        .query_row(
+            "SELECT task_id FROM events WHERE kind='native_task_bindings' AND json_extract(payload,'$.child_task_id')=?1",
+            [result["task_id"].as_str().unwrap()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let origin: String = db
+        .query_row(
+            "SELECT json_extract(payload,'$.origin') FROM events WHERE task_id=?1 AND kind='native_task_model_binding'",
+            [lifecycle_task],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(origin, "reused");
+    let _ = stop_tx.send(());
+}
+
+#[tokio::test]
+async fn lazy_native_refuses_unreceipted_instances_without_adoption_or_cleanup() {
+    let home = root();
+    let cfg = config(&home, 120);
+    cfg.save().unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let api_base = format!("http://{}/api/v1", listener.local_addr().unwrap());
+    let policy = write_lazy_policy(&home, &api_base, true, &["alpha"]);
+    let (stop_tx, stop_rx) = tokio::sync::oneshot::channel();
+    let preloaded =
+        BTreeMap::from([("alpha".to_owned(), vec![("foreign-alpha".to_owned(), 2048)])]);
+    let seen =
+        native_fixture_with_preloaded(listener, ChatReply::Correct, stop_rx, None, preloaded).await;
+    let result = cli(
+        &home,
+        &[
+            "--native-lifecycle-policy",
+            policy.to_str().unwrap(),
+            "--approve-native-lifecycle",
+            "ask",
+            "Say hello",
+            "--mode",
+            "fast",
+        ],
+    )
+    .await;
+    assert!(!result.status.success());
+    let outcome: Value = serde_json::from_slice(&result.stdout).unwrap();
+    assert_eq!(outcome["status"], "failed");
+    assert!(outcome["answer"]
+        .as_str()
+        .unwrap()
+        .contains("adoption is refused"));
+    let observations = seen.lock().unwrap();
+    assert!(observations.loads.is_empty());
+    assert_eq!(observations.chats, 0);
+    assert_eq!(observations.unloads, 0);
+    drop(observations);
+    let _ = stop_tx.send(());
+}
+
+#[tokio::test]
+async fn lazy_native_releases_only_its_newly_loaded_models_after_confirmed_work() {
+    let home = root();
+    config(&home, 120).save().unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let api_base = format!("http://{}/api/v1", listener.local_addr().unwrap());
+    let policy = write_lazy_policy(&home, &api_base, true, &["alpha", "beta"]);
+    let (stop_tx, stop_rx) = tokio::sync::oneshot::channel();
+    let seen = native_fixture(listener, ChatReply::Correct, stop_rx, None).await;
+    let result = cli(
+        &home,
+        &[
+            "--native-lifecycle-policy",
+            policy.to_str().unwrap(),
+            "--approve-native-lifecycle",
+            "ask",
+            "Say hello",
+            "--mode",
+            "fast",
+        ],
+    )
+    .await;
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let observations = seen.lock().unwrap();
+    assert_eq!(observations.loads.get("alpha"), Some(&1));
+    assert_eq!(observations.loads.get("beta"), None);
+    assert_eq!(observations.chats, 1);
+    assert_eq!(observations.unloads, 1);
+    drop(observations);
+    let _ = stop_tx.send(());
+}
+
+#[tokio::test]
+async fn native_gpu_placement_requires_matching_echo_and_fresh_inventory() {
+    for scenario in 0..4 {
+        let home = root();
+        let cfg = config(&home, 120);
+        cfg.save().unwrap();
+        let store = Store::open(&cfg.db()).unwrap();
+        store::bootstrap(&store).unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}/api/v1", listener.local_addr().unwrap());
+        let requested = scenario != 3;
+        let server = tokio::spawn(async move {
+            let steps = if scenario == 1 { 2 } else { 3 };
+            for step in 0..steps {
+                let (mut stream, _) =
+                    tokio::time::timeout(Duration::from_secs(5), listener.accept())
+                        .await
+                        .unwrap()
+                        .unwrap();
+                let (head, body) = http_request(&mut stream).await;
+                let value = if step == 1 {
+                    assert!(head.starts_with("POST /api/v1/models/load "));
+                    assert_eq!(body["offload_kv_cache_to_gpu"], requested);
+                    assert_eq!(body["echo_load_config"], true);
+                    json!({"status":"loaded","type":"llm","instance_id":"gpu-fixture","load_time_seconds":0.01,
+                        "load_config":{"offload_kv_cache_to_gpu":if scenario == 1 {!requested} else {requested}}})
+                } else {
+                    assert!(head.starts_with("GET /api/v1/models "));
+                    let instances = if step == 0 {
+                        vec![]
+                    } else {
+                        vec![json!({"id":"gpu-fixture","config":{"context_length":2048,
+                            "offload_kv_cache_to_gpu":if scenario == 2 {!requested} else {requested}}})]
+                    };
+                    json!({"models":[{"key":"alpha","type":"llm","loaded_instances":instances}]})
+                };
+                response(&mut stream, value).await;
+            }
+        });
+        let loaded = cogfabric::residency::managed::load_with_gpu(
+            &store,
+            &base,
+            false,
+            "alpha",
+            2048,
+            Some(requested),
+            true,
+        )
+        .await;
+        if matches!(scenario, 0 | 3) {
+            let report = loaded.unwrap();
+            assert_eq!(report["receipt"]["format_version"], 2);
+            assert_eq!(report["receipt"]["offload_kv_cache_to_gpu"], requested);
+            assert_eq!(report["physical_residency_attested"], false);
+            assert_eq!(report["generation_tested"], false);
+        } else {
+            assert!(loaded.is_err());
+        }
+        let ledger = cogfabric::residency::managed::list(&store, &base).unwrap();
+        assert_eq!(
+            ledger["managed_lifecycle_blocked"],
+            matches!(scenario, 1 | 2)
+        );
+        server.await.unwrap();
+    }
+}
+
+#[tokio::test]
+async fn lazy_native_deterministic_task_activates_zero_models() {
+    let home = root();
+    let cfg = config(&home, 120);
+    cfg.save().unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let api_base = format!("http://{}/api/v1", listener.local_addr().unwrap());
+    let path = write_lazy_policy(&home, &api_base, false, &["alpha", "beta"]);
+    let policy = NativeLifecyclePolicy::load(&path).unwrap();
+    let (stop_tx, stop_rx) = tokio::sync::oneshot::channel();
+    let seen = native_fixture(listener, ChatReply::Correct, stop_rx, None).await;
+    let output = cli(
+        &home,
+        &[
+            "--native-lifecycle-policy",
+            path.to_str().unwrap(),
+            "--approve-native-lifecycle",
+            "ask",
+            "calc: 6*7",
+            "--mode",
+            "fast",
+        ],
+    )
+    .await;
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(result["answer"], "42");
+    assert_eq!(seen.lock().unwrap().chats, 0);
+    assert!(seen.lock().unwrap().loads.is_empty());
+    let store = Arc::new(Store::open(&cfg.db()).unwrap());
+    let task = result["task_id"].as_str().unwrap();
+    store.finish_task(task, "interrupted", "").unwrap();
+    let report = cogfabric::residency::lifecycle::restoration::inspect(store, task, &policy)
+        .await
+        .unwrap();
+    assert_eq!(report["receipt_count"], 0);
+    let _ = stop_tx.send(());
+}
+
+#[tokio::test]
+async fn lazy_native_resource_profile_denial_precedes_model_load() {
+    let home = root();
+    let mut cfg = config(&home, 120);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let api_base = format!("http://{}/api/v1", listener.local_addr().unwrap());
+    cfg.resource_admission = Some(
+        serde_json::from_value(json!({
+            "settings":{"label":"lazy.native.resource","capacity":{"compute_slots":1,"host_memory_bytes":100,"device_memory_bytes":100},"max_pending":4,"max_wait_ms":5000,"max_execution_ms":5000},
+            "allocation":{"compute_slots":1,"host_memory_bytes":20,"device_memory_bytes":20},
+            "residents":[],
+            "working_profiles":[{"id":"beta-only","target":{"api_base":api_base.clone(),"model":"beta"},"roles":["solver"],"allocation":{"compute_slots":1,"host_memory_bytes":20,"device_memory_bytes":20}}]
+        }))
+        .unwrap(),
+    );
+    cfg.save().unwrap();
+    let path = write_lazy_policy(&home, &api_base, false, &["alpha", "beta"]);
+    let (stop_tx, stop_rx) = tokio::sync::oneshot::channel();
+    let seen = native_fixture(listener, ChatReply::Correct, stop_rx, None).await;
+    let output = cli(
+        &home,
+        &[
+            "--native-lifecycle-policy",
+            path.to_str().unwrap(),
+            "--approve-native-lifecycle",
+            "ask",
+            "Say hello",
+            "--mode",
+            "fast",
+        ],
+    )
+    .await;
+    assert!(!output.status.success());
+    assert!(
+        seen.lock()
+            .unwrap()
+            .requests
+            .iter()
+            .all(|path| !path.starts_with("POST /api/v1/models/load ")),
+        "working-profile refusal must happen before model mutation"
+    );
+    assert_eq!(seen.lock().unwrap().chats, 0);
+    let _ = stop_tx.send(());
+}
+
+#[tokio::test]
 async fn cli_serve_preserves_options_and_progress_and_does_not_release_reused_receipt() {
     let home = root();
     let cfg = config(&home, 15);
@@ -572,12 +992,25 @@ async fn cli_serve_preserves_options_and_progress_and_does_not_release_reused_re
 
 #[tokio::test]
 async fn wrong_response_instance_quarantines_generation_and_blocks_replay_and_cleanup() {
+    wrong_response_instance_case(false).await;
+}
+
+#[tokio::test]
+async fn lazy_wrong_response_instance_quarantines_generation_and_blocks_replay_and_cleanup() {
+    wrong_response_instance_case(true).await;
+}
+
+async fn wrong_response_instance_case(lazy: bool) {
     let home = root();
     let cfg = config(&home, 10);
     cfg.save().unwrap();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let api_base = format!("http://{}/api/v1", listener.local_addr().unwrap());
-    let policy = write_policy(&home, &api_base, true);
+    let policy = if lazy {
+        write_lazy_policy(&home, &api_base, true, &["alpha", "beta"])
+    } else {
+        write_policy(&home, &api_base, true)
+    };
     let (stop_tx, stop_rx) = tokio::sync::oneshot::channel();
     let seen = native_fixture(listener, ChatReply::WrongInstance, stop_rx, None).await;
 
@@ -724,53 +1157,95 @@ async fn pre_cancelled_engine_task_creates_no_lifecycle_or_child_tasks() {
 
 #[tokio::test]
 async fn cancellation_and_original_deadline_abort_a_stalled_native_load_without_chat_or_unload() {
-    for deadline_case in [false, true] {
-        let home = root();
-        let cfg = config(&home, if deadline_case { 2 } else { 10 });
-        cfg.save().unwrap();
-        let store = Arc::new(Store::open(&cfg.db()).unwrap());
-        store::bootstrap(&store).unwrap();
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let api_base = format!("http://{}/api/v1", listener.local_addr().unwrap());
-        let policy_path = write_policy(&home, &api_base, true);
-        let policy = NativeLifecyclePolicy::load(&policy_path).unwrap();
-        let (load_tx, load_rx) = tokio::sync::oneshot::channel();
-        let (stop_tx, stop_rx) = tokio::sync::oneshot::channel();
-        let seen = native_fixture(listener, ChatReply::Correct, stop_rx, Some(load_tx)).await;
-        let engine = Engine::new(cfg.clone(), store.clone())
-            .with_approved_native_lifecycle(policy, true)
-            .unwrap();
-        let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
-        let task = tokio::spawn(async move {
-            engine
-                .run_until("Say hello", "fast", async move {
-                    if deadline_case {
-                        std::future::pending::<()>().await;
-                    } else {
-                        let _ = cancel_rx.await;
-                    }
-                })
-                .await
-        });
-        tokio::time::timeout(Duration::from_secs(5), load_rx)
-            .await
-            .expect("native load request did not start")
-            .expect("load fixture notification remains live");
-        if deadline_case {
-            let result = tokio::time::timeout(Duration::from_secs(5), task)
-                .await
-                .expect("original task deadline did not stop stalled load")
+    for lazy in [false, true] {
+        for deadline_case in [false, true] {
+            let home = root();
+            let cfg = config(&home, if deadline_case { 2 } else { 10 });
+            cfg.save().unwrap();
+            let store = Arc::new(Store::open(&cfg.db()).unwrap());
+            store::bootstrap(&store).unwrap();
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let api_base = format!("http://{}/api/v1", listener.local_addr().unwrap());
+            let policy_path = if lazy {
+                write_lazy_policy(&home, &api_base, true, &["alpha", "beta"])
+            } else {
+                write_policy(&home, &api_base, true)
+            };
+            let policy = NativeLifecyclePolicy::load(&policy_path).unwrap();
+            let (load_tx, load_rx) = tokio::sync::oneshot::channel();
+            let (stop_tx, stop_rx) = tokio::sync::oneshot::channel();
+            let seen = native_fixture(listener, ChatReply::Correct, stop_rx, Some(load_tx)).await;
+            let engine = Engine::new(cfg.clone(), store.clone())
+                .with_approved_native_lifecycle(policy, true)
                 .unwrap();
-            assert!(result.is_err());
-        } else {
-            cancel_tx.send(()).unwrap();
-            assert!(task.await.unwrap().is_err());
+            let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
+            let task = tokio::spawn(async move {
+                engine
+                    .run_until("Say hello", "fast", async move {
+                        if deadline_case {
+                            std::future::pending::<()>().await;
+                        } else {
+                            let _ = cancel_rx.await;
+                        }
+                    })
+                    .await
+            });
+            tokio::time::timeout(Duration::from_secs(5), load_rx)
+                .await
+                .expect("native load request did not start")
+                .expect("load fixture notification remains live");
+            if deadline_case {
+                let result = tokio::time::timeout(Duration::from_secs(5), task)
+                    .await
+                    .expect("original task deadline did not stop stalled load")
+                    .unwrap();
+                if let Ok(outcome) = result {
+                    assert!(lazy, "Eager setup interruption must return an error");
+                    assert!(matches!(
+                        outcome.status.as_str(),
+                        "cancelled" | "exhausted" | "failed"
+                    ));
+                }
+            } else {
+                cancel_tx.send(()).unwrap();
+                if let Ok(outcome) = task.await.unwrap() {
+                    assert!(lazy, "Eager setup interruption must return an error");
+                    assert!(matches!(
+                        outcome.status.as_str(),
+                        "cancelled" | "exhausted" | "failed"
+                    ));
+                }
+            }
+            assert_eq!(seen.lock().unwrap().chats, 0);
+            assert_eq!(seen.lock().unwrap().unloads, 0);
+            if lazy && !deadline_case {
+                let loads_before = seen
+                    .lock()
+                    .unwrap()
+                    .requests
+                    .iter()
+                    .filter(|path| path.starts_with("POST /api/v1/models/load "))
+                    .count();
+                let retry_engine = Engine::new(cfg.clone(), store.clone())
+                    .with_approved_native_lifecycle(
+                        NativeLifecyclePolicy::load(&policy_path).unwrap(),
+                        true,
+                    )
+                    .unwrap();
+                assert!(retry_engine.run("Say hello again", "fast").await.is_err());
+                let loads_after = seen
+                    .lock()
+                    .unwrap()
+                    .requests
+                    .iter()
+                    .filter(|path| path.starts_with("POST /api/v1/models/load "))
+                    .count();
+                assert_eq!(loads_after, loads_before, "unresolved load must not retry");
+            }
+            let _ = stop_tx.send(());
+            tokio::time::sleep(Duration::from_millis(120)).await;
+            std::fs::remove_dir_all(home).unwrap();
         }
-        assert_eq!(seen.lock().unwrap().chats, 0);
-        assert_eq!(seen.lock().unwrap().unloads, 0);
-        let _ = stop_tx.send(());
-        tokio::time::sleep(Duration::from_millis(120)).await;
-        std::fs::remove_dir_all(home).unwrap();
     }
 }
 
@@ -857,15 +1332,169 @@ async fn service_reuses_native_policy_with_a_fresh_owned_worker_registry_per_tas
 
 #[tokio::test]
 async fn native_cli_continuation_restores_owned_instances_and_builtin_worker_without_loading() {
-    native_continuation_case(false).await;
+    native_continuation_case(false, false).await;
 }
 
 #[tokio::test]
 async fn uncertain_native_continuation_is_resolvable_without_replaying_inference() {
-    native_continuation_case(true).await;
+    native_continuation_case(true, false).await;
 }
 
-async fn native_continuation_case(fail: bool) {
+#[tokio::test]
+async fn lazy_native_continuation_restores_receipt_and_keeps_cancel_source_alive() {
+    native_continuation_case(false, true).await;
+}
+
+#[tokio::test]
+async fn lazy_native_resume_activates_an_approved_model_on_its_first_resumed_call() {
+    let home = root();
+    let mut cfg = config(&home, 120);
+    cfg.role_profiles.insert(
+        "planner".into(),
+        cogfabric::config::RoleProfile {
+            model: "alpha".into(),
+            temperature: 0.0,
+        },
+    );
+    cfg.role_profiles.insert(
+        "solver".into(),
+        cogfabric::config::RoleProfile {
+            model: "beta".into(),
+            temperature: 0.0,
+        },
+    );
+    cfg.save().unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let api_base = format!("http://{}/api/v1", listener.local_addr().unwrap());
+    let path = write_lazy_policy(&home, &api_base, false, &["alpha", "beta"]);
+    let policy = NativeLifecyclePolicy::load(&path).unwrap();
+    let (stop_tx, stop_rx) = tokio::sync::oneshot::channel();
+    let seen = native_fixture(listener, ChatReply::Sorted, stop_rx, None).await;
+    let initial = cli(
+        &home,
+        &[
+            "--native-lifecycle-policy",
+            path.to_str().unwrap(),
+            "--approve-native-lifecycle",
+            "ask",
+            "sort: {\"values\":[3,1,2]}",
+            "--mode",
+            "standard",
+        ],
+    )
+    .await;
+    assert!(
+        initial.status.success(),
+        "{}",
+        String::from_utf8_lossy(&initial.stderr)
+    );
+    let initial: Value = serde_json::from_slice(&initial.stdout).unwrap();
+    let task = initial["task_id"].as_str().unwrap();
+    assert_eq!(seen.lock().unwrap().loads.get("alpha"), Some(&1));
+    assert_eq!(seen.lock().unwrap().loads.get("beta"), Some(&1));
+
+    let store = Arc::new(Store::open(&cfg.db()).unwrap());
+    let db = rusqlite::Connection::open(cfg.db()).unwrap();
+    let parent: String = db
+        .query_row(
+            "SELECT task_id FROM events WHERE kind='native_task_bindings' AND json_extract(payload,'$.child_task_id')=?1",
+            [task],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let beta_receipt = {
+        let mut statement = db
+            .prepare("SELECT receipt_id,receipt_json FROM managed_residency_receipts WHERE endpoint=?1 AND state='active'")
+            .unwrap();
+        let receipt_id = statement
+            .query_map([format!("{api_base}/models")], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .unwrap()
+            .map(|row| row.unwrap())
+            .find_map(|(id, raw)| {
+                let receipt: Value = serde_json::from_str(&raw).ok()?;
+                (receipt["model_key"] == "beta").then_some(id)
+            })
+            .unwrap();
+        receipt_id
+    };
+    cogfabric::residency::managed::release(&store, &api_base, false, &beta_receipt, true)
+        .await
+        .unwrap();
+    let beta = db
+        .query_row(
+            "SELECT min(id) FROM events WHERE task_id=?1 AND kind='native_task_lifecycle' AND json_extract(payload,'$.state')='generation_confirmed' AND json_extract(payload,'$.model_key')='beta'",
+            [&parent],
+            |row| row.get::<_, i64>(0),
+        )
+        .unwrap();
+    let alpha_confirmed = db
+        .query_row(
+            "SELECT max(id) FROM events WHERE task_id=?1 AND kind='native_task_lifecycle' AND json_extract(payload,'$.state')='generation_confirmed' AND json_extract(payload,'$.model_key')='alpha'",
+            [&parent],
+            |row| row.get::<_, i64>(0),
+        )
+        .unwrap();
+    let boundary: i64 = db
+        .query_row(
+            "SELECT min(id) FROM events WHERE task_id=?1 AND kind='reasoning_boundary'",
+            [task],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(alpha_confirmed < beta);
+    db.execute(
+        "DELETE FROM events WHERE task_id=?1 AND id>?2",
+        rusqlite::params![task, boundary],
+    )
+    .unwrap();
+    db.execute(
+        "DELETE FROM events WHERE task_id=?1 AND ((kind='native_task_model_binding' AND json_extract(payload,'$.model_key')='beta') OR (kind='native_task_lifecycle' AND (json_extract(payload,'$.model_key')='beta' OR json_extract(payload,'$.state')='execution_finished')))",
+        [&parent],
+    )
+    .unwrap();
+    db.execute(
+        "UPDATE tasks SET status='interrupted',answer='' WHERE id=?1",
+        [task],
+    )
+    .unwrap();
+    drop(db);
+
+    let resumed = cli(
+        &home,
+        &[
+            "resume-task",
+            task,
+            "--human-approve",
+            "--native-policy",
+            path.to_str().unwrap(),
+        ],
+    )
+    .await;
+    assert!(
+        resumed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&resumed.stderr)
+    );
+    assert_eq!(seen.lock().unwrap().loads.get("alpha"), Some(&1));
+    assert_eq!(seen.lock().unwrap().loads.get("beta"), Some(&2));
+    let trace = store.task(task).unwrap();
+    assert!(trace["events"].as_array().unwrap().iter().any(|event| {
+        event["kind"] == "continuation"
+            && event["payload"]["state"] == "started"
+            && event["payload"]["original_budget_preserved"] == true
+    }));
+    let report =
+        cogfabric::residency::lifecycle::restoration::inspect(store.clone(), task, &policy).await;
+    assert!(
+        report.is_err(),
+        "completed task is not resumable for inspection"
+    );
+    let _ = stop_tx.send(());
+}
+
+async fn native_continuation_case(fail: bool, lazy: bool) {
     let home = root();
     let mut cfg = config(&home, 120);
     cfg.resource_admission = Some(serde_json::from_value(json!({
@@ -875,7 +1504,11 @@ async fn native_continuation_case(fail: bool) {
     cfg.save().unwrap();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let api_base = format!("http://{}/api/v1", listener.local_addr().unwrap());
-    let path = write_policy(&home, &api_base, false);
+    let path = if lazy {
+        write_lazy_policy(&home, &api_base, false, &["alpha", "beta"])
+    } else {
+        write_policy(&home, &api_base, false)
+    };
     let mut policy: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
     policy["typed_module_worker"] = json!(true);
     std::fs::write(&path, serde_json::to_vec(&policy).unwrap()).unwrap();
@@ -972,7 +1605,7 @@ async fn native_continuation_case(fail: bool) {
     if !fail {
         assert_eq!(report["answer"], "[1,2,3]");
     }
-    assert_eq!(report["new_calls"], 1);
+    assert_eq!(report["new_calls"], 1, "{report}");
     assert_eq!(
         report["restored_native_runtime"]["receipt_identity_matches"],
         true
@@ -988,6 +1621,9 @@ async fn native_continuation_case(fail: bool) {
             .count(),
         1
     );
+    if lazy {
+        assert_eq!(seen.lock().unwrap().loads.get("beta"), None);
+    }
     let store = Store::open(&cfg.db()).unwrap();
     let trace = store.task(task).unwrap();
     let events = trace["events"].as_array().unwrap();
@@ -1008,14 +1644,22 @@ async fn native_continuation_case(fail: bool) {
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(count, 1);
-    let generation: String = db
-        .query_row(
+    assert_eq!(count, i64::from(!lazy));
+    let generation: String = if lazy {
+        let (parent, started): (String, i64) = db.query_row(
+            "SELECT task_id,count(*) FROM events WHERE kind='native_task_lifecycle' AND json_extract(payload,'$.state')='generation_started' AND json_extract(payload,'$.child_task_id')=?1 GROUP BY task_id",
+            [task], |row| Ok((row.get(0)?, row.get(1)?)),
+        ).unwrap();
+        assert_eq!(started, (chats + 1) as i64);
+        parent
+    } else {
+        db.query_row(
             "SELECT task_id FROM events WHERE kind='native_continuation_bindings'",
             [],
-            |r| r.get(0),
+            |row| row.get(0),
         )
-        .unwrap();
+        .unwrap()
+    };
     drop(db);
     if fail {
         let native_policy = NativeLifecyclePolicy::load(&path).unwrap();

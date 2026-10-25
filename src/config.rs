@@ -59,6 +59,10 @@ pub struct Config {
     /// compatibility and conservative resource use.
     #[serde(skip_serializing_if = "is_false")]
     pub agent_collective: bool,
+    /// Optional immutable operator-published project context applied to new
+    /// client collective sessions (`project-id@version`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_project_profile: Option<String>,
     #[serde(skip_serializing_if = "default_interface_tokens")]
     pub interface_tokens: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -100,6 +104,7 @@ impl Default for Config {
             role_profiles: BTreeMap::new(),
             interpret_goals: true,
             agent_collective: false,
+            agent_project_profile: None,
             interface_tokens: 128,
             reasoning_effort: None,
             synthesize_results: false,
@@ -149,6 +154,9 @@ impl Config {
     }
 
     pub fn validate(&self) -> Result<()> {
+        if let Some(reference) = &self.agent_project_profile {
+            crate::projects::Selection::parse(reference)?;
+        }
         if self.input_token_admission.is_some() {
             crate::token_admission::validate_config(self)?;
         }
@@ -323,6 +331,34 @@ mod tests {
                 .unwrap()
                 .agent_collective
         );
+    }
+
+    #[test]
+    fn client_project_profile_is_optional_canonical_and_roundtrips() {
+        let mut cfg = Config::default();
+        let legacy = serde_json::to_value(&cfg).unwrap();
+        assert!(legacy.get("agent_project_profile").is_none());
+        assert_eq!(
+            serde_json::from_value::<Config>(legacy)
+                .unwrap()
+                .agent_project_profile,
+            None
+        );
+        cfg.agent_project_profile = Some("demo.project@1".into());
+        cfg.validate().unwrap();
+        let encoded = serde_json::to_value(&cfg).unwrap();
+        assert_eq!(encoded["agent_project_profile"], "demo.project@1");
+        assert_eq!(
+            serde_json::from_value::<Config>(encoded)
+                .unwrap()
+                .agent_project_profile
+                .as_deref(),
+            Some("demo.project@1")
+        );
+        for invalid in ["demo.project", "demo.project@0", "demo.project@01"] {
+            cfg.agent_project_profile = Some(invalid.into());
+            assert!(cfg.validate().is_err());
+        }
     }
     #[test]
     fn interface_reservation_defaults_preserve_legacy_settings_and_remain_bounded() {

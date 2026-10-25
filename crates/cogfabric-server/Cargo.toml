@@ -5,6 +5,10 @@ edition = "2021"
 license = "GPL-3.0-only"
 description = "Loopback OpenAI-compatible transport over the Cognitive Fabric core"
 
+[features]
+default = []
+nvml-gpu = ["cogfabric/nvml-gpu"]
+
 [dependencies]
 cogfabric = { path = "../.." }
 anyhow = "1"

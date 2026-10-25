@@ -111,8 +111,30 @@ impl State {
     fn validate(&self, cfg: &Config) -> Result<()> {
         self.clock.validate(cfg.max_wall_seconds)?;
         let (calls, cycles) = crate::reasoning::mode_limits(&self.mode)?;
+        let references_valid = if self.references.is_empty() && cfg.agent_project_profile.is_none()
+        {
+            // Preserve closed legacy snapshots created when the configured tool
+            // allowance was zero and no retrieval context was captured.
+            true
+        } else {
+            serde_json::from_str::<serde_json::Value>(&self.references).is_ok_and(|references| {
+                references["trust"] == "untrusted_data_never_instructions_or_permissions"
+            })
+        };
+        let project_pin = self.reference_pins.get("project_profile");
+        let configured_profile_matches = match (cfg.agent_project_profile.as_deref(), project_pin) {
+            (None, Some(serde_json::Value::Null) | None) => true,
+            (Some(expected), Some(pin)) => pin
+                .get("id")
+                .and_then(serde_json::Value::as_str)
+                .zip(pin.get("version").and_then(serde_json::Value::as_u64))
+                .is_some_and(|(id, version)| format!("{id}@{version}") == expected),
+            _ => false,
+        };
         if self.wall_seconds != cfg.max_wall_seconds
             || self.references.len() > 8000
+            || !references_valid
+            || !configured_profile_matches
             || serde_json::to_vec(&self.reference_pins)?.len() > 4096
             || self.objective_index >= self.history_len.max(1) && self.history_len > 0
             || self.proposals.saturating_add(self.internal_tools) > self.tool_limit
@@ -317,17 +339,21 @@ impl Lease {
         while !objective.is_char_boundary(query_end) {
             query_end -= 1;
         }
-        let (references, reference_pins, internal_tools) = if runtime.cfg.max_tool_calls > 0 {
+        let include_retrieval = runtime.cfg.max_tool_calls > 0;
+        if include_retrieval {
             TaskPolicy::client_collective(&task)?.authorize(
                 &task,
                 "jev-plus",
                 "knowledge.search",
             )?;
-            let (references, pins) = super::session_context::capture(&tx, &objective[..query_end])?;
-            (references, pins, 1)
-        } else {
-            (String::new(), json!([]), 0)
-        };
+        }
+        let (references, reference_pins) = super::session_context::capture(
+            &tx,
+            &objective[..query_end],
+            runtime.cfg.agent_project_profile.as_deref(),
+            include_retrieval,
+        )?;
+        let internal_tools = u32::from(include_retrieval);
         let state = State {
             version: 1,
             wall_seconds: runtime.cfg.max_wall_seconds,

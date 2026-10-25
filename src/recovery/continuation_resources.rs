@@ -1,6 +1,6 @@
 //! Original configured resource charges must form complete, matching call chains.
 use crate::{
-    backend::{InferenceTarget, ModelTarget, NativeModelTarget},
+    backend::{InferenceTarget, ManagedNativeTarget, ModelTarget, NativeModelTarget},
     config::Config,
     resource_scheduler::{ResourcePool, WorkingProfile},
 };
@@ -40,12 +40,57 @@ fn target_from_value(value: &Value) -> Result<InferenceTarget> {
             }
             InferenceTarget::Native(target)
         }
+        Some("managed_native") => {
+            let target: ManagedNativeTarget = serde_json::from_value(value["target"].clone())?;
+            let canonical = target.canonical()?;
+            if canonical != target
+                || value.as_object().is_none_or(|object| object.len() != 2)
+                || value["target"]
+                    .as_object()
+                    .is_none_or(|object| object.len() != 3)
+            {
+                bail!("Original managed native resource target is not canonical")
+            }
+            InferenceTarget::ManagedNative(target)
+        }
         _ => bail!("Unsupported original resource target"),
     };
     if serde_json::to_value(&target)? != *value {
         bail!("Original resource target shape changed")
     }
     Ok(target)
+}
+
+fn validate_managed_native_scope(
+    db: &rusqlite::Connection,
+    task: &str,
+    target: &ManagedNativeTarget,
+) -> Result<()> {
+    let mut statement = db.prepare(
+        "SELECT CASE WHEN length(CAST(source AS BLOB))<=64 THEN source END, CASE WHEN length(CAST(payload AS BLOB))<=16384 THEN payload END FROM events WHERE task_id=?1 AND kind='native_task_scope' ORDER BY id LIMIT 2",
+    )?;
+    let mut rows = statement.query([task])?;
+    let mut found = None;
+    while let Some(row) = rows.next()? {
+        if found.is_some() {
+            bail!("Repeated native task scope")
+        }
+        let source: String = row.get(0)?;
+        let raw: String = row.get(1)?;
+        let scope = crate::strict_json::value(raw.as_bytes(), 16_384)?;
+        found = Some((source, scope));
+    }
+    let (source, scope) = found.ok_or_else(|| anyhow::anyhow!("Missing lazy native task scope"))?;
+    if source != "security-kernel"
+        || scope["format_version"] != 2
+        || scope["activation"] != "on_demand"
+        || scope["policy_sha256"] != target.policy_sha256
+        || scope["instance_binding_required"] != true
+        || scope["permissions_granted"] != false
+    {
+        bail!("Managed native route differs from its original lazy lifecycle scope")
+    }
+    Ok(())
 }
 
 fn expected_allocation(
@@ -210,8 +255,14 @@ pub(super) fn validate(db: &rusqlite::Connection, task: &str, cfg: &Config) -> R
             "resource_profile" if profiled && history.stage == 1 => {
                 let target_value = &value["target"];
                 let target = target_from_value(target_value)?;
+                if let InferenceTarget::ManagedNative(managed) = &target {
+                    validate_managed_native_scope(db, task, managed)?;
+                }
                 if in_reasoning
-                    && !matches!(&target, InferenceTarget::Native(_))
+                    && !matches!(
+                        &target,
+                        InferenceTarget::Native(_) | InferenceTarget::ManagedNative(_)
+                    )
                     && Some(target.clone()) != crate::backend::configured_target(cfg, Some(role))?
                 {
                     bail!("Original reasoning resource target differs from pinned configuration")
@@ -255,8 +306,14 @@ pub(super) fn validate(db: &rusqlite::Connection, task: &str, cfg: &Config) -> R
             }
             "resource_target" if nonempty_residents && history.stage == profile_events + 1 => {
                 let target = target_from_value(&value["coverage"]["target"])?;
+                if let InferenceTarget::ManagedNative(managed) = &target {
+                    validate_managed_native_scope(db, task, managed)?;
+                }
                 if in_reasoning
-                    && !matches!(&target, InferenceTarget::Native(_))
+                    && !matches!(
+                        &target,
+                        InferenceTarget::Native(_) | InferenceTarget::ManagedNative(_)
+                    )
                     && Some(target.clone()) != crate::backend::configured_target(cfg, Some(role))?
                 {
                     bail!("Original reasoning resource target differs from pinned configuration")

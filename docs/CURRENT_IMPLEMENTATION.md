@@ -3560,8 +3560,8 @@ GPU stop guarantee or complete Jev-R session orchestration.
 
 ## Durable client tool-loop collective — 2026-10-25
 
-**Implemented for bounded client tool-loop continuation; verification of this
-milestone is pending.** This entry supersedes the immediately preceding first-slice
+**Implemented for bounded client tool-loop continuation; focused verification
+results are recorded below.** This entry supersedes the immediately preceding first-slice
 note where it says that each client request is a fresh task or that persistent
 session identity/checkpoint continuation is not implemented. The earlier test
 results above apply to that earlier slice and are not evidence for this addition.
@@ -3637,3 +3637,53 @@ agentic-client/protocol compatibility. FlatBuffers files were unchanged and the
 generator pairing could not be checked because the generator was unavailable; no
 FlatBuffers schema change was made. The dedicated restore, model and configuration
 checks above passed.
+
+## Engine client context and first-use model activation — 2026-10-25
+
+**Implemented; broader Engine endpoint integration and physical GPU control remain
+Partial.** Architecture sections 4–7, 9, 10 and 12: client collective sessions can
+capture an operator-selected immutable project profile with
+`configure-agent-project --profile id@version` (or `--clear`). The default remains
+unset and preserves legacy Config serialization. Selection resolves inside the
+opening SQLite transaction; full context/version/hash remain pinned through the
+tool loop. Configuration drift refuses continuation. Matching active Expert
+Network manifests supply at most three bounded workflow advisories; they never
+grant execution rights or replace the current goal/checker. Existing private
+checkpoint and aggregate 8-KiB context limits remain in force.
+
+Native lifecycle policy v3 adds first-use activation for approved Engine model
+keys. Deterministic work activates no model. Configured roles and selected expert
+models share a coordinator and exact receipt checks. Logical resource admission
+precedes loading, activated instances are checked before inference and replies
+must match their instance. Original task/lifecycle deadlines survive restoration;
+unknown load/inference results remain non-replayable and block unsafe mutation.
+Only newly loaded instances can be released automatically after safe completion.
+V1/v2 policies retain eager loading. Stable `managed_native` targets are policy
+identities, never placeholder loaded instances. See `docs/NATIVE_ON_DEMAND.md`.
+
+The optional server crate now forwards `nvml-gpu`, and `setup.sh --nvml-gpu`
+builds both installed packages with it. Typed GPU frame tests cover malformed
+frames, device/byte/value bounds, duplicate identities, version refusal and missing
+metrics. The installer test uses local fake build/fetch tools and makes no remote
+installation. CI checks the feature and GPU protocol suite. NVML is read-only
+observation; inference stays with the configured provider. This environment
+identifies an RTX 3060 but cannot access a functioning NVIDIA driver/device, so
+live GPU inference, offload performance and measured VRAM were not established.
+
+Client endpoint native lifecycle control, arbitrary Engine expert execution,
+project/model selection by clients, physical GPU quotas and general cross-process
+GPU arbitration remain incomplete. No real-model quality or speed claim is made.
+Focused verification results for this source state are recorded in the latest
+implementation-matrix entry; no complete v1.0 release-readiness claim is made.
+
+Verification: formatting, default/all-feature workspace all-target checks and
+strict all-feature Clippy pass. Focused tests pass: 57 client-agent, 33 resource
+scheduler, 17 residency, 11 backend, 7 resource-route recovery, 20 native lifecycle,
+2 policy-file input, 11 HTTP and 8 managed-worker tests. Optional NVML build checks
+pass 12 GPU unit tests, 2 observation tests, 1 installer and 1 project CLI test;
+the project Config roundtrip test also passes. Groups overlap where documented;
+these are command outcomes, not an independently sampled reasoning benchmark.
+Native GPU placement echo/inventory disagreement remains an unknown load rather
+than successful GPU execution. Initial native integration failures were fixed and
+the final 20-test target is green. No full reflection/all-target test campaign or
+live GPU measurement was run. See the matrix for exact commands and limitations.

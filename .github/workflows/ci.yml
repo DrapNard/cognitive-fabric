@@ -26,6 +26,10 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Test
         run: cargo test --workspace --all-targets
+      - name: Check optional GPU library integration
+        run: cargo check --locked --workspace --all-targets --features nvml-gpu
+      - name: Test GPU protocol and observation boundaries
+        run: cargo test --locked -p cogfabric --features nvml-gpu --lib gpu::
       - name: Check reviewed bindings without native compiler
         run: env -u FLATC cargo check --locked --workspace --all-targets
       - name: CLI smoke

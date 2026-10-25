@@ -28,8 +28,39 @@ cogfabric ask 'Explain the next milestone' --project example.project@1
 Publishing the same ID creates the next immutable version. A task must select an
 exact `id@version`; there is no automatic latest-profile selection. `--socket`
 uses the same optional typed FlatBuffers field. The HTTP compatibility server
-currently does not expose this selector. No profile is loaded for an unselected
-task. Existing conversation references remain a separate feature.
+does not expose a per-request selector. No profile is loaded for an unselected
+Engine task. Existing conversation references remain a separate feature.
+
+## Client collective default profile
+
+For the OpenAI-compatible `cogfabric-agent` endpoint, an operator can select one
+immutable profile as the default for newly created collective sessions:
+
+```bash
+cogfabric configure-agent-project --profile example.project@1
+cogfabric configure-agent-project --clear
+```
+
+The CLI requires the exact version to exist in the configured database. The
+setting is stored in the owner-only config file and takes effect after restarting
+the service. Clients cannot select or override the profile. Session creation
+resolves the profile inside the same SQLite transaction as its local retrieval
+snapshot, then pins its reference and checksum in the durable checkpoint. Profile
+publication or activation changes do not change waiting sessions. A changed
+operator configuration refuses old continuations under the existing config pin.
+
+The profile is included as quoted, untrusted background context for the collective
+roles. It cannot replace the active user goal or change model settings, budgets,
+permissions, tool execution or verification criteria. The setting is independent
+of model or GPU selection. If local retrieval is disabled by the operator's tool
+budget, the project profile can still be captured without reading RAG or expert
+registry context.
+
+When local retrieval is enabled, up to three lexically matching active Expert
+Network manifests can contribute a bounded description, tags, declared capability
+metadata and workflow advice. Exact manifest versions and hashes are pinned with
+the session. These entries are untrusted advisory text only; no expert callback,
+workflow, model binding or provider is dispatched by the client collective.
 
 Preferences are closed enums: verbosity is `brief`, `balanced`, or `detailed`;
 format is `prose` or `bullets`. The default is balanced prose. Unknown fields,

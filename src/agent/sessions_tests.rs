@@ -306,6 +306,88 @@ async fn waiting_session_survives_store_reopen_and_carries_budgets_and_advice() 
 }
 
 #[tokio::test]
+async fn operator_project_profile_stays_pinned_across_registry_version_changes() {
+    let store = Arc::new(Store::in_memory().unwrap());
+    let first_profile = store
+        .publish_project(crate::projects::ProjectDraft {
+            format_version: 1,
+            id: "demo.project".into(),
+            name: "Project".into(),
+            goal: "Original project guidance".into(),
+            preferences: crate::projects::Preferences::default(),
+        })
+        .unwrap();
+    let mut cfg = config();
+    cfg.agent_project_profile = Some("demo.project@1".into());
+    let backend = Arc::new(ScriptBackend::new([
+        answer("Plan using the pinned project context."),
+        answer("Explore using the pinned project context."),
+        proposal(),
+        proposal(),
+    ]));
+    let runtime = AgentRuntime::with_backend(cfg.clone(), store.clone(), backend.clone()).unwrap();
+    let initial = request();
+    let first = runtime
+        .run_until(initial.clone(), std::future::pending())
+        .await
+        .unwrap();
+    let first_snapshot = state(&store, &first.task_id);
+    assert_eq!(
+        first_snapshot["reference_pins"]["project_profile"]["sha256"],
+        first_profile.checksum
+    );
+    assert!(first_snapshot["references"]
+        .as_str()
+        .unwrap()
+        .contains("Original project guidance"));
+
+    store
+        .publish_project(crate::projects::ProjectDraft {
+            format_version: 1,
+            id: "demo.project".into(),
+            name: "Project".into(),
+            goal: "Later project guidance".into(),
+            preferences: crate::projects::Preferences::default(),
+        })
+        .unwrap();
+    let continued = append_tool_result(&initial, &first.completion.tool_calls[0], "result");
+    let mut drifted_config = cfg;
+    drifted_config.agent_project_profile = Some("demo.project@2".into());
+    let drifted_backend = Arc::new(ScriptBackend::new([]));
+    let drifted_runtime =
+        AgentRuntime::with_backend(drifted_config, store.clone(), drifted_backend.clone()).unwrap();
+    assert!(drifted_runtime
+        .run_until(continued.clone(), std::future::pending())
+        .await
+        .is_err());
+    assert!(drifted_backend.observed().is_empty());
+    let continued_result = runtime
+        .run_until(continued, std::future::pending())
+        .await
+        .unwrap();
+    assert_eq!(continued_result.task_id, first.task_id);
+    assert_eq!(continued_result.completion.tool_calls.len(), 1);
+    let continued_snapshot = state(&store, &first.task_id);
+    assert!(continued_snapshot["references"]
+        .as_str()
+        .unwrap()
+        .contains("Original project guidance"));
+    assert!(!continued_snapshot["references"]
+        .as_str()
+        .unwrap()
+        .contains("Later project guidance"));
+    let solver = backend
+        .observed()
+        .into_iter()
+        .find(|observed| role(&observed.turn) == "solver")
+        .unwrap();
+    assert!(serde_json::to_string(&solver.turn)
+        .unwrap()
+        .contains("Original project guidance"));
+    assert_eq!(solver.task, first.task_id);
+}
+
+#[tokio::test]
 async fn changed_history_pending_call_arguments_and_missing_results_fail_before_inference() {
     for mutation in ["history", "arguments", "missing_result", "call_id"] {
         let store = Arc::new(Store::in_memory().unwrap());

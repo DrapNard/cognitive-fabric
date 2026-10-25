@@ -92,8 +92,10 @@ rewrite the database and its evidence. No physical GPU/RSS or energy limit is
 established. The inference adapter currently selects endpoint/model, not an
 attested native instance; a receipt does not prove a reasoning task used it.
 
-General task-driven load/unload, provider continuity and independent
-utility/physical measurements remain incomplete. Explicit unknown-outcome
+Approved Engine task-driven load/reuse/release is available through
+[native lifecycle policies](NATIVE_LIFECYCLE.md), with version 3 supporting
+[first-use activation](NATIVE_ON_DEMAND.md). General provider support, continuous
+physical ownership and independent utility/physical measurements remain incomplete. Explicit unknown-outcome
 resolution and terminal receipt archiving are described below.
 
 ## Prior schema-7 verification

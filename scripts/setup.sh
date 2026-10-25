@@ -17,7 +17,7 @@ Build and install cogfabric, cogfabric-chat, and cogfabric-server from source.
 Also install the cogfabric-opencode startup helper.
 The default prefix is $HOME/.local and the default source ref is develop/v1.0.
 --replace allows replacing existing binaries with the same package version.
---nvml-gpu builds the core CLI with the optional NVML observation feature.
+--nvml-gpu builds the CLI and HTTP server with optional NVML observation support.
 USAGE
 }
 
@@ -134,7 +134,11 @@ install_core() {
 }
 
 install_core
-if [ "$replace" -eq 1 ]; then
+if [ "$nvml_gpu" -eq 1 ] && [ "$replace" -eq 1 ]; then
+    cargo install --features nvml-gpu --locked --path "$source_dir/crates/cogfabric-server" --root "$prefix" --force
+elif [ "$nvml_gpu" -eq 1 ]; then
+    cargo install --features nvml-gpu --locked --path "$source_dir/crates/cogfabric-server" --root "$prefix"
+elif [ "$replace" -eq 1 ]; then
     cargo install --locked --path "$source_dir/crates/cogfabric-server" --root "$prefix" --force
 else
     cargo install --locked --path "$source_dir/crates/cogfabric-server" --root "$prefix"

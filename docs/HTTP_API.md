@@ -139,8 +139,23 @@ They use operator-configured Engine budgets and existing independent checkers.
 Use `cogfabric-agent` for an external application's multi-turn tool workflow.
 The native agent path runs the collective only when the operator enables it. The
 collective pins and resumes a bounded root task through standard tool-call IDs;
-this API does not expose every Engine expert, custom model selector or general
+the operator may configure a default immutable project profile for new sessions,
+but clients cannot select one through request fields. Matching active expert
+manifests contribute bounded pinned advice only; they do not execute. The API
+still does not expose every Engine expert, custom model selector or general
 `resume-task` workflow. Most client answers remain unverified.
+
+Set or clear the operator's profile default with:
+
+```bash
+cogfabric configure-agent-project --profile example.project@1
+cogfabric configure-agent-project --clear
+```
+
+The profile must already be published. Restart the server after changing this
+setting. Each new collective root session captures that immutable version;
+existing sessions keep their original snapshot. See
+[project profiles](PROJECT_PROFILES.md#client-collective-default-profile).
 
 Responses use ordinary Chat Completions envelopes, native `tool_calls`, finish
 reasons, and reported token usage. Missing usage remains null rather than an
