@@ -3556,3 +3556,84 @@ consume extra inference and repeat client context; the option defaults off and
 charges all reservations within the existing request limits. Managed role workers
 add startup/reaping overhead. This establishes mechanics, not a quality gain,
 GPU stop guarantee or complete Jev-R session orchestration.
+
+
+## Durable client tool-loop collective — 2026-10-25
+
+**Implemented for bounded client tool-loop continuation; verification of this
+milestone is pending.** This entry supersedes the immediately preceding first-slice
+note where it says that each client request is a fresh task or that persistent
+session identity/checkpoint continuation is not implemented. The earlier test
+results above apply to that earlier slice and are not evidence for this addition.
+
+`src/agent/sessions.rs` now uses opaque `cgf_<uuid>` function-call IDs to resume a
+single root task through standard client history. A transactional SQLite state
+machine stores generation, pending call bindings, root model/configuration/
+registration/effort pins, original same-boot deadline and cumulative call, cycle,
+prompt-byte, output-reservation, proposal and internal-tool counters. Atomic
+claims reject concurrent duplicate resumes. The client must resend the committed
+history prefix and all correlated tool results; altered arguments, changed or
+missing results, replay, unknown IDs, configuration drift and expired sessions
+fail closed without a fresh budget. Per-request `max_tokens` only limits that
+step's additional work and cannot raise the root configured ceiling.
+
+The session captures bounded, untrusted local document/memory/skill-manifest
+references at the root task and pins their identities. Planner/explorer advice and
+derived references are stored in a bounded private SQLite checkpoint; advice may
+quote conversation content. Checkpoint data is not encrypted, and clearing its
+current value does not erase SQLite WAL history. Raw transcript, tool results and
+arguments remain outside persisted session state and ordinary audit traces.
+
+Only a completed checkpoint waiting for client tools is resumable after process
+restart on the same Linux boot with unchanged pinned configuration. A reboot,
+expired or unavailable original deadline, changed model/registration/effort or
+other pinned configuration invalidates restore and is refused; it does not create
+a replacement task or fresh budget. An in-flight model call interrupted by
+crash/cancellation remains charged and cannot be replayed. `recover-tasks` aborts
+active/waiting sessions without a refund or retry. Bounded admission-time cleanup
+expires waiting sessions when their saved deadline is expired, on another boot or
+unavailable. After a final answer, the echoed answer plus a new user turn starts a
+new root task. Disabling the collective refuses its prefixed continuation IDs;
+restore the original configuration or start a new conversation.
+
+The feature keeps client tool execution external and does not expose every Engine
+expert, custom execution, project-profile/model selector or the general
+`resume-task` flow through HTTP. Applicable pure compiled criteria can verify a
+narrow supported root-goal result; all other output and client tool results remain
+unverified. `src/agent/sessions_tests.rs`,
+`src/agent/session_context_tests.rs` and
+`src/store/agent_sessions_migration_tests.rs` contain new regressions.
+
+Focused verification supplied for this milestone:
+
+- `cargo fmt --all -- --check`: passed.
+- `cargo +1.99.0 check --locked --workspace --all-targets`: passed.
+- `cargo +1.99.0 clippy --locked --workspace --all-targets -- -D warnings`: passed.
+- `cargo +1.99.0 test --locked -p cogfabric --lib agent::`: 54 passed.
+- `cargo +1.99.0 test --locked -p cogfabric --lib schema_`: 11 passed,
+  including session schema migration coverage.
+- `cargo +1.99.0 test --locked -p cogfabric --lib storage::`: 10 passed.
+- `cargo +1.99.0 test --locked -p cogfabric --lib security::`: 12 passed.
+- `cargo +1.99.0 test --locked -p cogfabric-server --test http --test native_worker`:
+  all 11 HTTP tests passed. The initial combined run found a native fixture
+  assertion issue; after correction, `cargo +1.99.0 test --locked -p cogfabric-server
+  --test native_worker` passed all 8 tests.
+- `cargo +1.99.0 test --locked -p cogfabric-server --test opencode_mcp_client
+  installed_opencode_v2_jev_collective_owns_mcp_and_skill_workflow -- --ignored
+  --exact`: 1 passed with synthetic MCP results.
+- `cargo +1.99.0 test --locked -p cogfabric --lib recovery::`: 145 passed,
+  including existing revision/reflection recovery checks.
+- `cargo +1.99.0 test --locked -p cogfabric --lib restore::`: 5 passed,
+  including restoration invalidation cases.
+- `cargo +1.99.0 test --locked --test restore_configuration`: 1 passed; the
+  backup/restore configuration proof passed.
+- `cargo +1.99.0 test --locked --test client_collective_config`: 1 passed.
+- `cargo +1.99.0 test --locked -p cogfabric --lib models::tests::`: 5 passed.
+
+No new successful-reflection branch test, dedicated reflection campaign, live
+reasoning-quality benchmark or real REA/web connection was run. This verification
+does not prove general reasoning quality, GPU completion after cancellation or all
+agentic-client/protocol compatibility. FlatBuffers files were unchanged and the
+generator pairing could not be checked because the generator was unavailable; no
+FlatBuffers schema change was made. The dedicated restore, model and configuration
+checks above passed.

@@ -40,8 +40,8 @@ pub(crate) fn admit(db: &Connection) -> Result<()> {
     let free: u64 = db.pragma_query_value(None, "freelist_count", |row| row.get(0))?;
     let maximum: u64 = db.pragma_query_value(None, "max_page_count", |row| row.get(0))?;
     let size: u64 = db.pragma_query_value(None, "page_size", |row| row.get(0))?;
-    let running: u64 = db.query_row(
-        "SELECT count(*) FROM tasks WHERE status='running'",
+    let active: u64 = db.query_row(
+        "SELECT count(*) FROM tasks WHERE status IN ('running','waiting_client')",
         [],
         |row| row.get(0),
     )?;
@@ -49,7 +49,7 @@ pub(crate) fn admit(db: &Connection) -> Result<()> {
         .saturating_sub(pages.saturating_sub(free))
         .saturating_mul(size)
         < 16_000_000
-        || running >= 8
+        || active >= 8
     {
         bail!("Task admission denied: storage headroom or active-task capacity exhausted")
     }
@@ -287,6 +287,29 @@ mod tests {
         assert!(store.retention_preview(u64::MAX, 100).is_err());
         assert!(store.retention_preview(1, 1001).is_err());
         assert!(security::authorize("jev-plus", "storage.retention").is_err());
+    }
+
+    #[test]
+    fn waiting_client_sessions_consume_active_task_capacity() {
+        let store = Store::in_memory().unwrap();
+        let tasks = (0..8)
+            .map(|index| {
+                store
+                    .create_task(&format!("active {index}"), "fast")
+                    .unwrap()
+            })
+            .collect::<Vec<_>>();
+        store.finish_task(&tasks[0], "waiting_client", "").unwrap();
+        {
+            let db = store.lock().unwrap();
+            assert!(admit(&db).is_err());
+            db.execute(
+                "UPDATE tasks SET status='completed' WHERE id=?1",
+                [&tasks[0]],
+            )
+            .unwrap();
+            admit(&db).unwrap();
+        }
     }
 
     #[test]

@@ -100,7 +100,7 @@ additional resident neural models:
 
 | Alias | Behavior |
 |---|---|
-| `cogfabric-agent` | Bounded native conversation turn; one solver call by default, or the optional [per-request client collective](CLIENT_COLLECTIVE.md). The client owns its tool loop and execution. |
+| `cogfabric-agent` | Bounded native conversation turn; one solver call by default, or the optional durable [client collective](CLIENT_COLLECTIVE.md). The client owns tool execution. |
 | `cogfabric-fast` | Existing core Engine, FAST mode. |
 | `cogfabric-standard` | Existing core Engine, STANDARD mode. |
 | `cogfabric-deep` | Existing core Engine, DEEP mode. |
@@ -117,24 +117,30 @@ client's own schema validation and permission checks before execution.
 Supported options: `max_tokens` **or** `max_completion_tokens`, `temperature`,
 `tools`, `tool_choice` (`auto`, `none`, `required`, or a named function),
 `parallel_tool_calls`, `reasoning_effort` (`none`, `low`, `medium`, `high`), `stream`, `stream_options.include_usage`, and `store:false`.
-Unknown options and `store:true` are rejected. There is no server-side conversation
-storage/replay API; each request supplies its explicit history. Authentication
-and client-supplied system text never grant core file, shell or network tools.
+Unknown options and `store:true` are rejected. Each request supplies its explicit
+history. When the optional collective is enabled, CGF stores a bounded, hash-bound
+reasoning checkpoint and tool-call correlation ledger, not a raw conversation
+transcript; opaque returned tool IDs carry continuation through standard client
+history. Authentication and client-supplied system text never grant core file,
+shell or network tools.
 
 For OpenCode, keep `cogfabric-agent` selected and use its reasoning-effort
 variants; see [effort selection](OPENCODE.md). The same model and tool history
 remain active. Explicit effort overrides the saved provider default for that turn;
 omission preserves the saved setting. Direct and managed adapters carry it through
 the typed agent protocol without raising calls, output tokens, deadlines or tool
-permissions. Provider support is required. This native path does not invoke the
-full Jev-R collective or establish measured reasoning improvement.
+permissions. Provider support is required. The default native path does not invoke
+the collective. When enabled, the optional role graph uses the same configured
+model and effort; it does not establish measured reasoning improvement.
 
 Collective aliases accept exactly one user text goal (up to 12,000 bytes), without
 client function definitions, generation overrides or conversational history.
 They use operator-configured Engine budgets and existing independent checkers.
 Use `cogfabric-agent` for an external application's multi-turn tool workflow.
-The native agent path does not silently run the full collective or claim its
-answers are independently verified.
+The native agent path runs the collective only when the operator enables it. The
+collective pins and resumes a bounded root task through standard tool-call IDs;
+this API does not expose every Engine expert, custom model selector or general
+`resume-task` workflow. Most client answers remain unverified.
 
 Responses use ordinary Chat Completions envelopes, native `tool_calls`, finish
 reasons, and reported token usage. Missing usage remains null rather than an
@@ -224,27 +230,43 @@ and stalled SSE production to 30 seconds. Axum owns HTTP parsing; core APIs rece
 typed Rust values. Internal IPC remains versioned FlatBuffers, not HTTP JSON.
 
 Default native turns are FAST, one solver call and one cycle. The opt-in
-[client collective](CLIENT_COLLECTIVE.md) uses effort-selected modes and aggregate
-request reservations; it is not a resumable session. Input bytes, reserved output,
-wall time and tool-proposal counts obey existing operator configuration. Native
-requests allow at most 256 messages and 128 definitions; returned proposals are
+[client collective](CLIENT_COLLECTIVE.md) uses effort-selected modes and one
+durable session across correlated tool turns. Its configured call, cycle, input,
+output, internal-tool, proposal and wall-time budgets are cumulative for the root
+task. A per-request `max_tokens` can lower that step's reservation, but never raise
+the session's configured ceiling. FAST's one-call ceiling cannot resume after a
+tool proposal; use STANDARD or higher when tool results may need more reasoning.
+Native requests allow at most 256 messages and 128 definitions; returned proposals are
 capped at 16 and `max_tool_calls`, with one when parallel calls are disabled.
 Function arguments are limited to 32,000 bytes and must decode to a JSON object.
+In collective mode, CGF-issued opaque `cgf_` tool-call IDs carry continuation.
+Altered, missing, unknown, replayed, concurrently claimed or out-of-order history
+is rejected before inference and does not receive a fresh budget. Continuation also
+requires the root model, registration, configuration and effort to remain pinned.
+The original deadline restores only on the same Linux boot; an inference call
+interrupted by cancellation or crash is charged and never replayed automatically.
 Provider HTTP responses are limited to 256 KiB, without redirects, proxies or
 non-loopback endpoints. A longer core deadline does not extend the HTTP connection
-lifetime. Each client turn is a separate task; client session-wide step limits
-remain the client's responsibility.
+lifetime. A tool-loop response returns the same root task ID across client turns.
+The client still owns its own tool-loop limits and every external tool permission.
 
 Native tasks use the existing global SQLite task admission and runtime leases.
-`agent_client_capabilities`, `agent_admission`, policy and `agent_result` events record request/content hashes,
+With the optional collective enabled, tool-driven turns share one root task and a
+bounded `agent_sessions` checkpoint. Session state stores cumulative counters,
+model/configuration pins, same-boot expiry, pending opaque tool IDs and limited
+derived advice; it does not store the raw transcript. `agent_client_capabilities`,
+`agent_admission`, policy and `agent_result` events record request/content hashes,
 reserved resources, actual reported usage, model identity and registration
-snapshot (with weight identity explicitly unverified), elapsed time and
-proposal counts. Raw client conversations, function arguments and output bodies
-are not persisted by this path. Tool proposals and client-reported results remain
-**unverified**; no tools are executed by the conversation runtime. Failed,
-cancelled, exhausted or dropped turns retain admission records. These native
-turns do not implement the collective reasoning checkpoint format and cannot be
-resumed through `resume-task`.
+snapshot (with weight identity explicitly unverified), elapsed time and proposal
+counts. Raw client conversations, function arguments and output bodies are not
+persisted by this path. Tool proposals and client-reported results remain
+**unverified** unless an applicable pure compiled criterion independently accepts
+the original root goal; no client tool is executed by the conversation runtime.
+Failed, cancelled, exhausted or dropped turns retain admission records and charges.
+An active/in-flight session cannot be replayed after interruption. Terminal-task
+retention removes associated session rows; clearing checkpoint context does not
+securely erase SQLite WAL history. Collective continuations use standard tool-call
+history and are separate from the general `resume-task` workflow.
 
 ## Reproduce the live client test
 

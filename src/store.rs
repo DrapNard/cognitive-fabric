@@ -11,6 +11,9 @@ use std::{
 };
 use uuid::Uuid;
 #[cfg(test)]
+#[path = "store/agent_sessions_migration_tests.rs"]
+mod agent_sessions_migration_tests;
+#[cfg(test)]
 mod skill_inventory_tests;
 
 const SCHEMA: &str = r#"
@@ -51,7 +54,7 @@ CREATE TABLE IF NOT EXISTS evaluations (
 "#;
 
 /// Latest schema understood by writable and read-only Store entry points.
-pub(crate) const CURRENT_SCHEMA_VERSION: i64 = 9;
+pub(crate) const CURRENT_SCHEMA_VERSION: i64 = 10;
 
 const MANAGED_RESIDENCY_SCHEMA: &str = r#"
 CREATE TABLE managed_residency_receipts (
@@ -220,6 +223,28 @@ CREATE TRIGGER project_profiles_no_delete BEFORE DELETE ON project_profiles BEGI
  SELECT RAISE(ABORT,'project profile versions are immutable');
 END;
 PRAGMA user_version=9;
+"#;
+
+const AGENT_SESSIONS_SCHEMA_V10: &str = r#"
+CREATE TABLE agent_sessions (
+ id TEXT PRIMARY KEY CHECK(length(CAST(id AS BLOB))=36),
+ task_id TEXT NOT NULL UNIQUE REFERENCES tasks(id) ON DELETE CASCADE,
+ state TEXT NOT NULL CHECK(state IN ('active','waiting','closed','failed')),
+ generation INTEGER NOT NULL CHECK(generation BETWEEN 0 AND 64),
+ claim TEXT NOT NULL CHECK(length(CAST(claim AS BLOB))=36),
+ snapshot TEXT NOT NULL CHECK(length(CAST(snapshot AS BLOB)) BETWEEN 2 AND 32768),
+ snapshot_sha256 TEXT NOT NULL CHECK(length(CAST(snapshot_sha256 AS BLOB))=64 AND snapshot_sha256 NOT GLOB '*[^0-9a-f]*'),
+ updated REAL NOT NULL
+);
+CREATE INDEX agent_sessions_waiting ON agent_sessions(state,updated,id);
+CREATE TABLE agent_session_calls (
+ id TEXT PRIMARY KEY CHECK(length(CAST(id AS BLOB))=36),
+ session_id TEXT NOT NULL REFERENCES agent_sessions(id) ON DELETE CASCADE,
+ generation INTEGER NOT NULL CHECK(generation BETWEEN 0 AND 64),
+ call_sha256 TEXT NOT NULL CHECK(length(CAST(call_sha256 AS BLOB))=64 AND call_sha256 NOT GLOB '*[^0-9a-f]*')
+);
+CREATE INDEX agent_session_calls_generation ON agent_session_calls(session_id,generation);
+PRAGMA user_version=10;
 "#;
 
 pub(crate) const MAX_MANAGED_RESIDENCY_RESOLUTIONS: u64 = 1024;
@@ -566,6 +591,9 @@ impl Store {
         }
         if version < 9 {
             tx.execute_batch(PROJECT_PROFILE_SCHEMA_V9)?;
+        }
+        if version < 10 {
+            tx.execute_batch(AGENT_SESSIONS_SCHEMA_V10)?;
         }
         tx.commit()?;
         Ok(Self {
@@ -957,6 +985,20 @@ impl Store {
         };
         tx.commit()?;
         Ok((context, snapshot))
+    }
+
+    /// Resolve client collective references against the caller's existing
+    /// transaction so session creation and its pinned context share one
+    /// consistent SQLite snapshot. Expert model registrations are deliberately
+    /// excluded: this endpoint continues to use only its configured backend.
+    pub(crate) fn client_context_from(db: &Connection, query: &str) -> Result<TaskContext> {
+        Ok(TaskContext {
+            memories: crate::memory::search_from(db, query)?,
+            skills: Self::skills_from(db)?,
+            documents: Self::search_scoped(db, query, None, 3, true)?,
+            manifests: crate::registry::snapshot_from(db)?,
+            expert_models: std::collections::BTreeMap::new(),
+        })
     }
 
     fn search_from(
@@ -1736,7 +1778,8 @@ mod tests {
         {
             let db = store.lock().unwrap();
             db.execute_batch(
-                "DROP TRIGGER project_profiles_no_update; DROP TRIGGER project_profiles_no_delete; DROP INDEX project_profiles_inventory; DROP TABLE project_profiles;
+                "DROP TABLE agent_session_calls; DROP TABLE agent_sessions;
+                 DROP TRIGGER project_profiles_no_update; DROP TRIGGER project_profiles_no_delete; DROP INDEX project_profiles_inventory; DROP TABLE project_profiles;
                  DROP INDEX native_task_lifecycle_history; DROP TABLE managed_residency_resolution_members; DROP TABLE managed_residency_resolutions; DROP TABLE managed_residency_receipt_archive; DROP TRIGGER managed_residency_hot_no_archive_duplicate; DROP TRIGGER managed_residency_identity_immutable;
                  DROP INDEX managed_residency_active_identity;
                  DROP INDEX managed_residency_state;

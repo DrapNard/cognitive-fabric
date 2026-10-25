@@ -1045,3 +1045,40 @@ Jev+ and Jev-R remain **Partial**: automatic ownership-aware provider lifecycle,
 broader isolated executable verification and independent live-model effectiveness
 measurements remain open. The next lifecycle step requires explicit provider
 instance identity and durable ownership, without granting models mutation rights.
+
+
+## Client collective tool-loop checkpoints — 2026-10-25
+
+The opt-in `cogfabric-agent` collective keeps a root task across standard
+client-owned tool calls. CGF replaces returned proposal IDs with opaque
+`cgf_<uuid>` handles. On continuation, the client resends ordinary assistant/tool
+history. CGF maps the handle to the existing root, atomically claims the checkpoint,
+checks the committed transcript-prefix hash and exact pending proposal bindings,
+and refuses duplicates, missing results, changed arguments, altered history,
+unknown handles or replay. It never converts a rejected continuation into a fresh
+budget.
+
+The root's effective model/registration/configuration/effort, original goal and
+same-boot deadline remain pinned. Calls, cycles, input bytes, output reservations,
+client proposal count and the bounded internal-tool charge accumulate across tool
+turns. Reservations are persisted before backend entry; failures, cancellation and
+interrupted inference do not refund or retry. The request's `max_tokens` can limit
+one step but cannot raise the operator's cumulative session ceiling. Client tools
+remain outside CGF's execution and permission boundary.
+
+A `waiting_client` checkpoint whose inference completed is resumable after process
+restart when its exact configuration and same Linux boot deadline remain valid.
+Active/in-flight work on crash or cancellation is treated as uncertain and blocked
+from automatic replay. The deadline relies on Linux boot-time evidence and is not
+portable across reboot. `recover-tasks` can terminalize active/waiting entries
+without restoring their charges. Expired waiting sessions receive bounded cleanup
+at a later admission. The public HTTP route is not the general `resume-task`
+workflow; the client must provide its original correlated history.
+
+The session table stores bounded, hash-checked checkpoints and a small private
+derived advice/context string so Jev-R can continue its role graph. It does not
+store the full client transcript or tool outputs. Local SQLite checkpoint data is
+not encrypted by this feature, and terminal clearing is not secure erasure of WAL
+history. Session rows follow task retention. These hashes and IDs protect against
+accidental/malformed continuation and replay within the runtime, not a same-user
+attacker able to rewrite the database. See [client collective](CLIENT_COLLECTIVE.md).

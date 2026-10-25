@@ -471,7 +471,7 @@ mod tests {
         {
             let store = Store::open(&path).unwrap();
             store.lock().unwrap().execute_batch(
-                "DROP TRIGGER project_profiles_no_update; DROP TRIGGER project_profiles_no_delete; DROP INDEX project_profiles_inventory; DROP TABLE project_profiles; PRAGMA user_version=8;",
+                "DROP TABLE agent_session_calls; DROP TABLE agent_sessions; DROP TRIGGER project_profiles_no_update; DROP TRIGGER project_profiles_no_delete; DROP INDEX project_profiles_inventory; DROP TABLE project_profiles; PRAGMA user_version=8;",
             ).unwrap();
         }
         let store = Store::open(&path).unwrap();
@@ -480,7 +480,7 @@ mod tests {
             .unwrap()
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 9);
+        assert_eq!(version, crate::store::CURRENT_SCHEMA_VERSION);
         let profile = store.publish_project(draft()).unwrap();
         assert_eq!(
             store

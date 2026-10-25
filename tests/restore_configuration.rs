@@ -70,7 +70,7 @@ fn cli_backup_and_explicit_restore_preserve_settings_in_a_new_workspace() {
     use std::os::unix::fs::PermissionsExt;
     std::fs::set_permissions(&older, std::fs::Permissions::from_mode(0o600)).unwrap();
     let db = rusqlite::Connection::open(&older).unwrap();
-    db.execute_batch("DROP TABLE project_profiles; DROP INDEX native_task_lifecycle_history; DROP TABLE managed_residency_resolution_members; DROP TABLE managed_residency_resolutions; DROP TABLE managed_residency_receipt_archive; DROP TRIGGER managed_residency_hot_no_archive_duplicate; DROP TABLE managed_residency_receipts; DROP INDEX managed_residency_event_scan; DROP INDEX idx_tasks_status; DROP INDEX event_conversation_task; DROP TABLE retention_audit; PRAGMA user_version=5;").unwrap();
+    db.execute_batch("DROP TABLE agent_session_calls; DROP TABLE agent_sessions; DROP TABLE project_profiles; DROP INDEX native_task_lifecycle_history; DROP TABLE managed_residency_resolution_members; DROP TABLE managed_residency_resolutions; DROP TABLE managed_residency_receipt_archive; DROP TRIGGER managed_residency_hot_no_archive_duplicate; DROP TABLE managed_residency_receipts; DROP INDEX managed_residency_event_scan; DROP INDEX idx_tasks_status; DROP INDEX event_conversation_task; DROP TABLE retention_audit; PRAGMA user_version=5;").unwrap();
     drop(db);
     let checksum = cogfabric::store::sha256(&std::fs::read(&older).unwrap());
     let migrated = root.join("migrated");
@@ -91,7 +91,7 @@ fn cli_backup_and_explicit_restore_preserve_settings_in_a_new_workspace() {
     );
     let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(report["source_schema_version"], 5);
-    assert_eq!(report["schema_version"], 9);
+    assert_eq!(report["schema_version"], 10);
     let restored_db = rusqlite::Connection::open(migrated.join("fabric.sqlite3")).unwrap();
     let receipts: u32 = restored_db
         .query_row(

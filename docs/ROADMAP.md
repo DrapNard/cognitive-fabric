@@ -7,26 +7,27 @@ that planned items are implemented.
 
 ## Core completion: client-driven Jev-R orchestration
 
-**Status: Partial / not yet complete.** An opt-in [per-request role graph](CLIENT_COLLECTIVE.md) now runs client conversations with bounded planning, exploration and solving. Durable cross-request collective continuation is still missing. Extend the client-facing agent path so
-client conversation turns can be handled by bounded Jev+ routing and Jev-R
-planning, solving, exploration, critique, verification and revision. Keep this
-path compatible with clients that own their MCP servers, skills, web connections,
-tool permissions and tool execution.
+**Status: Implemented for bounded client tool-loop orchestration; verification
+evidence for this milestone is being recorded.** The opt-in
+[client collective](CLIENT_COLLECTIVE.md) now carries one root task across ordinary
+client tool-call requests. Opaque CGF-issued tool IDs bind the exact correlated
+history to a durable checkpoint. Calls, cycles, input/output reservations,
+proposals, selected internal tool use, configuration pins and the original
+same-boot deadline persist across those turns. Reservations precede inference and
+uncertain calls are not replayed.
 
-The runtime must accept the client's current tool catalog and conversation history,
-propose tool calls, then continue from the correlated results or errors returned by
-the client. It must retain the same configured model while applying the requested
-reasoning effort. The client remains responsible for executing and authorizing its
-tools; model output and tool results remain untrusted data. Jev+ and Jev-R roles,
-per-call and whole-task budgets, cancellation, audit events and verification
-evidence must remain explicit. A sequence of ordinary single model calls is not by
-itself evidence that full Jev-R orchestration has been delivered.
+OpenAI-compatible text/function clients continue to own MCP servers, skills, web
+connections, tool permissions and tool execution. Model output and client tool
+results remain untrusted. The endpoint runs bounded planner/explorer/solver roles,
+budget-gated review/revision and applicable pure compiled checks on the original
+goal. It does not expose every Engine expert, custom expert execution,
+project-profile/model selector or the general task recovery workflow. Therefore
+this milestone completes the client tool-loop path, not all seven architecture
+subsystems or all Jev+ / Jev-R research goals.
 
-**Completion evidence:** deterministic lifecycle tests for planning through
-verification, tool-call/result correlation across resumed client turns, budget and
-cancellation denials, audit-failure behavior, and end-to-end tests through the
-client-facing server path. These tests establish protocol and orchestration
-behavior, not general reasoning quality.
+**Verification record:** see the current implementation and implementation matrix
+for the commands and results run on the frozen feature. Tests demonstrate
+orchestration mechanics; they do not establish general reasoning quality.
 
 ## Client protocol adapters
 

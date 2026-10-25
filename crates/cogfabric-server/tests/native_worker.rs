@@ -85,6 +85,34 @@ async fn infer(
             "choices":[{"message":{"role":"assistant","content":format!("{} advice",role.unwrap())},"finish_reason":"stop"}],
             "usage":{"prompt_tokens":20,"completion_tokens":12}
         }))
+    } else if collective
+        && body["messages"].as_array().unwrap().iter().any(|message| {
+            message["role"] == "assistant"
+                && message["tool_calls"]
+                    .as_array()
+                    .is_some_and(|calls| !calls.is_empty())
+        })
+    {
+        let messages = body["messages"].as_array().unwrap();
+        let call_id = messages
+            .iter()
+            .find(|message| {
+                message["role"] == "assistant"
+                    && message["tool_calls"]
+                        .as_array()
+                        .is_some_and(|calls| !calls.is_empty())
+            })
+            .and_then(|message| message["tool_calls"].as_array()?.first())
+            .and_then(|call| call["id"].as_str())
+            .unwrap();
+        assert!(messages
+            .iter()
+            .any(|message| { message["role"] == "tool" && message["tool_call_id"] == call_id }));
+        Json(json!({
+            "model":"native-worker-fixture",
+            "choices":[{"message":{"role":"assistant","content":"The client reported the file content."},"finish_reason":"stop"}],
+            "usage":{"prompt_tokens":20,"completion_tokens":12}
+        }))
     } else {
         Json(
             json!({"model":"native-worker-fixture","choices":[{"message":{"role":"assistant","content":null,"tool_calls":[{"id":"read_1","type":"function","function":{"name":"read","arguments":"{\"path\":\"fixture.txt\"}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":20,"completion_tokens":12}}),
@@ -209,7 +237,7 @@ async fn run(mode: Mode) {
         ),
         max_tokens: if collective { 1024 } else { 128 },
         agent_collective: collective,
-        max_tool_calls: 1,
+        max_tool_calls: if collective { 2 } else { 1 },
         max_wall_seconds: 15,
         ..Config::default()
     };
@@ -286,6 +314,7 @@ async fn run(mode: Mode) {
         let db = rusqlite::Connection::open(cfg.db()).unwrap();
         db.execute_batch("CREATE TRIGGER fail_native_stop BEFORE INSERT ON events WHEN NEW.kind='native_worker_process_stopped' BEGIN SELECT RAISE(ABORT,'stop audit unavailable'); END;").unwrap();
     }
+    let db = rusqlite::Connection::open(cfg.db()).unwrap();
     if nonstream {
         let caller = client.clone();
         let url = format!("{base}/v1/chat/completions");
@@ -338,24 +367,90 @@ async fn run(mode: Mode) {
                 usize::from(stop_failure)
             );
         } else {
+            let first_request = request(pending, collective);
             let body: Value = response.json().await.unwrap();
-            assert_eq!(
-                body["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"],
-                "{\"path\":\"fixture.txt\"}"
-            );
             if collective {
                 assert_eq!(body["usage"]["prompt_tokens"], 60);
                 assert_eq!(body["usage"]["completion_tokens"], 36);
                 assert_eq!(body["usage"]["total_tokens"], 96);
+                let assistant = body["choices"][0]["message"].clone();
+                let tool_call = assistant["tool_calls"][0].clone();
+                let call_id = tool_call["id"].as_str().unwrap();
+                assert!(call_id.starts_with("cgf_"));
+                assert_eq!(call_id.len(), 36);
+                assert_eq!(tool_call["function"]["name"], "read");
+                assert_eq!(
+                    tool_call["function"]["arguments"],
+                    "{\"path\":\"fixture.txt\"}"
+                );
+
+                let task_before: String = db
+                    .query_row(
+                        "SELECT id FROM tasks WHERE query LIKE 'Agent turn %'",
+                        [],
+                        |row| row.get(0),
+                    )
+                    .unwrap();
+                let waiting_status: String = db
+                    .query_row(
+                        "SELECT status FROM tasks WHERE id=?1",
+                        [&task_before],
+                        |row| row.get(0),
+                    )
+                    .unwrap();
+                assert_eq!(waiting_status, "waiting_client");
+                let mut continuation = first_request;
+                let mut messages = continuation["messages"].as_array().unwrap().clone();
+                messages.push(assistant);
+                messages.push(json!({
+                    "role":"tool",
+                    "tool_call_id":call_id,
+                    "content":"Fixture data (untrusted)"
+                }));
+                continuation["messages"] = Value::Array(messages);
+                let final_response = client
+                    .post(format!("{base}/v1/chat/completions"))
+                    .bearer_auth(KEY)
+                    .json(&continuation)
+                    .send()
+                    .await
+                    .unwrap();
+                assert_eq!(final_response.status(), 200);
+                let final_body: Value = final_response.json().await.unwrap();
+                assert_eq!(
+                    final_body["choices"][0]["message"]["content"],
+                    "The client reported the file content."
+                );
+                assert!(final_body["choices"][0]["message"]
+                    .get("tool_calls")
+                    .is_none_or(Value::is_null));
+                assert_eq!(final_body["usage"]["prompt_tokens"], 20);
+                assert_eq!(final_body["usage"]["completion_tokens"], 12);
+                assert_eq!(final_body["usage"]["total_tokens"], 32);
+                let task_after: String = db
+                    .query_row(
+                        "SELECT id FROM tasks WHERE query LIKE 'Agent turn %'",
+                        [],
+                        |row| row.get(0),
+                    )
+                    .unwrap();
+                assert_eq!(
+                    task_before, task_after,
+                    "continuation must resume the same task root"
+                );
                 assert_eq!(
                     provider.roles.lock().unwrap().as_slice(),
-                    ["planner", "explorer", "solver"]
+                    ["planner", "explorer", "solver", "solver"]
                 );
-                assert_eq!(provider.calls.load(Ordering::SeqCst), 3);
+                assert_eq!(provider.calls.load(Ordering::SeqCst), 4);
+            } else {
+                assert_eq!(
+                    body["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"],
+                    "{\"path\":\"fixture.txt\"}"
+                );
             }
         }
     }
-    let db = rusqlite::Connection::open(cfg.db()).unwrap();
     if stop_failure {
         assert_eq!(
             client
@@ -380,7 +475,7 @@ async fn run(mode: Mode) {
         );
         assert_eq!(unsafe { libc::kill(server.0.id() as i32, libc::SIGINT) }, 0);
     } else {
-        let expected_children = if collective { 3 } else { 1 };
+        let expected_children = if collective { 4 } else { 1 };
         tokio::time::timeout(Duration::from_secs(5),async {loop {
         let reaped:u64=db.query_row("SELECT count(*) FROM events WHERE kind='native_worker_process_stopped' AND json_extract(payload,'$.reaped')=1",[],|r|r.get(0)).unwrap();if reaped==expected_children {break}tokio::time::sleep(Duration::from_millis(10)).await;
     }}).await.unwrap();
@@ -409,7 +504,7 @@ async fn run(mode: Mode) {
         );
     }
     if !audit_failure {
-        let expected_calls = if collective { 3 } else { 1 };
+        let expected_calls = if collective { 4 } else { 1 };
         assert_eq!(provider.calls.load(Ordering::SeqCst), expected_calls);
         tokio::time::timeout(Duration::from_secs(3), async {
             while provider.dropped.load(Ordering::SeqCst) != expected_calls {
@@ -450,7 +545,7 @@ async fn run(mode: Mode) {
             .filter(|event| event["kind"] == "agent_model_dispatch")
             .map(|event| event["payload"]["role"].as_str().unwrap())
             .collect::<Vec<_>>();
-        assert_eq!(roles, ["planner", "explorer", "solver"]);
+        assert_eq!(roles, ["planner", "explorer", "solver", "solver"]);
         assert!(events.iter().any(|event| {
             event["kind"] == "agent_admission"
                 && event["payload"]["collective"] == true
@@ -472,9 +567,9 @@ async fn run(mode: Mode) {
                     && event["payload"]["reaped"] == true
             })
             .collect::<Vec<_>>();
-        assert_eq!(launches.len(), 3);
-        assert_eq!(owned.len(), 3);
-        assert_eq!(stopped.len(), 3);
+        assert_eq!(launches.len(), 4);
+        assert_eq!(owned.len(), 4);
+        assert_eq!(stopped.len(), 4);
         let owned_pids = owned
             .iter()
             .map(|event| event["payload"]["pid"].as_u64().unwrap())
@@ -483,7 +578,7 @@ async fn run(mode: Mode) {
             .iter()
             .map(|event| event["payload"]["pid"].as_u64().unwrap())
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(owned_pids.len(), 3);
+        assert_eq!(owned_pids.len(), 4);
         assert_eq!(owned_pids, stopped_pids);
         assert!(events.iter().any(|event| {
             event["kind"] == "agent_verification"
@@ -491,9 +586,9 @@ async fn run(mode: Mode) {
                 && event["payload"]["tools_executed"] == 0
         }));
         assert!(events.iter().any(|event| {
-            event["kind"] == "agent_result"
+            event["kind"] == "agent_session_checkpoint"
+                && event["payload"]["state"] == "closed"
                 && event["payload"]["verified"] == false
-                && event["payload"]["tools_executed"] == 0
         }));
         assert!(!trace.to_string().contains("Read client data"));
         assert!(events
@@ -501,6 +596,35 @@ async fn run(mode: Mode) {
             .filter(|event| event["kind"] == "agent_model_dispatch")
             .all(|event| event["payload"].get("prompt").is_none()
                 && event["payload"].get("content").is_none()));
+        let session: (String, String) = db
+            .query_row(
+                "SELECT s.state,s.snapshot FROM agent_sessions s WHERE s.task_id=?1",
+                [&task],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(session.0, "closed");
+        let snapshot: Value = serde_json::from_str(&session.1).unwrap();
+        assert_eq!(snapshot["calls"], 4);
+        assert_eq!(snapshot["proposals"], 1);
+        assert_eq!(snapshot["internal_tools"], 1);
+        assert!(snapshot["reserved"].as_u64().unwrap() <= 1024);
+        let dispatch_reservations: u64 = events
+            .iter()
+            .filter(|event| event["kind"] == "agent_model_dispatch")
+            .map(|event| event["payload"]["allocation"].as_u64().unwrap())
+            .sum();
+        assert_eq!(
+            snapshot["reserved"].as_u64().unwrap(),
+            dispatch_reservations
+        );
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| event["kind"] == "agent_session_resume")
+                .count(),
+            1
+        );
     }
     if shutdown || stop_failure {
         tokio::time::timeout(Duration::from_secs(3), async {

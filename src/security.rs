@@ -13,6 +13,23 @@ impl TaskPolicy {
         Self::scoped(task, &[("jev-r", "llm.generate")])
     }
 
+    /// Narrow authority for a host-created client collective. Client-declared
+    /// MCP/web/file tools are never grants; this policy allows bounded shared
+    /// retrieval and only the independent compiled checkers used by the core.
+    pub(crate) fn client_collective(task: &str) -> Result<Self> {
+        Self::scoped(
+            task,
+            &[
+                ("jev-r", "llm.generate"),
+                ("jev-plus", "knowledge.search"),
+                ("jev-plus", "ordering.verify"),
+                ("jev-plus", "sorting.verify"),
+                ("jev-plus", "path.verify"),
+                ("jev-plus", "constraints.verify"),
+            ],
+        )
+    }
+
     pub(crate) fn reasoning(task: &str) -> Result<Self> {
         Self::reasoning_scoped(task, false)
     }
@@ -204,6 +221,37 @@ mod tests {
             .authorize(&task, "jev-plus", "math.evaluate")
             .is_err());
     }
+
+    #[test]
+    fn client_collective_grants_only_core_reasoning_retrieval_and_compiled_checks() {
+        let task = uuid::Uuid::new_v4().to_string();
+        let policy = TaskPolicy::client_collective(&task).unwrap();
+        for capability in [
+            "ordering.verify",
+            "sorting.verify",
+            "path.verify",
+            "constraints.verify",
+        ] {
+            policy.authorize(&task, "jev-plus", capability).unwrap();
+        }
+        policy
+            .authorize(&task, "jev-plus", "knowledge.search")
+            .unwrap();
+        policy.authorize(&task, "jev-r", "llm.generate").unwrap();
+        for (actor, capability) in [
+            ("jev-r", "knowledge.search"),
+            ("jev-plus", "llm.generate"),
+            ("jev-plus", "sql.query"),
+            ("jev-plus", "math.evaluate"),
+            ("jev-plus", "constraints.solve"),
+            ("jev-r", "shell.execute"),
+            ("jev-r", "network.connect"),
+            ("jev-r", "filesystem.read"),
+        ] {
+            assert!(policy.authorize(&task, actor, capability).is_err());
+        }
+    }
+
     #[test]
     fn reviewed_reads_reject_symlinks_directories_and_oversized_inputs() {
         let root = std::env::temp_dir().join(format!("fabric-read-{}", uuid::Uuid::new_v4()));

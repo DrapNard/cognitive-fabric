@@ -441,9 +441,10 @@ permissions. Fabric does not sandbox OpenCode or control tools it executes.
 Native logs retain hashes/usage rather than raw source conversations.
 
 Streaming and non-streaming disconnects drop pending local inference; provider
-GPU work is not proven stopped. A client may initiate further independent turns,
-so session-wide client step ceilings remain a separate control. The native
-adapter refuses role overrides it cannot preserve. Native
+GPU work is not proven stopped. When the optional collective is enabled, CGF
+enforces cumulative reasoning limits across a correlated tool loop. The client
+must still bound its own external tool executions and any steps outside that
+checkpoint. The native adapter refuses role overrides it cannot preserve. Native
 turns snapshot an enabled immutable model registration before admission and
 recheck model/endpoint/output-ceiling consistency. Disabling a registration
 blocks later snapshots while admitted turns preserve theirs; this is metadata
@@ -1383,12 +1384,31 @@ Catalog priorities/licensing labels do not establish independent quality or safe
 Only the operator enables `agent_collective`. The existing agent policy grants
 LLM generation, never client tool execution. Advisory roles are forced to prohibit
 tool proposals; solver proposals must satisfy the original current catalog and
-choice. Durable hash-only call reservations precede backend entry, are never
-refunded and obey cumulative per-request input/output/call/cycle/time limits.
-Backend entry rechecks deadlines after auditing and resource queueing. Managed
-role workers retain one-use grants and owned cleanup; cancellation does not prove
-provider GPU termination. Client tool results, skill text and model advice remain
-untrusted. Structural response validation is not factual verification. Each
-request remains a new task: no durable session budget, checkpoint trust or replay
-protection is inferred from supplied conversation history. See
-[client collective](CLIENT_COLLECTIVE.md) for the remaining integration boundaries.
+choice. Opaque CGF-issued tool-call IDs map client-returned standard history to a
+single durable root task. Atomic database claims prevent two requests from
+resuming one checkpoint concurrently; exact saved history and pending call
+bindings are checked before inference. Unknown, altered, missing, replayed,
+compacted or split continuations fail closed rather than receiving a fresh budget.
+The IDs are handles, not permissions or proof of client identity.
+
+Root model/configuration/registration/effort and original deadline are pinned.
+Call, cycle, input-byte, output-reservation, proposal and bounded internal-tool
+charges accumulate and are committed before backend entry; failures and
+cancellation do not refund them. The client request's output setting cannot raise
+the configured root ceiling. A waiting client-tool checkpoint can continue after
+process restart only while its saved same-boot Linux deadline is valid. An
+interrupted in-flight model call is uncertain and cannot be replayed. `recover-tasks`
+aborts active/waiting sessions without restoring charges or granting retry
+authority; expired waiting entries are cleaned up during bounded later admission.
+
+The checkpoint stores bounded derived planner/explorer context privately in local
+SQLite. That context can contain quoted conversation material, is not encrypted by
+this feature, and clearing the current checkpoint does not securely erase prior
+SQLite WAL pages. Raw transcripts, tool results and arguments remain outside the
+audit ledger. Client tool results, skill text and model advice remain untrusted.
+Only applicable pure compiled checks against the original root goal can establish
+their narrow independent completion result; structural collective validation is
+not factual verification. The collective grants no file, shell, network or client
+tool permission. Managed role workers retain one-use grants and owned cleanup;
+cancellation does not prove provider GPU termination. See [client collective](CLIENT_COLLECTIVE.md)
+for session limits and integration boundaries.

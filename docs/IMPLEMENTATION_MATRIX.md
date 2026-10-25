@@ -2790,13 +2790,13 @@ remains a pre-release. `QUALITY_REVIEW.md` preserves verification history.
 
 | Architecture sections | Requirement | Status | Current implementation and tests | Remaining release work |
 |---|---|---|---|---|
-| 3, 7, 9, 10, 12 | External agent HTTP interoperability | Implemented / Partial | `src/agent/`, `crates/cogfabric-server/`: generation-only native solver turns and authenticated same-image workers, authenticated loopback Chat Completions/SSE, client-owned tool proposals/results, collective aliases and bounded admission; real OpenCode v2 + Qwen read/edit/read, HTTP and worker regression tests | Responses/multimodal API, independent executable provisioning and role selection, broader client compatibility and independent agentic-quality/security evaluation |
+| 3, 7, 9, 10, 12 | External agent HTTP interoperability | Implemented / Partial | `src/agent/{collective,sessions,session_context,session_cleanup}.rs`, `src/store.rs`, `crates/cogfabric-server/`: authenticated loopback Chat Completions/SSE, client-owned tool proposals/results, optional durable root-task checkpoints through opaque echoed tool IDs, cumulative pinned budgets, atomic claims, bounded reference/advice persistence, same-boot expiry and fail-closed replay/history/configuration checks; prior OpenCode v2 + Qwen and synthetic MCP workflows | Broader client protocols, Responses/multimodal API, all Engine expert/project-profile paths, broader client compatibility and independent agentic-quality/security evaluation |
 | 7, 12 | Typed local IPC | Partial | `protocol/*.fbs`, `src/fabric.rs`, `src/events.rs`, `src/wire.rs`, `src/service.rs`: bounded verified IPC and module RPC, content-minimized typed progress subscriptions/catch-up, version-pinned inference registration/discovery, correlation/actor/destination/expiry checks, queues and cancellation; socket, spoofing, overflow, replacement and compatibility tests | General command routing, automatic independent actor provisioning and broader compatibility fixtures |
 | 3 | Language interface | Partial | `src/language.rs`, `src/backend.rs`, `src/config.rs`: strict advisory intent, clarification, original-goal preservation, explicit conversation references, optional synthesis, persistent role profiles; scripted and HTTP tests | Live interpretation and synthesis quality measurements; direct/managed/socket generation now succeeds |
 | 4, 9 | Jev+ coordination | Partial | `src/engine.rs`, `src/planning.rs`, `src/store.rs::route`, `src/resource_scheduler/`: pinned capability coverage, dependency scheduling, bounded parallel advisory waves, target/role working allocations, resource-aware per-role Broker eligibility, operator-approved managed native residency receipts, exact pinned route-scope recovery, original-budget completed-wave continuation and admission budgets; dependency, routing, recovery and budget tests | Automatic ownership-aware residency, calibrated measured escalation, incomplete in-flight outcome reconciliation and physical scheduling telemetry |
-| 5 | Jev-R reasoning | Partial | `src/reasoning.rs`, `src/verification/provider.rs`: planner/solver/explorer/critic/reflector, bounded revisions/search, progress stopping, unverified subtask advice, original-goal synthesis and optional trusted host verification with a required compiled criterion | Untrusted executable verifier isolation, new criterion families, host-provider restoration and independent live-model effectiveness measurements |
+| 5 | Jev-R reasoning | Partial | `src/reasoning.rs`, `src/agent/collective.rs`, `src/agent/sessions.rs`, `src/verification/provider.rs`: planner/solver/explorer/critic/reflector, bounded revisions/search, progress stopping, durable client tool-loop continuation with root-pinned cumulative budgets and exact history/call binding, original-goal pure compiled checks and optional trusted host verification | Full Engine expert integration through the external agent API, untrusted executable verifier isolation, broader criterion families, host-provider restoration and independent live-model effectiveness measurements |
 | 6 | Expert network | Partial | `src/registry.rs`: immutable semantic-versioned reference manifests, dependency/reverse-dependency checks, health, activate/disable/metadata rollback, bounded registry; lifecycle/tampering tests | General executable loading and health, measured workflow usefulness and real weight residency; trusted tool/inference rollback is implemented |
-| 7 | Persistent memory | Partial | `src/store.rs`: SQLite WAL/FTS5, schema migrations through 8, durable task/events, isolated explicit history, pinned registry/document snapshots, explicit lease-protected interrupted-task recovery, immutable versioned local model manifests and task selection snapshots, operator-published episodic snapshots, recomputed arithmetic memory, revocation and payload quotas, SQLite page ceilings, global task admission and reviewed retention; migration/isolation/tampering/deletion-rollback tests | Broader independent fact verifiers, backend model residency, physical WAL/filesystem bounds, general external/neural artifact portability and automatic checkpoint resumption |
+| 7 | Persistent memory | Partial | `src/store.rs`: SQLite WAL/FTS5, schema migrations through 9, durable task/events, bounded hash-checked agent session checkpoints/call bindings and pinned local reference identities, isolated explicit history, pinned registry/document snapshots, lease-protected recovery, immutable model manifests, episodic snapshots, quotas and reviewed retention | Broader independent fact verifiers, backend model residency, physical WAL/filesystem bounds, general external/neural artifact portability and automatic checkpoint resumption |
 | 8 A/B | RAG evolution | Partial | `src/evolution.rs`, `src/evaluation.rs`: content-addressed quarantine, hashes/provenance/deduplication/quotas, isolated held-out retrieval, bounded cumulative approved-version regression gates and immutable accepted suites, atomic paired review records, transactional human promotion/rollback; integrity, regression, concurrency and rollback tests | Stronger poisoning/security evaluation, automatic source discovery and cleaning; dataset independence remains operator-attested |
 | 8 C | Offline neural adaptation | Experimental | `training/train_lora.py`, inactive artifact registration; neural evaluation/promotion denied | Base-model provenance and independent neural evaluation manifests, actual training and externally isolated pipeline; no hot-swap claim |
 | 8 D, 14 | Novel neural reconstruction | Not implemented | Research only; no trained Jev networks or superiority claims | Separate research and independent evaluations, beyond proven v1.0 infrastructure |
@@ -5682,3 +5682,73 @@ consume extra inference and repeat client context; the option defaults off and
 charges all reservations within the existing request limits. Managed role workers
 add startup/reaping overhead. This establishes mechanics, not a quality gain,
 GPU stop guarantee or complete Jev-R session orchestration.
+
+
+## Durable client tool-loop continuation — 2026-10-25
+
+**Implemented for the bounded `cogfabric-agent` collective; broader Jev+/Jev-R
+and seven-subsystem integration remains Partial.** This entry supersedes the
+previous client-conversation first-slice entry's statements that session identity,
+cumulative budgets and checkpoint continuation were not implemented. Its
+verification counts apply only to that earlier code state.
+
+`src/agent/sessions.rs` maps opaque `cgf_<uuid>` tool-call IDs to a durable root
+task. Standard client tool-call/result history resumes the checkpoint; the client
+does not need a custom session field. Immediate SQLite transactions pin model,
+registration, configuration, effort, temperature and original deadline, and
+persist session generation, pending exact proposal hashes and cumulative calls,
+cycles, prompt bytes, output reservations, proposal counts and internal-tool
+charges. Per-request `max_tokens` can bound that step but cannot raise the root
+configured ceiling. Atomic single-claim semantics reject concurrent resume.
+Changed/missing/replayed calls and results, unknown handles, altered history,
+configuration drift and expired sessions fail closed without fresh task budget.
+
+`src/agent/session_context.rs` captures bounded untrusted document, memory, skill
+and manifest references once at the root; identities/checksums remain pinned.
+`src/agent/session_cleanup.rs` expires at most the bounded waiting-session batch
+during later admissions. The recovery path marks active/waiting collective sessions
+failed without retry/refund. Only completed waiting-client checkpoints can resume
+after process restart on the same Linux boot with unchanged model, registration,
+effort and other pinned configuration. Reboot, expired/unavailable original
+deadline or pinned-configuration drift invalidates restore; recovery fails closed
+without a replacement task or fresh budget. In-flight calls interrupted by
+cancellation/crash remain uncertain and cannot replay. Terminal-task retention
+removes associated rows; clearing current checkpoint data does not securely erase
+WAL history.
+
+Client tools remain external. Optional internal knowledge search is bounded and
+charged. Only applicable pure compiled criteria can independently complete their
+narrow supported root-goal result; other answers and client results remain
+unverified. The endpoint does not expose all Engine expert workflows, arbitrary
+custom execution, project-profile/model selection or general `resume-task`.
+Disabling the collective refuses its prefixed continuation IDs. See
+`docs/CLIENT_COLLECTIVE.md`, `docs/AGENT_CLIENTS.md`, `docs/HTTP_API.md`,
+`docs/RECOVERY.md` and `docs/THREAT_MODEL.md`.
+
+Regression sources: `src/agent/sessions_tests.rs`,
+`src/agent/session_context_tests.rs`, and `src/store/agent_sessions_migration_tests.rs`.
+
+Focused verification passed:
+
+- `cargo fmt --all -- --check`.
+- `cargo +1.99.0 check --locked --workspace --all-targets`.
+- `cargo +1.99.0 clippy --locked --workspace --all-targets -- -D warnings`.
+- `cargo +1.99.0 test --locked -p cogfabric --lib agent::` (54 tests),
+  `schema_` (11), `storage::` (10), `security::` (12), `recovery::` (145),
+  `restore::` (5), and `models::tests::` (5).
+- `cargo +1.99.0 test --locked -p cogfabric-server --test http --test native_worker`:
+  11 HTTP tests passed. After correcting a native-worker fixture assertion,
+  `cargo +1.99.0 test --locked -p cogfabric-server --test native_worker` passed
+  all 8 tests.
+- `cargo +1.99.0 test --locked -p cogfabric-server --test opencode_mcp_client
+  installed_opencode_v2_jev_collective_owns_mcp_and_skill_workflow -- --ignored
+  --exact` (1 test, synthetic MCP results).
+- `cargo +1.99.0 test --locked --test restore_configuration` and
+  `cargo +1.99.0 test --locked --test client_collective_config` (1 test each).
+
+The broad recovery filter includes existing revision/reflection recovery checks.
+No new successful-reflection branch test, dedicated reflection campaign, live
+reasoning-quality benchmark or real REA/web connection was run. FlatBuffers files
+were unchanged; the generator pairing could not be checked because `flatc` was
+unavailable. This does not establish full seven-subsystem integration or general
+agentic-client/protocol compatibility.

@@ -210,7 +210,7 @@ async fn low_effort_runs_planner_then_solver_with_shared_model_and_bounded_alloc
         .iter()
         .all(|call| call.turn.tools[0].function.name == "read_file"));
     assert_eq!(calls[0].allocation, 96);
-    assert_eq!(calls.iter().map(|call| call.allocation).sum::<usize>(), 512);
+    assert_eq!(calls.iter().map(|call| call.allocation).sum::<usize>(), 405);
     assert!(calls.iter().map(|call| call.allocation).sum::<usize>() <= 1024);
     assert!(
         calls.iter().map(|call| call.allocation).sum::<usize>() <= original.max_tokens.unwrap()
@@ -245,7 +245,7 @@ async fn low_effort_runs_planner_then_solver_with_shared_model_and_bounded_alloc
             .iter()
             .find(|event| event["kind"] == "agent_verification")
             .unwrap()["payload"]["reserved_output_tokens"],
-        512
+        405
     );
     assert!(!trace.to_string().contains(PRIVATE_PROMPT));
     assert!(!trace.to_string().contains(PRIVATE_DESCRIPTION));
@@ -320,19 +320,20 @@ async fn high_effort_keeps_history_and_catalog_then_returns_solver_tool_call_imm
             serde_json::to_value(&original.messages).unwrap()
         );
     }
-    assert_eq!(calls.iter().map(|call| call.allocation).sum::<usize>(), 512);
+    assert_eq!(calls.iter().map(|call| call.allocation).sum::<usize>(), 448);
     assert!(
         calls.iter().map(|call| call.allocation).sum::<usize>() <= original.max_tokens.unwrap()
     );
     assert!(calls.iter().map(|call| call.allocation).sum::<usize>() <= 1024);
     assert_eq!(result.completion.tool_calls.len(), 1);
     assert_eq!(result.completion.tool_calls[0].function.name, "read_file");
-    assert_eq!(result.completion.tool_calls[0].id, "call_client_read_1");
+    assert!(result.completion.tool_calls[0].id.starts_with("cgf_"));
+    assert_eq!(result.completion.tool_calls[0].id.len(), 36);
     assert_eq!(result.completion.output_tokens, Some(21));
 
     let trace = store.task(&result.task_id).unwrap();
     assert_eq!(trace["task"]["mode"], "research");
-    assert_eq!(trace["task"]["status"], "unverified");
+    assert_eq!(trace["task"]["status"], "waiting_client");
     assert!(!trace.to_string().contains(PRIVATE_PROMPT));
     assert!(!trace.to_string().contains(PRIVATE_DESCRIPTION));
     assert!(!trace.to_string().contains(PRIVATE_SCHEMA));
@@ -362,7 +363,7 @@ async fn high_effort_keeps_history_and_catalog_then_returns_solver_tool_call_imm
             .iter()
             .find(|event| event["kind"] == "agent_verification")
             .unwrap()["payload"]["reserved_output_tokens"],
-        512
+        448
     );
     assert_eq!(
         trace["events"]
@@ -553,9 +554,10 @@ async fn cancellation_drops_inference_and_keeps_the_reserved_call_audited() {
 }
 
 #[tokio::test]
-async fn client_tool_result_is_replayed_as_untrusted_history_under_a_fresh_request_budget() {
+async fn client_tool_result_resumes_the_durable_session_under_one_cumulative_budget() {
     let store = Arc::new(Store::in_memory().unwrap());
     let backend = Arc::new(ScriptBackend::new([
+        content("Use the client-declared reader."),
         tool_proposal("read_file", r#"{"path":"note.txt"}"#),
         content("The client reported the note contents; they remain unverified."),
     ]));
@@ -565,21 +567,22 @@ async fn client_tool_result_is_replayed_as_untrusted_history_under_a_fresh_reque
         ..Config::default()
     };
     let runtime = AgentRuntime::with_backend(cfg, store.clone(), backend.clone()).unwrap();
+    let first_request = request(Some("low"), 512);
     let first = runtime
-        .run_until(request(Some("none"), 256), std::future::pending())
+        .run_until(first_request.clone(), std::future::pending())
         .await
         .unwrap();
     assert_eq!(first.completion.tool_calls.len(), 1);
     let call = first.completion.tool_calls[0].clone();
+    assert!(call.id.starts_with("cgf_"));
+    assert_eq!(
+        store.task(&first.task_id).unwrap()["task"]["status"],
+        "waiting_client"
+    );
 
-    let mut next = request(Some("none"), 256);
+    let mut next = first_request.clone();
     next.messages = vec![
-        Message {
-            role: "user".into(),
-            content: Some("Read the note".into()),
-            tool_calls: Vec::new(),
-            tool_call_id: None,
-        },
+        first_request.messages[0].clone(),
         Message {
             role: "assistant".into(),
             content: None,
@@ -605,34 +608,61 @@ async fn client_tool_result_is_replayed_as_untrusted_history_under_a_fresh_reque
         .unwrap();
 
     let calls = backend.calls();
-    assert_eq!(calls.len(), 2);
-    assert_eq!(response_role(&calls[0].turn), "solver");
+    assert_eq!(calls.len(), 3);
+    assert_eq!(response_role(&calls[0].turn), "planner");
     assert_eq!(response_role(&calls[1].turn), "solver");
-    assert_eq!(calls[0].allocation, 256);
+    assert_eq!(response_role(&calls[2].turn), "solver");
+    assert_eq!(calls[0].allocation, 96);
     assert_eq!(calls[1].allocation, 256);
-    assert_eq!(calls[1].turn.reasoning_effort.as_deref(), Some("none"));
+    assert_eq!(calls[2].allocation, 160);
+    assert_eq!(calls[2].turn.reasoning_effort.as_deref(), Some("low"));
     assert_eq!(
-        serde_json::to_value(&calls[1].turn.messages[1..1 + next.messages.len()]).unwrap(),
+        serde_json::to_value(&calls[2].turn.messages[1..1 + next.messages.len()]).unwrap(),
         serde_json::to_value(&next.messages).unwrap()
     );
 
     let first_trace = store.task(&first.task_id).unwrap();
     let second_trace = store.task(&second.task_id).unwrap();
-    assert_ne!(first.task_id, second.task_id);
-    for trace in [&first_trace, &second_trace] {
-        assert_eq!(trace["task"]["status"], "unverified");
-        let admission = trace["events"]
-            .as_array()
+    assert_eq!(first.task_id, second.task_id);
+    assert_eq!(first_trace["task"]["status"], "unverified");
+    assert_eq!(second_trace["task"]["status"], "unverified");
+    assert!(!second_trace.to_string().contains(PRIVATE_RESULT));
+    assert_eq!(calls.iter().map(|call| call.allocation).sum::<usize>(), 512);
+    assert!(calls.iter().all(|call| call.allocation <= 512));
+    let session_state: String = store
+        .lock()
+        .unwrap()
+        .query_row(
+            "SELECT state FROM agent_sessions WHERE task_id=?1",
+            [&first.task_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(session_state, "closed");
+    assert_eq!(
+        store
+            .lock()
             .unwrap()
-            .iter()
-            .find(|event| event["kind"] == "agent_admission")
-            .unwrap();
-        assert_eq!(admission["payload"]["session_budget_scope"], "request");
-        assert_eq!(admission["payload"]["reserved_output_tokens"], 256);
-        assert_eq!(admission["payload"]["calls"], 1);
-        assert_eq!(admission["payload"]["client_tools_executed"], false);
-        assert!(!trace.to_string().contains(PRIVATE_RESULT));
-    }
+            .query_row(
+                "SELECT count(*) FROM agent_sessions WHERE task_id=?1",
+                [&first.task_id],
+                |row| row.get::<_, u64>(0)
+            )
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        store
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT count(*) FROM events WHERE task_id=?1 AND kind='agent_session_resume'",
+                [&first.task_id],
+                |row| row.get::<_, u64>(0)
+            )
+            .unwrap(),
+        1
+    );
     assert_eq!(
         store
             .lock()

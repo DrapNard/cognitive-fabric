@@ -407,7 +407,7 @@ impl Store {
         let result = (|| -> Result<Vec<String>> {
             let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
             let ids = tx
-            .prepare("SELECT CASE WHEN length(CAST(id AS BLOB))<=64 THEN id END FROM tasks WHERE status='running' ORDER BY created,id LIMIT 10001")?
+            .prepare("SELECT CASE WHEN length(CAST(id AS BLOB))<=64 THEN id END FROM tasks WHERE status IN ('running','waiting_client') ORDER BY created,id LIMIT 10001")?
             .query_map([], |row| row.get::<_, String>(0))?
             .collect::<rusqlite::Result<Vec<_>>>()?;
             if ids.len() > 10000 {
@@ -421,7 +421,13 @@ impl Store {
                 if started.elapsed() > std::time::Duration::from_secs(5) {
                     bail!("Task recovery deadline exhausted")
                 }
-                tx.execute("UPDATE tasks SET status='interrupted',answer='Task interrupted before a durable terminal result; no automatic replay',updated=unixepoch() WHERE id=?1 AND status='running'", [id])?;
+                if tx.execute("UPDATE tasks SET status='interrupted',answer='Task interrupted before a durable terminal result; no automatic replay',updated=unixepoch() WHERE id=?1 AND status IN ('running','waiting_client')", [id])? != 1 {
+                    bail!("Task changed during exclusive recovery")
+                }
+                tx.execute(
+                    "UPDATE agent_sessions SET state='failed',updated=unixepoch() WHERE task_id=?1 AND state IN ('active','waiting')",
+                    [id],
+                )?;
                 tx.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES (?1,'recovery','human-cli',?2,unixepoch())", params![id,serde_json::json!({"status":"interrupted","reason":"exclusive_runtime_lease","automatic_replay":false,"resource_usage_complete":false,"subtask_results_verified":false}).to_string()])?;
                 progress.push(
                     crate::events::Progress::from_audit(
@@ -776,6 +782,55 @@ mod tests {
         drop(store);
         std::fs::remove_dir_all(root).unwrap();
     }
+
+    #[test]
+    fn explicit_recovery_interrupts_waiting_client_sessions_without_replay() {
+        let root = std::env::temp_dir().join(format!(
+            "cogfabric-waiting-session-recovery-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let store = super::Store::open(&root.join("state.db")).unwrap();
+        let task = store
+            .create_task("Abandoned client tool loop", "research")
+            .unwrap();
+        store.finish_task(&task, "waiting_client", "").unwrap();
+        let session_id = uuid::Uuid::new_v4().to_string();
+        let claim = uuid::Uuid::new_v4().to_string();
+        let snapshot = "{}";
+        store
+            .lock()
+            .unwrap()
+            .execute(
+                "INSERT INTO agent_sessions(id,task_id,state,generation,claim,snapshot,snapshot_sha256,updated) \
+                 VALUES (?1,?2,'waiting',1,?3,?4,?5,unixepoch())",
+                rusqlite::params![
+                    session_id,
+                    task,
+                    claim,
+                    snapshot,
+                    crate::store::sha256(snapshot.as_bytes())
+                ],
+            )
+            .unwrap();
+
+        assert_eq!(store.recover_tasks().unwrap(), vec![task.clone()]);
+        assert_eq!(store.task(&task).unwrap()["task"]["status"], "interrupted");
+        let session_state: String = store
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT state FROM agent_sessions WHERE task_id=?1",
+                [&task],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(session_state, "failed");
+        assert!(store.recover_tasks().unwrap().is_empty());
+
+        drop(store);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn task_recovery_rejects_invalid_ids_and_oversized_batches_atomically() {
         let root = std::env::temp_dir().join(format!(

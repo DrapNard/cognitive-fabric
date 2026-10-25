@@ -124,7 +124,11 @@ The [GitHub Actions workflow](.github/workflows/ci.yml) also validates generated
 
 ## Project status
 
-See the [delivery roadmap](docs/ROADMAP.md), including optional image, audio and tentative video understanding after core completion. The [client collective](docs/CLIENT_COLLECTIVE.md) is an opt-in per-request implementation; durable session orchestration remains incomplete.
+See the [delivery roadmap](docs/ROADMAP.md), including optional image, audio and
+tentative video understanding after core completion. The opt-in [client
+collective](docs/CLIENT_COLLECTIVE.md) now persists bounded reasoning state across
+correlated client tool turns; broader Engine expert and project-profile integration
+remains incomplete.
 
 This repository is an actively developed alpha. Neural adaptation is optional and experimental; no trained Jev+ or Jev-R networks are included. General module lifecycle, model residency scheduling, independent held-out evaluation, and stronger isolation remain incomplete. The [implementation matrix](docs/IMPLEMENTATION_MATRIX.md) and [release audit](docs/RELEASE_AUDIT.md) track the current gaps.
 

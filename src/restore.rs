@@ -23,8 +23,263 @@ pub struct Restored {
     pub bytes: u64,
     pub schema_version: u32,
     pub running_tasks_not_replayed: u64,
+    pub invalidated_client_sessions: u64,
     pub configuration_restored: bool,
     pub external_artifacts_restored: bool,
+}
+
+const MAX_RESTORED_CLIENT_SESSIONS: usize = 10_000;
+const MAX_AGENT_SESSION_SNAPSHOT_BYTES: usize = 32_768;
+
+fn is_sha256_hex(value: &serde_json::Value) -> bool {
+    value.as_str().is_some_and(|digest| {
+        digest.len() == 64
+            && digest
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    })
+}
+
+/// Clear resumable agent-tool authority from a restored database. Restoring an
+/// older backup must not make a previously delivered client tool proposal live
+/// again. The caller owns an unpublished staging database.
+fn invalidate_restored_client_sessions(
+    db: &mut rusqlite::Connection,
+    started: Instant,
+) -> Result<u64> {
+    let rows = db
+        .prepare(
+            "SELECT s.id,s.task_id,s.state, \
+             CASE WHEN length(CAST(s.snapshot AS BLOB))<=32768 THEN s.snapshot END, \
+             s.snapshot_sha256 \
+             FROM agent_sessions s WHERE s.state IN ('active','waiting') \
+             ORDER BY s.updated,s.id LIMIT 10001",
+        )?
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, Option<String>>(3)?,
+                row.get::<_, String>(4)?,
+            ))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    if rows.len() > MAX_RESTORED_CLIENT_SESSIONS {
+        bail!("Restore contains too many unfinished client collective sessions")
+    }
+
+    let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+    for (session_id, task_id, previous_state, snapshot, snapshot_sha256) in &rows {
+        if started.elapsed() > Duration::from_secs(10) {
+            bail!("Restore session invalidation deadline exhausted")
+        }
+
+        let sanitized = snapshot
+            .as_deref()
+            .and_then(|raw| sanitize_agent_snapshot(raw, snapshot_sha256));
+        let updated = if let Some((raw, checksum)) = sanitized.as_ref() {
+            tx.execute(
+                "UPDATE agent_sessions SET state='failed',snapshot=?2,snapshot_sha256=?3,updated=unixepoch() \
+                 WHERE id=?1 AND state IN ('active','waiting')",
+                rusqlite::params![session_id, raw, checksum],
+            )?
+        } else {
+            tx.execute(
+                "UPDATE agent_sessions SET state='failed',updated=unixepoch() \
+                 WHERE id=?1 AND state IN ('active','waiting')",
+                [session_id],
+            )?
+        };
+        if updated != 1 {
+            bail!("Restored client session changed during invalidation")
+        }
+
+        tx.execute(
+            "UPDATE tasks SET status='interrupted',answer='Client collective session invalidated during restore; no automatic replay',updated=unixepoch() \
+             WHERE id=?1 AND status IN ('running','waiting_client')",
+            [task_id],
+        )?;
+        tx.execute(
+            "DELETE FROM agent_session_calls WHERE session_id=?1",
+            [session_id],
+        )?;
+        let payload = serde_json::json!({
+            "format_version": 1,
+            "session_id": session_id,
+            "previous_state": previous_state,
+            "state": "failed",
+            "reason": "explicit_database_restore",
+            "automatic_replay": false,
+            "refund": false,
+            "pending_call_mappings_removed": true,
+            "snapshot_context_scrubbed": sanitized.is_some()
+        });
+        let raw_payload = serde_json::to_string(&payload)?;
+        if raw_payload.len() > 8192 {
+            bail!("Restore session invalidation audit exceeds bounds")
+        }
+        tx.execute(
+            "INSERT INTO events(task_id,kind,source,payload,created) VALUES (?1,'agent_session_restore_invalidated','human-cli',?2,unixepoch())",
+            rusqlite::params![task_id, raw_payload],
+        )?;
+    }
+    tx.commit()?;
+    Ok(rows.len() as u64)
+}
+
+/// Return a rechecksummed checkpoint with all user-derived context and replay
+/// handles removed, or None when the original bounded checkpoint is not valid.
+fn sanitize_agent_snapshot(raw: &str, expected_checksum: &str) -> Option<(String, String)> {
+    if raw.len() > MAX_AGENT_SESSION_SNAPSHOT_BYTES
+        || crate::store::sha256(raw.as_bytes()) != expected_checksum
+    {
+        return None;
+    }
+    let mut value =
+        crate::strict_json::value(raw.as_bytes(), MAX_AGENT_SESSION_SNAPSHOT_BYTES).ok()?;
+    let object = value.as_object()?;
+    const KEYS: [&str; 26] = [
+        "version",
+        "configuration",
+        "registration",
+        "effort",
+        "temperature",
+        "mode",
+        "clock",
+        "wall_seconds",
+        "objective_index",
+        "references",
+        "reference_pins",
+        "internal_tools",
+        "call_limit",
+        "cycle_limit",
+        "output_limit",
+        "input_limit",
+        "tool_limit",
+        "calls",
+        "cycles",
+        "reserved",
+        "prompt_bytes",
+        "proposals",
+        "advice",
+        "history_len",
+        "history_sha256",
+        "pending",
+    ];
+    if object.len() != KEYS.len() || KEYS.iter().any(|key| !object.contains_key(*key)) {
+        return None;
+    }
+
+    let string_fields = [
+        "configuration",
+        "registration",
+        "mode",
+        "references",
+        "advice",
+        "history_sha256",
+    ];
+    if string_fields
+        .iter()
+        .any(|key| object.get(*key).is_none_or(|value| !value.is_string()))
+        || object.get("version")?.as_u64()? != 1
+        || object.get("wall_seconds")?.as_u64()?.clamp(1, 3600)
+            != object.get("wall_seconds")?.as_u64()?
+        || !object.get("temperature")?.as_f64()?.is_finite()
+        || !(object.get("effort")?.is_null() || object.get("effort")?.is_string())
+        || !object.get("reference_pins")?.is_array()
+        || !object.get("pending")?.is_array()
+        || !object.get("clock")?.is_object()
+        || !is_sha256_hex(object.get("configuration")?)
+        || !is_sha256_hex(object.get("registration")?)
+        || !is_sha256_hex(object.get("history_sha256")?)
+    {
+        return None;
+    }
+    for key in [
+        "objective_index",
+        "internal_tools",
+        "call_limit",
+        "cycle_limit",
+        "output_limit",
+        "input_limit",
+        "tool_limit",
+        "calls",
+        "cycles",
+        "reserved",
+        "prompt_bytes",
+        "proposals",
+        "history_len",
+    ] {
+        object.get(key)?.as_u64()?;
+    }
+    let wall_seconds = object.get("wall_seconds")?.as_u64()?;
+    let clock =
+        serde_json::from_value::<crate::execution_clock::Snapshot>(object.get("clock")?.clone())
+            .ok()?;
+    clock.validate(wall_seconds).ok()?;
+    let temperature = object.get("temperature")?.as_f64()?;
+    let history_len = object.get("history_len")?.as_u64()?;
+    let objective_index = object.get("objective_index")?.as_u64()?;
+    let tool_limit = object.get("tool_limit")?.as_u64()?;
+    let proposals = object.get("proposals")?.as_u64()?;
+    let internal_tools = object.get("internal_tools")?.as_u64()?;
+    let call_limit = object.get("call_limit")?.as_u64()?;
+    let cycle_limit = object.get("cycle_limit")?.as_u64()?;
+    let calls = object.get("calls")?.as_u64()?;
+    let cycles = object.get("cycles")?.as_u64()?;
+    let reserved = object.get("reserved")?.as_u64()?;
+    let output_limit = object.get("output_limit")?.as_u64()?;
+    let prompt_bytes = object.get("prompt_bytes")?.as_u64()?;
+    let input_limit = object.get("input_limit")?.as_u64()?;
+    let pending = object.get("pending")?.as_array()?;
+    if !(-0.0..=2.0).contains(&temperature)
+        || history_len > 255
+        || (history_len > 0 && objective_index >= history_len)
+        || proposals.saturating_add(internal_tools) > tool_limit
+        || calls > call_limit
+        || cycles > cycle_limit
+        || reserved > output_limit
+        || prompt_bytes > input_limit
+        || pending.iter().any(|id| {
+            id.as_str().is_none_or(|id| {
+                !id.strip_prefix("cgf_").is_some_and(|id| {
+                    id.len() == 32
+                        && id
+                            .bytes()
+                            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+                })
+            })
+        })
+        || object.get("references")?.as_str()?.len() > 8000
+        || object.get("advice")?.as_str()?.len() > 2000
+        || pending.len() > 16
+        || serde_json::to_vec(object.get("reference_pins")?)
+            .ok()?
+            .len()
+            > 4096
+    {
+        return None;
+    }
+
+    let object = value.as_object_mut()?;
+    object.insert(
+        "references".into(),
+        serde_json::Value::String(String::new()),
+    );
+    object.insert("reference_pins".into(), serde_json::json!([]));
+    object.insert("advice".into(), serde_json::Value::String(String::new()));
+    object.insert("pending".into(), serde_json::json!([]));
+    object.insert(
+        "history_sha256".into(),
+        serde_json::Value::String(String::new()),
+    );
+    let sanitized = serde_json::to_string(&value).ok()?;
+    if sanitized.len() > MAX_AGENT_SESSION_SNAPSHOT_BYTES {
+        return None;
+    }
+    let checksum = crate::store::sha256(sanitized.as_bytes());
+    Some((sanitized, checksum))
 }
 
 pub fn database(
@@ -229,6 +484,27 @@ pub fn database_with_migration(
                 bail!("Schema migration exceeds restore bounds")
             }
         }
+        let invalidated_client_sessions = {
+            let mut writable = crate::storage::wal_vfs::open(
+                &temporary,
+                OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NOFOLLOW,
+            )?;
+            writable.pragma_update(None, "trusted_schema", false)?;
+            writable.progress_handler(
+                1000,
+                Some(move || started.elapsed() > Duration::from_secs(10)),
+            );
+            let count = invalidate_restored_client_sessions(&mut writable, started)?;
+            writable.progress_handler(0, None::<fn() -> bool>);
+            drop(writable);
+            target.sync_all()?;
+            if target.metadata()?.len() > cfg.max_database_bytes
+                || started.elapsed() > Duration::from_secs(10)
+            {
+                bail!("Restore session invalidation exceeds resource bounds")
+            }
+            count
+        };
         let rag_artifacts_restored = if restore_rag {
             let mut writable = crate::storage::wal_vfs::open(
                 &temporary,
@@ -274,6 +550,7 @@ pub fn database_with_migration(
             bytes,
             schema_version: current_schema,
             running_tasks_not_replayed: running,
+            invalidated_client_sessions,
             configuration_restored: restore_configuration,
             external_artifacts_restored: false,
         };
@@ -339,7 +616,7 @@ mod tests {
         fs::copy(&backup.path, &legacy).unwrap();
         fs::set_permissions(&legacy, fs::Permissions::from_mode(0o600)).unwrap();
         let db = Connection::open(&legacy).unwrap();
-        db.execute_batch("DROP TABLE project_profiles; DROP INDEX native_task_lifecycle_history; DROP TABLE managed_residency_resolution_members; DROP TABLE managed_residency_resolutions; DROP TABLE managed_residency_receipt_archive; DROP TRIGGER managed_residency_hot_no_archive_duplicate; DROP TRIGGER managed_residency_identity_immutable; DROP INDEX managed_residency_active_identity; DROP INDEX managed_residency_state; DROP INDEX managed_residency_event_scan; DROP TABLE managed_residency_receipts; DROP INDEX idx_tasks_status; DROP INDEX event_conversation_task; DROP TABLE retention_audit; PRAGMA user_version=6;").unwrap();
+        db.execute_batch("DROP TABLE agent_session_calls; DROP TABLE agent_sessions; DROP TABLE project_profiles; DROP INDEX native_task_lifecycle_history; DROP TABLE managed_residency_resolution_members; DROP TABLE managed_residency_resolutions; DROP TABLE managed_residency_receipt_archive; DROP TRIGGER managed_residency_hot_no_archive_duplicate; DROP TRIGGER managed_residency_identity_immutable; DROP INDEX managed_residency_active_identity; DROP INDEX managed_residency_state; DROP INDEX managed_residency_event_scan; DROP TABLE managed_residency_receipts; DROP INDEX idx_tasks_status; DROP INDEX event_conversation_task; DROP TABLE retention_audit; PRAGMA user_version=6;").unwrap();
         drop(db);
         let bytes = fs::read(&legacy).unwrap();
         let hash = crate::store::sha256(&bytes);
@@ -586,6 +863,172 @@ mod tests {
         std::os::unix::fs::symlink(&backup.path, &link).unwrap();
         assert!(database(&cfg, &link, &backup.checksum, &root.join("linked")).is_err());
         assert!(security::authorize("jev-r", "storage.restore").is_err());
+        drop(restored);
+        drop(store);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn restore_invalidates_a_backed_up_waiting_tool_checkpoint() {
+        let root = std::env::temp_dir().join(format!(
+            "fabric-restore-agent-session-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let cfg = Config {
+            home: root.join("source"),
+            ..Config::default()
+        };
+        cfg.prepare().unwrap();
+        let store = crate::store::Store::open(&cfg.db()).unwrap();
+        let task = store
+            .create_task("Continue a client tool loop", "research")
+            .unwrap();
+        store.finish_task(&task, "waiting_client", "").unwrap();
+        let session_id = uuid::Uuid::new_v4().to_string();
+        let claim = uuid::Uuid::new_v4().to_string();
+        let call_id = format!("cgf_{}", "a".repeat(32));
+        let clock = crate::execution_clock::ExecutionStart::new(120)
+            .clock
+            .expect("test host needs a same-boot execution clock");
+        let checkpoint = serde_json::json!({
+            "version": 1,
+            "configuration": "b".repeat(64),
+            "registration": "c".repeat(64),
+            "effort": "high",
+            "temperature": 0.2,
+            "mode": "research",
+            "clock": clock,
+            "wall_seconds": 120,
+            "objective_index": 0,
+            "references": "private retrieved context",
+            "reference_pins": [{"id":"private-reference"}],
+            "internal_tools": 1,
+            "call_limit": 8,
+            "cycle_limit": 4,
+            "output_limit": 4096,
+            "input_limit": 512000,
+            "tool_limit": 4,
+            "calls": 3,
+            "cycles": 1,
+            "reserved": 352,
+            "prompt_bytes": 1234,
+            "proposals": 1,
+            "advice": "private derived advice",
+            "history_len": 2,
+            "history_sha256": "d".repeat(64),
+            "pending": [call_id]
+        });
+        let raw_checkpoint = serde_json::to_string(&checkpoint).unwrap();
+        store
+            .lock()
+            .unwrap()
+            .execute(
+                "INSERT INTO agent_sessions(id,task_id,state,generation,claim,snapshot,snapshot_sha256,updated) \
+                 VALUES (?1,?2,'waiting',1,?3,?4,?5,unixepoch())",
+                rusqlite::params![
+                    session_id,
+                    task,
+                    claim,
+                    raw_checkpoint,
+                    crate::store::sha256(raw_checkpoint.as_bytes())
+                ],
+            )
+            .unwrap();
+        store
+            .lock()
+            .unwrap()
+            .execute(
+                "INSERT INTO agent_session_calls(id,session_id,generation,call_sha256) VALUES (?1,?2,1,?3)",
+                rusqlite::params![call_id, session_id, "e".repeat(64)],
+            )
+            .unwrap();
+
+        let backup = crate::backups::create(&cfg, &store).unwrap();
+        let destination = root.join("restored");
+        // Simulate the live source progressing after the backup captured its
+        // pending proposal. Restore must not roll that checkpoint back to live.
+        store
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE agent_sessions SET state='closed' WHERE id=?1",
+                [&session_id],
+            )
+            .unwrap();
+        store
+            .lock()
+            .unwrap()
+            .execute("UPDATE tasks SET status='unverified' WHERE id=?1", [&task])
+            .unwrap();
+        store
+            .lock()
+            .unwrap()
+            .execute(
+                "DELETE FROM agent_session_calls WHERE session_id=?1",
+                [&session_id],
+            )
+            .unwrap();
+
+        let report = database(&cfg, &backup.path, &backup.checksum, &destination).unwrap();
+        assert_eq!(report.invalidated_client_sessions, 1);
+        let restore_manifest: serde_json::Value =
+            serde_json::from_slice(&fs::read(destination.join("restore-manifest.json")).unwrap())
+                .unwrap();
+        assert_eq!(restore_manifest["invalidated_client_sessions"], 1);
+        assert_eq!(
+            crate::store::sha256(&fs::read(&backup.path).unwrap()),
+            backup.checksum,
+            "restore leaves its source backup unchanged"
+        );
+        let restored = crate::store::Store::open(&destination.join("fabric.sqlite3")).unwrap();
+        assert_eq!(
+            restored.task(&task).unwrap()["task"]["status"],
+            "interrupted"
+        );
+        let db = restored.lock().unwrap();
+        let (session_state, sanitized, checksum): (String, String, String) = db
+            .query_row(
+                "SELECT state,snapshot,snapshot_sha256 FROM agent_sessions WHERE id=?1",
+                [&session_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(session_state, "failed");
+        assert_eq!(
+            crate::store::sha256(sanitized.as_bytes()),
+            checksum,
+            "the scrubbed checkpoint checksum is refreshed"
+        );
+        let sanitized: serde_json::Value = serde_json::from_str(&sanitized).unwrap();
+        assert_eq!(sanitized["references"], "");
+        assert_eq!(sanitized["reference_pins"], serde_json::json!([]));
+        assert_eq!(sanitized["advice"], "");
+        assert_eq!(sanitized["pending"], serde_json::json!([]));
+        assert_eq!(sanitized["history_sha256"], "");
+        assert_eq!(sanitized["calls"], 3, "charges remain preserved");
+        assert_eq!(
+            sanitized["reserved"], 352,
+            "reserved tokens are not refunded"
+        );
+        assert_eq!(
+            db.query_row(
+                "SELECT count(*) FROM agent_session_calls WHERE session_id=?1",
+                [&session_id],
+                |row| row.get::<_, u64>(0),
+            )
+            .unwrap(),
+            0
+        );
+        assert_eq!(
+            db.query_row(
+                "SELECT count(*) FROM events WHERE task_id=?1 AND kind='agent_session_restore_invalidated'",
+                [&task],
+                |row| row.get::<_, u64>(0),
+            )
+            .unwrap(),
+            1
+        );
+        drop(db);
         drop(restored);
         drop(store);
         fs::remove_dir_all(root).unwrap();

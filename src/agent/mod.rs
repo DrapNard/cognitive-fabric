@@ -4,6 +4,9 @@ mod collective;
 mod local;
 pub mod process;
 pub mod protocol;
+mod session_cleanup;
+mod session_context;
+mod sessions;
 mod types;
 pub mod unix;
 use crate::{
@@ -259,6 +262,17 @@ impl AgentRuntime {
         cancel: impl Future<Output = ()>,
     ) -> Result<TurnResult> {
         let tokens = self.validate(&request)?;
+        if self.cfg.agent_collective {
+            return sessions::run(self, request, tokens, cancel).await;
+        }
+        if request.messages.last().is_some_and(|m| {
+            m.role == "tool"
+                && m.tool_call_id
+                    .as_deref()
+                    .is_some_and(|id| id.starts_with("cgf_"))
+        }) {
+            bail!("Collective continuation is disabled; restore its original configuration")
+        }
         let start = Instant::now();
         let model_registration = self.store.pin_model(&self.cfg)?;
         let _lease = self
@@ -317,11 +331,7 @@ impl AgentRuntime {
                 _ = cancel => { self.store.finish_task(&task,"cancelled","")?; guard.finished=true; bail!("Agent turn cancelled") },
                 result = tokio::time::timeout_at(tokio::time::Instant::from_std(start + Duration::from_secs(self.cfg.max_wall_seconds)),async {
                     let deadline = start + Duration::from_secs(self.cfg.max_wall_seconds);
-                    if self.cfg.agent_collective {
-                        collective::run(self, backend.clone(), &task, &request, tokens, deadline).await
-                    } else {
-                        self.dispatch(backend.clone(), &task, &request, tokens, deadline).await
-                    }
+                    self.dispatch(backend.clone(), &task, &request, tokens, deadline).await
                 }) => match result {
                     Ok(result) => result?,
                     Err(_) => {self.store.finish_task(&task,"exhausted","")?; guard.finished=true; bail!("Agent turn deadline exhausted")},
@@ -398,5 +408,9 @@ impl Drop for TurnGuard {
 
 #[cfg(test)]
 mod collective_tests;
+#[cfg(test)]
+mod session_context_tests;
+#[cfg(test)]
+mod sessions_tests;
 #[cfg(test)]
 mod tests;
