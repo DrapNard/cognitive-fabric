@@ -423,6 +423,11 @@ enum Command {
         #[arg(long, action = clap::ArgAction::Set)]
         enabled: bool,
     },
+    /// Opt the client-facing cogfabric-agent endpoint into bounded Jev+ / Jev-R orchestration.
+    ConfigureAgentCollective {
+        #[arg(long, action = clap::ArgAction::Set)]
+        enabled: bool,
+    },
     ConfigShow,
     ResourceStatus,
     ResourceRelease {
@@ -1108,6 +1113,20 @@ async fn run_cli() -> Result<()> {
         cogfabric::projects::Selection::parse(reference)?;
     }
     let cfg = Config::load(cli.home, cli.backend)?;
+    if let Command::ConfigureAgentCollective { enabled } = &cli.command {
+        security::authorize("human-cli", "resources.configure")?;
+        let mut changed = cfg.clone();
+        changed.agent_collective = *enabled;
+        changed.save()?;
+        return output(
+            json!({
+                "agent_collective_enabled": changed.agent_collective,
+                "running_services_require_restart": true,
+                "model_switch": false
+            }),
+            cli.json,
+        );
+    }
     match &cli.command {
         Command::Candidate {
             action:
@@ -1760,7 +1779,7 @@ async fn run_cli() -> Result<()> {
         }
         Command::Status => {
             json!({"home":cfg.home,"backend":cfg.backend,"model":cfg.model,"inference_process":cfg.inference_process,
-            "resource_admission":cfg.resource_admission,
+            "resource_admission":cfg.resource_admission,"agent_collective_enabled":cfg.agent_collective,
             "skills":store.skills()?.len(),"candidates":store.candidates()?.len()})
         }
         Command::ConfigureInputTokens { .. } => {
@@ -1768,6 +1787,9 @@ async fn run_cli() -> Result<()> {
         }
         Command::ConfigureResources { .. } => {
             bail!("Resource configuration must run before initialization")
+        }
+        Command::ConfigureAgentCollective { .. } => {
+            bail!("Agent collective configuration must run before runtime initialization")
         }
         Command::ConfigureLocal {
             model,

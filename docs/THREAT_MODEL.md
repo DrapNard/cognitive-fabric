@@ -1377,3 +1377,18 @@ bounded SQLite inspection always clears its progress handler. Private output is
 an unapproved plan, not a new permission, candidate or evaluation. Registry changes
 after the check are possible and cannot authorize later acquisition automatically.
 Catalog priorities/licensing labels do not establish independent quality or safety.
+
+## Optional client-conversation collective
+
+Only the operator enables `agent_collective`. The existing agent policy grants
+LLM generation, never client tool execution. Advisory roles are forced to prohibit
+tool proposals; solver proposals must satisfy the original current catalog and
+choice. Durable hash-only call reservations precede backend entry, are never
+refunded and obey cumulative per-request input/output/call/cycle/time limits.
+Backend entry rechecks deadlines after auditing and resource queueing. Managed
+role workers retain one-use grants and owned cleanup; cancellation does not prove
+provider GPU termination. Client tool results, skill text and model advice remain
+untrusted. Structural response validation is not factual verification. Each
+request remains a new task: no durable session budget, checkpoint trust or replay
+protection is inferred from supplied conversation history. See
+[client collective](CLIENT_COLLECTIVE.md) for the remaining integration boundaries.

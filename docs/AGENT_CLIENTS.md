@@ -68,9 +68,14 @@ then MCP discovery and execution inside the client). Direct MCP tool exposure
 was not established for that installed version. It is not evidence that every agentic application
 has been tested or that a particular model can reliably solve agent tasks.
 
+An optional [client collective](CLIENT_COLLECTIVE.md) adds bounded planning,
+exploration and review on the same model endpoint. It defaults off and remains
+partial: each client request still receives a fresh task budget.
+
 This interface supports bounded text/function Chat Completions and completed
 responses re-chunked as SSE. It does not currently implement the Responses API,
 Anthropic-native messages, multimodal MCP content or full Jev-R orchestration.
 Clients requiring those protocols need a separately implemented adapter. Keep
 session-wide iteration, tool execution and spend limits in the client; each CGF
-request is one bounded inference turn.
+request is one bounded task (one call by default, eligible role calls when the
+optional collective is enabled).

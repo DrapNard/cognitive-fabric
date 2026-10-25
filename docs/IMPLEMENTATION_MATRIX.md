@@ -5618,3 +5618,67 @@ Code Mode workflow, not live REA/web access or arbitrary client compatibility.
 The total focused successful regression count is 49. Full Jev-R orchestration
 through the model endpoint and additional client protocol adapters remain the
 next separate engineering milestones.
+
+## Client-conversation Jev-R first slice — 2026-10-25
+
+**Implemented per request; full session orchestration remains Partial.** Canonical
+architecture sections 4, 5, 7, 9 and 10: `src/agent/collective.rs` integrates a
+bounded client-conversation role graph under the existing AgentRuntime task,
+model pin, policy, deadline, resource pool and typed managed workers. Shared
+`reasoning::mode_limits` supplies existing executive mode ceilings. The operator
+enables `Config.agent_collective` with `configure-agent-collective --enabled true`
+(default off); request effort selects FAST/STANDARD/DEEP/RESEARCH on the same
+`cogfabric-agent` model. Planning, optional exploration, solving and budget-gated
+critique/reflection/revision preserve client history and current function schemas.
+Only solver proposals may return; client execution remains external. Structural
+Verifier-R checks never claim factual verification. Each call is durably reserved
+before dispatch; aggregate request token/input budgets, call/cycle caps, deadlines
+and cancellation remain enforced. Hash-only traces exclude private message bodies.
+
+**Not implemented:** persistent session identity, cumulative budgets/checkpoint
+continuation across client tool turns, general expert-registry integration and
+independent factual criteria for arbitrary conversations. Each request is a fresh
+task, and client session limits remain necessary. This supersedes the earlier
+one-call-only endpoint description only when the option is enabled, not the
+remaining full-session gap. See `docs/CLIENT_COLLECTIVE.md`.
+
+`docs/ROADMAP.md` now explicitly places optional image, audio and tentative video
+evidence adapters at the end, after core/client completion; all remain planned,
+not implemented. The canonical French architecture is preserved unchanged.
+
+Verification for this slice:
+
+- `cargo fmt --all -- --check`: passed.
+- `cargo +1.99.0 check --locked --workspace --all-targets`: passed.
+- `cargo +1.99.0 clippy --locked --workspace --all-targets -- -D warnings`: passed.
+- `cargo +1.99.0 test --locked -p cogfabric agent:: --lib`: 41 passed,
+  including role/effort preservation, aggregate budgets, input/call fallback,
+  no-actionable-critique stopping, audit refusal, cancellation, privacy, typed IPC
+  and deadline-before-dispatch denial.
+- `cargo +1.99.0 test --locked -p cogfabric-server --test http --test native_worker`:
+  11 HTTP tests passed; the initial managed run found a new fixture assertion
+  counting audit phases as calls. After correcting it, the exact native-worker
+  rerun passed all 8 tests, including three distinct owned/reaped collective role
+  children, same model/effort, aggregate usage and no tool execution.
+- `cargo +1.99.0 test --locked -p cogfabric config::tests::client_collective_setting_defaults_off_and_roundtrips --lib`:
+  1 passed.
+- `cargo +1.99.0 test --locked -p cogfabric --test client_collective_config`:
+  1 passed; enable/disable persistence, invalid input refusal and no database/task
+  bootstrap are checked through the real executable.
+- `cargo +1.99.0 test --locked -p cogfabric-server --test opencode_mcp_client installed_opencode_v2_jev_collective_owns_mcp_and_skill_workflow -- --ignored --exact`:
+  1 passed (installed OpenCode, 3.47 seconds, synthetic MCP fixture/deterministic
+  backend); planner/explorer/solver calls and client skill/MCP results coexist.
+
+Total: 63 focused passing tests. Socket/process checks ran with loopback access.
+The full all-target test suite and reflection test campaigns were not run, honoring
+operator direction; the successful-reflection/revised-answer branch has no new
+runtime test in this slice. No live-model quality or performance benchmark was
+run. FlatBuffers schemas/bindings and database schema were unchanged; generator
+pairing, migration and rollback suites were not revalidated for this change.
+A review found and fixed a late-dispatch deadline race before final verification.
+
+Security/performance: no new tool grants or execution were added. Optional roles
+consume extra inference and repeat client context; the option defaults off and
+charges all reservations within the existing request limits. Managed role workers
+add startup/reaping overhead. This establishes mechanics, not a quality gain,
+GPU stop guarantee or complete Jev-R session orchestration.

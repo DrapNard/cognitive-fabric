@@ -49,6 +49,18 @@ impl ChatBackend for OpenCodeFixture {
         let request = request.clone();
         self.requests.lock().unwrap().push(request.clone());
         Box::pin(async move {
+            if let Some(role) = cgf_role(&request).filter(|role| *role != "solver") {
+                return Ok(Completion {
+                    content: Some(format!(
+                        "Bounded {role} advice; client evidence remains untrusted."
+                    )),
+                    tool_calls: vec![],
+                    model: "fixture/opencode-v2".into(),
+                    finish_reason: "stop".into(),
+                    input_tokens: Some(24),
+                    output_tokens: Some(8),
+                });
+            }
             let invoked = invoked_tool_names(&request);
             let next = if !invoked.iter().any(|name| name == "skill") {
                 request
@@ -123,6 +135,16 @@ fn invoked_tool_names(request: &Turn) -> Vec<String> {
         .flat_map(|message| message.tool_calls.iter())
         .map(|call| call.function.name.clone())
         .collect()
+}
+
+fn cgf_role(request: &Turn) -> Option<&str> {
+    request
+        .messages
+        .iter()
+        .find(|message| message.role == "system")
+        .and_then(|message| message.content.as_deref())
+        .and_then(|content| content.strip_prefix("CGF assigned role: "))
+        .and_then(|content| content.split_once('.').map(|(role, _)| role))
 }
 
 fn serialized_turn(request: &Turn) -> String {
@@ -306,6 +328,16 @@ fn redact(text: &str) -> String {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore = "requires installed OpenCode v2; run explicitly with --ignored"]
 async fn installed_opencode_v2_owns_mcp_and_skill_workflow() {
+    run_installed_opencode_workflow(false).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "requires installed OpenCode v2; run explicitly with --ignored"]
+async fn installed_opencode_v2_jev_collective_owns_mcp_and_skill_workflow() {
+    run_installed_opencode_workflow(true).await;
+}
+
+async fn run_installed_opencode_workflow(collective: bool) {
     let tree = TempTree::new();
     create_private_dirs(&tree.0);
     let workspace = tree.path("workspace");
@@ -367,7 +399,10 @@ async fn installed_opencode_v2_owns_mcp_and_skill_workflow() {
     .unwrap();
 
     // Replace placeholder ports after binding both loopback listeners.
-    let cfg = Config::default();
+    let cfg = Config {
+        agent_collective: collective,
+        ..Config::default()
+    };
     let store = Arc::new(Store::in_memory().unwrap());
     let backend = Arc::new(OpenCodeFixture::default());
     let runtime = AgentRuntime::with_backend(cfg.clone(), store.clone(), backend.clone()).unwrap();
@@ -489,6 +524,7 @@ async fn installed_opencode_v2_owns_mcp_and_skill_workflow() {
         .iter()
         .map(|request| serde_json::to_value(&request.tools).unwrap_or(Value::Null))
         .collect();
+    let observed_roles = requests.iter().filter_map(cgf_role).collect::<Vec<_>>();
     assert!(
         status.success(),
         "OpenCode failed ({status}). CGF requests: {}; CGF listener task finished: {}; MCP methods: {:?}; CGF toolsets: {observed_toolsets:?}. stdout: {output}\nstderr: {errors}",
@@ -522,6 +558,20 @@ async fn installed_opencode_v2_owns_mcp_and_skill_workflow() {
             .all(|request| request.reasoning_effort.as_deref() == Some("high")),
         "OpenCode changed or omitted the selected model's high reasoning effort"
     );
+    if collective {
+        assert!(
+            observed_roles.contains(&"planner"),
+            "Jev-R planner role was not observed: {observed_roles:?}"
+        );
+        assert!(
+            observed_roles.contains(&"explorer"),
+            "Jev-R explorer role was not observed: {observed_roles:?}"
+        );
+        assert!(
+            observed_roles.contains(&"solver"),
+            "Jev-R solver role was not observed: {observed_roles:?}"
+        );
+    }
     assert!(
         requests.iter().any(|request| {
             request.tools.iter().any(|tool| {

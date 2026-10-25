@@ -19,6 +19,17 @@ pub(crate) mod modules;
 
 pub(crate) const PROMPT_FORMAT: &str = "quoted-references-v1";
 
+/// Shared executive ceilings for both goal and client-conversation workflows.
+pub(crate) fn mode_limits(mode: &str) -> Result<(usize, usize)> {
+    Ok(match mode {
+        "fast" => (1, 1),
+        "standard" => (4, 1),
+        "deep" => (10, 3),
+        "research" => (18, 4),
+        _ => bail!("Unknown reasoning mode"),
+    })
+}
+
 const ADVICE_OUTPUT_CONTRACT: &str = "Advice output contract: Return one sentence of at most 24 words identifying the most important domain constraint or pitfall. Do not restate the problem, enumerate steps, or produce the final answer. Advice remains unverified.";
 
 pub(crate) fn subtask_prompt(
@@ -350,13 +361,7 @@ impl Session {
             bail!("Inference backend token-admission capability differs from configuration")
         }
         let deadline = start.deadline;
-        let (calls, cycles) = match mode {
-            "fast" => (1, 1),
-            "standard" => (4, 1),
-            "deep" => (10, 3),
-            "research" => (18, 4),
-            _ => bail!("Unknown reasoning mode"),
-        };
+        let (calls, cycles) = mode_limits(mode)?;
         let policy = if cfg.finite_search.is_some() {
             security::TaskPolicy::reasoning_with_finite_search(&task)?
         } else {

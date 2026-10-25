@@ -10,7 +10,7 @@ use std::{
     process::{Child, Command, Stdio},
     sync::{
         atomic::{AtomicUsize, Ordering},
-        Arc,
+        Arc, Mutex,
     },
     time::Duration,
 };
@@ -21,6 +21,7 @@ struct Provider {
     entered: tokio::sync::Notify,
     calls: AtomicUsize,
     dropped: AtomicUsize,
+    roles: Mutex<Vec<String>>,
 }
 struct Active<'a>(&'a AtomicUsize);
 impl Drop for Active<'_> {
@@ -35,22 +36,63 @@ async fn infer(
 ) -> Json<Value> {
     assert_eq!(headers["authorization"], format!("Bearer {UPSTREAM_KEY}"));
     assert_eq!(body["model"], "native-worker-fixture");
-    assert_eq!(body["max_tokens"], 128);
+    let role = body["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|message| {
+            message["role"] == "system"
+                && message["content"]
+                    .as_str()
+                    .is_some_and(|content| content.starts_with("CGF assigned role: "))
+        })
+        .and_then(|message| message["content"].as_str())
+        .map(|content| {
+            content
+                .strip_prefix("CGF assigned role: ")
+                .unwrap()
+                .split_once('.')
+                .unwrap()
+                .0
+                .to_owned()
+        });
+    let collective = role.is_some();
+    if collective {
+        assert!(body["max_tokens"]
+            .as_u64()
+            .is_some_and(|n| (1..=1024).contains(&n)));
+    } else {
+        assert_eq!(body["max_tokens"], 128);
+    }
     assert_eq!(body["reasoning_effort"], "high");
-    assert_eq!(body["tools"][0]["function"]["name"], "read");
+    assert_eq!(
+        body["tools"],
+        json!([{"type":"function","function":{"name":"read","description":"","parameters":{"type":"object"}}}])
+    );
     assert!(!body.to_string().contains(KEY));
+    if collective {
+        p.roles.lock().unwrap().push(role.clone().unwrap());
+    }
     p.calls.fetch_add(1, Ordering::SeqCst);
     p.entered.notify_one();
     let _active = Active(&p.dropped);
     if p.pending {
         std::future::pending::<()>().await;
     }
-    Json(
-        json!({"model":"native-worker-fixture","choices":[{"message":{"role":"assistant","content":null,"tool_calls":[{"id":"read_1","type":"function","function":{"name":"read","arguments":"{\"path\":\"fixture.txt\"}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":20,"completion_tokens":12}}),
-    )
+    if collective && role.as_deref() != Some("solver") {
+        Json(json!({
+            "model":"native-worker-fixture",
+            "choices":[{"message":{"role":"assistant","content":format!("{} advice",role.unwrap())},"finish_reason":"stop"}],
+            "usage":{"prompt_tokens":20,"completion_tokens":12}
+        }))
+    } else {
+        Json(
+            json!({"model":"native-worker-fixture","choices":[{"message":{"role":"assistant","content":null,"tool_calls":[{"id":"read_1","type":"function","function":{"name":"read","arguments":"{\"path\":\"fixture.txt\"}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":20,"completion_tokens":12}}),
+        )
+    }
 }
-fn request(stream: bool) -> Value {
-    json!({"model":"cogfabric-agent","reasoning_effort":"high","stream":stream,"max_tokens":128,"messages":[{"role":"user","content":"Read client data"}],"tools":[{"type":"function","function":{"name":"read","parameters":{"type":"object"}}}]})
+fn request(stream: bool, collective: bool) -> Value {
+    json!({"model":"cogfabric-agent","reasoning_effort":"high","stream":stream,"max_tokens":if collective {1024} else {128},"messages":[{"role":"user","content":"Read client data"}],"tools":[{"type":"function","function":{"name":"read","parameters":{"type":"object"}}}]})
 }
 struct Owned(Child);
 impl Drop for Owned {
@@ -62,6 +104,10 @@ impl Drop for Owned {
 #[tokio::test]
 async fn native_managed_http_preserves_registered_tool_call_and_reaps_child() {
     run(Mode::Success).await;
+}
+#[tokio::test]
+async fn native_managed_collective_preserves_client_tools_and_reaps_every_role_child() {
+    run(Mode::CollectiveSuccess).await;
 }
 #[tokio::test]
 async fn native_managed_disconnect_reaps_child_and_preserves_unknown_usage() {
@@ -89,6 +135,7 @@ async fn native_stop_audit_failure_blocks_more_children_and_fails_shutdown() {
 }
 enum Mode {
     Success,
+    CollectiveSuccess,
     StreamDisconnect,
     Shutdown,
     OwnerAuditFailure,
@@ -108,6 +155,7 @@ async fn run(mode: Mode) {
     let audit_failure = matches!(mode, Mode::OwnerAuditFailure);
     let nonstream = matches!(mode, Mode::NonstreamDisconnect | Mode::NonstreamShutdown);
     let stop_failure = matches!(mode, Mode::StopAuditFailure);
+    let collective = matches!(mode, Mode::CollectiveSuccess);
     // Clock resolution does not guarantee distinct names for parallel cases.
     // Reserve the directory atomically rather than sharing an existing database.
     static NEXT_HOME: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -132,6 +180,7 @@ async fn run(mode: Mode) {
         entered: tokio::sync::Notify::new(),
         calls: AtomicUsize::new(0),
         dropped: AtomicUsize::new(0),
+        roles: Mutex::new(Vec::new()),
     });
     let (provider_stop, stopped) = tokio::sync::oneshot::channel();
     let app = Router::new()
@@ -158,7 +207,8 @@ async fn run(mode: Mode) {
                 cpu_seconds: 60,
             },
         ),
-        max_tokens: 128,
+        max_tokens: if collective { 1024 } else { 128 },
+        agent_collective: collective,
         max_tool_calls: 1,
         max_wall_seconds: 15,
         ..Config::default()
@@ -173,7 +223,7 @@ async fn run(mode: Mode) {
         source: "operator-local".into(),
         license: "Apache-2.0".into(),
         context_tokens: 4096,
-        max_output_tokens: 128,
+        max_output_tokens: if collective { 1024 } else { 128 },
         weights_sha256: None,
     };
     let path = home.join("manifest.json");
@@ -243,7 +293,7 @@ async fn run(mode: Mode) {
             caller
                 .post(url)
                 .bearer_auth(KEY)
-                .json(&request(false))
+                .json(&request(false, false))
                 .send()
                 .await
         });
@@ -263,7 +313,7 @@ async fn run(mode: Mode) {
         let response = client
             .post(format!("{base}/v1/chat/completions"))
             .bearer_auth(KEY)
-            .json(&request(pending))
+            .json(&request(pending, collective))
             .send()
             .await
             .unwrap();
@@ -293,6 +343,16 @@ async fn run(mode: Mode) {
                 body["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"],
                 "{\"path\":\"fixture.txt\"}"
             );
+            if collective {
+                assert_eq!(body["usage"]["prompt_tokens"], 60);
+                assert_eq!(body["usage"]["completion_tokens"], 36);
+                assert_eq!(body["usage"]["total_tokens"], 96);
+                assert_eq!(
+                    provider.roles.lock().unwrap().as_slice(),
+                    ["planner", "explorer", "solver"]
+                );
+                assert_eq!(provider.calls.load(Ordering::SeqCst), 3);
+            }
         }
     }
     let db = rusqlite::Connection::open(cfg.db()).unwrap();
@@ -301,7 +361,7 @@ async fn run(mode: Mode) {
             client
                 .post(format!("{base}/v1/chat/completions"))
                 .bearer_auth(KEY)
-                .json(&request(false))
+                .json(&request(false, false))
                 .send()
                 .await
                 .unwrap()
@@ -320,8 +380,9 @@ async fn run(mode: Mode) {
         );
         assert_eq!(unsafe { libc::kill(server.0.id() as i32, libc::SIGINT) }, 0);
     } else {
+        let expected_children = if collective { 3 } else { 1 };
         tokio::time::timeout(Duration::from_secs(5),async {loop {
-        let reaped:u64=db.query_row("SELECT count(*) FROM events WHERE kind='native_worker_process_stopped' AND json_extract(payload,'$.reaped')=1",[],|r|r.get(0)).unwrap();if reaped==1 {break}tokio::time::sleep(Duration::from_millis(10)).await;
+        let reaped:u64=db.query_row("SELECT count(*) FROM events WHERE kind='native_worker_process_stopped' AND json_extract(payload,'$.reaped')=1",[],|r|r.get(0)).unwrap();if reaped==expected_children {break}tokio::time::sleep(Duration::from_millis(10)).await;
     }}).await.unwrap();
     }
     let (status, task): (String, String) = db
@@ -348,15 +409,16 @@ async fn run(mode: Mode) {
         );
     }
     if !audit_failure {
-        assert_eq!(provider.calls.load(Ordering::SeqCst), 1);
+        let expected_calls = if collective { 3 } else { 1 };
+        assert_eq!(provider.calls.load(Ordering::SeqCst), expected_calls);
         tokio::time::timeout(Duration::from_secs(3), async {
-            while provider.dropped.load(Ordering::SeqCst) != 1 {
+            while provider.dropped.load(Ordering::SeqCst) != expected_calls {
                 tokio::task::yield_now().await;
             }
         })
         .await
         .expect("Owned child exit must eventually close its provider connection");
-        assert_eq!(provider.dropped.load(Ordering::SeqCst), 1);
+        assert_eq!(provider.dropped.load(Ordering::SeqCst), expected_calls);
     }
     let trace = store.task(&task).unwrap();
     assert!(!trace.to_string().contains(KEY));
@@ -369,11 +431,76 @@ async fn run(mode: Mode) {
         .any(|e| e["kind"] == "model_registration"
             && e["payload"]["registration"]["manifest"]["id"] == "native.fixture"));
     if !audit_failure {
-        assert!(trace["events"]
+        let worker_audits = trace["events"]
             .as_array()
             .unwrap()
             .iter()
-            .any(|e| e["kind"] == "worker.audit" && e["payload"]["charged_calls"] == 1));
+            .filter(|e| e["kind"] == "worker.audit" && e["payload"]["charged_calls"] == 1)
+            .count();
+        if collective {
+            assert!(worker_audits >= 3);
+        } else {
+            assert!(worker_audits >= 1);
+        }
+    }
+    if collective {
+        let events = trace["events"].as_array().unwrap();
+        let roles = events
+            .iter()
+            .filter(|event| event["kind"] == "agent_model_dispatch")
+            .map(|event| event["payload"]["role"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(roles, ["planner", "explorer", "solver"]);
+        assert!(events.iter().any(|event| {
+            event["kind"] == "agent_admission"
+                && event["payload"]["collective"] == true
+                && event["payload"]["mode"] == "research"
+                && event["payload"]["model"] == "native-worker-fixture"
+        }));
+        let launches = events
+            .iter()
+            .filter(|event| event["kind"] == "native_worker_process_launch")
+            .collect::<Vec<_>>();
+        let owned = events
+            .iter()
+            .filter(|event| event["kind"] == "native_worker_process_owned")
+            .collect::<Vec<_>>();
+        let stopped = events
+            .iter()
+            .filter(|event| {
+                event["kind"] == "native_worker_process_stopped"
+                    && event["payload"]["reaped"] == true
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(launches.len(), 3);
+        assert_eq!(owned.len(), 3);
+        assert_eq!(stopped.len(), 3);
+        let owned_pids = owned
+            .iter()
+            .map(|event| event["payload"]["pid"].as_u64().unwrap())
+            .collect::<std::collections::BTreeSet<_>>();
+        let stopped_pids = stopped
+            .iter()
+            .map(|event| event["payload"]["pid"].as_u64().unwrap())
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(owned_pids.len(), 3);
+        assert_eq!(owned_pids, stopped_pids);
+        assert!(events.iter().any(|event| {
+            event["kind"] == "agent_verification"
+                && event["payload"]["verified"] == false
+                && event["payload"]["tools_executed"] == 0
+        }));
+        assert!(events.iter().any(|event| {
+            event["kind"] == "agent_result"
+                && event["payload"]["verified"] == false
+                && event["payload"]["tools_executed"] == 0
+        }));
+        assert!(!trace.to_string().contains("Read client data"));
+        assert!(events
+            .iter()
+            .filter(|event| event["kind"] == "agent_model_dispatch")
+            .all(|event| event["payload"].get("prompt").is_none()
+                && event["payload"].get("content").is_none()));
     }
     if shutdown || stop_failure {
         tokio::time::timeout(Duration::from_secs(3), async {

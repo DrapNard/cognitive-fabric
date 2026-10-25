@@ -100,7 +100,7 @@ additional resident neural models:
 
 | Alias | Behavior |
 |---|---|
-| `cogfabric-agent` | One bounded native conversation/solver turn; text and function proposals. The client owns its agent loop and tool execution. |
+| `cogfabric-agent` | Bounded native conversation turn; one solver call by default, or the optional [per-request client collective](CLIENT_COLLECTIVE.md). The client owns its tool loop and execution. |
 | `cogfabric-fast` | Existing core Engine, FAST mode. |
 | `cogfabric-standard` | Existing core Engine, STANDARD mode. |
 | `cogfabric-deep` | Existing core Engine, DEEP mode. |
@@ -223,7 +223,9 @@ and eight completion producers may run. Saturated request/turn admission returns
 and stalled SSE production to 30 seconds. Axum owns HTTP parsing; core APIs receive
 typed Rust values. Internal IPC remains versioned FlatBuffers, not HTTP JSON.
 
-Native turns are FAST, one solver call and one cycle. Input bytes, reserved output,
+Default native turns are FAST, one solver call and one cycle. The opt-in
+[client collective](CLIENT_COLLECTIVE.md) uses effort-selected modes and aggregate
+request reservations; it is not a resumable session. Input bytes, reserved output,
 wall time and tool-proposal counts obey existing operator configuration. Native
 requests allow at most 256 messages and 128 definitions; returned proposals are
 capped at 16 and `max_tool_calls`, with one when parallel calls are disabled.

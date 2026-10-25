@@ -54,6 +54,11 @@ pub struct Config {
     pub temperature: f64,
     pub role_profiles: BTreeMap<String, RoleProfile>,
     pub interpret_goals: bool,
+    /// Allow the client-facing `cogfabric-agent` endpoint to opt into the
+    /// bounded Jev+ / Jev-R collective path. Disabled by default for backwards
+    /// compatibility and conservative resource use.
+    #[serde(skip_serializing_if = "is_false")]
+    pub agent_collective: bool,
     #[serde(skip_serializing_if = "default_interface_tokens")]
     pub interface_tokens: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -94,6 +99,7 @@ impl Default for Config {
             temperature: 0.15,
             role_profiles: BTreeMap::new(),
             interpret_goals: true,
+            agent_collective: false,
             interface_tokens: 128,
             reasoning_effort: None,
             synthesize_results: false,
@@ -268,6 +274,10 @@ fn default_interface_tokens(value: &usize) -> bool {
     *value == 128
 }
 
+fn is_false(value: &bool) -> bool {
+    !value
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -291,6 +301,28 @@ mod tests {
             cfg.reasoning_effort = Some(effort.into());
             assert!(cfg.validate().is_err());
         }
+    }
+
+    #[test]
+    fn client_collective_setting_defaults_off_and_roundtrips() {
+        let mut cfg = Config::default();
+        let legacy = serde_json::to_value(&cfg).unwrap();
+        assert!(legacy.get("agent_collective").is_none());
+        assert!(
+            !serde_json::from_value::<Config>(legacy)
+                .unwrap()
+                .agent_collective
+        );
+
+        cfg.agent_collective = true;
+        cfg.validate().unwrap();
+        let encoded = serde_json::to_value(&cfg).unwrap();
+        assert_eq!(encoded["agent_collective"], true);
+        assert!(
+            serde_json::from_value::<Config>(encoded)
+                .unwrap()
+                .agent_collective
+        );
     }
     #[test]
     fn interface_reservation_defaults_preserve_legacy_settings_and_remain_bounded() {

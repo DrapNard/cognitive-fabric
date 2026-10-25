@@ -1,5 +1,6 @@
 //! Transport-independent, bounded solver turns for external agent clients.
 //! Tool calls are proposals; execution and approval belong to the client.
+mod collective;
 mod local;
 pub mod process;
 pub mod protocol;
@@ -141,6 +142,9 @@ impl AgentRuntime {
             _ => bail!("Configured agent resource pool is missing or changed"),
         }
         request.validate()?;
+        if self.cfg.agent_collective && request.messages.len() > 254 {
+            bail!("Collective conversations allow 254 messages plus two runtime role messages")
+        }
         local::validate_token_request(&self.cfg, request)?;
         let bytes = serde_json::to_vec(request)?.len();
         if bytes > self.cfg.max_input_bytes || self.cfg.max_calls == 0 || self.cfg.max_cycles == 0 {
@@ -172,6 +176,83 @@ impl AgentRuntime {
         }
         Ok(tokens)
     }
+    /// Dispatch one already reserved call. Collective managed calls each retain
+    /// their own one-use worker. Dispatch uses the original deadline; owned
+    /// cleanup may outlive cancellation and remains subject to shutdown draining.
+    async fn dispatch(
+        &self,
+        backend: Arc<dyn ChatBackend>,
+        task: &str,
+        request: &Turn,
+        tokens: usize,
+        deadline: Instant,
+    ) -> Result<Completion> {
+        if Instant::now() >= deadline {
+            bail!("Agent deadline exhausted before backend dispatch")
+        }
+        let process = if self.managed && self.cfg.agent_collective {
+            Some(Arc::new(process::ProcessTask::new(
+                self.cfg.clone(),
+                self.store.clone(),
+                task,
+                deadline,
+            )?))
+        } else {
+            None
+        };
+        let backend: Arc<dyn ChatBackend> = process
+            .as_ref()
+            .map(|p| p.clone() as Arc<dyn ChatBackend>)
+            .unwrap_or(backend);
+        let result = if let (Some(configuration), Some(pool)) =
+            (&self.cfg.resource_admission, &self.resource_pool)
+        {
+            // All client roles share the same configured solver target. This is
+            // resource admission, not permission for model/profile switching.
+            let (completion, _) = if configuration.working_profiles.is_empty() {
+                pool.execute(
+                    task,
+                    "solver",
+                    configuration.allocation,
+                    || backend.inference_target(),
+                    || async {
+                        if Instant::now() >= deadline {
+                            bail!("Agent deadline exhausted after resource admission")
+                        }
+                        backend.complete_for(task, request, tokens).await
+                    },
+                )
+                .await?
+            } else {
+                let pinned = backend.clone().pin()?.ok_or_else(|| {
+                    anyhow::anyhow!("Configured working profiles require a pinnable agent backend")
+                })?;
+                pool.execute_profiled(
+                    task,
+                    "solver",
+                    configuration.allocation,
+                    || pinned.inference_target(),
+                    || async {
+                        if Instant::now() >= deadline {
+                            bail!("Agent deadline exhausted after resource admission")
+                        }
+                        pinned.complete_for(task, request, tokens).await
+                    },
+                )
+                .await?
+            };
+            Ok(completion)
+        } else {
+            if Instant::now() >= deadline {
+                bail!("Agent deadline exhausted before inference")
+            }
+            backend.complete_for(task, request, tokens).await
+        };
+        if let Some(process) = process {
+            process.shutdown().await?;
+        }
+        result
+    }
     pub async fn run_until(
         &self,
         request: Turn,
@@ -188,15 +269,20 @@ impl AgentRuntime {
             .transpose()?;
         // Store only a digest here: client conversations may contain source code.
         let bytes = serde_json::to_vec(&request)?;
+        let mode = if self.cfg.agent_collective {
+            collective::mode(&self.cfg, &request)
+        } else {
+            "fast"
+        };
         let task = self
             .store
-            .create_task(&format!("Agent turn {}", sha256(&bytes)), "fast")?;
+            .create_task(&format!("Agent turn {}", sha256(&bytes)), mode)?;
         let mut guard = TurnGuard {
             store: self.store.clone(),
             task: task.clone(),
             finished: false,
         };
-        let process = if self.managed {
+        let process = if self.managed && !self.cfg.agent_collective {
             Some(Arc::new(process::ProcessTask::new(
                 self.cfg.clone(),
                 self.store.clone(),
@@ -214,7 +300,7 @@ impl AgentRuntime {
             self.store.event(&task,"model_registration","runtime",json!({"registration":model_registration,"weight_identity_verified":false}))?;
             let policy = TaskPolicy::agent(&task)?;
             policy.authorize(&task,"jev-r","llm.generate")?;
-            self.store.event(&task,"agent_admission","jev-plus",json!({"format_version":1,"request_hash":sha256(&bytes),"prompt_bytes":bytes.len(),"reserved_output_tokens":tokens,"calls":1,"cycles":1,"max_wall_seconds":self.cfg.max_wall_seconds,"model":self.cfg.model,"client_tools_executed":false,"verification":"unverified"}))?;
+            self.store.event(&task,"agent_admission","jev-plus",json!({"format_version":1,"request_hash":sha256(&bytes),"prompt_bytes":bytes.len(),"reserved_output_tokens":tokens,"calls":if self.cfg.agent_collective { crate::reasoning::mode_limits(mode)?.0.min(self.cfg.max_calls) } else { 1 },"cycles":if self.cfg.agent_collective { crate::reasoning::mode_limits(mode)?.1.min(self.cfg.max_cycles) } else { 1 },"collective":self.cfg.agent_collective,"mode":mode,"session_budget_scope":"request","max_wall_seconds":self.cfg.max_wall_seconds,"model":self.cfg.model,"client_tools_executed":false,"verification":"unverified"}))?;
             self.store.event(
                 &task,
                 "agent_client_capabilities",
@@ -230,21 +316,11 @@ impl AgentRuntime {
                 biased;
                 _ = cancel => { self.store.finish_task(&task,"cancelled","")?; guard.finished=true; bail!("Agent turn cancelled") },
                 result = tokio::time::timeout_at(tokio::time::Instant::from_std(start + Duration::from_secs(self.cfg.max_wall_seconds)),async {
-                    if let (Some(configuration), Some(pool)) = (&self.cfg.resource_admission, &self.resource_pool) {
-                        let (completion, _) = if configuration.working_profiles.is_empty() {
-                            pool.execute(&task,"solver",configuration.allocation, || backend.inference_target(),
-                                || backend.complete_for(&task,&request,tokens)).await?
-                        } else {
-                            let pinned = backend.clone().pin()?.ok_or_else(|| anyhow::anyhow!(
-                                "Configured working profiles require a pinnable agent backend"
-                            ))?;
-                            pool.execute_profiled(&task,"solver",configuration.allocation,
-                                || pinned.inference_target(),
-                                || pinned.complete_for(&task,&request,tokens)).await?
-                        };
-                        Ok(completion)
+                    let deadline = start + Duration::from_secs(self.cfg.max_wall_seconds);
+                    if self.cfg.agent_collective {
+                        collective::run(self, backend.clone(), &task, &request, tokens, deadline).await
                     } else {
-                        backend.complete_for(&task,&request,tokens).await
+                        self.dispatch(backend.clone(), &task, &request, tokens, deadline).await
                     }
                 }) => match result {
                     Ok(result) => result?,
@@ -320,5 +396,7 @@ impl Drop for TurnGuard {
     }
 }
 
+#[cfg(test)]
+mod collective_tests;
 #[cfg(test)]
 mod tests;

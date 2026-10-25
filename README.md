@@ -124,6 +124,8 @@ The [GitHub Actions workflow](.github/workflows/ci.yml) also validates generated
 
 ## Project status
 
+See the [delivery roadmap](docs/ROADMAP.md), including optional image, audio and tentative video understanding after core completion. The [client collective](docs/CLIENT_COLLECTIVE.md) is an opt-in per-request implementation; durable session orchestration remains incomplete.
+
 This repository is an actively developed alpha. Neural adaptation is optional and experimental; no trained Jev+ or Jev-R networks are included. General module lifecycle, model residency scheduling, independent held-out evaluation, and stronger isolation remain incomplete. The [implementation matrix](docs/IMPLEMENTATION_MATRIX.md) and [release audit](docs/RELEASE_AUDIT.md) track the current gaps.
 
 Optional [empirical Jev+ retry evaluation](docs/EMPIRICAL_ESCALATION.md) lets trusted hosts apply reviewed success/cost evidence within the existing runtime limits. It remains experimental and requires reviewed measurements.
