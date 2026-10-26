@@ -6290,3 +6290,11 @@ physical memory enforcement and model-aware capacity planning remain separate wo
 - `src/agent/native_scope.rs`: format-2 immutable evidence-class/approval pin and checkpoint binding. Native-instance-required scopes cannot authorize weaker model-key evidence. Existing format-1 scopes are refused, not reinterpreted.
 - `crates/cogfabric-server/src/main.rs`: explicit opt-in existing-model binding plus model-key evidence consent flags; no default activation or configuration changes.
 - Source review and static checks only; no tests, benchmarks or live provider calls. Automatic client model loading/release and general mid-reasoning recovery remain incomplete. OpenAI response instance identity and speed are unproven.
+
+### On-demand client activation — Experimental / runtime unverified
+
+- `src/agent/native_scope.rs`, `src/agent/native_scope_activation.rs`: immutable format-3 activation mode, shared generation/exclusive residency leases, short synchronized checkpoint state, selected-model-only managed loading and exact context/KV receipt binding, durable activation journal, endpoint-wide orphan/unknown gate, original deadlines and scope-owned final cleanup.
+- `src/agent/mod.rs`, `src/agent/native_chat.rs`, `src/agent/sessions.rs`: explicit mutation-authorized on-demand API, preserves configured role/registered routes and client tools, no late mode changes or fresh continuation budgets; final response precedes optional cleanup.
+- `crates/cogfabric-server/src/main.rs`: explicit on-demand option separate from existing-only mode; neither enabled by default. `src/main.rs`: explicit terminal intent stop acknowledgement command; no automatic retry or old-session revival.
+- `src/storage.rs`: preserve native client scope/activation roots during ordinary history retention, including pre-generation failures.
+- Existing-only format 2 and explicit model-key evidence limits remain. No native response-instance attestation, neural training, benchmark superiority or latency claim. Static checks only; no tests, benchmarks or live backend operations. General intermediate reasoning recovery and runtime verification remain incomplete.

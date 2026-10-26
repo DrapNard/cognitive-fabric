@@ -84,6 +84,7 @@ pub struct AgentRuntime {
     task_scoped_resources: bool,
     native_policy: Option<Arc<crate::residency::lifecycle::NativeLifecyclePolicy>>,
     native_owner: Option<Arc<crate::residency::lifecycle::Ownership>>,
+    native_on_demand: bool,
     resource_pool: Option<Arc<crate::resource_scheduler::ResourcePool>>,
 }
 impl AgentRuntime {
@@ -137,6 +138,7 @@ impl AgentRuntime {
             task_scoped_resources: false,
             native_policy: None,
             native_owner: None,
+            native_on_demand: false,
             resource_pool,
         })
     }
@@ -173,9 +175,25 @@ impl AgentRuntime {
             bail!("Native client routing requires the configured persistent workspace database")
         }
         self.native_policy = Some(Arc::new(policy));
+        self.native_on_demand = false;
         self.resource_pool = None;
         self.task_scoped_resources = true;
         Ok(self)
+    }
+    /// Activate only the operator-approved model selected by an admitted call.
+    /// The same explicit OpenAI evidence approval and durable session ceilings
+    /// apply; activation failures are never retried automatically.
+    pub fn with_on_demand_native_models(
+        self,
+        policy: crate::residency::lifecycle::NativeLifecyclePolicy,
+        human_approve: bool,
+        allow_model_key_evidence: bool,
+    ) -> Result<Self> {
+        crate::security::authorize("human-cli", "model.residency.change")?;
+        let mut selected =
+            self.with_existing_native_models(policy, human_approve, allow_model_key_evidence)?;
+        selected.native_on_demand = true;
+        Ok(selected)
     }
     /// Return a task-local runtime for a model registration captured at the
     /// session root. It shares the original Store, resource pool, managed-worker

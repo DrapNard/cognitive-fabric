@@ -1,7 +1,8 @@
 //! Durable, operator-pinned native lifecycle scope for a client session.
 //!
-//! This module admits only already-managed receipts that remain present in a
-//! fresh native inventory. It never loads a model or dispatches inference.
+//! This module admits already-managed receipts from a fresh native inventory.
+//! Only an explicitly pinned on-demand scope can load a missing model; it does
+//! so through the managed lifecycle ledger before the selected client call.
 use crate::{
     config::Config,
     execution_clock::Snapshot,
@@ -42,11 +43,17 @@ fn bounded_sql_scan(db: &rusqlite::Connection) -> SqlProgressReset<'_> {
     SqlProgressReset(db)
 }
 
+#[derive(Clone, Copy)]
+struct ScopeMode {
+    allow_model_key_evidence: bool,
+    on_demand: bool,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct Binding {
     receipt: managed::Receipt,
-    /// This module currently admits existing managed instances only.
+    /// Existing instances are reused; on-demand loads retain their causal origin.
     origin: String,
 }
 
@@ -54,6 +61,8 @@ struct Binding {
 #[serde(deny_unknown_fields)]
 struct ScopeRecord {
     format_version: u32,
+    #[serde(default, skip_serializing_if = "is_false")]
+    on_demand: bool,
     root_task_id: String,
     policy: NativeLifecyclePolicy,
     policy_sha256: String,
@@ -96,14 +105,27 @@ struct Checkpoint {
     inference_dispatched: bool,
 }
 
-/// A hash-bound session pin. It does not enable model activation or inference.
+#[path = "native_scope_activation.rs"]
+mod activation;
+
+/// A hash-bound client session scope. On-demand scopes can activate only an
+/// operator-approved model through its managed lifecycle receipt.
 pub struct NativeClientScope {
     store: Arc<Store>,
     owner: Arc<Ownership>,
     record: ScopeRecord,
+    state: std::sync::Mutex<DurableState>,
+    activation_gate: tokio::sync::RwLock<()>,
+}
+
+struct DurableState {
     bindings: BTreeMap<String, Binding>,
     checkpoint_sequence: u32,
     checkpoint_sha256: String,
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 fn digest<T: Serialize>(value: &T) -> Result<String> {
@@ -285,7 +307,8 @@ impl NativeClientScope {
             bail!("Native client scope requires the configured persistent workspace database")
         }
         let owner = Ownership::acquire(store.clone())?;
-        Self::prepare_owned_session(store, owner, root_task, cfg, Arc::new(policy), false).await
+        Self::prepare_owned_session(store, owner, root_task, cfg, Arc::new(policy), false, false)
+            .await
     }
 
     pub(crate) async fn prepare_owned_session(
@@ -295,6 +318,7 @@ impl NativeClientScope {
         cfg: &Config,
         policy: Arc<NativeLifecyclePolicy>,
         allow_model_key_evidence: bool,
+        on_demand: bool,
     ) -> Result<Self> {
         let mut expected_runtime_lock = cfg.db().into_os_string();
         expected_runtime_lock.push(".runtime.lock");
@@ -326,6 +350,7 @@ impl NativeClientScope {
             drop(_scan_deadline);
             found.is_some()
         };
+        activation::ensure_no_pending_activation(&store, &inventory_endpoint(&policy)?)?;
         let mut scope = if !exists {
             if session.generation != 0 || session.calls != 0 || session.state != "active" {
                 bail!("A native scope cannot be attached after the client session has started")
@@ -337,7 +362,10 @@ impl NativeClientScope {
                 cfg,
                 &session.clock,
                 policy.as_ref().clone(),
-                allow_model_key_evidence,
+                ScopeMode {
+                    allow_model_key_evidence,
+                    on_demand,
+                },
             )?
         } else {
             Self::restore(
@@ -347,7 +375,10 @@ impl NativeClientScope {
                 cfg,
                 &session.clock,
                 policy.as_ref(),
-                allow_model_key_evidence,
+                ScopeMode {
+                    allow_model_key_evidence,
+                    on_demand,
+                },
             )?
         };
         scope.admit_existing_receipts().await?;
@@ -361,8 +392,12 @@ impl NativeClientScope {
         cfg: &Config,
         session_clock: &Snapshot,
         policy: NativeLifecyclePolicy,
-        allow_model_key_evidence: bool,
+        mode: ScopeMode,
     ) -> Result<Self> {
+        let ScopeMode {
+            allow_model_key_evidence,
+            on_demand,
+        } = mode;
         ensure_owner(&owner, &store)?;
         validate_identity(root_task, cfg, &policy)?;
         let (boot_id, session_started_ns, session_deadline_ns) =
@@ -375,7 +410,8 @@ impl NativeClientScope {
         }
         let bindings = BTreeMap::new();
         let mut record = ScopeRecord {
-            format_version: 2,
+            format_version: if on_demand { 3 } else { 2 },
+            on_demand,
             root_task_id: root_task.to_owned(),
             policy_sha256: digest(&policy)?,
             configuration_sha256: digest(cfg)?,
@@ -420,15 +456,19 @@ impl NativeClientScope {
             bail!("Native client scope already exists for this session root")
         }
         insert_event_tx(&tx, root_task, SCOPE_KIND, &record)?;
+        activation::validate_activation_history(&tx, root_task, &record, &record.bindings)?;
         drop(_scan_deadline);
         tx.commit()?;
         drop(db);
         Ok(Self {
             store,
             owner,
-            bindings: BTreeMap::new(),
-            checkpoint_sequence: 0,
-            checkpoint_sha256: record.checkpoint_sha256.clone(),
+            state: std::sync::Mutex::new(DurableState {
+                bindings: BTreeMap::new(),
+                checkpoint_sequence: 0,
+                checkpoint_sha256: record.checkpoint_sha256.clone(),
+            }),
+            activation_gate: tokio::sync::RwLock::new(()),
             record,
         })
     }
@@ -441,8 +481,12 @@ impl NativeClientScope {
         cfg: &Config,
         session_clock: &Snapshot,
         expected_policy: &NativeLifecyclePolicy,
-        allow_model_key_evidence: bool,
+        mode: ScopeMode,
     ) -> Result<Self> {
+        let ScopeMode {
+            allow_model_key_evidence,
+            on_demand,
+        } = mode;
         ensure_owner(&owner, &store)?;
         validate_identity(root_task, cfg, expected_policy)?;
         let (boot_id, session_started_ns, session_deadline_ns) =
@@ -463,8 +507,9 @@ impl NativeClientScope {
             bail!("Native client scope is missing or ambiguous")
         }
         let scope_value = crate::strict_json::value(rows[0].as_bytes(), MAX_SCOPE_BYTES)?;
-        let mut record: ScopeRecord = serde_json::from_value(scope_value)?;
-        if record.format_version != 2
+        let record: ScopeRecord = serde_json::from_value(scope_value)?;
+        if record.format_version != if on_demand { 3 } else { 2 }
+            || record.on_demand != on_demand
             || record.root_task_id != root_task
             || record.policy_sha256 != digest(expected_policy)?
             || serde_json::to_value(&record.policy)? != serde_json::to_value(expected_policy)?
@@ -515,7 +560,7 @@ impl NativeClientScope {
         for (index, raw) in rows.iter().enumerate() {
             let value = crate::strict_json::value(raw.as_bytes(), MAX_SCOPE_BYTES)?;
             let checkpoint: Checkpoint = serde_json::from_value(value)?;
-            if checkpoint.format_version != 2
+            if checkpoint.format_version != record.format_version
                 || checkpoint.root_task_id != root_task
                 || checkpoint.sequence != index as u32 + 1
                 || checkpoint.previous_sha256 != previous
@@ -551,6 +596,7 @@ impl NativeClientScope {
         }
         drop(checkpoints);
         drop(statement);
+        activation::validate_activation_history(&tx, root_task, &record, &bindings)?;
         drop(_scan_deadline);
         tx.commit()?;
         drop(db);
@@ -564,14 +610,16 @@ impl NativeClientScope {
                 bail!("Native client scope references a missing, changed, or inactive receipt")
             }
         }
-        record.scope_sha256 = scope_digest(&record)?;
         Ok(Self {
             store,
             owner,
             record,
-            bindings,
-            checkpoint_sequence: rows.len() as u32,
-            checkpoint_sha256: previous,
+            state: std::sync::Mutex::new(DurableState {
+                bindings,
+                checkpoint_sequence: rows.len() as u32,
+                checkpoint_sha256: previous,
+            }),
+            activation_gate: tokio::sync::RwLock::new(()),
         })
     }
 
@@ -603,7 +651,12 @@ impl NativeClientScope {
             .ok_or_else(|| {
                 anyhow::anyhow!("Managed receipt inventory is malformed or over limit")
             })?;
-        let mut next = self.bindings.clone();
+        let mut next = self
+            .state
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Native scope state lock is poisoned"))?
+            .bindings
+            .clone();
         let mut added = 0usize;
         for ensure in &self.record.policy.models {
             self.check_deadline()?;
@@ -686,16 +739,21 @@ impl NativeClientScope {
     }
 
     pub(crate) fn managed_target(&self, model: &str) -> Result<crate::backend::InferenceTarget> {
-        if !self
+        let has_binding = self
+            .state
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Native scope state lock is poisoned"))?
+            .bindings
+            .contains_key(model);
+        let approved = self
             .record
             .policy
             .models
             .iter()
-            .any(|item| item.model == model)
-            || !self.bindings.contains_key(model)
-        {
+            .any(|item| item.model == model);
+        if !approved || (!has_binding && !self.record.on_demand) {
             bail!(
-                "Native client target has no exact existing managed receipt in the approved scope"
+                "Native client target is outside the approved model scope or lacks an existing managed receipt"
             )
         }
         let target = crate::backend::ManagedNativeTarget {
@@ -716,10 +774,6 @@ impl NativeClientScope {
             .ok_or_else(|| anyhow::anyhow!("Native client lifecycle cutoff is out of range"))
     }
 
-    pub(crate) fn model_bindings_sha256(&self) -> Result<String> {
-        digest(&self.bindings)
-    }
-
     pub(crate) async fn validate_receipt_for(
         &self,
         model: &str,
@@ -732,9 +786,16 @@ impl NativeClientScope {
         if target.origin() != policy_url.origin() {
             bail!("Native client route is outside the approved endpoint origin")
         }
-        let binding = self.bindings.get(model).ok_or_else(|| {
-            anyhow::anyhow!("No existing managed receipt is pinned for this model")
-        })?;
+        let binding = self
+            .state
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Native scope state lock is poisoned"))?
+            .bindings
+            .get(model)
+            .cloned()
+            .ok_or_else(|| {
+                anyhow::anyhow!("No existing managed receipt is pinned for this model")
+            })?;
         let status = tokio::time::timeout(
             self.remaining()?,
             residency::status(
@@ -782,7 +843,11 @@ impl NativeClientScope {
         }
         uuid::Uuid::parse_str(call_id)?;
         uuid::Uuid::parse_str(receipt_id)?;
-        let binding = self
+        let scope_state = self
+            .state
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Native scope state lock is poisoned"))?;
+        let binding = scope_state
             .bindings
             .get(model)
             .filter(|binding| binding.receipt.receipt_id == receipt_id)
@@ -797,7 +862,7 @@ impl NativeClientScope {
             "endpoint": inventory_endpoint(&self.record.policy)?,
             "child_task_id": self.record.root_task_id,
             "policy_sha256": self.record.policy_sha256,
-            "model_bindings_sha256": self.model_bindings_sha256()?,
+            "model_bindings_sha256": digest(&scope_state.bindings)?,
             "model_key": model,
             "receipt_id": receipt_id,
             "call_id": call_id,
@@ -807,6 +872,7 @@ impl NativeClientScope {
         if serde_json::to_vec(&payload)?.len() > 4096 {
             bail!("Native client lifecycle event exceeds its scanner bound")
         }
+        drop(scope_state);
         self.store.event(
             &self.record.root_task_id,
             "native_task_lifecycle",
@@ -817,7 +883,11 @@ impl NativeClientScope {
     /// Auditable state for the next runtime bridge; excludes prompts and
     /// credentials and makes the weaker OpenAI response evidence explicit.
     pub fn evidence(&self) -> Result<Value> {
-        let receipt_bindings = self
+        let state = self
+            .state
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Native scope state lock is poisoned"))?;
+        let receipt_bindings = state
             .bindings
             .iter()
             .map(|(model, binding)| -> Result<Value> {
@@ -836,31 +906,36 @@ impl NativeClientScope {
             "policy_sha256": self.record.policy_sha256,
             "configuration_sha256": self.record.configuration_sha256,
             "scope_sha256": self.record.scope_sha256,
+            "on_demand": self.record.on_demand,
             "evidence_class": self.record.evidence_class,
             "explicit_operator_approval": self.record.explicit_operator_approval,
-            "checkpoint_sequence": self.checkpoint_sequence,
-            "checkpoint_sha256": self.checkpoint_sha256,
+            "checkpoint_sequence": state.checkpoint_sequence,
+            "checkpoint_sha256": state.checkpoint_sha256,
             "lifecycle_deadline_ns": self.record.lifecycle_deadline_ns,
             "receipt_bindings": receipt_bindings,
             "permissions_granted": false,
             "weights_attested": false,
             "response_instance_attested": false,
             "inference_dispatched": false,
-            "scope_only": true,
+            "scope_only": !self.record.on_demand,
             "runtime_bridge_connected": false,
         }))
     }
 
-    fn publish_checkpoint(&mut self, bindings: BTreeMap<String, Binding>) -> Result<()> {
+    fn publish_checkpoint(&self, bindings: BTreeMap<String, Binding>) -> Result<()> {
         ensure_owner(&self.owner, &self.store)?;
         self.check_deadline()?;
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Native scope state lock is poisoned"))?;
         if bindings.len() > self.record.policy.models.len() || bindings.len() > MAX_CHECKPOINTS {
             bail!("Native client scope receipt bindings exceed policy bounds")
         }
-        if self.checkpoint_sequence as usize >= MAX_CHECKPOINTS {
+        if state.checkpoint_sequence as usize >= MAX_CHECKPOINTS {
             bail!("Native client scope checkpoint capacity exhausted")
         }
-        for (model, pinned) in &self.bindings {
+        for (model, pinned) in &state.bindings {
             let Some(candidate) = bindings.get(model) else {
                 bail!("Native client scope checkpoints cannot remove existing receipt pins")
             };
@@ -872,10 +947,10 @@ impl NativeClientScope {
             validate_binding(&self.record.policy, model, binding)?;
         }
         let mut checkpoint = Checkpoint {
-            format_version: 2,
+            format_version: self.record.format_version,
             root_task_id: self.record.root_task_id.clone(),
-            sequence: self.checkpoint_sequence + 1,
-            previous_sha256: self.checkpoint_sha256.clone(),
+            sequence: state.checkpoint_sequence + 1,
+            previous_sha256: state.checkpoint_sha256.clone(),
             policy_sha256: self.record.policy_sha256.clone(),
             configuration_sha256: self.record.configuration_sha256.clone(),
             scope_sha256: self.record.scope_sha256.clone(),
@@ -898,7 +973,7 @@ impl NativeClientScope {
             params![self.record.root_task_id, CHECKPOINT_KIND, SOURCE],
             |row| row.get(0),
         ).optional()?;
-        let expected = if self.checkpoint_sequence == 0 {
+        let expected = if state.checkpoint_sequence == 0 {
             if current.is_some() {
                 bail!("Unexpected native client checkpoint exists before genesis")
             }
@@ -910,15 +985,15 @@ impl NativeClientScope {
             let current: Checkpoint = serde_json::from_value(value)?;
             current.checkpoint_sha256
         };
-        if expected != self.checkpoint_sha256 {
+        if expected != state.checkpoint_sha256 {
             bail!("Native client scope checkpoint changed concurrently")
         }
         insert_event_tx(&tx, &self.record.root_task_id, CHECKPOINT_KIND, &checkpoint)?;
         drop(_scan_deadline);
         tx.commit()?;
-        self.bindings = checkpoint.bindings;
-        self.checkpoint_sequence = checkpoint.sequence;
-        self.checkpoint_sha256 = checkpoint.checkpoint_sha256;
+        state.bindings = checkpoint.bindings;
+        state.checkpoint_sequence = checkpoint.sequence;
+        state.checkpoint_sha256 = checkpoint.checkpoint_sha256;
         Ok(())
     }
 
@@ -964,7 +1039,7 @@ fn validate_binding(policy: &NativeLifecyclePolicy, model: &str, binding: &Bindi
             anyhow::anyhow!("Native client receipt is outside the approved model set")
         })?;
     let receipt = &binding.receipt;
-    if binding.origin != "reused"
+    if !matches!(binding.origin.as_str(), "reused" | "newly_loaded")
         || receipt.model_key != model
         || receipt.context_length != ensure.context_length
         || receipt.offload_kv_cache_to_gpu != ensure.offload_kv_cache_to_gpu

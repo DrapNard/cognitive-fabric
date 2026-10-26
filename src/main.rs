@@ -619,6 +619,16 @@ enum Command {
     Task {
         id: String,
     },
+    /// Retire an interrupted client activation intent after explicit provider stop acknowledgement.
+    ResolveClientActivation {
+        id: String,
+        #[arg(long)]
+        model: String,
+        #[arg(long)]
+        human_approve: bool,
+        #[arg(long)]
+        provider_stop_acknowledged: bool,
+    },
     TaskEvents {
         id: String,
         #[arg(long, default_value = "0")]
@@ -2368,6 +2378,19 @@ async fn run_cli() -> Result<()> {
             store.revoke_memory(&id)?;
             json!({"revoked":id})
         }
+        Command::ResolveClientActivation {
+            id,
+            model,
+            human_approve,
+            provider_stop_acknowledged,
+        } => cogfabric::agent::native_scope::NativeClientScope::acknowledge_stopped_activation(
+            store.clone(),
+            &cfg,
+            &id,
+            &model,
+            human_approve,
+            provider_stop_acknowledged,
+        )?,
         Command::Task { id } => store.task(&id)?,
         Command::TaskEvents { id, after } => store.task_events_since(&id, after)?,
         Command::GraphAudit { id } => store.graph_audit(&id)?,

@@ -546,8 +546,8 @@ attestation. Hashes preserve local integrity; they do not attest model weights.
 
 Standalone scope preparation does not load models, dispatch inference or execute
 tools. The optional existing-model client bridge described below now connects
-scope ownership to conversation inference. Automatic client model activation is
-still separate and unfinished. OpenAI model-key replies are never represented as
+scope ownership to conversation inference. Optional client model activation is
+provided by the separately approved on-demand mode below. OpenAI model-key replies are never represented as
 native response-instance evidence. Format-1 admission scopes are refused by the
 new evidence-pinned format-2 bridge; they are not silently upgraded.
 
@@ -593,8 +593,78 @@ record an unknown outcome and block later dispatch; the durable generation ledge
 also blocks new scoped requests until existing reconciliation resolves it.
 A response is published only through the existing bounded collective checkpoint.
 
-Models must already have active managed receipts. This bridge does not load,
-unload or retry models, and does not yet provide automatic activation or general
-mid-reasoning recovery. Ordinary servers preserve their existing routing unless
+In this existing-only mode, models must already have active managed receipts.
+It does not load, unload or retry models. Optional on-demand activation is a
+separate mode below; general mid-reasoning recovery remains unfinished. Ordinary servers preserve their existing routing unless
 these options are supplied. No local policy, installation or running provider was
 changed. Static checks only; no tests, benchmarks or live inference were run.
+
+
+## On-demand client model activation (experimental)
+
+`AgentRuntime::with_on_demand_native_models` and the HTTP host's
+`--activate-client-native-models` opt into loading the exact model selected by an
+already admitted role or registered expert call. The mode additionally requires
+operator `model.residency.change` authority. The existing-model binding option
+and activation option are mutually exclusive. Both require the pinned v3 native
+policy and explicit acceptance of model-key/inventory response evidence:
+
+```sh
+cogfabric-server --native-lifecycle-policy POLICY.json --approve-native-lifecycle \
+  --activate-client-native-models --allow-client-model-key-evidence
+```
+
+Scope format 3 pins `on_demand: true` to the original session. Format 2 preserves
+existing-only behavior. Changing modes on a waiting continuation is rejected
+before claim. Scope setup observes existing managed receipts without loading
+unused models. A missing selected model can be loaded only from the approved
+installed model set, with the exact context and KV-cache placement settings.
+No weights are downloaded or trained.
+
+Activation commits intent before requesting a managed load, validates the fresh
+receipt/inventory, checkpoints its `newly_loaded` origin, and then records
+confirmation. An endpoint-wide bounded journal gate prevents another task from
+adopting a load that succeeded without a confirmed scope checkpoint. Cancellation,
+missing terminal evidence or errors remain unresolved; no retry or guessed
+adoption is attempted. A configured working profile/GPU observation still gates
+the enclosing admitted call; provider-reported memory is not physical isolation.
+
+A shared generation lease allows independent ready calls to run together once
+models are available. Existing bindings use a fast path and do not take an
+exclusive activation lease. Actual loads use the exclusive side and wait for
+active generation before mutating residency; the provider may also queue calls.
+All waits and provider work remain subject to the original scope/task ceilings.
+No throughput or response-time improvement has been measured.
+
+Models remain available while the client executes proposed tools. After the
+final response is durably checkpointed, `release_after` may release only receipts
+marked `newly_loaded` by this scope, under the original owner and deadline, with
+no pending activation/generation. Reused instances are retained. Errors,
+cancellation, uncertainty or an exhausted cleanup allowance leave release deferred.
+Managed cleanup has its own durable ledger; cleanup audit failure cannot erase a
+committed response or grant permission to replay it.
+
+An interrupted activation can be retired only after explicit operator approval
+and acknowledgement that the provider operation has stopped:
+
+```sh
+cogfabric resolve-client-activation TASK_UUID --model MODEL_KEY \
+  --human-approve --provider-stop-acknowledged
+```
+
+Use the original saved workspace/configuration; configuration drift is refused.
+For a crashed process whose task is still running, use the existing
+`recover-tasks` operation first after the host is stopped. Retirement preserves
+unknown evidence, does not resume the old session, and grants no retry authority.
+It does not resolve a separate managed-load receipt or generation ledger; those
+keep their existing independent resolution gates. The stop record pins any
+remaining nonterminal receipt IDs for that endpoint/model. New scopes cannot
+adopt those receipts until independent managed handling marks them released or
+retired; missing or malformed receipt evidence remains blocked. Operator acknowledgement is
+not proof of provider stop or model identity. Scope and activation roots are
+protected from ordinary history retention so unresolved intent cannot disappear.
+
+Static formatting, compilation and lint inspection only. No tests, benchmarks,
+provider calls, model loads/unloads, configuration changes or installation were
+performed during implementation. End-to-end runtime behavior and reasoning speed
+remain unverified; general intermediate reasoning recovery remains incomplete.

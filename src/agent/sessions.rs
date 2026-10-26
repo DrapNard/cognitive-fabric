@@ -283,7 +283,9 @@ impl Lease {
                     (None, []) => (),
                     (Some(policy), [raw]) => {
                         let scope = crate::strict_json::value(raw.as_bytes(), 131072)?;
-                        if scope["format_version"] != 2
+                        let version = if runtime.native_on_demand { 3 } else { 2 };
+                        if scope["format_version"] != version
+                            || (scope["on_demand"] == true) != runtime.native_on_demand
                             || scope["root_task_id"] != task
                             || scope["configuration_sha256"] != state.configuration
                             || scope["policy_sha256"]
@@ -774,13 +776,14 @@ pub(super) async fn run(
     tokio::pin!(cancel);
     let result=async {
         let mut routed = runtime.clone();
+        let mut native_scope = None;
         if let Some(policy) = &runtime.native_policy {
             let owner = runtime.native_owner.clone().ok_or_else(||anyhow::anyhow!("Missing native client owner"))?;
             let scope = tokio::select! {
                 biased;
                 _=&mut cancel => {session.fail("cancelled")?; bail!("Agent native scope preparation cancelled")},
                 result=tokio::time::timeout_at(tokio::time::Instant::from_std(deadline),
-                    super::native_scope::NativeClientScope::prepare_owned_session(runtime.store.clone(), owner, &task, &runtime.cfg, policy.clone(), true)) => {
+                    super::native_scope::NativeClientScope::prepare_owned_session(runtime.store.clone(), owner, &task, &runtime.cfg, policy.clone(), true, runtime.native_on_demand)) => {
                     result.map_err(|_|anyhow::anyhow!("Agent native scope preparation deadline exhausted"))??
                 }
             };
@@ -788,10 +791,12 @@ pub(super) async fn run(
             runtime.store.event(&task,"agent_native_bridge","security-kernel",json!({
                 "policy_sha256":scope.policy_sha256(),"runtime_bridge_connected":true,
                 "response_instance_attested":false,"evidence":"model_key_and_inventory",
-                "automatic_activation":false,"permissions_granted":false
+                "automatic_activation":runtime.native_on_demand,"permissions_granted":false
             }))?;
+            let scope = Arc::new(scope);
             routed.backend = Arc::new(super::native_chat::ScopedChat::new(
-                runtime.backend.clone(), runtime.cfg.clone(), Arc::new(scope))?);
+                runtime.backend.clone(), runtime.cfg.clone(), scope.clone())?);
+            native_scope = Some(scope);
         }
 
         runtime.store.event(&task,"model_registration","runtime",json!({"registration":registration,"weight_identity_verified":false}))?;
@@ -807,6 +812,26 @@ pub(super) async fn run(
         };
         let mut completion=outcome.completion;
         session.checkpoint(&request,&mut completion,outcome.advice,outcome.verification == Some(true))?;
+        if completion.tool_calls.is_empty() {
+            if let Some(scope) = native_scope {
+                // The response is already durable. Cleanup cannot erase it or
+                // turn its completed provider call into permission to replay.
+                let cleanup_intent = runtime.store.event(&task,"agent_native_cleanup","security-kernel",json!({
+                    "phase":"pending","response_already_committed":true,
+                    "provider_stop_proven":false,"automatic_replay":false
+                }));
+                if cleanup_intent.is_ok() {
+                    let cleanup = scope.finish_session().await;
+                    // Managed release has its own durable ledger. Failure to
+                    // publish optional cleanup diagnostics cannot erase a reply.
+                    let _ = runtime.store.event(&task,"agent_native_cleanup","security-kernel",json!({
+                        "phase":"finished","cleanup_succeeded":cleanup.is_ok(),"cleanup_failed":cleanup.is_err(),
+                        "response_already_committed":true,"provider_stop_proven":false,
+                        "automatic_replay":false
+                    }));
+                }
+            }
+        }
         Ok(TurnResult{task_id:task.clone(),completion})
     }.await;
     if result.is_err() {

@@ -79,6 +79,11 @@ impl ScopedChat {
             if self.uncertain.load(Ordering::Acquire) {
                 bail!("A prior native client generation has an unknown outcome")
             }
+            self.scope.ensure_model(&self.target.model).await?;
+            let _generation = self.scope.generation_guard().await?;
+            if self.uncertain.load(Ordering::Acquire) {
+                bail!("A native client generation became unknown during activation")
+            }
             let before = self
                 .scope
                 .validate_receipt_for(&self.target.model, &self.target.api_base)
