@@ -131,3 +131,14 @@ These changes do not implement a full client-to-Engine bridge or managed client
 model activation. They do not create trained expert weights, prove inference
 speedups or replace existing legacy prose memory. No live inference, tests,
 benchmarks, migration execution or installation was performed for this slice.
+
+## Client advisory concurrency
+
+Research client sessions with `--parallelism 2..4` can admit planner and explorer
+as one independent wave against the same initial advice. The complete wave plus
+a minimum solver allocation and language presentation reserve must fit the root
+budget. Both calls receive durable reservations before either starts; the solver
+waits for both results. No sibling is detached, failures retain reservations, and
+provider cancellation is not claimed on timeout. Other modes and insufficient
+budgets keep sequential admission. Actual provider execution may still queue.
+Compilation/static checks only; no runtime or performance evidence is claimed.

@@ -1,5 +1,14 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Client planner/explorer wave — 2026-10-26
+
+**Implemented, runtime unverified.** `src/agent/collective.rs` admits independent
+planner/explorer calls together in research mode with a configured parallelism
+of at least two. Shared call/token/input/deadline limits, solver/presentation
+reserves and durable pre-dispatch charges remain in force. Both results are
+awaited; dependent solver work remains sequential. Formatting and static checks
+only; no tests, benchmarks or live inference were run.
+
 ## Client role routing and pinned memory retrieval — 2026-10-26
 
 **Partial; compiled/static analysis only, runtime unverified.**

@@ -212,8 +212,18 @@ impl Graph<'_> {
         )
         .await
         .map_err(|_| anyhow::anyhow!("Client collective inference deadline exhausted"))??;
+        self.record_completion(role, self.calls, allocation, &turn, completion)
+    }
+    fn record_completion(
+        &mut self,
+        role: &str,
+        call: usize,
+        allocation: usize,
+        turn: &Turn,
+        completion: Completion,
+    ) -> Result<Completion> {
         completion.validate(
-            &turn,
+            turn,
             self.session.state.tool_limit
                 - self.session.state.proposals
                 - self.session.state.internal_tools,
@@ -237,7 +247,7 @@ impl Graph<'_> {
             "agent_reasoning",
             "jev-r",
             json!({
-                "role":role,"call":self.calls,"cycle":self.cycles,"model":completion.model,
+                "role":role,"call":call,"cycle":self.cycles,"model":completion.model,
                 "content_sha256":sha256(completion.content.as_deref().unwrap_or("").as_bytes()),
                 "proposal_sha256":sha256(&serde_json::to_vec(&completion.tool_calls)?),
                 "input_tokens":completion.input_tokens,"output_tokens":completion.output_tokens,
@@ -245,6 +255,70 @@ impl Graph<'_> {
             }),
         )?;
         Ok(completion)
+    }
+    async fn advisory_pair(&mut self, advice: &str) -> Result<(Completion, Completion)> {
+        if !self.available(&[
+            ("planner", advice, ADVICE_TOKENS),
+            ("explorer", advice, ADVICE_TOKENS),
+        ])? {
+            bail!("Client advisory wave exceeds shared task budget")
+        }
+        let roles = ["planner", "explorer"];
+        let turns = roles.map(|role| self.turn(role, advice, ADVICE_TOKENS));
+        // Reserve both calls before either future is polled. Partial reservation
+        // failures terminate the session; reservations are never refunded/replayed.
+        for (role, turn) in roles.iter().zip(&turns) {
+            let bytes = serde_json::to_vec(turn)?;
+            TaskPolicy::agent(self.task)?.authorize(self.task, "jev-r", "llm.generate")?;
+            self.session
+                .reserve(role, ADVICE_TOKENS, &bytes, self.cycles)?;
+            self.calls += 1;
+            self.reserved += ADVICE_TOKENS;
+            self.prompt_bytes += bytes.len();
+        }
+        let deadline = self.deadline;
+        let timeout = Duration::from_secs(self.runtime.cfg.timeout_seconds)
+            .min(deadline.saturating_duration_since(Instant::now()));
+        let (planner, explorer) = tokio::time::timeout(timeout, async {
+            tokio::join!(
+                self.runtime.dispatch_role(
+                    self.backend.clone(),
+                    self.task,
+                    "planner",
+                    &turns[0],
+                    ADVICE_TOKENS,
+                    deadline
+                ),
+                self.runtime.dispatch_role(
+                    self.backend.clone(),
+                    self.task,
+                    "explorer",
+                    &turns[1],
+                    ADVICE_TOKENS,
+                    deadline
+                )
+            )
+        })
+        .await
+        .map_err(|_| {
+            anyhow::anyhow!(
+                "Client advisory wave deadline exhausted; provider outcomes may be unknown"
+            )
+        })?;
+        // Await the entire wave before propagating failures; no detached sibling.
+        let planner = planner.and_then(|completion| {
+            self.record_completion(
+                "planner",
+                self.calls - 1,
+                ADVICE_TOKENS,
+                &turns[0],
+                completion,
+            )
+        });
+        let explorer = explorer.and_then(|completion| {
+            self.record_completion("explorer", self.calls, ADVICE_TOKENS, &turns[1], completion)
+        });
+        Ok((planner?, explorer?))
     }
     fn check_candidate(&mut self, completion: &Completion) -> Result<Option<bool>> {
         let hash = sha256(
@@ -368,8 +442,30 @@ pub(super) async fn run(
     }
     // Bound hypothetical advice by bytes so optional roles cannot consume the solver's input allowance.
     let advice_bound = "\0".repeat(2000);
+    let pair_admitted = saved.calls == 0
+        && mode == "research"
+        && runtime.cfg.subtask_parallelism.unwrap_or(1) >= 2
+        && graph.available(&[
+            ("planner", &advice, ADVICE_TOKENS),
+            ("explorer", &advice, ADVICE_TOKENS),
+            ("solver", &advice_bound, MIN_SOLVER_TOKENS),
+        ])?;
+    if pair_admitted {
+        graph.schedule("independent_planner_explorer_wave", true)?;
+        let (planner, explorer) = graph.advisory_pair(&advice).await?;
+        advice = format!(
+            "Previous advisory context: {}\nplanner: {}\nexplorer: {}",
+            bounded(&advice, 600),
+            bounded(planner.content.as_deref().unwrap_or(""), 650),
+            bounded(explorer.content.as_deref().unwrap_or(""), 650)
+        );
+    }
     for role in ["planner", "explorer"] {
-        if saved.calls > 0 || mode == "fast" || (role == "explorer" && mode != "research") {
+        if pair_admitted
+            || saved.calls > 0
+            || mode == "fast"
+            || (role == "explorer" && mode != "research")
+        {
             continue;
         }
         let admitted = graph.available(&[
