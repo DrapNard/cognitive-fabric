@@ -33,12 +33,13 @@ fn admit(
     setup_deadline: Instant,
     claim: bool,
     expected: Option<(&Config, &PresentationCheckpoint)>,
+    native: Option<&crate::residency::lifecycle::restoration::NativeRuntime>,
 ) -> Result<Admission> {
     let mut db = store.lock()?;
     db.progress_handler(1000, Some(move || Instant::now() >= setup_deadline));
     let result = (|| -> Result<Admission> {
         let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-        super::validate_verifier_recovery(&tx, task, None)?;
+        super::validate_verifier_recovery_with_native(&tx, task, None, native)?;
         let (query, status): (String, String) = tx.query_row(
             "SELECT CASE WHEN length(CAST(query AS BLOB))<=12000 THEN query END,status FROM tasks WHERE id=?1",
             [task], |row| Ok((row.get(0)?, row.get(1)?)))?;
@@ -233,6 +234,38 @@ pub async fn resume(
     human_approve: bool,
     cancel: impl std::future::Future<Output = ()>,
 ) -> Result<Value> {
+    resume_inner(store, task, human_approve, None, cancel).await
+}
+
+/// Restore the original policy/receipts before dispatching a pending language
+/// call. Preparation checks provider inventory; it never guesses instance IDs.
+pub async fn resume_native(
+    store: Arc<Store>,
+    task: &str,
+    human_approve: bool,
+    policy: &crate::residency::lifecycle::NativeLifecyclePolicy,
+    cancel: impl std::future::Future<Output = ()>,
+) -> Result<Value> {
+    security::authorize("human-cli", "task.resume")?;
+    if !human_approve {
+        bail!("Native terminal presentation requires explicit operator approval")
+    }
+    tokio::pin!(cancel);
+    let native = tokio::select! {
+        biased;
+        _=&mut cancel => bail!("Native terminal restoration cancelled during setup"),
+        result=crate::residency::lifecycle::restoration::prepare(store.clone(), task, policy, true) => result?,
+    };
+    resume_inner(store, task, human_approve, Some(native), cancel).await
+}
+
+async fn resume_inner(
+    store: Arc<Store>,
+    task: &str,
+    human_approve: bool,
+    native: Option<crate::residency::lifecycle::restoration::NativeRuntime>,
+    cancel: impl std::future::Future<Output = ()>,
+) -> Result<Value> {
     security::authorize("human-cli", "task.resume")?;
     if !human_approve {
         bail!("Pending language presentation requires explicit operator approval")
@@ -241,11 +274,16 @@ pub async fn resume(
     let path = store.runtime_lock.as_deref().ok_or_else(|| {
         anyhow::anyhow!("Terminal presentation restoration requires a persistent store")
     })?;
-    let _lease = ExecutionLease::acquire(path, true).map_err(|error| {
-        error.context("Cannot acquire exclusive runtime lease for terminal presentation")
-    })?;
+    let _lease = if let Some(runtime) = &native {
+        runtime.ownership.validate(&store)?;
+        None
+    } else {
+        Some(ExecutionLease::acquire(path, true).map_err(|error| {
+            error.context("Cannot acquire exclusive runtime lease for terminal presentation")
+        })?)
+    };
     let setup_deadline = Instant::now() + Duration::from_secs(5);
-    let prepared = admit(&store, task, setup_deadline, false, None)?;
+    let prepared = admit(&store, task, setup_deadline, false, None, native.as_ref())?;
     let resource_pool = prepared
         .cfg
         .resource_admission
@@ -254,7 +292,7 @@ pub async fn resume(
             crate::resource_scheduler::ResourcePool::configured_owned(
                 store.clone(),
                 configuration,
-                None,
+                native.as_ref().map(|runtime| runtime.ownership.clone()),
             )
         })
         .transpose()?;
@@ -272,6 +310,7 @@ pub async fn resume(
         setup_deadline,
         true,
         Some((&prepared.cfg, &prepared.checkpoint)),
+        native.as_ref(),
     )?;
     let Admission {
         cfg,
@@ -304,7 +343,10 @@ pub async fn resume(
     };
     let backend: Arc<dyn InferenceBackend> = match &process {
         Some(process) => process.clone(),
-        None => Arc::new(LocalBackend(cfg.clone())),
+        None => match &native {
+            Some(runtime) => runtime.backend()?,
+            None => Arc::new(LocalBackend(cfg.clone())),
+        },
     };
     let backend: Arc<dyn InferenceBackend> =
         Arc::new(crate::fabric::Broker::with_inference(backend));
@@ -313,6 +355,9 @@ pub async fn resume(
         Session::restore_terminal(cfg, store.clone(), backend, task.to_owned(), &mode, state)?;
     session.resource_pool = resource_pool;
     session.set_resource_route_scope(resource_scope)?;
+    if let Some(runtime) = &native {
+        runtime.begin_continuation()?;
+    }
     let result = tokio::select! {
         biased;
         _=cancel => Err(anyhow::anyhow!("Terminal presentation cancelled")),
@@ -334,41 +379,63 @@ pub async fn resume(
         }
         Ok(answer)
     });
-    let mut db = store.lock()?;
-    let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-    let (answer, status) = match &result {
+    let mut report = {
+        let mut db = store.lock()?;
+        let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let (answer, status) = match &result {
         Ok(answer) => (answer.as_str(),checkpoint.status.as_str()),
         Err(_) => ("Terminal presentation interrupted; inspect charged outcomes before any further operation","interrupted"),
     };
-    if result.is_ok() {
-        tx.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'language_boundary_presentation','interface',?2,unixepoch())",
+        if result.is_ok() {
+            tx.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'language_boundary_presentation','interface',?2,unixepoch())",
             params![task,json!({"answer_sha256":sha256(answer.as_bytes()),"original_answer_sha256":checkpoint.answer_sha256,
                 "status":status,"verified_bytes_preserved":status=="completed","new_claims_verified":false}).to_string()])?;
-    }
-    if tx.execute(
+        }
+        if tx.execute(
         "UPDATE tasks SET status=?2,answer=?3,updated=unixepoch() WHERE id=?1 AND status='running'",
         params![task, status, answer],
     )? != 1
     {
         bail!("Terminal presentation lost its task anchor")
     }
-    let report = json!({"format_version":1,"task_id":task,"status":status,
+        let report = json!({"format_version":1,"task_id":task,"status":status,
         "answer_hash":sha256(answer.as_bytes()),"new_calls":session.resources.calls-prior_calls,
         "resources":session.resources,"timing_scope":"terminal_continuation_only",
         "resource_history":resource_history,"restored_resource_pool":restored_pool,
+        "restored_native_runtime":native.as_ref().map(|runtime|runtime.evidence()),
+        "native_lifecycle":{"cleanup_pending":native.is_some()},
         "verified":status=="completed","resource_usage_complete":false,
         "automatic_replay":false,"fresh_budget_granted":false,"provider_stop_proven":false});
-    tx.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'recovery','human-cli',?2,unixepoch())",params![task,report.to_string()])?;
-    let progress = crate::events::Progress::from_audit(
-        tx.last_insert_rowid() as u64,
-        task,
-        "recovery",
-        "human-cli",
-        &report,
-    )?
-    .ok_or_else(|| anyhow::anyhow!("Missing typed terminal recovery event"))?;
-    tx.commit()?;
-    store.events.publish(&progress)?;
+        tx.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'recovery','human-cli',?2,unixepoch())",params![task,report.to_string()])?;
+        let progress = crate::events::Progress::from_audit(
+            tx.last_insert_rowid() as u64,
+            task,
+            "recovery",
+            "human-cli",
+            &report,
+        )?
+        .ok_or_else(|| anyhow::anyhow!("Missing typed terminal recovery event"))?;
+        tx.commit()?;
+        store.events.publish(&progress)?;
+        report
+    };
+    // Persist the completed call before lifecycle cleanup can release its model.
+    if let Some(runtime) = &native {
+        let status = if result.is_ok() {
+            checkpoint.status.as_str()
+        } else {
+            "interrupted"
+        };
+        let cleanup = match runtime.finish_continuation(status).await {
+            Ok(value) => value,
+            Err(_) => json!({"cleanup_failed":true,"provider_stop_proven":false}),
+        };
+        store.lock()?.execute(
+            "INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'recovery_native_cleanup','human-cli',?2,unixepoch())",
+            params![task, cleanup.to_string()],
+        )?;
+        report["native_lifecycle"] = cleanup;
+    }
     result?;
     Ok(report)
 }

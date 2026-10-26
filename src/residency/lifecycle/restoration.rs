@@ -158,11 +158,7 @@ fn read_original(
             }
         }
         for role in crate::fabric::protocol::ROLES {
-            let model = cfg
-                .role_profiles
-                .get(role)
-                .map(|p| p.model.as_str())
-                .unwrap_or(&cfg.model);
+            let (model, _) = cfg.model_settings(role)?;
             if !policy.models.iter().any(|approved| approved.model == model)
                 || (!lazy && !receipts.contains_key(model))
             {
@@ -593,11 +589,8 @@ fn read_lazy_activation_receipts(
         let backend_kind = value["backend_kind"]
             .as_str()
             .ok_or_else(|| anyhow::anyhow!("Lazy native binding has no backend identity"))?;
-        let configured_model = cfg
-            .role_profiles
-            .get(role)
-            .map(|profile| profile.model.as_str())
-            .unwrap_or(&cfg.model);
+        let (configured_model, _) = cfg.model_settings(role)?;
+        cfg.require_role_model(role, model_key)?;
         if !crate::fabric::protocol::ROLES.contains(&role)
             || !matches!(backend_kind, "configured_role" | "expert_pinned")
             || (backend_kind == "configured_role" && configured_model != model_key)
@@ -827,11 +820,7 @@ pub(crate) async fn prepare(
             let mut targets = BTreeMap::new();
             let mut receipts = BTreeMap::new();
             for role in crate::fabric::protocol::ROLES {
-                let model = cfg
-                    .role_profiles
-                    .get(role)
-                    .map(|profile| profile.model.as_str())
-                    .unwrap_or(&cfg.model);
+                let (model, _) = cfg.model_settings(role)?;
                 let receipt = original
                     .receipts
                     .get(model)

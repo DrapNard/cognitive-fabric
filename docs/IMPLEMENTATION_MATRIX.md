@@ -6248,3 +6248,9 @@ FlatBuffers schema change, database migration or new rollback campaign was made.
 Reviewed binding integrity is checked by the build; `flatc` is unavailable for
 fresh generation. The next live milestone requires a usable driver/provider;
 physical memory enforcement and model-aware capacity planning remain separate work.
+
+### Native terminal language restoration — Partial
+
+- `src/recovery/language_presentation.rs`, `src/main.rs`: explicit original-policy native restoration for never-dispatched terminal presentation, with original receipt/ownership/resource/deadline admission. Durable response publication precedes optional model release; cleanup has a separate audit outcome.
+- `src/residency/lifecycle/restoration.rs`: eager and lazy restored role selection honors the language-only model boundary.
+- Static compilation and lint checks only; no tests, benchmarks or live provider/recovery operations. General mid-reasoning language recovery and automatic managed client activation remain incomplete.

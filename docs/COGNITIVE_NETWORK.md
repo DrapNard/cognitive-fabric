@@ -408,9 +408,13 @@ same-boot clock, and sufficient original held call/token/input capacity. It
 creates no task or fresh budget. It never replays a previously dispatched call.
 
 This experimental path supports the configured local adapter, including its
-same-image managed inference worker mode. Native lifecycle ownership, custom
+same-image managed inference worker mode. Add `--native-policy PATH` to restore
+the exact original approved native lifecycle policy, ownership and instance
+receipts after bounded provider inventory validation. Eager and lazy restoration
+resolve language roles through the explicit language profile. Original activation,
+cleanup and deadline limits apply; unknown outcomes remain blocked. Custom
 inference modules, registered default-model scopes and exact token-admission
-scopes are refused until their exact restoration is connected. Configured
+scopes remain refused. Configured
 resource pools use the restoration rules described below.
 It does not silently bypass those settings. Completed candidates need an exact
 prior independent proof hash binding, and their returned answer bytes must not
@@ -444,3 +448,8 @@ Native lifecycle ownership and other unsupported reconstruction scopes remain
 refused. Resource restoration alone does not load/unload models or establish
 GPU correctness, neural quality or a speedup. Compilation/static checks only;
 no tests, benchmarks, recovery execution or provider calls run.
+
+Native terminal recovery persists the response and task status before lifecycle
+cleanup can release a model. A separate `recovery_native_cleanup` event records
+cleanup outcome; cleanup failure does not erase a durable response or authorize
+replay. An interrupted cleanup remains subject to original residency reconciliation.

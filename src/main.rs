@@ -176,6 +176,10 @@ enum Command {
         id: String,
         #[arg(long)]
         human_approve: bool,
+
+        /// Original immutable native lifecycle policy; instance bindings must still match.
+        #[arg(long, requires = "human_approve")]
+        native_policy: Option<PathBuf>,
     },
     /// Restore an already published final language response without model replay.
     RecoverLanguageResult {
@@ -1885,16 +1889,33 @@ async fn run_cli() -> Result<()> {
         Command::RecoverRevisionResult { id, human_approve } => {
             store.recover_revision_result(&id, human_approve)?
         }
-        Command::ResumeLanguagePresentation { id, human_approve } => {
-            cogfabric::recovery::language_presentation::resume(
-                store.clone(),
-                &id,
-                human_approve,
-                async {
-                    let _ = tokio::signal::ctrl_c().await;
-                },
-            )
-            .await?
+        Command::ResumeLanguagePresentation {
+            id,
+            human_approve,
+            native_policy,
+        } => {
+            let cancel = async {
+                let _ = tokio::signal::ctrl_c().await;
+            };
+            if let Some(path) = native_policy {
+                let policy = cogfabric::residency::lifecycle::NativeLifecyclePolicy::load(path)?;
+                cogfabric::recovery::language_presentation::resume_native(
+                    store.clone(),
+                    &id,
+                    human_approve,
+                    &policy,
+                    cancel,
+                )
+                .await?
+            } else {
+                cogfabric::recovery::language_presentation::resume(
+                    store.clone(),
+                    &id,
+                    human_approve,
+                    cancel,
+                )
+                .await?
+            }
         }
         Command::RecoverLanguageResult { id } => store.recover_language_result(&id)?,
         Command::RecoverVerifiedResult { id } => store.recover_verified_result(&id)?,
