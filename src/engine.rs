@@ -293,6 +293,10 @@ impl Engine {
     pub fn expert_router_descriptor(&self) -> &crate::routing::Descriptor {
         self.router.descriptor()
     }
+    /// Whether this host needs exclusive model-mutation ownership per task.
+    pub fn uses_native_lifecycle(&self) -> bool {
+        self.native_lifecycle_policy.is_some()
+    }
     /// One configured pool is retained by every clone of this Engine.
     /// Changing a live pool's settings requires a new Engine, never fresh counters.
     pub fn configured_resource_pool(

@@ -6267,3 +6267,11 @@ physical memory enforcement and model-aware capacity planning remain separate wo
 - `src/residency/lifecycle/lazy.rs`: first-use model-binding audit records the freshly observed instance slot count; no policy/call-budget increase.
 - `src/residency/planning.rs`: synthetic transition instances leave advisory slots unknown; existing legacy/KV fingerprint projections remain unchanged.
 - Static checks only; no tests, benchmarks or provider requests. This does not establish provider parallel execution or complete managed client activation.
+
+### HTTP native lifecycle resource coexistence — Partial, runtime unverified
+
+- `src/agent/mod.rs`: operator-controlled request-scoped resource pools; materializes exact configured admission before execution and retains durable client session budgets.
+- `src/engine.rs`, `crates/cogfabric-server/src/lib.rs`: native-policy hosts avoid retaining an idle client shared resource lease that would block exclusive lifecycle ownership. Ordinary hosts retain one shared pool.
+- Unresolved resource history still blocks reconstruction; active client pools still exclude native mutations. Automatic managed client activation remains incomplete. Static checks only; no tests, benchmarks or provider calls.
+
+- `src/resource_scheduler/configured.rs`: cache reuse checks identical lifecycle ownership; ordinary callers cannot borrow a managed pool and skip its workspace lease. Source review identified and corrected this concurrency bypass; runtime remains untested.

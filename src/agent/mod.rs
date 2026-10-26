@@ -79,6 +79,7 @@ pub struct AgentRuntime {
     store: Arc<Store>,
     backend: Arc<dyn ChatBackend>,
     managed: bool,
+    task_scoped_resources: bool,
     resource_pool: Option<Arc<crate::resource_scheduler::ResourcePool>>,
 }
 impl AgentRuntime {
@@ -129,6 +130,7 @@ impl AgentRuntime {
             store,
             backend,
             managed: false,
+            task_scoped_resources: false,
             resource_pool,
         })
     }
@@ -199,6 +201,25 @@ impl AgentRuntime {
             _ => bail!("Agent resource pool differs from its operator configuration"),
         }
         self.resource_pool = pool;
+        self.task_scoped_resources = false;
+        Ok(self)
+    }
+    /// Release idle client resource ownership so an approved lifecycle host can
+    /// take exclusive model-mutation leases between requests. Active requests
+    /// still construct the exact configured pool and validate unresolved history.
+    pub fn with_task_scoped_resources(
+        mut self,
+        actor: &str,
+        store: &Arc<Store>,
+        configuration: Option<&crate::resource_scheduler::Configuration>,
+    ) -> Result<Self> {
+        crate::security::authorize(actor, "resources.configure")?;
+        if !Arc::ptr_eq(&self.store, store) || self.cfg.resource_admission.as_ref() != configuration
+        {
+            bail!("Task-scoped agent resources differ from the host workspace or configuration")
+        }
+        self.resource_pool = None;
+        self.task_scoped_resources = true;
         Ok(self)
     }
     fn collective_enabled(&self) -> bool {
@@ -226,6 +247,7 @@ impl AgentRuntime {
         }
         match (&self.cfg.resource_admission, &self.resource_pool) {
             (None, None) => (),
+            (Some(_), None) if self.task_scoped_resources => (),
             (Some(configuration), Some(pool)) if pool.matches(&self.store, configuration) => (),
             _ => bail!("Configured agent resource pool is missing or changed"),
         }
@@ -382,6 +404,32 @@ impl AgentRuntime {
         result
     }
     pub async fn run_until(
+        &self,
+        request: Turn,
+        cancel: impl Future<Output = ()>,
+    ) -> Result<TurnResult> {
+        let mut scoped;
+        let runtime = if self.task_scoped_resources {
+            scoped = self.clone();
+            scoped.resource_pool = self
+                .cfg
+                .resource_admission
+                .as_ref()
+                .map(|configuration| {
+                    crate::resource_scheduler::ResourcePool::configured(
+                        self.store.clone(),
+                        configuration,
+                    )
+                })
+                .transpose()?;
+            scoped.task_scoped_resources = false;
+            &scoped
+        } else {
+            self
+        };
+        runtime.run_with_resources(request, cancel).await
+    }
+    async fn run_with_resources(
         &self,
         request: Turn,
         cancel: impl Future<Output = ()>,

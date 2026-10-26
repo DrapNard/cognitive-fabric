@@ -40,7 +40,17 @@ pub struct Server {
 }
 impl Server {
     pub fn new(agent: AgentRuntime, engine: Engine, token: &str) -> anyhow::Result<Self> {
-        let agent = agent.with_resource_pool("human-cli", engine.configured_resource_pool()?)?;
+        let agent = if engine.uses_native_lifecycle() {
+            // An idle shared resource lease would exclude the native coordinator
+            // from its required exclusive mutation lease for this workspace.
+            agent.with_task_scoped_resources(
+                "human-cli",
+                &engine.store,
+                engine.cfg.resource_admission.as_ref(),
+            )?
+        } else {
+            agent.with_resource_pool("human-cli", engine.configured_resource_pool()?)?
+        };
         if !(32..=256).contains(&token.len())
             || !token
                 .bytes()

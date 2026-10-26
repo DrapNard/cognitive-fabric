@@ -28,6 +28,16 @@ impl ResourcePool {
             if !pool.matches(&store, configuration) {
                 bail!("Configured resource pool settings changed while live")
             }
+            // A matching catalog is not authority to borrow another runtime's
+            // exclusive lifecycle lease. Ordinary clients must own a shared
+            // lease; managed callers must retain the identical private owner.
+            match (&pool._managed_ownership, &ownership) {
+                (None, None) => (),
+                (Some(existing), Some(requested)) if Arc::ptr_eq(existing, requested) => (),
+                _ => bail!(
+                    "Configured resource pool belongs to a different lifecycle ownership scope"
+                ),
+            }
             return Ok(pool);
         }
         if pools.len() >= 128 {

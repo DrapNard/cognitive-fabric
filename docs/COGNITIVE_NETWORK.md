@@ -498,3 +498,27 @@ Provider inventory documentation:
 Static checks only; no tests, benchmarks or live inventory requests were run.
 Automatic managed client activation still needs a conversation lifecycle and
 explicit treatment of OpenAI tool proposals versus native instance evidence.
+
+## Native HTTP host resource ownership
+
+When an HTTP Engine has an approved native lifecycle policy, server setup leaves
+client resource pools request-scoped. Otherwise an idle client pool's shared
+workspace resource lease would prevent the coordinator from acquiring the
+exclusive lease required for model loading. Ordinary servers retain their shared
+Engine/client pool behavior.
+
+Each client request constructs or joins the exact configured pool before task
+execution, then uses ordinary resource admission. Concurrent requests share a
+live pool through the existing weak registry. The pool is released after its
+last active owner disappears; waiting client-tool checkpoints do not retain an
+idle process-owned pool. Durable session call/token/tool ceilings remain in the
+session ledger, and unresolved resource history still refuses a new pool.
+Native mutation remains excluded while a client request actually owns resources.
+This resolves an idle ownership conflict; it does not yet install a native
+activation adapter for client conversation calls. No model or tool permissions
+are added. Static compilation/lint only; no tests or live lifecycle operations.
+
+Configured pool reuse now requires matching ownership as well as matching
+workspace/configuration: ordinary pools share only with ordinary callers; native
+pools share only with the identical private lifecycle owner. A weak-registry hit
+cannot lend exclusive lifecycle authority to an ordinary client request.
