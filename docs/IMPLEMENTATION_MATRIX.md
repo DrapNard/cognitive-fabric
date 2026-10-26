@@ -1,5 +1,22 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Registered client expert routes and terminal presentation restoration — 2026-10-26
+
+**Partial network/recovery; runtime unverified.** Client expert/context/adapter
+modules and `models.rs` checksum-pin registered expert model snapshots, route
+through explicitly capable adapters and retain the original ledger, resource
+pool, worker and auth policy. Exact model/output limits are checked; ordinary
+provider context remains declared/unverified unless exact token admission is
+configured. Provider-bound experts and managed client activation remain open.
+
+`recovery/language_presentation.rs`, `reasoning/language_boundary.rs` and
+`resume-language-presentation` restore an exact never-dispatched presentation
+under the original same-boot clock and budget. Original proof hashes bind
+completed candidates; Engine arithmetic/SQL proofs add those hashes. Native,
+custom-module, registered-default, resource and exact-token restoration scopes
+remain explicitly refused. General mid-reasoning restoration is unfinished.
+No tests, benchmarks, provider calls, recovery execution or installation run.
+
 ## Parallel dependency-ready client expert steps — 2026-10-26
 
 **Implemented, runtime unverified.** `src/agent/collective.rs` and

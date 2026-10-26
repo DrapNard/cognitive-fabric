@@ -1187,7 +1187,7 @@ impl Engine {
                             &id,
                             "verification",
                             "verifier-r",
-                            json!({"expression":expression,"result":answer,"verified":true}),
+                            json!({"expression":expression,"result":answer,"verified":true,"objective_hash":store::sha256(query.as_bytes()),"answer_hash":store::sha256(answer.as_bytes())}),
                         )?;
                         Ok((answer, "completed".to_string()))
                     }
@@ -1234,7 +1234,7 @@ impl Engine {
                             "verified:sqlite_inline/v1:{input_hash}:{}",
                             store::sha256(answer.as_bytes())
                         ));
-                        self.store.event(&id, "verification", "verifier-r", json!({"checker":"sqlite_inline/v1","input_sha256":input_hash,"answer_sha256":store::sha256(answer.as_bytes()),"verified":true}))?;
+                        self.store.event(&id, "verification", "verifier-r", json!({"checker":"sqlite_inline/v1","input_sha256":input_hash,"answer_sha256":store::sha256(answer.as_bytes()),"verified":true,"objective_hash":store::sha256(query.as_bytes()),"answer_hash":store::sha256(answer.as_bytes())}))?;
                         Ok((answer, "completed".into()))
                     }
                     Err(error) => {

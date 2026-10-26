@@ -25,7 +25,51 @@ pub(crate) fn reservation_payload(cfg: &Config, base_calls: usize) -> Result<ser
         "continuation_supported":false}))
 }
 
+pub(crate) struct TerminalState {
+    pub deadline: Instant,
+    pub resources: Resources,
+    pub nodes: Vec<Node>,
+    pub call_limit: usize,
+}
+
 impl Session {
+    pub(crate) fn restore_terminal(
+        cfg: Config,
+        store: Arc<Store>,
+        backend: Arc<dyn InferenceBackend>,
+        task: String,
+        mode: &str,
+        state: TerminalState,
+    ) -> Result<Self> {
+        let start = crate::execution_clock::ExecutionStart {
+            instant: Instant::now(),
+            deadline: state.deadline,
+            clock: None,
+        };
+        let mut session = Self::new_state(
+            cfg,
+            store,
+            backend,
+            task,
+            mode,
+            start,
+            SettingsRecording::Restore,
+        )?;
+        if state.call_limit > session.cfg.max_calls
+            || state.resources.calls as usize >= state.call_limit
+        {
+            bail!("Saved terminal inference allowance is exhausted")
+        }
+        session.call_limit = state.call_limit;
+        session.resources = state.resources;
+        session.nodes = state.nodes;
+        session.complete_usage =
+            session.resources.input_tokens.is_some() && session.resources.output_tokens.is_some();
+        session.complete_queue_metrics = false;
+        session.stop_reason = "operator_language_presentation".into();
+        Ok(session)
+    }
+
     pub(crate) fn reserve_language_presentation(&mut self) -> Result<PresentationReservation> {
         if self.cfg.language_model().is_none() || self.resources.calls != 0 {
             bail!("Language boundary must be reserved before any inference")

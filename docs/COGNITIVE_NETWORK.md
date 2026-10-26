@@ -350,9 +350,9 @@ and marked partial; complete structured records are serialized whole. The summar
 enters the same pinned continuation advice and never grants permissions.
 
 This is a partial client bridge: expert steps use dependency-ready waves through
-the shared solver model, bounded by `subtask_parallelism` (default one). Manifests
-binding a separate registered model/provider remain explicitly advisory-only.
-Distinct client expert backends and managed client activation are still unfinished. Client tool
+the shared solver model, bounded by `subtask_parallelism` (default one). Manifests binding a separate registered local model use their pinned model
+snapshot through an adapter that explicitly supports that route. Provider-bound
+manifests and managed client activation remain unfinished. Client tool
 execution/approval remains with the external application. Static compilation and
 Clippy only; no tests, benchmarks or live provider calls run.
 
@@ -377,3 +377,46 @@ actual inference. Speed, reasoning quality and runtime reliability remain
 unmeasured. Workspace/all-target compilation and Clippy passed; no tests,
 benchmarks or provider calls were run. Managed client activation and separate
 registered client expert backends remain open.
+
+## Registered client expert models
+
+A new client session captures an enabled registered model's immutable manifest,
+version and checksum in its opening transaction. Its workflow pins a digest of
+that complete registration. Continuation uses that snapshot without a live
+registry reread; disabling a registration affects new session capture. The
+registration checksum and exact local endpoint/model are validated before route
+selection. The language-only model cannot serve this reasoning role.
+
+`LocalChat` explicitly supports the route. Custom adapters must opt in and attest
+the exact local target; unsupported adapters skip the workflow before reservation,
+with no default-model fallback. Expert calls retain the root session ledger,
+resource pool, process policy, worker limits and credential scope. A changed
+endpoint does not gain a wider credential scope. Registered output ceilings are
+enforced, and configured exact token admission is clamped to declared context.
+Ordinary OpenAI-compatible routes report `declared_context_tokens` and
+`context_enforcement=unverified_provider`; no byte/token equivalence is assumed.
+Provider context rejection fails explicitly. Provider-bound manifests remain
+unsupported, and model names/checksums do not attest loaded weight identity.
+
+## Resume a never-dispatched terminal presentation
+
+`cogfabric resume-language-presentation TASK_UUID --human-approve` can dispatch
+the exact saved presentation request when its phase is `presentation_ready` and
+all earlier model results are recorded. It requires an exclusive runtime lease,
+the original matching workspace/configuration/prompts, the original unexpired
+same-boot clock, and sufficient original held call/token/input capacity. It
+creates no task or fresh budget. It never replays a previously dispatched call.
+
+This experimental path supports the configured local adapter, including its
+same-image managed inference worker mode. Native lifecycle ownership, custom
+inference modules, registered default-model scopes, resource admission and exact
+token-admission scopes are refused until their exact restoration is connected.
+It does not silently bypass those settings. Completed candidates need an exact
+prior independent proof hash binding, and their returned answer bytes must not
+change. Engine arithmetic/SQL proofs now include objective and answer hashes.
+Unverified/rejected candidates retain that status. A failed/uncertain dispatch
+remains charged, leaves the task interrupted and is not retried.
+
+General mid-reasoning restoration and managed client activation remain open.
+Static checks only: no tests, benchmarks, provider calls, recovery execution,
+configuration changes or installation were performed in this run.

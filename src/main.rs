@@ -171,6 +171,12 @@ enum Command {
         #[arg(long)]
         human_approve: bool,
     },
+    /// Dispatch only a checkpointed terminal language request within its original budget.
+    ResumeLanguagePresentation {
+        id: String,
+        #[arg(long)]
+        human_approve: bool,
+    },
     /// Restore an already published final language response without model replay.
     RecoverLanguageResult {
         id: String,
@@ -1878,6 +1884,17 @@ async fn run_cli() -> Result<()> {
         }
         Command::RecoverRevisionResult { id, human_approve } => {
             store.recover_revision_result(&id, human_approve)?
+        }
+        Command::ResumeLanguagePresentation { id, human_approve } => {
+            cogfabric::recovery::language_presentation::resume(
+                store.clone(),
+                &id,
+                human_approve,
+                async {
+                    let _ = tokio::signal::ctrl_c().await;
+                },
+            )
+            .await?
         }
         Command::RecoverLanguageResult { id } => store.recover_language_result(&id)?,
         Command::RecoverVerifiedResult { id } => store.recover_verified_result(&id)?,
