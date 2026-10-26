@@ -67,12 +67,20 @@ objective and prior interpretation; planning does not consume expert results
 until they are collected for the solver. This requires a configured concurrency
 limit of three or four, enough spare slots for the complete first expert wave,
 and budget for the whole workflow, both advisory calls, solver and presentation.
-All calls are reserved and required models prepared before the overlap starts.
+All calls are reserved before the overlap starts. Routes without inference
+resource scheduling also prepare required models before generation.
 Later expert dependency waves wait for that first combined wave to finish. The
 planner/explorer results keep their reserved call IDs and are reused once rather
 than requested again. Unsupported or insufficient-capacity cases retain the
 existing sequential phase ordering. This is client orchestration support,
 without a runtime speed claim or equivalent Engine cross-subsystem overlap.
+
+When inference resource scheduling is configured, advance preparation does not
+activate models. Activation stays inside the admitted inference callback after
+the original target/profile, allocation and optional GPU-observation checks.
+Consequently, cold first-use calls can still serialize despite a concurrent CGF
+wave. Separate audited admission for lifecycle preparation remains unfinished;
+advance preparation applies only to routes without inference resource scheduling.
 
 Client planner/explorer waves select and prepare both exact role routes after
 the wave is authorized and durably reserved, before polling either generation.
@@ -88,7 +96,8 @@ graph waves use the same preparation ordering through an in-process backend
 hook. Supported route adapters are pinned before preparation and reused for
 generation. Preparation retains lifecycle/GPU admission, task permissions and
 the original clock; it does not acquire a prediction slot. Generation still
-uses the typed broker and configured inference resource pool. The expert phase
+uses the typed broker and configured inference resource pool. Resource-scheduled
+adapters defer preparation to that guarded dispatch path. The expert phase
 deadline includes both preparation and generation. Preparation failure stops
 the wave without refunding or replaying its durable reservations.
 

@@ -25,10 +25,11 @@ impl InferenceBackend for ScheduledBackend {
             if self.pool.lock()?.closed || prompt.len() > 32_000 {
                 bail!("Scheduled inference route is unavailable for preparation")
             }
-            // Preparation owns no prediction allocation. Native model loading
-            // retains its separate lifecycle/GPU admission; generate_for still
-            // admits this exact inference through the configured resource pool.
-            self.backend.prepare_for(task, role, prompt).await
+            // Target/profile/GPU checks run in generate_for's admitted callback.
+            // Forwarding preparation here would activate a model before those
+            // checks. Retain first-use activation inside that callback until
+            // lifecycle preparation has its own audited admission protocol.
+            Ok(())
         })
     }
     fn input_token_admission(&self) -> Option<crate::token_admission::Settings> {

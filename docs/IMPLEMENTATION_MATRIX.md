@@ -6286,7 +6286,7 @@ physical memory enforcement and model-aware capacity planning remain separate wo
 
 ### Client wave activation barrier — Implemented, runtime unverified
 
-- `src/agent/mod.rs`: optional task-scoped `ChatBackend::prepare_for` lifecycle hook and bounded role-wave preparation. All exact role routes are selected before preparation and the same selected adapters are retained for dispatch. Preparation runs only after the full wave's permissions and durable inference reservations.
+- `src/agent/mod.rs`: optional task-scoped `ChatBackend::prepare_for` lifecycle hook and bounded role-wave preparation. All exact role routes are selected before preparation and the same selected adapters are retained for dispatch. Preparation runs only after the full wave's permissions and durable inference reservations. Resource-scheduled runtimes retain activation inside guarded dispatch instead of forwarding advance preparation.
 - `src/agent/native_chat.rs`: preparation activates only the selected policy-approved model for the exact original task, with original ownership/deadline and uncertainty gates. It performs no generation and grants no permissions. Default adapters have no preparation work and do not attest readiness.
 - `src/agent/collective.rs`: planner/explorer pairs prepare both routes before concurrent inference; expert waves prepare their pinned solver route once before polling their step futures. Fresh receipt and response identity checks remain on every generation.
 - This avoids starting one wave member's generation while another member still needs a serialized activation lease. Loading remains policy-serialized and provider capacity can still serialize generation. No speed or GPU concurrency claim; static checks only, no tests, benchmarks or live provider operations.
@@ -6294,16 +6294,22 @@ physical memory enforcement and model-aware capacity planning remain separate wo
 ### Engine wave activation barrier — Implemented, runtime unverified
 
 - `src/backend.rs`, `src/residency/lifecycle/lazy.rs`: optional in-process preparation hook activates the exact approved task/role/model through the existing native coordinator without generating text. Original lifecycle ownership, GPU admission, cancellation and uncertainty gates remain enforced.
-- `src/fabric.rs`, `src/resource_scheduler/adapter.rs`: forwarding preserves pinned role restrictions, task authorization, closed-module checks and running-task admission. Preparation consumes no prediction allocation; actual generation still passes the original FlatBuffers broker and configured inference resource admission. No new IPC encoding is introduced.
+- `src/fabric.rs`, `src/resource_scheduler/adapter.rs`: forwarding preserves pinned role restrictions, task authorization, closed-module checks and running-task admission. Resource-scheduled adapters do not forward advance preparation: target/profile/GPU checks must precede activation inside the inference callback. Actual generation passes the original FlatBuffers broker and configured inference resource admission. No new IPC encoding is introduced.
 - `src/reasoning/expert_parallel.rs`, `src/reasoning/parallel.rs`, `src/reasoning.rs`: fully reserved independent expert batches, parallel workflow steps and advisory graph waves prepare their exact supported pinned adapters before polling generation. The shared expert phase deadline includes preparation, with no fresh phase budget afterward.
 - Failure leaves reservations charged and stops the wave. Default adapters perform no preparation and attest no residency; eager native adapters retain their existing generation validation. Tests, benchmarks, live activation and inference were not run. Physical GPU concurrency and speed remain unverified.
 
 ### Client Jev+/Jev-R overlap — Partial, runtime unverified
 
 - `src/agent/collective.rs`: Research-mode initial conversations can overlap the first pinned expert-workflow wave with independent planner/explorer advice. Admission requires at least three configured concurrent calls, a first expert wave fitting the remaining slots, and the entire workflow plus both advisory calls, solver and language presentation fitting the original shared budget.
-- Calls are authorized and reserved before activation. Required expert and reasoning routes are prepared before either branch generates. Both locally owned branches are awaited before failure handling; no background sibling, refund, automatic retry or extra model-selection authority is introduced.
+- Calls are authorized and reserved before activation. Required expert and reasoning routes without inference resource scheduling are prepared before either branch generates; scheduled routes activate inside guarded dispatch. Both locally owned branches are awaited before failure handling; no background sibling, refund, automatic retry or extra model-selection authority is introduced.
 - Advisory reservations retain explicit call identities, so recording expert results before planner/explorer results cannot relabel calls. The recorded pair is consumed once and is not dispatched again after expert completion. `agent_overlap_wave` binds call IDs, concurrency bounds and the original advice digest without storing an extra prompt copy.
 - Later expert waves retain their dependency barriers. Concurrency below three, wide first waves and insufficient budgets use existing sequential phases. Engine cross-subsystem overlap and runtime/provider concurrency proof remain incomplete. Static checks only; no tests, benchmarks, model operations or live inference.
+
+### Preparation and configured resource guards — Implemented, runtime unverified
+
+- `src/agent/mod.rs`, `src/resource_scheduler/adapter.rs`: resource-scheduled client/Engine adapters suppress advance activation. First-use activation remains inside the original admitted inference callback, after target/profile, queue/allocation and optional GPU observation checks. This closes the early-loading ordering gap introduced by the preparation hooks.
+- Supported routes are still pinned/selected before wave dispatch. Non-resource-scheduled native routes retain advance preparation under their separate operator lifecycle policy. Resource-scheduled routes may serialize cold first-use calls; separate lifecycle-preparation admission remains unfinished.
+- Static checks only; no tests, benchmarks, GPU samples, provider calls or local model operations were performed.
 
 ### Native prediction-slot visibility — Implemented, provider runtime unverified
 

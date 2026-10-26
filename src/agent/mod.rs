@@ -447,6 +447,12 @@ impl AgentRuntime {
                 Ok(route.unwrap_or_else(|| backend.clone()))
             })
             .collect::<Result<Vec<_>>>()?;
+        // Resource admission may include resident-target restrictions and a GPU
+        // observation. Keep activation inside that admitted callback until a
+        // separately audited lifecycle-preparation admission exists.
+        if self.resource_pool.is_some() {
+            return Ok(selected);
+        }
         for route in &selected {
             let timeout = Duration::from_secs(self.cfg.timeout_seconds)
                 .min(deadline.saturating_duration_since(Instant::now()));
