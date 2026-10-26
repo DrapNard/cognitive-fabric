@@ -84,11 +84,65 @@ impl Manifest {
         Ok(())
     }
 }
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Registered {
     pub manifest: Manifest,
     pub checksum: String,
     pub enabled: bool,
+}
+impl Registered {
+    /// Validate a durable registration snapshot without consulting the live registry.
+    pub(crate) fn validate_snapshot(&self, selection: &Selection) -> Result<()> {
+        selection.validate()?;
+        self.manifest.validate()?;
+        if self.manifest.id != selection.id
+            || self.manifest.version != selection.version
+            || self.checksum.len() != 64
+            || !self.checksum.bytes().all(|byte| byte.is_ascii_hexdigit())
+            || sha256(serde_json::to_string(&self.manifest)?.as_bytes()) != self.checksum
+        {
+            bail!("Pinned model registration snapshot failed identity or checksum validation")
+        }
+        Ok(())
+    }
+}
+
+/// Build a runtime configuration from a previously captured registration.
+/// This intentionally performs no registry read, so continuations cannot drift.
+pub(crate) fn configuration_from_snapshot(
+    cfg: &Config,
+    selection: &Selection,
+    entry: &Registered,
+) -> Result<Config> {
+    entry.validate_snapshot(selection)?;
+    if !entry.enabled {
+        bail!("Pinned model registration was disabled when the session started")
+    }
+    let mut configured = cfg.clone();
+    configured.backend = "openai-local".into();
+    configured.model = entry.manifest.model.clone();
+    configured.api_base = entry.manifest.api_base.clone();
+    configured.max_tokens = configured
+        .max_tokens
+        .min(entry.manifest.max_output_tokens as usize);
+    if let Some(mut admission) = configured.input_token_admission {
+        admission.max_context_tokens = admission
+            .max_context_tokens
+            .min(entry.manifest.context_tokens);
+        configured.input_token_admission = Some(admission);
+    }
+    if configured.language_model().is_some() {
+        configured
+            .role_profiles
+            .retain(|role, _| matches!(role.as_str(), "language" | "interface" | "synthesizer"));
+        configured.require_role_model("solver", &entry.manifest.model)?;
+    } else {
+        configured.role_profiles.clear();
+    }
+    configured.model_registration = Some(selection.clone());
+    configured.validate()?;
+    Ok(configured)
 }
 pub(crate) fn registered_from(
     db: &rusqlite::Connection,
@@ -214,26 +268,7 @@ impl Store {
     pub fn model_configuration(&self, cfg: &Config, selection: &Selection) -> Result<Config> {
         security::authorize("human-cli", "model.select")?;
         let entry = self.model(selection)?;
-        if !entry.enabled {
-            bail!("Selected model registration is disabled")
-        }
-        let mut configured = cfg.clone();
-        configured.backend = "openai-local".into();
-        configured.model = entry.manifest.model;
-        configured.api_base = entry.manifest.api_base;
-        configured.max_tokens = configured
-            .max_tokens
-            .min(entry.manifest.max_output_tokens as usize);
-        if configured.language_model().is_some() {
-            configured.role_profiles.retain(|role, _| {
-                matches!(role.as_str(), "language" | "interface" | "synthesizer")
-            });
-        } else {
-            configured.role_profiles.clear();
-        }
-        configured.model_registration = Some(selection.clone());
-        configured.validate()?;
-        Ok(configured)
+        configuration_from_snapshot(cfg, selection, &entry)
     }
     pub(crate) fn pin_model(&self, cfg: &Config) -> Result<Option<Registered>> {
         let Some(selection) = &cfg.model_registration else {

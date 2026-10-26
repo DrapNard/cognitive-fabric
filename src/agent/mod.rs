@@ -33,6 +33,16 @@ pub trait ChatBackend: Send + Sync {
     fn for_role(&self, _role: &str) -> Result<Option<Arc<dyn ChatBackend>>> {
         Ok(None)
     }
+    /// Select an exact, checksum-validated local model registration for this
+    /// task. Backends must opt in; callers never substitute their default route.
+    fn for_registered_model(
+        &self,
+        _selection: &crate::models::Selection,
+        _registration: &crate::models::Registered,
+        _cfg: &Config,
+    ) -> Result<Option<Arc<dyn ChatBackend>>> {
+        Ok(None)
+    }
     /// Exact operator-configured input-token admission capability. Backends
     /// return None unless every task-scoped request is subject to that policy.
     fn input_token_admission(&self) -> Option<crate::token_admission::Settings> {
@@ -121,6 +131,59 @@ impl AgentRuntime {
             managed: false,
             resource_pool,
         })
+    }
+    /// Return a task-local runtime for a model registration captured at the
+    /// session root. It shares the original Store, resource pool, managed-worker
+    /// policy and durable session ledger; it performs no registry reread.
+    pub(crate) fn for_registered_model(
+        &self,
+        selection: &crate::models::Selection,
+        registration: &crate::models::Registered,
+    ) -> Result<Option<Self>> {
+        registration.validate_snapshot(selection)?;
+        if !registration.enabled || registration.manifest.max_output_tokens < 128 {
+            return Ok(None);
+        }
+        // Check the language-only boundary against the original role map before
+        // deriving the expert route, so profile pruning cannot bypass it.
+        self.cfg
+            .require_role_model("solver", &registration.manifest.model)?;
+        let cfg = crate::models::configuration_from_snapshot(&self.cfg, selection, registration)?;
+        if cfg.inference_auth_scope != self.cfg.inference_auth_scope
+            || cfg.resource_admission != self.cfg.resource_admission
+            || cfg.worker_process_limits != self.cfg.worker_process_limits
+            || cfg.inference_process != self.cfg.inference_process
+            || cfg.api_base != registration.manifest.api_base
+            || cfg.model != registration.manifest.model
+            || cfg.max_tokens > registration.manifest.max_output_tokens as usize
+        {
+            bail!("Registered expert route changed an operator security or resource setting")
+        }
+        let Some(backend) = self
+            .backend
+            .for_registered_model(selection, registration, &cfg)?
+        else {
+            return Ok(None);
+        };
+        if backend.input_token_admission() != cfg.input_token_admission {
+            bail!("Registered expert backend cannot preserve input-token admission")
+        }
+        let routed = backend
+            .for_role("solver")?
+            .unwrap_or_else(|| backend.clone());
+        let expected = crate::backend::ModelTarget {
+            api_base: registration.manifest.api_base.clone(),
+            model: registration.manifest.model.clone(),
+        }
+        .canonical()?;
+        if routed.inference_target()? != Some(crate::backend::InferenceTarget::LocalHttp(expected))
+        {
+            bail!("Registered expert backend did not attest the exact pinned local target")
+        }
+        let mut selected = self.clone();
+        selected.cfg = cfg;
+        selected.backend = backend;
+        Ok(Some(selected))
     }
     /// Bind native turns to the same configured budget as collective requests.
     /// Existing cloned runtimes keep their pool. Only trusted host setup calls this.
@@ -309,10 +372,10 @@ impl AgentRuntime {
             process.shutdown().await?;
         }
         if let Ok(completion) = &result {
-            if self.cfg.language_model().is_some() {
+            if self.cfg.language_model().is_some() || self.cfg.model_registration.is_some() {
                 let (expected, _) = self.cfg.model_settings(role)?;
                 if completion.model != expected {
-                    bail!("Completion differs from its pinned role target")
+                    bail!("Completion differs from its pinned role or registered model target")
                 }
             }
         }

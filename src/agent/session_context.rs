@@ -107,6 +107,32 @@ pub(super) fn validate_checkpoint(references: &str, pins: &Value) -> Result<()> 
         {
             bail!("Saved expert workflow checksum mismatch")
         }
+        let binding = &expert["registered_model"];
+        let binding_digest = pin.get("registered_model_sha256");
+        if binding.is_null() {
+            if binding_digest.is_some_and(|digest| !digest.is_null())
+                || (!expert["model_selection"].is_null()
+                    && expert["executable_by_client_collective"] == true)
+            {
+                bail!("Saved expert model binding differs from its checkpoint pin")
+            }
+        } else {
+            let registered: crate::models::Registered = serde_json::from_value(binding.clone())?;
+            let selection = crate::models::Selection {
+                id: registered.manifest.id.clone(),
+                version: registered.manifest.version.clone(),
+            };
+            registered.validate_snapshot(&selection)?;
+            let digest = crate::store::sha256(&serde_json::to_vec(binding)?);
+            if binding_digest.and_then(Value::as_str) != Some(digest.as_str())
+                || expert["model_selection"]
+                    != json!({"id": selection.id, "version": selection.version})
+                || (expert["executable_by_client_collective"] == true
+                    && (!registered.enabled || registered.manifest.max_output_tokens < 128))
+            {
+                bail!("Saved expert model binding failed its immutable checkpoint pin")
+            }
+        }
     }
     if memory_values.is_empty() {
         return Ok(());
@@ -365,6 +391,25 @@ pub(super) fn capture_with_memory_policy(
     let mut manifest_pins = Vec::new();
     for (_, manifest) in ranked.into_iter().take(MAX_EXPERT_ADVICE) {
         let encoded = serde_json::to_vec(manifest)?;
+        let registered_model = manifest
+            .model
+            .as_ref()
+            .map(|selection| crate::models::registered_from(db, selection))
+            .transpose()?
+            .flatten();
+        let registered_model_enabled = registered_model
+            .as_ref()
+            .is_some_and(|registered| registered.enabled);
+        let model_binding_is_usable = manifest.model.is_none()
+            || registered_model_enabled
+                && registered_model
+                    .as_ref()
+                    .is_some_and(|registered| registered.manifest.max_output_tokens >= 128);
+        let registered_model_value = registered_model
+            .as_ref()
+            .map(serde_json::to_value)
+            .transpose()?
+            .unwrap_or(Value::Null);
         let mut advice = json!({
             "id": manifest.id,
             "version": manifest.version,
@@ -373,15 +418,21 @@ pub(super) fn capture_with_memory_policy(
             "tags": manifest.tags,
             "declared_capabilities": manifest.capabilities,
             "workflow_plan": workflow_plan(manifest)?,
+            "model_selection": manifest.model,
+            "registered_model": registered_model_value,
             "trust": "untrusted_operator_published_advice",
             "permissions_granted": false,
             "executable_by_client_collective": manifest.kind == "workflow"
-                && manifest.model.is_none()
+                && model_binding_is_usable
                 && manifest.provider.is_none(),
             "execution_status": if manifest.kind != "workflow" {
                 "metadata_only"
-            } else if manifest.model.is_some() || manifest.provider.is_some() {
-                "advisory_only_bound_backend_unsupported"
+            } else if manifest.provider.is_some() {
+                "advisory_only_provider_backend_unsupported"
+            } else if manifest.model.is_some() && !model_binding_is_usable {
+                "advisory_only_registered_model_unavailable"
+            } else if manifest.model.is_some() {
+                "bounded_registered_expert_model"
             } else {
                 "bounded_shared_solver_model"
             },
@@ -420,6 +471,11 @@ pub(super) fn capture_with_memory_policy(
                 "version": manifest.version,
                 "sha256": crate::store::sha256(&encoded),
                 "workflow_plan_sha256": workflow_plan_sha256,
+                "registered_model_sha256": if registered_model_value.is_null() {
+                    Value::Null
+                } else {
+                    json!(crate::store::sha256(&serde_json::to_vec(&registered_model_value)?))
+                },
                 "role": "advisory_context_only"
             }));
         }

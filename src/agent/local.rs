@@ -13,6 +13,26 @@ impl ChatBackend for LocalChat {
         }
         crate::backend::configured_target(&self.0, None)
     }
+    fn for_registered_model(
+        &self,
+        selection: &crate::models::Selection,
+        registration: &crate::models::Registered,
+        cfg: &Config,
+    ) -> Result<Option<Arc<dyn ChatBackend>>> {
+        registration.validate_snapshot(selection)?;
+        if cfg.backend != "openai-local"
+            || cfg.model != registration.manifest.model
+            || cfg.api_base != registration.manifest.api_base
+            || cfg.max_tokens > registration.manifest.max_output_tokens as usize
+            || cfg
+                .input_token_admission
+                .map(|settings| settings.max_context_tokens)
+                > Some(registration.manifest.context_tokens)
+        {
+            bail!("Local adapter configuration differs from the pinned model registration")
+        }
+        Ok(Some(Arc::new(LocalChat(cfg.clone()))))
+    }
     fn input_token_admission(&self) -> Option<crate::token_admission::Settings> {
         self.0.input_token_admission
     }

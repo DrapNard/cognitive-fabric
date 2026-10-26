@@ -14,6 +14,10 @@ pub(super) struct Plan {
     pub version: String,
     #[serde(default)]
     legacy: bool,
+    #[serde(default)]
+    pub model_selection: Option<crate::models::Selection>,
+    #[serde(default)]
+    pub registered_model: Option<crate::models::Registered>,
     pub steps: Vec<Step>,
 }
 
@@ -48,9 +52,21 @@ impl Plan {
                 "id": item["id"],
                 "version": item["version"],
                 "legacy": workflow["legacy"],
+                "model_selection": item["model_selection"],
+                "registered_model": item["registered_model"],
                 "steps": workflow["steps"]
             }))?;
             plan.validate()?;
+            match (&plan.model_selection, &plan.registered_model) {
+                (Some(selection), Some(registration)) => {
+                    registration.validate_snapshot(selection)?;
+                    if !registration.enabled || registration.manifest.max_output_tokens < 128 {
+                        bail!("Pinned expert model was not executable at the session root")
+                    }
+                }
+                (None, None) => (),
+                _ => bail!("Pinned expert model selection and snapshot are incomplete"),
+            }
             return Ok(Some(plan));
         }
         Ok(None)

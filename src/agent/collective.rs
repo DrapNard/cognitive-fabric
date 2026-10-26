@@ -263,6 +263,7 @@ impl Graph<'_> {
     fn reserve_expert_wave(
         &mut self,
         plan: &expert_workflow::Plan,
+        routed_runtime: &AgentRuntime,
         indices: &[usize],
         prior_results: &serde_json::Value,
         allocation: usize,
@@ -276,6 +277,9 @@ impl Graph<'_> {
             .iter()
             .map(|turn| (ROLE, turn.clone(), allocation))
             .collect::<Vec<_>>();
+        for (_, turn, _) in &requests {
+            local::validate_token_request(&routed_runtime.cfg, turn)?;
+        }
         if !self.available_turns_with_presentation(&requests, false)? {
             bail!("Pinned expert workflow wave exceeds the shared client task budget")
         }
@@ -317,13 +321,14 @@ impl Graph<'_> {
     async fn dispatch_expert_wave(
         &mut self,
         plan: &expert_workflow::Plan,
+        routed_runtime: &AgentRuntime,
         prepared: Vec<PreparedExpertCall>,
     ) -> Result<Vec<(usize, String)>> {
-        let timeout_seconds = self.runtime.cfg.timeout_seconds;
+        let timeout_seconds = routed_runtime.cfg.timeout_seconds;
         let deadline = self.deadline;
         let task = self.task.to_string();
-        let backend = self.backend.clone();
-        let runtime = self.runtime.clone();
+        let backend = routed_runtime.backend.clone();
+        let runtime = routed_runtime.clone();
         type WaveFuture = std::pin::Pin<
             Box<dyn std::future::Future<Output = (PreparedExpertCall, Result<Completion>)> + Send>,
         >;
@@ -408,6 +413,27 @@ impl Graph<'_> {
         else {
             return Ok(None);
         };
+        let routed_runtime = if let (Some(selection), Some(registration)) =
+            (&plan.model_selection, &plan.registered_model)
+        {
+            let Some(runtime) = self.runtime.for_registered_model(selection, registration)? else {
+                self.runtime.store.event(
+                    self.task,
+                    "expert_workflow_skipped",
+                    "jev-plus",
+                    serde_json::json!({
+                        "expert_id": plan.id,
+                        "version": plan.version,
+                        "reason": "backend_does_not_support_exact_registered_model_selection",
+                        "permissions_granted": false
+                    }),
+                )?;
+                return Ok(None);
+            };
+            runtime
+        } else {
+            self.runtime.clone()
+        };
         let parallelism = self.runtime.cfg.subtask_parallelism.unwrap_or(1);
         let waves = plan.ready_waves(parallelism)?;
         let step_count = waves.iter().map(Vec::len).sum::<usize>();
@@ -420,13 +446,16 @@ impl Graph<'_> {
         for wave in &waves {
             for index in wave {
                 let step = &plan.steps[*index];
+                let allocation = plan.registered_model.as_ref().map_or(STEP_TOKENS, |model| {
+                    STEP_TOKENS.min(model.manifest.max_output_tokens as usize)
+                });
                 let step_turn = self.expert_turn(
                     &plan,
                     step,
                     &serde_json::Value::Object(projected_results.clone()),
-                    STEP_TOKENS,
+                    allocation,
                 );
-                hypothetical.push(("solver", step_turn, STEP_TOKENS));
+                hypothetical.push(("solver", step_turn, allocation));
             }
             // Quotes consume two bytes in the bounded scalar JSON encoding and
             // expand again when the complete structured context is serialized
@@ -510,14 +539,34 @@ impl Graph<'_> {
                 "version": plan.version,
                 "steps": step_count,
                 "wave_sizes": waves.iter().map(Vec::len).collect::<Vec<_>>(),
+                "model_selection": plan.model_selection,
+                "declared_context_tokens": plan
+                    .registered_model
+                    .as_ref()
+                    .map(|model| model.manifest.context_tokens),
+                "context_enforcement": if plan.registered_model.is_some() {
+                    if routed_runtime.cfg.input_token_admission.is_some() {
+                        "exact_token_admission"
+                    } else {
+                        "unverified_provider"
+                    }
+                } else {
+                    "not_model_bound"
+                },
                 "manifest_pinned_at_session_root": true
             }),
         )?;
         let mut results = serde_json::Map::new();
         for wave in &waves {
             let prior = serde_json::Value::Object(results.clone());
-            let prepared = self.reserve_expert_wave(&plan, wave, &prior, STEP_TOKENS)?;
-            let completions = self.dispatch_expert_wave(&plan, prepared).await?;
+            let allocation = plan.registered_model.as_ref().map_or(STEP_TOKENS, |model| {
+                STEP_TOKENS.min(model.manifest.max_output_tokens as usize)
+            });
+            let prepared =
+                self.reserve_expert_wave(&plan, &routed_runtime, wave, &prior, allocation)?;
+            let completions = self
+                .dispatch_expert_wave(&plan, &routed_runtime, prepared)
+                .await?;
             for (index, output) in completions {
                 let step = &plan.steps[index];
                 let (output, partial) = bounded_json_string(&output, step_advice_budget);
