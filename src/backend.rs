@@ -31,6 +31,17 @@ pub struct Generation {
 }
 
 pub trait InferenceBackend: Send + Sync {
+    /// Prepare an admitted exact route without inference. Native lifecycle
+    /// adapters retain their separate operator policy and original task clock.
+    /// The default performs no work and does not attest readiness.
+    fn prepare_for<'a>(
+        &'a self,
+        _task: &'a str,
+        _role: &'a str,
+        _prompt: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
+        Box::pin(async { Ok(()) })
+    }
     /// Exact operator-configured token-admission capability, when this adapter
     /// can enforce it for every task-scoped inference request.
     fn input_token_admission(&self) -> Option<crate::token_admission::Settings> {

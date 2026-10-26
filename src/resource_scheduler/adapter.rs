@@ -12,6 +12,25 @@ pub(super) struct ScheduledBackend {
     pub use_working_profiles: bool,
 }
 impl InferenceBackend for ScheduledBackend {
+    fn prepare_for<'a>(
+        &'a self,
+        task: &'a str,
+        role: &'a str,
+        prompt: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
+        Box::pin(async move {
+            let actor = crate::fabric::protocol::actor(role)?;
+            security::TaskPolicy::reasoning(task)?.authorize(task, actor, "llm.generate")?;
+            self.pool.require_running(task)?;
+            if self.pool.lock()?.closed || prompt.len() > 32_000 {
+                bail!("Scheduled inference route is unavailable for preparation")
+            }
+            // Preparation owns no prediction allocation. Native model loading
+            // retains its separate lifecycle/GPU admission; generate_for still
+            // admits this exact inference through the configured resource pool.
+            self.backend.prepare_for(task, role, prompt).await
+        })
+    }
     fn input_token_admission(&self) -> Option<crate::token_admission::Settings> {
         self.backend.input_token_admission()
     }

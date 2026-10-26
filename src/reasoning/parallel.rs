@@ -230,6 +230,7 @@ impl Session {
         if backend.input_token_admission() != self.cfg.input_token_admission {
             bail!("Selected inference backend cannot enforce configured input-token admission")
         }
+        let backend = backend.pin()?.unwrap_or(backend);
         let ordered_step_ids = order
             .iter()
             .map(|index| {
@@ -363,6 +364,14 @@ impl Session {
             let timeout_seconds = self.cfg.timeout_seconds;
             let deadline = self.deadline;
             let task = self.task.clone();
+            self.prepare_inference_wave(
+                &prepared
+                    .iter()
+                    .map(|call| (&call.backend, call.prompt.as_str()))
+                    .collect::<Vec<_>>(),
+                deadline,
+            )
+            .await?;
             let futures: Vec<ExpertInferenceFuture> = prepared
                 .into_iter()
                 .map(|call| {
@@ -596,6 +605,14 @@ impl Session {
                     };
                 }
             }
+            self.prepare_inference_wave(
+                &prepared
+                    .iter()
+                    .map(|call| (&call.backend, call.prompt.as_str()))
+                    .collect::<Vec<_>>(),
+                self.deadline,
+            )
+            .await?;
             for call in &prepared {
                 if let Some(cost) = self.parallel_subtask_costs.get_mut(&call.subtask_index) {
                     cost.0 = Instant::now();
@@ -759,6 +776,7 @@ impl Session {
             (None, Some(_)) => bail!("Unexpected inference resource pool"),
             (None, None) => self.backend.clone(),
         };
+        let backend = backend.pin()?.unwrap_or(backend);
         let remaining = self
             .cfg
             .max_tokens

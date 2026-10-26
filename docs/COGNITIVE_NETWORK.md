@@ -70,6 +70,15 @@ uncertainty blocking and fresh per-generation receipt checks still apply.
 Activation remains serialized under the native lifecycle policy. Preparing a
 wave does not prove simultaneous provider execution or improved elapsed time.
 
+Engine independent expert batches, parallel expert-workflow steps and advisory
+graph waves use the same preparation ordering through an in-process backend
+hook. Supported route adapters are pinned before preparation and reused for
+generation. Preparation retains lifecycle/GPU admission, task permissions and
+the original clock; it does not acquire a prediction slot. Generation still
+uses the typed broker and configured inference resource pool. The expert phase
+deadline includes both preparation and generation. Preparation failure stops
+the wave without refunding or replaying its durable reservations.
+
 `--parallelism 1..4` configures the existing `subtask_parallelism` setting. In
 addition to Jev-R advisory graph waves, dependency-ready steps in one selected
 structured expert workflow now run in bounded waves. The pinned manifest order is

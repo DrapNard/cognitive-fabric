@@ -1328,6 +1328,7 @@ impl Session {
                 (None, Some(_)) => bail!("Unexpected inference resource pool"),
                 (None, None) => backend,
             };
+            let backend = backend.pin()?.unwrap_or(backend);
             if backend.input_token_admission() != self.cfg.input_token_admission {
                 bail!("Selected inference backend cannot enforce configured input-token admission")
             }

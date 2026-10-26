@@ -6291,6 +6291,13 @@ physical memory enforcement and model-aware capacity planning remain separate wo
 - `src/agent/collective.rs`: planner/explorer pairs prepare both routes before concurrent inference; expert waves prepare their pinned solver route once before polling their step futures. Fresh receipt and response identity checks remain on every generation.
 - This avoids starting one wave member's generation while another member still needs a serialized activation lease. Loading remains policy-serialized and provider capacity can still serialize generation. No speed or GPU concurrency claim; static checks only, no tests, benchmarks or live provider operations.
 
+### Engine wave activation barrier — Implemented, runtime unverified
+
+- `src/backend.rs`, `src/residency/lifecycle/lazy.rs`: optional in-process preparation hook activates the exact approved task/role/model through the existing native coordinator without generating text. Original lifecycle ownership, GPU admission, cancellation and uncertainty gates remain enforced.
+- `src/fabric.rs`, `src/resource_scheduler/adapter.rs`: forwarding preserves pinned role restrictions, task authorization, closed-module checks and running-task admission. Preparation consumes no prediction allocation; actual generation still passes the original FlatBuffers broker and configured inference resource admission. No new IPC encoding is introduced.
+- `src/reasoning/expert_parallel.rs`, `src/reasoning/parallel.rs`, `src/reasoning.rs`: fully reserved independent expert batches, parallel workflow steps and advisory graph waves prepare their exact supported pinned adapters before polling generation. The shared expert phase deadline includes preparation, with no fresh phase budget afterward.
+- Failure leaves reservations charged and stops the wave. Default adapters perform no preparation and attest no residency; eager native adapters retain their existing generation validation. Tests, benchmarks, live activation and inference were not run. Physical GPU concurrency and speed remain unverified.
+
 ### Native prediction-slot visibility — Implemented, provider runtime unverified
 
 - `src/residency.rs`: bounded optional per-instance prediction-slot parsing and explicit concurrency observations with unknown queue/active counts. Omission stays unknown.

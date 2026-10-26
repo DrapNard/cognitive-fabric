@@ -979,6 +979,23 @@ pub(crate) fn restrict_inference_roles(
 }
 
 impl InferenceBackend for RestrictedRoutes {
+    fn prepare_for<'a>(
+        &'a self,
+        task: &'a str,
+        role: &'a str,
+        prompt: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
+        Box::pin(async move {
+            let expected = self
+                .routes
+                .get(role)
+                .ok_or_else(|| anyhow!("Role is absent from the saved inference route map"))?;
+            if self.backend.inference_target(role)?.as_ref() != Some(expected) {
+                bail!("Saved inference target changed before preparation")
+            }
+            self.backend.prepare_for(task, role, prompt).await
+        })
+    }
     fn input_token_admission(&self) -> Option<crate::token_admission::Settings> {
         self.backend.input_token_admission()
     }
@@ -1046,6 +1063,14 @@ impl InferenceBackend for RestrictedRoutes {
 }
 
 impl InferenceBackend for Broker {
+    fn prepare_for<'a>(
+        &'a self,
+        task: &'a str,
+        role: &'a str,
+        prompt: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
+        Box::pin(async move { self.snapshot()?.prepare_for(task, role, prompt).await })
+    }
     fn input_token_admission(&self) -> Option<crate::token_admission::Settings> {
         let registry = self.registry.read().ok()?;
         let mut settings = registry
@@ -1098,6 +1123,36 @@ impl InferenceBackend for Broker {
     }
 }
 impl InferenceBackend for Pinned {
+    fn prepare_for<'a>(
+        &'a self,
+        task: &'a str,
+        role: &'a str,
+        prompt: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
+        Box::pin(async move {
+            let actor = actor(role)?;
+            TaskPolicy::reasoning(task)?.authorize(task, actor, "llm.generate")?;
+            if prompt.len() > 32_000 {
+                bail!("Inference preparation prompt exceeds limits")
+            }
+            let module = self
+                .routes
+                .get(role)
+                .context("No registered module for inference role")?;
+            let backend = self
+                .route_backends
+                .as_ref()
+                .and_then(|routes| routes.get(role))
+                .unwrap_or(&module.backend);
+            if backend.input_token_admission() != self.input_token_admission()
+                || *module.shutdown.borrow()
+                || module.availability().unavailable()
+            {
+                bail!("Pinned inference route is unavailable for preparation")
+            }
+            backend.prepare_for(task, role, prompt).await
+        })
+    }
     fn input_token_admission(&self) -> Option<crate::token_admission::Settings> {
         let settings = if let Some(backends) = &self.route_backends {
             backends

@@ -23,6 +23,28 @@ type CandidateFuture =
     Pin<Box<dyn Future<Output = (CandidateCall, Result<Generation>, f64)> + Send>>;
 
 impl Session {
+    pub(super) async fn prepare_inference_wave(
+        &self,
+        routes: &[(&Arc<dyn InferenceBackend>, &str)],
+        deadline: Instant,
+    ) -> Result<()> {
+        if routes.is_empty() || routes.len() > 4 {
+            return Err(anyhow!("Invalid inference preparation wave"));
+        }
+        let deadline = deadline.min(self.deadline);
+        for (backend, prompt) in routes {
+            let timeout = Duration::from_secs(self.cfg.timeout_seconds)
+                .min(deadline.saturating_duration_since(Instant::now()));
+            if timeout.is_zero() {
+                return Err(anyhow::Error::new(InferenceTimeout));
+            }
+            tokio::time::timeout(timeout, backend.prepare_for(&self.task, "solver", prompt))
+                .await
+                .map_err(|_| anyhow::Error::new(InferenceTimeout))??;
+        }
+        Ok(())
+    }
+
     pub(super) async fn execute_independent_expert_batch(
         &mut self,
         calls: Vec<CandidateCall>,
@@ -31,6 +53,16 @@ impl Session {
         if calls.is_empty() || calls.len() > 4 || phase_budget.is_zero() {
             return Err(anyhow!("Invalid admitted expert batch"));
         }
+        let phase_deadline = (Instant::now() + phase_budget).min(self.deadline);
+        self.prepare_inference_wave(
+            &calls
+                .iter()
+                .map(|call| (&call.backend, call.prompt.as_str()))
+                .collect::<Vec<_>>(),
+            phase_deadline,
+        )
+        .await?;
+        let phase_budget = phase_deadline.saturating_duration_since(Instant::now());
         let timeout_metadata = calls
             .iter()
             .map(|call| {

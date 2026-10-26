@@ -774,6 +774,26 @@ impl LazyBackend {
 }
 
 impl InferenceBackend for LazyBackend {
+    fn prepare_for<'a>(
+        &'a self,
+        task: &'a str,
+        role: &'a str,
+        prompt: &'a str,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send + 'a>> {
+        Box::pin(async move {
+            let actor = crate::fabric::protocol::actor(role)?;
+            crate::security::TaskPolicy::reasoning(task)?.authorize(task, actor, "llm.generate")?;
+            if prompt.len() > 32_000 {
+                bail!("Native preparation prompt exceeds inference limits")
+            }
+            let model = self.model_for(role)?;
+            self.coordinator
+                .activate(task, role, &model, prompt, self.fixed_model.is_some())
+                .await?;
+            self.coordinator.ensure_generation_allowed()
+        })
+    }
+
     fn has_uncertain_dispatch(&self) -> bool {
         self.uncertain()
     }
