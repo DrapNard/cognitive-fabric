@@ -31,6 +31,12 @@ impl Store {
             if !matches!(status.as_str(), "running" | "interrupted") {
                 bail!("Only abandoned running or interrupted tasks permit result recovery")
             }
+            let language_boundary: bool = tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM events WHERE task_id=?1 AND kind='language_boundary_reservation')",
+                [task], |row| row.get(0))?;
+            if language_boundary {
+                bail!("Language-network tasks require published language-result recovery; raw solver recovery is refused")
+            }
             let criterion = Criterion::from_query(&query)?.ok_or_else(|| {
                 anyhow::anyhow!("No independent structured checker for this task")
             })?;

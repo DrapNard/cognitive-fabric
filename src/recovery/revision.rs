@@ -91,6 +91,13 @@ impl Store {
         let result = (|| -> Result<Value> {
             let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
             super::validate_verifier_recovery(&tx, task, None)?;
+            let language_boundary: bool = tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM events WHERE task_id=?1 AND kind='language_boundary_reservation')",
+                [task], |row| row.get(0))?;
+            if language_boundary {
+                bail!("Language-network revision requires phase-aware restoration; raw revision recovery is refused")
+            }
+
             let query:String=tx.query_row("SELECT CASE WHEN length(CAST(query AS BLOB))<=12000 THEN query END FROM tasks WHERE id=?1",[task],|r|r.get(0))?;
             if crate::verification::Criterion::from_query(&query)?.is_some() {
                 bail!("Structured objectives require independent result recovery")

@@ -171,6 +171,10 @@ enum Command {
         #[arg(long)]
         human_approve: bool,
     },
+    /// Restore an already published final language response without model replay.
+    RecoverLanguageResult {
+        id: String,
+    },
     RecoverVerifiedResult {
         id: String,
     },
@@ -1875,6 +1879,7 @@ async fn run_cli() -> Result<()> {
         Command::RecoverRevisionResult { id, human_approve } => {
             store.recover_revision_result(&id, human_approve)?
         }
+        Command::RecoverLanguageResult { id } => store.recover_language_result(&id)?,
         Command::RecoverVerifiedResult { id } => store.recover_verified_result(&id)?,
         Command::RecoverTasks => {
             json!({"interrupted_tasks":store.recover_tasks()?,"automatic_replay":false})

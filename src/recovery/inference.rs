@@ -49,6 +49,8 @@ pub(super) fn audit_from(db: &rusqlite::Connection, task: &str) -> Result<Value>
     let mut language_boundary = None;
     let mut presentation_dispatched = false;
     let mut presentation_recorded = false;
+    let mut presentation_completed = false;
+    let mut language_recovery_check = false;
     let mut result_hashes = BTreeMap::<u64, String>::new();
     let mut tools = 0u64;
     let mut cycles = 0u64;
@@ -161,11 +163,40 @@ pub(super) fn audit_from(db: &rusqlite::Connection, task: &str) -> Result<Value>
                     bail!("Invalid language presentation history")
                 }
                 presentation_recorded = true;
+                presentation_completed = status == "completed";
                 continue;
             }
             if matches!(kind.as_str(), "tool_reservation" | "cycle_reservation") {
-                if presentation_dispatched {
+                if presentation_dispatched
+                    && !(presentation_recorded
+                        && presentation_completed
+                        && !language_recovery_check
+                        && kind == "tool_reservation"
+                        && payload["origin"] == "operator_language_result_recovery"
+                        && matches!(
+                            payload["capability"].as_str(),
+                            Some(
+                                "ordering.verify"
+                                    | "sorting.verify"
+                                    | "path.verify"
+                                    | "constraints.verify"
+                            )
+                        ))
+                {
                     bail!("Resource work followed terminal language presentation")
+                }
+                if presentation_dispatched {
+                    let query: String = db.query_row(
+                        "SELECT CASE WHEN length(CAST(query AS BLOB))<=12000 THEN query END FROM tasks WHERE id=?1",
+                        [task], |row| row.get(0))?;
+                    let criterion = crate::verification::Criterion::from_query(&query)?
+                        .ok_or_else(|| {
+                            anyhow::anyhow!("Language result recovery has no compiled criterion")
+                        })?;
+                    if payload["capability"] != criterion.capability() {
+                        bail!("Language recovery charged a different compiled checker")
+                    }
+                    language_recovery_check = true;
                 }
                 let Some((cfg, _, cycle_limit, true)) = settings.as_ref() else {
                     bail!("Resource reservation has no compatible settings")

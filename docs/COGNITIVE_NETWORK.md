@@ -281,3 +281,27 @@ a publication marker is not reported as published. Reports contain identities,
 hashes and metrics rather than model text. These observations grant no replay
 or resume authority. Engine continuation is still refused until full phase-aware
 restoration is implemented. No tests, benchmarks or live provider calls run.
+
+## Published language-result recovery
+
+`cogfabric recover-language-result TASK_UUID` restores the terminal task state
+from an already published final language response. It requires a persistent
+workspace, an exclusive runtime lease, an abandoned/interrupted task, a valid
+phase audit, and no unresolved model dispatch. It performs no inference, model
+load or tool replay and grants no new task budget. The saved response identity
+must match the audited publication hash.
+
+Unverified and rejected publications retain their status. A completed publication
+requires a fresh supported compiled criterion check against the original query,
+charged to the original remaining verification allowance. Failure records rejection
+and retains the charge. Tasks without such a criterion cannot recover a completed
+claim through this path. The audit allows only that single specific compiled
+recovery check after presentation, not further reasoning or arbitrary tools.
+Native lifecycle ownership and verifier callbacks retain their existing restoration
+requirements; this command does not bypass them.
+
+Raw solver-result and revision-result recovery refuse Engine language-phase tasks
+so they cannot publish an answer that bypasses language presentation. Mid-reasoning
+continuation and pending/unpublished language phases remain refused. This is
+partial phase-aware recovery, not uninterrupted operation. No tests, benchmarks
+or live workspace recovery operations were run.

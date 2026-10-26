@@ -5,6 +5,7 @@ mod finite_search;
 mod finite_search_witness;
 pub(crate) mod graph;
 mod inference;
+mod language_result;
 mod result;
 mod revision;
 pub mod worker_files;

@@ -1,5 +1,18 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Recover published language responses without replay — 2026-10-26
+
+**Partial recovery; runtime unverified.** `src/recovery/language_result.rs` and
+`recover-language-result` restore already-published final language responses
+under an exclusive lease/transaction. No inference repeats and no new budget is
+granted. Unverified/rejected status is preserved; completed status requires one
+fresh supported compiled check charged to the original allowance. The inference
+audit permits only that specific terminal recovery check. Existing native/verifier
+restoration gates remain. Raw solver/revision recovery refuses language-phase
+tasks to prevent presentation bypass. Pending phases and mid-reasoning continuation
+remain unsupported. Formatting and Clippy passed; no tests, benchmarks, live
+inference or recovery execution performed.
+
 ## Phase-aware language inference audit — 2026-10-26
 
 **Implemented, runtime unverified.** `src/recovery/inference.rs` validates the
