@@ -172,6 +172,20 @@ checkpoint validation rejects inconsistent projections. Conflict resolution and
 conversion of legacy prose remain to implement. Memory constraints are data, not task permission
 or acceptance-rule overrides.
 
+New client sessions capture project memory before ordinary document/skill
+retrieval consumes the context. The projection may use up to half the bytes left
+after the project profile; the other half remains available for retrieval. Whole
+claims and their evidence are retained, and oversized claims are omitted rather
+than cut into invalid fragments. The existing total context and pin limits apply.
+
+With the explicit language-only network, Engine and client retrieval skip the
+legacy query/answer memory search itself, rather than fetching those episodes and
+discarding them afterward. Legacy configurations keep their prior retrieval.
+Historical storage, audit transcripts and corpus backups are not converted or
+deleted by this policy. Projection selection validates/hashes its immutable record
+once and computes candidate array size without cloning the surrounding context.
+These changes reduce repeated source-level work; no measured latency claim is made.
+
 ## Optional project LoRA
 
 A project-specific LoRA is a future optional candidate, not a replacement for the

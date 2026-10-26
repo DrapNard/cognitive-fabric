@@ -939,9 +939,13 @@ impl Engine {
                 }
             } else {
                 if pin_references && self.corpus.is_none() {
-                    let (context, snapshot) = self
-                        .store
-                        .task_context_with_references(query, retrieve, experts, true)?;
+                    let (context, snapshot) = self.store.task_context_with_memory_policy(
+                        query,
+                        retrieve,
+                        experts,
+                        true,
+                        self.cfg.language_model().is_none(),
+                    )?;
                     reference_snapshot = snapshot.map(Arc::new);
                     context
                 } else {
@@ -949,7 +953,14 @@ impl Engine {
                         .as_ref()
                         .map(|corpus| &corpus.store)
                         .unwrap_or(&self.store)
-                        .task_context_scoped(query, retrieve, experts)?
+                        .task_context_with_memory_policy(
+                            query,
+                            retrieve,
+                            experts,
+                            false,
+                            self.cfg.language_model().is_none(),
+                        )?
+                        .0
                 }
             };
             if pin_references {

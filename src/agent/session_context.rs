@@ -244,7 +244,11 @@ pub(super) fn capture_with_memory_policy(
     include_retrieval: bool,
     schema_memory_only: bool,
 ) -> Result<(String, Value)> {
-    let context = if include_retrieval {
+    let context = if include_retrieval && schema_memory_only {
+        Some(crate::store::Store::client_context_with_memory_policy(
+            db, query, false,
+        )?)
+    } else if include_retrieval {
         Some(crate::store::Store::client_context_from(db, query)?)
     } else {
         None
@@ -273,6 +277,25 @@ pub(super) fn capture_with_memory_policy(
         reference["project_profile"] = profile_context;
         if encoded_len(&reference)? > MAX_REFERENCE_BYTES {
             bail!("Configured project profile does not fit the collective context bound")
+        }
+    }
+
+    // Capture explicit structured project memory before ordinary retrieval can
+    // consume the context. Keep half the remaining bytes for documents/skills.
+    // The same opening transaction pins the immutable revision for continuation.
+    if include_retrieval {
+        if let Some(reference_name) = project_reference {
+            if let Some(stored) =
+                crate::store::Store::latest_project_memory_from(db, reference_name)?
+            {
+                let occupied = encoded_len(&reference)?;
+                let memory_limit = occupied + (MAX_REFERENCE_BYTES - occupied) / 2;
+                if let Some((_projection, pin)) =
+                    crate::project_memory::context::add(&mut reference, &stored, memory_limit)?
+                {
+                    project_memory_pins.push(pin);
+                }
+            }
         }
     }
 
@@ -478,28 +501,6 @@ pub(super) fn capture_with_memory_policy(
                 },
                 "role": "advisory_context_only"
             }));
-        }
-    }
-
-    // Project memory is explicit-profile scoped and read through this same opening
-    // transaction. Only the latest immutable revision is captured; continuation
-    // reuses this snapshot and does not re-read the live registry.
-    if include_retrieval {
-        if let Some(reference_name) = project_reference {
-            if let Some(stored) =
-                crate::store::Store::latest_project_memory_from(db, reference_name)?
-            {
-                if let Some((_projection, pin)) = crate::project_memory::context::add(
-                    &mut reference,
-                    &stored,
-                    MAX_REFERENCE_BYTES,
-                )? {
-                    project_memory_pins.push(pin);
-                    if encoded_len(&reference)? > MAX_REFERENCE_BYTES {
-                        bail!("Project memory context exceeded its encoded bound")
-                    }
-                }
-            }
         }
     }
 

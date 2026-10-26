@@ -1,5 +1,20 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Prioritize schema memory and avoid legacy episode reads — 2026-10-26
+
+**Implemented; runtime unverified.** Architecture memory/resource responsibilities:
+`src/agent/session_context.rs` captures an exact immutable project-memory revision
+before ordinary retrieval, bounded to half the context space remaining after the
+project profile. Existing complete-claim, evidence and durable pin rules remain.
+`src/store.rs` and `src/engine.rs` skip legacy episode searches for explicit
+language-only network tasks; client schema-memory sessions use the same policy.
+`src/project_memory/context.rs` hashes the full record once per projection and
+uses checked JSON array-size accounting instead of repeated surrounding-context
+clones. No schema migration, provider call, model activation, permission change
+or automatic memory publication is introduced. Legacy conversion, conflict
+resolution and independently evaluated optional project LoRA remain incomplete.
+Static checks only; no tests, benchmarks or speed measurements were run.
+
 ## Restore original resources for pending presentation — 2026-10-26
 
 **Partial restoration, runtime unverified.** `recovery/language_presentation.rs`
