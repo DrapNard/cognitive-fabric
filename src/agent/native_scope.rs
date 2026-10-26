@@ -66,6 +66,8 @@ struct ScopeRecord {
     bindings_sha256: String,
     checkpoint_sequence: u32,
     checkpoint_sha256: String,
+    evidence_class: String,
+    explicit_operator_approval: bool,
     permissions_granted: bool,
     weights_attested: bool,
     response_instance_check_required: bool,
@@ -83,6 +85,7 @@ struct Checkpoint {
     previous_sha256: String,
     policy_sha256: String,
     configuration_sha256: String,
+    scope_sha256: String,
     bindings: BTreeMap<String, Binding>,
     bindings_sha256: String,
     checkpoint_sha256: String,
@@ -152,8 +155,16 @@ fn inventory_endpoint(policy: &NativeLifecyclePolicy) -> Result<String> {
     Ok(endpoint.to_string())
 }
 
-fn validate_identity(root_task: &str, cfg: &Config, policy: &NativeLifecyclePolicy) -> Result<()> {
+pub(crate) fn validate_identity(
+    root_task: &str,
+    cfg: &Config,
+    policy: &NativeLifecyclePolicy,
+) -> Result<()> {
     uuid::Uuid::parse_str(root_task)?;
+    validate_configuration(cfg, policy)
+}
+
+pub(crate) fn validate_configuration(cfg: &Config, policy: &NativeLifecyclePolicy) -> Result<()> {
     cfg.validate()?;
     policy.validate()?;
     if serde_json::to_vec(policy)?.len() > 65_536 || serde_json::to_vec(cfg)?.len() > 65_536 {
@@ -274,6 +285,29 @@ impl NativeClientScope {
             bail!("Native client scope requires the configured persistent workspace database")
         }
         let owner = Ownership::acquire(store.clone())?;
+        Self::prepare_owned_session(store, owner, root_task, cfg, Arc::new(policy), false).await
+    }
+
+    pub(crate) async fn prepare_owned_session(
+        store: Arc<Store>,
+        owner: Arc<Ownership>,
+        root_task: &str,
+        cfg: &Config,
+        policy: Arc<NativeLifecyclePolicy>,
+        allow_model_key_evidence: bool,
+    ) -> Result<Self> {
+        let mut expected_runtime_lock = cfg.db().into_os_string();
+        expected_runtime_lock.push(".runtime.lock");
+        if store
+            .runtime_lock
+            .as_deref()
+            .map(std::path::Path::as_os_str)
+            != Some(expected_runtime_lock.as_os_str())
+        {
+            bail!("Native client scope requires the configured persistent workspace database")
+        }
+        ensure_owner(&owner, &store)?;
+        validate_identity(root_task, cfg, &policy)?;
         let session = super::sessions::native_scope_session_snapshot(&store, root_task, cfg)?;
         crate::residency::lifecycle::require_no_unknown_generation(
             &store,
@@ -296,9 +330,25 @@ impl NativeClientScope {
             if session.generation != 0 || session.calls != 0 || session.state != "active" {
                 bail!("A native scope cannot be attached after the client session has started")
             }
-            Self::create(store, owner, root_task, cfg, &session.clock, policy)?
+            Self::create(
+                store,
+                owner,
+                root_task,
+                cfg,
+                &session.clock,
+                policy.as_ref().clone(),
+                allow_model_key_evidence,
+            )?
         } else {
-            Self::restore(store, owner, root_task, cfg, &session.clock, &policy)?
+            Self::restore(
+                store,
+                owner,
+                root_task,
+                cfg,
+                &session.clock,
+                policy.as_ref(),
+                allow_model_key_evidence,
+            )?
         };
         scope.admit_existing_receipts().await?;
         Ok(scope)
@@ -311,6 +361,7 @@ impl NativeClientScope {
         cfg: &Config,
         session_clock: &Snapshot,
         policy: NativeLifecyclePolicy,
+        allow_model_key_evidence: bool,
     ) -> Result<Self> {
         ensure_owner(&owner, &store)?;
         validate_identity(root_task, cfg, &policy)?;
@@ -324,7 +375,7 @@ impl NativeClientScope {
         }
         let bindings = BTreeMap::new();
         let mut record = ScopeRecord {
-            format_version: 1,
+            format_version: 2,
             root_task_id: root_task.to_owned(),
             policy_sha256: digest(&policy)?,
             configuration_sha256: digest(cfg)?,
@@ -341,9 +392,16 @@ impl NativeClientScope {
             bindings,
             checkpoint_sequence: 0,
             checkpoint_sha256: sha256(b"agent-native-scope-genesis-v1"),
+            evidence_class: if allow_model_key_evidence {
+                "model_key_and_inventory"
+            } else {
+                "native_instance_required"
+            }
+            .into(),
+            explicit_operator_approval: allow_model_key_evidence,
             permissions_granted: false,
             weights_attested: false,
-            response_instance_check_required: true,
+            response_instance_check_required: !allow_model_key_evidence,
             response_instance_attested: false,
             inference_dispatched: false,
             scope_sha256: String::new(),
@@ -383,6 +441,7 @@ impl NativeClientScope {
         cfg: &Config,
         session_clock: &Snapshot,
         expected_policy: &NativeLifecyclePolicy,
+        allow_model_key_evidence: bool,
     ) -> Result<Self> {
         ensure_owner(&owner, &store)?;
         validate_identity(root_task, cfg, expected_policy)?;
@@ -405,7 +464,7 @@ impl NativeClientScope {
         }
         let scope_value = crate::strict_json::value(rows[0].as_bytes(), MAX_SCOPE_BYTES)?;
         let mut record: ScopeRecord = serde_json::from_value(scope_value)?;
-        if record.format_version != 1
+        if record.format_version != 2
             || record.root_task_id != root_task
             || record.policy_sha256 != digest(expected_policy)?
             || serde_json::to_value(&record.policy)? != serde_json::to_value(expected_policy)?
@@ -421,7 +480,14 @@ impl NativeClientScope {
             || record.checkpoint_sha256 != sha256(b"agent-native-scope-genesis-v1")
             || record.permissions_granted
             || record.weights_attested
-            || !record.response_instance_check_required
+            || record.evidence_class
+                != if allow_model_key_evidence {
+                    "model_key_and_inventory"
+                } else {
+                    "native_instance_required"
+                }
+            || record.explicit_operator_approval != allow_model_key_evidence
+            || record.response_instance_check_required == allow_model_key_evidence
             || record.response_instance_attested
             || record.inference_dispatched
             || !record.bindings.is_empty()
@@ -449,17 +515,19 @@ impl NativeClientScope {
         for (index, raw) in rows.iter().enumerate() {
             let value = crate::strict_json::value(raw.as_bytes(), MAX_SCOPE_BYTES)?;
             let checkpoint: Checkpoint = serde_json::from_value(value)?;
-            if checkpoint.format_version != 1
+            if checkpoint.format_version != 2
                 || checkpoint.root_task_id != root_task
                 || checkpoint.sequence != index as u32 + 1
                 || checkpoint.previous_sha256 != previous
                 || checkpoint.policy_sha256 != record.policy_sha256
                 || checkpoint.configuration_sha256 != record.configuration_sha256
+                || checkpoint.scope_sha256 != record.scope_sha256
                 || checkpoint.bindings_sha256 != digest(&checkpoint.bindings)?
                 || checkpoint.checkpoint_sha256 != checkpoint_digest(&checkpoint)?
                 || checkpoint.permissions_granted
                 || checkpoint.weights_attested
-                || !checkpoint.response_instance_check_required
+                || checkpoint.response_instance_check_required
+                    != record.response_instance_check_required
                 || checkpoint.response_instance_attested
                 || checkpoint.inference_dispatched
             {
@@ -603,6 +671,149 @@ impl NativeClientScope {
     pub fn configuration_sha256(&self) -> &str {
         &self.record.configuration_sha256
     }
+    pub(crate) fn validate_config(&self, cfg: &Config) -> Result<()> {
+        validate_identity(&self.record.root_task_id, cfg, &self.record.policy)?;
+        if digest(cfg)? != self.record.configuration_sha256 {
+            bail!("Native client runtime configuration differs from its original session scope")
+        }
+        Ok(())
+    }
+
+    pub(crate) fn model_key_evidence_approved(&self) -> bool {
+        self.record.evidence_class == "model_key_and_inventory"
+            && self.record.explicit_operator_approval
+            && !self.record.response_instance_check_required
+    }
+
+    pub(crate) fn managed_target(&self, model: &str) -> Result<crate::backend::InferenceTarget> {
+        if !self
+            .record
+            .policy
+            .models
+            .iter()
+            .any(|item| item.model == model)
+            || !self.bindings.contains_key(model)
+        {
+            bail!(
+                "Native client target has no exact existing managed receipt in the approved scope"
+            )
+        }
+        let target = crate::backend::ManagedNativeTarget {
+            api_base: self.record.policy.api_base.clone(),
+            model: model.to_owned(),
+            policy_sha256: self.record.policy_sha256.clone(),
+        }
+        .canonical()?;
+        Ok(crate::backend::InferenceTarget::ManagedNative(target))
+    }
+
+    pub(crate) fn endpoint_for_validation(&self) -> &str {
+        &self.record.policy.api_base
+    }
+    pub(crate) fn deadline(&self) -> Result<Instant> {
+        Instant::now()
+            .checked_add(self.remaining()?)
+            .ok_or_else(|| anyhow::anyhow!("Native client lifecycle cutoff is out of range"))
+    }
+
+    pub(crate) fn model_bindings_sha256(&self) -> Result<String> {
+        digest(&self.bindings)
+    }
+
+    pub(crate) async fn validate_receipt_for(
+        &self,
+        model: &str,
+        route_api_base: &str,
+    ) -> Result<NativeModelKeyAndInventory> {
+        ensure_owner(&self.owner, &self.store)?;
+        self.check_deadline()?;
+        let target = url::Url::parse(route_api_base)?;
+        let policy_url = url::Url::parse(&self.record.policy.api_base)?;
+        if target.origin() != policy_url.origin() {
+            bail!("Native client route is outside the approved endpoint origin")
+        }
+        let binding = self.bindings.get(model).ok_or_else(|| {
+            anyhow::anyhow!("No existing managed receipt is pinned for this model")
+        })?;
+        let status = tokio::time::timeout(
+            self.remaining()?,
+            residency::status(
+                &self.record.policy.api_base,
+                self.record.policy.authenticate,
+            ),
+        )
+        .await
+        .map_err(|_| anyhow::anyhow!("Native inventory validation deadline exhausted"))??;
+        let models: Vec<residency::Model> = serde_json::from_value(status["models"].clone())?;
+        if models.len() > 256 {
+            bail!("Native model inventory exceeds validation bounds")
+        }
+        let receipt = managed::validate_task_binding(
+            &self.store,
+            &binding.receipt.receipt_id,
+            &self.record.policy.api_base,
+            &models,
+        )?;
+        if serde_json::to_value(&receipt)? != serde_json::to_value(&binding.receipt)? {
+            bail!("Native client receipt differs from its pinned lifecycle scope")
+        }
+        self.check_deadline()?;
+        Ok(NativeModelKeyAndInventory {
+            model: model.to_owned(),
+            receipt,
+            inventory_sha256: digest(&models)?,
+            policy_sha256: self.record.policy_sha256.clone(),
+            evidence: "model_key_and_inventory_only".into(),
+        })
+    }
+
+    pub(crate) fn lifecycle_event(
+        &self,
+        state: &str,
+        model: &str,
+        receipt_id: &str,
+        call_id: &str,
+    ) -> Result<()> {
+        if !matches!(
+            state,
+            "generation_started" | "generation_confirmed" | "generation_outcome_unknown"
+        ) {
+            bail!("Invalid native client generation lifecycle state")
+        }
+        uuid::Uuid::parse_str(call_id)?;
+        uuid::Uuid::parse_str(receipt_id)?;
+        let binding = self
+            .bindings
+            .get(model)
+            .filter(|binding| binding.receipt.receipt_id == receipt_id)
+            .ok_or_else(|| {
+                anyhow::anyhow!("Native generation receipt is outside the pinned client scope")
+            })?;
+        let _ = binding;
+        let payload = json!({
+            "format_version": 2,
+            "activation": "on_demand",
+            "state": state,
+            "endpoint": inventory_endpoint(&self.record.policy)?,
+            "child_task_id": self.record.root_task_id,
+            "policy_sha256": self.record.policy_sha256,
+            "model_bindings_sha256": self.model_bindings_sha256()?,
+            "model_key": model,
+            "receipt_id": receipt_id,
+            "call_id": call_id,
+            "permissions_granted": false,
+            "provider_stop_proven": false,
+        });
+        if serde_json::to_vec(&payload)?.len() > 4096 {
+            bail!("Native client lifecycle event exceeds its scanner bound")
+        }
+        self.store.event(
+            &self.record.root_task_id,
+            "native_task_lifecycle",
+            "human-cli",
+            payload,
+        )
+    }
     /// Auditable state for the next runtime bridge; excludes prompts and
     /// credentials and makes the weaker OpenAI response evidence explicit.
     pub fn evidence(&self) -> Result<Value> {
@@ -625,6 +836,8 @@ impl NativeClientScope {
             "policy_sha256": self.record.policy_sha256,
             "configuration_sha256": self.record.configuration_sha256,
             "scope_sha256": self.record.scope_sha256,
+            "evidence_class": self.record.evidence_class,
+            "explicit_operator_approval": self.record.explicit_operator_approval,
             "checkpoint_sequence": self.checkpoint_sequence,
             "checkpoint_sha256": self.checkpoint_sha256,
             "lifecycle_deadline_ns": self.record.lifecycle_deadline_ns,
@@ -659,18 +872,19 @@ impl NativeClientScope {
             validate_binding(&self.record.policy, model, binding)?;
         }
         let mut checkpoint = Checkpoint {
-            format_version: 1,
+            format_version: 2,
             root_task_id: self.record.root_task_id.clone(),
             sequence: self.checkpoint_sequence + 1,
             previous_sha256: self.checkpoint_sha256.clone(),
             policy_sha256: self.record.policy_sha256.clone(),
             configuration_sha256: self.record.configuration_sha256.clone(),
+            scope_sha256: self.record.scope_sha256.clone(),
             bindings_sha256: digest(&bindings)?,
             bindings,
             checkpoint_sha256: String::new(),
             permissions_granted: false,
             weights_attested: false,
-            response_instance_check_required: true,
+            response_instance_check_required: self.record.response_instance_check_required,
             response_instance_attested: false,
             inference_dispatched: false,
         };
@@ -731,6 +945,14 @@ impl NativeClientScope {
             .ok_or_else(|| anyhow::anyhow!("Original native client lifecycle deadline expired"))?;
         Ok(Duration::from_nanos(remaining))
     }
+}
+
+pub(crate) struct NativeModelKeyAndInventory {
+    pub model: String,
+    pub receipt: managed::Receipt,
+    pub inventory_sha256: String,
+    pub policy_sha256: String,
+    pub evidence: String,
 }
 
 fn validate_binding(policy: &NativeLifecyclePolicy, model: &str, binding: &Binding) -> Result<()> {

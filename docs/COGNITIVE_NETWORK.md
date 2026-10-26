@@ -544,15 +544,57 @@ Scope evidence excludes prompts and credentials and explicitly reports
 `scope_only: true`, `runtime_bridge_connected: false`, and no response-instance
 attestation. Hashes preserve local integrity; they do not attest model weights.
 
-This API does not load models, dispatch inference or execute tools. The active
-Agent request path is not yet connected to it: normal client calls retain their
-shared runtime lease, while scope preparation requires exclusive ownership.
-A future request-level lifecycle handoff must bridge those owners and bind
-inference/proposals before automatic client activation can be enabled. OpenAI
-model-key replies must not be represented as native response-instance evidence.
-No server flag or user configuration enables that unfinished bridge.
+Standalone scope preparation does not load models, dispatch inference or execute
+tools. The optional existing-model client bridge described below now connects
+scope ownership to conversation inference. Automatic client model activation is
+still separate and unfinished. OpenAI model-key replies are never represented as
+native response-instance evidence. Format-1 admission scopes are refused by the
+new evidence-pinned format-2 bridge; they are not silently upgraded.
 
 The private cached native language adapter also preserves the language profile's
 temperature precedence when it prunes its outer role map; explicit interface and
 synthesizer profiles cannot silently replace that temperature. Language effort
 remains off. Static checks only; no tests, benchmarks or live provider calls.
+
+
+## Existing-model client inference bridge (experimental)
+
+`AgentRuntime::with_existing_native_models(policy, human_approve,
+allow_model_key_evidence)` opts a direct collective client runtime into a
+request-owned native scope. Both approval arguments must be true. The HTTP host
+exposes the equivalent explicit options alongside the approved native policy:
+
+```sh
+cogfabric-server --native-lifecycle-policy POLICY.json --approve-native-lifecycle \
+  --bind-client-existing-native-models --allow-client-model-key-evidence
+```
+
+The client endpoint keeps ordinary OpenAI-compatible messages, tool definitions
+and tool-call proposals. Client tools remain client-owned. Every scoped role and
+registered model route must match its selected configuration, the approved
+provider origin and an existing exact managed receipt. The bridge validates
+inventory/receipt evidence before and after inference and requires the response
+model key to match. It cannot identify the exact generating instance from an
+OpenAI response: the weaker `model_key_and_inventory` evidence class and explicit
+operator approval are immutably pinned in scope format 2 and its checkpoints.
+A native-instance-required scope cannot be reused as weak-evidence approval.
+
+A request acquires one private owner before reconstructing its configured pool;
+the same owner is reused by the client session and scope. It is released when the
+request ends. Waiting tool continuations restore the original policy, evidence
+class, receipt pins, budgets and deadline. Disabling/changing the scope is refused
+before claiming a waiting continuation. No additional solver call or fresh wall
+budget is granted. Registered expert routes share this owner and session ledger.
+
+Independent admitted calls share immutable scope bindings and a local uncertainty
+flag, without holding a scope mutex across inference. Live sibling calls do not
+trip the global abandoned-generation scanner. Errors/cancellation after intent
+record an unknown outcome and block later dispatch; the durable generation ledger
+also blocks new scoped requests until existing reconciliation resolves it.
+A response is published only through the existing bounded collective checkpoint.
+
+Models must already have active managed receipts. This bridge does not load,
+unload or retry models, and does not yet provide automatic activation or general
+mid-reasoning recovery. Ordinary servers preserve their existing routing unless
+these options are supplied. No local policy, installation or running provider was
+changed. Static checks only; no tests, benchmarks or live inference were run.

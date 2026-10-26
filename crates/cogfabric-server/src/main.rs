@@ -22,6 +22,12 @@ struct Args {
     native_lifecycle_policy: Option<PathBuf>,
     #[arg(long, global = true, requires = "native_lifecycle_policy")]
     approve_native_lifecycle: bool,
+    /// Bind Agent client turns to existing managed receipts under the same policy.
+    #[arg(long, requires_all = ["native_lifecycle_policy", "approve_native_lifecycle", "allow_client_model_key_evidence"])]
+    bind_client_existing_native_models: bool,
+    /// Accept model-key/inventory evidence for OpenAI tool proposals; no response-instance attestation.
+    #[arg(long, requires = "bind_client_existing_native_models")]
+    allow_client_model_key_evidence: bool,
     #[command(subcommand)]
     worker: Option<Worker>,
 }
@@ -76,6 +82,8 @@ async fn main() -> Result<()> {
             || args.workflow_thresholds.is_some()
             || args.native_lifecycle_policy.is_some()
             || args.approve_native_lifecycle
+            || args.bind_client_existing_native_models
+            || args.allow_client_model_key_evidence
             || args.typed_module_worker
         {
             anyhow::bail!("Policy options are not valid for worker commands")
@@ -143,6 +151,18 @@ async fn main() -> Result<()> {
     let store = Arc::new(Store::open_with_limit(&cfg.db(), cfg.max_database_bytes)?);
     cogfabric::store::bootstrap(&store)?;
     let agent = AgentRuntime::local(cfg.clone(), store.clone())?;
+    let agent = if args.bind_client_existing_native_models {
+        let policy = native_lifecycle.as_ref().ok_or_else(|| {
+            anyhow::anyhow!("Client model binding requires the approved native policy")
+        })?;
+        agent.with_existing_native_models(
+            policy.clone(),
+            args.approve_native_lifecycle,
+            args.allow_client_model_key_evidence,
+        )?
+    } else {
+        agent
+    };
     let engine = Engine::new(cfg, store);
     let engine = if args.typed_module_worker {
         engine.with_builtin_module_worker()?

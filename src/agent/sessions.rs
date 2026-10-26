@@ -273,6 +273,32 @@ impl Lease {
                 serde_json::from_value(crate::strict_json::value(raw.as_bytes(), 32768)?)?;
             if status != "closed" {
                 state.validate(&runtime.cfg)?;
+                let mut scopes = tx.prepare(
+                    "SELECT CASE WHEN length(CAST(payload AS BLOB))<=131072 THEN payload END FROM events WHERE task_id=?1 AND kind='agent_native_scope' AND source='security-kernel' ORDER BY id LIMIT 2",
+                )?;
+                let scopes = scopes
+                    .query_map([&task], |row| row.get::<_, String>(0))?
+                    .collect::<rusqlite::Result<Vec<_>>>()?;
+                match (&runtime.native_policy, scopes.as_slice()) {
+                    (None, []) => (),
+                    (Some(policy), [raw]) => {
+                        let scope = crate::strict_json::value(raw.as_bytes(), 131072)?;
+                        if scope["format_version"] != 2
+                            || scope["root_task_id"] != task
+                            || scope["configuration_sha256"] != state.configuration
+                            || scope["policy_sha256"]
+                                != sha256(&serde_json::to_vec(policy.as_ref())?)
+                            || scope["evidence_class"] != "model_key_and_inventory"
+                            || scope["explicit_operator_approval"] != true
+                            || scope["response_instance_check_required"] != false
+                        {
+                            bail!("Collective continuation native policy or evidence class changed")
+                        }
+                    }
+                    _ => bail!(
+                        "Collective continuation requires its single original native model scope"
+                    ),
+                }
             }
             if status != "closed"
                 && (state.configuration != configuration
@@ -727,24 +753,54 @@ pub(super) async fn run(
     tokens: usize,
     cancel: impl Future<Output = ()>,
 ) -> Result<TurnResult> {
-    let _lease = runtime
-        .store
-        .runtime_lock
-        .as_deref()
-        .map(|p| ExecutionLease::acquire(p, false))
-        .transpose()?;
+    let _lease = if let Some(owner) = &runtime.native_owner {
+        owner.validate(&runtime.store)?;
+        None
+    } else {
+        if runtime.native_policy.is_some() {
+            bail!("Client native scope is missing its exclusive workspace owner")
+        }
+        runtime
+            .store
+            .runtime_lock
+            .as_deref()
+            .map(|p| ExecutionLease::acquire(p, false))
+            .transpose()?
+    };
     let registration = serde_json::to_value(runtime.store.pin_model(&runtime.cfg)?)?;
     let mut session = Lease::begin(runtime, &request, &registration)?;
     let task = session.task.clone();
-    let deadline = session.deadline;
+    let mut deadline = session.deadline;
+    tokio::pin!(cancel);
     let result=async {
+        let mut routed = runtime.clone();
+        if let Some(policy) = &runtime.native_policy {
+            let owner = runtime.native_owner.clone().ok_or_else(||anyhow::anyhow!("Missing native client owner"))?;
+            let scope = tokio::select! {
+                biased;
+                _=&mut cancel => {session.fail("cancelled")?; bail!("Agent native scope preparation cancelled")},
+                result=tokio::time::timeout_at(tokio::time::Instant::from_std(deadline),
+                    super::native_scope::NativeClientScope::prepare_owned_session(runtime.store.clone(), owner, &task, &runtime.cfg, policy.clone(), true)) => {
+                    result.map_err(|_|anyhow::anyhow!("Agent native scope preparation deadline exhausted"))??
+                }
+            };
+            deadline = deadline.min(scope.deadline()?);
+            runtime.store.event(&task,"agent_native_bridge","security-kernel",json!({
+                "policy_sha256":scope.policy_sha256(),"runtime_bridge_connected":true,
+                "response_instance_attested":false,"evidence":"model_key_and_inventory",
+                "automatic_activation":false,"permissions_granted":false
+            }))?;
+            routed.backend = Arc::new(super::native_chat::ScopedChat::new(
+                runtime.backend.clone(), runtime.cfg.clone(), Arc::new(scope))?);
+        }
+
         runtime.store.event(&task,"model_registration","runtime",json!({"registration":registration,"weight_identity_verified":false}))?;
         runtime.store.event(&task,"agent_admission","jev-plus",json!({"collective":true,"mode":session.state.mode,"calls":session.state.call_limit,"cycles":session.state.cycle_limit,"reserved_output_tokens":tokens,"session_budget_scope":"tool_loop","session_output_limit":session.state.output_limit,"model":runtime.cfg.model,"client_tools_executed":false,"verification":"unverified"}))?;
         runtime.store.event(&task,"agent_client_capabilities","jev-plus",client_capability_audit(&request)?)?;
         let outcome=tokio::select! {
             biased;
-            _=cancel => {session.fail("cancelled")?; bail!("Agent collective session cancelled")},
-            result=tokio::time::timeout_at(tokio::time::Instant::from_std(deadline),collective::run(runtime,runtime.backend.clone(),&task,&request,tokens,deadline,&mut session)) => match result {
+            _=&mut cancel => {session.fail("cancelled")?; bail!("Agent collective session cancelled")},
+            result=tokio::time::timeout_at(tokio::time::Instant::from_std(deadline),collective::run(&routed,routed.backend.clone(),&task,&request,tokens,deadline,&mut session)) => match result {
                 Ok(result)=>result?,
                 Err(_)=>{session.fail("exhausted")?;bail!("Agent collective session deadline exhausted")}
             }

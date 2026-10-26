@@ -6282,3 +6282,11 @@ physical memory enforcement and model-aware capacity planning remain separate wo
 - `src/agent/sessions.rs`: reuse full checkpoint validation and exact configuration digest when extracting the original session clock; initial attachment requires generation zero and zero dispatched calls.
 - `src/residency/lifecycle/lazy.rs`: preserve language temperature precedence in private cached adapters as well as the existing effort boundary.
 - Static formatting/compilation/lint checks only; no tests, benchmarks or live provider calls. Automatic client lifecycle ownership handoff and conversation inference/proposal binding remain the next implementation milestone. No neural weights or speed claims are introduced.
+
+### Existing-model client lifecycle bridge — Experimental / Partial
+
+- `src/agent/mod.rs`, `src/agent/sessions.rs`: explicit existing-model scope API, one request owner shared with resource admission, original tool-session continuation budgets/policy checks, cancellable bounded scope setup.
+- `src/agent/native_chat.rs`: preserves OpenAI messages and client tool proposals; exact configured/registered route checks, fresh pre/post managed receipt validation, model-key match and durable uncertain-call guard. Parallel siblings share uncertainty state without serializing inference.
+- `src/agent/native_scope.rs`: format-2 immutable evidence-class/approval pin and checkpoint binding. Native-instance-required scopes cannot authorize weaker model-key evidence. Existing format-1 scopes are refused, not reinterpreted.
+- `crates/cogfabric-server/src/main.rs`: explicit opt-in existing-model binding plus model-key evidence consent flags; no default activation or configuration changes.
+- Source review and static checks only; no tests, benchmarks or live provider calls. Automatic client model loading/release and general mid-reasoning recovery remain incomplete. OpenAI response instance identity and speed are unproven.

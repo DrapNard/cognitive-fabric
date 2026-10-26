@@ -3,6 +3,7 @@
 mod collective;
 mod expert_workflow;
 mod local;
+mod native_chat;
 pub mod native_scope;
 pub mod process;
 pub mod protocol;
@@ -81,6 +82,8 @@ pub struct AgentRuntime {
     backend: Arc<dyn ChatBackend>,
     managed: bool,
     task_scoped_resources: bool,
+    native_policy: Option<Arc<crate::residency::lifecycle::NativeLifecyclePolicy>>,
+    native_owner: Option<Arc<crate::residency::lifecycle::Ownership>>,
     resource_pool: Option<Arc<crate::resource_scheduler::ResourcePool>>,
 }
 impl AgentRuntime {
@@ -132,8 +135,47 @@ impl AgentRuntime {
             backend,
             managed: false,
             task_scoped_resources: false,
+            native_policy: None,
+            native_owner: None,
             resource_pool,
         })
+    }
+    /// Bind existing managed model instances to each durable client session.
+    /// OpenAI tool proposals identify a model key, not the generating instance;
+    /// the operator must explicitly accept that weaker evidence. No model is
+    /// loaded, released or retried by this opt-in path.
+    pub fn with_existing_native_models(
+        mut self,
+        policy: crate::residency::lifecycle::NativeLifecyclePolicy,
+        human_approve: bool,
+        allow_model_key_evidence: bool,
+    ) -> Result<Self> {
+        crate::security::authorize("human-cli", "model.residency.inspect")?;
+        crate::security::authorize("human-cli", "resources.configure")?;
+        if !human_approve || !allow_model_key_evidence {
+            bail!(
+                "Client native routing requires explicit approval of model-key/inventory evidence"
+            )
+        }
+        if !self.collective_enabled() || self.managed {
+            bail!("Client native routing requires direct collective conversation inference")
+        }
+        native_scope::validate_configuration(&self.cfg, &policy)?;
+        let mut expected_lock = self.cfg.db().into_os_string();
+        expected_lock.push(".runtime.lock");
+        if self
+            .store
+            .runtime_lock
+            .as_deref()
+            .map(std::path::Path::as_os_str)
+            != Some(expected_lock.as_os_str())
+        {
+            bail!("Native client routing requires the configured persistent workspace database")
+        }
+        self.native_policy = Some(Arc::new(policy));
+        self.resource_pool = None;
+        self.task_scoped_resources = true;
+        Ok(self)
     }
     /// Return a task-local runtime for a model registration captured at the
     /// session root. It shares the original Store, resource pool, managed-worker
@@ -179,9 +221,26 @@ impl AgentRuntime {
             model: registration.manifest.model.clone(),
         }
         .canonical()?;
-        if routed.inference_target()? != Some(crate::backend::InferenceTarget::LocalHttp(expected))
-        {
-            bail!("Registered expert backend did not attest the exact pinned local target")
+        let target_matches = match routed.inference_target()? {
+            Some(crate::backend::InferenceTarget::LocalHttp(target)) => target == expected,
+            Some(crate::backend::InferenceTarget::ManagedNative(target)) => {
+                let Some(policy) = &self.native_policy else {
+                    bail!("Registered expert returned an unapproved managed native target")
+                };
+                let target = target.canonical()?;
+                target.model == expected.model
+                    && target.policy_sha256 == sha256(&serde_json::to_vec(policy.as_ref())?)
+                    && url::Url::parse(&target.api_base)?.origin()
+                        == url::Url::parse(&expected.api_base)?.origin()
+                    && policy
+                        .models
+                        .iter()
+                        .any(|model| model.model == target.model)
+            }
+            _ => false,
+        };
+        if !target_matches {
+            bail!("Registered expert backend differs from its pinned local target and approved policy")
         }
         let mut selected = self.clone();
         selected.cfg = cfg;
@@ -196,6 +255,9 @@ impl AgentRuntime {
         pool: Option<Arc<crate::resource_scheduler::ResourcePool>>,
     ) -> Result<Self> {
         crate::security::authorize(actor, "resources.configure")?;
+        if self.native_policy.is_some() {
+            bail!("Native client model scope requires task-scoped resource ownership")
+        }
         match (&self.cfg.resource_admission, &pool) {
             (None, None) => (),
             (Some(configuration), Some(pool)) if pool.matches(&self.store, configuration) => (),
@@ -412,14 +474,20 @@ impl AgentRuntime {
         let mut scoped;
         let runtime = if self.task_scoped_resources {
             scoped = self.clone();
+            if self.native_policy.is_some() {
+                scoped.native_owner = Some(crate::residency::lifecycle::Ownership::acquire(
+                    self.store.clone(),
+                )?);
+            }
             scoped.resource_pool = self
                 .cfg
                 .resource_admission
                 .as_ref()
                 .map(|configuration| {
-                    crate::resource_scheduler::ResourcePool::configured(
+                    crate::resource_scheduler::ResourcePool::configured_owned(
                         self.store.clone(),
                         configuration,
+                        scoped.native_owner.clone(),
                     )
                 })
                 .transpose()?;
