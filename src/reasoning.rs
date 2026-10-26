@@ -17,6 +17,7 @@ use std::{
 
 mod expert_parallel;
 mod language_boundary;
+pub(crate) use language_boundary::reservation_payload as language_reservation_payload;
 pub(crate) mod modules;
 
 pub(crate) const PROMPT_FORMAT: &str = "quoted-references-v1";

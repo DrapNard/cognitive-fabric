@@ -9,6 +9,22 @@ pub(crate) struct PresentationReservation {
     prompt_limit: usize,
 }
 
+pub(crate) fn reservation_payload(cfg: &Config, base_calls: usize) -> Result<serde_json::Value> {
+    let call_limit = base_calls.saturating_add(2).min(cfg.max_calls);
+    if cfg.language_model().is_none()
+        || call_limit < 3
+        || cfg.max_tokens < cfg.interface_tokens.saturating_mul(2).saturating_add(384)
+        || cfg.max_input_bytes < 8192usize.saturating_add(1024)
+    {
+        bail!("Root limits cannot cover interpretation, reasoning and presentation")
+    }
+    Ok(json!({"format_version":1,"root_call_limit":call_limit,
+        "root_output_limit":cfg.max_tokens,"root_input_limit":cfg.max_input_bytes,
+        "presentation_calls":1,"presentation_output_tokens":cfg.interface_tokens,
+        "presentation_prompt_bytes":8192,"charged":false,"permissions_granted":false,
+        "continuation_supported":false}))
+}
+
 impl Session {
     pub(crate) fn reserve_language_presentation(&mut self) -> Result<PresentationReservation> {
         if self.cfg.language_model().is_none() || self.resources.calls != 0 {
@@ -30,12 +46,12 @@ impl Session {
             allocation,
             prompt_limit,
         };
-        self.store.event(&self.task, "language_boundary_reservation", "jev-plus", json!({
-            "format_version":1,"root_call_limit":call_limit,"root_output_limit":self.cfg.max_tokens,
-            "root_input_limit":self.cfg.max_input_bytes,"presentation_calls":1,
-            "presentation_output_tokens":allocation,"presentation_prompt_bytes":prompt_limit,
-            "charged":false,"permissions_granted":false,"continuation_supported":false
-        }))?;
+        self.store.event(
+            &self.task,
+            "language_boundary_reservation",
+            "jev-plus",
+            reservation_payload(&self.cfg, self.call_limit)?,
+        )?;
         // Every existing solver/expert admission path sees the reduced ceilings.
         // Restore them once, only when entering the terminal presentation phase.
         self.call_limit = call_limit - 1;

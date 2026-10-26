@@ -46,16 +46,20 @@ pub(super) fn audit_from(db: &rusqlite::Connection, task: &str) -> Result<Value>
     let mut legacy = 0usize;
     let mut settings: Option<(crate::config::Config, u64, u64, bool)> = None;
     let mut execution_clock = None;
+    let mut language_boundary = None;
+    let mut presentation_dispatched = false;
+    let mut presentation_recorded = false;
+    let mut result_hashes = BTreeMap::<u64, String>::new();
     let mut tools = 0u64;
     let mut cycles = 0u64;
     {
-        let mut stmt=db.prepare("SELECT kind,CASE WHEN length(CAST(source AS BLOB))<=64 THEN source END,CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN payload END FROM events WHERE task_id=?1 AND kind IN ('execution_settings','model_dispatch','reasoning','tool_reservation','cycle_reservation') ORDER BY id LIMIT 210")?;
+        let mut stmt=db.prepare("SELECT kind,CASE WHEN length(CAST(source AS BLOB))<=64 THEN source END,CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN payload END FROM events WHERE task_id=?1 AND kind IN ('execution_settings','model_dispatch','reasoning','tool_reservation','cycle_reservation','language_boundary_reservation','language_boundary_presentation') ORDER BY id LIMIT 212")?;
         let mut rows = stmt.query([task])?;
         let mut count = 0;
         let mut inference_count = 0;
         while let Some(row) = rows.next()? {
             count += 1;
-            if count > 209 {
+            if count > 211 {
                 bail!("Inference audit exceeds bounded call history")
             }
             let kind: String = row.get(0)?;
@@ -112,7 +116,57 @@ pub(super) fn audit_from(db: &rusqlite::Connection, task: &str) -> Result<Value>
                 ));
                 continue;
             }
+            if kind == "language_boundary_reservation" {
+                let Some((cfg, limit, _, true)) = settings.as_mut() else {
+                    bail!("Language reservation has no durable execution settings")
+                };
+                if source != "jev-plus"
+                    || language_boundary.is_some()
+                    || !calls.is_empty()
+                    || tools != 0
+                    || cycles != 0
+                    || payload
+                        != crate::reasoning::language_reservation_payload(cfg, *limit as usize)?
+                {
+                    bail!("Invalid or repeated language boundary reservation")
+                }
+                *limit = payload["root_call_limit"].as_u64().unwrap();
+                language_boundary = Some(payload);
+                continue;
+            }
+            if kind == "language_boundary_presentation" {
+                let call = calls.len() as u64;
+                let result = calls
+                    .get(&call)
+                    .ok_or_else(|| anyhow::anyhow!("Presentation has no dispatch"))?;
+                let status = payload["status"].as_str().unwrap_or("");
+                let original = payload["original_answer_sha256"].as_str().unwrap_or("");
+                if source != "interface"
+                    || language_boundary.is_none()
+                    || presentation_recorded
+                    || !presentation_dispatched
+                    || result["role"] != "synthesizer"
+                    || result["state"] != "result_recorded"
+                    || payload.as_object().is_none_or(|object| object.len() != 5)
+                    || result_hashes.get(&call).map(String::as_str)
+                        != payload["answer_sha256"].as_str()
+                    || original.len() != 64
+                    || !original.bytes().all(|byte| byte.is_ascii_hexdigit())
+                    || !matches!(status, "completed" | "unverified" | "rejected")
+                    || payload["verified_bytes_preserved"] != (status == "completed")
+                    || payload["new_claims_verified"] != false
+                    || (status == "completed"
+                        && payload["answer_sha256"] != payload["original_answer_sha256"])
+                {
+                    bail!("Invalid language presentation history")
+                }
+                presentation_recorded = true;
+                continue;
+            }
             if matches!(kind.as_str(), "tool_reservation" | "cycle_reservation") {
+                if presentation_dispatched {
+                    bail!("Resource work followed terminal language presentation")
+                }
                 let Some((cfg, _, cycle_limit, true)) = settings.as_ref() else {
                     bail!("Resource reservation has no compatible settings")
                 };
@@ -185,6 +239,56 @@ pub(super) fn audit_from(db: &rusqlite::Connection, task: &str) -> Result<Value>
                 {
                     bail!("Invalid inference reservation history")
                 }
+                if let Some(boundary) = &language_boundary {
+                    let (cfg, limit, _, _) = settings.as_ref().unwrap();
+                    let interpretation_ready = calls.get(&1).is_some_and(|entry| {
+                        entry["role"] == "interface" && entry["state"] == "result_recorded"
+                    });
+                    if presentation_dispatched
+                        || (call == 1
+                            && (role != "interface" || allocation != cfg.interface_tokens as u64))
+                        || (call > 1 && (!interpretation_ready || role == "interface"))
+                    {
+                        bail!("Language phases are out of order")
+                    }
+                    let presenting = role == "synthesizer";
+                    let held_calls = u64::from(!presenting);
+                    let held_output = if presenting {
+                        0
+                    } else {
+                        boundary["presentation_output_tokens"].as_u64().unwrap()
+                    };
+                    let held_input = if presenting {
+                        0
+                    } else {
+                        boundary["presentation_prompt_bytes"].as_u64().unwrap()
+                    };
+                    let used_output: u64 = calls
+                        .values()
+                        .map(|entry| entry["reserved_output_tokens"].as_u64().unwrap())
+                        .sum();
+                    let used_input: u64 = calls
+                        .values()
+                        .map(|entry| entry["prompt_bytes"].as_u64().unwrap())
+                        .sum();
+                    if call.saturating_add(held_calls) > *limit
+                        || used_output
+                            .saturating_add(allocation)
+                            .saturating_add(held_output)
+                            > cfg.max_tokens as u64
+                        || used_input
+                            .saturating_add(prompt_bytes)
+                            .saturating_add(held_input)
+                            > cfg.max_input_bytes as u64
+                        || (presenting
+                            && (allocation != cfg.interface_tokens as u64
+                                || prompt_bytes
+                                    > boundary["presentation_prompt_bytes"].as_u64().unwrap()))
+                    {
+                        bail!("Language phase exceeded its original reserved capacity")
+                    }
+                    presentation_dispatched = presenting;
+                }
                 calls.insert(call,json!({"call":call,"role":role,"reserved_output_tokens":allocation,"prompt_bytes":prompt_bytes,"state":"result_not_recorded","model":null,"input_tokens":null,"output_tokens":null}));
             } else {
                 let Some(call) = payload["call"].as_u64() else {
@@ -222,6 +326,14 @@ pub(super) fn audit_from(db: &rusqlite::Connection, task: &str) -> Result<Value>
                 {
                     bail!("Recorded output exceeds reservation")
                 }
+                if language_boundary.is_some() {
+                    settings
+                        .as_ref()
+                        .unwrap()
+                        .0
+                        .require_role_model(record["role"].as_str().unwrap(), model)?;
+                }
+                result_hashes.insert(call, sha256(text.as_bytes()));
                 record["model"] = json!(model);
                 record["state"] = json!("result_recorded");
             }
@@ -255,8 +367,16 @@ pub(super) fn audit_from(db: &rusqlite::Connection, task: &str) -> Result<Value>
         {
             bail!("Recorded inference exceeds saved execution limits or has uncorrelated results")
         }
+        let holding = language_boundary.is_some() && !presentation_dispatched;
+        let held_calls = u64::from(holding);
+        let held_output = if holding {
+            cfg.interface_tokens as u64
+        } else {
+            0
+        };
+        let held_input = if holding { 8192 } else { 0 };
         Some(
-            json!({"calls":limit-used_calls,"reserved_output_tokens":cfg.max_tokens as u64-reserved,"prompt_bytes":cfg.max_input_bytes as u64-input,"wall_time":execution_clock.as_ref().map(|clock| clock.remaining()).transpose()?,"cycles":if durable {Some(cycle_limit-cycles)} else {None},"tool_calls":if durable {Some(cfg.max_tool_calls as u64-tools)} else {None},"resume_authorized":false}),
+            json!({"calls":if presentation_dispatched {0} else {limit.saturating_sub(used_calls).saturating_sub(held_calls)},"reserved_output_tokens":if presentation_dispatched {0} else {(cfg.max_tokens as u64).saturating_sub(reserved).saturating_sub(held_output)},"prompt_bytes":if presentation_dispatched {0} else {(cfg.max_input_bytes as u64).saturating_sub(input).saturating_sub(held_input)},"wall_time":execution_clock.as_ref().map(|clock| clock.remaining()).transpose()?,"cycles":if durable {Some(cycle_limit-cycles)} else {None},"tool_calls":if durable {Some(cfg.max_tool_calls as u64-tools)} else {None},"resume_authorized":false}),
         )
     } else {
         None
@@ -265,7 +385,14 @@ pub(super) fn audit_from(db: &rusqlite::Connection, task: &str) -> Result<Value>
         json!({"format_version":1,"task_id":task,"task_status":status,"reserved_calls":calls.len(),"recorded_results":recorded,"results_not_recorded":calls.len()-recorded,"legacy_results_without_call_identity":legacy,
             "reserved_output_tokens":sum("reserved_output_tokens")?,"charged_prompt_bytes":sum("prompt_bytes")?,"reported_usage_complete":complete,
             "input_tokens":if complete {Some(sum("input_tokens")?)} else {None},"output_tokens":if complete {Some(sum("output_tokens")?)} else {None},
-            "remaining_inference_admission":remaining,"calls":calls.values().collect::<Vec<_>>(),"automatic_replay":false,"resume_authorized":false,"weights_attested":false}),
+            "remaining_inference_admission":remaining,"calls":calls.values().collect::<Vec<_>>(),"language_boundary":language_boundary.as_ref().map(|reservation| json!({
+                "reservation":reservation,"phase":if presentation_recorded {"presented"}
+                    else if presentation_dispatched {"presentation_uncommitted"}
+                    else if calls.get(&1).is_some_and(|call| call["state"] == "result_recorded") {"reasoning"}
+                    else {"interpretation_uncommitted"},
+                "presentation_capacity_held":!presentation_dispatched,
+                "continuation_supported":false,"resume_authorized":false
+            })),"automatic_replay":false,"resume_authorized":false,"weights_attested":false}),
     )
 }
 

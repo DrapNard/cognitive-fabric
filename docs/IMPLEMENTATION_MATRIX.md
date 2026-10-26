@@ -1,5 +1,16 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Phase-aware language inference audit — 2026-10-26
+
+**Implemented, runtime unverified.** `src/recovery/inference.rs` validates the
+shared language reservation emitted by `reasoning/language_boundary.rs`, orders
+interpretation/reasoning/presentation, preserves held capacity and reconstructs
+publication state without returning model text. Unresolved dispatches remain
+charged; no replay/resume authority is granted. This fixes the audit rejecting
+valid augmented language-call ceilings under the old mode-only limit. Actual
+Engine continuation still refuses these phase layouts. Formatting and Clippy
+passed; no tests, benchmarks or live inference run.
+
 ## Work-conserving ready expert waves — 2026-10-26
 
 **Implemented, runtime unverified.** `src/reasoning.rs` schedules ready steps in

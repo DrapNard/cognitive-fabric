@@ -262,3 +262,22 @@ step cap so the host does not serialize these admitted calls unnecessarily.
 per-call authorization and durable reservations. Existing root budgets, deadline,
 resource admission, failure handling and no-replay behavior remain authoritative.
 No runtime or speed evidence is claimed; tests and benchmarks were not run.
+
+## Phase-aware inference audit
+
+Inference audit now validates the Engine's language reservation against the
+original configuration and mode, using the same reservation encoder as execution.
+The reservation must occur once, before model/tool/cycle work. Interpretation
+must be the first call with its declared allocation; its recorded result must
+precede reasoning or presentation. Presentation consumes its held slot/token/input
+capacity, ends model dispatch, and must correlate with a recorded synthesizer
+result before publication is recognized. Conflicting model roles, altered
+reservation fields, overdrawn phase budgets and work after presentation are refused.
+
+Audit reports the current phase and keeps held presentation capacity out of
+reasoning admission. Once presentation is dispatched, remaining inference
+admission is zero. Unrecorded results remain charged and unknown; a result without
+a publication marker is not reported as published. Reports contain identities,
+hashes and metrics rather than model text. These observations grant no replay
+or resume authority. Engine continuation is still refused until full phase-aware
+restoration is implemented. No tests, benchmarks or live provider calls run.
