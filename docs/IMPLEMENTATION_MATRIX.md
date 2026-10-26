@@ -1,5 +1,18 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Concurrent independent structured experts — 2026-10-26
+
+**Implemented, runtime unverified.** `engine.rs`, `reasoning.rs` and
+`reasoning/expert_parallel.rs` extend explicitly selected independent expert
+batches to validated multi-step workflows. Full graph preflight reserves final
+reasoning capacity. One dependency-ready step per expert advances each wave;
+per-call authorization, durable reservations and the original shared deadline
+remain enforced. Mixed legacy/structured batches are supported; missing results
+discard all advice without retry. Complete result JSON is retained in context.
+No new trained weights, client activation or speedup claim. Formatting and
+Clippy only; no tests/benchmarks or live inference run. Earlier one-call-only
+entries describe the previous slice and are superseded by this entry.
+
 ## Shared structured memory for Engine tasks — 2026-10-26
 
 **Implemented, runtime unverified.** `src/project_memory/context.rs` shares bounded

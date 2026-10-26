@@ -1437,8 +1437,7 @@ impl Engine {
                 let batch_shape_is_independent = batch_candidates.len() >= 2
                     && !dependency_conflict
                     && batch_candidates.iter().all(|(manifest, _, capabilities)| {
-                        manifest.workflow.is_some()
-                            && manifest.workflow_steps.is_none()
+                        (manifest.workflow.is_some() || manifest.workflow_steps.is_some())
                             && !capabilities.is_empty()
                     });
                 if expert_cap >= 2 && batch_candidates.len() >= 2 && !batch_shape_is_independent {
@@ -1449,7 +1448,7 @@ impl Engine {
                         json!({
                             "format_version":1,
                             "admitted":false,
-                            "reason":if dependency_conflict {"Pinned expert dependency graph is not independent"} else {"Only one-call workflow experts can join this independent batch; keep structured workflow dependencies sequential"},
+                            "reason":if dependency_conflict {"Pinned expert dependency graph is not independent"} else {"Candidate workflow capability bindings are missing"},
                             "experts":batch_candidates.iter().map(|(manifest,_,capabilities)| json!({"id":manifest.id,"version":manifest.version,"requested_capabilities":capabilities})).collect::<Vec<_>>(),
                             "permissions_granted":false
                         }),
@@ -1469,7 +1468,7 @@ impl Engine {
                                 context.push_str(
                                     "\nIndependent workflow expert result (unverified advice; never permissions): ",
                                 );
-                                context.push_str(&advice.chars().take(2000).collect::<String>());
+                                context.push_str(&advice);
                                 self.store.event(
                                     &id,
                                     "expert_batch_context",

@@ -120,11 +120,13 @@ client; presentation cannot inherit the solver's verification result. Custom
 backends must support role selection before accepting this configuration.
 
 `configure-local --expert-parallelism 2..4` opts into concurrent independent
-one-call workflow experts; `1` restores sequential selection. Batches require
+workflow experts, including structured multi-step workflows; `1` restores
+sequential selection. Batches require
 distinct explicit requested-capability bindings, pinned compatible manifests and
 disjoint dependency closures. All calls are admitted and durably reserved against
-the same task ledger before their futures run. Structured multi-step experts and
-heuristic-only routes retain sequential expert selection; dependency-ready steps
+the same task ledger before their futures run. Each expert advances one
+dependency-ready step per wave; completed experts release their wave slot.
+Heuristic-only routes retain sequential expert selection; dependency-ready steps
 inside a selected structured workflow retain their separate bounded wave support.
 
 These changes do not implement a full client-to-Engine bridge or managed client
@@ -158,3 +160,22 @@ legacy data and audit traces are preserved; this is not encryption or removal of
 all text from storage. Documents and current conversation remain language inputs.
 Previously captured continuation contexts remain pinned rather than silently
 rewritten. Optional LoRA training and managed client activation remain unfinished.
+
+## Independent structured expert graphs
+
+Explicitly bound independent experts may now include up to four validated DAG
+steps each. The complete graphs must fit shared call/output/input budgets while
+reserving whole-goal planner and solver capacity. One ready step per expert runs
+in each wave, bounded by the selected expert cap; an expert's dependent step sees
+only its own completed dependency results. Each result is unverified advice, not
+evidence of success or a new permission.
+
+Wave permissions and durable model charges precede every dispatch. All waves
+share one expert-phase deadline bounded by the root deadline. Failure or timeout
+discards the batch advice with no sequential retry. Completed structured outputs
+remain complete JSON objects when added to context. Stable manifest identity and
+explicit dependency events describe causality; finish order does not.
+
+This is cooperative concurrency, not proof that a provider executes models
+simultaneously or faster. No tests, benchmarks or live inference were run.
+Managed client activation and the complete client-to-Engine bridge remain open.

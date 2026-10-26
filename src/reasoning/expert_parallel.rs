@@ -28,7 +28,7 @@ impl Session {
         calls: Vec<CandidateCall>,
         phase_budget: Duration,
     ) -> Result<Vec<(String, String)>> {
-        if calls.len() < 2 || calls.len() > 4 || phase_budget.is_zero() {
+        if calls.is_empty() || calls.len() > 4 || phase_budget.is_zero() {
             return Err(anyhow!("Invalid admitted expert batch"));
         }
         let timeout_metadata = calls
@@ -135,7 +135,9 @@ impl Session {
                     let advice = report.text.chars().take(2_000).collect::<String>();
                     let node = Node {
                         id: self.nodes.len(),
-                        parent: self.nodes.last().map(|node| node.id),
+                        // Workflow dependency edges are recorded by expert_step;
+                        // completion order does not establish a causal parent.
+                        parent: None,
                         role: "solver".into(),
                         cycle: self.resources.cycles,
                         model: report.model,
