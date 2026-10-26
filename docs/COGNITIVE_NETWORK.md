@@ -327,3 +327,31 @@ The checkpoint distinguishes work ready to dispatch from an uncertain dispatch;
 it does not itself authorize resumption. Dispatching a pending checkpoint under
 the original clock/resource/worker scope is still unfinished. No tests, benchmarks
 or live inference were run.
+
+## Client Expert Network workflow execution
+
+New durable client sessions pin complete bounded workflow plans, exact versions,
+manifest hashes and plan hashes in their opening snapshot. Continuation validates
+those pins without rereading live registry data. Old metadata-only snapshots
+cannot authorize execution. Plans retain full legacy advice (up to 2,000 bytes)
+or validated structured dependencies (up to four steps, 1,000 bytes per step).
+
+The client collective may execute one matching pinned workflow before its main
+reasoning graph. Steps use the configured solver role, with client tools disabled
+and no provider/model selection from workflow text. All steps share the existing
+Lease call/token/input/deadline ledger. A deterministic workflow-advice capability
+reservation consumes one existing internal tool slot. Required client tool
+capacity is preserved. No nested Engine task or fresh task budget is created.
+
+Preflight uses the exact expert request construction, bounds nested JSON escaping
+and reserves final solver/presentation capacity. Optional workflows that cannot
+fit are skipped before dispatch. Scalar advice is bounded by JSON-encoded bytes
+and marked partial; complete structured records are serialized whole. The summary
+enters the same pinned continuation advice and never grants permissions.
+
+This is a partial client bridge: expert steps currently run sequentially through
+the shared solver model. Manifests binding a separate registered model/provider
+remain explicitly advisory-only. Distinct client expert backends, client expert
+parallelism and managed client activation are still unfinished. Client tool
+execution/approval remains with the external application. Static compilation and
+Clippy only; no tests, benchmarks or live provider calls run.

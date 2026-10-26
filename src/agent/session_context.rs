@@ -69,6 +69,45 @@ pub(super) fn validate_checkpoint(references: &str, pins: &Value) -> Result<()> 
     if memory_values.len() > 1 || memory_values.len() != pin_values.len() {
         bail!("Saved project memory and identity pins do not match")
     }
+    let experts = reference
+        .get("expert_advice")
+        .and_then(Value::as_array)
+        .ok_or_else(|| anyhow::anyhow!("Saved expert context is not an array"))?;
+    let expert_pins = pins
+        .get("manifests")
+        .and_then(Value::as_array)
+        .ok_or_else(|| anyhow::anyhow!("Saved expert pins are not an array"))?;
+    if experts.len() != expert_pins.len() || experts.len() > MAX_EXPERT_ADVICE {
+        bail!("Saved expert context and version pins do not match")
+    }
+    for (expert, pin) in experts.iter().zip(expert_pins) {
+        if expert.get("manifest_sha256").is_none()
+            || expert.get("workflow_plan_sha256").is_none()
+            || pin.get("workflow_plan_sha256").is_none()
+        {
+            if expert["executable_by_client_collective"] == true {
+                bail!("Legacy expert checkpoint cannot authorize workflow execution")
+            }
+            continue;
+        }
+        for (reference_field, pin_field) in [
+            ("id", "id"),
+            ("version", "version"),
+            ("manifest_sha256", "sha256"),
+            ("workflow_plan_sha256", "workflow_plan_sha256"),
+        ] {
+            if expert.get(reference_field) != pin.get(pin_field) {
+                bail!("Saved expert context differs from its immutable version pin")
+            }
+        }
+        validate_sha256(expert["manifest_sha256"].as_str().unwrap_or_default())?;
+        validate_sha256(expert["workflow_plan_sha256"].as_str().unwrap_or_default())?;
+        if crate::store::sha256(&serde_json::to_vec(&expert["workflow_plan"])?)
+            != expert["workflow_plan_sha256"]
+        {
+            bail!("Saved expert workflow checksum mismatch")
+        }
+    }
     if memory_values.is_empty() {
         return Ok(());
     }
@@ -162,7 +201,17 @@ fn encoded_len(value: &Value) -> Result<usize> {
 /// Capture shared retrieval context without opening another Store connection.
 /// The first return value is compact JSON explicitly labeled as untrusted data;
 /// the second contains only bounded identities and hashes for durable pinning.
+#[cfg(test)]
 pub(super) fn capture(
+    db: &Connection,
+    query: &str,
+    project_reference: Option<&str>,
+    include_retrieval: bool,
+) -> Result<(String, Value)> {
+    capture_with_memory_policy(db, query, project_reference, include_retrieval, false)
+}
+
+pub(super) fn capture_with_memory_policy(
     db: &Connection,
     query: &str,
     project_reference: Option<&str>,
@@ -323,10 +372,21 @@ pub(super) fn capture(
             "description": manifest.description,
             "tags": manifest.tags,
             "declared_capabilities": manifest.capabilities,
-            "workflow_advice": workflow_advice(manifest)?,
+            "workflow_plan": workflow_plan(manifest)?,
             "trust": "untrusted_operator_published_advice",
             "permissions_granted": false,
-            "executable_by_client_collective": false
+            "executable_by_client_collective": manifest.kind == "workflow"
+                && manifest.model.is_none()
+                && manifest.provider.is_none(),
+            "execution_status": if manifest.kind != "workflow" {
+                "metadata_only"
+            } else if manifest.model.is_some() || manifest.provider.is_some() {
+                "advisory_only_bound_backend_unsupported"
+            } else {
+                "bounded_shared_solver_model"
+            },
+            "manifest_sha256": crate::store::sha256(&encoded),
+            "workflow_plan_sha256": crate::store::sha256(&serde_json::to_vec(&workflow_plan(manifest)?)?)
         });
         let mut candidate = reference.clone();
         candidate["expert_advice"]
@@ -334,7 +394,12 @@ pub(super) fn capture(
             .expect("expert advice array")
             .push(advice.clone());
         if encoded_len(&candidate)? > MAX_REFERENCE_BYTES {
-            advice["workflow_advice"] = Value::Null;
+            advice["workflow_plan"] = Value::Null;
+            advice["executable_by_client_collective"] = json!(false);
+            advice["execution_status"] = json!("advisory_only_context_bound");
+            let workflow_plan_sha256 =
+                crate::store::sha256(&serde_json::to_vec(&advice["workflow_plan"])?);
+            advice["workflow_plan_sha256"] = json!(workflow_plan_sha256);
             candidate = reference.clone();
             candidate["expert_advice"]
                 .as_array_mut()
@@ -342,11 +407,19 @@ pub(super) fn capture(
                 .push(advice);
         }
         if encoded_len(&candidate)? <= MAX_REFERENCE_BYTES {
+            let workflow_plan_sha256 = crate::store::sha256(&serde_json::to_vec(
+                &candidate["expert_advice"]
+                    .as_array()
+                    .expect("expert advice array")
+                    .last()
+                    .expect("inserted expert advice")["workflow_plan"],
+            )?);
             reference = candidate;
             manifest_pins.push(json!({
                 "id": manifest.id,
                 "version": manifest.version,
                 "sha256": crate::store::sha256(&encoded),
+                "workflow_plan_sha256": workflow_plan_sha256,
                 "role": "advisory_context_only"
             }));
         }
@@ -427,21 +500,22 @@ fn manifest_terms(manifest: &crate::registry::Manifest) -> std::collections::BTr
     query_terms(&source)
 }
 
-fn workflow_advice(manifest: &crate::registry::Manifest) -> Result<Value> {
+fn workflow_plan(manifest: &crate::registry::Manifest) -> Result<Value> {
     if let Some(advice) = &manifest.workflow {
-        return Ok(json!({"text":utf8_prefix(advice, 1200)}));
+        return Ok(
+            json!({"legacy":true,"steps":[{"id":"workflow","advice":advice,"depends_on":[]}]}),
+        );
     }
     if let Some(steps) = &manifest.workflow_steps {
         let order = manifest.workflow_order()?;
         let selected = order
             .into_iter()
-            .take(4)
             .map(|index| {
                 let step = &steps[index];
-                json!({"id":step.id,"advice":utf8_prefix(&step.advice, 400)})
+                json!({"id":step.id,"advice":step.advice,"depends_on":step.depends_on})
             })
             .collect::<Vec<_>>();
-        return Ok(json!({"steps":selected}));
+        return Ok(json!({"legacy":false,"steps":selected}));
     }
     Ok(Value::Null)
 }

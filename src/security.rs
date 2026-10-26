@@ -22,6 +22,7 @@ impl TaskPolicy {
             &[
                 ("jev-r", "llm.generate"),
                 ("jev-plus", "knowledge.search"),
+                ("jev-plus", "expert.workflow.advice"),
                 ("jev-plus", "ordering.verify"),
                 ("jev-plus", "sorting.verify"),
                 ("jev-plus", "path.verify"),
@@ -110,6 +111,7 @@ pub fn authorize(principal: &str, capability: &str) -> Result<()> {
         "jev-plus" => matches!(
             capability,
             "knowledge.search"
+                | "expert.workflow.advice"
                 | "math.evaluate"
                 | "ordering.verify"
                 | "sorting.verify"

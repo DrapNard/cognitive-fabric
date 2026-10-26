@@ -1,5 +1,19 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Client workflow integration through the shared session ledger — 2026-10-26
+
+**Partial bridge, runtime unverified.** `src/agent/expert_workflow.rs` plus client
+collective/context/session modules pin full workflow plans and hashes at session
+start, validate them on continuation and execute one matching workflow through
+the configured solver. Steps disable client tools and charge the original
+Lease budgets. `security.rs` authorizes only the deterministic workflow-advice
+capability; external tools stay client-owned. Full-workflow preflight bounds
+exact request shapes/nested JSON and preserves main solver/presentation capacity;
+over-budget workflows skip before dispatch. Bounded scalar advice is marked
+partial and serialized records stay complete. Separate model/provider bindings
+remain advisory-only; client expert parallelism and managed activation remain
+open. No tests or benchmarks run; compilation/Clippy only.
+
 ## Exact pending presentation checkpoint — 2026-10-26
 
 **Partial recovery infrastructure; runtime unverified.** `language.rs` defines a

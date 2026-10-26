@@ -348,7 +348,7 @@ impl Lease {
                 "knowledge.search",
             )?;
         }
-        let (references, reference_pins) = super::session_context::capture(
+        let (references, reference_pins) = super::session_context::capture_with_memory_policy(
             &tx,
             &objective[..query_end],
             runtime.cfg.agent_project_profile.as_deref(),
@@ -413,7 +413,12 @@ impl Lease {
         bytes: &[u8],
         cycle: usize,
     ) -> Result<()> {
-        if cycle == 0 && !matches!(role, "interface" | "planner" | "explorer") {
+        if cycle == 0
+            && !matches!(
+                role,
+                "interface" | "planner" | "explorer" | "expert-advisory"
+            )
+        {
             bail!("A collective solver cycle is required")
         }
         self.state.validate_limits(allocation, bytes.len(), cycle)?;
@@ -425,6 +430,35 @@ impl Lease {
         next.prompt_bytes += bytes.len();
         let payload = json!({"role":role,"call":next.calls,"cycle":cycle,"allocation":allocation,"prompt_bytes":bytes.len(),"request_sha256":sha256(bytes),"client_tools_executed":false,"authorized_capability":"llm.generate"});
         self.write_active(next, "agent_model_dispatch", payload)
+    }
+    pub fn reserve_internal_tool(
+        &mut self,
+        actor: &str,
+        capability: &str,
+        payload: serde_json::Value,
+    ) -> Result<()> {
+        if self
+            .state
+            .proposals
+            .saturating_add(self.state.internal_tools)
+            >= self.state.tool_limit
+        {
+            bail!("Client collective internal tool budget exhausted")
+        }
+        TaskPolicy::client_collective(&self.task)?.authorize(&self.task, actor, capability)?;
+        remaining(&self.state.clock)?;
+        let mut next = self.state.clone();
+        next.internal_tools += 1;
+        self.write_active(
+            next,
+            "agent_internal_tool_dispatch",
+            json!({
+                "actor": actor,
+                "capability": capability,
+                "client_tools_executed": false,
+                "details": payload
+            }),
+        )
     }
     fn write_active(&mut self, next: State, kind: &str, payload: serde_json::Value) -> Result<()> {
         let (raw, checksum) = raw_state(&next)?;
