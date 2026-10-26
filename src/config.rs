@@ -211,6 +211,20 @@ impl Config {
         ))
     }
 
+    /// Language-only roles must not inherit reasoning effort from a task or
+    /// provider default. Other roles preserve explicit request/config precedence.
+    pub fn role_reasoning_effort<'a>(
+        &'a self,
+        role: &str,
+        requested: Option<&'a str>,
+    ) -> Option<&'a str> {
+        if self.language_model().is_some() && matches!(role, "interface" | "synthesizer") {
+            Some("none")
+        } else {
+            requested.or(self.reasoning_effort.as_deref())
+        }
+    }
+
     pub fn provider_effort<'a>(&self, effort: &'a str) -> Result<&'a str> {
         if !matches!(effort, "none" | "low" | "medium" | "high") {
             bail!("Unsupported provider reasoning effort")

@@ -134,10 +134,9 @@ impl LocalChat {
             if let Some(parallel) = request.parallel_tool_calls {
                 body["parallel_tool_calls"] = json!(parallel);
             }
-            if let Some(effort) = request
-                .reasoning_effort
-                .as_ref()
-                .or(self.0.reasoning_effort.as_ref())
+            if let Some(effort) = self
+                .0
+                .role_reasoning_effort(role, request.reasoning_effort.as_deref())
             {
                 body["reasoning_effort"] = json!(self.0.provider_effort(effort)?);
             }

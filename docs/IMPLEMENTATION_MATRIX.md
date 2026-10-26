@@ -1,5 +1,14 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Language provider effort isolation — 2026-10-26
+
+**Implemented, runtime unverified.** `Config::role_reasoning_effort` centralizes
+request/config precedence while forcing `none` on explicit language-boundary
+roles. OpenAI/local chat and native adapters use it; private managed/native
+adapters pin language effort before clearing role metadata. Reasoning effort
+remains configurable for Jev-R. Provider compliance and speed are not proven.
+Formatting and Clippy passed; no tests, benchmarks or live requests run.
+
 ## Required Engine language phases — 2026-10-26
 
 **Experimental, runtime unverified.** `src/reasoning/language_boundary.rs` and

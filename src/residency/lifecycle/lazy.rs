@@ -714,6 +714,9 @@ impl LazyBackend {
         if let Some(profile) = config.role_profiles.get("language") {
             if profile.model == model {
                 config.temperature = profile.temperature;
+                // The private instance adapter drops the outer routing marker;
+                // pin language effort before that marker leaves its config.
+                config.reasoning_effort = Some("none".into());
             }
         }
         config.role_profiles.remove("language");

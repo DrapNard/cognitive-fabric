@@ -232,3 +232,18 @@ restoration exists. Continuation refuses these tasks before dispatch; no replay
 or fresh budget is substituted. This restriction does not change the existing
 durable client tool-continuation path. No tests, benchmarks or live inference
 were run for this implementation.
+
+## Language effort isolation
+
+An explicit language profile forces `reasoning_effort=none` for interface and
+synthesizer calls, even when a request or global configuration selects high
+effort. OpenAI-compatible adapters send `none`; the native LM Studio adapter
+maps that to its existing `off` value. Managed one-call workers and private
+on-demand native adapters pin this setting before dropping the outer role map.
+Reasoning roles retain request/config effort precedence. Configurations without
+the explicit language marker retain their previous behavior.
+
+This requests the provider's non-reasoning mode; it does not attest internal
+model execution or measure latency. A provider that rejects the setting fails
+explicitly rather than silently rerouting language work to a reasoning role.
+Formatting/static checks only; no tests, benchmarks or provider calls run.

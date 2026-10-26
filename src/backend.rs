@@ -392,7 +392,7 @@ pub async fn generate_report(
             {"role":"user", "content": prompt}
         ]
     });
-    if let Some(effort) = &cfg.reasoning_effort {
+    if let Some(effort) = cfg.role_reasoning_effort(role, None) {
         payload["reasoning_effort"] = json!(cfg.provider_effort(effort)?);
     }
     let mut request = client.post(endpoint).json(&payload);

@@ -147,6 +147,10 @@ impl AgentRuntime {
         selected.temperature = temperature;
         // One-use worker delegation carries the already authorized exact target.
         // Root configuration/hash and role reservation retain the full network map.
+        selected.reasoning_effort = self
+            .cfg
+            .role_reasoning_effort(role, None)
+            .map(str::to_owned);
         selected.role_profiles.clear();
         selected.model_registration = None;
         selected.validate()?;

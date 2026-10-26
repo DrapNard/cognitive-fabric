@@ -184,7 +184,7 @@ impl NativeBackend {
             "store": false,
             "integrations": []
         });
-        if let Some(effort) = &self.config.reasoning_effort {
+        if let Some(effort) = self.config.role_reasoning_effort(role, None) {
             let mapped = self.config.provider_effort(effort)?;
             payload["reasoning"] = json!(if mapped == "none" { "off" } else { mapped });
         }
