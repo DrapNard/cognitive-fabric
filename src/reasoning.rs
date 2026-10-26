@@ -1050,7 +1050,12 @@ impl Session {
                 } else {
                     Arc::new(crate::backend::LocalBackend(cfg))
                 };
-            Arc::new(crate::fabric::Broker::with_inference(inference)) as Arc<dyn InferenceBackend>
+            let concurrency =
+                crate::reasoning::parallel::validate_parallelism(self.cfg.subtask_parallelism)?;
+            Arc::new(crate::fabric::Broker::with_inference_concurrency(
+                inference,
+                concurrency,
+            )) as Arc<dyn InferenceBackend>
         } else {
             self.backend.clone()
         };
@@ -1202,6 +1207,11 @@ impl Session {
             }
             PreparedWorkflow::Structured { base, order } => (base, order),
         };
+        if crate::reasoning::parallel::validate_parallelism(self.cfg.subtask_parallelism)? > 1 {
+            return self
+                .execute_parallel_workflow_advice(manifest, base, order, backend)
+                .await;
+        }
         let steps = manifest
             .workflow_steps
             .as_ref()
