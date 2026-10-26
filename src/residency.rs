@@ -21,6 +21,10 @@ pub struct Instance {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct InstanceConfig {
     pub context_length: u64,
+    /// Provider-reported prediction slots; omitted means unknown, not unlimited.
+    /// Advisory only: this is not proof of concurrent execution or free capacity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parallel: Option<u32>,
     /// Server-reported KV-cache placement, if this LM Studio version exposes it.
     /// `None` means unknown/omitted and is never treated as CPU placement.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -62,6 +66,10 @@ fn parse(bytes: &[u8]) -> Result<Vec<Model>> {
             if !identity(&instance.id)
                 || !instances.insert(&instance.id)
                 || !(1..=16_777_216).contains(&instance.config.context_length)
+                || instance
+                    .config
+                    .parallel
+                    .is_some_and(|slots| !(1..=65536).contains(&slots))
             {
                 bail!("Invalid native model instance or context bounds")
             }
@@ -151,7 +159,17 @@ pub async fn status(base: &str, authenticate: bool) -> Result<Value> {
         json!({"format_version":1,"adapter":"lmstudio-native-v1","endpoint":endpoint(base)?.as_str(),
         "models":models,"loaded_instances":loaded,"observation_ms":start.elapsed().as_secs_f64()*1000.0,
         "server_reported":true,"weights_attested":false,"generation_tested":false,
-        "ownership_established":false,"model_mutation_performed":false}),
+        "ownership_established":false,"model_mutation_performed":false,
+        "prediction_concurrency":{
+            "scope":"per_loaded_instance",
+            "configured_slots_are_not_free_slots":true,
+            "provider_execution_verified":false,
+            "instances":models.iter().flat_map(|model|model.loaded_instances.iter().map(move |instance|json!({
+                "model_key":model.key,"instance_id":instance.id,
+                "configured_prediction_slots":instance.config.parallel,
+                "queue_depth":Value::Null,"active_predictions":Value::Null
+            }))).collect::<Vec<_>>()
+        }}),
     )
 }
 

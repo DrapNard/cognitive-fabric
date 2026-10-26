@@ -169,6 +169,7 @@ pub(super) fn validate_transition(
             selected.loaded_instances.push(Instance {
                 id: instance.to_owned(),
                 config: InstanceConfig {
+                    parallel: None,
                     context_length: u64::from(*context_length),
                     offload_kv_cache_to_gpu: *offload_kv_cache_to_gpu,
                 },

@@ -474,3 +474,27 @@ avoided when the provider permits reuse; no latency improvement is measured.
 Static checks only; no tests, benchmarks or provider calls were run for this
 change. Managed client activation and general mid-reasoning restoration remain
 incomplete.
+
+## Provider prediction slots versus CGF parallelism
+
+Native inventory retains optional `loaded_instances[].config.parallel` as the
+provider-reported prediction-slot limit for that instance. `residency-status`
+includes a `prediction_concurrency` observation with instance IDs, nullable slot
+counts and unknown queue/active-prediction counts. Missing slots remain unknown;
+CGF does not interpret omission as unlimited capacity or sum slots across models.
+First-use native activation also records the observed instance's slot count in
+its hash-bound model-binding event, without changing the receipt or granting
+additional inference capacity.
+
+A CGF ready wave can be concurrent while its requests wait in a provider queue.
+One configured prediction slot may serialize calls to that instance. Reported
+slots do not prove simultaneous GPU execution, free slots or a faster response.
+These observations neither load/reload a model nor change an operator policy.
+Legacy inventory fingerprints and KV-placement fingerprints keep their existing
+projections; prediction-slot changes do not reinterpret saved approval digests.
+Provider inventory documentation:
+[LM Studio model inventory](https://lmstudio.ai/docs/developer/rest/list).
+
+Static checks only; no tests, benchmarks or live inventory requests were run.
+Automatic managed client activation still needs a conversation lifecycle and
+explicit treatment of OpenAI tool proposals versus native instance evidence.

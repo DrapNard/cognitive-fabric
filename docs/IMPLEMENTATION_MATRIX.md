@@ -6260,3 +6260,10 @@ physical memory enforcement and model-aware capacity planning remain separate wo
 - `src/backend/transport.rs`: concurrent process-local HTTP pool, at most four idle connections per host and 30-second idle lifetime; no shared credential or model defaults.
 - `src/backend.rs`, `src/backend/native.rs`, `src/agent/local.rs`, `src/token_admission.rs`: reuse transport across network roles and preserve per-request or absolute deadlines, response bounds and adapter checks.
 - Reduces repeated client construction and enables connection reuse; does not prove faster inference, parallel provider execution or automatic activation. Static checks only; no tests, benchmarks or live provider calls.
+
+### Native prediction-slot visibility — Implemented, provider runtime unverified
+
+- `src/residency.rs`: bounded optional per-instance prediction-slot parsing and explicit concurrency observations with unknown queue/active counts. Omission stays unknown.
+- `src/residency/lifecycle/lazy.rs`: first-use model-binding audit records the freshly observed instance slot count; no policy/call-budget increase.
+- `src/residency/planning.rs`: synthetic transition instances leave advisory slots unknown; existing legacy/KV fingerprint projections remain unchanged.
+- Static checks only; no tests, benchmarks or provider requests. This does not establish provider parallel execution or complete managed client activation.

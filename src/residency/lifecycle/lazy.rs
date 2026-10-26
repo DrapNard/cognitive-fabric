@@ -442,7 +442,18 @@ impl Coordinator {
             *state = Activation::Unknown;
             bail!("Native receipt differs from current provider inventory")
         }
+        let prediction_slots = current
+            .iter()
+            .find(|item| item.key == model)
+            .and_then(|item| {
+                item.loaded_instances
+                    .iter()
+                    .find(|instance| instance.id == binding.receipt.instance_id)
+            })
+            .and_then(|instance| instance.config.parallel);
         let mut raw = json!({
+            "provider_prediction_slots":prediction_slots,
+            "provider_concurrency_verified":false,
             "format_version":1,"policy_sha256":self.policy_sha256,
             "child_task_id":self.child_task,"model_key":model,"receipt":binding.receipt,
             "receipt_sha256":crate::store::sha256(&serde_json::to_vec(&binding.receipt)?),
