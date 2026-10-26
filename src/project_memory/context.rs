@@ -17,6 +17,7 @@ pub(crate) fn add(
     use crate::project_memory::{Constraint, Fact, Relation};
 
     let record = &stored.record;
+    record.require_consistent_claims()?;
     let memories = reference["project_memories"]
         .as_array()
         .ok_or_else(|| anyhow::anyhow!("Invalid project-memory context container"))?;

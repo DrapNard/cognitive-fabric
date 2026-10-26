@@ -168,7 +168,7 @@ and checksum. The referenced profile must already be published. The Rust API
 exposes the same typed records and Store operations. Models cannot publish records
 through these operator-only commands. Session opening now captures a bounded typed projection of the latest exact-profile
 revision. Record, profile and projection hashes pin it across continuations;
-checkpoint validation rejects inconsistent projections. Conflict resolution and
+checkpoint validation rejects inconsistent projections. Semantic conflict resolution and
 conversion of legacy prose remain to implement. Memory constraints are data, not task permission
 or acceptance-rule overrides.
 
@@ -185,6 +185,27 @@ Historical storage, audit transcripts and corpus backups are not converted or
 deleted by this policy. Projection selection validates/hashes its immutable record
 once and computes candidate array size without cloning the surrounding context.
 These changes reduce repeated source-level work; no measured latency claim is made.
+
+### Explicit memory contradictions
+
+`cogfabric project-memory-conflicts memory-draft.json` inspects a bounded draft
+without opening the database, publishing a revision or calling a model. Its report
+names conflicting claim IDs for matching subject/predicate pairs. Detection covers
+facts violating explicit constraints, incompatible equality constraints, inverted
+numeric lower/upper bounds, and required substrings forbidden by another constraint.
+Reports stop with an error beyond 256 conflicts instead of silently truncating.
+
+New publication and runtime projection construction refuse detected contradictions.
+The operator resolves them by publishing the next complete corrected revision;
+prior immutable records remain available for inspection. An intentional change
+between revisions is not itself a conflict: revisions are complete snapshots.
+Multiple facts are not assumed to make an attribute single-valued. Relations,
+multi-constraint implications, ontology inference and external truth are not proved.
+Integer comparisons retain exact signed/unsigned values; mixed integer/float
+comparisons are unknown rather than rounded. Unsupported comparisons are skipped.
+An empty report therefore does not certify consistent or correct project knowledge.
+Existing checkpoint snapshots keep their original evidence; this does not rewrite
+in-flight tasks or authorize any tool. No runtime execution or benchmark was run.
 
 ## Optional project LoRA
 

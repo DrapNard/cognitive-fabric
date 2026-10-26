@@ -759,6 +759,7 @@ impl Store {
     ) -> Result<crate::project_memory::StoredProjectMemory> {
         crate::security::authorize("human-cli", "project.publish")?;
         record.validate()?;
+        record.require_consistent_claims()?;
         if record.revision > crate::project_memory::MAX_REVISIONS_PER_PROJECT {
             bail!("Project memory revision history is full")
         }

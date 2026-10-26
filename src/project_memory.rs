@@ -3,7 +3,9 @@
 //! This module defines the wire/storage shape only. Records are untrusted context;
 //! they never grant permissions, amend task budgets, or prove their own claims.
 
+mod conflicts;
 pub(crate) mod context;
+pub use conflicts::MemoryConflict;
 
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};

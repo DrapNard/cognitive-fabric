@@ -100,6 +100,10 @@ enum Command {
     ProjectMemoryShow {
         reference: String,
     },
+    /// Inspect explicit pairwise contradictions in a memory draft without publishing it.
+    ProjectMemoryConflicts {
+        manifest: PathBuf,
+    },
     Status,
     SelfTest,
     SecurityEval,
@@ -1265,6 +1269,29 @@ async fn run_cli() -> Result<()> {
             let store = Store::open_existing_with_limit(&cfg.db(), cfg.max_database_bytes)?;
             return output(store.checkpoint_wal()?, cli.json);
         }
+        Command::ProjectMemoryConflicts { manifest } => {
+            security::authorize("human-cli", "project.read")?;
+            let bytes = security::read_regular_bytes(
+                manifest,
+                cogfabric::project_memory::MAX_RECORD_BYTES,
+            )?;
+            let draft: cogfabric::project_memory::ProjectMemoryDraft = serde_json::from_value(
+                cogfabric::strict_json::value(&bytes, cogfabric::project_memory::MAX_RECORD_BYTES)?,
+            )?;
+            let record = draft.into_record()?;
+            return output(
+                json!({
+                    "format_version": 1,
+                    "project_ref": record.project_ref,
+                    "revision": record.revision,
+                    "scope": "explicit_pairwise_scalar_contradictions_only",
+                    "semantic_completeness_proven": false,
+                    "published": false,
+                    "conflicts": record.conflicts()?
+                }),
+                cli.json,
+            );
+        }
         Command::ProjectMemoryPublish { manifest } => {
             security::authorize("human-cli", "project.publish")?;
             let bytes = security::read_regular_bytes(
@@ -2073,7 +2100,8 @@ async fn run_cli() -> Result<()> {
         | Command::ProjectShow { .. }
         | Command::ProjectList
         | Command::ProjectMemoryPublish { .. }
-        | Command::ProjectMemoryShow { .. } => {
+        | Command::ProjectMemoryShow { .. }
+        | Command::ProjectMemoryConflicts { .. } => {
             bail!("Project commands must run before engine initialization")
         }
         Command::SecurityCorpusEvaluate { .. } => {

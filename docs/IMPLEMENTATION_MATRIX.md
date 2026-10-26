@@ -1,5 +1,18 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Detect explicit structured-memory contradictions — 2026-10-26
+
+**Partial conflict handling; runtime unverified.** `src/project_memory/conflicts.rs`
+implements bounded deterministic fact/constraint and constraint-pair checks with
+exact integer comparisons and conservative unknowns for unsupported cases.
+`src/store.rs` and `src/project_memory/context.rs` refuse detected contradictions
+at publication and new projection construction. `src/main.rs` exposes
+`project-memory-conflicts` for a bounded draft with no database/model operation.
+Existing schema, evidence provenance, immutable revisions and permission boundaries
+remain authoritative. Resolution requires a corrected complete operator revision;
+semantic consistency, relation reasoning and general multi-constraint satisfiability
+remain incomplete. Static checks only; no tests, benchmarks or live calls were run.
+
 ## Prioritize schema memory and avoid legacy episode reads — 2026-10-26
 
 **Implemented; runtime unverified.** Architecture memory/resource responsibilities:
