@@ -6298,6 +6298,13 @@ physical memory enforcement and model-aware capacity planning remain separate wo
 - `src/reasoning/expert_parallel.rs`, `src/reasoning/parallel.rs`, `src/reasoning.rs`: fully reserved independent expert batches, parallel workflow steps and advisory graph waves prepare their exact supported pinned adapters before polling generation. The shared expert phase deadline includes preparation, with no fresh phase budget afterward.
 - Failure leaves reservations charged and stops the wave. Default adapters perform no preparation and attest no residency; eager native adapters retain their existing generation validation. Tests, benchmarks, live activation and inference were not run. Physical GPU concurrency and speed remain unverified.
 
+### Client Jev+/Jev-R overlap — Partial, runtime unverified
+
+- `src/agent/collective.rs`: Research-mode initial conversations can overlap the first pinned expert-workflow wave with independent planner/explorer advice. Admission requires at least three configured concurrent calls, a first expert wave fitting the remaining slots, and the entire workflow plus both advisory calls, solver and language presentation fitting the original shared budget.
+- Calls are authorized and reserved before activation. Required expert and reasoning routes are prepared before either branch generates. Both locally owned branches are awaited before failure handling; no background sibling, refund, automatic retry or extra model-selection authority is introduced.
+- Advisory reservations retain explicit call identities, so recording expert results before planner/explorer results cannot relabel calls. The recorded pair is consumed once and is not dispatched again after expert completion. `agent_overlap_wave` binds call IDs, concurrency bounds and the original advice digest without storing an extra prompt copy.
+- Later expert waves retain their dependency barriers. Concurrency below three, wide first waves and insufficient budgets use existing sequential phases. Engine cross-subsystem overlap and runtime/provider concurrency proof remain incomplete. Static checks only; no tests, benchmarks, model operations or live inference.
+
 ### Native prediction-slot visibility — Implemented, provider runtime unverified
 
 - `src/residency.rs`: bounded optional per-instance prediction-slot parsing and explicit concurrency observations with unknown queue/active counts. Omission stays unknown.

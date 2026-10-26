@@ -56,6 +56,47 @@ struct Graph<'a> {
     input_tokens: Option<u64>,
     output_tokens: Option<u64>,
     checked: Option<(String, Option<bool>)>,
+    overlapped_pair: Option<(Completion, Completion)>,
+}
+
+struct PreparedAdvisoryPair {
+    first_call: usize,
+    turns: [Turn; 2],
+}
+
+async fn dispatch_advisory_pair(
+    runtime: &AgentRuntime,
+    task: &str,
+    routes: &[Arc<dyn ChatBackend>],
+    pair: &PreparedAdvisoryPair,
+    deadline: Instant,
+) -> Result<(Result<Completion>, Result<Completion>)> {
+    let timeout = Duration::from_secs(runtime.cfg.timeout_seconds)
+        .min(deadline.saturating_duration_since(Instant::now()));
+    tokio::time::timeout(timeout, async {
+        tokio::join!(
+            runtime.dispatch_selected_role(
+                routes[0].clone(),
+                task,
+                "planner",
+                &pair.turns[0],
+                ADVICE_TOKENS,
+                deadline
+            ),
+            runtime.dispatch_selected_role(
+                routes[1].clone(),
+                task,
+                "explorer",
+                &pair.turns[1],
+                ADVICE_TOKENS,
+                deadline
+            )
+        )
+    })
+    .await
+    .map_err(|_| {
+        anyhow::anyhow!("Client advisory wave deadline exhausted; provider outcomes may be unknown")
+    })
 }
 
 struct PreparedExpertCall {
@@ -323,14 +364,11 @@ impl Graph<'_> {
         plan: &expert_workflow::Plan,
         routed_runtime: &AgentRuntime,
         prepared: Vec<PreparedExpertCall>,
+        backend: Arc<dyn ChatBackend>,
     ) -> Result<Vec<(usize, String)>> {
         let timeout_seconds = routed_runtime.cfg.timeout_seconds;
         let deadline = self.deadline;
         let task = self.task.to_string();
-        let backend = routed_runtime
-            .prepare_role_wave(routed_runtime.backend.clone(), &task, &["solver"], deadline)
-            .await?
-            .remove(0);
         let runtime = routed_runtime.clone();
         type WaveFuture = std::pin::Pin<
             Box<dyn std::future::Future<Output = (PreparedExpertCall, Result<Completion>)> + Send>,
@@ -500,6 +538,29 @@ impl Graph<'_> {
             self.turn("solver", &projected_combined_advice, MIN_SOLVER_TOKENS),
             MIN_SOLVER_TOKENS,
         ));
+        // Planning and domain advice consume the same original objective and
+        // interpretation. Neither depends on the other's generated result.
+        let overlap_candidate = mode(&self.runtime.cfg, self.original) == "research"
+            && parallelism >= 3
+            && waves
+                .first()
+                .is_some_and(|wave| wave.len() + 2 <= parallelism);
+        let overlap = if overlap_candidate {
+            let mut combined = hypothetical.clone();
+            if let Some((_, solver, _)) = combined.last_mut() {
+                *solver = self.turn("solver", &"\0".repeat(2000), MIN_SOLVER_TOKENS);
+            }
+            for role in ["planner", "explorer"] {
+                combined.push((
+                    role,
+                    self.turn(role, prior_advice, ADVICE_TOKENS),
+                    ADVICE_TOKENS,
+                ));
+            }
+            self.available_turns(&combined)?
+        } else {
+            false
+        };
         let remaining_tool_slots = self
             .session
             .state
@@ -559,6 +620,11 @@ impl Graph<'_> {
                 "manifest_pinned_at_session_root": true
             }),
         )?;
+        let mut pair = if overlap {
+            Some(self.reserve_advisory_pair(prior_advice)?)
+        } else {
+            None
+        };
         let mut results = serde_json::Map::new();
         for wave in &waves {
             let prior = serde_json::Value::Object(results.clone());
@@ -567,9 +633,55 @@ impl Graph<'_> {
             });
             let prepared =
                 self.reserve_expert_wave(&plan, &routed_runtime, wave, &prior, allocation)?;
-            let completions = self
-                .dispatch_expert_wave(&plan, &routed_runtime, prepared)
-                .await?;
+            let backend = routed_runtime
+                .prepare_role_wave(
+                    routed_runtime.backend.clone(),
+                    self.task,
+                    &["solver"],
+                    self.deadline,
+                )
+                .await?
+                .remove(0);
+            let completions = if let Some(pair) = pair.take() {
+                let runtime = self.runtime.clone();
+                let task = self.task.to_owned();
+                let deadline = self.deadline;
+                let routes = runtime
+                    .prepare_role_wave(
+                        self.backend.clone(),
+                        &task,
+                        &["planner", "explorer"],
+                        deadline,
+                    )
+                    .await?;
+                self.runtime.store.event(
+                    self.task,
+                    "agent_overlap_wave",
+                    "jev-plus",
+                    json!({
+                        "planner_call":pair.first_call,"explorer_call":pair.first_call + 1,
+                        "expert_calls":prepared.iter().map(|call|call.call).collect::<Vec<_>>(),
+                        "concurrency_limit":parallelism,"active_calls_bound":wave.len() + 2,
+                        "original_advice_sha256":sha256(prior_advice.as_bytes()),
+                        "all_calls_reserved":true,"inputs_independent":true,
+                        "permissions_granted":false,"results_verified":false
+                    }),
+                )?;
+                // Poll both owned branches to completion before handling either
+                // error. No background task survives a cancelled parent future.
+                let (expert, advisory) = tokio::join!(
+                    self.dispatch_expert_wave(&plan, &routed_runtime, prepared, backend),
+                    dispatch_advisory_pair(&runtime, &task, &routes, &pair, deadline)
+                );
+                let advisory = advisory.and_then(|(planner, explorer)| {
+                    self.record_advisory_pair(&pair, planner, explorer)
+                });
+                self.overlapped_pair = Some(advisory?);
+                expert?
+            } else {
+                self.dispatch_expert_wave(&plan, &routed_runtime, prepared, backend)
+                    .await?
+            };
             for (index, output) in completions {
                 let step = &plan.steps[index];
                 let (output, partial) = bounded_json_string(&output, step_advice_budget);
@@ -651,7 +763,7 @@ impl Graph<'_> {
         )?;
         Ok(completion)
     }
-    async fn advisory_pair(&mut self, advice: &str) -> Result<(Completion, Completion)> {
+    fn reserve_advisory_pair(&mut self, advice: &str) -> Result<PreparedAdvisoryPair> {
         if !self.available(&[
             ("planner", advice, ADVICE_TOKENS),
             ("explorer", advice, ADVICE_TOKENS),
@@ -660,6 +772,7 @@ impl Graph<'_> {
         }
         let roles = ["planner", "explorer"];
         let turns = roles.map(|role| self.turn(role, advice, ADVICE_TOKENS));
+        let first_call = self.calls + 1;
         // Reserve both calls before either future is polled. Partial reservation
         // failures terminate the session; reservations are never refunded/replayed.
         for (role, turn) in roles.iter().zip(&turns) {
@@ -671,53 +784,51 @@ impl Graph<'_> {
             self.reserved += ADVICE_TOKENS;
             self.prompt_bytes += bytes.len();
         }
-        let deadline = self.deadline;
-        let routes = self
-            .runtime
-            .prepare_role_wave(self.backend.clone(), self.task, &roles, deadline)
-            .await?;
-        let timeout = Duration::from_secs(self.runtime.cfg.timeout_seconds)
-            .min(deadline.saturating_duration_since(Instant::now()));
-        let (planner, explorer) = tokio::time::timeout(timeout, async {
-            tokio::join!(
-                self.runtime.dispatch_selected_role(
-                    routes[0].clone(),
-                    self.task,
-                    "planner",
-                    &turns[0],
-                    ADVICE_TOKENS,
-                    deadline
-                ),
-                self.runtime.dispatch_selected_role(
-                    routes[1].clone(),
-                    self.task,
-                    "explorer",
-                    &turns[1],
-                    ADVICE_TOKENS,
-                    deadline
-                )
-            )
-        })
-        .await
-        .map_err(|_| {
-            anyhow::anyhow!(
-                "Client advisory wave deadline exhausted; provider outcomes may be unknown"
-            )
-        })?;
-        // Await the entire wave before propagating failures; no detached sibling.
+        Ok(PreparedAdvisoryPair { first_call, turns })
+    }
+
+    fn record_advisory_pair(
+        &mut self,
+        pair: &PreparedAdvisoryPair,
+        planner: Result<Completion>,
+        explorer: Result<Completion>,
+    ) -> Result<(Completion, Completion)> {
         let planner = planner.and_then(|completion| {
             self.record_completion(
                 "planner",
-                self.calls - 1,
+                pair.first_call,
                 ADVICE_TOKENS,
-                &turns[0],
+                &pair.turns[0],
                 completion,
             )
         });
         let explorer = explorer.and_then(|completion| {
-            self.record_completion("explorer", self.calls, ADVICE_TOKENS, &turns[1], completion)
+            self.record_completion(
+                "explorer",
+                pair.first_call + 1,
+                ADVICE_TOKENS,
+                &pair.turns[1],
+                completion,
+            )
         });
         Ok((planner?, explorer?))
+    }
+
+    async fn advisory_pair(&mut self, advice: &str) -> Result<(Completion, Completion)> {
+        let pair = self.reserve_advisory_pair(advice)?;
+        let deadline = self.deadline;
+        let routes = self
+            .runtime
+            .prepare_role_wave(
+                self.backend.clone(),
+                self.task,
+                &["planner", "explorer"],
+                deadline,
+            )
+            .await?;
+        let (planner, explorer) =
+            dispatch_advisory_pair(self.runtime, self.task, &routes, &pair, deadline).await?;
+        self.record_advisory_pair(&pair, planner, explorer)
     }
     fn check_candidate(&mut self, completion: &Completion) -> Result<Option<bool>> {
         let hash = sha256(
@@ -836,6 +947,7 @@ pub(super) async fn run(
         input_tokens: Some(0),
         output_tokens: Some(0),
         checked: None,
+        overlapped_pair: None,
     };
     let mut advice = saved.advice.clone();
     if runtime.cfg.language_model().is_some() && saved.calls == 0 {
@@ -869,17 +981,29 @@ pub(super) async fn run(
     }
     // Bound hypothetical advice by bytes so optional roles cannot consume the solver's input allowance.
     let advice_bound = "\0".repeat(2000);
-    let pair_admitted = saved.calls == 0
-        && mode == "research"
-        && runtime.cfg.subtask_parallelism.unwrap_or(1) >= 2
-        && graph.available(&[
-            ("planner", &advice, ADVICE_TOKENS),
-            ("explorer", &advice, ADVICE_TOKENS),
-            ("solver", &advice_bound, MIN_SOLVER_TOKENS),
-        ])?;
+    let overlapped_pair = graph.overlapped_pair.take();
+    let pair_admitted = overlapped_pair.is_some()
+        || (saved.calls == 0
+            && mode == "research"
+            && runtime.cfg.subtask_parallelism.unwrap_or(1) >= 2
+            && graph.available(&[
+                ("planner", &advice, ADVICE_TOKENS),
+                ("explorer", &advice, ADVICE_TOKENS),
+                ("solver", &advice_bound, MIN_SOLVER_TOKENS),
+            ])?);
     if pair_admitted {
-        graph.schedule("independent_planner_explorer_wave", true)?;
-        let (planner, explorer) = graph.advisory_pair(&advice).await?;
+        graph.schedule(
+            if overlapped_pair.is_some() {
+                "use_recorded_overlapped_planner_explorer"
+            } else {
+                "independent_planner_explorer_wave"
+            },
+            true,
+        )?;
+        let (planner, explorer) = match overlapped_pair {
+            Some(pair) => pair,
+            None => graph.advisory_pair(&advice).await?,
+        };
         advice = format!(
             "Previous advisory context: {}\nplanner: {}\nexplorer: {}",
             bounded(&advice, 600),

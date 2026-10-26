@@ -61,6 +61,19 @@ Do not describe this endpoint as the finished cognitive network.
 
 ## Bounded parallel work
 
+In initial Research-mode client conversations, the first expert-workflow wave
+may run alongside planner/explorer advice. All three branches use the original
+objective and prior interpretation; planning does not consume expert results
+until they are collected for the solver. This requires a configured concurrency
+limit of three or four, enough spare slots for the complete first expert wave,
+and budget for the whole workflow, both advisory calls, solver and presentation.
+All calls are reserved and required models prepared before the overlap starts.
+Later expert dependency waves wait for that first combined wave to finish. The
+planner/explorer results keep their reserved call IDs and are reused once rather
+than requested again. Unsupported or insufficient-capacity cases retain the
+existing sequential phase ordering. This is client orchestration support,
+without a runtime speed claim or equivalent Engine cross-subsystem overlap.
+
 Client planner/explorer waves select and prepare both exact role routes after
 the wave is authorized and durably reserved, before polling either generation.
 For approved native on-demand adapters, this loads only the models required by
