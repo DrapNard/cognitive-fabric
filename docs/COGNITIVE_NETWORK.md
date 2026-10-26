@@ -522,3 +522,37 @@ Configured pool reuse now requires matching ownership as well as matching
 workspace/configuration: ordinary pools share only with ordinary callers; native
 pools share only with the identical private lifecycle owner. A weak-registry hit
 cannot lend exclusive lifecycle authority to an ordinary client request.
+
+## Client lifecycle scope admission (partial bridge)
+
+`agent::native_scope::NativeClientScope::prepare_session` is a library admission
+API for an existing durable client session. It requires explicit operator approval,
+retains exclusive ownership of the configured persistent workspace, and validates
+the exact saved session configuration and original same-boot clock. Initial
+attachment is limited to an active generation-zero session with no dispatched
+model calls. Restoration reuses the single original policy and cutoff; the cutoff
+is the earlier of the original session deadline and original session start plus
+the approved lifecycle duration. Attaching late cannot restart that duration.
+
+Preparation and subsequent receipt refreshes inspect native inventory and admit
+only existing active managed receipts matching the approved model/context/KV
+settings. Missing, changed, ambiguous or unknown outcomes fail admission.
+Cumulative receipt pins cannot be replaced or removed. At most eight bounded
+hash-chained checkpoints are stored; unchanged refreshes need no new checkpoint.
+SQLite scans have cooperative deadlines and clear their progress callbacks.
+Scope evidence excludes prompts and credentials and explicitly reports
+`scope_only: true`, `runtime_bridge_connected: false`, and no response-instance
+attestation. Hashes preserve local integrity; they do not attest model weights.
+
+This API does not load models, dispatch inference or execute tools. The active
+Agent request path is not yet connected to it: normal client calls retain their
+shared runtime lease, while scope preparation requires exclusive ownership.
+A future request-level lifecycle handoff must bridge those owners and bind
+inference/proposals before automatic client activation can be enabled. OpenAI
+model-key replies must not be represented as native response-instance evidence.
+No server flag or user configuration enables that unfinished bridge.
+
+The private cached native language adapter also preserves the language profile's
+temperature precedence when it prunes its outer role map; explicit interface and
+synthesizer profiles cannot silently replace that temperature. Language effort
+remains off. Static checks only; no tests, benchmarks or live provider calls.

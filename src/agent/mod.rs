@@ -3,6 +3,7 @@
 mod collective;
 mod expert_workflow;
 mod local;
+pub mod native_scope;
 pub mod process;
 pub mod protocol;
 mod session_cleanup;

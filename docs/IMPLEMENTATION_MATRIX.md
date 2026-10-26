@@ -6275,3 +6275,10 @@ physical memory enforcement and model-aware capacity planning remain separate wo
 - Unresolved resource history still blocks reconstruction; active client pools still exclude native mutations. Automatic managed client activation remains incomplete. Static checks only; no tests, benchmarks or provider calls.
 
 - `src/resource_scheduler/configured.rs`: cache reuse checks identical lifecycle ownership; ordinary callers cannot borrow a managed pool and skip its workspace lease. Source review identified and corrected this concurrency bypass; runtime remains untested.
+
+### Durable client native scope admission — Partial; dispatch bridge not connected
+
+- `src/agent/native_scope.rs`, `src/agent/mod.rs`: usable library scope preparation/restoration and fresh admission of existing managed receipts, immutable original policy/config/root/clock, cumulative hash-chained receipt pins, bounded SQL/metadata, exact retained workspace ownership. No activation, inference, tool execution or automatic server integration.
+- `src/agent/sessions.rs`: reuse full checkpoint validation and exact configuration digest when extracting the original session clock; initial attachment requires generation zero and zero dispatched calls.
+- `src/residency/lifecycle/lazy.rs`: preserve language temperature precedence in private cached adapters as well as the existing effort boundary.
+- Static formatting/compilation/lint checks only; no tests, benchmarks or live provider calls. Automatic client lifecycle ownership handoff and conversation inference/proposal binding remain the next implementation milestone. No neural weights or speed claims are introduced.

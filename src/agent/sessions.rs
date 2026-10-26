@@ -46,6 +46,73 @@ pub(super) struct Lease {
     pub deadline: Instant,
     done: bool,
 }
+
+pub(super) struct NativeScopeSessionSnapshot {
+    pub clock: Snapshot,
+    pub generation: usize,
+    pub calls: usize,
+    pub state: String,
+}
+
+struct SessionSqlProgressReset<'a>(&'a rusqlite::Connection);
+
+impl Drop for SessionSqlProgressReset<'_> {
+    fn drop(&mut self) {
+        self.0.progress_handler(0, None::<fn() -> bool>);
+    }
+}
+
+/// Load the already-authenticated durable client snapshot for the native
+/// lifecycle bridge. Keep validation here so that bridge cannot accept a
+/// weaker copy of the AgentRuntime continuation invariants.
+pub(super) fn native_scope_session_snapshot(
+    store: &Store,
+    task: &str,
+    cfg: &Config,
+) -> Result<NativeScopeSessionSnapshot> {
+    uuid::Uuid::parse_str(task)?;
+    let db = store.lock()?;
+    let started = Instant::now();
+    db.progress_handler(
+        1000,
+        Some(move || started.elapsed() > Duration::from_secs(1)),
+    );
+    let _scan_deadline = SessionSqlProgressReset(&db);
+    let (session_state, generation, raw, checksum): (String, usize, String, String) = db.query_row(
+        "SELECT CASE WHEN length(CAST(state AS BLOB))<=32 THEN state END,generation,CASE WHEN length(CAST(snapshot AS BLOB))<=32768 THEN snapshot END,CASE WHEN length(CAST(snapshot_sha256 AS BLOB))=64 THEN snapshot_sha256 END FROM agent_sessions WHERE task_id=?1 LIMIT 1",
+        [task],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+    )?;
+    if raw.len() > 32768 || sha256(raw.as_bytes()) != checksum {
+        bail!("Native scope client session snapshot is missing or has changed")
+    }
+    let state: State = crate::strict_json::value(raw.as_bytes(), 32768)
+        .and_then(|value| Ok(serde_json::from_value(value)?))?;
+    state.validate(cfg)?;
+    if state.configuration != sha256(&serde_json::to_vec(cfg)?) {
+        bail!("Native scope client session configuration differs from its original snapshot")
+    }
+    let task_state: String = db.query_row(
+        "SELECT CASE WHEN length(CAST(status AS BLOB))<=64 THEN status END FROM tasks WHERE id=?1",
+        [task],
+        |row| row.get(0),
+    )?;
+    let matches = matches!(
+        (session_state.as_str(), task_state.as_str()),
+        ("active", "running") | ("waiting", "waiting_client")
+    );
+    if !matches {
+        bail!("Native scope client session and root task lifecycle differ")
+    }
+    drop(_scan_deadline);
+    Ok(NativeScopeSessionSnapshot {
+        clock: state.clock,
+        generation,
+        calls: state.calls,
+        state: session_state,
+    })
+}
+
 fn history_hash(messages: &[Message]) -> Result<String> {
     let mut normalized = messages.to_vec();
     for message in &mut normalized {

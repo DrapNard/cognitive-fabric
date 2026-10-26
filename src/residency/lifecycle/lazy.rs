@@ -730,10 +730,22 @@ impl LazyBackend {
                 config.reasoning_effort = Some("none".into());
             }
         }
+        let language_temperature = config
+            .role_profiles
+            .get("language")
+            .filter(|profile| profile.model == model)
+            .map(|profile| profile.temperature);
         config.role_profiles.remove("language");
         config.model = model.to_owned();
-        for profile in config.role_profiles.values_mut() {
+        for (role, profile) in &mut config.role_profiles {
             profile.model = model.to_owned();
+            if matches!(role.as_str(), "interface" | "synthesizer") {
+                if let Some(temperature) = language_temperature {
+                    // The outer language profile takes precedence over explicit
+                    // boundary profiles even after this private map is pruned.
+                    profile.temperature = temperature;
+                }
+            }
         }
         let native = Arc::new(crate::backend::native::NativeBackend::with_target(
             config,
