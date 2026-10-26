@@ -1,5 +1,9 @@
 use super::*;
 use std::future::Future;
+struct AdmissionMode {
+    profiled: bool,
+    preparation: bool,
+}
 impl ResourcePool {
     pub(super) fn require_running(&self, task: &str) -> Result<()> {
         let db = self.store.lock()?;
@@ -21,8 +25,18 @@ impl ResourcePool {
         resolve_target: impl FnOnce() -> Result<Option<crate::backend::InferenceTarget>>,
         invoke: impl FnOnce() -> F,
     ) -> Result<(T, f64)> {
-        self.execute_inner(task, role, allocation, false, resolve_target, invoke)
-            .await
+        self.execute_inner(
+            task,
+            role,
+            allocation,
+            AdmissionMode {
+                profiled: false,
+                preparation: false,
+            },
+            resolve_target,
+            invoke,
+        )
+        .await
     }
     pub(crate) async fn execute_profiled<T, F: Future<Output = Result<T>>>(
         self: &Arc<Self>,
@@ -36,7 +50,34 @@ impl ResourcePool {
             task,
             role,
             fallback_allocation,
-            true,
+            AdmissionMode {
+                profiled: true,
+                preparation: false,
+            },
+            resolve_target,
+            invoke,
+        )
+        .await
+    }
+    /// Lifecycle work uses its own resource lease and audit identity. It never
+    /// consumes or completes the separately reserved model generation call.
+    pub(crate) async fn prepare_route<T, F: Future<Output = Result<T>>>(
+        self: &Arc<Self>,
+        task: &str,
+        role: &str,
+        allocation: Allocation,
+        profiled: bool,
+        resolve_target: impl FnOnce() -> Result<Option<crate::backend::InferenceTarget>>,
+        invoke: impl FnOnce() -> F,
+    ) -> Result<(T, f64)> {
+        self.execute_inner(
+            task,
+            role,
+            allocation,
+            AdmissionMode {
+                profiled,
+                preparation: true,
+            },
             resolve_target,
             invoke,
         )
@@ -47,7 +88,7 @@ impl ResourcePool {
         task: &str,
         role: &str,
         mut allocation: Allocation,
-        profiled: bool,
+        mode: AdmissionMode,
         resolve_target: impl FnOnce() -> Result<Option<crate::backend::InferenceTarget>>,
         invoke: impl FnOnce() -> F,
     ) -> Result<(T, f64)> {
@@ -55,6 +96,19 @@ impl ResourcePool {
         security::TaskPolicy::reasoning(task)?.authorize(task, actor, "llm.generate")?;
         self.require_running(task)?;
         let reservation_id = uuid::Uuid::new_v4().to_string();
+        let profiled = mode.profiled;
+        if mode.preparation {
+            self.store.event(
+                task,
+                "resource_preparation_intent",
+                "jev-plus",
+                json!({
+                    "format_version":1,"pool_id":self.id,"reservation_id":reservation_id,
+                    "role":role,"operation":"backend_preparation","permissions_granted":false,
+                    "inference_dispatched":false
+                }),
+            )?;
+        }
         let profile_digest = if profiled {
             let digest = self
                 .working_profiles_sha256

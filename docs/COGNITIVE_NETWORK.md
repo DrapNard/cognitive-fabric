@@ -67,20 +67,41 @@ objective and prior interpretation; planning does not consume expert results
 until they are collected for the solver. This requires a configured concurrency
 limit of three or four, enough spare slots for the complete first expert wave,
 and budget for the whole workflow, both advisory calls, solver and presentation.
-All calls are reserved before the overlap starts. Routes without inference
-resource scheduling also prepare required models before generation.
+All calls are reserved before the overlap starts. Required native routes prepare
+their models before generation.
 Later expert dependency waves wait for that first combined wave to finish. The
 planner/explorer results keep their reserved call IDs and are reused once rather
 than requested again. Unsupported or insufficient-capacity cases retain the
 existing sequential phase ordering. This is client orchestration support,
-without a runtime speed claim or equivalent Engine cross-subsystem overlap.
+without a runtime speed claim.
 
-When inference resource scheduling is configured, advance preparation does not
-activate models. Activation stays inside the admitted inference callback after
-the original target/profile, allocation and optional GPU-observation checks.
-Consequently, cold first-use calls can still serialize despite a concurrent CGF
-wave. Separate audited admission for lifecycle preparation remains unfinished;
-advance preparation applies only to routes without inference resource scheduling.
+The Engine can also overlap its planner with the first wave of at least two
+selected independent experts when planning is admitted outside Fast mode and
+configured concurrency and shared budgets permit it. One slot is reserved for
+the planner; dependency barriers remain in force for later expert waves. Exact
+role routes are prepared after durable call reservations. Resource scheduling
+checks the combined configured allocations before admission; this snapshot is
+not a reservation or proof of simultaneous provider execution.
+
+Completed overlap results and their expert-advice snapshot are published in one
+database transaction. Explicit human-approved continuation validates the saved
+calls, original configuration, selected manifest snapshots and registry digest,
+and reuses the completed planner result. The digest links trusted task records;
+it is not an independently verifiable registry membership proof. Read-only
+checkpoint inspection does not reconstruct or modify a saved plan. Reconstruction
+occurs inside the explicit resume transaction and rolls back on admission failure.
+Incomplete or uncertain overlap histories are refused rather than replayed.
+These paths have static checks only; runtime behavior and latency remain unverified.
+
+When inference resource scheduling is configured, advance preparation acquires
+a separate resource lease through the original target/profile, queue/allocation
+and optional GPU-observation checks. Its `resource_preparation_intent` identifies
+lifecycle work independently of the later generation lease. Unknown preparation
+outcomes retain their allocation and require the existing explicit resource
+reconciliation; completion does not complete a model inference reservation.
+Recovery validates both chains. Already-bound models and adapters with no
+preparation work skip that admission. Loading remains serialized and a provider
+may still queue generation; this does not establish a latency improvement.
 
 Client planner/explorer waves select and prepare both exact role routes after
 the wave is authorized and durably reserved, before polling either generation.
@@ -95,9 +116,10 @@ Engine independent expert batches, parallel expert-workflow steps and advisory
 graph waves use the same preparation ordering through an in-process backend
 hook. Supported route adapters are pinned before preparation and reused for
 generation. Preparation retains lifecycle/GPU admission, task permissions and
-the original clock; it does not acquire a prediction slot. Generation still
-uses the typed broker and configured inference resource pool. Resource-scheduled
-adapters defer preparation to that guarded dispatch path. The expert phase
+the original clock. With resource scheduling it temporarily reserves the
+configured working allocation, then releases it after confirmed preparation.
+Generation acquires its own lease through the typed broker and resource pool.
+The expert phase
 deadline includes both preparation and generation. Preparation failure stops
 the wave without refunding or replaying its durable reservations.
 

@@ -979,6 +979,16 @@ pub(crate) fn restrict_inference_roles(
 }
 
 impl InferenceBackend for RestrictedRoutes {
+    fn requires_preparation(&self, role: &str) -> Result<bool> {
+        let expected = self
+            .routes
+            .get(role)
+            .ok_or_else(|| anyhow!("Role is absent from the saved inference route map"))?;
+        if self.backend.inference_target(role)?.as_ref() != Some(expected) {
+            bail!("Saved inference target changed before preparation")
+        }
+        self.backend.requires_preparation(role)
+    }
     fn prepare_for<'a>(
         &'a self,
         task: &'a str,
@@ -1063,6 +1073,9 @@ impl InferenceBackend for RestrictedRoutes {
 }
 
 impl InferenceBackend for Broker {
+    fn requires_preparation(&self, role: &str) -> Result<bool> {
+        self.snapshot()?.requires_preparation(role)
+    }
     fn prepare_for<'a>(
         &'a self,
         task: &'a str,
@@ -1123,6 +1136,17 @@ impl InferenceBackend for Broker {
     }
 }
 impl InferenceBackend for Pinned {
+    fn requires_preparation(&self, role: &str) -> Result<bool> {
+        let module = self
+            .routes
+            .get(role)
+            .context("No registered module for inference role")?;
+        self.route_backends
+            .as_ref()
+            .and_then(|routes| routes.get(role))
+            .unwrap_or(&module.backend)
+            .requires_preparation(role)
+    }
     fn prepare_for<'a>(
         &'a self,
         task: &'a str,

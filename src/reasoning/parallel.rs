@@ -367,7 +367,7 @@ impl Session {
             self.prepare_inference_wave(
                 &prepared
                     .iter()
-                    .map(|call| (&call.backend, call.prompt.as_str()))
+                    .map(|call| (&call.backend, "solver", call.prompt.as_str()))
                     .collect::<Vec<_>>(),
                 deadline,
             )
@@ -608,7 +608,7 @@ impl Session {
             self.prepare_inference_wave(
                 &prepared
                     .iter()
-                    .map(|call| (&call.backend, call.prompt.as_str()))
+                    .map(|call| (&call.backend, "solver", call.prompt.as_str()))
                     .collect::<Vec<_>>(),
                 self.deadline,
             )

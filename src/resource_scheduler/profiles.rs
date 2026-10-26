@@ -96,6 +96,48 @@ pub(super) fn select_profile(
 }
 
 impl ResourcePool {
+    /// Conservative instantaneous declaration check, never a reservation or
+    /// proof of provider concurrency. Dispatch must still acquire every lease.
+    pub(crate) fn wave_fits(
+        &self,
+        configuration: &Configuration,
+        routes: &[(&str, Option<crate::backend::InferenceTarget>)],
+    ) -> Result<bool> {
+        if routes.is_empty() || routes.len() > 4 || !self.matches(&self.store, configuration) {
+            bail!("Invalid configured resource wave")
+        }
+        let mut total = Allocation::default();
+        for (role, target) in routes {
+            crate::fabric::protocol::actor(role)?;
+            if !self.residents.is_empty() {
+                self.resident_coverage(target.clone())?;
+            }
+            let allocation = if self.working_profiles.is_empty() {
+                configuration.allocation
+            } else {
+                Self::profile_for(configuration, role, target.as_ref())?
+                    .ok_or_else(|| anyhow!("Wave target has no configured working profile"))?
+                    .allocation
+            };
+            total.compute_slots = total
+                .compute_slots
+                .checked_add(allocation.compute_slots)
+                .ok_or_else(|| anyhow!("Wave compute allocation overflow"))?;
+            total.host_memory_bytes = total
+                .host_memory_bytes
+                .checked_add(allocation.host_memory_bytes)
+                .ok_or_else(|| anyhow!("Wave host allocation overflow"))?;
+            total.device_memory_bytes = total
+                .device_memory_bytes
+                .checked_add(allocation.device_memory_bytes)
+                .ok_or_else(|| anyhow!("Wave device allocation overflow"))?;
+        }
+        let state = self.lock()?;
+        Ok(!state.closed
+            && state.queue.is_empty()
+            && total.fits(self.settings.capacity.available(state.used)))
+    }
+
     pub(crate) fn profile_for(
         configuration: &Configuration,
         role: &str,

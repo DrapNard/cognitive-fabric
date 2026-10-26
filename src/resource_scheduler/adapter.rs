@@ -12,6 +12,9 @@ pub(super) struct ScheduledBackend {
     pub use_working_profiles: bool,
 }
 impl InferenceBackend for ScheduledBackend {
+    fn requires_preparation(&self, role: &str) -> Result<bool> {
+        self.backend.requires_preparation(role)
+    }
     fn prepare_for<'a>(
         &'a self,
         task: &'a str,
@@ -19,16 +22,25 @@ impl InferenceBackend for ScheduledBackend {
         prompt: &'a str,
     ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
         Box::pin(async move {
+            if !self.backend.requires_preparation(role)? {
+                return Ok(());
+            }
             let actor = crate::fabric::protocol::actor(role)?;
             security::TaskPolicy::reasoning(task)?.authorize(task, actor, "llm.generate")?;
             self.pool.require_running(task)?;
             if self.pool.lock()?.closed || prompt.len() > 32_000 {
                 bail!("Scheduled inference route is unavailable for preparation")
             }
-            // Target/profile/GPU checks run in generate_for's admitted callback.
-            // Forwarding preparation here would activate a model before those
-            // checks. Retain first-use activation inside that callback until
-            // lifecycle preparation has its own audited admission protocol.
+            self.pool
+                .prepare_route(
+                    task,
+                    role,
+                    self.allocation,
+                    self.use_working_profiles,
+                    || self.backend.inference_target(role),
+                    || self.backend.prepare_for(task, role, prompt),
+                )
+                .await?;
             Ok(())
         })
     }

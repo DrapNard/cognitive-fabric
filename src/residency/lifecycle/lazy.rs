@@ -774,6 +774,16 @@ impl LazyBackend {
 }
 
 impl InferenceBackend for LazyBackend {
+    fn requires_preparation(&self, role: &str) -> Result<bool> {
+        self.coordinator.ensure_generation_allowed()?;
+        let model = self.model_for(role)?;
+        Ok(!self
+            .coordinator
+            .committed
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Native activation binding registry poisoned"))?
+            .contains_key(&model))
+    }
     fn prepare_for<'a>(
         &'a self,
         task: &'a str,

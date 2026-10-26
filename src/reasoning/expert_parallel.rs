@@ -11,12 +11,15 @@ use std::{
 };
 
 pub(crate) struct CandidateCall {
+    pub role: String,
     pub expert_id: String,
     pub expert_version: String,
     pub capabilities: Vec<String>,
     pub call: u32,
+    pub allocation: usize,
     pub prompt: String,
     pub backend: Arc<dyn InferenceBackend>,
+    pub overlap_id: Option<String>,
 }
 
 type CandidateFuture =
@@ -25,20 +28,20 @@ type CandidateFuture =
 impl Session {
     pub(super) async fn prepare_inference_wave(
         &self,
-        routes: &[(&Arc<dyn InferenceBackend>, &str)],
+        routes: &[(&Arc<dyn InferenceBackend>, &str, &str)],
         deadline: Instant,
     ) -> Result<()> {
         if routes.is_empty() || routes.len() > 4 {
             return Err(anyhow!("Invalid inference preparation wave"));
         }
         let deadline = deadline.min(self.deadline);
-        for (backend, prompt) in routes {
+        for (backend, role, prompt) in routes {
             let timeout = Duration::from_secs(self.cfg.timeout_seconds)
                 .min(deadline.saturating_duration_since(Instant::now()));
             if timeout.is_zero() {
                 return Err(anyhow::Error::new(InferenceTimeout));
             }
-            tokio::time::timeout(timeout, backend.prepare_for(&self.task, "solver", prompt))
+            tokio::time::timeout(timeout, backend.prepare_for(&self.task, role, prompt))
                 .await
                 .map_err(|_| anyhow::Error::new(InferenceTimeout))??;
         }
@@ -49,7 +52,7 @@ impl Session {
         &mut self,
         calls: Vec<CandidateCall>,
         phase_budget: Duration,
-    ) -> Result<Vec<(String, String)>> {
+    ) -> Result<Vec<(String, String, String)>> {
         if calls.is_empty() || calls.len() > 4 || phase_budget.is_zero() {
             return Err(anyhow!("Invalid admitted expert batch"));
         }
@@ -57,22 +60,12 @@ impl Session {
         self.prepare_inference_wave(
             &calls
                 .iter()
-                .map(|call| (&call.backend, call.prompt.as_str()))
+                .map(|call| (&call.backend, call.role.as_str(), call.prompt.as_str()))
                 .collect::<Vec<_>>(),
             phase_deadline,
         )
         .await?;
         let phase_budget = phase_deadline.saturating_duration_since(Instant::now());
-        let timeout_metadata = calls
-            .iter()
-            .map(|call| {
-                (
-                    call.expert_id.clone(),
-                    call.expert_version.clone(),
-                    call.capabilities.clone(),
-                )
-            })
-            .collect::<Vec<_>>();
         let task = self.task.clone();
         let timeout_seconds = self.cfg.timeout_seconds;
         let futures: Vec<CandidateFuture> = calls
@@ -87,8 +80,12 @@ impl Session {
                     } else {
                         tokio::time::timeout(
                             timeout,
-                            call.backend
-                                .generate_for(&task, "solver", &call.prompt, 192),
+                            call.backend.generate_for(
+                                &task,
+                                &call.role,
+                                &call.prompt,
+                                call.allocation,
+                            ),
                         )
                         .await
                         .map_err(|_| anyhow::Error::new(InferenceTimeout))
@@ -99,37 +96,9 @@ impl Session {
                 }) as CandidateFuture
             })
             .collect();
-        let reports =
-            match tokio::time::timeout(phase_budget, crate::reasoning::parallel::join_all(futures))
-                .await
-            {
-                Ok(reports) => reports,
-                Err(_) => {
-                    self.complete_usage = false;
-                    self.resources.input_tokens = None;
-                    self.resources.output_tokens = None;
-                    self.complete_queue_metrics = false;
-                    self.resources.queue_wait_ms = None;
-                    for call in timeout_metadata {
-                        self.store.event(
-                            &self.task,
-                            "expert_failure",
-                            "jev-plus",
-                            json!({
-                                "id":call.0,
-                                "version":call.1,
-                                "failure_kind":"batch_timeout",
-                                "reason":"Expert result is unknown after the shared phase deadline",
-                                "provider_stop_proven":false,
-                                "partial_advice_discarded":true,
-                                "capabilities":call.2,
-                                "permissions_granted":false
-                            }),
-                        )?;
-                    }
-                    return Ok(Vec::new());
-                }
-            };
+        // Every member future owns its timeout. Await all of them so one slow
+        // provider cannot cause the parent to drop still-running siblings.
+        let reports = crate::reasoning::parallel::join_all(futures).await;
 
         let mut results = Vec::with_capacity(reports.len());
         let mut failure = None;
@@ -151,26 +120,32 @@ impl Session {
                             .provider_metrics
                             .as_ref()
                             .is_none_or(|metrics| metrics.validate().is_ok())
-                        && !report.output_tokens.is_some_and(|count| count > 192);
+                        && !report
+                            .output_tokens
+                            .is_some_and(|count| count > call.allocation as u64);
                     if !valid {
                         self.mark_usage_incomplete();
                         self.store.event(
                             &self.task,
                             "expert_failure",
                             "jev-plus",
-                            json!({"id":call.expert_id,"version":call.expert_version,"call":call.call,"failure_kind":"invalid_result","result_verified":false,"partial_advice_discarded":true,"capabilities":call.capabilities}),
+                            json!({"id":call.expert_id,"version":call.expert_version,"call":call.call,"role":call.role,"failure_kind":"invalid_result","result_verified":false,"partial_advice_discarded":true,"capabilities":call.capabilities}),
                         )?;
                         failure.get_or_insert_with(|| anyhow!("Invalid bounded expert result"));
                         continue;
                     }
                     self.accumulate_parallel_usage(&report);
-                    let advice = report.text.chars().take(2_000).collect::<String>();
+                    let advice = if call.role == "planner" {
+                        report.text.clone()
+                    } else {
+                        report.text.chars().take(2_000).collect::<String>()
+                    };
                     let node = Node {
                         id: self.nodes.len(),
                         // Workflow dependency edges are recorded by expert_step;
                         // completion order does not establish a causal parent.
                         parent: None,
-                        role: "solver".into(),
+                        role: call.role.clone(),
                         cycle: self.resources.cycles,
                         model: report.model,
                         content_hash: crate::store::sha256(report.text.as_bytes()),
@@ -179,22 +154,31 @@ impl Session {
                         &self.task,
                         "reasoning",
                         "jev-r",
-                        json!({"call":call.call,"node":node,"text":report.text,"input_tokens":report.input_tokens,"output_tokens":report.output_tokens,"inference_ms":report.elapsed_ms,"queue_wait_ms":report.queue_wait_ms}),
+                        json!({"call":call.call,"node":node,"text":report.text,"input_tokens":report.input_tokens,"output_tokens":report.output_tokens,"inference_ms":report.elapsed_ms,"queue_wait_ms":report.queue_wait_ms,"overlap_id":call.overlap_id}),
                     )?;
                     self.record_provider_metrics(
                         call.call,
-                        "solver",
+                        &call.role,
                         &node,
                         report.provider_metrics.as_ref(),
                     )?;
                     self.nodes.push(node);
-                    self.store.event(
-                        &self.task,
-                        "expert_batch_result",
-                        "jev-plus",
-                        json!({"id":call.expert_id,"version":call.expert_version,"call":call.call,"capabilities":call.capabilities,"result_sha256":crate::store::sha256(advice.as_bytes()),"result_verified":false,"permissions_granted":false}),
-                    )?;
-                    results.push((call.expert_id, advice));
+                    if call.role == "planner" {
+                        self.store.event(
+                            &self.task,
+                            "planner_overlap_result",
+                            "jev-plus",
+                            json!({"overlap_id":call.overlap_id,"call":call.call,"result_sha256":crate::store::sha256(advice.as_bytes()),"permissions_granted":false}),
+                        )?;
+                    } else {
+                        self.store.event(
+                            &self.task,
+                            "expert_batch_result",
+                            "jev-plus",
+                            json!({"id":call.expert_id,"version":call.expert_version,"call":call.call,"capabilities":call.capabilities,"result_sha256":crate::store::sha256(advice.as_bytes()),"result_verified":false,"permissions_granted":false,"overlap_id":call.overlap_id}),
+                        )?;
+                    }
+                    results.push((call.expert_id, call.role, advice));
                 }
                 Err(error) => {
                     self.mark_usage_incomplete();
@@ -203,7 +187,7 @@ impl Session {
                         &self.task,
                         "expert_failure",
                         "jev-plus",
-                        json!({"id":call.expert_id,"version":call.expert_version,"call":call.call,"failure_kind":if is_timeout {"inference_timeout"} else {"provider_error"},"reason":error.to_string().chars().take(250).collect::<String>(),"provider_stop_proven":false,"partial_advice_discarded":true,"capabilities":call.capabilities}),
+                            json!({"id":call.expert_id,"version":call.expert_version,"call":call.call,"role":call.role,"overlap_id":call.overlap_id,"failure_kind":if is_timeout {"inference_timeout"} else {"provider_error"},"reason":error.to_string().chars().take(250).collect::<String>(),"provider_stop_proven":false,"partial_advice_discarded":true,"capabilities":call.capabilities}),
                     )?;
                     if is_timeout {
                         timed_out = true;

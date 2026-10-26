@@ -6,7 +6,7 @@ use crate::{
     security,
     store::Store,
 };
-use anyhow::{bail, Result};
+use anyhow::{anyhow, bail, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::{
@@ -35,7 +35,7 @@ pub(crate) fn mode_limits(mode: &str) -> Result<(usize, usize)> {
     })
 }
 
-const ADVICE_OUTPUT_CONTRACT: &str = "Advice output contract: Return one sentence of at most 24 words identifying the most important domain constraint or pitfall. Do not restate the problem, enumerate steps, or produce the final answer. Advice remains unverified.";
+pub(crate) const ADVICE_OUTPUT_CONTRACT: &str = "Advice output contract: Return one sentence of at most 24 words identifying the most important domain constraint or pitfall. Do not restate the problem, enumerate steps, or produce the final answer. Advice remains unverified.";
 
 pub(crate) fn subtask_prompt(
     base: &str,
@@ -79,6 +79,27 @@ pub struct Node {
 pub(crate) enum WorkflowAdvice {
     NotAdmitted,
     Attempted(Option<String>),
+}
+
+pub(crate) struct PlannerOverlap {
+    pub id: String,
+    pub prompt: String,
+    pub capacity: usize,
+    pub phase_budget: Duration,
+}
+
+pub(crate) type WorkflowCandidate<'a> = (
+    &'a crate::registry::Manifest,
+    Option<&'a crate::models::Registered>,
+    Vec<String>,
+);
+
+pub(crate) struct ExpertOverlap<'a> {
+    pub candidates: &'a [WorkflowCandidate<'a>],
+    pub query: &'a str,
+    pub context: &'a str,
+    pub expert_cap: usize,
+    pub global_capacity: usize,
 }
 
 enum PreparedWorkflow {
@@ -171,6 +192,26 @@ enum SettingsRecording {
 }
 
 impl Session {
+    fn original_configuration_digest(&self) -> Result<String> {
+        let db = self.store.lock()?;
+        let mut statement = db.prepare(
+            "SELECT CASE WHEN length(CAST(source AS BLOB))<=64 THEN source END,CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN payload END FROM events WHERE task_id=?1 AND kind='execution_settings' ORDER BY id LIMIT 2",
+        )?;
+        let mut rows = statement.query([self.task.as_str()])?;
+        let row = rows
+            .next()?
+            .ok_or_else(|| anyhow!("Original execution configuration snapshot is missing"))?;
+        let source: String = row.get(0)?;
+        let raw: String = row.get(1)?;
+        if source != "runtime" || rows.next()?.is_some() {
+            bail!("Original execution configuration snapshot is repeated or invalid")
+        }
+        let payload = crate::strict_json::value(raw.as_bytes(), 262144)?;
+        let config: Config = serde_json::from_value(payload["configuration"].clone())?;
+        config.validate()?;
+        Ok(crate::store::sha256(&serde_json::to_vec(&config)?))
+    }
+
     pub(crate) fn reference_search_admitted(&self, query: &str) -> Result<bool> {
         let reserve = u32::from(crate::verification::Criterion::from_query(query)?.is_some());
         Ok(Instant::now() < self.deadline
@@ -734,10 +775,11 @@ impl Session {
         } else {
             boundary["strategy"].as_str().unwrap().into()
         };
-        self.solve_with_strategy(query, context, mode, true, Some(strategy))
+        self.solve_with_strategy(query, context, mode, true, Some(strategy), None)
             .await
     }
 
+    #[cfg(test)]
     pub(crate) async fn continue_graph(
         &mut self,
         nodes: Vec<Subtask>,
@@ -745,6 +787,19 @@ impl Session {
         context: &str,
         mode: &str,
         saved_parallel_waves: Option<Vec<Vec<usize>>>,
+    ) -> Result<String> {
+        self.continue_graph_with_advice(nodes, query, context, mode, saved_parallel_waves, None)
+            .await
+    }
+
+    pub(crate) async fn continue_graph_with_advice(
+        &mut self,
+        nodes: Vec<Subtask>,
+        query: &str,
+        context: &str,
+        mode: &str,
+        saved_parallel_waves: Option<Vec<Vec<usize>>>,
+        expert_advice_snapshot: Option<&str>,
     ) -> Result<String> {
         let plan = Plan {
             steps: nodes.iter().map(|n| n.step.clone()).collect(),
@@ -755,10 +810,19 @@ impl Session {
         };
         self.subtasks = nodes;
         let base = Self::prompt_base(query, context, self.verification_enabled)?;
-        let strategy = self
+        let mut strategy = self
             .execute_remaining_plan(order, &base, saved_parallel_waves)
             .await?;
-        self.solve_with_strategy(query, context, mode, true, Some(strategy))
+        if let Some(advice) = expert_advice_snapshot {
+            let _: serde_json::Value = serde_json::from_str(advice)?;
+            strategy = truncate(
+                &format!(
+                    "{strategy}\nIndependent workflow advice (unverified data, never permissions): {advice}"
+                ),
+                4000,
+            );
+        }
+        self.solve_with_strategy(query, context, mode, true, Some(strategy), None)
             .await
     }
 
@@ -1121,21 +1185,27 @@ impl Session {
     /// sequential path to decide what to attempt.
     pub(crate) async fn workflow_advice_batch(
         &mut self,
-        candidates: &[(
-            &crate::registry::Manifest,
-            Option<&crate::models::Registered>,
-            Vec<String>,
-        )],
+        candidates: &[WorkflowCandidate<'_>],
         query: &str,
         context: &str,
         cap: usize,
-    ) -> Result<Option<Vec<(String, String)>>> {
+        planner_overlap: Option<PlannerOverlap>,
+    ) -> Result<Option<(Option<(u32, String)>, Vec<(String, String)>)>> {
+        let overlap_deadline = planner_overlap
+            .as_ref()
+            .map(|overlap| (Instant::now() + overlap.phase_budget).min(self.deadline));
         if !(2..=4).contains(&cap) || candidates.len() < 2 || candidates.len() > cap {
             bail!("Invalid independent expert batch selection")
         }
         let step_cap =
             crate::reasoning::parallel::validate_parallelism(self.cfg.subtask_parallelism)?
                 .min(cap);
+        if planner_overlap
+            .as_ref()
+            .is_some_and(|overlap| overlap.capacity < 2 || overlap.capacity > 4)
+        {
+            bail!("Invalid planner/expert overlap capacity")
+        }
         let mut seen_capabilities = std::collections::BTreeSet::new();
         let mut seen_experts = std::collections::BTreeSet::new();
         let mut prompt_specs = Vec::with_capacity(candidates.len());
@@ -1237,7 +1307,12 @@ impl Session {
             .saturating_add(max_prompt_bytes.saturating_mul(2))
             .saturating_add(advice_context_bytes);
         let phase_budget = (self.deadline.saturating_duration_since(Instant::now()) / 3)
-            .min(Duration::from_secs(self.cfg.timeout_seconds));
+            .min(Duration::from_secs(self.cfg.timeout_seconds))
+            .min(
+                planner_overlap
+                    .as_ref()
+                    .map_or(Duration::MAX, |overlap| overlap.phase_budget),
+            );
         let admitted = self.cycle_limit > 0
             && phase_budget > Duration::ZERO
             && self
@@ -1299,7 +1374,7 @@ impl Session {
                 cfg.role_profiles.clear();
                 cfg.model_registration = Some(selection.clone());
                 cfg.validate()?;
-                self.store.event(&self.task,"expert_model_snapshot","jev-plus",json!({"expert":manifest.id,"model_registration":selection,"model_checksum":model.checksum,"requested_model":model.manifest.model,"weights_attested":false}))?;
+                self.store.event(&self.task,"expert_model_snapshot","jev-plus",json!({"expert":manifest.id,"model_registration":selection,"model_checksum":model.checksum,"requested_model":model.manifest.model,"weights_attested":false,"overlap_id":planner_overlap.as_ref().map(|overlap| overlap.id.as_str())}))?;
                 let inference: Arc<dyn InferenceBackend> =
                     if let Some(factory) = &self.model_backend_factory {
                         factory(&cfg)?
@@ -1332,10 +1407,10 @@ impl Session {
             if backend.input_token_admission() != self.cfg.input_token_admission {
                 bail!("Selected inference backend cannot enforce configured input-token admission")
             }
-            prepared.push((manifest, capabilities, prompt, backend));
+            prepared.push((manifest, model, capabilities, prompt, backend));
         }
 
-        for (manifest, _, _, _) in &prepared {
+        for (manifest, _, _, _, _) in &prepared {
             let decision = self.policy.authorize(&self.task, "jev-r", "llm.generate");
             self.store.event(&self.task,"policy","security-kernel",json!({"task_id":self.task,"actor":"jev-r","role":"solver","capability":"llm.generate","allowed":decision.is_ok(),"reason":decision.as_ref().err().map(ToString::to_string),"expert_id":manifest.id}))?;
             decision?;
@@ -1344,19 +1419,46 @@ impl Session {
             &self.task,
             "expert_phase_budget",
             "jev-plus",
-            json!({"experts":prepared.iter().map(|(manifest,_,_,_)| json!({"id":manifest.id,"version":manifest.version})).collect::<Vec<_>>(),"max_milliseconds":phase_budget.as_millis().min(u64::MAX as u128) as u64,"original_deadline_preserved":true,"provider_stop_proven":false}),
+            json!({"experts":prepared.iter().map(|(manifest,_,_,_,_)| json!({"id":manifest.id,"version":manifest.version})).collect::<Vec<_>>(),"max_milliseconds":phase_budget.as_millis().min(u64::MAX as u128) as u64,"original_deadline_preserved":true,"provider_stop_proven":false}),
         )?;
 
-        let phase_deadline = (Instant::now() + phase_budget).min(self.deadline);
+        let phase_deadline = overlap_deadline.unwrap_or_else(|| Instant::now() + phase_budget);
         let mut results = vec![std::collections::BTreeMap::<String, String>::new(); prepared.len()];
+        let mut overlap_call_ids = Vec::<u32>::new();
+        let mut planner_call = None::<u32>;
+        let mut planner_text = None::<String>;
+        let mut expert_wave_index = 0usize;
+        let overlap_experts = prepared
+            .iter()
+            .map(|(manifest, model, capabilities, _, _)| {
+                Ok(json!({
+                    "id":manifest.id,
+                    "version":manifest.version,
+                    "manifest":manifest,
+                    "checksum":crate::store::sha256(&serde_json::to_vec(manifest)?),
+                    "requested_capabilities":capabilities,
+                    "model_registration":manifest.model,
+                    "model_checksum":model.map(|model| model.checksum.as_str()),
+                    "requested_model":model.map(|model| model.manifest.model.as_str()),
+                    "workflow_step_ids":manifest.workflow_steps.as_ref().map(|steps| steps.iter().map(|step| step.id.as_str()).collect::<Vec<_>>()),
+                    "legacy_workflow":manifest.workflow.is_some(),
+                }))
+            })
+            .collect::<Result<Vec<_>>>()?;
         loop {
             let mut wave = Vec::new();
+            let first_wave = overlap_call_ids.is_empty() && planner_overlap.is_some();
+            let expert_wave_capacity = if first_wave {
+                planner_overlap.as_ref().unwrap().capacity.saturating_sub(1)
+            } else {
+                cap
+            };
             // First give every active expert one slot, then fill spare slots
             // with additional independent steps. Never use a sibling's pending
             // output to satisfy a dependency within this wave.
             'ready: for lane in 0..step_cap {
-                for (index, (manifest, _, base, backend)) in prepared.iter().enumerate() {
-                    if wave.len() == cap {
+                for (index, (manifest, _, _, base, backend)) in prepared.iter().enumerate() {
+                    if wave.len() == expert_wave_capacity {
                         break 'ready;
                     }
                     let next = if let Some(steps) = &manifest.workflow_steps {
@@ -1395,14 +1497,16 @@ impl Session {
             if wave.is_empty() {
                 break;
             }
-            self.store.event(&self.task, "expert_ready_wave", "jev-plus", json!({
+            let ready_wave_event = json!({
                 "format_version":1,"expert_parallelism":cap,"per_expert_step_parallelism":step_cap,
+                "overlap_id":planner_overlap.as_ref().map(|overlap| overlap.id.as_str()),
+                "wave_index":expert_wave_index,
                 "calls":wave.iter().map(|(index, step, _, _)| json!({
                     "expert_id":prepared[*index].0.id,"expert_version":prepared[*index].0.version,"step":step
                 })).collect::<Vec<_>>(),
                 "policy":"stable_round_robin_ready_steps/v1","dependencies_from_prior_waves_only":true,
                 "permissions_granted":false,"results_verified":false
-            }))?;
+            });
             let remaining = phase_deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
                 self.store.event(
@@ -1414,7 +1518,11 @@ impl Session {
                         "partial_advice_discarded":true,"automatic_replay":false
                     }),
                 )?;
-                return Ok(Some(Vec::new()));
+                return if overlap_call_ids.is_empty() {
+                    Ok(None)
+                } else {
+                    Ok(Some((None, Vec::new())))
+                };
             }
             let wave_bytes = wave
                 .iter()
@@ -1437,7 +1545,7 @@ impl Session {
                 bail!("Expert DAG wave exceeds its admitted shared task reserve")
             }
             for (index, _, prompt, _) in &wave {
-                let (manifest, _, base, _) = &prepared[*index];
+                let (manifest, _, _, base, _) = &prepared[*index];
                 if prompt.len() > prompt_bound(manifest, base) {
                     bail!("Expert DAG prompt exceeds its preflight bound")
                 }
@@ -1448,9 +1556,100 @@ impl Session {
                 }))?;
                 decision?;
             }
+            if first_wave {
+                if let Some(configuration) = &self.cfg.resource_admission {
+                    let Some(pool) = &self.resource_pool else {
+                        bail!("Configured resource pool is missing during overlap admission")
+                    };
+                    let mut routes = Vec::with_capacity(wave.len() + 1);
+                    routes.push(("planner", self.backend.inference_target("planner")?));
+                    for (_, _, _, backend) in &wave {
+                        routes.push(("solver", backend.inference_target("solver")?));
+                    }
+                    if !pool.wave_fits(configuration, &routes)? {
+                        self.store.event(
+                            &self.task,
+                            "expert_batch_admission",
+                            "jev-plus",
+                            json!({"format_version":1,"admitted":false,"reason":"Configured resource pool has no simultaneous planner and expert capacity","permissions_granted":false}),
+                        )?;
+                        return Ok(None);
+                    }
+                }
+            }
             let mut calls = Vec::with_capacity(wave.len());
+            if first_wave {
+                let overlap = planner_overlap.as_ref().unwrap();
+                self.store.event(
+                    &self.task,
+                    "expert_planner_wave_intent",
+                    "jev-plus",
+                    json!({
+                        "format_version":1,
+                        "overlap_id":overlap.id,
+                        "objective_sha256":crate::store::sha256(query.as_bytes()),
+                        "context_sha256":crate::store::sha256(context.as_bytes()),
+                        "planner_prompt_sha256":crate::store::sha256(overlap.prompt.as_bytes()),
+                        "configuration_sha256":self.original_configuration_digest()?,
+                        "experts":overlap_experts,
+                        "expert_first_wave_capacity":expert_wave_capacity,
+                        "global_capacity":overlap.capacity,
+                        "dependencies_from_prior_waves_only":true,
+                        "permissions_granted":false,
+                        "results_verified":false
+                    }),
+                )?;
+                self.store.event(
+                    &self.task,
+                    "expert_ready_wave",
+                    "jev-plus",
+                    ready_wave_event.clone(),
+                )?;
+                let call = self.resources.calls + 1;
+                let publication_error = match self.store.event(
+                    &self.task,
+                    "model_dispatch",
+                    "jev-r",
+                    json!({
+                        "role":"planner","call":call,"allocation":256,
+                        "prompt_bytes":overlap.prompt.len(),
+                        "prompt_sha256":crate::store::sha256(overlap.prompt.as_bytes()),
+                        "overlap_id":overlap.id,"dispatch_kind":"planner_expert_overlap"
+                    }),
+                ) {
+                    Ok(()) => None,
+                    Err(error) if error.is::<crate::store::PersistedEventError>() => Some(error),
+                    Err(error) => return Err(error),
+                };
+                self.resources.calls = call;
+                self.resources.reserved_output_tokens += 256;
+                self.resources.prompt_bytes += overlap.prompt.len();
+                if let Some(error) = publication_error {
+                    return Err(error);
+                }
+                planner_call = Some(call);
+                overlap_call_ids.push(call);
+                calls.push(expert_parallel::CandidateCall {
+                    role: "planner".into(),
+                    expert_id: "__planner__".into(),
+                    expert_version: "1".into(),
+                    capabilities: Vec::new(),
+                    call,
+                    allocation: 256,
+                    prompt: overlap.prompt.clone(),
+                    backend: self.backend.clone(),
+                    overlap_id: Some(overlap.id.clone()),
+                });
+            } else {
+                self.store.event(
+                    &self.task,
+                    "expert_ready_wave",
+                    "jev-plus",
+                    ready_wave_event,
+                )?;
+            }
             for (index, step_id, prompt, backend) in &wave {
-                let (manifest, capabilities, _, _) = &prepared[*index];
+                let (manifest, _, capabilities, _, _) = &prepared[*index];
                 let dependencies = manifest
                     .workflow_steps
                     .as_ref()
@@ -1472,8 +1671,12 @@ impl Session {
                     "jev-r",
                     json!({
                         "role":"solver","call":call,"allocation":192,"prompt_bytes":prompt.len(),
+                        "prompt_sha256":crate::store::sha256(prompt.as_bytes()),
                         "expert_id":manifest.id,"expert_version":manifest.version,"step":step_id,
-                        "requested_capabilities":capabilities
+                        "requested_capabilities":capabilities,
+                        "overlap_id":planner_overlap.as_ref().map(|overlap| overlap.id.as_str()),
+                        "expert_wave":expert_wave_index,
+                        "dispatch_kind":if planner_overlap.is_some() {"planner_expert_overlap"} else {"expert_batch"}
                     }),
                 ) {
                     Ok(()) => None,
@@ -1483,25 +1686,42 @@ impl Session {
                 self.resources.calls = call;
                 self.resources.reserved_output_tokens += 192;
                 self.resources.prompt_bytes += prompt.len();
+                if planner_overlap.is_some() {
+                    overlap_call_ids.push(call);
+                }
                 if let Some(error) = publication_error {
                     return Err(error);
                 }
                 calls.push(expert_parallel::CandidateCall {
+                    role: "solver".into(),
                     expert_id: manifest.id.clone(),
                     expert_version: manifest.version.clone(),
                     capabilities: capabilities.clone(),
                     call,
+                    allocation: 192,
                     prompt: prompt.clone(),
                     backend: backend.clone(),
+                    overlap_id: planner_overlap.as_ref().map(|overlap| overlap.id.clone()),
                 });
             }
+            let call_count = calls.len();
             let reports = self
                 .execute_independent_expert_batch(calls, remaining)
                 .await?;
-            if reports.len() != wave.len() {
-                return Ok(Some(Vec::new()));
+            if reports.len() != call_count {
+                return Ok(Some((None, Vec::new())));
             }
-            for ((index, step_id, _, _), (expert_id, advice)) in wave.into_iter().zip(reports) {
+            let mut expert_reports = Vec::new();
+            for (expert_id, role, advice) in reports {
+                if role == "planner" {
+                    planner_text = Some(advice);
+                } else {
+                    expert_reports.push((expert_id, advice));
+                }
+            }
+            for ((index, step_id, _, _), (expert_id, advice)) in
+                wave.into_iter().zip(expert_reports)
+            {
                 let manifest = prepared[index].0;
                 if expert_id != manifest.id {
                     bail!("Expert DAG result identity mismatch");
@@ -1517,9 +1737,10 @@ impl Session {
                 }))?;
                 results[index].insert(step_id, advice);
             }
+            expert_wave_index += 1;
         }
         let mut outcomes = Vec::with_capacity(prepared.len());
-        for ((manifest, _, _, _), results) in prepared.into_iter().zip(results) {
+        for ((manifest, _, _, _, _), results) in prepared.into_iter().zip(results) {
             let expected = manifest.workflow_steps.as_ref().map_or(1, Vec::len);
             if results.len() != expected {
                 bail!("Expert DAG stopped with unresolved dependencies");
@@ -1534,7 +1755,68 @@ impl Session {
             };
             outcomes.push((manifest.id.clone(), advice));
         }
-        Ok(Some(outcomes))
+        if let (Some(overlap), Some(planner_call), Some(planner_text)) = (
+            planner_overlap.as_ref(),
+            planner_call,
+            planner_text.as_ref(),
+        ) {
+            let completion = json!({
+                "format_version":1,
+                "overlap_id":overlap.id,
+                "planner_call":planner_call,
+                "planner_result_sha256":crate::store::sha256(planner_text.as_bytes()),
+                "call_ids":overlap_call_ids,
+                "expert_advice":outcomes,
+                "expert_advice_sha256":crate::store::sha256(&serde_json::to_vec(&outcomes)?),
+                "objective_sha256":crate::store::sha256(query.as_bytes()),
+                "context_sha256":crate::store::sha256(context.as_bytes()),
+                "permissions_granted":false,
+                "verified":false
+            });
+            let serialized_advice = serde_json::to_string(&outcomes)?;
+            let snapshot = json!({
+                "format_version":1,
+                "source_context_sha256":crate::store::sha256(context.as_bytes()),
+                "advice_sha256":crate::store::sha256(serialized_advice.as_bytes()),
+                "advice":serialized_advice,
+                "verified":false,
+                "permissions_granted":false
+            });
+            let completion_raw = completion.to_string();
+            let snapshot_raw = snapshot.to_string();
+            if completion_raw.len() > 262144 || snapshot_raw.len() > 262144 {
+                bail!("Planner/expert durable result exceeds its event bound")
+            }
+            let mut db = self.store.lock()?;
+            let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+            tx.execute(
+                "INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'expert_planner_wave_complete','jev-plus',?2,unixepoch())",
+                rusqlite::params![self.task, completion_raw],
+            )?;
+            tx.execute(
+                "INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'expert_advice_snapshot','jev-plus',?2,unixepoch())",
+                rusqlite::params![self.task, snapshot_raw],
+            )?;
+            tx.commit()?;
+            Ok(Some((Some((planner_call, planner_text.clone())), outcomes)))
+        } else if let Some(overlap) = planner_overlap.as_ref() {
+            self.store.event(
+                &self.task,
+                "expert_planner_wave_incomplete",
+                "jev-plus",
+                json!({
+                    "format_version":1,
+                    "overlap_id":overlap.id,
+                    "call_ids":overlap_call_ids,
+                    "reason":"Planner or expert wave has an unresolved result",
+                    "automatic_replay":false,
+                    "permissions_granted":false
+                }),
+            )?;
+            Ok(Some((None, outcomes)))
+        } else {
+            Ok(Some((None, outcomes)))
+        }
     }
 
     pub(crate) async fn shutdown_experts(&self) -> Result<()> {
@@ -1839,6 +2121,146 @@ impl Session {
         }
     }
 
+    async fn planning_advice_with_expert_overlap(
+        &mut self,
+        base: &str,
+        ticket: advice_guard::Ticket,
+        request: ExpertOverlap<'_>,
+    ) -> Result<String> {
+        let phase_budget = ticket.remaining();
+        let overlap = PlannerOverlap {
+            id: uuid::Uuid::new_v4().to_string(),
+            prompt: base.to_owned(),
+            capacity: request.global_capacity,
+            phase_budget,
+        };
+        let batch = self
+            .workflow_advice_batch(
+                request.candidates,
+                request.query,
+                request.context,
+                request.expert_cap,
+                Some(overlap),
+            )
+            .await;
+        let batch = match batch {
+            Ok(batch) => batch,
+            Err(error) => {
+                self.observe_advice(
+                    &ticket,
+                    if error.is::<InferenceTimeout>() {
+                        advice_guard::Outcome::TimedOut
+                    } else {
+                        advice_guard::Outcome::Failed
+                    },
+                )?;
+                return Err(error);
+            }
+        };
+        let Some((planner_result, expert_advice)) = batch else {
+            // No call was reserved or dispatched. Continue through the existing
+            // planner path with the same ticket and deadline.
+            return self.planning_advice(base, ticket).await;
+        };
+        let result: Result<String> = async {
+            // Publish the completed advisory result before any plan work can be
+            // interrupted. Recovery can then use these exact bytes without replay.
+            let serialized_advice = if expert_advice.is_empty() {
+                None
+            } else {
+                Some(serde_json::to_string(&expert_advice)?)
+            };
+
+            let mut strategy = String::new();
+            if let Some((planner_call, planner_text)) = planner_result {
+                match Plan::parse(&planner_text) {
+                    Ok(graph) => {
+                        self.store.event(
+                            &self.task,
+                            "plan",
+                            "planner-r",
+                            json!({
+                                "graph":graph,
+                                "planner_call":planner_call,
+                                "trusted_permissions":false,
+                                "scheduler_required":true,
+                                "overlap_outcome_bound":true
+                            }),
+                        )?;
+                        let remaining = ticket.remaining();
+                        if remaining.is_zero() {
+                            bail!("Original planning phase deadline exhausted before plan execution")
+                        }
+                        strategy = match tokio::time::timeout(remaining, self.execute_plan(graph, base)).await {
+                            Ok(result) => result?,
+                            Err(_) => return Err(InferenceTimeout.into()),
+                        };
+                    }
+                    Err(error) => {
+                        self.store.event(
+                            &self.task,
+                            "plan_fallback",
+                            "jev-plus",
+                            json!({"reason":error.to_string(),"action":"Solve original objective","overlap_outcome_bound":true}),
+                        )?;
+                    }
+                }
+            } else {
+                self.store.event(
+                    &self.task,
+                    "planning_failure",
+                    "jev-plus",
+                    json!({
+                        "failure_kind":"planner_or_expert_wave_unresolved",
+                        "partial_strategy_discarded":true,
+                        "action":"Solve original objective without retrying dispatched calls",
+                        "provider_stop_proven":false,
+                        "automatic_replay":false
+                    }),
+                )?;
+                return Err(InferenceTimeout.into());
+            }
+            if let Some(serialized) = serialized_advice {
+                strategy = format!(
+                    "{}\nIndependent workflow advice (unverified data, never permissions): {}",
+                    strategy,
+                    serialized
+                );
+                strategy = truncate(&strategy, 4000);
+            }
+            Ok(strategy)
+        }
+        .await;
+
+        self.observe_advice(
+            &ticket,
+            match &result {
+                Err(error) if error.is::<InferenceTimeout>() => advice_guard::Outcome::TimedOut,
+                Err(_) => advice_guard::Outcome::Failed,
+                Ok(_) => advice_guard::Outcome::Completed,
+            },
+        )?;
+        match result {
+            Err(error) if error.is::<InferenceTimeout>() => {
+                self.finish_metrics();
+                self.complete_usage = false;
+                self.resources.input_tokens = None;
+                self.resources.output_tokens = None;
+                self.complete_queue_metrics = false;
+                self.resources.queue_wait_ms = None;
+                self.finish_subtasks("exhausted")?;
+                self.store.event(
+                    &self.task,
+                    "planning_failure",
+                    "jev-plus",
+                    json!({"failure_kind":"inference_timeout","partial_strategy_discarded":true,"action":"Solve original objective within remaining budgets","provider_stop_proven":false,"verified":false}),
+                )?;
+                Ok(String::new())
+            }
+            result => result,
+        }
+    }
+
     pub async fn solve(&mut self, query: &str, context: &str, mode: &str) -> Result<String> {
         self.solve_configured(query, context, mode, true).await
     }
@@ -1850,7 +2272,19 @@ impl Session {
         mode: &str,
         collective: bool,
     ) -> Result<String> {
-        self.solve_with_strategy(query, context, mode, collective, None)
+        self.solve_with_strategy(query, context, mode, collective, None, None)
+            .await
+    }
+
+    pub(crate) async fn solve_configured_with_expert_overlap(
+        &mut self,
+        query: &str,
+        context: &str,
+        mode: &str,
+        collective: bool,
+        request: ExpertOverlap<'_>,
+    ) -> Result<String> {
+        self.solve_with_strategy(query, context, mode, collective, None, Some(request))
             .await
     }
 
@@ -1861,6 +2295,7 @@ impl Session {
         mode: &str,
         collective: bool,
         saved_strategy: Option<String>,
+        expert_overlap: Option<ExpertOverlap<'_>>,
     ) -> Result<String> {
         if Instant::now() >= self.deadline || self.resources.cycles as usize >= self.cycle_limit {
             self.stop_reason = "budget_exhausted".into();
@@ -2135,7 +2570,19 @@ impl Session {
             let admitted = ticket.is_some();
             self.store.event(&self.task,"schedule","jev-plus",json!({"decision":if admitted {"admit_planning"} else {"skip_planning"},"reason":"Preserve first whole-goal solver call, output and prompt budget","reserved_prompt_bytes":prompt_reserve}))?;
             if let Some(ticket) = ticket {
-                strategy = self.planning_advice(&base, ticket).await?;
+                strategy = if let Some(request) = expert_overlap {
+                    if request.candidates.len() >= 2
+                        && (2..=4).contains(&request.expert_cap)
+                        && (2..=4).contains(&request.global_capacity)
+                    {
+                        self.planning_advice_with_expert_overlap(&base, ticket, request)
+                            .await?
+                    } else {
+                        self.planning_advice(&base, ticket).await?
+                    }
+                } else {
+                    self.planning_advice(&base, ticket).await?
+                };
             }
         }
         if collective && !resuming && mode == "research" && self.call_limit >= 4 {

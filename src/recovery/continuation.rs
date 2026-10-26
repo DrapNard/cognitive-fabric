@@ -25,6 +25,8 @@ mod module_history;
 #[cfg(test)]
 #[path = "continuation_module_tests.rs"]
 mod module_tests;
+#[path = "continuation_overlap.rs"]
+mod overlap_history;
 #[path = "continuation_parallel.rs"]
 mod parallel_history;
 #[path = "continuation_path_progress.rs"]
@@ -62,6 +64,7 @@ struct Checkpoint {
     project_profile: Option<crate::projects::ProjectProfile>,
     project_profile_sha256: Option<String>,
     reconciled_parallel_subtasks: Vec<Subtask>,
+    overlap_advice_snapshot: Option<String>,
 }
 
 fn prepare(db: &rusqlite::Connection, task: &str) -> Result<Checkpoint> {
@@ -103,6 +106,7 @@ fn prepare_with_native(
         |row| row.get(0),
     )?;
     let (status, graph, mut subtasks) = graph::graph_from(db, task)?;
+    let overlap_history = overlap_history::validate_from_task(db, task)?;
     if parallel_recorded && graph.is_none() {
         bail!("Parallel advisory schedule has no pinned graph")
     }
@@ -152,6 +156,7 @@ fn prepare_with_native(
     let mut nodes = Vec::new();
     let mut solver_texts = BTreeMap::new();
     let mut planner_texts = BTreeMap::new();
+    let mut overlap_parent_candidates = BTreeSet::<u64>::new();
     let mut exploration = None;
     let mut explorer_seen = false;
     let mut bytes = 0usize;
@@ -189,8 +194,25 @@ fn prepare_with_native(
                 bail!("Invalid saved reasoning source")
             }
             let node: Node = serde_json::from_value(payload["node"].clone())?;
+            let call_id = payload["call"].as_u64();
+            let marked_overlap = payload["overlap_id"].as_str().is_some();
+            let parent_ok = if marked_overlap {
+                let Some(call_id) = call_id else {
+                    bail!("Overlap reasoning node has no call identity")
+                };
+                if node.parent.is_some()
+                    || node.cycle != 0
+                    || !matches!(node.role.as_str(), "planner" | "solver")
+                    || !overlap_parent_candidates.insert(call_id)
+                {
+                    bail!("Overlap reasoning node has invalid independent lineage")
+                }
+                true
+            } else {
+                node.parent == nodes.last().map(|n: &Node| n.id)
+            };
             if node.id != nodes.len()
-                || node.parent != nodes.last().map(|n: &Node| n.id)
+                || !parent_ok
                 || node.cycle > 16
                 || nodes.last().is_some_and(|n: &Node| n.cycle > node.cycle)
             {
@@ -548,11 +570,19 @@ fn prepare_with_native(
         None,
         boundary_id,
     )?;
+    if overlap_parent_candidates != overlap_history.all_call_ids {
+        bail!("Independent reasoning nodes do not match a validated planner/expert overlap")
+    }
     let tail = audit["calls"]
         .as_array()
         .unwrap()
         .iter()
-        .filter(|c| c["call"].as_u64().unwrap() > calls_before)
+        .filter(|call| {
+            call["call"].as_u64().unwrap() > calls_before
+                && !overlap_history
+                    .expert_call_ids
+                    .contains(&call["call"].as_u64().unwrap())
+        })
         .collect::<Vec<_>>();
     let mut parallel_schedule = None;
     if let Some(graph) = &graph {
@@ -581,6 +611,7 @@ fn prepare_with_native(
                 tail: &tail,
                 calls_before,
                 boundary_present: boundary.is_some(),
+                excluded_solver_calls: &overlap_history.expert_call_ids,
             },
         )?;
         if let Some(schedule) = &parallel_schedule {
@@ -730,6 +761,7 @@ fn prepare_with_native(
         boundary,
         parallel_schedule,
         reconciled_parallel_subtasks,
+        overlap_advice_snapshot: overlap_history.advice_snapshot,
         state: RestoredState {
             resources,
             nodes,
@@ -767,6 +799,152 @@ fn validate_parallel_remaining_budget(
 
 pub(super) fn validate_checkpoint(db: &rusqlite::Connection, task: &str) -> Result<()> {
     prepare(db, task).map(|_| ())
+}
+
+fn original_configuration(db: &rusqlite::Connection, task: &str) -> Result<Config> {
+    let mut statement = db.prepare(
+        "SELECT CASE WHEN length(CAST(source AS BLOB))<=64 THEN source END,CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN payload END FROM events WHERE task_id=?1 AND kind='execution_settings' ORDER BY id LIMIT 2",
+    )?;
+    let mut rows = statement.query([task])?;
+    let row = rows
+        .next()?
+        .ok_or_else(|| anyhow::anyhow!("Original execution settings are missing"))?;
+    let source: String = row.get(0)?;
+    let raw: String = row.get(1)?;
+    if source != "runtime" || rows.next()?.is_some() {
+        bail!("Original execution settings are repeated or have an invalid source")
+    }
+    let settings = crate::strict_json::value(raw.as_bytes(), 262144)?;
+    let configuration: Config = serde_json::from_value(settings["configuration"].clone())?;
+    configuration.validate()?;
+    Ok(configuration)
+}
+
+/// Materialize the saved overlap outcome only after explicit resume approval,
+/// under the caller's exclusive owner and immediate transaction.
+fn reconstruct_completed_overlap(db: &rusqlite::Connection, task: &str) -> Result<()> {
+    let status: String = db.query_row("SELECT status FROM tasks WHERE id=?1", [task], |row| {
+        row.get(0)
+    })?;
+    if !matches!(status.as_str(), "running" | "interrupted") {
+        bail!("Only an abandoned task can materialize overlap recovery state")
+    }
+    let (_, graph, subtasks) = graph::graph_from(db, task)?;
+    if graph.is_some() || !subtasks.is_empty() {
+        return Ok(());
+    }
+    let overlap = overlap_history::validate_from_task(db, task)?;
+    let (Some(planner_text), Some(planner_call)) =
+        (overlap.planner_text.as_deref(), overlap.planner_call)
+    else {
+        return Ok(());
+    };
+    let has_boundary: bool = db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM events WHERE task_id=?1 AND kind='reasoning_boundary')",
+        [task],
+        |row| row.get(0),
+    )?;
+    if has_boundary {
+        return Ok(());
+    }
+    let context_raw: String = db.query_row(
+        "SELECT CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN payload END FROM events WHERE task_id=?1 AND kind='reasoning_context' ORDER BY id LIMIT 1",
+        [task],
+        |row| row.get(0),
+    )?;
+    let context = crate::strict_json::value(context_raw.as_bytes(), 262144)?;
+    let settings_raw: String = db.query_row(
+        "SELECT CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN payload END FROM events WHERE task_id=?1 AND kind='execution_settings' ORDER BY id LIMIT 1",
+        [task],
+        |row| row.get(0),
+    )?;
+    let settings = crate::strict_json::value(settings_raw.as_bytes(), 262144)?;
+    let cfg: Config = serde_json::from_value(settings["configuration"].clone())?;
+    cfg.validate()?;
+    let audit = inference::audit_from(db, task)?;
+    let cycles = settings["cycle_limit"]
+        .as_u64()
+        .ok_or_else(|| anyhow::anyhow!("Original cycle limit is missing"))?
+        .checked_sub(
+            audit["remaining_inference_admission"]["cycles"]
+                .as_u64()
+                .ok_or_else(|| anyhow::anyhow!("Remaining cycle budget is missing"))?,
+        )
+        .ok_or_else(|| anyhow::anyhow!("Cycle budget changed during overlap recovery"))?;
+    if cycles != 0 {
+        bail!("Completed overlap is not at the original pre-solver cycle boundary")
+    }
+    match crate::planning::Plan::parse(planner_text) {
+        Ok(plan) => {
+            let payload = json!({
+                "graph":plan,
+                "planner_call":planner_call,
+                "trusted_permissions":false,
+                "scheduler_required":true,
+                "overlap_outcome_bound":true,
+                "origin":"operator_completed_overlap_recovery"
+            });
+            db.execute(
+                "INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'plan','planner-r',?2,unixepoch())",
+                rusqlite::params![task, serde_json::to_string(&payload)?],
+            )?;
+        }
+        Err(error) => {
+            let has_fallback: bool = db.query_row(
+                "SELECT EXISTS(SELECT 1 FROM events WHERE task_id=?1 AND kind='plan_fallback')",
+                [task],
+                |row| row.get(0),
+            )?;
+            if !has_fallback {
+                db.execute(
+                    "INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'plan_fallback','jev-plus',?2,unixepoch())",
+                    rusqlite::params![task, json!({"reason":error.to_string(),"action":"Solve original objective","overlap_outcome_bound":true,"origin":"operator_completed_overlap_recovery"}).to_string()],
+                )?;
+            }
+            let strategy = overlap
+                .advice_snapshot
+                .as_ref()
+                .map(|advice| format!("\nIndependent workflow advice (unverified data, never permissions): {advice}"))
+                .unwrap_or_default();
+            let strategy = strategy.chars().take(4000).collect::<String>();
+            let remaining_tool_calls = audit["remaining_inference_admission"]["tool_calls"]
+                .as_u64()
+                .ok_or_else(|| anyhow::anyhow!("Remaining tool-call budget is missing"))?;
+            let tool_calls_before = (cfg.max_tool_calls as u64)
+                .checked_sub(remaining_tool_calls)
+                .ok_or_else(|| {
+                    anyhow::anyhow!("Tool-call budget changed during overlap recovery")
+                })?;
+            let boundary = json!({
+                "format_version":1,
+                "phase":"ready_solver",
+                "mode":settings["mode"],
+                "objective_hash":context["objective_hash"],
+                "context_hash":context["context_hash"],
+                "prompt_base_hash":context["prompt_base_hash"],
+                "strategy":strategy,
+                "previous_answer":"",
+                "last_answer_hash":null,
+                "calls_before":audit["reserved_calls"],
+                "cycles_before":cycles,
+                "tool_calls_before":tool_calls_before,
+                "reserved_output_tokens":audit["reserved_output_tokens"],
+                "charged_prompt_bytes":audit["charged_prompt_bytes"],
+                "permissions_restorable":false,
+                "subtask_results_verified":false,
+                "origin":"operator_completed_overlap_recovery"
+            });
+            let raw = serde_json::to_string(&boundary)?;
+            if raw.len() > 262144 {
+                bail!("Recovered overlap solver boundary exceeds its bound")
+            }
+            db.execute(
+                "INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'reasoning_boundary','jev-r',?2,unixepoch())",
+                rusqlite::params![task, raw],
+            )?;
+        }
+    }
+    Ok(())
 }
 
 /// Construct a revision boundary only after a fresh failed independent check.
@@ -1464,25 +1642,15 @@ async fn resume_with_runtime_handles(
     };
     let admission_started = Instant::now();
     let original_configuration = {
-        let mut db = store.lock()?;
+        let db = store.lock()?;
+        let started = admission_started;
         db.progress_handler(
             1000,
-            Some(move || admission_started.elapsed() > Duration::from_secs(5)),
+            Some(move || started.elapsed() > Duration::from_secs(5)),
         );
-        let prepared = (|| -> Result<Config> {
-            let tx = db.transaction()?;
-            Ok(prepare_with_native(
-                &tx,
-                task,
-                &escalator,
-                verifier_provider.as_ref(),
-                modules.clone(),
-                native.as_ref(),
-            )?
-            .cfg)
-        })();
+        let result = original_configuration(&db, task);
         db.progress_handler(0, None::<fn() -> bool>);
-        prepared?
+        result?
     };
     let resource_pool = original_configuration
         .resource_admission
@@ -1520,6 +1688,14 @@ async fn resume_with_runtime_handles(
         );
         let prepared = (|| -> Result<Checkpoint> {
             let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+            let status: String =
+                tx.query_row("SELECT status FROM tasks WHERE id=?1", [task], |row| {
+                    row.get(0)
+                })?;
+            if !matches!(status.as_str(), "running" | "interrupted") {
+                bail!("Task is no longer eligible for explicit continuation")
+            }
+            reconstruct_completed_overlap(&tx, task)?;
             let mut checkpoint = prepare_with_native(
                 &tx,
                 task,
@@ -1680,7 +1856,7 @@ async fn resume_with_runtime_handles(
                 .await?
         } else {
             session
-                .continue_graph(
+                .continue_graph_with_advice(
                     checkpoint.subtasks,
                     &checkpoint.query,
                     &checkpoint.context,
@@ -1689,6 +1865,7 @@ async fn resume_with_runtime_handles(
                         .parallel_schedule
                         .as_ref()
                         .map(|schedule| schedule.waves.clone()),
+                    checkpoint.overlap_advice_snapshot.as_deref(),
                 )
                 .await?
         };

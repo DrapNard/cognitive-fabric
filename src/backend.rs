@@ -31,6 +31,10 @@ pub struct Generation {
 }
 
 pub trait InferenceBackend: Send + Sync {
+    /// Trusted lifecycle capability, not provider output or residency evidence.
+    fn requires_preparation(&self, _role: &str) -> Result<bool> {
+        Ok(false)
+    }
     /// Prepare an admitted exact route without inference. Native lifecycle
     /// adapters retain their separate operator policy and original task clock.
     /// The default performs no work and does not attest readiness.

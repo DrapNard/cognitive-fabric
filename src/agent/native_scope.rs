@@ -741,6 +741,15 @@ impl NativeClientScope {
             && !self.record.response_instance_check_required
     }
 
+    pub(crate) fn requires_preparation(&self, model: &str) -> bool {
+        self.activation_pending
+            .load(std::sync::atomic::Ordering::Acquire)
+            || self
+                .state
+                .lock()
+                .map_or(true, |state| !state.bindings.contains_key(model))
+    }
+
     pub(crate) fn managed_target(&self, model: &str) -> Result<crate::backend::InferenceTarget> {
         let has_binding = self
             .state

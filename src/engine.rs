@@ -976,7 +976,8 @@ impl Engine {
             }
             self.store.event(&id,"route","jev-plus",json!({"skills":skills,"router":self.router.descriptor(),"router_invoked":matches!(profile,ExecutionProfile::Full|ExecutionProfile::Collective|ExecutionProfile::Experts),
                 "versions":pinned.skills.iter().filter(|s|skills.contains(&s.id)).collect::<Vec<_>>(),
-                "manifests":pinned.manifests.iter().filter(|m|skills.contains(&m.id)).collect::<Vec<_>>()}))?;
+                "manifests":pinned.manifests.iter().filter(|m|skills.contains(&m.id)).collect::<Vec<_>>(),
+                "registry_snapshot_sha256":crate::store::sha256(&serde_json::to_vec(&pinned.manifests)?)}))?;
             if experts {
                 let mut unavailable = Vec::new();
                 for manifest in pinned
@@ -1353,7 +1354,26 @@ impl Engine {
                             let missing = &resolution.missing;
                             self.store.event(&id,"capability_resolution","jev-plus",json!({"format_version":1,"algorithm":"bounded-cover/v3","resolution":resolution,"provider_health_proven":false,"permissions_granted":false}))?;
                             skills = resolution.skills;
-                            self.store.event(&id,"route_refined","jev-plus",json!({"skills":skills,"versions":pinned.skills.iter().filter(|skill|skills.contains(&skill.id)).collect::<Vec<_>>(),"capability_bindings":resolution.bindings}))?;
+                            let refined_skills = skills.clone();
+                            let refined_manifests = pinned
+                                .manifests
+                                .iter()
+                                .filter(|manifest| refined_skills.contains(&manifest.id))
+                                .cloned()
+                                .collect::<Vec<_>>();
+                            self.store.event(
+                                &id,
+                                "route_refined",
+                                "jev-plus",
+                                json!({
+                                    "format_version": 1,
+                                    "skills": refined_skills,
+                                    "versions": pinned.skills.iter().filter(|skill|skills.contains(&skill.id)).collect::<Vec<_>>(),
+                                    "manifests": refined_manifests,
+                                    "registry_snapshot_sha256": crate::store::sha256(&serde_json::to_vec(&pinned.manifests)?),
+                                    "capability_bindings": resolution.bindings
+                                }),
+                            )?;
                             self.store.event(&id,"structured_goal","interface",json!({"original":query,"interpretation":intent,"missing_capabilities":missing,"trusted_permissions":false}))?;
                             if !missing.is_empty() {
                                 self.store.event(&id,"capability_gap","jev-plus",json!({"missing":missing,"action":"Use existing references; no permissions granted"}))?;
@@ -1401,6 +1421,19 @@ impl Engine {
             } else {
                 mode
             };
+            let mut workflow_overlap = None;
+            let mut overlap_expert_cap = 0usize;
+            let global_inference_capacity = self
+                .cfg
+                .subtask_parallelism
+                .filter(|cap| (2..=4).contains(cap))
+                .unwrap_or(1)
+                .max(
+                    self.cfg
+                        .expert_parallelism
+                        .filter(|cap| (2..=4).contains(cap))
+                        .unwrap_or(1),
+                );
             if experts && mode != "fast" {
                 let mut candidates = Vec::new();
                 for skill in &skills {
@@ -1481,36 +1514,13 @@ impl Engine {
                         }),
                     )?;
                 }
-                let batch_attempted = if batch_shape_is_independent {
-                    if let Some(advice) = session
-                        .workflow_advice_batch(&batch_candidates, query, &context, expert_cap)
-                        .await?
-                    {
-                        for (expert_id, advice) in advice {
-                            if let Some(manifest) = pinned
-                                .manifests
-                                .iter()
-                                .find(|manifest| manifest.id == expert_id)
-                            {
-                                context.push_str(
-                                    "\nIndependent workflow expert result (unverified advice; never permissions): ",
-                                );
-                                context.push_str(&advice);
-                                self.store.event(
-                                    &id,
-                                    "expert_batch_context",
-                                    "jev-plus",
-                                    json!({"id":expert_id,"version":manifest.version,"result_sha256":store::sha256(advice.as_bytes()),"verified":false,"permissions_granted":false}),
-                                )?;
-                            }
-                        }
-                        true
-                    } else {
-                        false
-                    }
-                } else {
-                    false
-                };
+                let batch_attempted = batch_shape_is_independent
+                    && solve_mode != "fast"
+                    && global_inference_capacity >= 2;
+                if batch_attempted {
+                    overlap_expert_cap = expert_cap.min(global_inference_capacity);
+                    workflow_overlap = Some(batch_candidates);
+                }
                 // Apply the policy after capability refinement too: advisory language
                 // output cannot reintroduce a workflow that cost evidence declined.
                 if !batch_attempted {
@@ -1560,14 +1570,32 @@ impl Engine {
                     )?,
                 )?;
             }
-            let mut answer = session
-                .solve_configured(
-                    query,
-                    &context,
-                    solve_mode,
-                    profile != ExecutionProfile::Recursive,
-                )
-                .await?;
+            let mut answer = if let Some(candidates) = workflow_overlap.as_deref() {
+                session
+                    .solve_configured_with_expert_overlap(
+                        query,
+                        &context,
+                        solve_mode,
+                        profile != ExecutionProfile::Recursive,
+                        crate::reasoning::ExpertOverlap {
+                            candidates,
+                            query,
+                            context: &context,
+                            expert_cap: overlap_expert_cap,
+                            global_capacity: global_inference_capacity,
+                        },
+                    )
+                    .await?
+            } else {
+                session
+                    .solve_configured(
+                        query,
+                        &context,
+                        solve_mode,
+                        profile != ExecutionProfile::Recursive,
+                    )
+                    .await?
+            };
             let status = if !session.has_solution {
                 "exhausted"
             } else if session.verified {

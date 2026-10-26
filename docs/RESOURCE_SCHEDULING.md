@@ -133,6 +133,28 @@ records measured pool waiting, followed by `resource_dispatch` before provider
 entry. These inserts must succeed. `resource_refused` records admission failure.
 No prompt, answer, credential or provider error body is included in these events.
 
+On-demand wave preparation uses a separate `resource_preparation_intent` and
+reservation UUID before the same admission chain. Preparation acquires the
+configured role/model working allocation, validates resident coverage and any
+GPU observation, then invokes only the trusted backend lifecycle hook. It does
+not dispatch or complete an inference call. Generation subsequently acquires its
+own lease. Warm native bindings and adapters with no preparation work skip this
+extra lease; this capability is trusted adapter metadata, not residency evidence.
+
+The preparation allocation covers the load operation, not the lifetime of the
+loaded weights. Persistent weight footprints must be represented in the resident
+catalog to participate in declared pool capacity after the operation lease is
+released. An empty catalog does not establish weight-memory accounting or a
+physical VRAM limit. GPU observations are temporary admission evidence only.
+
+Preparation errors or cancellation after resource dispatch use the same
+quarantine and operator-stop reconciliation as inference. Recovery correlates
+preparation markers with complete matching role/pool resource chains separately
+from model-call chains, with at most 64 preparations and 1,536 resource-related
+events per task. A missing or repeated marker/chain refuses continuation. These
+changes have static-check evidence only; no live preparation or GPU behavior was
+verified and no speed improvement is claimed.
+
 A successful provider future plus committed `resource_completed` releases its
 reservation. Provider error, execution timeout, cancellation/panic after dispatch,
 or failure to commit completion **retains the allocation as quarantined**. A

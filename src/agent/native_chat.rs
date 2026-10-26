@@ -126,6 +126,10 @@ impl ScopedChat {
 }
 
 impl ChatBackend for ScopedChat {
+    fn requires_preparation(&self) -> bool {
+        self.uncertain.load(Ordering::Acquire)
+            || self.scope.requires_preparation(&self.target.model)
+    }
     fn prepare_for<'a>(
         &'a self,
         task: &'a str,

@@ -30,6 +30,10 @@ use std::{
 pub use types::*;
 
 pub trait ChatBackend: Send + Sync {
+    /// Trusted adapter capability; false avoids admission work for no-op hooks.
+    fn requires_preparation(&self) -> bool {
+        false
+    }
     /// Prepare this exact already-admitted task route without generating text.
     /// The default has no lifecycle work and does not attest model readiness.
     /// Managed adapters must retain their operator policy and original clock.
@@ -447,19 +451,36 @@ impl AgentRuntime {
                 Ok(route.unwrap_or_else(|| backend.clone()))
             })
             .collect::<Result<Vec<_>>>()?;
-        // Resource admission may include resident-target restrictions and a GPU
-        // observation. Keep activation inside that admitted callback until a
-        // separately audited lifecycle-preparation admission exists.
-        if self.resource_pool.is_some() {
-            return Ok(selected);
-        }
-        for route in &selected {
+        for (role, route) in roles.iter().zip(&selected) {
+            if !route.requires_preparation() {
+                continue;
+            }
             let timeout = Duration::from_secs(self.cfg.timeout_seconds)
                 .min(deadline.saturating_duration_since(Instant::now()));
             if timeout.is_zero() {
                 bail!("Client role wave deadline exhausted before preparation")
             }
-            tokio::time::timeout(timeout, route.prepare_for(task))
+            let prepare = async {
+                match (&self.cfg.resource_admission, &self.resource_pool) {
+                    (Some(configuration), Some(pool))
+                        if pool.matches(&self.store, configuration) =>
+                    {
+                        pool.prepare_route(
+                            task,
+                            role,
+                            configuration.allocation,
+                            !configuration.working_profiles.is_empty(),
+                            || route.inference_target(),
+                            || route.prepare_for(task),
+                        )
+                        .await?;
+                    }
+                    (None, None) => route.prepare_for(task).await?,
+                    _ => bail!("Configured client preparation resource pool is missing or changed"),
+                }
+                Ok::<(), anyhow::Error>(())
+            };
+            tokio::time::timeout(timeout, prepare)
                 .await
                 .map_err(|_| anyhow::anyhow!("Client role wave preparation timed out"))??;
         }
@@ -475,6 +496,11 @@ impl AgentRuntime {
         tokens: usize,
         deadline: Instant,
     ) -> Result<Completion> {
+        match (&self.cfg.resource_admission, &self.resource_pool) {
+            (Some(configuration), Some(pool)) if pool.matches(&self.store, configuration) => (),
+            (None, None) => (),
+            _ => bail!("Configured client inference resource pool is missing or changed"),
+        }
         if Instant::now() >= deadline {
             bail!("Agent deadline exhausted before backend dispatch")
         }

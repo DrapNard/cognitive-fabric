@@ -6311,6 +6311,15 @@ physical memory enforcement and model-aware capacity planning remain separate wo
 - Supported routes are still pinned/selected before wave dispatch. Non-resource-scheduled native routes retain advance preparation under their separate operator lifecycle policy. Resource-scheduled routes may serialize cold first-use calls; separate lifecycle-preparation admission remains unfinished.
 - Static checks only; no tests, benchmarks, GPU samples, provider calls or local model operations were performed.
 
+### Guarded resource preparation admission — Implemented, runtime unverified
+
+- `src/resource_scheduler/admission.rs`, `adapter.rs`, `src/agent/mod.rs`: a separate `resource_preparation_intent` and working-allocation lease use the original target/profile, resident coverage, bounded queue/execution and optional GPU observation/freshness checks before native activation. Actual inference later acquires a separate lease; its original model-call reservation is neither consumed nor refunded by preparation.
+- Preparation uses the existing unknown-dispatch quarantine, startup ledger, retention and explicit operator-stop reconciliation. `src/recovery/continuation_resources.rs` validates unique preparation identities, role/pool binding and complete resource chains separately from model calls; at most 64 preparations and 1,536 bounded events per task are admitted.
+- `src/backend.rs`, `src/fabric.rs`, `src/residency/lifecycle/lazy.rs`, `src/agent/native_chat.rs`, `native_scope.rs`: trusted preparation capability and existing-binding checks avoid resource admission/GPU sampling for no-op adapters and warm model routes. No residency or physical identity is inferred from the capability flag.
+- `src/resource_scheduler/profiles.rs`: bounded `wave_fits` checks all exact declared role/model working allocations, resident coverage, queue and current pool use. It is an instantaneous conservative hint, not a lease or proof of simultaneous provider execution.
+- Preparation leases cover operations; persistent model-weight capacity is represented only by configured resident declarations. An empty resident catalog does not establish weight-memory accounting or physical VRAM enforcement.
+- Supersedes the temporary suppression of resource-scheduled advance activation above. Static checks only; no tests, benchmarks, GPU samples, provider calls or live recovery performed.
+
 ### Native prediction-slot visibility — Implemented, provider runtime unverified
 
 - `src/residency.rs`: bounded optional per-instance prediction-slot parsing and explicit concurrency observations with unknown queue/active counts. Omission stays unknown.
@@ -6348,3 +6357,16 @@ physical memory enforcement and model-aware capacity planning remain separate wo
 - `crates/cogfabric-server/src/main.rs`: explicit on-demand option separate from existing-only mode; neither enabled by default. `src/main.rs`: explicit terminal intent stop acknowledgement command; no automatic retry or old-session revival.
 - `src/storage.rs`: preserve native client scope/activation roots during ordinary history retention, including pre-generation failures.
 - Existing-only format 2 and explicit model-key evidence limits remain. No native response-instance attestation, neural training, benchmark superiority or latency claim. Static checks only; no tests, benchmarks or live backend operations. General intermediate reasoning recovery and runtime verification remain incomplete.
+
+## Engine planner and expert overlap
+
+**Implemented; runtime unverified.** `src/engine.rs`, `src/reasoning.rs` and
+`src/reasoning/expert_parallel.rs` admit independent expert work alongside the
+planner under original call, token, permission, time and concurrency limits.
+Exact routes retain guarded preparation and separate generation admission.
+`src/recovery/continuation_overlap.rs` validates bounded saved evidence;
+`src/recovery/continuation.rs` reconstructs completed planning only inside an
+explicitly approved resume transaction. Completion and advice publication are
+atomic. Unknown histories fail closed. Registry digests bind trusted task records,
+not independent membership proofs. Provider execution overlap, recovery at runtime
+and performance have not been tested or benchmarked, as requested by the owner.

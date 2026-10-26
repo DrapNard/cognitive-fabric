@@ -17,6 +17,7 @@ pub(super) struct HistoryAnchor<'a> {
     pub(super) tail: &'a [&'a Value],
     pub(super) calls_before: u64,
     pub(super) boundary_present: bool,
+    pub(super) excluded_solver_calls: &'a BTreeSet<u64>,
 }
 
 /// Read-only, evidence-backed reconstruction of a trailing unpublished part
@@ -354,6 +355,7 @@ pub(super) fn validate(
         tail,
         calls_before,
         boundary_present,
+        excluded_solver_calls,
     } = anchor;
     let Some(schedule) = graph::parallel_schedule_from(db, task, plan, order)? else {
         return Ok(None);
@@ -544,7 +546,7 @@ pub(super) fn validate(
     // No additional cycle-zero solver result may masquerade as an unrecorded
     // subtask. Later ready-solver boundary work uses its own charged cycle.
     let mut statement = db.prepare(
-        "SELECT id,CASE WHEN length(CAST(source AS BLOB))<=64 THEN source END,CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN payload END FROM events WHERE task_id=?1 AND kind='reasoning' AND json_extract(payload,'$.call')>?2 AND json_extract(payload,'$.node.role')='solver' AND json_extract(payload,'$.node.cycle')=0 ORDER BY id LIMIT 34",
+        "SELECT id,CASE WHEN length(CAST(source AS BLOB))<=64 THEN source END,CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN payload END FROM events WHERE task_id=?1 AND kind='reasoning' AND json_extract(payload,'$.call')>?2 AND json_extract(payload,'$.node.role')='solver' AND json_extract(payload,'$.node.cycle')=0 ORDER BY id LIMIT 129",
     )?;
     let rows = statement
         .query_map(rusqlite::params![task, calls_before], |row| {
@@ -555,6 +557,17 @@ pub(super) fn validate(
             ))
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
+    let mut retained_rows = Vec::with_capacity(rows.len());
+    for row in rows {
+        let payload = crate::strict_json::value(row.2.as_bytes(), 262144)?;
+        let call = payload["call"]
+            .as_u64()
+            .ok_or_else(|| anyhow::anyhow!("Cycle-zero solver result lacks a call identity"))?;
+        if !excluded_solver_calls.contains(&call) {
+            retained_rows.push(row);
+        }
+    }
+    let rows = retained_rows;
     if rows.len() != completed_indices.len()
         || rows.len() > 32
         || rows

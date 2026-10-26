@@ -125,7 +125,7 @@ fn validate_phase(
     cfg: &Config,
     require_context: bool,
 ) -> Result<Value> {
-    let mut statement=db.prepare("SELECT kind,CASE WHEN length(CAST(source AS BLOB))<=64 THEN source END,CASE WHEN length(CAST(payload AS BLOB))<=16384 THEN payload END FROM events WHERE task_id=?1 AND (kind IN ('model_dispatch','reasoning_context') OR kind GLOB 'resource_*') ORDER BY id LIMIT 769")?;
+    let mut statement=db.prepare("SELECT kind,CASE WHEN length(CAST(source AS BLOB))<=64 THEN source END,CASE WHEN length(CAST(payload AS BLOB))<=16384 THEN payload END FROM events WHERE task_id=?1 AND (kind IN ('model_dispatch','reasoning_context') OR kind GLOB 'resource_*') ORDER BY id LIMIT 1537")?;
     let mut rows = statement.query([task])?;
     let configuration = cfg.resource_admission.as_ref();
     let binding = configuration
@@ -137,6 +137,7 @@ fn validate_phase(
     let mut ids = BTreeSet::new();
     let mut count = 0;
     let mut calls = 0;
+    let mut preparations = BTreeMap::<String, (String, String)>::new();
     let mut in_reasoning = false;
     let nonempty_residents = configuration.is_some_and(|c| !c.residents.is_empty());
     let profiled = configuration.is_some_and(|c| !c.working_profiles.is_empty());
@@ -159,7 +160,7 @@ fn validate_phase(
 
     while let Some(row) = rows.next()? {
         count += 1;
-        if count > 768 {
+        if count > 1536 {
             bail!("Resource continuation history exceeds bounds")
         }
         let kind: String = row.get(0)?;
@@ -212,6 +213,27 @@ fn validate_phase(
         uuid::Uuid::parse_str(id)?;
         uuid::Uuid::parse_str(pool_id)?;
 
+        if kind == "resource_preparation_intent" {
+            let role = value["role"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing preparation role"))?;
+            crate::fabric::protocol::actor(role)?;
+            if value.as_object().is_none_or(|object| object.len() != 7)
+                || value["operation"] != "backend_preparation"
+                || value["permissions_granted"] != false
+                || value["inference_dispatched"] != false
+                || preparations.len() >= 64
+                || histories.contains_key(id)
+                || outstanding_dispatches.get(role).copied().unwrap_or(0) == 0
+                || preparations
+                    .insert(id.to_owned(), (role.to_owned(), pool_id.to_owned()))
+                    .is_some()
+            {
+                bail!("Invalid or repeated resource preparation identity")
+            }
+            continue;
+        }
+
         if !histories.contains_key(id) {
             let start_kind = if profiled {
                 "resource_profile_intent"
@@ -227,13 +249,19 @@ fn validate_phase(
                 .as_str()
                 .ok_or_else(|| anyhow::anyhow!("Missing resource role"))?;
             crate::fabric::protocol::actor(role)?;
-            let pending = outstanding_dispatches.get_mut(role).ok_or_else(|| {
-                anyhow::anyhow!("Resource reservation has no prior model dispatch")
-            })?;
-            if *pending == 0 {
-                bail!("Resource reservation has no prior model dispatch")
+            if let Some((expected_role, expected_pool)) = preparations.get(id) {
+                if expected_role != role || expected_pool != pool_id {
+                    bail!("Resource preparation changed its role or pool")
+                }
+            } else {
+                let pending = outstanding_dispatches.get_mut(role).ok_or_else(|| {
+                    anyhow::anyhow!("Resource reservation has no prior model dispatch")
+                })?;
+                if *pending == 0 {
+                    bail!("Resource reservation has no prior model dispatch")
+                }
+                *pending -= 1;
             }
-            *pending -= 1;
             pools.insert(pool_id.to_string());
             histories.insert(
                 id.to_string(),
@@ -529,7 +557,8 @@ fn validate_phase(
     }
     if (require_context && !seen_context)
         || !outstanding_dispatches.values().all(|pending| *pending == 0)
-        || histories.len() != calls
+        || histories.len() != calls + preparations.len()
+        || preparations.keys().any(|id| !histories.contains_key(id))
         || histories
             .values()
             .any(|history| history.stage != resource_complete_stage)
@@ -541,6 +570,7 @@ fn validate_phase(
         "configured":true,
         "original_pool_ids":pools,
         "completed_calls":calls,
+        "completed_preparations":preparations.len(),
         "binding":binding.unwrap(),
         "permissions_granted":false,
         "physical_limits_enforced":false
