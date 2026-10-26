@@ -106,6 +106,25 @@ fn expected_allocation(
 /// legitimately overlap in Jev-R waves, so event chronology is checked per
 /// reservation and each chain start consumes a prior same-role model dispatch.
 pub(super) fn validate(db: &rusqlite::Connection, task: &str, cfg: &Config) -> Result<Value> {
+    validate_phase(db, task, cfg, true)
+}
+
+/// A terminal checkpoint can follow independently checked inline tools without
+/// ever entering a whole-goal reasoning context. All call chains must still end.
+pub(in crate::recovery) fn validate_terminal(
+    db: &rusqlite::Connection,
+    task: &str,
+    cfg: &Config,
+) -> Result<Value> {
+    validate_phase(db, task, cfg, false)
+}
+
+fn validate_phase(
+    db: &rusqlite::Connection,
+    task: &str,
+    cfg: &Config,
+    require_context: bool,
+) -> Result<Value> {
     let mut statement=db.prepare("SELECT kind,CASE WHEN length(CAST(source AS BLOB))<=64 THEN source END,CASE WHEN length(CAST(payload AS BLOB))<=16384 THEN payload END FROM events WHERE task_id=?1 AND (kind IN ('model_dispatch','reasoning_context') OR kind GLOB 'resource_*') ORDER BY id LIMIT 769")?;
     let mut rows = statement.query([task])?;
     let configuration = cfg.resource_admission.as_ref();
@@ -508,7 +527,7 @@ pub(super) fn validate(db: &rusqlite::Connection, task: &str, cfg: &Config) -> R
     if configuration.is_none() {
         return Ok(Value::Null);
     }
-    if !seen_context
+    if (require_context && !seen_context)
         || !outstanding_dispatches.values().all(|pending| *pending == 0)
         || histories.len() != calls
         || histories

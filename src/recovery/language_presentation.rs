@@ -22,15 +22,20 @@ struct Admission {
     checkpoint: PresentationCheckpoint,
     state: TerminalState,
     prior_calls: u32,
+    resource_history: Value,
+    resource_routes: Option<std::collections::BTreeMap<String, crate::backend::InferenceTarget>>,
+    resource_scope: Option<String>,
 }
 
-fn admit(store: &Store, task: &str) -> Result<Admission> {
+fn admit(
+    store: &Store,
+    task: &str,
+    setup_deadline: Instant,
+    claim: bool,
+    expected: Option<(&Config, &PresentationCheckpoint)>,
+) -> Result<Admission> {
     let mut db = store.lock()?;
-    let started = Instant::now();
-    db.progress_handler(
-        1000,
-        Some(move || started.elapsed() > Duration::from_secs(5)),
-    );
+    db.progress_handler(1000, Some(move || Instant::now() >= setup_deadline));
     let result = (|| -> Result<Admission> {
         let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         super::validate_verifier_recovery(&tx, task, None)?;
@@ -57,11 +62,10 @@ fn admit(store: &Store, task: &str) -> Result<Admission> {
         }
         // Preserve unsupported scopes rather than bypassing their restoration.
         if cfg.backend != "openai-local"
-            || cfg.resource_admission.is_some()
             || cfg.input_token_admission.is_some()
             || cfg.model_registration.is_some()
         {
-            bail!("Terminal presentation restoration requires the configured local adapter without registered/resource/token-admission scopes")
+            bail!("Terminal presentation restoration requires the configured local adapter without registered/token-admission scopes")
         }
         let raw: String = tx.query_row("SELECT CASE WHEN length(CAST(payload AS BLOB))<=65536 THEN payload END FROM events WHERE task_id=?1 AND kind='module_snapshot' AND source='fabric' ORDER BY id LIMIT 1",[task],|row|row.get(0))?;
         let modules = crate::strict_json::value(raw.as_bytes(), 65536)?;
@@ -71,6 +75,18 @@ fn admit(store: &Store, task: &str) -> Result<Admission> {
                 || entries[0]["version"] != "1.0.0"
         }) {
             bail!("Terminal restoration cannot replace the original named inference module")
+        }
+        let resource_history =
+            super::continuation::resource_history::validate_terminal(&tx, task, &cfg)?;
+        let (resource_routes, resource_scope) =
+            super::continuation::resource_routes::validate(&tx, task, &cfg, &settings, &modules)?
+                .map(|(routes, scope)| (Some(routes), Some(scope)))
+                .unwrap_or_default();
+        if resource_routes
+            .as_ref()
+            .is_some_and(|routes| !routes.contains_key("synthesizer"))
+        {
+            bail!("Original resource routing did not admit the terminal language role")
         }
         let mut expected_lock = cfg.db().into_os_string();
         expected_lock.push(".runtime.lock");
@@ -166,17 +182,26 @@ fn admit(store: &Store, task: &str) -> Result<Admission> {
             bail!("Original held presentation capacity is exhausted")
         }
         security::TaskPolicy::reasoning(task)?.authorize(task, "interface", "llm.generate")?;
-        if tx.execute(
-            "UPDATE tasks SET status='running',updated=unixepoch() WHERE id=?1 AND status=?2",
-            params![task, status],
-        )? != 1
-        {
-            bail!("Task changed during terminal presentation admission")
+        if let Some((original_cfg, original_checkpoint)) = expected {
+            if serde_json::to_vec(original_cfg)? != serde_json::to_vec(&cfg)?
+                || serde_json::to_vec(original_checkpoint)? != serde_json::to_vec(&checkpoint)?
+            {
+                bail!("Original terminal configuration changed during resource restoration")
+            }
         }
-        tx.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'language_presentation_resume','human-cli',?2,unixepoch())",
+        if claim {
+            if tx.execute(
+                "UPDATE tasks SET status='running',updated=unixepoch() WHERE id=?1 AND status=?2",
+                params![task, status],
+            )? != 1
+            {
+                bail!("Task changed during terminal presentation admission")
+            }
+            tx.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'language_presentation_resume','human-cli',?2,unixepoch())",
             params![task,json!({"format_version":1,"call":checkpoint.call,"prompt_sha256":checkpoint.prompt_sha256,
                 "original_clock_preserved":true,"fresh_budget_granted":false,"automatic_replay":false}).to_string()])?;
-        if started.elapsed() > Duration::from_secs(5) || Instant::now() >= deadline {
+        }
+        if Instant::now() >= setup_deadline || Instant::now() >= deadline {
             bail!("Terminal presentation admission deadline exhausted")
         }
         let mode = settings["mode"].as_str().unwrap_or("").to_owned();
@@ -193,6 +218,9 @@ fn admit(store: &Store, task: &str) -> Result<Admission> {
                 call_limit,
             },
             prior_calls: calls,
+            resource_history,
+            resource_routes,
+            resource_scope,
         })
     })();
     db.progress_handler(0, None::<fn() -> bool>);
@@ -216,13 +244,45 @@ pub async fn resume(
     let _lease = ExecutionLease::acquire(path, true).map_err(|error| {
         error.context("Cannot acquire exclusive runtime lease for terminal presentation")
     })?;
+    let setup_deadline = Instant::now() + Duration::from_secs(5);
+    let prepared = admit(&store, task, setup_deadline, false, None)?;
+    let resource_pool = prepared
+        .cfg
+        .resource_admission
+        .as_ref()
+        .map(|configuration| {
+            crate::resource_scheduler::ResourcePool::configured_owned(
+                store.clone(),
+                configuration,
+                None,
+            )
+        })
+        .transpose()?;
+    let restored_pool = resource_pool.as_ref().map(|pool| -> Result<Value> {
+        let snapshot = pool.snapshot()?;
+        if snapshot.closed || snapshot.reservations.iter().any(|entry| entry.task_id == task) {
+            bail!("Original terminal resource pool is closed or has unresolved reservations")
+        }
+        Ok(json!({"pool_id":snapshot.pool_id,"resident_catalog_sha256":snapshot.resident_catalog_sha256,
+            "original_configuration_preserved":true,"physical_limits_enforced":false}))
+    }).transpose()?;
+    let admitted = admit(
+        &store,
+        task,
+        setup_deadline,
+        true,
+        Some((&prepared.cfg, &prepared.checkpoint)),
+    )?;
     let Admission {
         cfg,
         mode,
         checkpoint,
         state,
         prior_calls,
-    } = admit(&store, task)?;
+        resource_history,
+        resource_routes,
+        resource_scope,
+    } = admitted;
     let deadline = state.deadline;
     let process = if cfg.inference_process {
         let mut worker_cfg = cfg.clone();
@@ -248,8 +308,11 @@ pub async fn resume(
     };
     let backend: Arc<dyn InferenceBackend> =
         Arc::new(crate::fabric::Broker::with_inference(backend));
+    let backend = super::continuation::resource_routes::restrict_backend(backend, resource_routes)?;
     let mut session =
         Session::restore_terminal(cfg, store.clone(), backend, task.to_owned(), &mode, state)?;
+    session.resource_pool = resource_pool;
+    session.set_resource_route_scope(resource_scope)?;
     let result = tokio::select! {
         biased;
         _=cancel => Err(anyhow::anyhow!("Terminal presentation cancelled")),
@@ -292,6 +355,7 @@ pub async fn resume(
     let report = json!({"format_version":1,"task_id":task,"status":status,
         "answer_hash":sha256(answer.as_bytes()),"new_calls":session.resources.calls-prior_calls,
         "resources":session.resources,"timing_scope":"terminal_continuation_only",
+        "resource_history":resource_history,"restored_resource_pool":restored_pool,
         "verified":status=="completed","resource_usage_complete":false,
         "automatic_replay":false,"fresh_budget_granted":false,"provider_stop_proven":false});
     tx.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'recovery','human-cli',?2,unixepoch())",params![task,report.to_string()])?;

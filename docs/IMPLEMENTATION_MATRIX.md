@@ -1,5 +1,17 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Restore original resources for pending presentation — 2026-10-26
+
+**Partial restoration, runtime unverified.** `recovery/language_presentation.rs`
+reuses the original resource-history/route validators, restores the configured
+pool and pins the original role routes on the reconstructed backend. Closed or
+unresolved pools and missing terminal routes are refused. Admission revalidates
+the complete configuration/checkpoint around pool setup within one setup deadline
+and retains the original root clock/budget. The shared history validator supports
+terminal inline-tool paths without relaxing general graph-continuation context
+requirements. Native ownership restoration remains unsupported. No tests,
+benchmarks, recovery execution or provider calls run.
+
 ## Registered client expert routes and terminal presentation restoration — 2026-10-26
 
 **Partial network/recovery; runtime unverified.** Client expert/context/adapter

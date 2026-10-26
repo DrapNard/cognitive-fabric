@@ -35,9 +35,9 @@ mod progress_history;
 #[path = "continuation_progress_tests.rs"]
 mod progress_tests;
 #[path = "continuation_resources.rs"]
-mod resource_history;
+pub(super) mod resource_history;
 #[path = "resource_routes.rs"]
-mod resource_routes;
+pub(super) mod resource_routes;
 
 struct Checkpoint {
     cfg: Config,

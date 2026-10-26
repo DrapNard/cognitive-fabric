@@ -409,8 +409,9 @@ creates no task or fresh budget. It never replays a previously dispatched call.
 
 This experimental path supports the configured local adapter, including its
 same-image managed inference worker mode. Native lifecycle ownership, custom
-inference modules, registered default-model scopes, resource admission and exact
-token-admission scopes are refused until their exact restoration is connected.
+inference modules, registered default-model scopes and exact token-admission
+scopes are refused until their exact restoration is connected. Configured
+resource pools use the restoration rules described below.
 It does not silently bypass those settings. Completed candidates need an exact
 prior independent proof hash binding, and their returned answer bytes must not
 change. Engine arithmetic/SQL proofs now include objective and answer hashes.
@@ -420,3 +421,26 @@ remains charged, leaves the task interrupted and is not retried.
 General mid-reasoning restoration and managed client activation remain open.
 Static checks only: no tests, benchmarks, provider calls, recovery execution,
 configuration changes or installation were performed in this run.
+
+## Resource-managed terminal presentation restoration
+
+Pending presentation restoration now validates the original complete per-call
+resource chains and immutable route map before rebuilding the configured pool.
+It refuses unresolved calls, closed pools or a route map that did not admit the
+synthesizer. It restores original catalogs/allocations and applies the pinned role
+route restriction to the reconstructed backend. The terminal Session uses that
+same pool for its sole new call, including profile selection and fresh GPU
+observation when configured. No physical enforcement claim is added.
+
+Admission is checked twice under the exclusive runtime lease, around pool setup,
+within one bounded setup deadline. The second transaction compares the complete
+configuration and exact presentation checkpoint before claiming the task. The
+original task clock/call/output/input allowances remain authoritative. Histories
+that ended in independently checked inline tools can restore their presentation
+without inventing a whole-goal reasoning context; all resource chains must still
+be complete. Existing general continuation checks retain their context requirement.
+
+Native lifecycle ownership and other unsupported reconstruction scopes remain
+refused. Resource restoration alone does not load/unload models or establish
+GPU correctness, neural quality or a speedup. Compilation/static checks only;
+no tests, benchmarks, recovery execution or provider calls run.
