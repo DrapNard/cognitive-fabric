@@ -327,7 +327,10 @@ impl Graph<'_> {
         let timeout_seconds = routed_runtime.cfg.timeout_seconds;
         let deadline = self.deadline;
         let task = self.task.to_string();
-        let backend = routed_runtime.backend.clone();
+        let backend = routed_runtime
+            .prepare_role_wave(routed_runtime.backend.clone(), &task, &["solver"], deadline)
+            .await?
+            .remove(0);
         let runtime = routed_runtime.clone();
         type WaveFuture = std::pin::Pin<
             Box<dyn std::future::Future<Output = (PreparedExpertCall, Result<Completion>)> + Send>,
@@ -348,7 +351,7 @@ impl Graph<'_> {
                             .min(deadline.saturating_duration_since(Instant::now()));
                         tokio::time::timeout(
                             timeout,
-                            runtime.dispatch_role(
+                            runtime.dispatch_selected_role(
                                 backend,
                                 &task,
                                 "solver",
@@ -669,20 +672,24 @@ impl Graph<'_> {
             self.prompt_bytes += bytes.len();
         }
         let deadline = self.deadline;
+        let routes = self
+            .runtime
+            .prepare_role_wave(self.backend.clone(), self.task, &roles, deadline)
+            .await?;
         let timeout = Duration::from_secs(self.runtime.cfg.timeout_seconds)
             .min(deadline.saturating_duration_since(Instant::now()));
         let (planner, explorer) = tokio::time::timeout(timeout, async {
             tokio::join!(
-                self.runtime.dispatch_role(
-                    self.backend.clone(),
+                self.runtime.dispatch_selected_role(
+                    routes[0].clone(),
                     self.task,
                     "planner",
                     &turns[0],
                     ADVICE_TOKENS,
                     deadline
                 ),
-                self.runtime.dispatch_role(
-                    self.backend.clone(),
+                self.runtime.dispatch_selected_role(
+                    routes[1].clone(),
                     self.task,
                     "explorer",
                     &turns[1],

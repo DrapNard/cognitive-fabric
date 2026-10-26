@@ -6284,6 +6284,13 @@ physical memory enforcement and model-aware capacity planning remain separate wo
 - Requires explicit operator continuation and the version-2 reservation/evidence snapshot. Unknown call outcomes, incomplete wave publication that cannot be reconciled, unsupported execution options and expired clocks remain refused.
 - Static checks only; no tests, benchmarks, live inference or recovery executed. This does not establish automatic uninterrupted service or faster provider execution.
 
+### Client wave activation barrier — Implemented, runtime unverified
+
+- `src/agent/mod.rs`: optional task-scoped `ChatBackend::prepare_for` lifecycle hook and bounded role-wave preparation. All exact role routes are selected before preparation and the same selected adapters are retained for dispatch. Preparation runs only after the full wave's permissions and durable inference reservations.
+- `src/agent/native_chat.rs`: preparation activates only the selected policy-approved model for the exact original task, with original ownership/deadline and uncertainty gates. It performs no generation and grants no permissions. Default adapters have no preparation work and do not attest readiness.
+- `src/agent/collective.rs`: planner/explorer pairs prepare both routes before concurrent inference; expert waves prepare their pinned solver route once before polling their step futures. Fresh receipt and response identity checks remain on every generation.
+- This avoids starting one wave member's generation while another member still needs a serialized activation lease. Loading remains policy-serialized and provider capacity can still serialize generation. No speed or GPU concurrency claim; static checks only, no tests, benchmarks or live provider operations.
+
 ### Native prediction-slot visibility — Implemented, provider runtime unverified
 
 - `src/residency.rs`: bounded optional per-instance prediction-slot parsing and explicit concurrency observations with unknown queue/active counts. Omission stays unknown.

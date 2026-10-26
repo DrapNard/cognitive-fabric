@@ -61,6 +61,15 @@ Do not describe this endpoint as the finished cognitive network.
 
 ## Bounded parallel work
 
+Client planner/explorer waves select and prepare both exact role routes after
+the wave is authorized and durably reserved, before polling either generation.
+For approved native on-demand adapters, this loads only the models required by
+that wave. Expert-step waves similarly prepare their exact pinned solver route
+once. The selected adapters are retained for dispatch; request deadlines,
+uncertainty blocking and fresh per-generation receipt checks still apply.
+Activation remains serialized under the native lifecycle policy. Preparing a
+wave does not prove simultaneous provider execution or improved elapsed time.
+
 `--parallelism 1..4` configures the existing `subtask_parallelism` setting. In
 addition to Jev-R advisory graph waves, dependency-ready steps in one selected
 structured expert workflow now run in bounded waves. The pinned manifest order is

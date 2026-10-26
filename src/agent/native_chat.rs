@@ -126,6 +126,26 @@ impl ScopedChat {
 }
 
 impl ChatBackend for ScopedChat {
+    fn prepare_for<'a>(
+        &'a self,
+        task: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
+        Box::pin(async move {
+            if task != self.scope.root_task_id() {
+                bail!("Native client preparation cannot activate for another task")
+            }
+            if self.uncertain.load(Ordering::Acquire) {
+                bail!("A prior native client generation has an unknown outcome")
+            }
+            self.scope.ensure_model(&self.target.model).await?;
+            let _generation = self.scope.generation_guard().await?;
+            if self.uncertain.load(Ordering::Acquire) {
+                bail!("A native client generation became unknown during preparation")
+            }
+            Ok(())
+        })
+    }
+
     fn for_role(&self, role: &str) -> Result<Option<Arc<dyn ChatBackend>>> {
         let Some(inner) = self.inner.for_role(role)? else {
             return Ok(None);

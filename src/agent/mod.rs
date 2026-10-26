@@ -30,6 +30,15 @@ use std::{
 pub use types::*;
 
 pub trait ChatBackend: Send + Sync {
+    /// Prepare this exact already-admitted task route without generating text.
+    /// The default has no lifecycle work and does not attest model readiness.
+    /// Managed adapters must retain their operator policy and original clock.
+    fn prepare_for<'a>(
+        &'a self,
+        _task: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
+        Box::pin(async { Ok(()) })
+    }
     /// Return a task-independent, pinned adapter for one trusted host-assigned role.
     /// None means role-specific routing is unsupported, never permission to guess.
     fn for_role(&self, _role: &str) -> Result<Option<Arc<dyn ChatBackend>>> {
@@ -411,6 +420,55 @@ impl AgentRuntime {
             bail!("Selected backend cannot honor the pinned language/reasoning role map")
         }
         let backend = selected.unwrap_or(backend);
+        self.dispatch_selected_role(backend, task, role, request, tokens, deadline)
+            .await
+    }
+
+    /// Select all wave routes before lifecycle preparation, then prepare them
+    /// before polling any generation. Call only after the full wave reservation.
+    async fn prepare_role_wave(
+        &self,
+        backend: Arc<dyn ChatBackend>,
+        task: &str,
+        roles: &[&str],
+        deadline: Instant,
+    ) -> Result<Vec<Arc<dyn ChatBackend>>> {
+        if roles.is_empty() || roles.len() > 4 {
+            bail!("Client role wave is outside its concurrency bound")
+        }
+        let selected = roles
+            .iter()
+            .map(|role| {
+                crate::fabric::protocol::actor(role)?;
+                let route = backend.for_role(role)?;
+                if route.is_none() && self.cfg.language_model().is_some() {
+                    bail!("Selected backend cannot honor the pinned language/reasoning role map")
+                }
+                Ok(route.unwrap_or_else(|| backend.clone()))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        for route in &selected {
+            let timeout = Duration::from_secs(self.cfg.timeout_seconds)
+                .min(deadline.saturating_duration_since(Instant::now()));
+            if timeout.is_zero() {
+                bail!("Client role wave deadline exhausted before preparation")
+            }
+            tokio::time::timeout(timeout, route.prepare_for(task))
+                .await
+                .map_err(|_| anyhow::anyhow!("Client role wave preparation timed out"))??;
+        }
+        Ok(selected)
+    }
+
+    async fn dispatch_selected_role(
+        &self,
+        backend: Arc<dyn ChatBackend>,
+        task: &str,
+        role: &str,
+        request: &Turn,
+        tokens: usize,
+        deadline: Instant,
+    ) -> Result<Completion> {
         if Instant::now() >= deadline {
             bail!("Agent deadline exhausted before backend dispatch")
         }
