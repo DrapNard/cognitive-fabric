@@ -77,6 +77,21 @@ impl Session {
         if prompt.len() > reservation.prompt_limit {
             bail!("Result exceeds the reserved complete language presentation context")
         }
+        let checkpoint = crate::language::PresentationCheckpoint::new(
+            &self.cfg,
+            query,
+            answer,
+            status,
+            &prompt,
+            self.resources.calls as usize + 1,
+            reservation.allocation,
+        )?;
+        self.store.event(
+            &self.task,
+            "language_presentation_ready",
+            "jev-plus",
+            serde_json::to_value(checkpoint)?,
+        )?;
         let presented = self
             .call("synthesizer", &prompt, reservation.allocation)
             .await?

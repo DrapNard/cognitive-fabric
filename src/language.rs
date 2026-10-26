@@ -46,6 +46,86 @@ impl Interpretation {
     }
 }
 
+/// Exact bounded terminal request, saved before dispatch. This is task state,
+/// never project memory, permission authority or proof that inference ran.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct PresentationCheckpoint {
+    pub format_version: u16,
+    pub call: usize,
+    pub configuration_sha256: String,
+    pub objective_sha256: String,
+    pub answer_sha256: String,
+    pub status: String,
+    pub prompt: String,
+    pub prompt_sha256: String,
+    pub allocation: usize,
+    pub permissions_restorable: bool,
+}
+
+impl PresentationCheckpoint {
+    pub(crate) fn new(
+        cfg: &crate::config::Config,
+        query: &str,
+        answer: &str,
+        status: &str,
+        prompt: &str,
+        call: usize,
+        allocation: usize,
+    ) -> Result<Self> {
+        let checkpoint = Self {
+            format_version: 1,
+            call,
+            configuration_sha256: crate::store::sha256(&serde_json::to_vec(cfg)?),
+            objective_sha256: crate::store::sha256(query.as_bytes()),
+            answer_sha256: crate::store::sha256(answer.as_bytes()),
+            status: status.into(),
+            prompt: prompt.into(),
+            prompt_sha256: crate::store::sha256(prompt.as_bytes()),
+            allocation,
+            permissions_restorable: false,
+        };
+        checkpoint.validate(cfg, query)?;
+        Ok(checkpoint)
+    }
+
+    pub(crate) fn validate(&self, cfg: &crate::config::Config, query: &str) -> Result<()> {
+        if self.format_version != 1
+            || self.permissions_restorable
+            || cfg.language_model().is_none()
+            || self.call < 2
+            || self.call > cfg.max_calls
+            || self.allocation != cfg.interface_tokens
+            || self.prompt.len() > 8192
+            || self.configuration_sha256 != crate::store::sha256(&serde_json::to_vec(cfg)?)
+            || self.objective_sha256 != crate::store::sha256(query.as_bytes())
+            || self.prompt_sha256 != crate::store::sha256(self.prompt.as_bytes())
+            || !matches!(
+                self.status.as_str(),
+                "completed" | "unverified" | "rejected"
+            )
+        {
+            bail!("Invalid terminal language checkpoint identity or limits")
+        }
+        let input = crate::strict_json::value(self.prompt.as_bytes(), 8192)?;
+        if input.as_object().is_none_or(|object| object.len() != 6)
+            || input["objective"] != query
+            || input["status"] != self.status
+            || input["answer"]
+                .as_str()
+                .is_none_or(|answer| crate::store::sha256(answer.as_bytes()) != self.answer_sha256)
+            || input["evidence"]
+                .as_array()
+                .is_none_or(|items| items.iter().any(|item| !item.is_string()))
+            || !input["stop_reason"].is_string()
+            || !input["contract"].is_string()
+        {
+            bail!("Terminal language checkpoint does not contain a complete structured result")
+        }
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct TaskOptions {
     pub conversation_ref: Option<String>,

@@ -47,6 +47,7 @@ pub(super) fn audit_from(db: &rusqlite::Connection, task: &str) -> Result<Value>
     let mut settings: Option<(crate::config::Config, u64, u64, bool)> = None;
     let mut execution_clock = None;
     let mut language_boundary = None;
+    let mut presentation_checkpoint: Option<crate::language::PresentationCheckpoint> = None;
     let mut presentation_dispatched = false;
     let mut presentation_recorded = false;
     let mut presentation_completed = false;
@@ -55,13 +56,13 @@ pub(super) fn audit_from(db: &rusqlite::Connection, task: &str) -> Result<Value>
     let mut tools = 0u64;
     let mut cycles = 0u64;
     {
-        let mut stmt=db.prepare("SELECT kind,CASE WHEN length(CAST(source AS BLOB))<=64 THEN source END,CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN payload END FROM events WHERE task_id=?1 AND kind IN ('execution_settings','model_dispatch','reasoning','tool_reservation','cycle_reservation','language_boundary_reservation','language_boundary_presentation') ORDER BY id LIMIT 212")?;
+        let mut stmt=db.prepare("SELECT kind,CASE WHEN length(CAST(source AS BLOB))<=64 THEN source END,CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN payload END FROM events WHERE task_id=?1 AND kind IN ('execution_settings','model_dispatch','reasoning','tool_reservation','cycle_reservation','language_boundary_reservation','language_boundary_presentation','language_presentation_ready') ORDER BY id LIMIT 213")?;
         let mut rows = stmt.query([task])?;
         let mut count = 0;
         let mut inference_count = 0;
         while let Some(row) = rows.next()? {
             count += 1;
-            if count > 211 {
+            if count > 212 {
                 bail!("Inference audit exceeds bounded call history")
             }
             let kind: String = row.get(0)?;
@@ -136,6 +137,31 @@ pub(super) fn audit_from(db: &rusqlite::Connection, task: &str) -> Result<Value>
                 language_boundary = Some(payload);
                 continue;
             }
+            if kind == "language_presentation_ready" {
+                let Some((cfg, _, _, _)) = settings.as_ref() else {
+                    bail!("Terminal language checkpoint has no original settings")
+                };
+                let checkpoint: crate::language::PresentationCheckpoint =
+                    serde_json::from_value(payload)?;
+                let query: String = db.query_row(
+                    "SELECT CASE WHEN length(CAST(query AS BLOB))<=12000 THEN query END FROM tasks WHERE id=?1",
+                    [task], |row| row.get(0))?;
+                checkpoint.validate(cfg, &query)?;
+                if source != "jev-plus"
+                    || language_boundary.is_none()
+                    || presentation_checkpoint.is_some()
+                    || presentation_dispatched
+                    || checkpoint.call != calls.len() + 1
+                    || calls.is_empty()
+                    || calls
+                        .values()
+                        .any(|call| call["state"] != "result_recorded")
+                {
+                    bail!("Terminal language checkpoint is repeated, premature or out of order")
+                }
+                presentation_checkpoint = Some(checkpoint);
+                continue;
+            }
             if kind == "language_boundary_presentation" {
                 let call = calls.len() as u64;
                 let result = calls
@@ -162,11 +188,21 @@ pub(super) fn audit_from(db: &rusqlite::Connection, task: &str) -> Result<Value>
                 {
                     bail!("Invalid language presentation history")
                 }
+                if let Some(checkpoint) = &presentation_checkpoint {
+                    if payload["original_answer_sha256"] != checkpoint.answer_sha256
+                        || payload["status"] != checkpoint.status
+                    {
+                        bail!("Published language response does not match its saved request")
+                    }
+                }
                 presentation_recorded = true;
                 presentation_completed = status == "completed";
                 continue;
             }
             if matches!(kind.as_str(), "tool_reservation" | "cycle_reservation") {
+                if presentation_checkpoint.is_some() && !presentation_dispatched {
+                    bail!("Resource work followed the terminal language checkpoint")
+                }
                 if presentation_dispatched
                     && !(presentation_recorded
                         && presentation_completed
@@ -320,6 +356,16 @@ pub(super) fn audit_from(db: &rusqlite::Connection, task: &str) -> Result<Value>
                     }
                     presentation_dispatched = presenting;
                 }
+                if let Some(checkpoint) = &presentation_checkpoint {
+                    if role != "synthesizer"
+                        || call != checkpoint.call as u64
+                        || allocation != checkpoint.allocation as u64
+                        || prompt_bytes != checkpoint.prompt.len() as u64
+                        || payload["prompt_sha256"] != checkpoint.prompt_sha256
+                    {
+                        bail!("Terminal language dispatch differs from its checkpoint")
+                    }
+                }
                 calls.insert(call,json!({"call":call,"role":role,"reserved_output_tokens":allocation,"prompt_bytes":prompt_bytes,"state":"result_not_recorded","model":null,"input_tokens":null,"output_tokens":null}));
             } else {
                 let Some(call) = payload["call"].as_u64() else {
@@ -419,9 +465,11 @@ pub(super) fn audit_from(db: &rusqlite::Connection, task: &str) -> Result<Value>
             "remaining_inference_admission":remaining,"calls":calls.values().collect::<Vec<_>>(),"language_boundary":language_boundary.as_ref().map(|reservation| json!({
                 "reservation":reservation,"phase":if presentation_recorded {"presented"}
                     else if presentation_dispatched {"presentation_uncommitted"}
+                    else if presentation_checkpoint.is_some() {"presentation_ready"}
                     else if calls.get(&1).is_some_and(|call| call["state"] == "result_recorded") {"reasoning"}
                     else {"interpretation_uncommitted"},
                 "presentation_capacity_held":!presentation_dispatched,
+                "presentation_checkpoint_recorded":presentation_checkpoint.is_some(),
                 "continuation_supported":false,"resume_authorized":false
             })),"automatic_replay":false,"resume_authorized":false,"weights_attested":false}),
     )

@@ -1,5 +1,16 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Exact pending presentation checkpoint — 2026-10-26
+
+**Partial recovery infrastructure; runtime unverified.** `language.rs` defines a
+strict bounded presentation checkpoint. `reasoning/language_boundary.rs` persists
+it before dispatch; `reasoning.rs` hashes the dispatched prompt. The inference
+audit validates original configuration/objective/answer identities, prior known
+results, exact next-call allocation/digest, and final publication status. It
+exposes `presentation_ready` without exposing prompt text. Pending dispatch
+restoration remains unsupported; no replay authority is granted. No tests,
+benchmarks, provider calls or migrations executed.
+
 ## Recover published language responses without replay — 2026-10-26
 
 **Partial recovery; runtime unverified.** `src/recovery/language_result.rs` and

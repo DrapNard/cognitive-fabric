@@ -882,7 +882,7 @@ impl Session {
         self.store.event(&self.task, "policy", "security-kernel", json!({"task_id":self.task,"actor":actor,"role":role,"capability":"llm.generate","allowed":decision.is_ok(),"reason":decision.as_ref().err().map(ToString::to_string)}))?;
         decision?;
         let next_call = self.resources.calls + 1;
-        let publication_error = match self.store.event(&self.task,"model_dispatch","jev-r",json!({"role":role,"call":next_call,"allocation":allocation,"prompt_bytes":prompt.len()})) {
+        let publication_error = match self.store.event(&self.task,"model_dispatch","jev-r",json!({"role":role,"call":next_call,"allocation":allocation,"prompt_bytes":prompt.len(),"prompt_sha256":crate::store::sha256(prompt.as_bytes())})) {
             Ok(()) => None,
             Err(error) if error.is::<crate::store::PersistedEventError>() => Some(error),
             Err(error) => return Err(error),

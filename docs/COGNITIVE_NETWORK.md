@@ -305,3 +305,25 @@ so they cannot publish an answer that bypasses language presentation. Mid-reason
 continuation and pending/unpublished language phases remain refused. This is
 partial phase-aware recovery, not uninterrupted operation. No tests, benchmarks
 or live workspace recovery operations were run.
+
+## Exact pre-dispatch presentation checkpoint
+
+Before the Engine dispatches its terminal language call, it records a strict
+`language_presentation_ready` checkpoint containing the complete bounded request,
+original configuration/objective/answer/prompt hashes, allocation and next call
+identity. The saved request is at most 8,192 bytes, and is task state rather than
+project memory. Like existing task traces it may contain sensitive task content;
+it is not encrypted. It cannot restore permissions.
+
+Inference audit validates the checkpoint against original settings, requires all
+earlier model results to be recorded, and checks the next synthesizer dispatch's
+identity, prompt digest, byte count and allocation. It refuses further reasoning
+or resource work once the terminal checkpoint exists. Publication must match the
+saved answer/status. The public audit reports `presentation_ready` and a checkpoint
+flag, not the saved prompt. Old histories without this checkpoint retain their
+previous phase interpretation.
+
+The checkpoint distinguishes work ready to dispatch from an uncertain dispatch;
+it does not itself authorize resumption. Dispatching a pending checkpoint under
+the original clock/resource/worker scope is still unfinished. No tests, benchmarks
+or live inference were run.
