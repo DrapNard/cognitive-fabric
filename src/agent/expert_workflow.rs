@@ -106,28 +106,38 @@ impl Plan {
     }
 
     pub fn order(&self) -> Result<Vec<usize>> {
-        let mut done = std::collections::BTreeSet::new();
-        let mut order = Vec::with_capacity(self.steps.len());
-        while order.len() < self.steps.len() {
-            let index = self
-                .steps
-                .iter()
-                .enumerate()
-                .find(|(_, step)| {
-                    !done.contains(&step.id)
-                        && step
-                            .depends_on
-                            .iter()
-                            .all(|dependency| done.contains(dependency))
-                })
-                .map(|(index, _)| index);
-            let Some(index) = index else {
-                bail!("Pinned expert workflow contains a dependency cycle")
-            };
-            done.insert(self.steps[index].id.clone());
-            order.push(index);
+        Ok(self.ready_waves(1)?.into_iter().flatten().collect())
+    }
+
+    pub fn ready_waves(&self, parallelism: usize) -> Result<Vec<Vec<usize>>> {
+        if !(1..=4).contains(&parallelism) {
+            bail!("Expert workflow parallelism is outside its bound")
         }
-        Ok(order)
+        let mut pending = (0..self.steps.len()).collect::<std::collections::BTreeSet<_>>();
+        let mut done = std::collections::BTreeSet::new();
+        let mut waves = Vec::new();
+        while !pending.is_empty() {
+            let wave = pending
+                .iter()
+                .copied()
+                .filter(|index| {
+                    self.steps[*index]
+                        .depends_on
+                        .iter()
+                        .all(|dependency| done.contains(dependency))
+                })
+                .take(parallelism)
+                .collect::<Vec<_>>();
+            if wave.is_empty() {
+                bail!("Pinned expert workflow contains a dependency cycle")
+            }
+            for index in &wave {
+                pending.remove(index);
+                done.insert(self.steps[*index].id.clone());
+            }
+            waves.push(wave);
+        }
+        Ok(waves)
     }
 }
 

@@ -1,5 +1,18 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Parallel dependency-ready client expert steps — 2026-10-26
+
+**Implemented, runtime unverified.** `src/agent/collective.rs` and
+`expert_workflow.rs` execute independent ready steps in bounded waves using
+`subtask_parallelism` (default one). Exact complete-workflow preflight preserves
+solver/presentation capacity; each wave authorizes and commits all reservations
+against the existing Lease before polling owned futures. Shared solver routing,
+resource/worker admission, tool-free expert steps and the original deadline
+remain enforced. Sibling outcomes are awaited; failures/unknown outcomes prevent
+retry and dependent later waves. Separate registered expert backends and managed
+client activation remain unsupported. Formatting, workspace/all-target compilation
+and Clippy passed; no tests, benchmarks or provider requests executed.
+
 ## Client workflow integration through the shared session ledger — 2026-10-26
 
 **Partial bridge, runtime unverified.** `src/agent/expert_workflow.rs` plus client

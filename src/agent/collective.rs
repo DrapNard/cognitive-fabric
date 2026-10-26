@@ -58,6 +58,13 @@ struct Graph<'a> {
     checked: Option<(String, Option<bool>)>,
 }
 
+struct PreparedExpertCall {
+    step_index: usize,
+    call: usize,
+    turn: Turn,
+    allocation: usize,
+}
+
 impl Graph<'_> {
     fn turn(&self, role: &str, advice: &str, allocation: usize) -> Turn {
         let mut turn = self.original.clone();
@@ -116,6 +123,13 @@ impl Graph<'_> {
         self.available_turns(&turns)
     }
     fn available_turns(&self, requests: &[(&str, Turn, usize)]) -> Result<bool> {
+        self.available_turns_with_presentation(requests, true)
+    }
+    fn available_turns_with_presentation(
+        &self,
+        requests: &[(&str, Turn, usize)],
+        reserve_presentation: bool,
+    ) -> Result<bool> {
         let mut bytes = 0usize;
         let mut tokens = 0usize;
         for (role, turn, allocation) in requests {
@@ -161,7 +175,8 @@ impl Graph<'_> {
             bytes = bytes.saturating_add(size);
             tokens = tokens.saturating_add(*allocation);
         }
-        let presentation = self.runtime.cfg.language_model().is_some()
+        let presentation = reserve_presentation
+            && self.runtime.cfg.language_model().is_some()
             && !requests.iter().any(|(role, _, _)| *role == "synthesizer");
         let presentation_tokens = if presentation {
             self.runtime.cfg.interface_tokens
@@ -245,67 +260,174 @@ impl Graph<'_> {
         .map_err(|_| anyhow::anyhow!("Client collective inference deadline exhausted"))??;
         self.record_completion(role, self.calls, allocation, &turn, completion)
     }
-    async fn call_expert_step(
+    fn reserve_expert_wave(
         &mut self,
         plan: &expert_workflow::Plan,
-        step: &expert_workflow::Step,
+        indices: &[usize],
         prior_results: &serde_json::Value,
         allocation: usize,
-    ) -> Result<Completion> {
+    ) -> Result<Vec<PreparedExpertCall>> {
         const ROLE: &str = "solver";
-        let turn = self.expert_turn(plan, step, prior_results, allocation);
-        if !self.available_turns(&[(ROLE, turn.clone(), allocation)])? {
-            bail!("Pinned expert workflow exceeds the shared client task budget")
+        let turns = indices
+            .iter()
+            .map(|index| self.expert_turn(plan, &plan.steps[*index], prior_results, allocation))
+            .collect::<Vec<_>>();
+        let requests = turns
+            .iter()
+            .map(|turn| (ROLE, turn.clone(), allocation))
+            .collect::<Vec<_>>();
+        if !self.available_turns_with_presentation(&requests, false)? {
+            bail!("Pinned expert workflow wave exceeds the shared client task budget")
         }
-        let bytes = serde_json::to_vec(&turn)?;
-        TaskPolicy::client_collective(self.task)?.authorize(
-            self.task,
-            "jev-plus",
-            "expert.workflow.advice",
-        )?;
-        TaskPolicy::agent(self.task)?.authorize(self.task, "jev-r", "llm.generate")?;
-        self.session
-            .reserve("expert-advisory", allocation, &bytes, self.cycles)?;
-        self.calls += 1;
-        self.reserved += allocation;
-        self.prompt_bytes += bytes.len();
-        let completion = tokio::time::timeout(
-            Duration::from_secs(self.runtime.cfg.timeout_seconds)
-                .min(self.deadline.saturating_duration_since(Instant::now())),
-            self.runtime.dispatch_role(
-                self.backend.clone(),
-                self.task,
-                ROLE,
-                &turn,
+        let client_policy = TaskPolicy::client_collective(self.task)?;
+        let agent_policy = TaskPolicy::agent(self.task)?;
+        for _ in indices {
+            client_policy.authorize(self.task, "jev-plus", "expert.workflow.advice")?;
+            agent_policy.authorize(self.task, "jev-r", "llm.generate")?;
+        }
+        let mut prepared = Vec::with_capacity(indices.len());
+        for (index, turn) in indices.iter().copied().zip(turns) {
+            let bytes = serde_json::to_vec(&turn)?;
+            // Every wave call is committed before any of its futures is polled.
+            self.session
+                .reserve("expert-advisory", allocation, &bytes, self.cycles)?;
+            self.calls += 1;
+            self.reserved += allocation;
+            self.prompt_bytes += bytes.len();
+            prepared.push(PreparedExpertCall {
+                step_index: index,
+                call: self.calls,
+                turn,
                 allocation,
-                self.deadline,
-            ),
-        )
-        .await
-        .map_err(|_| anyhow::anyhow!("Expert advisory step deadline exhausted"))??;
-        self.record_completion(ROLE, self.calls, allocation, &turn, completion)
+            });
+        }
+        self.runtime.store.event(
+            self.task,
+            "expert_workflow_wave_dispatch",
+            "jev-plus",
+            json!({
+                "step_ids":indices.iter().map(|index|plan.steps[*index].id.as_str()).collect::<Vec<_>>(),
+                "calls":prepared.iter().map(|call|call.call).collect::<Vec<_>>(),
+                "provider_calls_reserved_before_poll":true,
+                "permissions_granted":false
+            }),
+        )?;
+        Ok(prepared)
+    }
+    async fn dispatch_expert_wave(
+        &mut self,
+        plan: &expert_workflow::Plan,
+        prepared: Vec<PreparedExpertCall>,
+    ) -> Result<Vec<(usize, String)>> {
+        let timeout_seconds = self.runtime.cfg.timeout_seconds;
+        let deadline = self.deadline;
+        let task = self.task.to_string();
+        let backend = self.backend.clone();
+        let runtime = self.runtime.clone();
+        type WaveFuture = std::pin::Pin<
+            Box<dyn std::future::Future<Output = (PreparedExpertCall, Result<Completion>)> + Send>,
+        >;
+        let futures = prepared
+            .into_iter()
+            .map(|call| {
+                let runtime = runtime.clone();
+                let backend = backend.clone();
+                let task = task.clone();
+                Box::pin(async move {
+                    let result = if Instant::now() >= deadline {
+                        Err(anyhow::anyhow!(
+                            "Expert advisory wave deadline exhausted before dispatch"
+                        ))
+                    } else {
+                        let timeout = Duration::from_secs(timeout_seconds)
+                            .min(deadline.saturating_duration_since(Instant::now()));
+                        tokio::time::timeout(
+                            timeout,
+                            runtime.dispatch_role(
+                                backend,
+                                &task,
+                                "solver",
+                                &call.turn,
+                                call.allocation,
+                                deadline,
+                            ),
+                        )
+                        .await
+                        .map_err(|_| anyhow::anyhow!("Expert advisory wave call timed out"))
+                        .and_then(|result| result)
+                    };
+                    (call, result)
+                }) as WaveFuture
+            })
+            .collect::<Vec<_>>();
+        // This polls every owned future and waits for all outcomes. No sibling is
+        // detached or abandoned after one provider failure.
+        let reports = crate::reasoning::parallel::join_all(futures).await;
+        let wave_size = reports.len();
+        let mut completions = Vec::with_capacity(reports.len());
+        let mut failed = false;
+        for (call, result) in reports {
+            match result {
+                Ok(completion) => match self.record_completion(
+                    "solver",
+                    call.call,
+                    call.allocation,
+                    &call.turn,
+                    completion,
+                ) {
+                    Ok(completion) if completion.tool_calls.is_empty() => {
+                        completions.push((call.step_index, completion.content.unwrap_or_default()));
+                    }
+                    Ok(_) | Err(_) => failed = true,
+                },
+                Err(_) => failed = true,
+            }
+        }
+        self.runtime.store.event(
+            self.task,
+            "expert_workflow_wave_complete",
+            "jev-plus",
+            json!({
+                "expert_id":plan.id,
+                "version":plan.version,
+                "results_received":completions.len(),
+                "wave_size":wave_size,
+                "failed_or_unknown":failed,
+                "retry_attempted":false,
+                "client_tools_executed":false
+            }),
+        )?;
+        if failed {
+            bail!("Expert workflow wave failed or has unknown provider outcomes; no calls were retried")
+        }
+        completions.sort_by_key(|(index, _)| *index);
+        Ok(completions)
     }
     async fn expert_workflow(&mut self, prior_advice: &str) -> Result<Option<String>> {
         let Some(plan) = expert_workflow::Plan::from_references(&self.session.state.references)?
         else {
             return Ok(None);
         };
-        let order = plan.order()?;
+        let parallelism = self.runtime.cfg.subtask_parallelism.unwrap_or(1);
+        let waves = plan.ready_waves(parallelism)?;
+        let step_count = waves.iter().map(Vec::len).sum::<usize>();
         const STEP_TOKENS: usize = 128;
         const MAX_SUMMARY_ADVICE_BYTES: usize = 1_200;
         const MAX_SUMMARY_CONTENT_BYTES: usize = 600;
-        let step_advice_budget = MAX_SUMMARY_CONTENT_BYTES / order.len();
+        let step_advice_budget = MAX_SUMMARY_CONTENT_BYTES / step_count;
         let mut projected_results = serde_json::Map::new();
-        let mut hypothetical = Vec::with_capacity(order.len() + 1);
-        for index in &order {
-            let step = &plan.steps[*index];
-            let step_turn = self.expert_turn(
-                &plan,
-                step,
-                &serde_json::Value::Object(projected_results.clone()),
-                STEP_TOKENS,
-            );
-            hypothetical.push(("solver", step_turn, STEP_TOKENS));
+        let mut hypothetical = Vec::with_capacity(step_count + 1);
+        for wave in &waves {
+            for index in wave {
+                let step = &plan.steps[*index];
+                let step_turn = self.expert_turn(
+                    &plan,
+                    step,
+                    &serde_json::Value::Object(projected_results.clone()),
+                    STEP_TOKENS,
+                );
+                hypothetical.push(("solver", step_turn, STEP_TOKENS));
+            }
             // Quotes consume two bytes in the bounded scalar JSON encoding and
             // expand again when the complete structured context is serialized
             // into the next request envelope.
@@ -316,14 +438,17 @@ impl Graph<'_> {
                 "\"".repeat(quote_count),
                 "x".repeat(step_advice_budget.saturating_sub(used) % 2)
             );
-            projected_results.insert(
-                step.id.clone(),
-                serde_json::json!({
-                    "advice": placeholder,
-                    "partial": false,
-                    "trust": "untrusted_model_advisory_never_permissions"
-                }),
-            );
+            for index in wave {
+                let step = &plan.steps[*index];
+                projected_results.insert(
+                    step.id.clone(),
+                    serde_json::json!({
+                        "advice": placeholder,
+                        "partial": false,
+                        "trust": "untrusted_model_advisory_never_permissions"
+                    }),
+                );
+            }
         }
         let projected_summary = serde_json::json!({
             "expert_id": plan.id,
@@ -383,30 +508,28 @@ impl Graph<'_> {
             serde_json::json!({
                 "expert_id": plan.id,
                 "version": plan.version,
-                "steps": order.len(),
+                "steps": step_count,
+                "wave_sizes": waves.iter().map(Vec::len).collect::<Vec<_>>(),
                 "manifest_pinned_at_session_root": true
             }),
         )?;
         let mut results = serde_json::Map::new();
-        for index in &order {
-            let step = &plan.steps[*index];
+        for wave in &waves {
             let prior = serde_json::Value::Object(results.clone());
-            let completion = self
-                .call_expert_step(&plan, step, &prior, STEP_TOKENS)
-                .await?;
-            if !completion.tool_calls.is_empty() {
-                bail!("Tool proposal rejected from tool-free expert advisory call")
+            let prepared = self.reserve_expert_wave(&plan, wave, &prior, STEP_TOKENS)?;
+            let completions = self.dispatch_expert_wave(&plan, prepared).await?;
+            for (index, output) in completions {
+                let step = &plan.steps[index];
+                let (output, partial) = bounded_json_string(&output, step_advice_budget);
+                results.insert(
+                    step.id.clone(),
+                    serde_json::json!({
+                        "advice": output,
+                        "partial": partial,
+                        "trust": "untrusted_model_advisory_never_permissions"
+                    }),
+                );
             }
-            let output = completion.content.as_deref().unwrap_or("");
-            let (output, partial) = bounded_json_string(output, step_advice_budget);
-            results.insert(
-                step.id.clone(),
-                serde_json::json!({
-                    "advice": output,
-                    "partial": partial,
-                    "trust": "untrusted_model_advisory_never_permissions"
-                }),
-            );
         }
         let summary = serde_json::json!({
             "expert_id": plan.id,
@@ -425,7 +548,8 @@ impl Graph<'_> {
             serde_json::json!({
                 "expert_id": plan.id,
                 "version": plan.version,
-                "steps": order.len(),
+                "steps": step_count,
+                "wave_sizes": waves.iter().map(Vec::len).collect::<Vec<_>>(),
                 "result_sha256": sha256(summary.as_bytes()),
                 "permissions_granted": false,
                 "client_tools_executed": false

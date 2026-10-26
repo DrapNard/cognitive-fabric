@@ -349,9 +349,31 @@ fit are skipped before dispatch. Scalar advice is bounded by JSON-encoded bytes
 and marked partial; complete structured records are serialized whole. The summary
 enters the same pinned continuation advice and never grants permissions.
 
-This is a partial client bridge: expert steps currently run sequentially through
-the shared solver model. Manifests binding a separate registered model/provider
-remain explicitly advisory-only. Distinct client expert backends, client expert
-parallelism and managed client activation are still unfinished. Client tool
+This is a partial client bridge: expert steps use dependency-ready waves through
+the shared solver model, bounded by `subtask_parallelism` (default one). Manifests
+binding a separate registered model/provider remain explicitly advisory-only.
+Distinct client expert backends and managed client activation are still unfinished. Client tool
 execution/approval remains with the external application. Static compilation and
 Clippy only; no tests, benchmarks or live provider calls run.
+
+## Parallel client expert steps
+
+Pinned client workflow DAGs now run independent ready steps in waves of at most
+`subtask_parallelism` calls (1–4, default one). Dependencies must have completed in
+a prior wave; scheduling a producer in the same wave does not satisfy them. The
+whole-workflow preflight constructs exact tool-free expert requests and preserves
+main solver/presentation capacity. Every wave rechecks capacity, authorizes all
+calls and persists all Lease reservations before polling its owned futures.
+
+Calls use the pinned solver route and the same ResourcePool/worker limits as
+other client inference. All sibling outcomes are awaited and successful results
+are recorded by their reserved call IDs. A failed or unknown result terminates
+workflow execution with no retry and no dependent later wave. Model/provider
+cancellation is not asserted by a timeout. Complete JSON advice and original
+session budgets/clock remain unchanged across client tool continuations.
+
+This enables host concurrency; provider queues and resource limits may serialize
+actual inference. Speed, reasoning quality and runtime reliability remain
+unmeasured. Workspace/all-target compilation and Clippy passed; no tests,
+benchmarks or provider calls were run. Managed client activation and separate
+registered client expert backends remain open.
