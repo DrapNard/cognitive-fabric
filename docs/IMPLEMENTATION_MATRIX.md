@@ -1,5 +1,25 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Independent client expert workflows — 2026-10-26
+
+**Partial network integration; runtime unverified.** Client collective scheduling
+now binds distinct pinned workflows to requested capabilities and version
+requirements, with bounded independent expert waves under the original session
+ledger. New session capture pins declared capabilities/dependencies and their
+digest; legacy metadata cannot prove batch independence. Cross-expert dependencies
+remain outside this client batch scope. `src/agent/mod.rs` supplies an advisory
+combined resource-capacity check; each dispatch still acquires its own lease.
+Registered routes, language-only exclusion, native preparation, tool permissions,
+shared solver/presentation reserves and uncertainty handling remain required.
+Relevant sources: `src/agent/collective.rs`, `src/agent/expert_workflow.rs`,
+`src/agent/collective/experts.rs`, `src/agent/session_context.rs` and
+`src/agent/mod.rs`. Fair ready waves enforce per-expert and total caps; the first
+wave can share capacity with Research planner/explorer. Prompt preflight includes
+worst-case nested escaping and complete potential prior-result context. Completed
+wave counts are recorded from actual scheduling rather than an estimated DAG.
+Final workspace/all-target compilation, strict Clippy and formatting checks pass.
+No tests, benchmarks, provider operations or runtime speed measurements were run.
+
 ## Detect explicit structured-memory contradictions — 2026-10-26
 
 **Partial conflict handling; runtime unverified.** `src/project_memory/conflicts.rs`

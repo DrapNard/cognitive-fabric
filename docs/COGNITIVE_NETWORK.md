@@ -54,10 +54,11 @@ FlatBuffers role-profile vector. It requires the `language` profile and older
 versions refuse that marker. No JSON internal transport or generated schema change
 is introduced. Older workers reject version 4.
 
-The conversation endpoint can use the distinct default reasoning backend, but its
-full structured Engine delegation, language-only final rendering, independent
-role-model bindings and durable client-tool continuation still need integration.
-Do not describe this endpoint as the finished cognitive network.
+The conversation endpoint has its own durable collective path with language-only
+interpretation/presentation, independent role routes and client-tool continuation.
+It does not delegate every conversation to the Engine or inherit every Engine
+recovery scope. Native activation remains explicit and experimental. These
+implemented paths do not establish a finished, runtime-verified cognitive network.
 
 ## Bounded parallel work
 
@@ -237,16 +238,47 @@ backends must support role selection before accepting this configuration.
 workflow experts, including structured multi-step workflows; `1` restores
 sequential selection. Batches require
 distinct explicit requested-capability bindings, pinned compatible manifests and
-disjoint dependency closures. All calls are admitted and durably reserved against
+empty pinned cross-expert dependency declarations. Version requirements from the
+language interpretation must match declared capability versions. The session
+opening snapshot contains at most three ranked expert entries; this is not
+discovery of every registry expert after interpretation. Legacy snapshots without
+routing-declaration pins retain the single-workflow path. All calls are admitted and durably reserved against
 the same task ledger before their futures run. Each expert receives a first dependency-ready step before spare slots are filled
 with additional ready steps, within the per-expert subtask cap.
 Heuristic-only routes retain sequential expert selection; dependency-ready steps
 inside a selected structured workflow retain their separate bounded wave support.
 
-These changes do not implement a full client-to-Engine bridge or managed client
-model activation. They do not create trained expert weights, prove inference
+These changes do not implement a full client-to-Engine bridge. Native client
+activation uses the explicit experimental mode described below. They do not create trained expert weights, prove inference
 speedups or replace existing legacy prose memory. No live inference, tests,
 benchmarks, migration execution or installation was performed for this slice.
+
+Client batch scheduling lives in `agent/collective/experts.rs`. A fair ready-wave
+selection gives each selected expert one ready step before filling remaining
+slots, while enforcing `subtask_parallelism` per expert and an overall maximum of
+four calls. The global cap is the larger of configured expert and subtask caps.
+Shared model backbones are permitted; each registered route remains exact and
+the explicit language model is excluded from expert reasoning.
+An optional workflow that selects that language model, or whose adapter cannot
+honor its exact registration, is recorded as skipped before call admission;
+remaining experts and the ordinary reasoning solver retain their own routes.
+
+Research-mode first waves may reserve two slots for planner/explorer. The exact
+same expert wave is used for capacity preflight and dispatch, so advisory overlap
+cannot exceed the global cap. Whole-workflow prompt admission includes bounded,
+maximally escaped outputs for every step, covering any completed-results context.
+Fallback to one workflow happens before model-call reservations. All sibling
+outcomes are awaited; failures retain charges and do not trigger another expert
+or provider retry. Dependencies are never satisfied by a sibling in the same wave.
+One bounded internal workflow-advice reservation covers the batch; every model
+call retains its own authorization and durable inference reservation.
+
+New snapshots pin a digest of capability and dependency declarations alongside
+workflow/model pins. Continuation rejects modified declarations. This links
+operator metadata, not trained weights or proof that an expert is competent.
+Configured resource preflight is an instantaneous advisory check; generation
+still acquires individual leases and may queue. Client mid-reasoning crash
+recovery, general cross-expert dependencies and measured performance remain open.
 
 ## Client advisory concurrency
 
@@ -273,7 +305,8 @@ sessions omit legacy query/answer memory episodes from inference context. Existi
 legacy data and audit traces are preserved; this is not encryption or removal of
 all text from storage. Documents and current conversation remain language inputs.
 Previously captured continuation contexts remain pinned rather than silently
-rewritten. Optional LoRA training and managed client activation remain unfinished.
+rewritten. Optional independently evaluated project LoRA remains unfinished;
+native client activation uses the explicit experimental mode described below.
 
 ## Independent structured expert graphs
 
@@ -450,8 +483,9 @@ those pins without rereading live registry data. Old metadata-only snapshots
 cannot authorize execution. Plans retain full legacy advice (up to 2,000 bytes)
 or validated structured dependencies (up to four steps, 1,000 bytes per step).
 
-The client collective may execute one matching pinned workflow before its main
-reasoning graph. Steps use the configured solver role, with client tools disabled
+The client collective executes a matching pinned workflow before its main
+reasoning graph, or an admitted batch of independent workflows as described above.
+Steps use the configured solver role or their exact registered expert route, with client tools disabled
 and no provider/model selection from workflow text. All steps share the existing
 Lease call/token/input/deadline ledger. A deterministic workflow-advice capability
 reservation consumes one existing internal tool slot. Required client tool
@@ -466,7 +500,8 @@ enters the same pinned continuation advice and never grants permissions.
 This is a partial client bridge: expert steps use dependency-ready waves through
 the shared solver model, bounded by `subtask_parallelism` (default one). Manifests binding a separate registered local model use their pinned model
 snapshot through an adapter that explicitly supports that route. Provider-bound
-manifests and managed client activation remain unfinished. Client tool
+manifests remain unsupported. Managed client activation requires the explicit
+experimental mode described below. Client tool
 execution/approval remains with the external application. Static compilation and
 Clippy only; no tests, benchmarks or live provider calls run.
 
@@ -489,8 +524,9 @@ session budgets/clock remain unchanged across client tool continuations.
 This enables host concurrency; provider queues and resource limits may serialize
 actual inference. Speed, reasoning quality and runtime reliability remain
 unmeasured. Workspace/all-target compilation and Clippy passed; no tests,
-benchmarks or provider calls were run. Managed client activation and separate
-registered client expert backends remain open.
+benchmarks or provider calls were run. Separate registered client expert backends
+and optional native activation are described in the following sections; they
+remain runtime-unverified.
 
 ## Registered client expert models
 
@@ -586,8 +622,8 @@ uncertain generation or bypass a reservation. Connection setup overhead can be
 avoided when the provider permits reuse; no latency improvement is measured.
 
 Static checks only; no tests, benchmarks or provider calls were run for this
-change. Managed client activation and general mid-reasoning restoration remain
-incomplete.
+change. Optional native activation is described below; general client
+mid-reasoning restoration remains incomplete.
 
 ## Provider prediction slots versus CGF parallelism
 

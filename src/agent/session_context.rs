@@ -107,6 +107,27 @@ pub(super) fn validate_checkpoint(references: &str, pins: &Value) -> Result<()> 
         {
             bail!("Saved expert workflow checksum mismatch")
         }
+        if expert.get("declared_dependencies").is_some()
+            || expert.get("routing_declarations_sha256").is_some()
+            || pin.get("routing_declarations_sha256").is_some()
+        {
+            let capabilities: Vec<crate::registry::Capability> =
+                serde_json::from_value(expert["declared_capabilities"].clone())?;
+            let dependencies: Vec<crate::registry::Dependency> =
+                serde_json::from_value(expert["declared_dependencies"].clone())?;
+            if capabilities.len() > 16 || dependencies.len() > 16 {
+                bail!("Saved expert routing declarations exceed their bounds")
+            }
+            let digest = crate::store::sha256(&serde_json::to_vec(&json!({
+                "capabilities": capabilities,
+                "dependencies": dependencies
+            }))?);
+            if expert["routing_declarations_sha256"].as_str() != Some(digest.as_str())
+                || pin["routing_declarations_sha256"].as_str() != Some(digest.as_str())
+            {
+                bail!("Saved expert routing declarations differ from their checkpoint pin")
+            }
+        }
         let binding = &expert["registered_model"];
         let binding_digest = pin.get("registered_model_sha256");
         if binding.is_null() {
@@ -433,6 +454,10 @@ pub(super) fn capture_with_memory_policy(
             .map(serde_json::to_value)
             .transpose()?
             .unwrap_or(Value::Null);
+        let routing_declarations_sha256 = crate::store::sha256(&serde_json::to_vec(&json!({
+            "capabilities": manifest.capabilities,
+            "dependencies": manifest.dependencies
+        }))?);
         let mut advice = json!({
             "id": manifest.id,
             "version": manifest.version,
@@ -440,6 +465,8 @@ pub(super) fn capture_with_memory_policy(
             "description": manifest.description,
             "tags": manifest.tags,
             "declared_capabilities": manifest.capabilities,
+            "declared_dependencies": manifest.dependencies,
+            "routing_declarations_sha256": routing_declarations_sha256,
             "workflow_plan": workflow_plan(manifest)?,
             "model_selection": manifest.model,
             "registered_model": registered_model_value,
@@ -494,6 +521,7 @@ pub(super) fn capture_with_memory_policy(
                 "version": manifest.version,
                 "sha256": crate::store::sha256(&encoded),
                 "workflow_plan_sha256": workflow_plan_sha256,
+                "routing_declarations_sha256": routing_declarations_sha256,
                 "registered_model_sha256": if registered_model_value.is_null() {
                     Value::Null
                 } else {

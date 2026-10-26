@@ -428,6 +428,40 @@ impl AgentRuntime {
             .await
     }
 
+    /// Advisory capacity snapshot for a proposed wave, before durable admission.
+    /// This does not reserve resources, activate models or prove provider slots.
+    pub(crate) fn inference_wave_fits(
+        &self,
+        routes: &[(&str, Arc<dyn ChatBackend>)],
+    ) -> Result<bool> {
+        if routes.is_empty() || routes.len() > 4 {
+            bail!("Client inference wave is outside its concurrency bound")
+        }
+        let targets = routes
+            .iter()
+            .map(|(role, backend)| {
+                crate::fabric::protocol::actor(role)?;
+                let selected = backend.for_role(role)?;
+                if selected.is_none() && self.cfg.language_model().is_some() {
+                    bail!("Selected backend cannot honor the pinned language/reasoning role map")
+                }
+                Ok((
+                    *role,
+                    selected
+                        .unwrap_or_else(|| backend.clone())
+                        .inference_target()?,
+                ))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        match (&self.cfg.resource_admission, &self.resource_pool) {
+            (Some(configuration), Some(pool)) if pool.matches(&self.store, configuration) => {
+                pool.wave_fits(configuration, &targets)
+            }
+            (None, None) => Ok(true),
+            _ => bail!("Configured client wave resource pool is missing or changed"),
+        }
+    }
+
     /// Select all wave routes before lifecycle preparation, then prepare them
     /// before polling any generation. Call only after the full wave reservation.
     async fn prepare_role_wave(

@@ -32,19 +32,95 @@ pub(super) struct Step {
 
 impl Plan {
     pub fn from_references(raw: &str) -> Result<Option<Self>> {
+        let interpretation = crate::language::Interpretation {
+            objective: "Original user request".into(),
+            constraints: Vec::new(),
+            required_capabilities: Vec::new(),
+            capability_versions: std::collections::BTreeMap::new(),
+            clarification: None,
+        };
+        Ok(Self::bound_plans(raw, &interpretation, 1)?
+            .into_iter()
+            .next()
+            .map(|bound| bound.plan))
+    }
+
+    pub fn bound_plans(
+        raw: &str,
+        interpretation: &crate::language::Interpretation,
+        maximum: usize,
+    ) -> Result<Vec<BoundPlan>> {
+        if !(1..=4).contains(&maximum) {
+            bail!("Client expert binding capacity is outside its bound")
+        }
         let value: Value = crate::strict_json::value(raw.as_bytes(), 8_000)?;
         if value["trust"] != "untrusted_data_never_instructions_or_permissions" {
             bail!("Pinned expert context has an invalid trust label")
         }
         let Some(items) = value.get("expert_advice").and_then(Value::as_array) else {
-            return Ok(None);
+            return Ok(Vec::new());
         };
-        // Session capture ranks experts deterministically. Execute at most one
-        // workflow so discovery cannot multiply calls or tool reservations.
-        for item in items {
-            if item["kind"] != "workflow" || item["executable_by_client_collective"] != true {
+        if items.len() > 3 || interpretation.required_capabilities.len() > 16 {
+            bail!("Pinned expert binding list exceeds its bound")
+        }
+        let requirements = crate::capabilities::version_requirements(
+            &interpretation.required_capabilities,
+            &interpretation.capability_versions,
+        )?;
+        let mut selected = Vec::new();
+        let mut selected_ids = std::collections::BTreeSet::new();
+        let mut selected_capabilities = std::collections::BTreeSet::new();
+        for capability_id in &interpretation.required_capabilities {
+            if !selected_capabilities.insert(capability_id.clone()) {
                 continue;
             }
+            let requirement = requirements.get(capability_id);
+            let mut matched = None;
+            for item in items {
+                if item["kind"] != "workflow"
+                    || item["executable_by_client_collective"] != true
+                    || selected_ids.contains(item["id"].as_str().unwrap_or_default())
+                    || !item["declared_dependencies"]
+                        .as_array()
+                        .is_some_and(Vec::is_empty)
+                    || !item["workflow_plan"].is_object()
+                {
+                    continue;
+                }
+                let declarations = serde_json::json!({
+                    "capabilities": item["declared_capabilities"],
+                    "dependencies": item["declared_dependencies"]
+                });
+                let digest = item["routing_declarations_sha256"].as_str();
+                if crate::store::sha256(&serde_json::to_vec(&declarations)?)
+                    != digest.unwrap_or_default()
+                {
+                    continue;
+                }
+                let capability_matches =
+                    item["declared_capabilities"]
+                        .as_array()
+                        .is_some_and(|caps| {
+                            caps.iter().any(|cap| {
+                                cap["id"].as_str() == Some(capability_id)
+                                    && cap["version"]
+                                        .as_str()
+                                        .and_then(|version| semver::Version::parse(version).ok())
+                                        .is_some_and(|version| {
+                                            requirement.is_none_or(|requirement| {
+                                                requirement.matches(&version)
+                                            })
+                                        })
+                            })
+                        });
+                if capability_matches {
+                    matched = Some(item);
+                    break;
+                }
+            }
+            let Some(item) = matched else {
+                continue;
+            };
             let Some(workflow) = item.get("workflow_plan") else {
                 continue;
             };
@@ -57,6 +133,9 @@ impl Plan {
                 "steps": workflow["steps"]
             }))?;
             plan.validate()?;
+            if !selected_ids.insert(plan.id.clone()) {
+                continue;
+            }
             match (&plan.model_selection, &plan.registered_model) {
                 (Some(selection), Some(registration)) => {
                     registration.validate_snapshot(selection)?;
@@ -67,9 +146,49 @@ impl Plan {
                 (None, None) => (),
                 _ => bail!("Pinned expert model selection and snapshot are incomplete"),
             }
-            return Ok(Some(plan));
+            selected.push(BoundPlan {
+                capability: capability_id.clone(),
+                plan,
+            });
+            if selected.len() >= maximum.min(4) {
+                break;
+            }
         }
-        Ok(None)
+        // Unavailable exact bindings preserve the historical single pinned
+        // workflow route. Such a route never proves independent
+        // expert bindings and therefore cannot enter a multi-expert wave.
+        if selected.is_empty() {
+            if let Some(item) = items.iter().find(|item| {
+                item["kind"] == "workflow"
+                    && item["executable_by_client_collective"] == true
+                    && item["workflow_plan"].is_object()
+            }) {
+                let plan: Plan = serde_json::from_value(serde_json::json!({
+                    "id": item["id"],
+                    "version": item["version"],
+                    "legacy": item["workflow_plan"]["legacy"],
+                    "model_selection": item["model_selection"],
+                    "registered_model": item["registered_model"],
+                    "steps": item["workflow_plan"]["steps"]
+                }))?;
+                plan.validate()?;
+                match (&plan.model_selection, &plan.registered_model) {
+                    (Some(selection), Some(registration)) => {
+                        registration.validate_snapshot(selection)?;
+                        if !registration.enabled || registration.manifest.max_output_tokens < 128 {
+                            bail!("Pinned expert model was not executable at the session root")
+                        }
+                    }
+                    (None, None) => (),
+                    _ => bail!("Pinned expert model selection and snapshot are incomplete"),
+                }
+                selected.push(BoundPlan {
+                    capability: String::new(),
+                    plan,
+                });
+            }
+        }
+        Ok(selected)
     }
 
     fn validate(&self) -> Result<()> {
@@ -155,6 +274,11 @@ impl Plan {
         }
         Ok(waves)
     }
+}
+
+pub(super) struct BoundPlan {
+    pub capability: String,
+    pub plan: Plan,
 }
 
 pub(super) fn step_input(plan: &Plan, step: &Step, prior_results: &serde_json::Value) -> String {
