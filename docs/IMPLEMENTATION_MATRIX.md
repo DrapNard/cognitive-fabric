@@ -6259,7 +6259,14 @@ physical memory enforcement and model-aware capacity planning remain separate wo
 
 - `src/backend/transport.rs`: concurrent process-local HTTP pool, at most four idle connections per host and 30-second idle lifetime; no shared credential or model defaults.
 - `src/backend.rs`, `src/backend/native.rs`, `src/agent/local.rs`, `src/token_admission.rs`: reuse transport across network roles and preserve per-request or absolute deadlines, response bounds and adapter checks.
+- `src/residency.rs`: native inventory and lifecycle HTTP calls also reuse the pool, retaining individual timeouts, request-local credentials and bounded response validation.
 - Reduces repeated client construction and enables connection reuse; does not prove faster inference, parallel provider execution or automatic activation. Static checks only; no tests, benchmarks or live provider calls.
+
+### Client activation admission overhead — Implemented, runtime unverified
+
+- `src/agent/native_scope.rs`, `src/agent/native_scope_activation.rs`: each generation checks a scope-local uncertainty latch under the shared activation lease instead of rescanning all activation history. Scope preparation still validates durable history under exclusive workspace ownership; new activations and cleanup retain durable checks.
+- Activation latches uncertainty before its durable start and clears it only after durable confirmation. Cancellation or journal failure blocks subsequent generation and activation in that scope. Restored scopes revalidate persisted history.
+- No tests, benchmarks or live provider calls. This removes repeated synchronous history scans; elapsed-time improvement and physical provider concurrency remain unmeasured.
 
 ### Native prediction-slot visibility — Implemented, provider runtime unverified
 

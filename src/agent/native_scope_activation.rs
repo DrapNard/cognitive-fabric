@@ -605,6 +605,12 @@ impl NativeClientScope {
             return Ok(());
         }
         let _activation = self.activation_gate.write().await;
+        if self
+            .activation_pending
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
+            bail!("Native client activation has an unresolved outcome")
+        }
         ensure_no_pending_activation(&self.store, &inventory_endpoint(&self.record.policy)?)?;
         let existing = self
             .state
@@ -686,7 +692,15 @@ impl NativeClientScope {
     pub(crate) async fn generation_guard(&self) -> Result<tokio::sync::RwLockReadGuard<'_, ()>> {
         let guard = self.activation_gate.read().await;
         self.check_deadline()?;
-        ensure_no_pending_activation(&self.store, &inventory_endpoint(&self.record.policy)?)?;
+        // Preparation validates durable history under exclusive workspace
+        // ownership. Within this scope only the activation writer can change
+        // that history; retain its uncertainty without scanning it per call.
+        if self
+            .activation_pending
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
+            bail!("Native client activation has an unresolved outcome")
+        }
         Ok(guard)
     }
 
@@ -695,6 +709,12 @@ impl NativeClientScope {
     pub(crate) async fn finish_session(&self) -> Result<()> {
         let _activation = self.activation_gate.write().await;
         self.check_deadline()?;
+        if self
+            .activation_pending
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
+            bail!("Native client activation has an unresolved outcome")
+        }
         ensure_no_pending_activation(&self.store, &inventory_endpoint(&self.record.policy)?)?;
         crate::residency::lifecycle::require_no_unknown_generation(
             &self.store,
@@ -741,6 +761,9 @@ struct ActivationGuard<'a> {
 
 impl<'a> ActivationGuard<'a> {
     fn start(scope: &'a NativeClientScope, model: &str) -> Result<Self> {
+        scope
+            .activation_pending
+            .store(true, std::sync::atomic::Ordering::Release);
         persist_activation_event(
             &scope.store,
             &scope.record,
@@ -763,6 +786,9 @@ impl<'a> ActivationGuard<'a> {
             "activation_confirmed",
             Some(receipt),
         )?;
+        self.scope
+            .activation_pending
+            .store(false, std::sync::atomic::Ordering::Release);
         self.terminal = true;
         Ok(())
     }

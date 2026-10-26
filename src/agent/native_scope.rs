@@ -116,6 +116,7 @@ pub struct NativeClientScope {
     record: ScopeRecord,
     state: std::sync::Mutex<DurableState>,
     activation_gate: tokio::sync::RwLock<()>,
+    activation_pending: std::sync::atomic::AtomicBool,
 }
 
 struct DurableState {
@@ -469,6 +470,7 @@ impl NativeClientScope {
                 checkpoint_sha256: record.checkpoint_sha256.clone(),
             }),
             activation_gate: tokio::sync::RwLock::new(()),
+            activation_pending: std::sync::atomic::AtomicBool::new(false),
             record,
         })
     }
@@ -620,6 +622,7 @@ impl NativeClientScope {
                 checkpoint_sha256: previous,
             }),
             activation_gate: tokio::sync::RwLock::new(()),
+            activation_pending: std::sync::atomic::AtomicBool::new(false),
         })
     }
 

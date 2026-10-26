@@ -109,15 +109,12 @@ async fn request(
     } else {
         None
     };
-    let client = reqwest::Client::builder()
-        .no_proxy()
-        .redirect(reqwest::redirect::Policy::none())
-        .timeout(timeout)
-        .build()?;
+    let client = crate::backend::transport::client()?;
     let mut request = match body {
         Some(body) => client.post(endpoint.clone()).json(&body),
         None => client.get(endpoint.clone()),
-    };
+    }
+    .timeout(timeout);
     if let Some(credential) = &credential {
         request = credential.apply(request)?;
     }
