@@ -1,5 +1,16 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Atomic language-network setup — 2026-10-26
+
+**Implemented, runtime unverified.** `Config::language_network` in `src/config.rs`
+and `configure-network` in `src/main.rs` validate language/reasoning model
+separation, five optional reasoning-role overrides and 1–4 concurrency caps
+before one configuration save. Duplicate/unknown roles and conflicting model
+assignments fail before saving. Existing limits/provider/project settings remain;
+role mappings are replaced explicitly. Models are not loaded/trained, running
+sessions are not reconfigured, and independent verification cannot be overridden.
+Formatting and Clippy passed; no tests/benchmarks or live operations run.
+
 ## Concurrent independent structured experts — 2026-10-26
 
 **Implemented, runtime unverified.** `engine.rs`, `reasoning.rs` and

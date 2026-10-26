@@ -450,6 +450,20 @@ enum Command {
         #[arg(long, value_parser = clap::value_parser!(u64).range(1..=4))]
         expert_parallelism: Option<u64>,
     },
+    /// Replace the role map with a language-only model and reasoning model network.
+    ConfigureNetwork {
+        #[arg(long)]
+        language_model: String,
+        #[arg(long)]
+        reasoning_model: String,
+        /// Optional repeated ROLE=MODEL overrides: planner, solver, explorer, critic, reflector.
+        #[arg(long = "role", value_name = "ROLE=MODEL")]
+        roles: Vec<String>,
+        #[arg(long, default_value_t = 2, value_parser = clap::value_parser!(u64).range(1..=4))]
+        parallelism: u64,
+        #[arg(long, default_value_t = 2, value_parser = clap::value_parser!(u64).range(1..=4))]
+        expert_parallelism: u64,
+    },
     ConfigureAuth {
         #[arg(long, action = clap::ArgAction::Set)]
         enabled: bool,
@@ -1943,6 +1957,55 @@ async fn run_cli() -> Result<()> {
             }
             settings.save()?;
             json!({"saved":true,"configuration":settings})
+        }
+        Command::ConfigureNetwork {
+            language_model,
+            reasoning_model,
+            roles,
+            parallelism,
+            expert_parallelism,
+        } => {
+            let mut bindings = std::collections::BTreeMap::new();
+            if roles.len() > 5 {
+                bail!("At most five reasoning role overrides are supported");
+            }
+            for assignment in roles {
+                let (role, model) = assignment.split_once('=').ok_or_else(|| {
+                    anyhow::anyhow!("Reasoning role binding must have ROLE=MODEL form")
+                })?;
+                if bindings.insert(role.to_owned(), model.to_owned()).is_some() {
+                    bail!("Duplicate reasoning role binding")
+                }
+            }
+            let settings = cfg.language_network(
+                language_model,
+                reasoning_model,
+                bindings,
+                parallelism as usize,
+                expert_parallelism as usize,
+            )?;
+            settings.save()?;
+            let routes = [
+                "interface",
+                "planner",
+                "solver",
+                "explorer",
+                "critic",
+                "reflector",
+                "synthesizer",
+            ]
+            .into_iter()
+            .map(|role| {
+                settings
+                    .model_settings(role)
+                    .map(|(model, _)| json!({"role":role,"model":model}))
+            })
+            .collect::<Result<Vec<_>>>()?;
+            json!({"saved":true,"routes":routes,"parallelism":parallelism,
+                "expert_parallelism":expert_parallelism,"client_collective":true,
+                "models_loaded":false,"trained_weights_created":false,
+                "verification":"Independent compiled kernel; no verifier-model override",
+                "active_sessions_reconfigured":false})
         }
         Command::ConfigureAuth { enabled } => {
             security::authorize("human-cli", "inference.auth.configure")?;

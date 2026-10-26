@@ -120,6 +120,58 @@ impl Default for Config {
 }
 
 impl Config {
+    /// Construct a complete replacement role map before publishing any settings.
+    /// This configures model identities only; it never loads or trains weights.
+    pub fn language_network(
+        &self,
+        language: String,
+        reasoning: String,
+        overrides: BTreeMap<String, String>,
+        parallelism: usize,
+        expert_parallelism: usize,
+    ) -> Result<Self> {
+        if !(1..=4).contains(&parallelism) || !(1..=4).contains(&expert_parallelism) {
+            bail!("Network parallelism must be between 1 and 4")
+        }
+        if overrides.len() > 5
+            || overrides.keys().any(|role| {
+                !matches!(
+                    role.as_str(),
+                    "planner" | "solver" | "explorer" | "critic" | "reflector"
+                )
+            })
+        {
+            bail!("Unsupported reasoning role override; verification remains independent")
+        }
+        let mut configured = self.clone();
+        configured.backend = "openai-local".into();
+        configured.model_registration = None;
+        configured.model = reasoning;
+        configured.role_profiles.clear();
+        configured.role_profiles.insert(
+            "language".into(),
+            RoleProfile {
+                model: language,
+                temperature: self.temperature,
+            },
+        );
+        for (role, model) in overrides {
+            configured.role_profiles.insert(
+                role,
+                RoleProfile {
+                    model,
+                    temperature: self.temperature,
+                },
+            );
+        }
+        configured.interpret_goals = true;
+        configured.agent_collective = true;
+        configured.subtask_parallelism = Some(parallelism);
+        configured.expert_parallelism = (expert_parallelism > 1).then_some(expert_parallelism);
+        configured.validate()?;
+        Ok(configured)
+    }
+
     /// Explicit language-only routing marker, carried in typed role profiles.
     pub fn language_model(&self) -> Option<&str> {
         self.role_profiles

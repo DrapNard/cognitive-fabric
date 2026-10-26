@@ -17,8 +17,8 @@ do not attest immutable weights or detect two aliases serving identical weights.
 Example configuration commands, using model keys chosen by the operator:
 
 ```sh
-cogfabric configure-local --model YOUR_REASONING_MODEL --parallelism 2
-cogfabric configure-local --role language --model YOUR_LANGUAGE_MODEL
+cogfabric configure-network --language-model YOUR_LANGUAGE_MODEL \
+  --reasoning-model YOUR_REASONING_MODEL --parallelism 2 --expert-parallelism 2
 ```
 
 Do not copy the placeholder names into a live provider configuration. No model is
@@ -179,3 +179,25 @@ explicit dependency events describe causality; finish order does not.
 This is cooperative concurrency, not proof that a provider executes models
 simultaneously or faster. No tests, benchmarks or live inference were run.
 Managed client activation and the complete client-to-Engine bridge remain open.
+
+## Atomic network configuration
+
+`configure-network` replaces the previous role map in one validated configuration
+save. Repeated `--role planner=MODEL`, `--role solver=MODEL`,
+`--role explorer=MODEL`, `--role critic=MODEL` and `--role reflector=MODEL`
+bind optional role models. Omitted reasoning roles use the default reasoning
+model. Interpretation/presentation resolve through the language marker; no model
+may serve both the language and reasoning groups under the same configured name.
+The verifier remains the independent kernel, not a configurable reasoning model.
+
+The command enables goal interpretation and client collective orchestration.
+Parallelism defaults to two in this command; explicit caps accept 1–4. It keeps
+existing provider, credential scope, budgets, project reference and residency
+settings. It clears the prior default model registration because the default
+model identity changes. No currently running service or session is reconfigured,
+and no model is loaded or trained. Restart the service with the saved configuration
+to use it for new sessions. Exact installed model keys remain operator inputs.
+
+Engine interpretation/presentation still follow its existing scheduling/explain
+conditions; this command does not complete unconditional Engine language phases,
+managed client activation or the full client-to-Engine bridge.
