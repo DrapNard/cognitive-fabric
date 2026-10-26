@@ -110,6 +110,7 @@ fn audit(
 impl State {
     fn validate(&self, cfg: &Config) -> Result<()> {
         self.clock.validate(cfg.max_wall_seconds)?;
+        super::session_context::validate_checkpoint(&self.references, &self.reference_pins)?;
         let (calls, cycles) = crate::reasoning::mode_limits(&self.mode)?;
         let references_valid = if self.references.is_empty() && cfg.agent_project_profile.is_none()
         {
@@ -139,7 +140,7 @@ impl State {
             || self.objective_index >= self.history_len.max(1) && self.history_len > 0
             || self.proposals.saturating_add(self.internal_tools) > self.tool_limit
             || self.version != 1
-            || self.call_limit != calls.min(cfg.max_calls)
+            || self.call_limit != super::collective::call_limit(cfg, calls)
             || self.cycle_limit != cycles.min(cfg.max_cycles)
             || self.output_limit != cfg.max_tokens
             || self.input_limit != cfg.max_input_bytes
@@ -367,7 +368,7 @@ impl Lease {
             temperature,
             mode: mode.clone(),
             clock,
-            call_limit: calls.min(runtime.cfg.max_calls),
+            call_limit: super::collective::call_limit(&runtime.cfg, calls),
             cycle_limit: cycles.min(runtime.cfg.max_cycles),
             output_limit: runtime.cfg.max_tokens,
             input_limit: runtime.cfg.max_input_bytes,
@@ -411,7 +412,7 @@ impl Lease {
         bytes: &[u8],
         cycle: usize,
     ) -> Result<()> {
-        if cycle == 0 && !matches!(role, "planner" | "explorer") {
+        if cycle == 0 && !matches!(role, "interface" | "planner" | "explorer") {
             bail!("A collective solver cycle is required")
         }
         self.state.validate_limits(allocation, bytes.len(), cycle)?;

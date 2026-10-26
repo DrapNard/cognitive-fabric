@@ -16,15 +16,72 @@ impl ChatBackend for LocalChat {
     fn input_token_admission(&self) -> Option<crate::token_admission::Settings> {
         self.0.input_token_admission
     }
+    fn for_role(&self, role: &str) -> Result<Option<Arc<dyn ChatBackend>>> {
+        self.0.model_settings(role)?;
+        Ok(Some(Arc::new(RoleChat {
+            inner: LocalChat(self.0.clone()),
+            role: role.into(),
+        })))
+    }
     fn complete_for<'a>(
         &'a self,
         task: &'a str,
         request: &'a Turn,
         tokens: usize,
     ) -> Pin<Box<dyn Future<Output = Result<Completion>> + Send + 'a>> {
+        self.complete_role_for("solver", task, request, tokens)
+    }
+    fn complete<'a>(
+        &'a self,
+        request: &'a Turn,
+        tokens: usize,
+    ) -> Pin<Box<dyn Future<Output = Result<Completion>> + Send + 'a>> {
+        self.complete_role("solver", request, tokens)
+    }
+}
+
+struct RoleChat {
+    inner: LocalChat,
+    role: String,
+}
+impl ChatBackend for RoleChat {
+    fn pin(self: Arc<Self>) -> Result<Option<Arc<dyn ChatBackend>>> {
+        Ok(Some(self))
+    }
+    fn inference_target(&self) -> Result<Option<crate::backend::InferenceTarget>> {
+        crate::backend::configured_target(&self.inner.0, Some(&self.role))
+    }
+    fn input_token_admission(&self) -> Option<crate::token_admission::Settings> {
+        self.inner.0.input_token_admission
+    }
+    fn complete_for<'a>(
+        &'a self,
+        task: &'a str,
+        request: &'a Turn,
+        tokens: usize,
+    ) -> Pin<Box<dyn Future<Output = Result<Completion>> + Send + 'a>> {
+        self.inner
+            .complete_role_for(&self.role, task, request, tokens)
+    }
+    fn complete<'a>(
+        &'a self,
+        request: &'a Turn,
+        tokens: usize,
+    ) -> Pin<Box<dyn Future<Output = Result<Completion>> + Send + 'a>> {
+        self.inner.complete_role(&self.role, request, tokens)
+    }
+}
+impl LocalChat {
+    fn complete_role_for<'a>(
+        &'a self,
+        role: &'a str,
+        task: &'a str,
+        request: &'a Turn,
+        tokens: usize,
+    ) -> Pin<Box<dyn Future<Output = Result<Completion>> + Send + 'a>> {
         Box::pin(async move {
             if self.0.input_token_admission.is_none() {
-                return self.complete(request, tokens).await;
+                return self.complete_role(role, request, tokens).await;
             }
             if self.0.backend != "openai-local" {
                 bail!("Token-admitted agent turns require an OpenAI-compatible local backend")
@@ -49,8 +106,9 @@ impl ChatBackend for LocalChat {
             })
         })
     }
-    fn complete<'a>(
+    fn complete_role<'a>(
         &'a self,
+        role: &'a str,
         request: &'a Turn,
         tokens: usize,
     ) -> Pin<Box<dyn Future<Output = Result<Completion>> + Send + 'a>> {
@@ -61,7 +119,7 @@ impl ChatBackend for LocalChat {
             if self.0.backend != "openai-local" {
                 bail!("Native agent turns require an OpenAI-compatible local backend")
             }
-            let (model, temperature) = self.0.model_settings("solver")?;
+            let (model, temperature) = self.0.model_settings(role)?;
             let endpoint = crate::backend::local_endpoint(&self.0.api_base)?;
             let client = reqwest::Client::builder()
                 .no_proxy()

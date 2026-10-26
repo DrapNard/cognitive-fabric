@@ -87,9 +87,10 @@ cogfabric project-memory-show PROJECT_ID@VERSION
 `facts`, `relations`, `constraints`, and `evidence`; the CLI creates the record ID
 and checksum. The referenced profile must already be published. The Rust API
 exposes the same typed records and Store operations. Models cannot publish records
-through these operator-only commands. Retrieval into bounded task context,
-immutable memory selection on continuation, conflict resolution and conversion of
-legacy prose remain to implement. Memory constraints are data, not task permission
+through these operator-only commands. Session opening now captures a bounded typed projection of the latest exact-profile
+revision. Record, profile and projection hashes pin it across continuations;
+checkpoint validation rejects inconsistent projections. Conflict resolution and
+conversion of legacy prose remain to implement. Memory constraints are data, not task permission
 or acceptance-rule overrides.
 
 ## Optional project LoRA
@@ -108,3 +109,25 @@ Compilation, formatting and static review only. No tests, benchmarks, live model
 requests, database migration execution or installation are performed for this
 run. The migration and concurrent execution have not been runtime-verified.
 The full network, continuous operation and performance objective remain open.
+
+## Client routing and independent expert batches
+
+With an explicit language profile, client conversations use the durable collective
+path automatically. Interpretation and final presentation select that profile;
+reasoning calls select their assigned role backend. Language calls consume the
+same root call, token and wall budgets. Tool proposals return directly to the
+client; presentation cannot inherit the solver's verification result. Custom
+backends must support role selection before accepting this configuration.
+
+`configure-local --expert-parallelism 2..4` opts into concurrent independent
+one-call workflow experts; `1` restores sequential selection. Batches require
+distinct explicit requested-capability bindings, pinned compatible manifests and
+disjoint dependency closures. All calls are admitted and durably reserved against
+the same task ledger before their futures run. Structured multi-step experts and
+heuristic-only routes retain sequential expert selection; dependency-ready steps
+inside a selected structured workflow retain their separate bounded wave support.
+
+These changes do not implement a full client-to-Engine bridge or managed client
+model activation. They do not create trained expert weights, prove inference
+speedups or replace existing legacy prose memory. No live inference, tests,
+benchmarks, migration execution or installation was performed for this slice.

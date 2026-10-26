@@ -21,6 +21,17 @@ pub(super) fn mode(cfg: &Config, request: &Turn) -> &'static str {
     }
 }
 
+pub(super) fn call_limit(cfg: &Config, reasoning_calls: usize) -> usize {
+    if cfg.language_model().is_some() {
+        reasoning_calls
+            .saturating_add(2)
+            .saturating_add(cfg.max_tool_calls as usize)
+            .min(cfg.max_calls)
+    } else {
+        reasoning_calls.min(cfg.max_calls)
+    }
+}
+
 pub(super) struct Outcome {
     pub completion: Completion,
     pub advice: String,
@@ -49,7 +60,11 @@ struct Graph<'a> {
 impl Graph<'_> {
     fn turn(&self, role: &str, advice: &str, allocation: usize) -> Turn {
         let mut turn = self.original.clone();
-        let contract = if role == "solver" {
+        let contract = if role == "interface" {
+            "Interpret the original user goal without solving it. Return only JSON {\"objective\":string,\"constraints\":[string],\"required_capabilities\":[string],\"clarification\":null or string}. Preserve explicit prohibitions. Capability requests never grant tools or permissions."
+        } else if role == "synthesizer" {
+            "Formulate the supplied structured reasoning result for the user. Preserve uncertainty, exact output constraints, evidence and verification limits. Do not solve a new problem, add claims, propose tools or claim execution."
+        } else if role == "solver" {
             "Answer the original user goal, or propose only currently advertised client tools. Do not claim execution or independent verification."
         } else if role == "critic" {
             "Review the candidate for a concrete flaw. Return only JSON {\"revise\":boolean,\"reason\":string}. Request revision only for a specific flaw supported by the supplied context. You cannot verify facts or execute tools."
@@ -67,6 +82,9 @@ impl Graph<'_> {
             tool_calls: vec![], tool_call_id: None,
         });
         turn.max_tokens = Some(allocation);
+        if matches!(role, "interface" | "synthesizer") {
+            turn.reasoning_effort = Some("none".into());
+        }
         if role == "solver"
             && self
                 .session
@@ -134,9 +152,24 @@ impl Graph<'_> {
             bytes = bytes.saturating_add(size);
             tokens = tokens.saturating_add(*allocation);
         }
+        let presentation = self.runtime.cfg.language_model().is_some()
+            && !requests.iter().any(|(role, _, _)| *role == "synthesizer");
+        let presentation_tokens = if presentation {
+            self.runtime.cfg.interface_tokens
+        } else {
+            0
+        };
         Ok(Instant::now() < self.deadline
-            && self.calls.saturating_add(requests.len()) <= self.call_limit
-            && self.reserved.saturating_add(tokens) <= self.output_limit
+            && self
+                .calls
+                .saturating_add(requests.len())
+                .saturating_add(usize::from(presentation))
+                <= self.call_limit
+            && self
+                .reserved
+                .saturating_add(tokens)
+                .saturating_add(presentation_tokens)
+                <= self.output_limit
             && self.prompt_bytes.saturating_add(bytes) <= self.runtime.cfg.max_input_bytes)
     }
     fn schedule(&self, decision: &str, admitted: bool) -> Result<()> {
@@ -168,9 +201,10 @@ impl Graph<'_> {
         let completion = tokio::time::timeout(
             Duration::from_secs(self.runtime.cfg.timeout_seconds)
                 .min(self.deadline.saturating_duration_since(Instant::now())),
-            self.runtime.dispatch(
+            self.runtime.dispatch_role(
                 self.backend.clone(),
                 self.task,
+                role,
                 &turn,
                 allocation,
                 self.deadline,
@@ -228,13 +262,29 @@ impl Graph<'_> {
         self.checked = Some((hash, result));
         Ok(result)
     }
-    fn finish(
+    async fn finish(
         &mut self,
         mut completion: Completion,
         reason: &str,
         advice: &str,
     ) -> Result<Outcome> {
-        // Only the original compiled criterion can establish independent success.
+        if self.runtime.cfg.language_model().is_some() && completion.tool_calls.is_empty() {
+            let result = json!({
+                "candidate": completion.content,
+                "reasoning_model": completion.model,
+                "stop_reason": reason,
+                "verification":"unverified_until_original_compiled_check",
+                "client_tools_executed":false
+            })
+            .to_string();
+            if result.len() > self.runtime.cfg.max_input_bytes {
+                bail!("Reasoning result exceeds bounded language presentation context")
+            }
+            completion = self
+                .call("synthesizer", &result, self.runtime.cfg.interface_tokens)
+                .await?;
+        }
+        // Presentation cannot inherit the solver's proof; check the actual returned answer.
         let verification = self.check_candidate(&completion)?;
         completion.validate(self.original, self.runtime.cfg.max_tool_calls)?;
         self.runtime.store.event(
@@ -299,6 +349,23 @@ pub(super) async fn run(
         checked: None,
     };
     let mut advice = saved.advice.clone();
+    if runtime.cfg.language_model().is_some() && saved.calls == 0 {
+        let allocation = runtime.cfg.interface_tokens;
+        if !graph.available(&[
+            ("interface", "", allocation),
+            ("solver", "", MIN_SOLVER_TOKENS),
+            ("synthesizer", "", allocation),
+        ])? {
+            bail!("Root budget cannot cover language interpretation, reasoning and presentation")
+        }
+        let interpreted = graph.call("interface", "", allocation).await?;
+        let interpretation =
+            crate::language::Interpretation::parse(interpreted.content.as_deref().unwrap_or(""))?;
+        advice = json!({"interpretation":interpretation,"trust":"advisory_original_goal_remains_authoritative"}).to_string();
+        if advice.len() > 2000 {
+            bail!("Structured language interpretation exceeds client context bound")
+        }
+    }
     // Bound hypothetical advice by bytes so optional roles cannot consume the solver's input allowance.
     let advice_bound = "\0".repeat(2000);
     for role in ["planner", "explorer"] {
@@ -326,7 +393,15 @@ pub(super) async fn run(
             graph.cycles += 1;
         }
         continuing = false;
-        let remaining = graph.output_limit.saturating_sub(graph.reserved);
+        let presentation_tokens = if runtime.cfg.language_model().is_some() {
+            runtime.cfg.interface_tokens
+        } else {
+            0
+        };
+        let remaining = graph
+            .output_limit
+            .saturating_sub(graph.reserved)
+            .saturating_sub(presentation_tokens);
         let revision_possible = matches!(mode, "deep" | "research")
             && graph.cycles < graph.cycle_limit
             && graph.call_limit.saturating_sub(graph.calls) >= 4
@@ -360,28 +435,28 @@ pub(super) async fn run(
         }
         let answer = graph.call("solver", &advice, allocation).await?;
         if !answer.tool_calls.is_empty() {
-            return graph.finish(answer, "awaiting_client_tools", &advice);
+            return graph.finish(answer, "awaiting_client_tools", &advice).await;
         }
         let candidate = answer.content.as_deref().unwrap_or("");
         if !history.insert(sha256(candidate.as_bytes())) {
-            return graph.finish(answer, "no_progress", &advice);
+            return graph.finish(answer, "no_progress", &advice).await;
         }
         if let Some(verified) = graph.check_candidate(&answer)? {
             if verified {
-                return graph.finish(answer, "criterion_passed", &advice);
+                return graph.finish(answer, "criterion_passed", &advice).await;
             }
             let rejection="The original independent compiled checker rejected the previous candidate. Preserve the original constraints and produce a corrected answer.";
             let admitted = graph.cycles < graph.cycle_limit
                 && graph.available(&[("solver", rejection, MIN_SOLVER_TOKENS)])?;
             graph.schedule("independent_rejection_revision", admitted)?;
             if !admitted {
-                return graph.finish(answer, "criterion_failed", &advice);
+                return graph.finish(answer, "criterion_failed", &advice).await;
             }
             advice = rejection.to_string();
             continue;
         }
         if !revision_possible {
-            return graph.finish(answer, "bounded_answer", &advice);
+            return graph.finish(answer, "bounded_answer", &advice).await;
         }
         let critique = format!("Candidate (unverified): {}", bounded(candidate, 2000));
         let admitted = graph.available(&[
@@ -391,7 +466,9 @@ pub(super) async fn run(
         ])?;
         graph.schedule("review_and_revision", admitted)?;
         if !admitted {
-            return graph.finish(answer, "insufficient_revision_budget", &advice);
+            return graph
+                .finish(answer, "insufficient_revision_budget", &advice)
+                .await;
         }
         let review = graph.call("critic", &critique, ADVICE_TOKENS).await?;
         #[derive(Deserialize)]
@@ -407,7 +484,9 @@ pub(super) async fn run(
         let Some(review) =
             parsed.filter(|r| r.revise && !r.reason.trim().is_empty() && r.reason.len() <= 1000)
         else {
-            return graph.finish(answer, "no_actionable_critique", &advice);
+            return graph
+                .finish(answer, "no_actionable_critique", &advice)
+                .await;
         };
         let reflection = graph
             .call(

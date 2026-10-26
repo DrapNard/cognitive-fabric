@@ -299,6 +299,63 @@ impl ProjectMemoryRecord {
     }
 }
 
+/// Recheck the complete claims and their evidence links in a bounded context projection.
+pub(crate) fn validate_projection_claims(
+    facts: &[Fact],
+    relations: &[Relation],
+    constraints: &[Constraint],
+    evidence: &[EvidenceRef],
+) -> Result<()> {
+    if facts.len() > MAX_FACTS
+        || relations.len() > MAX_RELATIONS
+        || constraints.len() > MAX_CONSTRAINTS
+        || evidence.is_empty()
+        || evidence.len() > MAX_EVIDENCE
+    {
+        bail!("Project memory projection exceeds a schema bound")
+    }
+    let mut evidence_ids = std::collections::BTreeSet::new();
+    for item in evidence {
+        validate_identifier(&item.id, "evidence identity", 128)?;
+        validate_hash(&item.sha256)?;
+        if !evidence_ids.insert(item.id.as_str()) {
+            bail!("Duplicate project memory projection evidence identity")
+        }
+    }
+    let mut record_ids = std::collections::BTreeSet::new();
+    for fact in facts {
+        validate_identifier(&fact.id, "fact identity", 64)?;
+        validate_identifier(&fact.subject, "fact subject", 96)?;
+        validate_identifier(&fact.predicate, "fact predicate", 64)?;
+        validate_scalar(&fact.value)?;
+        validate_links(&fact.evidence, &evidence_ids)?;
+        if !record_ids.insert(fact.id.as_str()) {
+            bail!("Duplicate project memory projection claim identity")
+        }
+    }
+    for relation in relations {
+        validate_identifier(&relation.id, "relation identity", 64)?;
+        validate_identifier(&relation.source, "relation source", 96)?;
+        validate_identifier(&relation.predicate, "relation predicate", 64)?;
+        validate_identifier(&relation.target, "relation target", 96)?;
+        validate_links(&relation.evidence, &evidence_ids)?;
+        if !record_ids.insert(relation.id.as_str()) {
+            bail!("Duplicate project memory projection claim identity")
+        }
+    }
+    for constraint in constraints {
+        validate_identifier(&constraint.id, "constraint identity", 64)?;
+        validate_identifier(&constraint.subject, "constraint subject", 96)?;
+        validate_identifier(&constraint.predicate, "constraint predicate", 64)?;
+        validate_scalar(&constraint.value)?;
+        validate_links(&constraint.evidence, &evidence_ids)?;
+        if !record_ids.insert(constraint.id.as_str()) {
+            bail!("Duplicate project memory projection claim identity")
+        }
+    }
+    Ok(())
+}
+
 fn validate_identifier(value: &str, label: &str, maximum: usize) -> Result<()> {
     if value.is_empty()
         || value.len() > maximum

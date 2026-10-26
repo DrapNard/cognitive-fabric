@@ -27,6 +27,11 @@ use std::{
 pub use types::*;
 
 pub trait ChatBackend: Send + Sync {
+    /// Return a task-independent, pinned adapter for one trusted host-assigned role.
+    /// None means role-specific routing is unsupported, never permission to guess.
+    fn for_role(&self, _role: &str) -> Result<Option<Arc<dyn ChatBackend>>> {
+        Ok(None)
+    }
     /// Exact operator-configured input-token admission capability. Backends
     /// return None unless every task-scoped request is subject to that policy.
     fn input_token_admission(&self) -> Option<crate::token_admission::Settings> {
@@ -69,15 +74,6 @@ impl AgentRuntime {
     pub fn local(cfg: Config, store: Arc<Store>) -> Result<Self> {
         // Native conversation RPC is deliberately separate from role-prompt RPC.
         // Never silently bypass an operator's managed worker requirement.
-        if !cfg.role_profiles.is_empty()
-            && (cfg.language_model().is_none()
-                || cfg
-                    .role_profiles
-                    .keys()
-                    .any(|role| !matches!(role.as_str(), "language" | "interface" | "synthesizer")))
-        {
-            bail!("Agent turns currently require no role overrides")
-        }
         if cfg.inference_process {
             let mut expected = cfg.db().into_os_string();
             expected.push(".runtime.lock");
@@ -141,6 +137,21 @@ impl AgentRuntime {
         self.resource_pool = pool;
         Ok(self)
     }
+    fn collective_enabled(&self) -> bool {
+        self.cfg.agent_collective || self.cfg.language_model().is_some()
+    }
+    fn worker_role_config(&self, role: &str) -> Result<Config> {
+        let (model, temperature) = self.cfg.model_settings(role)?;
+        let mut selected = self.cfg.clone();
+        selected.model = model.to_owned();
+        selected.temperature = temperature;
+        // One-use worker delegation carries the already authorized exact target.
+        // Root configuration/hash and role reservation retain the full network map.
+        selected.role_profiles.clear();
+        selected.model_registration = None;
+        selected.validate()?;
+        Ok(selected)
+    }
     pub fn validate(&self, request: &Turn) -> Result<usize> {
         if self.backend.input_token_admission() != self.cfg.input_token_admission {
             bail!("Configured agent backend cannot enforce input-token admission")
@@ -151,7 +162,23 @@ impl AgentRuntime {
             _ => bail!("Configured agent resource pool is missing or changed"),
         }
         request.validate()?;
-        if self.cfg.agent_collective && request.messages.len() > 254 {
+        if self.cfg.language_model().is_some() {
+            for role in [
+                "interface",
+                "planner",
+                "solver",
+                "explorer",
+                "critic",
+                "reflector",
+                "synthesizer",
+            ] {
+                if self.backend.for_role(role)?.is_none() {
+                    bail!("Language-boundary conversations require explicit backend role routing")
+                }
+            }
+        }
+
+        if self.collective_enabled() && request.messages.len() > 254 {
             bail!("Collective conversations allow 254 messages plus two runtime role messages")
         }
         local::validate_token_request(&self.cfg, request)?;
@@ -196,12 +223,29 @@ impl AgentRuntime {
         tokens: usize,
         deadline: Instant,
     ) -> Result<Completion> {
+        self.dispatch_role(backend, task, "solver", request, tokens, deadline)
+            .await
+    }
+    async fn dispatch_role(
+        &self,
+        backend: Arc<dyn ChatBackend>,
+        task: &str,
+        role: &str,
+        request: &Turn,
+        tokens: usize,
+        deadline: Instant,
+    ) -> Result<Completion> {
+        let selected = backend.for_role(role)?;
+        if selected.is_none() && self.cfg.language_model().is_some() {
+            bail!("Selected backend cannot honor the pinned language/reasoning role map")
+        }
+        let backend = selected.unwrap_or(backend);
         if Instant::now() >= deadline {
             bail!("Agent deadline exhausted before backend dispatch")
         }
-        let process = if self.managed && self.cfg.agent_collective {
+        let process = if self.managed && self.collective_enabled() {
             Some(Arc::new(process::ProcessTask::new(
-                self.cfg.clone(),
+                self.worker_role_config(role)?,
                 self.store.clone(),
                 task,
                 deadline,
@@ -216,12 +260,11 @@ impl AgentRuntime {
         let result = if let (Some(configuration), Some(pool)) =
             (&self.cfg.resource_admission, &self.resource_pool)
         {
-            // All client roles share the same configured solver target. This is
-            // resource admission, not permission for model/profile switching.
+            // Admit the exact role target selected from the pinned operator map.
             let (completion, _) = if configuration.working_profiles.is_empty() {
                 pool.execute(
                     task,
-                    "solver",
+                    role,
                     configuration.allocation,
                     || backend.inference_target(),
                     || async {
@@ -238,7 +281,7 @@ impl AgentRuntime {
                 })?;
                 pool.execute_profiled(
                     task,
-                    "solver",
+                    role,
                     configuration.allocation,
                     || pinned.inference_target(),
                     || async {
@@ -260,6 +303,14 @@ impl AgentRuntime {
         if let Some(process) = process {
             process.shutdown().await?;
         }
+        if let Ok(completion) = &result {
+            if self.cfg.language_model().is_some() {
+                let (expected, _) = self.cfg.model_settings(role)?;
+                if completion.model != expected {
+                    bail!("Completion differs from its pinned role target")
+                }
+            }
+        }
         result
     }
     pub async fn run_until(
@@ -268,7 +319,7 @@ impl AgentRuntime {
         cancel: impl Future<Output = ()>,
     ) -> Result<TurnResult> {
         let tokens = self.validate(&request)?;
-        if self.cfg.agent_collective {
+        if self.collective_enabled() {
             return sessions::run(self, request, tokens, cancel).await;
         }
         if request.messages.last().is_some_and(|m| {

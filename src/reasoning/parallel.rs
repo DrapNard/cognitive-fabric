@@ -808,7 +808,7 @@ impl Session {
         }))
     }
 
-    fn accumulate_parallel_usage(&mut self, report: &Generation) {
+    pub(super) fn accumulate_parallel_usage(&mut self, report: &Generation) {
         if self.complete_usage {
             if let (Some(input), Some(output)) = (report.input_tokens, report.output_tokens) {
                 self.resources.input_tokens = Some(

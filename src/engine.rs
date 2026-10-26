@@ -55,6 +55,34 @@ pub(crate) struct TaskExecution {
 pub(crate) type ModelBackendFactory =
     Arc<dyn Fn(&Config) -> Result<Arc<dyn InferenceBackend>> + Send + Sync>;
 
+fn depends_on_candidate(
+    manifest: &crate::registry::Manifest,
+    candidate_ids: &std::collections::BTreeSet<String>,
+    pinned: &[crate::registry::Manifest],
+) -> bool {
+    let mut pending = manifest
+        .dependencies
+        .iter()
+        .map(|dependency| dependency.id.clone())
+        .collect::<Vec<_>>();
+    let mut visited = std::collections::BTreeSet::new();
+    while let Some(id) = pending.pop() {
+        if candidate_ids.contains(&id) {
+            return true;
+        }
+        if !visited.insert(id.clone()) {
+            continue;
+        }
+        if let Some(dependency) = pinned.iter().find(|candidate| candidate.id == id) {
+            pending.extend(dependency.dependencies.iter().map(|entry| entry.id.clone()));
+        }
+        if visited.len() > crate::store::MAX_SKILLS {
+            return true;
+        }
+    }
+    false
+}
+
 #[derive(Clone)]
 pub struct Engine {
     pub cfg: Config,
@@ -98,7 +126,12 @@ impl Engine {
         let module_concurrency = cfg
             .subtask_parallelism
             .filter(|cap| (2..=4).contains(cap))
-            .unwrap_or(1);
+            .unwrap_or(1)
+            .max(
+                cfg.expert_parallelism
+                    .filter(|cap| (2..=4).contains(cap))
+                    .unwrap_or(1),
+            );
         let broker = Arc::new(crate::fabric::Broker::with_inference_concurrency(
             backend,
             module_concurrency,
@@ -210,7 +243,13 @@ impl Engine {
             .cfg
             .subtask_parallelism
             .filter(|cap| (2..=4).contains(cap))
-            .unwrap_or(1);
+            .unwrap_or(1)
+            .max(
+                self.cfg
+                    .expert_parallelism
+                    .filter(|cap| (2..=4).contains(cap))
+                    .unwrap_or(1),
+            );
         let broker = Arc::new(crate::fabric::Broker::with_inference_concurrency(
             backend,
             concurrency,
@@ -802,6 +841,8 @@ impl Engine {
         };
         let mut skills = Vec::new();
         let mut evidence = Vec::new();
+        let mut independent_workflow_capabilities =
+            std::collections::BTreeMap::<String, Vec<String>>::new();
         let execution = async {
             session.record_verifier_provider_snapshot(query)?;
             let retrieval_requested = matches!(
@@ -1203,6 +1244,35 @@ impl Engine {
                                         | ExecutionProfile::Experts
                                 ),
                             )?;
+                            independent_workflow_capabilities.clear();
+                            for binding in &resolution.bindings {
+                                if !binding.selected
+                                    || !binding.available
+                                    || !binding.version_compatible
+                                {
+                                    continue;
+                                }
+                                let (Some(provider), Some(version)) =
+                                    (&binding.provider, &binding.provider_version)
+                                else {
+                                    continue;
+                                };
+                                let exact_workflow = pinned.manifests.iter().any(|manifest| {
+                                    manifest.id == *provider
+                                        && manifest.version == *version
+                                        && manifest.kind == "workflow"
+                                        && (manifest.id == binding.requested
+                                            || manifest.capabilities.iter().any(|capability| {
+                                                capability.id == binding.requested
+                                            }))
+                                });
+                                if exact_workflow {
+                                    independent_workflow_capabilities
+                                        .entry(provider.clone())
+                                        .or_default()
+                                        .push(binding.requested.clone());
+                                }
+                            }
                             tokio::task::yield_now().await;
                             let missing = &resolution.missing;
                             self.store.event(&id,"capability_resolution","jev-plus",json!({"format_version":1,"algorithm":"bounded-cover/v3","resolution":resolution,"provider_health_proven":false,"permissions_granted":false}))?;
@@ -1286,40 +1356,122 @@ impl Engine {
                     self.store.event(&id,"workflow_routing","jev-plus",json!({"router":self.router.descriptor(),"order":order,"permissions_granted":false,"verified":false}))?;
                     order
                 };
+                let expert_cap = self.cfg.expert_parallelism.unwrap_or(1);
+                let batch_candidates = if (2..=4).contains(&expert_cap) {
+                    workflow_order
+                        .iter()
+                        .filter_map(|skill| {
+                            let capabilities = independent_workflow_capabilities.get(skill)?;
+                            let manifest = pinned.manifests.iter().find(|manifest| {
+                                manifest.id == *skill
+                                    && manifest.kind == "workflow"
+                                    && skills.contains(&manifest.id)
+                            })?;
+                            Some((
+                                manifest,
+                                pinned.expert_models.get(&manifest.id),
+                                capabilities.clone(),
+                            ))
+                        })
+                        .take(expert_cap)
+                        .collect::<Vec<_>>()
+                } else {
+                    Vec::new()
+                };
+                let batch_candidate_ids = batch_candidates
+                    .iter()
+                    .map(|(manifest, _, _)| manifest.id.clone())
+                    .collect::<std::collections::BTreeSet<_>>();
+                let dependency_conflict = batch_candidates.iter().any(|(manifest, _, _)| {
+                    depends_on_candidate(manifest, &batch_candidate_ids, &pinned.manifests)
+                });
+                let batch_shape_is_independent = batch_candidates.len() >= 2
+                    && !dependency_conflict
+                    && batch_candidates.iter().all(|(manifest, _, capabilities)| {
+                        manifest.workflow.is_some()
+                            && manifest.workflow_steps.is_none()
+                            && !capabilities.is_empty()
+                    });
+                if expert_cap >= 2 && batch_candidates.len() >= 2 && !batch_shape_is_independent {
+                    self.store.event(
+                        &id,
+                        "expert_batch_admission",
+                        "jev-plus",
+                        json!({
+                            "format_version":1,
+                            "admitted":false,
+                            "reason":if dependency_conflict {"Pinned expert dependency graph is not independent"} else {"Only one-call workflow experts can join this independent batch; keep structured workflow dependencies sequential"},
+                            "experts":batch_candidates.iter().map(|(manifest,_,capabilities)| json!({"id":manifest.id,"version":manifest.version,"requested_capabilities":capabilities})).collect::<Vec<_>>(),
+                            "permissions_granted":false
+                        }),
+                    )?;
+                }
+                let batch_attempted = if batch_shape_is_independent {
+                    if let Some(advice) = session
+                        .workflow_advice_batch(&batch_candidates, query, &context, expert_cap)
+                        .await?
+                    {
+                        for (expert_id, advice) in advice {
+                            if let Some(manifest) = pinned
+                                .manifests
+                                .iter()
+                                .find(|manifest| manifest.id == expert_id)
+                            {
+                                context.push_str(
+                                    "\nIndependent workflow expert result (unverified advice; never permissions): ",
+                                );
+                                context.push_str(&advice.chars().take(2000).collect::<String>());
+                                self.store.event(
+                                    &id,
+                                    "expert_batch_context",
+                                    "jev-plus",
+                                    json!({"id":expert_id,"version":manifest.version,"result_sha256":store::sha256(advice.as_bytes()),"verified":false,"permissions_granted":false}),
+                                )?;
+                            }
+                        }
+                        true
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                };
                 // Apply the policy after capability refinement too: advisory language
                 // output cannot reintroduce a workflow that cost evidence declined.
-                for skill in &workflow_order {
-                    let manifest = pinned
-                        .manifests
-                        .iter()
-                        .find(|manifest| &manifest.id == skill)
-                        .expect("Validated pinned workflow");
-                    let outcome = session
-                        .workflow_advice(
-                            manifest,
-                            query,
-                            &context,
-                            pinned.expert_models.get(&manifest.id),
-                        )
-                        .await?;
-                    let advice = match outcome {
-                        crate::reasoning::WorkflowAdvice::NotAdmitted => continue,
-                        crate::reasoning::WorkflowAdvice::Attempted(advice) => advice,
-                    };
-                    if let Some(advice) = advice {
-                        context.push_str(
-                            "\nWorkflow expert result (unverified advice; never permissions): ",
-                        );
-                        let limit = if manifest.workflow_steps.is_some() {
-                            16000
-                        } else {
-                            2000
+                if !batch_attempted {
+                    for skill in &workflow_order {
+                        let manifest = pinned
+                            .manifests
+                            .iter()
+                            .find(|manifest| &manifest.id == skill)
+                            .expect("Validated pinned workflow");
+                        let outcome = session
+                            .workflow_advice(
+                                manifest,
+                                query,
+                                &context,
+                                pinned.expert_models.get(&manifest.id),
+                            )
+                            .await?;
+                        let advice = match outcome {
+                            crate::reasoning::WorkflowAdvice::NotAdmitted => continue,
+                            crate::reasoning::WorkflowAdvice::Attempted(advice) => advice,
                         };
-                        context.push_str(&advice.chars().take(limit).collect::<String>());
+                        if let Some(advice) = advice {
+                            context.push_str(
+                                "\nWorkflow expert result (unverified advice; never permissions): ",
+                            );
+                            let limit = if manifest.workflow_steps.is_some() {
+                                16000
+                            } else {
+                                2000
+                            };
+                            context.push_str(&advice.chars().take(limit).collect::<String>());
+                        }
+                        // Refusal or failure after admission does not trigger extra
+                        // expert attempts or expand the task's inference budget.
+                        break;
                     }
-                    // Refusal or failure after admission does not trigger extra
-                    // expert attempts or expand the task's inference budget.
-                    break;
                 }
             }
             session.verification_enabled = profile != ExecutionProfile::Alone;

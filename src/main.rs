@@ -446,6 +446,9 @@ enum Command {
         /// Maximum concurrent dependency-ready reasoning or expert workflow steps.
         #[arg(long, value_parser = clap::value_parser!(u64).range(1..=4))]
         parallelism: Option<u64>,
+        /// Concurrent independent experts; 1 restores sequential selection.
+        #[arg(long, value_parser = clap::value_parser!(u64).range(1..=4))]
+        expert_parallelism: Option<u64>,
     },
     ConfigureAuth {
         #[arg(long, action = clap::ArgAction::Set)]
@@ -1907,6 +1910,7 @@ async fn run_cli() -> Result<()> {
             reasoning_effort,
             timeout_seconds,
             parallelism,
+            expert_parallelism,
         } => {
             let mut settings = cfg.clone();
             settings.backend = "openai-local".into();
@@ -1922,6 +1926,9 @@ async fn run_cli() -> Result<()> {
             }
             if let Some(cap) = parallelism {
                 settings.subtask_parallelism = Some(cap as usize);
+            }
+            if let Some(cap) = expert_parallelism {
+                settings.expert_parallelism = (cap > 1).then_some(cap as usize);
             }
             if let Some(endpoint) = api_base {
                 settings.api_base = endpoint;

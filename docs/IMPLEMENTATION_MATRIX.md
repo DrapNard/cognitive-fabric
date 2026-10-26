@@ -1,5 +1,21 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Client role routing and pinned memory retrieval — 2026-10-26
+
+**Partial; compiled/static analysis only, runtime unverified.**
+`src/agent/{mod,local,collective,sessions}.rs` routes collective calls by role,
+uses the explicit language model for interpretation/presentation, reserves those
+calls within the root budget and checks the presented answer independently.
+`session_context.rs`, `project_memory.rs` and `store.rs` capture bounded structured
+project-memory projections in the opening transaction and validate continuation
+pins. `engine.rs` and `reasoning/expert_parallel.rs` add optional independent
+one-call expert batches with joint budget admission and pinned capabilities.
+`configure-local --expert-parallelism 1..4` exposes the cap (1 means sequential).
+
+Full client Engine integration, managed client activation, concurrent distinct
+structured experts, legacy-memory conversion and optional evaluated project LoRA
+remain open. No tests/benchmarks, live inference, migration or installation run.
+
 ## Language boundary, expert waves and structured project memory — 2026-10-26
 
 **Partial network implementation; schema migration/runtime behavior unverified.**

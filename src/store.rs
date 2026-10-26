@@ -840,11 +840,19 @@ impl Store {
         project_ref: &str,
     ) -> Result<Vec<crate::project_memory::StoredProjectMemory>> {
         crate::security::authorize("human-cli", "project.read")?;
-        let mut db = self.lock()?;
-        let tx = db.transaction()?;
-        let profile = Self::project_profile_from(&tx, project_ref)?;
+        let db = self.lock()?;
+        Self::project_memories_from(&db, project_ref)
+    }
+
+    /// Resolve exact project-memory revisions from a caller's opening transaction.
+    /// The caller owns the snapshot; this helper never opens another connection.
+    pub(crate) fn project_memories_from(
+        db: &Connection,
+        project_ref: &str,
+    ) -> Result<Vec<crate::project_memory::StoredProjectMemory>> {
+        let profile = Self::project_profile_from(db, project_ref)?;
         let selection = crate::projects::Selection::parse(project_ref)?;
-        let mut statement = tx.prepare(
+        let mut statement = db.prepare(
             "SELECT id,CASE WHEN length(CAST(record_json AS BLOB))<=?3 THEN record_json END, \
                     CASE WHEN length(CAST(record_sha256 AS BLOB))=64 THEN record_sha256 END, \
                     CASE WHEN length(CAST(profile_sha256 AS BLOB))=64 THEN profile_sha256 END, \
@@ -911,10 +919,15 @@ impl Store {
                 bail!("Stored project memory revision history exceeds its bound")
             }
         }
-        drop(rows);
-        drop(statement);
-        tx.commit()?;
         Ok(records)
+    }
+
+    /// Read one exact latest project-memory revision from a caller's transaction.
+    pub(crate) fn latest_project_memory_from(
+        db: &Connection,
+        project_ref: &str,
+    ) -> Result<Option<crate::project_memory::StoredProjectMemory>> {
+        Ok(Self::project_memories_from(db, project_ref)?.pop())
     }
 
     pub fn create_task(&self, query: &str, mode: &str) -> Result<String> {

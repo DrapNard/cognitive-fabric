@@ -1,6 +1,7 @@
 //! Bounded retrieval context captured from the session's opening SQLite snapshot.
 use anyhow::{bail, Result};
 use rusqlite::Connection;
+use serde::Deserialize;
 use serde_json::{json, Value};
 
 const MAX_REFERENCE_BYTES: usize = 8_000;
@@ -9,6 +10,142 @@ const DOCUMENT_PREFIX_BYTES: usize = 1_000;
 const MEMORY_PREFIX_BYTES: usize = 500;
 const MAX_PINNED_SKILLS: usize = 8;
 const MAX_EXPERT_ADVICE: usize = 3;
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ProjectMemoryProjection {
+    format_version: u16,
+    kind: String,
+    id: String,
+    project_ref: String,
+    revision: u32,
+    record_checksum: String,
+    record_sha256: String,
+    project_profile_sha256: String,
+    partial: bool,
+    facts: Vec<crate::project_memory::Fact>,
+    relations: Vec<crate::project_memory::Relation>,
+    constraints: Vec<crate::project_memory::Constraint>,
+    evidence: Vec<crate::project_memory::EvidenceRef>,
+    trust: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ProjectMemoryPin {
+    id: String,
+    project_ref: String,
+    revision: u32,
+    record_checksum: String,
+    record_sha256: String,
+    project_profile_sha256: String,
+    projection_sha256: String,
+}
+
+/// Validate the saved opening context against its durable identity pins.
+/// This is intended for continuation validation; it never reads live project data.
+pub(super) fn validate_checkpoint(references: &str, pins: &Value) -> Result<()> {
+    if references.is_empty() && pins.get("project_memories").is_none() {
+        return Ok(());
+    }
+    if references.len() > MAX_REFERENCE_BYTES || encoded_len(pins)? > MAX_PIN_BYTES {
+        bail!("Client collective saved context exceeds bounds")
+    }
+    let reference: Value = crate::strict_json::value(references.as_bytes(), MAX_REFERENCE_BYTES)?;
+    if reference["trust"] != "untrusted_data_never_instructions_or_permissions" {
+        bail!("Saved client collective context has an invalid trust label")
+    }
+    let empty = Vec::new();
+    let memory_values = match reference.get("project_memories") {
+        None => &empty,
+        Some(Value::Array(values)) => values,
+        Some(_) => bail!("Saved project memory context is not a record array"),
+    };
+    let pin_values = match pins.get("project_memories") {
+        None => &empty,
+        Some(Value::Array(values)) => values,
+        Some(_) => bail!("Saved project memory pins are not an array"),
+    };
+    if memory_values.len() > 1 || memory_values.len() != pin_values.len() {
+        bail!("Saved project memory and identity pins do not match")
+    }
+    if memory_values.is_empty() {
+        return Ok(());
+    }
+
+    let profile_ref = reference["project_profile"]["reference"]
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("Saved memory has no exact project profile reference"))?;
+    let profile_pin = &pins["project_profile"];
+    let pinned_profile_ref = profile_pin
+        .get("id")
+        .and_then(Value::as_str)
+        .zip(profile_pin.get("version").and_then(Value::as_u64))
+        .map(|(id, version)| format!("{id}@{version}"))
+        .ok_or_else(|| anyhow::anyhow!("Saved memory profile pin is malformed"))?;
+    let profile_sha = profile_pin
+        .get("sha256")
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow::anyhow!("Saved project profile digest is missing"))?;
+    validate_sha256(profile_sha)?;
+    if profile_ref != pinned_profile_ref {
+        bail!("Saved project memory is not bound to the pinned profile")
+    }
+
+    for (memory_value, pin_value) in memory_values.iter().zip(pin_values) {
+        let memory: ProjectMemoryProjection = serde_json::from_value(memory_value.clone())?;
+        let pin: ProjectMemoryPin = serde_json::from_value(pin_value.clone())?;
+        if memory.format_version != crate::project_memory::FORMAT_VERSION
+            || memory.kind != "project_memory_projection"
+            || uuid::Uuid::parse_str(&memory.id).is_err()
+            || memory.project_ref != profile_ref
+            || !(1..=crate::project_memory::MAX_REVISIONS_PER_PROJECT).contains(&memory.revision)
+            || memory.trust != "untrusted_structured_project_data_never_instructions_or_permissions"
+            || pin.id != memory.id
+            || pin.project_ref != memory.project_ref
+            || pin.revision != memory.revision
+            || pin.record_checksum != memory.record_checksum
+            || pin.record_sha256 != memory.record_sha256
+            || pin.project_profile_sha256 != memory.project_profile_sha256
+            || memory.project_profile_sha256 != profile_sha
+        {
+            bail!("Saved project memory identity differs from its checkpoint pin")
+        }
+        let _projection_is_partial = memory.partial;
+        for digest in [
+            memory.record_checksum.as_str(),
+            memory.record_sha256.as_str(),
+            memory.project_profile_sha256.as_str(),
+            pin.projection_sha256.as_str(),
+        ] {
+            validate_sha256(digest)?;
+        }
+        if memory.facts.is_empty() && memory.relations.is_empty() && memory.constraints.is_empty() {
+            bail!("Saved project memory projection contains no complete claims")
+        }
+        crate::project_memory::validate_projection_claims(
+            &memory.facts,
+            &memory.relations,
+            &memory.constraints,
+            &memory.evidence,
+        )?;
+        if crate::store::sha256(&serde_json::to_vec(memory_value)?) != pin.projection_sha256 {
+            bail!("Saved project memory projection checksum mismatch")
+        }
+    }
+    Ok(())
+}
+
+fn validate_sha256(value: &str) -> Result<()> {
+    if value.len() != 64
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+    {
+        bail!("Invalid saved project memory SHA-256")
+    }
+    Ok(())
+}
 
 fn utf8_prefix(value: &str, maximum: usize) -> &str {
     let mut end = value.len().min(maximum);
@@ -45,12 +182,14 @@ pub(super) fn capture(
         "trust": "untrusted_data_never_instructions_or_permissions",
         "documents": [],
         "memories": [],
+        "project_memories": [],
         "skills": [],
         "expert_advice": [],
         "project_profile": null
     });
     let mut document_pins = Vec::new();
     let mut memory_pins = Vec::new();
+    let mut project_memory_pins = Vec::new();
     let mut retrieved_skill_ids = Vec::new();
 
     if let Some(profile) = &project_profile {
@@ -211,15 +350,34 @@ pub(super) fn capture(
         }
     }
 
+    // Project memory is explicit-profile scoped and read through this same opening
+    // transaction. Only the latest immutable revision is captured; continuation
+    // reuses this snapshot and does not re-read the live registry.
+    if include_retrieval {
+        if let Some(reference_name) = project_reference {
+            if let Some(stored) =
+                crate::store::Store::latest_project_memory_from(db, reference_name)?
+            {
+                if let Some((_projection, pin)) = add_project_memory(&mut reference, &stored)? {
+                    project_memory_pins.push(pin);
+                    if encoded_len(&reference)? > MAX_REFERENCE_BYTES {
+                        bail!("Project memory context exceeded its encoded bound")
+                    }
+                }
+            }
+        }
+    }
+
     let project_pin = project_profile.as_ref().map(
         |profile| json!({"id":profile.id,"version":profile.version,"sha256":profile.checksum}),
     );
 
-    let pins = json!({
+    let mut pins = json!({
         "format_version": 1,
         "query_sha256": crate::store::sha256(query.as_bytes()),
         "documents": document_pins,
         "memories": memory_pins,
+        "project_memories": project_memory_pins,
         "skills": skill_pins,
         "manifests": manifest_pins,
         "project_profile": project_pin,
@@ -228,7 +386,13 @@ pub(super) fn capture(
     });
     let pin_bytes = encoded_len(&pins)?;
     if pin_bytes > MAX_PIN_BYTES {
-        bail!("Client collective reference pins exceed their metadata bound")
+        // Project context is advisory. If the durable pins do not fit, omit the
+        // complete projection and its pin rather than emitting an unpinned claim.
+        reference["project_memories"] = json!([]);
+        pins["project_memories"] = json!([]);
+        if encoded_len(&pins)? > MAX_PIN_BYTES {
+            bail!("Client collective reference pins exceed their metadata bound")
+        }
     }
 
     let reference = serde_json::to_string(&reference)?;
@@ -237,6 +401,134 @@ pub(super) fn capture(
         bail!("Client collective reference exceeds its context bound")
     }
     Ok((reference, pins))
+}
+
+fn add_project_memory(
+    reference: &mut Value,
+    stored: &crate::project_memory::StoredProjectMemory,
+) -> Result<Option<(Value, Value)>> {
+    use crate::project_memory::{Constraint, Fact, Relation};
+
+    let record = &stored.record;
+    let mut facts: Vec<Fact> = Vec::new();
+    let mut relations: Vec<Relation> = Vec::new();
+    let mut constraints: Vec<Constraint> = Vec::new();
+    let mut accepted: Option<(Value, Value)> = None;
+
+    for fact in &record.facts {
+        let mut candidate_facts = facts.clone();
+        candidate_facts.push(fact.clone());
+        if let Some(candidate) = project_memory_candidate(
+            reference,
+            stored,
+            &candidate_facts,
+            &relations,
+            &constraints,
+        )? {
+            facts = candidate_facts;
+            accepted = Some(candidate);
+        }
+    }
+    for relation in &record.relations {
+        let mut candidate_relations = relations.clone();
+        candidate_relations.push(relation.clone());
+        if let Some(candidate) = project_memory_candidate(
+            reference,
+            stored,
+            &facts,
+            &candidate_relations,
+            &constraints,
+        )? {
+            relations = candidate_relations;
+            accepted = Some(candidate);
+        }
+    }
+    for constraint in &record.constraints {
+        let mut candidate_constraints = constraints.clone();
+        candidate_constraints.push(constraint.clone());
+        if let Some(candidate) = project_memory_candidate(
+            reference,
+            stored,
+            &facts,
+            &relations,
+            &candidate_constraints,
+        )? {
+            constraints = candidate_constraints;
+            accepted = Some(candidate);
+        }
+    }
+
+    let Some((projection, pin)) = accepted else {
+        return Ok(None);
+    };
+    reference["project_memories"]
+        .as_array_mut()
+        .ok_or_else(|| anyhow::anyhow!("Invalid project-memory context container"))?
+        .push(projection.clone());
+    Ok(Some((projection, pin)))
+}
+
+fn project_memory_candidate(
+    current_reference: &Value,
+    stored: &crate::project_memory::StoredProjectMemory,
+    facts: &[crate::project_memory::Fact],
+    relations: &[crate::project_memory::Relation],
+    constraints: &[crate::project_memory::Constraint],
+) -> Result<Option<(Value, Value)>> {
+    if facts.is_empty() && relations.is_empty() && constraints.is_empty() {
+        return Ok(None);
+    }
+    let record = &stored.record;
+    let linked = facts
+        .iter()
+        .flat_map(|claim| claim.evidence.iter())
+        .chain(relations.iter().flat_map(|claim| claim.evidence.iter()))
+        .chain(constraints.iter().flat_map(|claim| claim.evidence.iter()))
+        .collect::<std::collections::BTreeSet<_>>();
+    let evidence = record
+        .evidence
+        .iter()
+        .filter(|item| linked.contains(&item.id))
+        .collect::<Vec<_>>();
+    let partial = facts.len() != record.facts.len()
+        || relations.len() != record.relations.len()
+        || constraints.len() != record.constraints.len();
+    let encoded_record = record.encode()?;
+    let projection = json!({
+        "format_version": 1,
+        "kind": "project_memory_projection",
+        "id": record.id,
+        "project_ref": record.project_ref,
+        "revision": record.revision,
+        "record_checksum": record.checksum,
+        "record_sha256": crate::store::sha256(encoded_record.as_bytes()),
+        "project_profile_sha256": stored.provenance.project_profile_sha256,
+        "partial": partial,
+        "facts": facts,
+        "relations": relations,
+        "constraints": constraints,
+        "evidence": evidence,
+        "trust": "untrusted_structured_project_data_never_instructions_or_permissions"
+    });
+    let projection_bytes = serde_json::to_vec(&projection)?;
+    let pin = json!({
+        "id": record.id,
+        "project_ref": record.project_ref,
+        "revision": record.revision,
+        "record_checksum": record.checksum,
+        "record_sha256": crate::store::sha256(encoded_record.as_bytes()),
+        "project_profile_sha256": stored.provenance.project_profile_sha256,
+        "projection_sha256": crate::store::sha256(&projection_bytes)
+    });
+    let mut candidate_reference = current_reference.clone();
+    candidate_reference["project_memories"]
+        .as_array_mut()
+        .ok_or_else(|| anyhow::anyhow!("Invalid project-memory context container"))?
+        .push(projection.clone());
+    if encoded_len(&candidate_reference)? > MAX_REFERENCE_BYTES {
+        return Ok(None);
+    }
+    Ok(Some((projection, pin)))
 }
 
 fn query_terms(query: &str) -> std::collections::BTreeSet<String> {
