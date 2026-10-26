@@ -311,6 +311,19 @@ enum Command {
         #[arg(long)]
         retire_stale_cohort: bool,
     },
+    /// Retire stale release authority after the operator confirms an empty provider.
+    ResidencyManagedAbandon {
+        #[arg(long)]
+        api_base: String,
+        #[arg(long)]
+        authenticate: bool,
+        #[arg(long)]
+        receipt_id: String,
+        #[arg(long)]
+        human_approve: bool,
+        #[arg(long)]
+        provider_stop_acknowledged: bool,
+    },
     /// Archive a terminal receipt while retaining its immutable evidence.
     ResidencyManagedArchive {
         #[arg(long)]
@@ -418,6 +431,9 @@ enum Command {
         interface_tokens: Option<usize>,
         #[arg(long, value_parser = ["default", "none", "low", "medium", "high"])]
         reasoning_effort: Option<String>,
+        /// Per-call provider deadline; the root task wall limit still applies.
+        #[arg(long, value_parser = clap::value_parser!(u64).range(1..=300))]
+        timeout_seconds: Option<u64>,
     },
     ConfigureAuth {
         #[arg(long, action = clap::ArgAction::Set)]
@@ -888,6 +904,9 @@ async fn run_cli() -> Result<()> {
         } | Command::ResidencyManagedResolve {
             human_approve: false,
             ..
+        } | Command::ResidencyManagedAbandon {
+            human_approve: false,
+            ..
         } | Command::ResidencyManagedArchive {
             human_approve: false,
             ..
@@ -904,6 +923,9 @@ async fn run_cli() -> Result<()> {
     if matches!(
         &cli.command,
         Command::ResidencyManagedResolve {
+            provider_stop_acknowledged: false,
+            ..
+        } | Command::ResidencyManagedAbandon {
             provider_stop_acknowledged: false,
             ..
         } | Command::ResidencyTaskResolve {
@@ -1318,6 +1340,27 @@ async fn run_cli() -> Result<()> {
                         provider_stop_acknowledged: *provider_stop_acknowledged,
                         retire_stale_cohort: *retire_stale_cohort,
                     },
+                )
+                .await?,
+                cli.json,
+            );
+        }
+        Command::ResidencyManagedAbandon {
+            api_base,
+            authenticate,
+            receipt_id,
+            human_approve,
+            provider_stop_acknowledged,
+        } => {
+            let store = Store::open_existing_with_limit(&cfg.db(), cfg.max_database_bytes)?;
+            return output(
+                cogfabric::residency::managed::abandonment::abandon(
+                    &store,
+                    api_base,
+                    *authenticate,
+                    receipt_id,
+                    *human_approve,
+                    *provider_stop_acknowledged,
                 )
                 .await?,
                 cli.json,
@@ -1833,6 +1876,7 @@ async fn run_cli() -> Result<()> {
             temperature,
             interface_tokens,
             reasoning_effort,
+            timeout_seconds,
         } => {
             let mut settings = cfg.clone();
             settings.backend = "openai-local".into();
@@ -1842,6 +1886,9 @@ async fn run_cli() -> Result<()> {
             }
             if let Some(effort) = reasoning_effort {
                 settings.reasoning_effort = (effort != "default").then_some(effort);
+            }
+            if let Some(seconds) = timeout_seconds {
+                settings.timeout_seconds = seconds;
             }
             if let Some(endpoint) = api_base {
                 settings.api_base = endpoint;
@@ -1884,6 +1931,7 @@ async fn run_cli() -> Result<()> {
         | Command::ResidencyManagedStatus { .. }
         | Command::ResidencyManagedInspect { .. }
         | Command::ResidencyManagedResolve { .. }
+        | Command::ResidencyManagedAbandon { .. }
         | Command::ResidencyManagedArchive { .. } => {
             bail!("Residency plans must run before runtime initialization")
         }

@@ -95,6 +95,38 @@ after OpenCode exits. The launcher never downloads weights or starts LM Studio.
 Generic OpenAI-compatible providers without the native API still require manual
 loading. Discovery and context checks run before OpenCode starts.
 
+## Reasoning effort and slow local inference
+
+The OpenAI-compatible endpoint requires standard effort values. In this LM Studio
+installation, `reasoning_effort: "none"` disables Qwen thinking and produces a
+visible answer. Its internal model log describes thinking as `on`/`off`, but those
+are **not** valid `reasoning_effort` values on `/v1/chat/completions`.
+
+```sh
+cogfabric --home "$HOME/.local/share/cogfabric-http" configure-local \
+  --model qwen/qwen3-8b --reasoning-effort none --timeout-seconds 120
+```
+
+Client effort overrides the configured default. Select the `#none` variant in
+OpenCode for a first response without internal thinking. The other effort choices
+remain standard wire values; a binary-thinking model cannot provide four distinct
+internal thinking depths. CGF's optional collective mode separately applies its
+bounded orchestration modes. No provider reasoning text is treated as an answer.
+
+`--timeout-seconds` accepts 1–300 seconds. The original task wall deadline and
+HTTP service limits still apply; increasing this value never raises other budgets.
+CPU context caching can be slower, and a short output allowance can be exhausted
+by thinking before a visible answer appears. Empty reasoning-only output is not
+accepted as success; failed calls are never silently retried by CGF. Restart the
+CGF launcher after changing settings and begin a fresh conversation; existing
+durable collective sessions retain their original configuration pins.
+
+The tested provider accepts string `tool_choice` modes `none`, `auto`, and
+`required`, but rejects the OpenAI named-function object form. CGF preserves a
+client's requested selection rather than silently weakening it. The live tool
+proposal check uses one declared function with `required`; it does not execute
+that function or prove arbitrary client workflows.
+
 ## Project OpenCode configuration
 
 The current project directory must contain an OpenCode v2 `opencode.json` with

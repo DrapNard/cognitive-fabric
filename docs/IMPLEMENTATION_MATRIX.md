@@ -1,5 +1,60 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Explicit retirement after an empty-provider restart — 2026-10-26
+
+**Implemented; regression verification passed.** Architecture sections 6, 7, 9 and 10:
+`src/residency/managed/abandonment.rs` adds a human-only CLI action to retire the
+release authority of an active confirmed receipt after a fresh wholly empty native
+inventory and explicit provider-stop acknowledgement. Original confirmed history
+and immutable receipt identities are preserved. A transaction binds two bounded
+audits to the original retention-protected load task; failed audit writes roll back
+retirement. Resolution/archival history validation recognizes this proof without
+changing the database schema. Unknown operations remain separately blocked;
+models never receive this action, and the launcher never invokes it automatically.
+Observation can race external clients and does not attest physical GPU ownership
+or provider termination. This closes the restart case discovered during the live
+inference-compatibility check; it is distinct from resolving an unknown load.
+
+All 15 managed-residency integration tests pass, including loaded-instance denial,
+missing approval/stop acknowledgement, atomic audit failure, duplicate retirement,
+archival, fresh reload and tampered proof. The operator approved retirement of the
+stale local receipt; Qwen reloaded at 32K with CPU KV caching in 12.071 reported
+seconds. Original load evidence remains confirmed and the new load has a fresh
+receipt. This is provider-reported observation, not physical ownership proof.
+
+
+## Standard provider effort and configurable call deadline — 2026-10-26
+
+**Implemented.** Architecture sections 3, 5, 7 and 9: `configure-local
+--timeout-seconds` accepts 1–300 seconds without raising root wall/token/call
+budgets. Conversation and role HTTP adapters share validation of standard effort
+values; no provider-specific effort dialect, schema change or worker restriction
+is introduced. Explicit per-turn `none` overrides configured effort and remains
+`none` on the OpenAI-compatible wire. The existing native adapter retains its
+separate `reasoning` field shape.
+
+Live Qwen logs showed a 45-second generation cancellation with thinking enabled.
+A live probe disproved an initial attempted on/off wire mapping: the provider
+rejects those values on `/v1/chat/completions`, while standard `none` returns a
+visible `READY.` answer with zero reasoning tokens. Internal model log names must
+not be confused with external API values. The local setting is now `none` with a
+120-second call deadline; root wall time remains 120 seconds. Client overrides
+remain authoritative. The provider also rejects named-function object tool choice;
+the live tool-proposal check uses its supported `required` string form. No retry,
+extra permission or reasoning-text promotion is introduced. General provider
+capability discovery and calibrated reasoning quality remain Partial.
+
+Eight focused effort tests and the deadline CLI regression pass. Formatting,
+all-target compilation and strict all-target Clippy pass; the optional NVML release
+build is checked separately. Live CGF text returned `READY.` with three output
+tokens; one `report_status` proposal returned `finish_reason: tool_calls` without
+execution. Installed OpenCode 2.0.32 then returned `READY` through the actual
+launcher with the `#none` variant and no auto-approved tools. Project-local ignored
+configuration now selects that variant. The 120-second root wall cap is unchanged.
+Full all-target/reflection tests were not run under the operator's restriction;
+these checks establish the exercised path, not arbitrary workflow success,
+calibrated reasoning quality, physical GPU quotas or a stable release gate.
+
 ## OpenCode cache placement after live VRAM failure — 2026-10-25
 
 **Implemented; live CPU-cache loading verified.** Architecture sections 6 and 9:

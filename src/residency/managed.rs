@@ -2,6 +2,7 @@
 //!
 //! Receipts are causal records for this workspace's native request. They do not
 //! attest provider identity, exclusive ownership, weights, or inference routing.
+pub mod abandonment;
 pub mod resolution;
 pub mod retirement;
 

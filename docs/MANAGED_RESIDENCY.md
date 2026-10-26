@@ -171,3 +171,33 @@ five-second deadline. These are logical bounds, not physical resource guarantees
 Migration preserves schema-7 receipt rows without adopting provider inventory.
 No model receives a new permission. Owner-local hashes and audit consistency do
 not authenticate evidence against an owner who edits the database or source.
+
+
+## Empty provider after restart: retire stale release authority
+
+A confirmed load receipt can outlive its provider instance after LM Studio exits.
+Its old inventory digest must not be silently reused or rebased. With independent
+confirmation that provider work stopped, an operator can explicitly discard that
+receipt's release authority:
+
+```sh
+cogfabric --home "$HOME/.local/share/cogfabric-http" residency-managed-abandon \
+  --api-base http://127.0.0.1:1234/api/v1 --receipt-id RECEIPT_UUID \
+  --human-approve --provider-stop-acknowledged
+```
+
+This narrowly requires a fresh native inventory with **no loaded instances at all**,
+an active confirmed receipt at the exact endpoint, no pending unknown operation,
+and exclusive local runtime/resource leases. It never unloads or adopts a model,
+replays an inference, fabricates a provider failure, or changes the original load's
+confirmed outcome. Stop acknowledgement is operator testimony, not proof that the
+provider has terminated all work. Other applications can race the observation.
+
+The atomic transaction marks the receipt retired and appends two bounded,
+hash-bound events to its retention-protected original load task. Original receipt,
+load history and inventory digest remain intact. Audit failure rolls back retirement.
+History validation, inspection and archival validate that pair; corruption blocks
+further managed work. Existing archive facilities retain the evidence. A later
+load requires a fresh receipt. No schema migration or new model capability is
+introduced; older binaries cannot validate the new proof and fail closed. The
+launcher never calls abandonment automatically.

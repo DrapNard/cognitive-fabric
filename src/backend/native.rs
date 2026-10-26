@@ -186,7 +186,8 @@ impl NativeBackend {
             "integrations": []
         });
         if let Some(effort) = &self.config.reasoning_effort {
-            payload["reasoning"] = json!(if effort == "none" { "off" } else { effort });
+            let mapped = self.config.provider_effort(effort)?;
+            payload["reasoning"] = json!(if mapped == "none" { "off" } else { mapped });
         }
 
         let client = reqwest::Client::builder()

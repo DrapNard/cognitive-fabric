@@ -115,6 +115,13 @@ impl Default for Config {
 }
 
 impl Config {
+    pub fn provider_effort<'a>(&self, effort: &'a str) -> Result<&'a str> {
+        if !matches!(effort, "none" | "low" | "medium" | "high") {
+            bail!("Unsupported provider reasoning effort")
+        }
+        Ok(effort)
+    }
+
     pub fn load(home: Option<PathBuf>, backend: Option<String>) -> Result<Self> {
         let default_home = env::var_os("HOME")
             .map(PathBuf::from)
@@ -308,6 +315,17 @@ mod tests {
         for effort in ["", "default", "arbitrary", "HIGH"] {
             cfg.reasoning_effort = Some(effort.into());
             assert!(cfg.validate().is_err());
+        }
+    }
+
+    #[test]
+    fn provider_effort_keeps_standard_wire_values_and_rejects_internal_toggle_names() {
+        let cfg = Config::default();
+        for effort in ["none", "low", "medium", "high"] {
+            assert_eq!(cfg.provider_effort(effort).unwrap(), effort);
+        }
+        for unsupported in ["on", "off", "unknown"] {
+            assert!(cfg.provider_effort(unsupported).is_err());
         }
     }
 

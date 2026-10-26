@@ -80,7 +80,7 @@ impl ChatBackend for LocalChat {
                 .as_ref()
                 .or(self.0.reasoning_effort.as_ref())
             {
-                body["reasoning_effort"] = json!(effort);
+                body["reasoning_effort"] = json!(self.0.provider_effort(effort)?);
             }
             let credential = crate::credentials::resolve(&self.0)?;
             let mut http = client.post(endpoint).json(&body);
@@ -248,7 +248,7 @@ mod duplicate_provider_tests {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let endpoint = format!("http://{}/v1", listener.local_addr().unwrap());
         let provider = tokio::spawn(async move {
-            for expected_effort in ["high", "low"] {
+            for expected_effort in ["high", "low", "none", "high"] {
                 let (mut socket, _) = listener.accept().await.unwrap();
                 let mut bytes = Vec::new();
                 loop {
@@ -307,7 +307,7 @@ mod duplicate_provider_tests {
             ..Config::default()
         });
 
-        for per_turn_effort in [Some("high"), None] {
+        for per_turn_effort in [Some("high"), None, Some("none"), Some("high")] {
             let turn: Turn = serde_json::from_value(json!({
                 "messages":[
                     {"role":"system","content":"Client skill instructions"},

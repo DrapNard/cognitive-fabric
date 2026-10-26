@@ -408,10 +408,7 @@ pub async fn generate_report(
         ]
     });
     if let Some(effort) = &cfg.reasoning_effort {
-        if !matches!(effort.as_str(), "none" | "low" | "medium" | "high") {
-            bail!("Unsupported provider reasoning effort")
-        }
-        payload["reasoning_effort"] = json!(effort);
+        payload["reasoning_effort"] = json!(cfg.provider_effort(effort)?);
     }
     let mut request = client.post(endpoint).json(&payload);
     if let Some(credential) = &credential {

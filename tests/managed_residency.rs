@@ -1842,3 +1842,138 @@ async fn stale_cohort_requires_explicit_authority_retirement_and_retains_member_
     no_request(&listener).await;
     std::fs::remove_dir_all(home).unwrap();
 }
+
+#[tokio::test]
+async fn empty_provider_abandonment_requires_approval_is_atomic_and_preserves_archive_proof() {
+    let _serial = serial().await;
+    let home = home();
+    let cfg = create_home(&home);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let api_base = base(&listener);
+    let loaded = models(&BTreeMap::from([(
+        "alpha".into(),
+        vec![("original".into(), 2048)],
+    )]));
+    let empty = models(&BTreeMap::new());
+    let (result, ()) = tokio::join!(
+        cli(&home, managed_command("load", &api_base, "alpha")),
+        async {
+            exchange(&listener, "GET /api/v1/models ", "200 OK", empty.clone()).await;
+            exchange(&listener,"POST /api/v1/models/load ","200 OK",json!({"status":"loaded","type":"llm","instance_id":"original","load_time_seconds":0.1})).await;
+            exchange(&listener, "GET /api/v1/models ", "200 OK", loaded.clone()).await;
+        }
+    );
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let report: Value = serde_json::from_slice(&result.stdout).unwrap();
+    let id = report["receipt"]["receipt_id"].as_str().unwrap();
+    let load_task = report["receipt"]["load_task_id"].as_str().unwrap();
+    let command = args(&[
+        "residency-managed-abandon",
+        "--api-base",
+        &api_base,
+        "--receipt-id",
+        id,
+    ]);
+    for extra in [
+        vec![],
+        args(&["--human-approve"]),
+        args(&["--provider-stop-acknowledged"]),
+    ] {
+        assert!(!cli(&home, command.iter().cloned().chain(extra))
+            .await
+            .status
+            .success());
+        no_request(&listener).await;
+    }
+    let approved = command
+        .iter()
+        .cloned()
+        .chain(args(&["--human-approve", "--provider-stop-acknowledged"]))
+        .collect::<Vec<_>>();
+    let (denied, ()) = tokio::join!(cli(&home, approved.clone()), async {
+        exchange(&listener, "GET /api/v1/models ", "200 OK", loaded).await;
+    });
+    assert!(!denied.status.success());
+    assert_eq!(receipts(&cfg.db())[0].state, "active");
+    let db = rusqlite::Connection::open(cfg.db()).unwrap();
+    db.execute_batch("CREATE TRIGGER deny_abandon BEFORE INSERT ON events WHEN NEW.kind='managed_residency_abandonment' BEGIN SELECT RAISE(ABORT,'fixture'); END;").unwrap();
+    let (denied, ()) = tokio::join!(cli(&home, approved.clone()), async {
+        exchange(&listener, "GET /api/v1/models ", "200 OK", empty.clone()).await;
+    });
+    assert!(!denied.status.success());
+    assert_eq!(receipts(&cfg.db())[0].state, "active");
+    db.execute_batch("DROP TRIGGER deny_abandon;").unwrap();
+    let (retired, ()) = tokio::join!(cli(&home, approved.clone()), async {
+        exchange(&listener, "GET /api/v1/models ", "200 OK", empty.clone()).await;
+    });
+    assert!(
+        retired.status.success(),
+        "{}",
+        String::from_utf8_lossy(&retired.stderr)
+    );
+    assert_eq!(receipts(&cfg.db())[0].state, "retired");
+    assert!(!cli(&home, approved).await.status.success());
+    no_request(&listener).await;
+    let archived = cli(
+        &home,
+        args(&[
+            "residency-managed-archive",
+            "--receipt-id",
+            id,
+            "--human-approve",
+        ]),
+    )
+    .await;
+    assert!(
+        archived.status.success(),
+        "{}",
+        String::from_utf8_lossy(&archived.stderr)
+    );
+    no_request(&listener).await;
+    let status_args = args(&["residency-managed-status", "--api-base", &api_base]);
+    let status = cli(&home, status_args.clone()).await;
+    assert_eq!(
+        serde_json::from_slice::<Value>(&status.stdout).unwrap()["managed_lifecycle_blocked"],
+        false
+    );
+    let (fresh, ()) = tokio::join!(
+        cli(&home, managed_command("load", &api_base, "alpha")),
+        async {
+            exchange(&listener, "GET /api/v1/models ", "200 OK", empty).await;
+            exchange(&listener,"POST /api/v1/models/load ","200 OK",json!({"status":"loaded","type":"llm","instance_id":"fresh","load_time_seconds":0.1})).await;
+            exchange(
+                &listener,
+                "GET /api/v1/models ",
+                "200 OK",
+                models(&BTreeMap::from([(
+                    "alpha".into(),
+                    vec![("fresh".into(), 2048)],
+                )])),
+            )
+            .await;
+        }
+    );
+    assert!(
+        fresh.status.success(),
+        "{}",
+        String::from_utf8_lossy(&fresh.stderr)
+    );
+    assert_ne!(
+        serde_json::from_slice::<Value>(&fresh.stdout).unwrap()["receipt"]["receipt_id"],
+        id
+    );
+    let original:(String,i64) = db.query_row("SELECT status,(SELECT count(*) FROM events WHERE task_id=?1 AND kind='model_residency') FROM tasks WHERE id=?1",[load_task],|r|Ok((r.get(0)?,r.get(1)?))).unwrap();
+    assert_eq!(original, ("completed".into(), 2));
+    db.execute("UPDATE events SET source='untrusted' WHERE task_id=?1 AND kind='managed_residency_abandonment'",[load_task]).unwrap();
+    let corrupted = cli(&home, status_args).await;
+    assert_eq!(
+        serde_json::from_slice::<Value>(&corrupted.stdout).unwrap()["managed_lifecycle_blocked"],
+        true
+    );
+    drop(db);
+    std::fs::remove_dir_all(home).unwrap();
+}

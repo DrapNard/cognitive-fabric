@@ -305,6 +305,9 @@ pub(super) fn is_resolved(store: &Store, task: &str, endpoint: &str) -> Result<b
     Ok(validated(store, task)?.is_some_and(|record| record.endpoint == endpoint))
 }
 pub(super) fn validate_retired(store: &Store, id: &str) -> Result<()> {
+    if super::abandonment::validate_retired(store, id)? {
+        return Ok(());
+    }
     let tasks = {
         let db = store.lock()?;
         let mut s=db.prepare("SELECT r.original_task_id FROM managed_residency_resolution_members m JOIN managed_residency_resolutions r ON r.resolution_id=m.resolution_id WHERE m.receipt_id=?1 ORDER BY r.resolution_id LIMIT 1025")?;
