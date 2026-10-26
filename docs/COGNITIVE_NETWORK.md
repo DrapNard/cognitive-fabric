@@ -198,6 +198,37 @@ model identity changes. No currently running service or session is reconfigured,
 and no model is loaded or trained. Restart the service with the saved configuration
 to use it for new sessions. Exact installed model keys remain operator inputs.
 
-Engine interpretation/presentation still follow its existing scheduling/explain
-conditions; this command does not complete unconditional Engine language phases,
-managed client activation or the full client-to-Engine bridge.
+With an explicit language profile, Engine network execution requires the language
+phases described below. Managed client activation and the full client-to-Engine
+bridge remain incomplete.
+
+## Required Engine language phases
+
+With an explicit language profile, Engine execution profiles other than the
+`Alone` comparison baseline require an interpretation call before inference/tool
+work and a presentation call for completed, unverified or rejected results.
+Interpretation is advisory: the original request and deterministic permissions
+remain authoritative. Its parsed result is reused for capability refinement,
+without a second interpretation call. Errors, cancellation and exhausted tasks
+return operator diagnostics rather than asking a model to rewrite them.
+
+The Engine reserves one presentation call, `interface_tokens` output tokens and
+8,192 prompt bytes inside the original root ceilings. All reasoning/expert
+admission sees the remaining capacity. The mode's reasoning-call allowance is
+augmented by at most two language calls, still capped by `max_calls`. Actual
+model dispatch charges remain durable. A complete result that exceeds the
+presentation reserve fails explicitly rather than truncating JSON or returning
+raw reasoning as a successful language response.
+
+For completed results, the language output must equal the independently verified
+answer byte-for-byte. A changed result fails; it cannot inherit verification.
+Unverified/rejected results retain their status, and the language call supplies
+no independent evidence. Cancellation and the original wall deadline cover both
+phases. Existing configurations without the language marker retain prior behavior.
+
+**Experimental recovery limitation:** tasks recording a language-boundary
+reservation cannot use Engine checkpoint continuation until phase-aware
+restoration exists. Continuation refuses these tasks before dispatch; no replay
+or fresh budget is substituted. This restriction does not change the existing
+durable client tool-continuation path. No tests, benchmarks or live inference
+were run for this implementation.

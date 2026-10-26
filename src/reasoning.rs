@@ -16,6 +16,7 @@ use std::{
 };
 
 mod expert_parallel;
+mod language_boundary;
 pub(crate) mod modules;
 
 pub(crate) const PROMPT_FORMAT: &str = "quoted-references-v1";

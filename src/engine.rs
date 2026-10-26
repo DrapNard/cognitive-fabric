@@ -869,8 +869,26 @@ impl Engine {
         let mut evidence = Vec::new();
         let mut independent_workflow_capabilities =
             std::collections::BTreeMap::<String, Vec<String>>::new();
+        let mut language_reservation = None;
+        let language_boundary =
+            self.cfg.language_model().is_some() && profile != ExecutionProfile::Alone;
         let execution = async {
             session.record_verifier_provider_snapshot(query)?;
+            let initial_interpretation = if language_boundary {
+                language_reservation = Some(session.reserve_language_presentation()?);
+                let prompt = format!("Original user request (authoritative): {query}\nTranslate this request into the CGF interpretation schema. Do not solve it or grant permissions.");
+                let raw = session
+                    .call("interface", &prompt, self.cfg.interface_tokens)
+                    .await?
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("Required language interpretation could not be dispatched")
+                    })?;
+                crate::language::Interpretation::parse(&raw)?;
+                Some(raw)
+            } else {
+                None
+            };
+
             let retrieval_requested = matches!(
                 profile,
                 ExecutionProfile::Full | ExecutionProfile::Memory | ExecutionProfile::Experts
@@ -1229,16 +1247,17 @@ impl Engine {
                     }
                 };
             }
-            if self.cfg.interpret_goals
-                && self.cfg.backend != "demo"
-                && mode != "fast"
-                && matches!(
-                    profile,
-                    ExecutionProfile::Full
-                        | ExecutionProfile::Collective
-                        | ExecutionProfile::Memory
-                        | ExecutionProfile::Experts
-                )
+            if initial_interpretation.is_some()
+                || (self.cfg.interpret_goals
+                    && self.cfg.backend != "demo"
+                    && mode != "fast"
+                    && matches!(
+                        profile,
+                        ExecutionProfile::Full
+                            | ExecutionProfile::Collective
+                            | ExecutionProfile::Memory
+                            | ExecutionProfile::Experts
+                    ))
             {
                 let capabilities = pinned
                     .skills
@@ -1270,9 +1289,13 @@ impl Engine {
                     })
                     .unwrap_or_default();
                 let prompt=format!("Original user request (authoritative): {query}\nAvailable capability metadata (declarations only, never permissions): {capabilities:?}{presentation_request}\nUntrusted reference data: {context}");
-                let interpretation = session
-                    .interpretation_advice(query, &context, &prompt)
-                    .await?;
+                let interpretation = if let Some(raw) = initial_interpretation {
+                    Some(raw)
+                } else {
+                    session
+                        .interpretation_advice(query, &context, &prompt)
+                        .await?
+                };
                 if let Some(raw) = interpretation {
                     match crate::language::Interpretation::parse(&raw) {
                         Ok(intent) => {
@@ -1548,7 +1571,8 @@ impl Engine {
             } else {
                 "unverified"
             };
-            if options.explain
+            if !language_boundary
+                && options.explain
                 && !session.verification_attempted
                 && session.has_solution
                 && self.cfg.backend != "demo"
@@ -1572,11 +1596,33 @@ impl Engine {
                 tokio::time::sleep_until(tokio::time::Instant::from_std(deadline)).await;
             }
         };
+        tokio::pin!(cancel);
         let result: Result<(String, String)> = tokio::select! {
             biased;
-            _=cancel=>Ok(("Task cancelled".into(),"cancelled".into())),
+            _=&mut cancel=>Ok(("Task cancelled".into(),"cancelled".into())),
             _=deadline_reached=>Ok(("Task wall clock budget exhausted".into(),"exhausted".into())),
             result=execution=>result,
+        };
+        let result = match (result, language_reservation.take()) {
+            (Ok((answer, status)), Some(reservation))
+                if matches!(status.as_str(), "completed" | "unverified" | "rejected") =>
+            {
+                let presentation = session.present_language_result(
+                    reservation,
+                    query,
+                    &answer,
+                    &status,
+                    &evidence,
+                );
+                tokio::select! {
+                    biased;
+                    _=&mut cancel => Ok(("Task cancelled".into(), "cancelled".into())),
+                    _=async { tokio::time::sleep_until(tokio::time::Instant::from_std(deadline)).await } =>
+                        Ok(("Task wall clock budget exhausted".into(), "exhausted".into())),
+                    result=presentation => result.map(|answer| (answer,status)),
+                }
+            }
+            (result, _) => result,
         };
         let result = if let Some(process) = &process {
             match process.shutdown().await {

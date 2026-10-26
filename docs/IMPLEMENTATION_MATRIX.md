@@ -1,5 +1,18 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Required Engine language phases — 2026-10-26
+
+**Experimental, runtime unverified.** `src/reasoning/language_boundary.rs` and
+`engine.rs` reserve final presentation within original root limits, require
+interpretation for explicit language-network execution (except the `Alone`
+comparison baseline), reuse its parsed result and require presentation for
+completed/unverified/rejected outcomes. Verified answer bytes cannot change.
+Cancellation/deadline coverage and independent permissions remain in force.
+`recovery/continuation.rs` explicitly refuses these new Engine phase layouts
+until phase-aware restoration exists; this is a known remaining requirement,
+not completed recovery support. Formatting and Clippy passed. No tests,
+benchmarks, live inference or installation performed.
+
 ## Atomic language-network setup — 2026-10-26
 
 **Implemented, runtime unverified.** `Config::language_network` in `src/config.rs`

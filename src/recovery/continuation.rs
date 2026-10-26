@@ -157,6 +157,12 @@ fn prepare_with_native(
     let mut execution_options_event_id = None;
     let mut project_profile_event_id = None;
     let mut original_context_event_id = None;
+    let language_boundary: bool = db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM events WHERE task_id=?1 AND kind='language_boundary_reservation')",
+        [task], |row| row.get(0))?;
+    if language_boundary {
+        bail!("Engine language-boundary continuation requires phase-aware restoration; automatic replay is refused")
+    }
     let mut stmt = db.prepare("SELECT kind,CASE WHEN length(CAST(source AS BLOB))<=64 THEN source END,CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN payload END,id FROM events WHERE task_id=?1 AND kind IN ('execution_settings','execution_options','model_registration','module_snapshot','escalation_policy','project_profile_snapshot','reasoning_context','reasoning') ORDER BY id LIMIT 87")?;
     let mut rows = stmt.query([task])?;
     let mut count = 0;
