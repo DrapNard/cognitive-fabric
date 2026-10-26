@@ -7,6 +7,15 @@ already listening, it reuses that process and leaves it running after OpenCode
 exits. The helper requires a running inference provider and can load the
 configured installed LM Studio model automatically.
 
+The launcher always adds `--standalone` to OpenCode. Its private session inherits
+the current ephemeral `COGFABRIC_SERVER_API_KEY`; an already-running background
+OpenCode service can retain an older environment and fail with `A valid server
+bearer token is required`. This does not disable authentication or persist the
+key. `--server` is refused because a separate OpenCode server cannot inherit the
+launcher's environment. Close an older launcher session before starting a new one;
+start CGF-backed conversations with `cogfabric-opencode`, not a separately launched
+OpenCode process.
+
 ## MCP, skills and web connections
 
 OpenCode owns MCP connections, skill discovery, web access, credentials and tool
@@ -232,6 +241,12 @@ removed after the API check. The helper only signals and reaps the server PID it
 started; it does not shut down a pre-existing service.
 
 ## Troubleshooting
+
+- **A valid server bearer token is required:** close the old CGF launcher session,
+  then rerun `cogfabric-opencode`. Updated launchers create a private OpenCode
+  session with the matching key. Running `opencode` directly can reuse a background
+  process with stale credentials. A pre-existing CGF server is reused only when its
+  supplied token authenticates; the launcher never resets its key or stops it.
 
 - **Unknown load after CUDA out of memory:** inspect LM Studio's log and native
   inventory first. After independently confirming the failed operation has stopped

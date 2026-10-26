@@ -41,6 +41,15 @@ die() {
 [[ "$AUTO_LOAD" == 0 || "$AUTO_LOAD" == 1 ]] || die 'COGFABRIC_OPENCODE_AUTO_LOAD must be 0 or 1.'
 [[ "$KV_GPU" == true || "$KV_GPU" == false ]] || die 'COGFABRIC_OPENCODE_KV_GPU must be true or false.'
 
+# A remote/background OpenCode process cannot inherit this launcher's ephemeral
+# CGF credential. Keep the inference client in this invocation's environment.
+for argument in "$@"; do
+    [[ "$argument" != -- ]] || break
+    case "$argument" in
+        --server|--server=*) die 'cogfabric-opencode requires a private OpenCode session; --server cannot inherit its ephemeral CGF token.' ;;
+    esac
+done
+
 command -v bash >/dev/null 2>&1 || die 'Bash is required.'
 for required in jq curl timeout openssl; do
     command -v "$required" >/dev/null 2>&1 || die "Missing dependency: $required."
@@ -293,7 +302,7 @@ rm -f -- "$CURL_CONFIG"
 export COGFABRIC_SERVER_API_KEY="$API_KEY"
 printf 'Starting OpenCode %s from %s\n' "$version_output" "$PWD"
 set +e
-"$OPENCODE_BIN" "$@"
+"$OPENCODE_BIN" --standalone "$@"
 opencode_status=$?
 set -e
 exit "$opencode_status"

@@ -1,5 +1,26 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Private OpenCode session credential inheritance — 2026-10-26
+
+**Implemented; focused verification passed.** Architecture sections 3, 7 and
+10: `scripts/opencode-local.sh` always launches OpenCode with `--standalone` so
+its inference process inherits the current CGF server token. Explicit `--server`
+connections are refused rather than forwarding an ephemeral key to a process
+with an unrelated environment. Authentication, private curl credential files,
+existing-server ownership rules and cleanup are retained. Background OpenCode
+services are not stopped or reconfigured; credentials are not printed or persisted.
+The tradeoff is one private OpenCode service per launcher invocation instead of
+background-service reuse. `tests/opencode_autoload.rs` checks interactive/run
+argument forwarding, current-token inheritance, remote-session denial and absence
+of the fixture token from logs. Both launcher tests pass (13 combined scenarios).
+Shell syntax, formatting, all-target compilation and strict all-target Clippy pass.
+The installed helper matches the source. The running CGF endpoint correctly refused
+an unauthenticated probe; its token and process were left unchanged. The prior live
+OpenCode check used explicit private mode and passed; the updated helper now adds
+that mode by default. Full all-target/reflection tests were not run under the
+operator's restriction. See [OpenCode setup](OPENCODE.md).
+
+
 ## Explicit retirement after an empty-provider restart — 2026-10-26
 
 **Implemented; regression verification passed.** Architecture sections 6, 7, 9 and 10:
