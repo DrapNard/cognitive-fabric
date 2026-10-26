@@ -105,6 +105,7 @@ impl NativeBackend {
             {
                 bail!("Native adapter role profile does not match its pinned model key")
             }
+            config.require_role_model(role, &target.model)?;
             let expected_base = NativeModelTarget {
                 api_base: config.api_base.clone(),
                 model: target.model.clone(),
@@ -171,10 +172,8 @@ impl NativeBackend {
 
         let target = self.target(role)?;
         let system = system_prompt(role)?;
-        let profile = self.config.role_profiles.get(role);
-        let temperature = profile
-            .map(|profile| profile.temperature)
-            .unwrap_or(self.config.temperature);
+        self.config.require_role_model(role, &target.model)?;
+        let (_, temperature) = self.config.model_settings(role)?;
         let mut payload = json!({
             "model": target.model,
             "input": prompt,

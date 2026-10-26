@@ -115,6 +115,45 @@ impl Default for Config {
 }
 
 impl Config {
+    /// Explicit language-only routing marker, carried in typed role profiles.
+    pub fn language_model(&self) -> Option<&str> {
+        self.role_profiles
+            .get("language")
+            .map(|profile| profile.model.as_str())
+    }
+
+    pub fn require_role_model(&self, role: &str, model: &str) -> Result<()> {
+        crate::fabric::protocol::actor(role)?;
+        if let Some(language) = self.language_model() {
+            let boundary = matches!(role, "interface" | "synthesizer");
+            if boundary != (model == language) {
+                bail!("Language-only model routing forbids this role/model assignment")
+            }
+        }
+        Ok(())
+    }
+
+    pub fn model_settings(&self, role: &str) -> Result<(&str, f64)> {
+        crate::fabric::protocol::actor(role)?;
+        let profile = if matches!(role, "interface" | "synthesizer") {
+            self.role_profiles
+                .get("language")
+                .or_else(|| self.role_profiles.get(role))
+        } else {
+            self.role_profiles.get(role)
+        };
+        let model = profile
+            .map(|profile| profile.model.as_str())
+            .unwrap_or(&self.model);
+        self.require_role_model(role, model)?;
+        Ok((
+            model,
+            profile
+                .map(|profile| profile.temperature)
+                .unwrap_or(self.temperature),
+        ))
+    }
+
     pub fn provider_effort<'a>(&self, effort: &'a str) -> Result<&'a str> {
         if !matches!(effort, "none" | "low" | "medium" | "high") {
             bail!("Unsupported provider reasoning effort")
@@ -210,7 +249,7 @@ impl Config {
             || self.model.len() > 256
             || !self.temperature.is_finite()
             || !(0.0..=2.0).contains(&self.temperature)
-            || self.role_profiles.len() > 7
+            || self.role_profiles.len() > 8
             || self.max_calls > 64
             || self.max_cycles > 16
             || self.max_tokens > 16_384
@@ -228,7 +267,8 @@ impl Config {
         for (role, profile) in &self.role_profiles {
             if !matches!(
                 role.as_str(),
-                "planner"
+                "language"
+                    | "planner"
                     | "solver"
                     | "critic"
                     | "explorer"
@@ -241,6 +281,16 @@ impl Config {
                 || !(0.0..=2.0).contains(&profile.temperature)
             {
                 bail!("Invalid role profile")
+            }
+        }
+        if let Some(language) = self.language_model() {
+            if language == self.model {
+                bail!("Language-only routing requires a distinct default reasoning model")
+            }
+            for (role, profile) in &self.role_profiles {
+                if role != "language" {
+                    self.require_role_model(role, &profile.model)?;
+                }
             }
         }
         Ok(())

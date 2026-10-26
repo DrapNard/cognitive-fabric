@@ -224,7 +224,13 @@ impl Store {
         configured.max_tokens = configured
             .max_tokens
             .min(entry.manifest.max_output_tokens as usize);
-        configured.role_profiles.clear();
+        if configured.language_model().is_some() {
+            configured.role_profiles.retain(|role, _| {
+                matches!(role.as_str(), "language" | "interface" | "synthesizer")
+            });
+        } else {
+            configured.role_profiles.clear();
+        }
         configured.model_registration = Some(selection.clone());
         configured.validate()?;
         Ok(configured)
@@ -238,7 +244,11 @@ impl Store {
             || cfg.backend != "openai-local"
             || cfg.model != entry.manifest.model
             || cfg.api_base != entry.manifest.api_base
-            || !cfg.role_profiles.is_empty()
+            || (!cfg.role_profiles.is_empty()
+                && (cfg.language_model().is_none()
+                    || cfg.role_profiles.keys().any(|role| {
+                        !matches!(role.as_str(), "language" | "interface" | "synthesizer")
+                    })))
             || cfg.max_tokens > entry.manifest.max_output_tokens as usize
         {
             bail!("Configured inference differs from enabled registered model; select the model again")

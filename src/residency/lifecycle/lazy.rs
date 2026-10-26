@@ -684,13 +684,9 @@ impl LazyBackend {
 
     fn model_for(&self, role: &str) -> Result<String> {
         crate::fabric::protocol::actor(role)?;
-        let model = self.fixed_model.as_deref().unwrap_or_else(|| {
-            self.config
-                .role_profiles
-                .get(role)
-                .map(|profile| profile.model.as_str())
-                .unwrap_or(&self.config.model)
-        });
+        let (configured, _) = self.config.model_settings(role)?;
+        let model = self.fixed_model.as_deref().unwrap_or(configured);
+        self.config.require_role_model(role, model)?;
         if !self.coordinator.models.contains_key(model) {
             bail!("Native role target is outside the approved lifecycle model scope")
         }
@@ -712,6 +708,15 @@ impl LazyBackend {
             return Ok(native);
         }
         let mut config = self.config.clone();
+        // This private cached adapter receives only the model selected by the
+        // outer role guard. Preserve the original guard on the lazy wrapper;
+        // a one-instance adapter cannot represent the entire network role map.
+        if let Some(profile) = config.role_profiles.get("language") {
+            if profile.model == model {
+                config.temperature = profile.temperature;
+            }
+        }
+        config.role_profiles.remove("language");
         config.model = model.to_owned();
         for profile in config.role_profiles.values_mut() {
             profile.model = model.to_owned();

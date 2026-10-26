@@ -69,7 +69,13 @@ impl AgentRuntime {
     pub fn local(cfg: Config, store: Arc<Store>) -> Result<Self> {
         // Native conversation RPC is deliberately separate from role-prompt RPC.
         // Never silently bypass an operator's managed worker requirement.
-        if !cfg.role_profiles.is_empty() {
+        if !cfg.role_profiles.is_empty()
+            && (cfg.language_model().is_none()
+                || cfg
+                    .role_profiles
+                    .keys()
+                    .any(|role| !matches!(role.as_str(), "language" | "interface" | "synthesizer")))
+        {
             bail!("Agent turns currently require no role overrides")
         }
         if cfg.inference_process {

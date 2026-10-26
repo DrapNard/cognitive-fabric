@@ -966,11 +966,7 @@ async fn run_internal(
         let mut role_receipts = std::collections::BTreeMap::new();
         let mut targets = std::collections::BTreeMap::new();
         for role in crate::fabric::protocol::ROLES {
-            let model = cfg
-                .role_profiles
-                .get(role)
-                .map(|p| p.model.as_str())
-                .unwrap_or(&cfg.model);
+            let (model, _) = cfg.model_settings(role)?;
             let receipt = receipts.get(model).ok_or_else(|| {
                 anyhow::anyhow!("Configured role is absent from approved model set")
             })?;

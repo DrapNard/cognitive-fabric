@@ -61,13 +61,14 @@ impl ChatBackend for LocalChat {
             if self.0.backend != "openai-local" {
                 bail!("Native agent turns require an OpenAI-compatible local backend")
             }
+            let (model, temperature) = self.0.model_settings("solver")?;
             let endpoint = crate::backend::local_endpoint(&self.0.api_base)?;
             let client = reqwest::Client::builder()
                 .no_proxy()
                 .redirect(reqwest::redirect::Policy::none())
                 .timeout(Duration::from_secs(self.0.timeout_seconds))
                 .build()?;
-            let mut body = json!({"model":self.0.model,"messages":request.messages,"max_tokens":tokens,"temperature":request.temperature.unwrap_or(self.0.temperature),"stream":false});
+            let mut body = json!({"model":model,"messages":request.messages,"max_tokens":tokens,"temperature":request.temperature.unwrap_or(temperature),"stream":false});
             if !request.tools.is_empty() {
                 body["tools"] = json!(request.tools);
                 body["tool_choice"] = request.tool_choice.clone().unwrap_or(json!("auto"));
@@ -108,6 +109,9 @@ impl ChatBackend for LocalChat {
                 .map_err(|_| anyhow::anyhow!("Invalid agent provider JSON"))?;
             if let Some(c) = &credential {
                 c.reject_echo(&serde_json::to_vec(&response)?)?;
+            }
+            if self.0.language_model().is_some() && response["model"].as_str() != Some(model) {
+                bail!("Agent provider reply does not match the assigned reasoning model")
             }
             let choices = response["choices"]
                 .as_array()

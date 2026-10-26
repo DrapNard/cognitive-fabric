@@ -104,7 +104,9 @@ impl Bootstrap {
             )
         });
         let args = fb::BootstrapArgs {
-            version: if self.config.input_token_admission.is_some() {
+            version: if self.config.language_model().is_some() {
+                4
+            } else if self.config.input_token_admission.is_some() {
                 3
             } else if self.config.reasoning_effort.is_some() {
                 2
@@ -160,7 +162,7 @@ impl Bootstrap {
                     max_context_tokens: settings.max_context_tokens(),
                     authenticate: settings.authenticate(),
                 });
-        if !matches!(packet.version(), 1..=3)
+        if !matches!(packet.version(), 1..=4)
             || (packet.version() == 1 && packet.reasoning_effort().is_some())
             || (packet.version() == 2 && packet.reasoning_effort().is_none())
             || (packet.version() < 3 && input_token_admission.is_some())
@@ -217,6 +219,9 @@ impl Bootstrap {
                     bail!("Duplicate worker role profile")
                 }
             }
+        }
+        if (packet.version() == 4) != config.language_model().is_some() {
+            bail!("Language boundary profile requires worker bootstrap version 4")
         }
         let bootstrap = Self {
             task: packet.task_id().into(),

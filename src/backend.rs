@@ -118,13 +118,7 @@ impl InferenceBackend for LocalBackend {
                 {"role":"system", "content":system},
                 {"role":"user", "content":prompt}
             ]);
-            let profile = self.0.role_profiles.get(role);
-            let model = profile
-                .map(|profile| profile.model.as_str())
-                .unwrap_or(&self.0.model);
-            let temperature = profile
-                .map(|profile| profile.temperature)
-                .unwrap_or(self.0.temperature);
+            let (model, temperature) = self.0.model_settings(role)?;
             let mut task_config = self.0.clone();
             task_config.model = model.to_string();
             task_config.temperature = temperature;
@@ -275,10 +269,7 @@ pub(crate) fn configured_target(
     match cfg.backend.as_str() {
         "demo" => Ok(Some(InferenceTarget::Deterministic)),
         "openai-local" => {
-            let model = role
-                .and_then(|r| cfg.role_profiles.get(r))
-                .map(|p| p.model.as_str())
-                .unwrap_or(&cfg.model);
+            let (model, _) = cfg.model_settings(role.unwrap_or("solver"))?;
             Ok(Some(InferenceTarget::LocalHttp(
                 ModelTarget {
                     api_base: cfg.api_base.clone(),
@@ -386,13 +377,7 @@ pub async fn generate_report(
         bail!("Unsupported inference backend")
     }
     let endpoint = local_endpoint(&cfg.api_base)?;
-    let profile = cfg.role_profiles.get(role);
-    let model = profile
-        .map(|profile| profile.model.as_str())
-        .unwrap_or(&cfg.model);
-    let temperature = profile
-        .map(|profile| profile.temperature)
-        .unwrap_or(cfg.temperature);
+    let (model, temperature) = cfg.model_settings(role)?;
     let client = reqwest::Client::builder()
         .no_proxy()
         .redirect(reqwest::redirect::Policy::none())
@@ -459,6 +444,11 @@ pub async fn generate_report(
             bail!("Model returned internal reasoning without an answer; try configure-local --reasoning-effort none and a model-supported no-thinking prompt")
         }
         bail!("Model returned empty text")
+    }
+    if cfg.language_model().is_some()
+        && response.get("model").and_then(|value| value.as_str()) != Some(model)
+    {
+        bail!("Provider reply does not match the assigned language/reasoning model")
     }
     Ok(Generation {
         text: text.chars().take(24_000).collect(),
