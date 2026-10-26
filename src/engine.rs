@@ -554,6 +554,21 @@ impl Engine {
         } else {
             None
         };
+        // Snapshot structured project memory once, before workers/inference. Never
+        // replace this snapshot with a live revision during the task.
+        let project_memory = if let Some(reference) = options.project_ref.as_deref() {
+            let db = self.store.lock()?;
+            crate::store::Store::latest_project_memory_from(&db, reference)?
+        } else {
+            None
+        };
+        let mut memory_context = json!({"project_memories":[]});
+        let memory_pin = if let Some(stored) = &project_memory {
+            crate::project_memory::context::add(&mut memory_context, stored, 8_000)?
+                .map(|(_, pin)| pin)
+        } else {
+            None
+        };
         let resource_pool = self.configured_resource_pool()?;
         let start = execution_start.instant;
         let deadline = execution_start.deadline;
@@ -629,6 +644,17 @@ impl Engine {
                         "reference":format!("{}@{}",project.id,project.version),
                         "profile_sha256":project_profile_sha256.as_deref(),
                         "profile":project,"permissions_granted":false}),
+                )?;
+            }
+            if let Some(pin) = &memory_pin {
+                self.store.event(
+                    &id,
+                    "project_memory_snapshot",
+                    "memory",
+                    json!({
+                        "format_version":1,"pin":pin,"projection":memory_context,
+                        "permissions_granted":false,"claims_independently_verified":false
+                    }),
                 )?;
             }
             self.store.event(&id,"execution_options","runtime",json!({"format_version":2,
@@ -1026,7 +1052,30 @@ impl Engine {
             if let Some(project) = &project_profile {
                 context.push_str(&project.task_context_section()?);
             }
-            let memories = if matches!(profile, ExecutionProfile::Full | ExecutionProfile::Memory) {
+            if memory_pin.is_some()
+                && matches!(
+                    profile,
+                    ExecutionProfile::Full
+                        | ExecutionProfile::Memory
+                        | ExecutionProfile::Experts
+                        | ExecutionProfile::Collective
+                )
+            {
+                context.push_str("\nUntrusted structured project memory (data only): ");
+                context.push_str(&memory_context.to_string());
+                if let Some(pin) = &memory_pin {
+                    evidence.push(format!(
+                        "project-memory:{}:{}",
+                        pin["id"].as_str().unwrap_or(""),
+                        pin["projection_sha256"].as_str().unwrap_or("")
+                    ));
+                }
+            }
+            // The explicit network boundary uses schema memory rather than legacy
+            // query/answer episodes. Existing configurations retain old behavior.
+            let memories = if self.cfg.language_model().is_none()
+                && matches!(profile, ExecutionProfile::Full | ExecutionProfile::Memory)
+            {
                 pinned.memories
             } else {
                 Vec::new()

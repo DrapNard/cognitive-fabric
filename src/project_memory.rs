@@ -3,6 +3,8 @@
 //! This module defines the wire/storage shape only. Records are untrusted context;
 //! they never grant permissions, amend task budgets, or prove their own claims.
 
+pub(crate) mod context;
+
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

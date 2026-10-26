@@ -1,5 +1,15 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Shared structured memory for Engine tasks — 2026-10-26
+
+**Implemented, runtime unverified.** `src/project_memory/context.rs` shares bounded
+whole-claim projections between client sessions and Engine tasks. `engine.rs`
+captures an exact project revision before inference, audits the projection/digests
+and includes it as untrusted data in applicable execution profiles. With an
+explicit language-only profile, new Engine/client contexts omit legacy prose
+episodes. Existing storage and continuation snapshots are preserved. No migration,
+tests, benchmarks or live inference executed; formatting/static analysis only.
+
 ## Client planner/explorer wave — 2026-10-26
 
 **Implemented, runtime unverified.** `src/agent/collective.rs` admits independent

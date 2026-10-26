@@ -142,3 +142,19 @@ waits for both results. No sibling is detached, failures retain reservations, an
 provider cancellation is not claimed on timeout. Other modes and insufficient
 budgets keep sequential admission. Actual provider execution may still queue.
 Compilation/static checks only; no runtime or performance evidence is claimed.
+
+## Engine project-memory snapshot
+
+Engine tasks with an explicit immutable project reference now capture the latest
+structured project-memory revision before workers/inference. Engine and client
+paths share the same bounded complete-claim projection builder; linked evidence,
+partial-projection indication and record/profile/projection digests are retained.
+The Engine records its selected projection and pin in the audit log and never
+refreshes that revision during the task. Constraints remain untrusted data.
+
+When the explicit language-only profile is configured, both Engine and new client
+sessions omit legacy query/answer memory episodes from inference context. Existing
+legacy data and audit traces are preserved; this is not encryption or removal of
+all text from storage. Documents and current conversation remain language inputs.
+Previously captured continuation contexts remain pinned rather than silently
+rewritten. Optional LoRA training and managed client activation remain unfinished.
