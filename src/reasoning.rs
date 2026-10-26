@@ -16,7 +16,7 @@ use std::{
 };
 
 mod expert_parallel;
-mod language_boundary;
+pub(crate) mod language_boundary;
 pub(crate) use language_boundary::{
     reservation_payload as language_reservation_payload, TerminalState,
 };

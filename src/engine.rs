@@ -1550,6 +1550,16 @@ impl Engine {
                 }
             }
             session.verification_enabled = profile != ExecutionProfile::Alone;
+            if language_boundary {
+                self.store.event(
+                    &id,
+                    "language_evidence_snapshot",
+                    "jev-plus",
+                    crate::reasoning::language_boundary::evidence_snapshot(
+                        &self.cfg, query, &context, &evidence,
+                    )?,
+                )?;
+            }
             let mut answer = session
                 .solve_configured(
                     query,

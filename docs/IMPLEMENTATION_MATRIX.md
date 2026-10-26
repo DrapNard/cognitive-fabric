@@ -6268,6 +6268,15 @@ physical memory enforcement and model-aware capacity planning remain separate wo
 - Activation latches uncertainty before its durable start and clears it only after durable confirmation. Cancellation or journal failure blocks subsequent generation and activation in that scope. Restored scopes revalidate persisted history.
 - No tests, benchmarks or live provider calls. This removes repeated synchronous history scans; elapsed-time improvement and physical provider concurrency remain unmeasured.
 
+### Explicit language-network reasoning continuation — Partial, runtime unverified
+
+- `src/reasoning/language_boundary.rs`, `src/engine.rs`: new version-2 language reservations permit phase-aware continuation; bounded immutable evidence-reference snapshots bind the original configuration, objective and reasoning context. Restoration reapplies the original held presentation capacity without resetting charges or clocks.
+- `src/recovery/continuation_language.rs`, `src/recovery/continuation.rs`: explicit operator continuation admits fully recorded reasoning only at an existing validated boundary. It requires the original interpretation result, unique exact evidence snapshot, original permissions/resource/native restoration and remaining root allowance. It renders successful/rejected/unverified results through the language-only model before publishing the outcome.
+- `src/recovery/inference.rs`: continues auditing exact legacy version-1 reservations but does not grant them the new continuation path. Uncommitted calls, missing evidence, terminal presentation phases and unsupported histories are refused; dedicated terminal-presentation recovery remains separate.
+- Existing Full/Collective-only, no-explanation and no-conversation-reference continuation restrictions remain enforced.
+- Process-worker call ceilings include only the original two language-phase calls, capped by the root configuration. No new allowance, interpretation replay, automatic retry, trained weights or speed claim.
+- Static checks only; no tests, benchmarks, provider calls or live recovery performed. Automatic continuous recovery, interruptions outside recorded boundaries and end-to-end runtime proof remain incomplete.
+
 ### Native prediction-slot visibility — Implemented, provider runtime unverified
 
 - `src/residency.rs`: bounded optional per-instance prediction-slot parsing and explicit concurrency observations with unknown queue/active counts. Omission stays unknown.

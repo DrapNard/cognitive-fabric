@@ -123,13 +123,18 @@ pub(super) fn audit_from(db: &rusqlite::Connection, task: &str) -> Result<Value>
                 let Some((cfg, limit, _, true)) = settings.as_mut() else {
                     bail!("Language reservation has no durable execution settings")
                 };
+                let mut expected =
+                    crate::reasoning::language_reservation_payload(cfg, *limit as usize)?;
+                if payload["format_version"] == 1 {
+                    expected["format_version"] = json!(1);
+                    expected["continuation_supported"] = json!(false);
+                }
                 if source != "jev-plus"
                     || language_boundary.is_some()
                     || !calls.is_empty()
                     || tools != 0
                     || cycles != 0
-                    || payload
-                        != crate::reasoning::language_reservation_payload(cfg, *limit as usize)?
+                    || payload != expected
                 {
                     bail!("Invalid or repeated language boundary reservation")
                 }
@@ -470,7 +475,7 @@ pub(super) fn audit_from(db: &rusqlite::Connection, task: &str) -> Result<Value>
                     else {"interpretation_uncommitted"},
                 "presentation_capacity_held":!presentation_dispatched,
                 "presentation_checkpoint_recorded":presentation_checkpoint.is_some(),
-                "continuation_supported":false,"resume_authorized":false
+                "continuation_supported":reservation["continuation_supported"] == true,"resume_authorized":false
             })),"automatic_replay":false,"resume_authorized":false,"weights_attested":false}),
     )
 }

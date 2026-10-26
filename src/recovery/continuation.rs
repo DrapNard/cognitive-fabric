@@ -16,6 +16,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[path = "continuation_language.rs"]
+mod language;
 #[path = "continuation_module_history.rs"]
 mod module_dispatch_history;
 #[path = "continuation_modules.rs"]
@@ -40,6 +42,7 @@ pub(super) mod resource_history;
 pub(super) mod resource_routes;
 
 struct Checkpoint {
+    language: Option<language::Restored>,
     cfg: Config,
     query: String,
     context: String,
@@ -160,9 +163,6 @@ fn prepare_with_native(
     let language_boundary: bool = db.query_row(
         "SELECT EXISTS(SELECT 1 FROM events WHERE task_id=?1 AND kind='language_boundary_reservation')",
         [task], |row| row.get(0))?;
-    if language_boundary {
-        bail!("Engine language-boundary continuation requires phase-aware restoration; automatic replay is refused")
-    }
     let mut stmt = db.prepare("SELECT kind,CASE WHEN length(CAST(source AS BLOB))<=64 THEN source END,CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN payload END,id FROM events WHERE task_id=?1 AND kind IN ('execution_settings','execution_options','model_registration','module_snapshot','escalation_policy','project_profile_snapshot','reasoning_context','reasoning') ORDER BY id LIMIT 87")?;
     let mut rows = stmt.query([task])?;
     let mut count = 0;
@@ -520,6 +520,16 @@ fn prepare_with_native(
         [task],
         |row| row.get(0),
     )?;
+    let language = if language_boundary {
+        if boundary.is_none() {
+            bail!("Language continuation requires a recorded reasoning boundary")
+        }
+        Some(language::prepare(
+            db, task, &cfg, settings, &query, text, &audit,
+        )?)
+    } else {
+        None
+    };
     let finite_search_history =
         super::finite_search::validate(db, task, &query, &cfg, original_context_id, boundary_id)?;
     let path_progress = path_progress_history::validate_before(
@@ -696,6 +706,7 @@ fn prepare_with_native(
     };
     let resource_history = resource_history::validate(db, task, &cfg)?;
     Ok(Checkpoint {
+        language,
         finite_search_history,
         path_progress_enabled,
         verifier_provider: verifier_provider.cloned(),
@@ -1578,15 +1589,12 @@ async fn resume_with_runtime_handles(
     let path_progress_enabled = checkpoint.path_progress_enabled;
     let process = if checkpoint.cfg.inference_process {
         let mut cfg = checkpoint.cfg.clone();
+        let (mode_calls, _) = crate::reasoning::mode_limits(&checkpoint.mode)?;
+        let root_calls =
+            mode_calls.saturating_add(if checkpoint.language.is_some() { 2 } else { 0 });
         cfg.max_calls = cfg
             .max_calls
-            .min(match checkpoint.mode.as_str() {
-                "fast" => 1,
-                "standard" => 4,
-                "deep" => 10,
-                "research" => 18,
-                _ => 0,
-            })
+            .min(root_calls)
             .saturating_sub(checkpoint.state.resources.calls as usize);
         cfg.max_tokens = cfg
             .max_tokens
@@ -1627,6 +1635,16 @@ async fn resume_with_runtime_handles(
         &checkpoint.mode,
         checkpoint.state,
     )?;
+    let language_reservation = checkpoint
+        .language
+        .as_ref()
+        .map(|saved| session.restore_language_presentation(&saved.reservation, saved.base_calls))
+        .transpose()?;
+    let mut evidence = checkpoint
+        .language
+        .as_ref()
+        .map(|saved| saved.evidence.clone())
+        .unwrap_or_default();
     session.model_backend_factory = native
         .as_ref()
         .and_then(|runtime| runtime.model_backend_factory());
@@ -1646,7 +1664,7 @@ async fn resume_with_runtime_handles(
         native.begin_continuation()?;
     }
     let execution = async {
-        if let Some(boundary) = &checkpoint.boundary {
+        let answer = if let Some(boundary) = &checkpoint.boundary {
             session
                 .continue_solver(
                     boundary,
@@ -1654,7 +1672,7 @@ async fn resume_with_runtime_handles(
                     &checkpoint.context,
                     &checkpoint.mode,
                 )
-                .await
+                .await?
         } else {
             session
                 .continue_graph(
@@ -1667,8 +1685,37 @@ async fn resume_with_runtime_handles(
                         .as_ref()
                         .map(|schedule| schedule.waves.clone()),
                 )
-                .await
+                .await?
+        };
+        if let Some(reservation) = language_reservation {
+            let status = if !session.has_solution {
+                "exhausted"
+            } else if session.verified {
+                evidence.push(format!(
+                    "verified:{}",
+                    session.verified_criterion.ok_or_else(|| {
+                        anyhow::anyhow!("Verified continuation lacks criterion identity")
+                    })?
+                ));
+                "completed"
+            } else if session.verification_attempted {
+                "rejected"
+            } else {
+                "unverified"
+            };
+            if matches!(status, "completed" | "rejected" | "unverified") {
+                return session
+                    .present_language_result(
+                        reservation,
+                        &checkpoint.query,
+                        &answer,
+                        status,
+                        &evidence,
+                    )
+                    .await;
+            }
         }
+        Ok(answer)
     };
     let mut outcome = tokio::select! {
         biased;
@@ -1727,7 +1774,7 @@ async fn resume_with_runtime_handles(
         bail!("Continuation lost its running task anchor")
     }
     tx.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'continuation','human-cli',?2,unixepoch())",rusqlite::params![task,serde_json::to_string(&report)?])?;
-    let outcome = json!({"status":status,"resources":session.resources,"verified":session.verified,"origin":"operator_continuation","timing_scope":"continuation_only"});
+    let outcome = json!({"status":status,"resources":session.resources,"verified":session.verified,"origin":"operator_continuation","timing_scope":"continuation_only","evidence":evidence});
     tx.execute("INSERT INTO events(task_id,kind,source,payload,created) VALUES(?1,'outcome','jev-plus',?2,unixepoch())",rusqlite::params![task,outcome.to_string()])?;
     let progress = crate::events::Progress::from_audit(
         tx.last_insert_rowid() as u64,

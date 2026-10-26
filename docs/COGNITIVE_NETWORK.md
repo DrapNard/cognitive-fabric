@@ -14,6 +14,20 @@ interface/synthesizer profiles are refused. Provider-reported model identities m
 match the selected model when the boundary is enabled. Names and endpoint replies
 do not attest immutable weights or detect two aliases serving identical weights.
 
+New Engine tasks save a version-2 presentation reservation and a bounded,
+hash-bound evidence-reference snapshot before reasoning starts. Explicit
+`resume-task` continuation can restore a fully recorded reasoning phase at a
+validated reasoning boundary, preserving interpretation, context, charges and
+the original deadline. Final presentation consumes the original reservation;
+it does not receive a fresh budget. Native tasks still require their original
+approved native restoration path. Existing continuation restrictions still
+apply: Full/Collective execution, no explanation option and no conversation
+reference. Legacy reservations without the evidence
+snapshot, unknown call outcomes and interruptions outside supported boundaries
+remain refused. Terminal presentation recovery uses its separate existing path.
+This continuation is source implemented and statically checked; no runtime
+recovery, tests or benchmarks were performed for this change.
+
 Example configuration commands, using model keys chosen by the operator:
 
 ```sh

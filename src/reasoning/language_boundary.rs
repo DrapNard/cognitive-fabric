@@ -18,11 +18,53 @@ pub(crate) fn reservation_payload(cfg: &Config, base_calls: usize) -> Result<ser
     {
         bail!("Root limits cannot cover interpretation, reasoning and presentation")
     }
-    Ok(json!({"format_version":1,"root_call_limit":call_limit,
+    Ok(json!({"format_version":2,"root_call_limit":call_limit,
         "root_output_limit":cfg.max_tokens,"root_input_limit":cfg.max_input_bytes,
         "presentation_calls":1,"presentation_output_tokens":cfg.interface_tokens,
         "presentation_prompt_bytes":8192,"charged":false,"permissions_granted":false,
-        "continuation_supported":false}))
+        "continuation_supported":true}))
+}
+
+/// Immutable evidence references for restoring the final language phase. These
+/// are task data, not project memory, independent proofs or permissions.
+pub(crate) fn evidence_snapshot(
+    cfg: &Config,
+    query: &str,
+    context: &str,
+    evidence: &[String],
+) -> Result<serde_json::Value> {
+    if cfg.language_model().is_none()
+        || evidence.len() > 128
+        || evidence
+            .iter()
+            .any(|item| item.is_empty() || item.len() > 1024)
+    {
+        bail!("Language evidence snapshot exceeds its reference bounds")
+    }
+    let mut payload = json!({"format_version":1,
+        "configuration_sha256":crate::store::sha256(&serde_json::to_vec(cfg)?),
+        "objective_sha256":crate::store::sha256(query.as_bytes()),
+        "context_sha256":crate::store::sha256(context.as_bytes()),
+        "evidence":evidence,"permissions_restorable":false});
+    let encoded = serde_json::to_vec(&payload)?;
+    if encoded.len() > 65536 {
+        bail!("Language evidence snapshot exceeds its byte bound")
+    }
+    payload["snapshot_sha256"] = crate::store::sha256(&encoded).into();
+    Ok(payload)
+}
+
+pub(crate) fn restore_evidence_snapshot(
+    cfg: &Config,
+    query: &str,
+    context: &str,
+    payload: &serde_json::Value,
+) -> Result<Vec<String>> {
+    let evidence: Vec<String> = serde_json::from_value(payload["evidence"].clone())?;
+    if *payload != evidence_snapshot(cfg, query, context, &evidence)? {
+        bail!("Saved language evidence snapshot changed or is unsupported")
+    }
+    Ok(evidence)
 }
 
 pub(crate) struct TerminalState {
@@ -33,6 +75,36 @@ pub(crate) struct TerminalState {
 }
 
 impl Session {
+    /// Reapply the original held presentation capacity without reserving a new
+    /// call or resetting resource counters, nodes, clocks or task ownership.
+    pub(crate) fn restore_language_presentation(
+        &mut self,
+        payload: &serde_json::Value,
+        base_calls: usize,
+    ) -> Result<PresentationReservation> {
+        if *payload != reservation_payload(&self.cfg, base_calls)? {
+            bail!("Saved language presentation reservation is unsupported or changed")
+        }
+        let call_limit = base_calls.saturating_add(2).min(self.cfg.max_calls);
+        let reservation = PresentationReservation {
+            max_tokens: self.cfg.max_tokens,
+            max_input_bytes: self.cfg.max_input_bytes,
+            call_limit,
+            allocation: self.cfg.interface_tokens,
+            prompt_limit: 8192,
+        };
+        if self.resources.calls as usize > call_limit - 1
+            || self.resources.reserved_output_tokens > self.cfg.max_tokens - reservation.allocation
+            || self.resources.prompt_bytes > self.cfg.max_input_bytes - reservation.prompt_limit
+        {
+            bail!("Saved reasoning exceeds its original language reservation")
+        }
+        self.call_limit = call_limit - 1;
+        self.cfg.max_tokens -= reservation.allocation;
+        self.cfg.max_input_bytes -= reservation.prompt_limit;
+        Ok(reservation)
+    }
+
     pub(crate) fn restore_terminal(
         cfg: Config,
         store: Arc<Store>,
