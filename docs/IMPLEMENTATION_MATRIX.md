@@ -1,5 +1,15 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Work-conserving ready expert waves — 2026-10-26
+
+**Implemented, runtime unverified.** `src/reasoning.rs` schedules ready steps in
+stable round-robin order: one per active expert first, then spare capacity up to
+`expert_parallelism`, bounded per expert by `subtask_parallelism`. Dependency
+results must come from completed prior waves. Registered expert brokers use the
+validated step cap. Exact selections and limits are audited before dispatch.
+Original root budgets and permissions remain enforced. Formatting and Clippy
+passed; no tests, benchmarks or provider requests run.
+
 ## Language provider effort isolation — 2026-10-26
 
 **Implemented, runtime unverified.** `Config::role_reasoning_effort` centralizes

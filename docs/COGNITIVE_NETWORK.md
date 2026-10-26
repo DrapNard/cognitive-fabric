@@ -124,8 +124,8 @@ workflow experts, including structured multi-step workflows; `1` restores
 sequential selection. Batches require
 distinct explicit requested-capability bindings, pinned compatible manifests and
 disjoint dependency closures. All calls are admitted and durably reserved against
-the same task ledger before their futures run. Each expert advances one
-dependency-ready step per wave; completed experts release their wave slot.
+the same task ledger before their futures run. Each expert receives a first dependency-ready step before spare slots are filled
+with additional ready steps, within the per-expert subtask cap.
 Heuristic-only routes retain sequential expert selection; dependency-ready steps
 inside a selected structured workflow retain their separate bounded wave support.
 
@@ -165,8 +165,8 @@ rewritten. Optional LoRA training and managed client activation remain unfinishe
 
 Explicitly bound independent experts may now include up to four validated DAG
 steps each. The complete graphs must fit shared call/output/input budgets while
-reserving whole-goal planner and solver capacity. One ready step per expert runs
-in each wave, bounded by the selected expert cap; an expert's dependent step sees
+reserving whole-goal planner and solver capacity. A stable round-robin ready-step schedule runs
+each wave, bounded by both the selected expert cap and per-expert subtask cap; an expert's dependent step sees
 only its own completed dependency results. Each result is unverified advice, not
 evidence of success or a new permission.
 
@@ -247,3 +247,18 @@ This requests the provider's non-reasoning mode; it does not attest internal
 model execution or measure latency. A provider that rejects the setting fails
 explicitly rather than silently rerouting language work to a reasoning role.
 Formatting/static checks only; no tests, benchmarks or provider calls run.
+
+## Filling available expert slots
+
+`expert_parallelism` bounds total active calls in an independent expert batch;
+`subtask_parallelism` bounds ready steps from any one expert. Each wave considers
+one ready step from each active expert first, then additional ready steps in
+stable expert/topological order until the total cap is reached. A dependency
+requires a result from a previous completed wave; merely scheduling its producer
+in the same wave is insufficient. Registered expert brokers use the validated
+step cap so the host does not serialize these admitted calls unnecessarily.
+
+`expert_ready_wave` records the exact expert versions/steps and both limits before
+per-call authorization and durable reservations. Existing root budgets, deadline,
+resource admission, failure handling and no-replay behavior remain authoritative.
+No runtime or speed evidence is claimed; tests and benchmarks were not run.
