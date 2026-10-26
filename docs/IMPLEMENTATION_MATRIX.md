@@ -1,5 +1,36 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Language boundary, expert waves and structured project memory — 2026-10-26
+
+**Partial network implementation; schema migration/runtime behavior unverified.**
+Architecture sections 3–7 and 9: an explicit `language` role profile reserves its
+model for interpretation/presentation and forbids it as the default reasoning
+model or another role override. Shared role selection and native activation guards
+preserve the separation; version-4 FlatBuffers bootstrap retains the declaration.
+Default configurations retain the previous behavior. `configure-local
+--parallelism 1..4` exposes bounded dependency-ready Jev-R/expert workflow waves,
+including complete-wave budget preflight, authorization and durable reservations.
+
+`src/project_memory.rs`, Store schema 11, and `project-memory-publish/show` add
+immutable typed facts/relations/constraints/evidence records with exact project
+version/checksum binding, sequential revisions, count/byte bounds and no FTS
+indexing. Canonical JSON is schema encoding, not encryption. Migration execution,
+legacy prose conversion and task-context/recovery integration remain unverified
+or incomplete. No LoRA training, evaluation or promotion was performed.
+
+Files: `src/config.rs`, `src/backend.rs`, `src/backend/native.rs`,
+`src/fabric/unix/bootstrap.rs`, `src/residency/lifecycle*`, `src/models.rs`,
+`src/agent/{mod,local}.rs`, `src/reasoning{,/parallel}.rs`, `src/project_memory.rs`,
+`src/store.rs`, `src/main.rs`. Read [network implementation](COGNITIVE_NETWORK.md)
+for scope, compatibility, security and remaining work. No tests or benchmarks were
+added or run, following the explicit operator instruction. Compilation/static
+checks passed: `cargo fmt --all -- --check`,
+`cargo +1.99.0 check --locked --workspace`, and
+`cargo +1.99.0 clippy --locked --workspace --lib --bins -- -D warnings`.
+These are compilation/static outcomes, not a release-readiness claim. No live
+configuration, installed binaries, or database was migrated for this pass.
+
+
 ## Private OpenCode session credential inheritance — 2026-10-26
 
 **Implemented; focused verification passed.** Architecture sections 3, 7 and

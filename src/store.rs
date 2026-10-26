@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS evaluations (
 "#;
 
 /// Latest schema understood by writable and read-only Store entry points.
-pub(crate) const CURRENT_SCHEMA_VERSION: i64 = 10;
+pub(crate) const CURRENT_SCHEMA_VERSION: i64 = 11;
 
 const MANAGED_RESIDENCY_SCHEMA: &str = r#"
 CREATE TABLE managed_residency_receipts (
@@ -245,6 +245,31 @@ CREATE TABLE agent_session_calls (
 );
 CREATE INDEX agent_session_calls_generation ON agent_session_calls(session_id,generation);
 PRAGMA user_version=10;
+"#;
+
+const PROJECT_MEMORY_SCHEMA_V11: &str = r#"
+CREATE TABLE project_memory_records (
+ id TEXT PRIMARY KEY CHECK(length(CAST(id AS BLOB))=36),
+ project_id TEXT NOT NULL,
+ profile_version INTEGER NOT NULL CHECK(profile_version BETWEEN 1 AND 32),
+ revision INTEGER NOT NULL CHECK(revision BETWEEN 1 AND 32),
+ format_version INTEGER NOT NULL CHECK(format_version=1),
+ record_json TEXT NOT NULL CHECK(length(CAST(record_json AS BLOB)) BETWEEN 2 AND 16384),
+ record_sha256 TEXT NOT NULL CHECK(length(record_sha256)=64 AND record_sha256 NOT GLOB '*[^0-9a-f]*'),
+ profile_sha256 TEXT NOT NULL CHECK(length(profile_sha256)=64 AND profile_sha256 NOT GLOB '*[^0-9a-f]*'),
+ publisher TEXT NOT NULL CHECK(publisher='human-cli'),
+ created REAL NOT NULL,
+ UNIQUE(project_id,profile_version,revision),
+ FOREIGN KEY(project_id,profile_version) REFERENCES project_profiles(id,version) ON DELETE RESTRICT
+);
+CREATE INDEX project_memory_project_revision ON project_memory_records(project_id,profile_version,revision);
+CREATE TRIGGER project_memory_records_no_update BEFORE UPDATE ON project_memory_records BEGIN
+ SELECT RAISE(ABORT,'project memory revisions are immutable');
+END;
+CREATE TRIGGER project_memory_records_no_delete BEFORE DELETE ON project_memory_records BEGIN
+ SELECT RAISE(ABORT,'project memory revisions are immutable');
+END;
+PRAGMA user_version=11;
 "#;
 
 pub(crate) const MAX_MANAGED_RESIDENCY_RESOLUTIONS: u64 = 1024;
@@ -595,6 +620,9 @@ impl Store {
         if version < 10 {
             tx.execute_batch(AGENT_SESSIONS_SCHEMA_V10)?;
         }
+        if version < 11 {
+            tx.execute_batch(PROJECT_MEMORY_SCHEMA_V11)?;
+        }
         tx.commit()?;
         Ok(Self {
             db: Mutex::new(db),
@@ -722,6 +750,171 @@ impl Store {
             profiles.push(profile);
         }
         Ok(profiles)
+    }
+
+    /// Publish one immutable, schema-validated project-memory revision.
+    pub fn publish_project_memory(
+        &self,
+        record: &crate::project_memory::ProjectMemoryRecord,
+    ) -> Result<crate::project_memory::StoredProjectMemory> {
+        crate::security::authorize("human-cli", "project.publish")?;
+        record.validate()?;
+        if record.revision > crate::project_memory::MAX_REVISIONS_PER_PROJECT {
+            bail!("Project memory revision history is full")
+        }
+        let mut db = self.lock()?;
+        let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let profile = Self::project_profile_from(&tx, &record.project_ref)?;
+        let selection = crate::projects::Selection::parse(&record.project_ref)?;
+        let stored =
+            crate::project_memory::StoredProjectMemory::new(record.clone(), profile.checksum)?;
+        let payload = stored.record.encode()?;
+        let existing: Option<(String, u64, u32, u16, String, String, String)> = tx
+            .query_row(
+                "SELECT project_id,profile_version,revision,format_version,record_json,record_sha256,profile_sha256 \
+                 FROM project_memory_records WHERE id=?1",
+                [&record.id],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get(5)?,
+                        row.get(6)?,
+                    ))
+                },
+            )
+            .optional()?;
+        if let Some((id, version, revision, format, bytes, digest, profile_digest)) = existing {
+            if id != selection.id()
+                || version != selection.version()
+                || revision != record.revision
+                || format != record.format_version
+                || bytes != payload
+                || digest != sha256(payload.as_bytes())
+                || profile_digest != stored.provenance.project_profile_sha256
+            {
+                bail!("Project memory identity already exists with different canonical bytes")
+            }
+            return Ok(stored);
+        }
+        let total: u64 =
+            tx.query_row("SELECT count(*) FROM project_memory_records", [], |row| {
+                row.get(0)
+            })?;
+        let prior_revisions: u64 = tx.query_row(
+            "SELECT count(*) FROM project_memory_records WHERE project_id=?1 AND profile_version=?2",
+            rusqlite::params![selection.id(), selection.version()],
+            |row| row.get(0),
+        )?;
+        if total >= crate::project_memory::MAX_TOTAL_RECORDS
+            || prior_revisions >= crate::project_memory::MAX_REVISIONS_PER_PROJECT as u64
+            || record.revision != prior_revisions as u32 + 1
+        {
+            bail!("Project memory requires the next bounded revision")
+        }
+        tx.execute(
+            "INSERT INTO project_memory_records(id,project_id,profile_version,revision,format_version,record_json,record_sha256,profile_sha256,publisher,created) \
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,'human-cli',?9)",
+            rusqlite::params![
+                record.id,
+                selection.id(),
+                selection.version(),
+                record.revision,
+                record.format_version,
+                payload,
+                sha256(payload.as_bytes()),
+                stored.provenance.project_profile_sha256,
+                now(),
+            ],
+        )?;
+        tx.commit()?;
+        Ok(stored)
+    }
+
+    /// Read bounded, canonical memory revisions for one exact project profile.
+    pub fn project_memories(
+        &self,
+        project_ref: &str,
+    ) -> Result<Vec<crate::project_memory::StoredProjectMemory>> {
+        crate::security::authorize("human-cli", "project.read")?;
+        let mut db = self.lock()?;
+        let tx = db.transaction()?;
+        let profile = Self::project_profile_from(&tx, project_ref)?;
+        let selection = crate::projects::Selection::parse(project_ref)?;
+        let mut statement = tx.prepare(
+            "SELECT id,CASE WHEN length(CAST(record_json AS BLOB))<=?3 THEN record_json END, \
+                    CASE WHEN length(CAST(record_sha256 AS BLOB))=64 THEN record_sha256 END, \
+                    CASE WHEN length(CAST(profile_sha256 AS BLOB))=64 THEN profile_sha256 END, \
+                    revision,format_version,publisher \
+             FROM project_memory_records WHERE project_id=?1 AND profile_version=?2 \
+             ORDER BY revision LIMIT ?4",
+        )?;
+        let mut rows = statement.query_map(
+            rusqlite::params![
+                selection.id(),
+                selection.version(),
+                crate::project_memory::MAX_RECORD_BYTES,
+                crate::project_memory::MAX_REVISIONS_PER_PROJECT as i64 + 1,
+            ],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                    row.get::<_, u32>(4)?,
+                    row.get::<_, u16>(5)?,
+                    row.get::<_, String>(6)?,
+                ))
+            },
+        )?;
+        let mut records = Vec::new();
+        for row in rows.by_ref() {
+            let (
+                stored_id,
+                payload,
+                record_hash,
+                profile_hash,
+                revision,
+                format_version,
+                publisher,
+            ) = row?;
+            let payload =
+                payload.ok_or_else(|| anyhow!("Stored project memory exceeds its byte bound"))?;
+            let record_hash =
+                record_hash.ok_or_else(|| anyhow!("Stored project memory digest is malformed"))?;
+            let profile_hash = profile_hash
+                .ok_or_else(|| anyhow!("Stored project profile digest is malformed"))?;
+            if sha256(payload.as_bytes()) != record_hash
+                || profile_hash != profile.checksum
+                || publisher != "human-cli"
+                || format_version != crate::project_memory::FORMAT_VERSION
+                || revision != records.len() as u32 + 1
+            {
+                bail!("Stored project memory provenance, digest, or revision chain is inconsistent")
+            }
+            let record = crate::project_memory::ProjectMemoryRecord::decode(&payload)?;
+            if record.id != stored_id
+                || record.project_ref != project_ref
+                || record.revision != revision
+            {
+                bail!("Stored project memory record identity does not match its storage key")
+            }
+            records.push(crate::project_memory::StoredProjectMemory::new(
+                record,
+                profile_hash,
+            )?);
+            if records.len() > crate::project_memory::MAX_REVISIONS_PER_PROJECT as usize {
+                bail!("Stored project memory revision history exceeds its bound")
+            }
+        }
+        drop(rows);
+        drop(statement);
+        tx.commit()?;
+        Ok(records)
     }
 
     pub fn create_task(&self, query: &str, mode: &str) -> Result<String> {

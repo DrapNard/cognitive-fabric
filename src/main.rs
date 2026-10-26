@@ -92,6 +92,14 @@ enum Command {
         reference: String,
     },
     ProjectList,
+    /// Publish a bounded schema-based project-memory revision; never imports a transcript.
+    ProjectMemoryPublish {
+        manifest: PathBuf,
+    },
+    /// Read schema-based memory revisions for an exact project profile.
+    ProjectMemoryShow {
+        reference: String,
+    },
     Status,
     SelfTest,
     SecurityEval,
@@ -423,6 +431,7 @@ enum Command {
         model: String,
         #[arg(long)]
         api_base: Option<String>,
+        /// Select an inference role, or `language` to reserve this model for interpretation/presentation only.
         #[arg(long)]
         role: Option<String>,
         #[arg(long, default_value = "0.15")]
@@ -434,6 +443,9 @@ enum Command {
         /// Per-call provider deadline; the root task wall limit still applies.
         #[arg(long, value_parser = clap::value_parser!(u64).range(1..=300))]
         timeout_seconds: Option<u64>,
+        /// Maximum concurrent dependency-ready reasoning or expert workflow steps.
+        #[arg(long, value_parser = clap::value_parser!(u64).range(1..=4))]
+        parallelism: Option<u64>,
     },
     ConfigureAuth {
         #[arg(long, action = clap::ArgAction::Set)]
@@ -1212,6 +1224,23 @@ async fn run_cli() -> Result<()> {
             let store = Store::open_existing_with_limit(&cfg.db(), cfg.max_database_bytes)?;
             return output(store.checkpoint_wal()?, cli.json);
         }
+        Command::ProjectMemoryPublish { manifest } => {
+            security::authorize("human-cli", "project.publish")?;
+            let bytes = security::read_regular_bytes(
+                manifest,
+                cogfabric::project_memory::MAX_RECORD_BYTES,
+            )?;
+            let draft: cogfabric::project_memory::ProjectMemoryDraft = serde_json::from_value(
+                cogfabric::strict_json::value(&bytes, cogfabric::project_memory::MAX_RECORD_BYTES)?,
+            )?;
+            let record = draft.into_record()?;
+            let store = Store::open_existing_with_limit(&cfg.db(), cfg.max_database_bytes)?;
+            return output(store.publish_project_memory(&record)?, cli.json);
+        }
+        Command::ProjectMemoryShow { reference } => {
+            let store = Store::open_existing_read_only(&cfg.db())?;
+            return output(store.project_memories(reference)?, cli.json);
+        }
         Command::ProjectShow { reference } => {
             cogfabric::projects::Selection::parse(reference)?;
             let store = Store::open_existing_read_only(&cfg.db())?;
@@ -1877,6 +1906,7 @@ async fn run_cli() -> Result<()> {
             interface_tokens,
             reasoning_effort,
             timeout_seconds,
+            parallelism,
         } => {
             let mut settings = cfg.clone();
             settings.backend = "openai-local".into();
@@ -1889,6 +1919,9 @@ async fn run_cli() -> Result<()> {
             }
             if let Some(seconds) = timeout_seconds {
                 settings.timeout_seconds = seconds;
+            }
+            if let Some(cap) = parallelism {
+                settings.subtask_parallelism = Some(cap as usize);
             }
             if let Some(endpoint) = api_base {
                 settings.api_base = endpoint;
@@ -1913,7 +1946,11 @@ async fn run_cli() -> Result<()> {
         }
         Command::ConfigShow => serde_json::to_value(&cfg)?,
         Command::GpuNvmlWorker => bail!("GPU worker must run before normal initialization"),
-        Command::ProjectPublish { .. } | Command::ProjectShow { .. } | Command::ProjectList => {
+        Command::ProjectPublish { .. }
+        | Command::ProjectShow { .. }
+        | Command::ProjectList
+        | Command::ProjectMemoryPublish { .. }
+        | Command::ProjectMemoryShow { .. } => {
             bail!("Project commands must run before engine initialization")
         }
         Command::SecurityCorpusEvaluate { .. } => {
