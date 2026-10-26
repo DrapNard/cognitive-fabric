@@ -25,7 +25,7 @@ pub(super) fn prepare(
         || saved["reservation"] != crate::reasoning::language_reservation_payload(cfg, base_calls)?
         || saved["presentation_capacity_held"] != true
     {
-        bail!("Language continuation requires a recorded reasoning boundary and its original reservation")
+        bail!("Language continuation requires a recorded reasoning phase and its original reservation")
     }
     let root_calls = saved["reservation"]["root_call_limit"].as_u64().unwrap();
     if audit["reserved_calls"]

@@ -6277,6 +6277,13 @@ physical memory enforcement and model-aware capacity planning remain separate wo
 - Process-worker call ceilings include only the original two language-phase calls, capped by the root configuration. No new allowance, interpretation replay, automatic retry, trained weights or speed claim.
 - Static checks only; no tests, benchmarks, provider calls or live recovery performed. Automatic continuous recovery, interruptions outside recorded boundaries and end-to-end runtime proof remain incomplete.
 
+### Language-network advisory graph continuation — Partial, runtime unverified
+
+- `src/recovery/continuation.rs`, `src/recovery/continuation_language.rs`: language-network tasks can also restore existing validated pre-solver advisory graphs before a whole-goal reasoning boundary exists. Existing graph prefix, immutable planner result, complete call-result correlation and parallel-wave reconciliation rules remain mandatory.
+- Pending parallel waves are admitted against the reasoning ceilings after subtracting the held final language call, output allocation and 8 KiB prompt allowance. Original interpretation and completed advisory calls are not replayed; final language presentation retains its reservation.
+- Requires explicit operator continuation and the version-2 reservation/evidence snapshot. Unknown call outcomes, incomplete wave publication that cannot be reconciled, unsupported execution options and expired clocks remain refused.
+- Static checks only; no tests, benchmarks, live inference or recovery executed. This does not establish automatic uninterrupted service or faster provider execution.
+
 ### Native prediction-slot visibility — Implemented, provider runtime unverified
 
 - `src/residency.rs`: bounded optional per-instance prediction-slot parsing and explicit concurrency observations with unknown queue/active counts. Omission stays unknown.

@@ -18,7 +18,10 @@ New Engine tasks save a version-2 presentation reservation and a bounded,
 hash-bound evidence-reference snapshot before reasoning starts. Explicit
 `resume-task` continuation can restore a fully recorded reasoning phase at a
 validated reasoning boundary, preserving interpretation, context, charges and
-the original deadline. Final presentation consumes the original reservation;
+the original deadline. It can also restore validated pre-solver advisory graphs,
+including pending parallel waves whose recorded results can be reconciled.
+Parallel-wave preflight subtracts the held language capacity before admitting
+remaining work. Final presentation consumes the original reservation;
 it does not receive a fresh budget. Native tasks still require their original
 approved native restoration path. Existing continuation restrictions still
 apply: Full/Collective execution, no explanation option and no conversation

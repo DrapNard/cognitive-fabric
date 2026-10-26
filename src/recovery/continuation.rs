@@ -521,9 +521,6 @@ fn prepare_with_native(
         |row| row.get(0),
     )?;
     let language = if language_boundary {
-        if boundary.is_none() {
-            bail!("Language continuation requires a recorded reasoning boundary")
-        }
         Some(language::prepare(
             db, task, &cfg, settings, &query, text, &audit,
         )?)
@@ -659,9 +656,17 @@ fn prepare_with_native(
         && boundary.is_none()
         && cfg.subtask_parallelism.is_some_and(|maximum| maximum > 1)
     {
+        let mut reasoning_cfg = cfg.clone();
+        let call_limit = if let Some(saved) = &language {
+            reasoning_cfg.max_tokens -= cfg.interface_tokens;
+            reasoning_cfg.max_input_bytes -= 8192;
+            saved.reservation["root_call_limit"].as_u64().unwrap() as usize - 1
+        } else {
+            settings["call_limit"].as_u64().unwrap() as usize
+        };
         validate_parallel_remaining_budget(
-            &cfg,
-            settings["call_limit"].as_u64().unwrap() as usize,
+            &reasoning_cfg,
+            call_limit,
             &query,
             text,
             &subtasks,
