@@ -6254,3 +6254,9 @@ physical memory enforcement and model-aware capacity planning remain separate wo
 - `src/recovery/language_presentation.rs`, `src/main.rs`: explicit original-policy native restoration for never-dispatched terminal presentation, with original receipt/ownership/resource/deadline admission. Durable response publication precedes optional model release; cleanup has a separate audit outcome.
 - `src/residency/lifecycle/restoration.rs`: eager and lazy restored role selection honors the language-only model boundary.
 - Static compilation and lint checks only; no tests, benchmarks or live provider/recovery operations. General mid-reasoning language recovery and automatic managed client activation remain incomplete.
+
+### Shared inference transport — Implemented, runtime unverified
+
+- `src/backend/transport.rs`: concurrent process-local HTTP pool, at most four idle connections per host and 30-second idle lifetime; no shared credential or model defaults.
+- `src/backend.rs`, `src/backend/native.rs`, `src/agent/local.rs`, `src/token_admission.rs`: reuse transport across network roles and preserve per-request or absolute deadlines, response bounds and adapter checks.
+- Reduces repeated client construction and enables connection reuse; does not prove faster inference, parallel provider execution or automatic activation. Static checks only; no tests, benchmarks or live provider calls.

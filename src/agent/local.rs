@@ -141,11 +141,7 @@ impl LocalChat {
             }
             let (model, temperature) = self.0.model_settings(role)?;
             let endpoint = crate::backend::local_endpoint(&self.0.api_base)?;
-            let client = reqwest::Client::builder()
-                .no_proxy()
-                .redirect(reqwest::redirect::Policy::none())
-                .timeout(Duration::from_secs(self.0.timeout_seconds))
-                .build()?;
+            let client = crate::backend::transport::client()?;
             let mut body = json!({"model":model,"messages":request.messages,"max_tokens":tokens,"temperature":request.temperature.unwrap_or(temperature),"stream":false});
             if !request.tools.is_empty() {
                 body["tools"] = json!(request.tools);
@@ -161,7 +157,10 @@ impl LocalChat {
                 body["reasoning_effort"] = json!(self.0.provider_effort(effort)?);
             }
             let credential = crate::credentials::resolve(&self.0)?;
-            let mut http = client.post(endpoint).json(&body);
+            let mut http = client
+                .post(endpoint)
+                .timeout(Duration::from_secs(self.0.timeout_seconds))
+                .json(&body);
             if let Some(c) = &credential {
                 http = c.apply(http)?;
             }

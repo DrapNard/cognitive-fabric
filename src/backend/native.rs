@@ -189,13 +189,12 @@ impl NativeBackend {
             payload["reasoning"] = json!(if mapped == "none" { "off" } else { mapped });
         }
 
-        let client = reqwest::Client::builder()
-            .no_proxy()
-            .redirect(reqwest::redirect::Policy::none())
-            .timeout(std::time::Duration::from_secs(self.config.timeout_seconds))
-            .build()?;
+        let client = super::transport::client()?;
         let credential = self.credential()?;
-        let mut request = client.post(self.chat_endpoint(target)?).json(&payload);
+        let mut request = client
+            .post(self.chat_endpoint(target)?)
+            .timeout(std::time::Duration::from_secs(self.config.timeout_seconds))
+            .json(&payload);
         if let Some(credential) = &credential {
             request = credential.apply(request)?;
         }

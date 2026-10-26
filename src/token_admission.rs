@@ -134,10 +134,7 @@ pub(crate) async fn generate_with_finish(
     let deadline = started + Duration::from_secs(cfg.timeout_seconds);
     validate_task_before_preparation(cfg, task, deadline)?;
     let api = canonical_v1_base(&cfg.api_base)?;
-    let client = reqwest::Client::builder()
-        .no_proxy()
-        .redirect(reqwest::redirect::Policy::none())
-        .build()?;
+    let client = backend::transport::client()?;
     let credential = if settings.authenticate {
         let key = std::env::var(ENVIRONMENT_VARIABLE)
             .context("Dedicated llama.cpp API credential is unavailable")?;

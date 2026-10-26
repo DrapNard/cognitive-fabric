@@ -11,6 +11,7 @@ use url::Url;
 
 pub mod metrics;
 pub mod native;
+pub(crate) mod transport;
 pub use metrics::{ProviderMetricSource, ProviderMetrics};
 
 const MAX_RESPONSE_BYTES: usize = 256 * 1024;
@@ -378,11 +379,7 @@ pub async fn generate_report(
     }
     let endpoint = local_endpoint(&cfg.api_base)?;
     let (model, temperature) = cfg.model_settings(role)?;
-    let client = reqwest::Client::builder()
-        .no_proxy()
-        .redirect(reqwest::redirect::Policy::none())
-        .timeout(Duration::from_secs(cfg.timeout_seconds))
-        .build()?;
+    let client = transport::client()?;
     let credential = crate::credentials::resolve(cfg)?;
     let mut payload = json!({
         "model": model, "stream": false, "temperature": temperature,
@@ -395,7 +392,10 @@ pub async fn generate_report(
     if let Some(effort) = cfg.role_reasoning_effort(role, None) {
         payload["reasoning_effort"] = json!(cfg.provider_effort(effort)?);
     }
-    let mut request = client.post(endpoint).json(&payload);
+    let mut request = client
+        .post(endpoint)
+        .timeout(Duration::from_secs(cfg.timeout_seconds))
+        .json(&payload);
     if let Some(credential) = &credential {
         request = credential.apply(request)?;
     }

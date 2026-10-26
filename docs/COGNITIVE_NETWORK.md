@@ -453,3 +453,24 @@ Native terminal recovery persists the response and task status before lifecycle
 cleanup can release a model. A separate `recovery_native_cleanup` event records
 cleanup outcome; cleanup failure does not erase a durable response or authorize
 replay. An interrupted cleanup remains subject to original residency reconciliation.
+
+## Shared inference connection pool
+
+Engine role calls, native instance-bound calls, client conversation calls and
+exact-token preparation share a process-local HTTP connection pool. Connections
+are not held behind a global request mutex: independent admitted waves may use
+the pool concurrently. Idle reuse is limited to four connections per host for
+30 seconds. This does not change model activation or provider scheduling.
+
+The client has no default authorization header, model, task or request body.
+Credentials remain resolved and applied per request; proxy use and redirects
+remain disabled. Engine, native and client calls retain their configured
+request timeout. Exact-token calls retain their shared absolute preparation and
+completion deadline. Existing response bounds and instance/model validation
+remain in their adapters. Pool reuse grants no authority to load models, retry
+uncertain generation or bypass a reservation. Connection setup overhead can be
+avoided when the provider permits reuse; no latency improvement is measured.
+
+Static checks only; no tests, benchmarks or provider calls were run for this
+change. Managed client activation and general mid-reasoning restoration remain
+incomplete.
