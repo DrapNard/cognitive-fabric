@@ -1,5 +1,22 @@
 # Current Rust implementation
 
+## Frozen manifest-bound client typed providers — 2026-10-27
+
+Client typed sessions capture active provider declarations with opening exact
+module pins, validate full descriptor/capability correspondence and resolve
+without live registry reads. Automatic stable selection respects covering
+bindings; declared but unavailable providers cannot silently become generic host
+routes. Exact batch operations may choose a published expert version or capability
+version requirement; model-translated arguments cannot choose implementations.
+Bound calls reserve their exact retained module and audit the manifest/module/
+capability/request linkage before broker intent, preserving existing task grants,
+budgets, waves and final checks. This supersedes the preceding note that all client
+manifest binding is absent. Provider dependency/model combinations, ranking quality
+and interrupted typed recovery remain incomplete. No tests, benchmarks or live
+provider operations were run. See
+[manifest-bound typed providers](COGNITIVE_NETWORK.md#manifest-bound-typed-providers).
+
+
 ## Independent composite typed client requests — 2026-10-27
 
 Exact `typed-batch:` requests and client-only `typed_batch` translations can group

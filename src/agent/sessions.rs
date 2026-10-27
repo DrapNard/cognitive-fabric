@@ -106,11 +106,20 @@ impl PreparedTypedWork {
                     let snapshot = self.snapshot.clone();
                     let task = self.task.clone();
                     let deadline = self.deadline;
+                    let store = self.store.clone();
+                    let root_query_sha256 = self.identity.query_digest().to_owned();
                     Box::pin(async move {
                         let result = match TaskPolicy::client_collective(&task) {
                             Ok(policy) => {
                                 snapshot
-                                    .evaluate(&task, &entry.work, deadline, &policy)
+                                    .evaluate(
+                                        &task,
+                                        &entry,
+                                        &store,
+                                        &root_query_sha256,
+                                        deadline,
+                                        &policy,
+                                    )
                                     .await
                             }
                             Err(error) => Err(error),
@@ -574,7 +583,7 @@ impl Lease {
             .typed_modules
             .as_ref()
             .filter(|_| include_retrieval)
-            .map(|broker| super::typed_experts::Snapshot::capture(broker.clone(), &task))
+            .map(|broker| super::typed_experts::Snapshot::capture(broker.clone(), &task, &tx))
             .transpose()?;
         let state = State {
             version: 1,
@@ -724,11 +733,10 @@ impl Lease {
         let Some(snapshot) = &self.typed_experts else {
             return Ok(false);
         };
-        if plan
-            .works()
-            .any(|work| !snapshot.available(work.capability()))
-        {
-            return Ok(false);
+        for entry in plan.entries() {
+            if !snapshot.supports(entry)? {
+                return Ok(false);
+            }
         }
         let policy = TaskPolicy::client_collective(&self.task)?;
         for work in plan.works() {

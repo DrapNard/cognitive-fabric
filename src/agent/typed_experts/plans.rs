@@ -20,6 +20,8 @@ const MAX_ENTRIES: usize = 4;
 pub(in crate::agent) struct Entry {
     pub(in crate::agent) id: String,
     pub(in crate::agent) work: Work,
+    pub(in crate::agent) expert: Option<super::providers::Selection>,
+    pub(in crate::agent) capability_requirement: Option<String>,
 }
 
 /// A validated collection of independent typed operations.
@@ -50,6 +52,10 @@ struct BatchDocument {
 struct BatchOperation {
     id: String,
     query: String,
+    #[serde(default)]
+    expert: Option<super::providers::Selection>,
+    #[serde(default)]
+    capability_requirement: Option<String>,
 }
 
 impl Plan {
@@ -66,6 +72,12 @@ impl Plan {
             let mut ids = HashSet::with_capacity(document.operations.len());
             let mut entries = Vec::with_capacity(document.operations.len());
             for operation in document.operations {
+                if let Some(expert) = &operation.expert {
+                    expert.validate()?;
+                }
+                if let Some(requirement) = &operation.capability_requirement {
+                    validate_capability_requirement(requirement)?;
+                }
                 validate_id(&operation.id)?;
                 if !ids.insert(operation.id.clone()) {
                     bail!("Typed batch operation IDs must be distinct")
@@ -81,6 +93,8 @@ impl Plan {
                 entries.push(Entry {
                     id: operation.id,
                     work,
+                    expert: operation.expert,
+                    capability_requirement: operation.capability_requirement,
                 });
             }
 
@@ -100,6 +114,8 @@ impl Plan {
             entries: vec![Entry {
                 id: "result".to_owned(),
                 work,
+                expert: None,
+                capability_requirement: None,
             }],
             batch: false,
             translated: false,
@@ -119,6 +135,8 @@ impl Plan {
             entries: vec![Entry {
                 id: "result".to_owned(),
                 work,
+                expert: None,
+                capability_requirement: None,
             }],
             batch: false,
             translated: true,
@@ -149,7 +167,12 @@ impl Plan {
                 bail!("Translated typed batch exceeds its aggregate input bound")
             }
             let work = Work::from_translation(original, &translation)?;
-            validated.push(Entry { id, work });
+            validated.push(Entry {
+                id,
+                work,
+                expert: None,
+                capability_requirement: None,
+            });
         }
 
         Ok(Self {
@@ -170,6 +193,10 @@ impl Plan {
 
     pub(in crate::agent) fn works(&self) -> impl Iterator<Item = &Work> {
         self.entries.iter().map(|entry| &entry.work)
+    }
+
+    pub(in crate::agent) fn entries(&self) -> impl Iterator<Item = &Entry> {
+        self.entries.iter()
     }
 
     pub(in crate::agent) fn translated(&self) -> bool {
@@ -316,5 +343,13 @@ fn validate_id(id: &str) -> Result<()> {
     {
         bail!("Typed batch operation ID must be 1-32 ASCII letters, digits, or underscores and start with a letter")
     }
+    Ok(())
+}
+
+fn validate_capability_requirement(requirement: &str) -> Result<()> {
+    if requirement.is_empty() || requirement.len() > 64 {
+        bail!("Typed batch capability requirement must contain 1-64 bytes")
+    }
+    semver::VersionReq::parse(requirement)?;
     Ok(())
 }

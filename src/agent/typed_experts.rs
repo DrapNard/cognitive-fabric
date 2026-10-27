@@ -1,12 +1,13 @@
 //! Host-pinned deterministic experts for the client collective.
 //!
 //! This snapshot only routes typed requests to trusted host modules already
-//! registered with the broker. It is separate from the manifest-backed Expert
-//! Network, and the metadata digest is provenance bookkeeping rather than an
-//! attestation of executable code or model weights.
+//! registered with the broker. Frozen expert manifests can narrow those routes;
+//! their declarations never register code or grant capabilities. Metadata digests
+//! preserve provenance, not executable behavior or model-weight attestations.
 
 mod goals;
 mod plans;
+mod providers;
 pub(super) mod translation;
 pub(super) use goals::Work;
 pub(super) use plans::{Entry, Plan, PlanIdentity};
@@ -36,6 +37,8 @@ pub(super) struct Snapshot {
     digest: String,
     module_count: usize,
     broker_id: String,
+    module_digest: String,
+    providers: providers::Catalog,
 }
 
 #[derive(Serialize)]
@@ -59,7 +62,11 @@ struct SnapshotMetadata<'a> {
 impl Snapshot {
     /// Capture every currently active module and capability route exactly once.
     /// Callers should invoke this while holding their task-opening transaction.
-    pub(super) fn capture(broker: Arc<Broker>, task: &str) -> Result<Self> {
+    pub(super) fn capture(
+        broker: Arc<Broker>,
+        task: &str,
+        db: &rusqlite::Connection,
+    ) -> Result<Self> {
         let (pins, routes) = broker.pin_active_routes(task)?;
         let broker_id = broker.identity_id().to_string();
         let modules = pins
@@ -90,13 +97,20 @@ impl Snapshot {
         if encoded.len() > MAX_SNAPSHOT_BYTES {
             bail!("Typed expert snapshot metadata exceeds its byte bound")
         }
-        let digest = crate::store::sha256(&encoded);
+        let module_digest = crate::store::sha256(&encoded);
+        let providers = providers::Catalog::capture(db, &routes)?;
+        let digest = crate::store::sha256(&serde_json::to_vec(&serde_json::json!({
+            "format_version":2, "modules_sha256":module_digest,
+            "expert_providers_sha256":providers.digest()
+        }))?);
         Ok(Self {
             broker,
             routes,
             digest,
             module_count: pins.len(),
             broker_id,
+            module_digest,
+            providers,
         })
     }
 
@@ -110,6 +124,16 @@ impl Snapshot {
 
     pub(super) fn available(&self, capability: Capability) -> bool {
         self.routes.contains_key(&capability)
+            && self.providers.resolve(capability, None, None).is_ok()
+    }
+
+    pub(super) fn supports(&self, entry: &Entry) -> Result<bool> {
+        self.providers.resolve(
+            entry.work.capability(),
+            entry.expert.as_ref(),
+            entry.capability_requirement.as_deref(),
+        )?;
+        Ok(self.routes.contains_key(&entry.work.capability()))
     }
 
     /// Bounded audit summary only; never includes module bodies, requests, or results.
@@ -118,6 +142,10 @@ impl Snapshot {
             "snapshot_sha256": self.digest,
             "module_count": self.module_count,
             "broker_id": self.broker_id,
+            "format_version":2,
+            "modules_sha256":self.module_digest,
+            "expert_providers_sha256":self.providers.digest(),
+            "expert_provider_count":self.providers.len(),
         })
     }
 
@@ -126,10 +154,14 @@ impl Snapshot {
     pub(super) async fn evaluate(
         &self,
         task: &str,
-        work: &Work,
+        entry: &Entry,
+        store: &crate::store::Store,
+        root_query_sha256: &str,
         deadline: Instant,
         policy: &TaskPolicy,
     ) -> Result<String> {
+        self.broker.require_store(store)?;
+        let work = &entry.work;
         let capability = work.capability();
         policy.authorize(task, "jev-plus", capability.as_str())?;
         let remaining = deadline.saturating_duration_since(Instant::now());
@@ -144,10 +176,33 @@ impl Snapshot {
             bail!("Typed expert snapshot belongs to another task")
         }
         let operation = async {
-            let reservation = self
-                .broker
-                .reserve_candidate(candidates, capability, deadline)
-                .await?;
+            let route = self.providers.resolve(
+                capability,
+                entry.expert.as_ref(),
+                entry.capability_requirement.as_deref(),
+            )?;
+            let (reservation, binding) = match route {
+                providers::Route::Host => (
+                    self.broker
+                        .reserve_candidate(candidates, capability, deadline)
+                        .await?,
+                    None,
+                ),
+                providers::Route::Bound { pin, audit } => (
+                    self.broker.reserve_exact(&pin, deadline).await?,
+                    Some(audit),
+                ),
+            };
+            store.event(task, "agent_typed_provider_binding", "jev-plus", serde_json::json!({
+                "format_version":1, "operation_id":entry.id, "root_query_sha256":root_query_sha256,
+                "criterion_sha256":work.criterion_digest(), "snapshot_sha256":self.digest,
+                "capability":capability.as_str(), "binding":binding,
+                "module_id":reservation.pin().descriptor().id,
+                "module_version":reservation.pin().descriptor().version,
+                "requested_capability_requirement":entry.capability_requirement,
+                "host_registered_code_only":true,"permissions_granted":false,
+                "weight_identity_verified":false,"live_registry_read":false
+            }))?;
             let grant = Grant::narrow(task, "jev-plus", [capability], 1, policy)?;
             let response = self
                 .broker

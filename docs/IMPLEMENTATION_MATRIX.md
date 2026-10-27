@@ -6,6 +6,40 @@
 
 
 
+
+## Frozen manifest-bound client typed providers — 2026-10-27
+
+**Implemented independent typed bindings; dependent/mixed network Partial,
+runtime unverified.** Architecture sections 4, 6, 7 and 9:
+`src/agent/typed_experts/providers.rs` captures at most 256 active verified
+manifests and 1 MiB of compact provider metadata from the opening transaction,
+retains exact module pins and resolves capability/expert/module versions without
+later registry reads. `src/registry/providers.rs` exposes its existing pure full
+binding/descriptor validator within the crate; no Engine recovery authority is
+borrowed. Canonical manifest hashes and complete declared capability sets are
+checked; metadata/weights/competence are not self-attested.
+
+`src/agent/typed_experts.rs` links module/provider metadata digests, prefers stable
+matching published bindings, refuses declared but unsupported/unavailable routes,
+and reserves exact pins for bound calls with no alternate-provider fallback.
+Legacy generic host routes remain only where no provider declaration covers the
+capability. A bounded client-specific pre-dispatch audit records task/operation/
+root/criterion/snapshot/expert/capability/module linkage, before broker intent.
+`src/agent/sessions.rs` preserves opening transaction capture and validates every
+plan entry against the frozen provider catalog before invocation charges/polling.
+`src/agent/typed_experts/plans.rs` permits optional exact expert/version and bounded
+semantic capability requirements only in original exact batch operations;
+translated entries always leave these selectors unset. Original grants, deadlines,
+concurrency, no-replay rules and per-operation result/presentation checks remain.
+
+Manifests with expert dependencies or simultaneous inference-model bindings are
+explicitly refused, not marked executed. Typed dependent/mixed execution,
+calibrated ranking, interrupted restore and measured reasoning/performance remain
+incomplete. No permission, code registration, runtime schema/protocol, model load,
+training or promotion is introduced. No tests, benchmarks, live providers, model
+operations, installation or recovery execution were run. Formatting, locked
+workspace/all-target compilation, strict Clippy and diff whitespace checks passed.
+
 ## Independent composite typed client requests — 2026-10-27
 
 **Implemented bounded independent plans and waves; dependent network Partial,

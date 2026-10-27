@@ -93,8 +93,8 @@ worker code; it does not load a model.
 The opening transaction freezes active task routes and retains exact module
 implementations in process memory. A bounded metadata digest, broker ID and count
 are audited; the full catalog is not persisted or sent to Qwen. These trusted
-host routes are distinct from manifest-backed Expert Network bindings. Metadata
-cannot register code, select executable paths or grant capabilities.
+host routes can be narrowed by the frozen manifest bindings described below.
+Metadata cannot register code, select executable paths or grant capabilities.
 
 Supported exact original inputs are:
 
@@ -130,8 +130,8 @@ Eligibility requires an available opening route and two remaining internal tool
 slots: expert work and final presentation checking. Required/named client tools
 retain the ordinary client-tool path. Without eligibility, the previous bounded
 reasoning path remains. Single-operation natural-language translation uses the separate, semantically
-unverified route below. Manifest-bound client provider selection, composite
-typed dependency graphs and interrupted catalog restoration remain incomplete.
+unverified route below. Manifest bindings follow the separate rules below. Typed dependency graphs and
+interrupted catalog restoration remain incomplete.
 
 The typed result stays in memory through presentation. Qwen receives a strict
 numeric/JSON output contract; the actual returned answer is checked against the
@@ -202,8 +202,8 @@ Raw translated criteria remain in one-use process memory rather than persistent
 project memory. Tool continuations do not refreeze or restore this typed work.
 
 Single-operation translation and independent batches use the same origin rules.
-Measured translation quality, dependent task execution, manifest-backed provider
-selection and interrupted typed recovery remain incomplete. No tests, benchmarks or live model/provider calls were
+Measured translation quality, dependent task execution and interrupted typed
+recovery remain incomplete; independent manifest binding follows the rules below. No tests, benchmarks or live model/provider calls were
 run for this addition.
 
 ## Independent composite typed requests
@@ -276,6 +276,63 @@ These are independent batches: there is no dependency graph, output substitution
 cross-operation iterative reasoning or interrupted typed-plan restoration. There
 is no new permission, protocol/schema change, model activation or speed claim.
 No tests, benchmarks or live provider calls were run for this addition.
+
+## Manifest-bound typed providers
+
+The typed opening snapshot now captures active, enabled Expert Network provider
+manifests in the same SQLite transaction as the client session. It retains compact
+metadata and exact host module pins: at most 256 manifests and 1 MiB of encoded
+provider metadata. Workflow bodies, descriptions, credentials and weights are not
+provider audit payloads. The canonical full-manifest hash is distinct from an
+original source-file hash. Module metadata keeps its separate existing 64 KiB
+bound; the task snapshot digest links both metadata digests.
+
+A usable binding requires the exact provider module ID/version and equality of
+its entire declared capability set with the frozen module descriptor. This shares
+the Engine's pure binding validator without claiming that client tasks have the
+Engine's recovery audit format. Capability versions, expert manifest versions and
+module implementation versions are separate identities. Each operation's compiled
+checker remains the acceptance authority; declarations do not prove competence or
+attest executable behavior/weights.
+
+For automatic selection, matching usable manifests are ordered by expert ID and
+version. This is deterministic selection, not calibrated usefulness or performance
+ranking. If no provider declaration covers the capability, legacy host-registry
+routing remains. If a covering declaration exists but its binding is unavailable
+or unsupported, the typed route fails instead of silently bypassing it. Selected
+bound routes reserve the exact pinned module and never substitute another provider
+because of queue capacity, failure or timeout. Generic host-only routes preserve
+their prior bounded candidate selection before dispatch intent.
+
+Exact `typed-batch:` operations may additionally name an expert and/or capability
+version requirement. For example, with an already published and active expert:
+
+```text
+typed-batch:{"operations":[{"id":"total","query":"calc:2+2","expert":{"id":"math.reviewed","version":"1.0.0"},"capability_requirement":"^1.2"}]}
+```
+
+The example expert identity is a placeholder, not an installed provider. The
+manifest must declare a compatible `math.evaluate` version and bind an exact
+opening host module. A version requirement cannot be satisfied by an unversioned
+generic host route. Unknown experts, inactive/different versions, incompatible
+capabilities or mismatched descriptors fail before dispatch. Model-translated
+`typed_goal`/`typed_batch` forms cannot include expert/module/provider selectors;
+the host alone chooses from its frozen catalog.
+
+Dispatch audits link task, operation ID, whole-request hash, typed criterion hash,
+snapshot digest, capability/version, canonical manifest hash and exact module
+identity before broker intent. They store no raw request/result bodies. Activation
+changes after task opening cannot replace those pins. Each call still needs its
+own narrowed task grant, original budget and deadline. These client-only metadata
+anchors do not implement interrupted typed-plan recovery or an immutable-code
+attestation.
+
+Manifests that require dependency experts or also bind an inference model are
+currently refused by this typed route. Advisory workflow text is not an executable
+provider program and grants no extra steps. Typed provider dependency orchestration,
+mixed provider/model execution, calibrated ranking and interrupted restoration
+remain incomplete. No model is loaded, trained or promoted by provider selection.
+No tests, benchmarks or live provider operations were run for this addition.
 
 ## Bounded parallel work
 

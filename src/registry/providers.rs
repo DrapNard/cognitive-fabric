@@ -47,7 +47,7 @@ fn require_running_task(store: &Store, task_id: &str) -> Result<()> {
     Ok(())
 }
 
-fn binding_and_descriptor<'a>(
+pub(crate) fn binding_and_descriptor<'a>(
     manifest: &'a Manifest,
     descriptor: &'a Descriptor,
     required_capability: ProviderCapability,
