@@ -32,6 +32,17 @@ set is ambiguous. The host advertises its operation budget and pinned
 capabilities separately. This is an advisory translation only; it does not
 select tools, models, providers, modules, or permissions.
 
+Optional typed_graph: {"operations":[{"id":"first","capability":"sorting.verify","arguments":{"values":[3,1]}},{"id":"next","capability":"sorting.verify","arguments":{"values":[0],"descending":true},"depends_on":["first"],"bindings":[{"target":"/values","source":"first","pointer":""}]}]}
+Use typed_graph only for a complete, unambiguous 1-to-4-operation DAG. Every binding
+source must be in depends_on; targets replace existing argument values. Concrete
+schema-valid placeholders are structural only and must be overwritten by their
+bindings before use; never invent missing real input data. Result data cannot
+replace SQL query text; math /expression bindings must use numeric_expression mode
+with a whole numeric source token. Graphs cannot choose experts, modules, providers,
+models, permissions, or capability versions. Omit typed_graph on ambiguity and
+request clarification instead. typed_goal, typed_batch and typed_graph are mutually
+exclusive; include exactly the graph's capability set in required_capabilities.
+
 math.evaluate: {"capability":"math.evaluate","arguments":{"expression":"..."}}
 sql.query: {"capability":"sql.query","arguments":{"tables":[{"name":"...","columns":["..."],"rows":[[...]]}],"query":"SELECT ..."}}
 sorting.verify: {"capability":"sorting.verify","arguments":{"values":[1,2],"descending":false}}
@@ -45,6 +56,7 @@ pub(in crate::agent) struct Parsed {
     pub(in crate::agent) interpretation: language::Interpretation,
     pub(in crate::agent) typed_goal: Option<Translation>,
     pub(in crate::agent) typed_batch: Option<Vec<(String, Translation)>>,
+    pub(in crate::agent) typed_graph: Option<super::graph_translation::Translation>,
 }
 
 #[derive(Deserialize)]
@@ -138,6 +150,9 @@ impl Parsed {
             .ok_or_else(|| anyhow::anyhow!("Language response must be a JSON object"))?;
         let typed_value = object.remove("typed_goal");
         let batch_value = object.remove("typed_batch");
+        let graph_value = object
+            .remove("typed_graph")
+            .filter(|value| !value.is_null());
         let typed_goal = match typed_value {
             None | Some(Value::Null) => None,
             Some(value) => {
@@ -175,8 +190,12 @@ impl Parsed {
                 Some(translated)
             }
         };
-        if typed_goal.is_some() && typed_batch.is_some() {
-            bail!("Typed goal and typed batch are mutually exclusive")
+        if usize::from(typed_goal.is_some())
+            + usize::from(typed_batch.is_some())
+            + usize::from(graph_value.is_some())
+            > 1
+        {
+            bail!("Typed goal, typed batch and typed graph are mutually exclusive")
         }
 
         let interpretation_json = serde_json::to_string(&envelope)?;
@@ -235,10 +254,14 @@ impl Parsed {
             })
             .transpose()?;
 
+        let typed_graph = graph_value
+            .map(|value| super::graph_translation::parse(value, &interpretation))
+            .transpose()?;
         Ok(Self {
             interpretation,
             typed_goal,
             typed_batch,
+            typed_graph,
         })
     }
 }

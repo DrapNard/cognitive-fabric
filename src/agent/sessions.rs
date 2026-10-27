@@ -762,7 +762,7 @@ impl Lease {
         if capabilities.is_empty() {
             return None;
         }
-        Some(format!("{}\nHost-available typed capabilities: {}. Maximum independent typed operations: {}. Include exactly the chosen capability set in required_capabilities. Do not request capability versions for typed routes.",
+        Some(format!("{}\nHost-available typed capabilities: {}. Maximum typed operations: {}. Include exactly the chosen capability set in required_capabilities. Do not request capability versions for typed routes.",
             super::typed_experts::translation::INTERFACE_TRANSLATION_CONTRACT,
             json!(capabilities),
             self.state.tool_limit.saturating_sub(self.state.proposals.saturating_add(self.state.internal_tools)).saturating_div(2).min(4)))
@@ -857,6 +857,27 @@ impl Lease {
         }
     }
 
+    pub fn prepare_translated_graph(
+        &self,
+        request: &Turn,
+        translation: &super::typed_experts::GraphTranslation,
+    ) -> Result<Option<super::typed_experts::Plan>> {
+        if self.typed_experts.is_none()
+            || super::typed_experts::Work::has_explicit_prefix(self.original_objective(request)?)
+        {
+            return Ok(None);
+        }
+        let plan = super::typed_experts::Plan::from_translated_graph(
+            self.original_objective(request)?,
+            translation,
+        )?;
+        if self.typed_plan_eligible(request, &plan, 1)? {
+            Ok(Some(plan))
+        } else {
+            Ok(None)
+        }
+    }
+
     pub fn prepare_typed_work(&self, request: &Turn) -> Result<Option<super::typed_experts::Plan>> {
         if self.typed_experts.is_none() {
             return Ok(None);
@@ -885,9 +906,9 @@ impl Lease {
         runtime: &AgentRuntime,
         request: &Turn,
         plan: super::typed_experts::Plan,
-        alongside_language: bool,
     ) -> Result<PreparedTypedWork> {
-        if !self.typed_plan_eligible(request, &plan, 1)?
+        let interpreted_calls = usize::from(plan.translated());
+        if !self.typed_plan_eligible(request, &plan, interpreted_calls)?
             || runtime.cfg.language_model().is_none()
             || self.state.configuration != sha256(&serde_json::to_vec(&runtime.cfg)?)
             || !Arc::ptr_eq(&self.store, &runtime.store)
@@ -895,13 +916,7 @@ impl Lease {
             bail!("Typed expert plan is outside its original admission boundary")
         }
         let total = runtime.cfg.subtask_parallelism.unwrap_or(1).clamp(1, 4);
-        if alongside_language && total < 2 {
-            bail!("Typed opening wave exceeds configured concurrency")
-        }
-        let concurrency = total
-            .saturating_sub(usize::from(alongside_language))
-            .min(runtime.cfg.expert_parallelism.unwrap_or(1).clamp(1, 4))
-            .max(1);
+        let concurrency = total.min(runtime.cfg.expert_parallelism.unwrap_or(1).clamp(1, 4));
         let snapshot = Arc::new(
             self.typed_experts
                 .take()
@@ -941,7 +956,7 @@ impl Lease {
         completion: &Completion,
     ) -> Result<Option<bool>> {
         if self.generation != 0
-            || self.state.calls != 2
+            || self.state.calls != usize::from(result.translated()) + 1
             || self.state.cycles != 1
             || !completion.tool_calls.is_empty()
             || result.identity.query_digest()

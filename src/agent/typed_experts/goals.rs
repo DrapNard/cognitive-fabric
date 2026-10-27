@@ -138,9 +138,33 @@ impl Work {
         if work.capability() != translation.capability() {
             bail!("Language translation changed its declared typed capability")
         }
-        work.source_query_sha256 = crate::store::sha256(original.as_bytes());
-        work.translated = true;
+        work.mark_language_translation(original)?;
         Ok(work)
+    }
+
+    /// Mark work as derived from a natural-language translation while retaining
+    /// only the source digest. Explicit typed requests cannot be reclassified.
+    pub(in crate::agent) fn mark_language_translation(&mut self, original: &str) -> Result<()> {
+        if Self::has_explicit_prefix(original) {
+            bail!("Language translation cannot replace an explicit typed goal")
+        }
+        let digest = crate::store::sha256(original.as_bytes());
+        self.mark_translated_digest(&digest)
+    }
+
+    /// Apply trusted host-computed translation provenance to a typed criterion.
+    /// This API is not exposed to model-controlled constructors or serialization.
+    pub(in crate::agent) fn mark_translated_digest(&mut self, digest: &str) -> Result<()> {
+        if digest.len() != 64
+            || !digest
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        {
+            bail!("Translated source digest must be 64 lowercase hexadecimal characters")
+        }
+        self.source_query_sha256 = digest.to_owned();
+        self.translated = true;
+        Ok(())
     }
 
     /// Build typed work only for supported exact prefixes or bounded math syntax.

@@ -8,6 +8,39 @@
 
 
 
+
+## Natural typed graphs and exact client language-call reduction — 2026-10-27
+
+**Implemented translation/call-scope mechanics; broader mixed network Partial,
+runtime unverified.** Architecture sections 4, 6, 7 and 9:
+`src/agent/typed_experts/graph_translation.rs` strictly parses model-proposed
+one-to-four-operation graphs, excludes implementation/version selectors, requires
+exact capability coverage/no clarification, bounds the serialized graph and
+reuses exact graph validation. `src/agent/typed_experts/translation.rs` adds the
+mutually exclusive client-only `typed_graph` extension and prompt contract without
+changing public Interpretation/Engine formats.
+
+`src/agent/typed_experts/plans.rs`, `goals.rs` and `graphs.rs` preserve original
+source hashes and translated origin for initial and dynamically resolved Work.
+No resolved criterion or successful check promotes natural meaning to verified.
+`src/agent/sessions.rs` admits exact programs at zero model calls and translated
+programs after one interpretation call, then checks final presentation at one/two
+calls respectively. All original invocation/final-check tool charges, clocks,
+provider snapshots and task-claim CAS guards remain.
+`src/agent/collective.rs` removes the redundant exact-input interpretation call
+and its overlap helper. Exact programs use only final language presentation;
+translated programs use interpretation then presentation. Configured typed
+concurrency is available in the typed phase without a held language slot.
+This reduces the source-level call count for eligible exact client work; it does
+not establish wall time, model efficiency or reasoning quality.
+
+No new capability, protocol/schema, budget, retry, model load, training, automatic
+promotion or restore path is added. Manifest dependency/model combinations, mixed
+neural/provider execution, interrupted recovery and measured quality/performance
+remain incomplete. No tests, benchmarks, live inference, provider/model operations,
+installation or recovery execution were run. Formatting, locked workspace/all-target
+compilation, strict Clippy and diff whitespace checks passed.
+
 ## Exact typed dependency graphs and checked dataflow — 2026-10-27
 
 **Implemented bounded exact graph scheduling/dataflow; mixed/natural-language

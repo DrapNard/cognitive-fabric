@@ -1,5 +1,23 @@
 # Current Rust implementation
 
+## Natural graph translation and exact client call reduction — 2026-10-27
+
+The client language interface can emit a strict optional `typed_graph` for bounded
+dependent work, without implementation/version selectors. It is mutually exclusive
+with other typed extensions and reuses the existing graph validator/scheduler.
+Original natural-request digests and translation origin survive every resolved
+node and final check; translated tasks remain semantically `unverified`.
+Eligible exact typed inputs now skip redundant model interpretation and use only
+one final presentation call; translated work still uses interpretation plus
+presentation. Counter/charge guards distinguish those paths and typed phases use
+the configured slots without a held language slot. This supersedes the former
+exact-input language/expert overlap and natural-graph absence. Root budgets,
+provider pins, source freezes and native ownership stay enforced. Mixed neural/
+provider work, manifest dependencies and interrupted restoration remain incomplete.
+No tests, benchmarks or live inference were run. See
+[language-call scope](COGNITIVE_NETWORK.md#natural-language-graph-translation-and-language-call-scope).
+
+
 ## Exact typed dependency graphs and checked dataflow — 2026-10-27
 
 `typed-graph:` now expresses up to four fixed-capability operations with validated

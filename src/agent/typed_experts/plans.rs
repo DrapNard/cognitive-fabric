@@ -157,6 +157,46 @@ impl Plan {
         })
     }
 
+    /// Build a dependency graph from a validated client-side translation while
+    /// keeping every resolved operation tied to the original natural-language
+    /// request. Model-provided expert and capability selectors remain forbidden.
+    pub(in crate::agent) fn from_translated_graph(
+        original: &str,
+        graph: &super::graph_translation::Translation,
+    ) -> Result<Self> {
+        reject_explicit_translation_source(original)?;
+        let canonical_query = graph.canonical_query();
+        let mut entries = super::graphs::parse(canonical_query)?
+            .ok_or_else(|| anyhow::anyhow!("Translated typed graph has no supported graph"))?;
+
+        let declared = graph.capabilities().collect::<HashSet<_>>();
+        let actual = entries
+            .iter()
+            .map(|entry| entry.work.capability().as_str())
+            .collect::<HashSet<_>>();
+        if declared != actual {
+            bail!("Translated graph changed its capability set")
+        }
+        for entry in &mut entries {
+            if entry.expert.is_some() || entry.capability_requirement.is_some() {
+                bail!("Translated typed graph cannot select experts or capability versions")
+            }
+            entry.work.mark_language_translation(original)?;
+            entry
+                .template
+                .as_mut()
+                .ok_or_else(|| anyhow::anyhow!("Translated graph operation has no template"))?
+                .mark_language_translation(original)?;
+        }
+
+        Ok(Self {
+            query_digest: crate::store::sha256(original.as_bytes()),
+            entries,
+            batch: true,
+            translated: true,
+        })
+    }
+
     /// Wrap independently translated entries. Every translation is checked
     /// against the same original request by Work's existing adapter.
     pub(in crate::agent) fn from_translated_entries(

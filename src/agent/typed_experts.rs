@@ -6,11 +6,13 @@
 //! preserve provenance, not executable behavior or model-weight attestations.
 
 mod goals;
+mod graph_translation;
 mod graphs;
 mod plans;
 mod providers;
 pub(super) mod translation;
 pub(super) use goals::Work;
+pub(super) use graph_translation::Translation as GraphTranslation;
 pub(super) use plans::{Entry, Plan, PlanIdentity};
 
 use crate::{

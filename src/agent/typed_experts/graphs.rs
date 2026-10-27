@@ -75,6 +75,7 @@ pub(in crate::agent) struct Template {
     dependencies: Vec<String>,
     bindings: Vec<Binding>,
     template_sha256: String,
+    translation_source_sha256: Option<String>,
 }
 
 impl Template {
@@ -84,6 +85,16 @@ impl Template {
 
     pub(in crate::agent) fn binding_sources(&self) -> impl Iterator<Item = &str> {
         self.bindings.iter().map(|binding| binding.source.as_str())
+    }
+
+    /// Retain the provenance of a natural-language graph translation without
+    /// retaining the original prose in the graph template.
+    pub(in crate::agent) fn mark_language_translation(&mut self, original: &str) -> Result<()> {
+        if Work::has_explicit_prefix(original) {
+            bail!("Language translation cannot replace an explicit typed goal")
+        }
+        self.translation_source_sha256 = Some(crate::store::sha256(original.as_bytes()));
+        Ok(())
     }
 
     /// Resolve prior JSON results into existing argument fields and revalidate
@@ -144,11 +155,16 @@ impl Template {
         if encoded.len() > MAX_RESOLVED_BYTES {
             bail!("Resolved typed graph arguments exceed their byte limit")
         }
-        let work = Work::from_arguments(self.capability, &resolved)?;
+        let mut work = Work::from_arguments(self.capability, &resolved)?;
+        if let Some(source_digest) = &self.translation_source_sha256 {
+            work.mark_translated_digest(source_digest)?;
+        }
         let audit = serde_json::json!({
             "template_sha256": self.template_sha256,
             "source_results": source_hashes,
             "resolved_criterion_sha256": work.criterion_digest(),
+            "language_translated": work.translated(),
+            "original_source_sha256": self.translation_source_sha256,
             "permissions_granted": false,
         });
         if serde_json::to_vec(&audit)?.len() > 4_096 {
@@ -239,6 +255,7 @@ pub(in crate::agent) fn parse(query: &str) -> Result<Option<Vec<Entry>>> {
                 })
                 .collect::<Result<Vec<_>>>()?,
             template_sha256: template_sha256.clone(),
+            translation_source_sha256: None,
         };
         entries.push(Entry {
             id: operation.id,

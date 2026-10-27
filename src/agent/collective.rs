@@ -293,53 +293,6 @@ impl Graph<'_> {
             }),
         )
     }
-    /// Both operations use the original request, so neither needs the other's
-    /// output. Reserve both budgets before polling either owned future.
-    async fn typed_opening_pair(
-        &mut self,
-        work: super::typed_experts::Plan,
-        allocation: usize,
-    ) -> Result<(Completion, sessions::TypedResult)> {
-        if !self.available(&[("interface", "", allocation)])? {
-            bail!("Client language/expert opening exceeds the original budget")
-        }
-        let turn = self.turn("interface", "", allocation);
-        let bytes = serde_json::to_vec(&turn)?;
-        TaskPolicy::agent(self.task)?.authorize(self.task, "jev-r", "llm.generate")?;
-        self.session
-            .reserve("interface", allocation, &bytes, self.cycles)?;
-        self.calls += 1;
-        self.reserved += allocation;
-        self.prompt_bytes += bytes.len();
-        let prepared = self
-            .session
-            .reserve_typed_work(self.runtime, self.original, work, true)?;
-        self.schedule("independent_language_typed_expert_wave", true)?;
-        let timeout = Duration::from_secs(self.runtime.cfg.timeout_seconds)
-            .min(self.deadline.saturating_duration_since(Instant::now()));
-        let language = tokio::time::timeout(
-            timeout,
-            self.runtime.dispatch_role(
-                self.backend.clone(),
-                self.task,
-                "interface",
-                &turn,
-                allocation,
-                self.deadline,
-            ),
-        );
-        let (language, expert) = tokio::join!(language, prepared.execute());
-        // Reconcile both operations before propagating either failure. No
-        // sibling is restarted or abandoned because the other returned early.
-        let interpreted = language
-            .map_err(|_| anyhow::anyhow!("Client language opening deadline exhausted"))
-            .and_then(|result| result)
-            .and_then(|completion| {
-                self.record_completion("interface", self.calls, allocation, &turn, completion)
-            });
-        Ok((interpreted?, expert?))
-    }
-
     async fn call(&mut self, role: &str, advice: &str, allocation: usize) -> Result<Completion> {
         if !self.available(&[(role, advice, allocation)])? {
             bail!("Client collective inference budget exhausted before dispatch")
@@ -631,8 +584,16 @@ pub(super) async fn run(
         None
     };
     let mut using_typed = typed_work.is_some();
-    let mut typed_value = None;
-    if runtime.cfg.language_model().is_some() && saved.calls == 0 {
+    if using_typed {
+        graph.schedule(
+            "validated_typed_program_skips_language_interpretation",
+            true,
+        )?;
+        if !graph.available(&[("synthesizer", "", runtime.cfg.interface_tokens)])? {
+            bail!("Typed task budget cannot cover final language presentation")
+        }
+    }
+    if runtime.cfg.language_model().is_some() && saved.calls == 0 && !using_typed {
         let allocation = runtime.cfg.interface_tokens;
         let mut opening_calls = vec![("interface", "", allocation)];
         if !using_typed && graph.session.typed_translation_contract(request).is_none() {
@@ -642,16 +603,7 @@ pub(super) async fn run(
         if !graph.available(&opening_calls)? {
             bail!("Root budget cannot cover language interpretation, reasoning and presentation")
         }
-        let interpreted = if runtime.cfg.subtask_parallelism.unwrap_or(1) >= 2 && using_typed {
-            let work = typed_work
-                .take()
-                .ok_or_else(|| anyhow::anyhow!("Typed opening work disappeared"))?;
-            let (interpreted, value) = graph.typed_opening_pair(work, allocation).await?;
-            typed_value = Some(value);
-            interpreted
-        } else {
-            graph.call("interface", "", allocation).await?
-        };
+        let interpreted = graph.call("interface", "", allocation).await?;
         let parsed = super::typed_experts::translation::Parsed::parse(
             interpreted.content.as_deref().unwrap_or(""),
         )?;
@@ -667,6 +619,11 @@ pub(super) async fn run(
                     .session
                     .prepare_translated_batch(request, translations)?;
                 using_typed = typed_work.is_some();
+            } else if let Some(translation) = parsed.typed_graph {
+                typed_work = graph
+                    .session
+                    .prepare_translated_graph(request, &translation)?;
+                using_typed = typed_work.is_some();
             }
         }
         if !using_typed {
@@ -678,20 +635,15 @@ pub(super) async fn run(
         }
     }
     if using_typed {
-        let value = match typed_value {
-            Some(value) => value,
-            None => {
-                let work = typed_work
-                    .take()
-                    .ok_or_else(|| anyhow::anyhow!("Typed expert work disappeared"))?;
-                graph.schedule("pinned_typed_expert", true)?;
-                graph
-                    .session
-                    .reserve_typed_work(runtime, request, work, false)?
-                    .execute()
-                    .await?
-            }
-        };
+        let plan = typed_work
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("Typed expert plan disappeared"))?;
+        graph.schedule("pinned_typed_expert", true)?;
+        let value = graph
+            .session
+            .reserve_typed_work(runtime, request, plan)?
+            .execute()
+            .await?;
         graph.cycles = 1;
         let completion = Completion {
             content: Some(value.value().to_owned()),

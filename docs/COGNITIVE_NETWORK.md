@@ -116,22 +116,22 @@ do not prove unsatisfiability: no assignment may mean exhausted search, provider
 failure or an unsatisfiable goal. The built-in worker uses checked i128 linear sums
 consistent with the original criterion, and unreachable paths accept `[]`.
 
-These routes use Qwen only for interpretation and final presentation. They skip
-model-backed expert workflows and planner/solver/critic/reflector calls. The Rust
-request and acceptance criterion come from the original input, never Qwen's rewrite.
-When `subtask_parallelism` is at least two, interpretation and the single typed
-operation run concurrently because neither consumes the other's output. Both
-reservations commit before either future is polled; both outcomes settle before
-failure propagation. With one slot they run sequentially. Cancellation drops both
-owned futures; it does not establish that an already-started external operation
+Validated exact client typed inputs skip model interpretation: Rust already has
+the complete typed program. Qwen runs once for final presentation, after typed
+execution; model-backed expert workflows and planner/solver/critic/reflector calls
+are skipped. Natural-language inputs still need interpretation before their
+translated typed work. Independent typed operations use the configured bounded
+slots without reserving a slot for an unnecessary language call. This supersedes
+the former exact-input interpretation/expert overlap. Cancellation drops owned
+futures; it does not establish that an already-started external operation
 physically stopped. No unknown outcome is replayed or refunded.
 
 Eligibility requires an available opening route and two remaining internal tool
 slots: expert work and final presentation checking. Required/named client tools
 retain the ordinary client-tool path. Without eligibility, the previous bounded
 reasoning path remains. Single-operation natural-language translation uses the separate, semantically
-unverified route below. Manifest bindings follow the separate rules below. Typed dependency graphs and
-interrupted catalog restoration remain incomplete.
+unverified route below. Manifest bindings and typed dependency graphs follow the
+separate rules below; interrupted catalog restoration remains incomplete.
 
 The typed result stays in memory through presentation. Qwen receives a strict
 numeric/JSON output contract; the actual returned answer is checked against the
@@ -258,8 +258,8 @@ opening snapshot, and requires two internal tool slots per operation (invocation
 and final check). Every invocation is charged through the original session CAS
 before polling any expert. One immutable snapshot is shared across bounded owned
 waves. Concurrent operations respect both `subtask_parallelism` and
-`expert_parallelism`, each capped at four. Exact-input opening overlap reserves
-one total slot for language; natural-language operations wait for translation.
+`expert_parallelism`, each capped at four. Exact inputs skip language interpretation and use the configured typed slots;
+natural-language operations wait for translation.
 All waves use one existing typed deadline and the original same-boot task clock.
 No later wave starts after a failed/unknown result; all started siblings settle,
 and reservations are not refunded or replayed. Cancellation still cannot prove
@@ -402,13 +402,75 @@ such a source value, or equivalent numeric spellings, can therefore be refused.
 Leaf values retain their existing criterion checks. Aggregate output remains
 capped at 16,384 bytes and final checks remain charged per operation.
 
-This adds exact structured dataflow. Natural-language graph translation is not
-implemented; the existing optional `typed_batch` remains independent. Graph edges
+This adds exact structured dataflow. The client-only natural-language graph
+extension below uses the same validated dataflow; `typed_batch` remains independent.
+Graph edges
 do not satisfy an expert manifest's declared dependency/model requirements: those
 mixed bindings remain refused. Interrupted graph restoration, mixed neural work,
 physical termination guarantees and measured speed/quality remain incomplete.
 No model is activated by binding resolution. No tests, benchmarks or live provider
 operations were run for this addition.
+
+## Natural-language graph translation and language-call scope
+
+The client-only interpretation envelope additionally accepts `typed_graph`,
+mutually exclusive with `typed_goal` and `typed_batch`. It contains one to four
+operations with IDs, fixed capabilities, domain arguments, dependencies and data
+bindings. Separate strict DTOs exclude expert/module/provider/model selectors and
+capability-version requirements. The entire translated graph and its canonical
+form are bounded at 16,000 bytes; the existing graph parser rechecks DAG, pointer,
+placeholder, binding-safety and domain rules before admission.
+
+For example, a language interface may translate an unambiguous sorting pipeline:
+
+```json
+{
+  "objective":"Sort the supplied numbers ascending, then reverse-sort that result",
+  "constraints":[],
+  "required_capabilities":["sorting.verify"],
+  "clarification":null,
+  "typed_graph":{
+    "operations":[
+      {"id":"ascending","capability":"sorting.verify","arguments":{"values":[3,1,2]}},
+      {"id":"descending","capability":"sorting.verify","arguments":{"values":[0],"descending":true},
+       "depends_on":["ascending"],
+       "bindings":[{"target":"/values","source":"ascending","pointer":""}]}
+    ]
+  }
+}
+```
+
+The declared capability set must equal the graph's complete set, clarification
+must be absent, and unsupported version requirements are refused. A concrete valid
+placeholder is a structural slot that will be overwritten, not evidence of user
+input. The prompt forbids inventing missing real data; schema checks cannot prove
+that the model complied. Ambiguous tasks should request clarification instead.
+Original exact typed programs cannot be replaced by a translated graph.
+
+Every translated Work and Template retains only the original request digest for
+provenance. Resolving a dependent node creates a new concrete criterion and then
+reapplies the translation marker and source digest. Thus neither a successful
+provider result nor a successful final check can turn translated meaning into
+original-goal verification. Such tasks still finish `unverified`. Consumed source
+values remain frozen in final presentation, and all existing provider pins,
+per-operation charges, deadlines and concurrency bounds apply.
+
+The exact client path now admits work before any language call, executes its
+checked typed program, then reserves one synthesizer call. Its final checker
+expects one charged model call. The natural-language path reserves interpretation
+first, executes translated work only after validation, then reserves presentation;
+its final checker expects two charged model calls. No new allowance, retry,
+checkpoint restoration path or model activation is added. This is a reduction in
+configured call count for eligible exact inputs, not a measured latency claim.
+The full configured typed concurrency is available during either typed execution
+phase; language parsing or presentation does not run concurrently with that phase.
+
+Public Interpretation/Engine request formats and older client replies remain
+unchanged. This optimization is specific to the client typed route, not every
+Engine/CLI path. Manifest-declared expert dependency/model combinations, mixed
+neural/provider orchestration, interrupted restore and measured language accuracy
+or speed remain incomplete. No tests, benchmarks, live models or providers were
+run for this addition.
 
 ## Bounded parallel work
 
