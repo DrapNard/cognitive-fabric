@@ -1,4 +1,4 @@
-//! Independent client expert workflows sharing one durable task ledger.
+//! Dependency-aware client expert workflows sharing one durable task ledger.
 use super::*;
 
 struct PreparedExpertCall {
@@ -15,16 +15,32 @@ fn ready_expert_wave(
     plans: &[expert_workflow::BoundPlan],
     done: &[std::collections::BTreeSet<String>],
     results: &[serde_json::Map<String, serde_json::Value>],
+    expert_capacity: usize,
     per_expert_capacity: usize,
     global_capacity: usize,
-) -> Vec<(usize, usize, serde_json::Value)> {
+) -> Result<Vec<(usize, usize, serde_json::Value)>> {
     let mut counts = vec![0usize; plans.len()];
     let mut selected = vec![std::collections::BTreeSet::<String>::new(); plans.len()];
     let mut wave = Vec::new();
+    let mut active_experts = 0usize;
     while wave.len() < global_capacity {
         let mut progressed = false;
         for (plan_index, bound) in plans.iter().enumerate() {
-            if wave.len() == global_capacity || counts[plan_index] >= per_expert_capacity {
+            if wave.len() == global_capacity
+                || counts[plan_index] >= per_expert_capacity
+                || (counts[plan_index] == 0 && active_experts >= expert_capacity)
+            {
+                continue;
+            }
+            let mut prerequisites_complete = true;
+            for dependency in &bound.dependencies {
+                let source = plans
+                    .iter()
+                    .position(|candidate| candidate.plan.id == *dependency)
+                    .ok_or_else(|| anyhow::anyhow!("Pinned expert dependency is missing"))?;
+                prerequisites_complete &= done[source].len() == plans[source].plan.steps.len();
+            }
+            if !prerequisites_complete {
                 continue;
             }
             if let Some((step_index, step)) =
@@ -38,11 +54,14 @@ fn ready_expert_wave(
                 })
             {
                 selected[plan_index].insert(step.id.clone());
+                if counts[plan_index] == 0 {
+                    active_experts += 1;
+                }
                 counts[plan_index] += 1;
                 wave.push((
                     plan_index,
                     step_index,
-                    serde_json::Value::Object(results[plan_index].clone()),
+                    expert_prior(plans, plan_index, results)?,
                 ));
                 progressed = true;
             }
@@ -51,7 +70,36 @@ fn ready_expert_wave(
             break;
         }
     }
-    wave
+    Ok(wave)
+}
+
+fn expert_prior(
+    plans: &[expert_workflow::BoundPlan],
+    plan_index: usize,
+    results: &[serde_json::Map<String, serde_json::Value>],
+) -> Result<serde_json::Value> {
+    let bound = &plans[plan_index];
+    if bound.dependencies.is_empty() {
+        return Ok(serde_json::Value::Object(results[plan_index].clone()));
+    }
+    let mut dependencies = Vec::with_capacity(bound.dependencies.len());
+    for dependency in &bound.dependencies {
+        let source = plans
+            .iter()
+            .position(|candidate| candidate.plan.id == *dependency)
+            .ok_or_else(|| anyhow::anyhow!("Pinned expert dependency context is missing"))?;
+        dependencies.push(json!({
+            "expert_id":plans[source].plan.id,
+            "version":plans[source].plan.version,
+            "results":results[source],
+            "trust":"untrusted_model_advisory_never_permissions"
+        }));
+    }
+    Ok(json!({
+        "own_steps":results[plan_index],
+        "dependency_experts":dependencies,
+        "trust":"untrusted_model_advisory_never_permissions"
+    }))
 }
 
 fn expert_wave_routes(
@@ -259,24 +307,27 @@ impl Graph<'_> {
             }
         };
         let expert_capacity = self.runtime.cfg.expert_parallelism.unwrap_or(1).min(4);
-        let plans = if interpretation.required_capabilities.is_empty() {
-            expert_workflow::Plan::from_references(&self.session.state.references)?
-                .into_iter()
-                .map(|plan| expert_workflow::BoundPlan {
-                    capability: String::new(),
-                    plan,
-                })
-                .collect()
-        } else {
-            expert_workflow::Plan::bound_plans(
-                &self.session.state.references,
-                &interpretation,
-                expert_capacity,
-            )?
-        };
+        let selection = expert_workflow::Plan::bound_plans(
+            &self.session.state.references,
+            &interpretation,
+            expert_capacity,
+        )?;
+        for skipped in selection.skipped {
+            self.runtime.store.event(
+                self.task,
+                "expert_workflow_skipped",
+                "jev-plus",
+                json!({"selection":skipped,"permissions_granted":false}),
+            )?;
+        }
+        let plans = selection.plans;
         if plans.is_empty() {
+            self.runtime.store.event(self.task, "expert_workflow_skipped", "jev-plus",
+                json!({"reason":"no_complete_pinned_workflow_selection","permissions_granted":false}))?;
             return Ok(None);
         }
+        let dependency_graph = plans.iter().any(|bound| !bound.dependencies.is_empty());
+        let selected_plan_count = plans.len();
         let mut routed_runtimes = Vec::with_capacity(plans.len());
         let mut routed_plans = Vec::with_capacity(plans.len());
         for bound in plans {
@@ -322,6 +373,11 @@ impl Graph<'_> {
         if plans.is_empty() {
             return Ok(None);
         }
+        if dependency_graph && plans.len() != selected_plan_count {
+            self.runtime.store.event(self.task, "expert_workflow_skipped", "jev-plus",
+                json!({"reason":"complete_dependency_graph_route_unavailable","permissions_granted":false}))?;
+            return Ok(None);
+        }
         let per_expert_capacity = self.runtime.cfg.subtask_parallelism.unwrap_or(1).min(4);
         let global_capacity = per_expert_capacity.max(expert_capacity).min(4);
         let empty_done = plans
@@ -337,9 +393,10 @@ impl Graph<'_> {
             &plans,
             &empty_done,
             &empty_results,
+            expert_capacity,
             per_expert_capacity,
             first_wave_capacity,
-        );
+        )?;
         while !first_wave.is_empty()
             && !self
                 .runtime
@@ -351,9 +408,10 @@ impl Graph<'_> {
                 &plans,
                 &empty_done,
                 &empty_results,
+                expert_capacity,
                 per_expert_capacity,
                 first_wave_capacity,
-            );
+            )?;
         }
         if first_wave.is_empty()
             || !self
@@ -368,7 +426,7 @@ impl Graph<'_> {
             )?;
             return Ok(None);
         }
-        if plans.len() > 1 && first_wave.len() < 2 {
+        if !dependency_graph && plans.len() > 1 && first_wave.len() < 2 {
             plans.truncate(1);
             routed_runtimes.truncate(1);
             first_wave_capacity = global_capacity;
@@ -376,9 +434,10 @@ impl Graph<'_> {
                 &plans,
                 &empty_done[..1],
                 &empty_results[..1],
+                expert_capacity,
                 per_expert_capacity,
                 first_wave_capacity,
-            );
+            )?;
         }
         let mut step_count = plans
             .iter()
@@ -393,6 +452,7 @@ impl Graph<'_> {
         loop {
             hypothetical.clear();
             projected_summaries.clear();
+            let mut all_projected_results = Vec::with_capacity(plans.len());
             for bound in &plans {
                 let plan = &bound.plan;
                 // Quotes maximize escaping when scalar advice is embedded in
@@ -416,7 +476,13 @@ impl Graph<'_> {
                         }),
                     );
                 }
-                let maximum_prior = serde_json::Value::Object(projected_results.clone());
+                all_projected_results.push(projected_results);
+            }
+            for (plan_index, bound) in plans.iter().enumerate() {
+                let plan = &bound.plan;
+                // Include every possible prerequisite output as well as this
+                // expert's own prior steps in the complete prompt-size bound.
+                let maximum_prior = expert_prior(&plans, plan_index, &all_projected_results)?;
                 for step in &plan.steps {
                     let allocation = plan.registered_model.as_ref().map_or(STEP_TOKENS, |model| {
                         STEP_TOKENS.min(model.manifest.max_output_tokens as usize)
@@ -427,12 +493,16 @@ impl Graph<'_> {
                         allocation,
                     ));
                 }
-                projected_summaries.push(json!({
+                let mut summary = json!({
                     "capability":bound.capability,
                     "expert_id":plan.id,
                     "version":plan.version,
-                    "results":projected_results
-                }));
+                    "results":all_projected_results[plan_index]
+                });
+                if dependency_graph {
+                    summary["dependencies"] = json!(bound.dependencies);
+                }
+                projected_summaries.push(summary);
             }
             let projected_summary = if plans.len() == 1 {
                 json!({
@@ -464,7 +534,7 @@ impl Graph<'_> {
             {
                 break;
             }
-            if plans.len() > 1 {
+            if !dependency_graph && plans.len() > 1 {
                 plans.truncate(1);
                 routed_runtimes.truncate(1);
                 step_count = plans[0].plan.steps.len();
@@ -473,9 +543,10 @@ impl Graph<'_> {
                     &plans,
                     &empty_done[..1],
                     &empty_results[..1],
+                    expert_capacity,
                     per_expert_capacity,
                     first_wave_capacity,
-                );
+                )?;
                 continue;
             }
             self.runtime.store.event(
@@ -507,9 +578,10 @@ impl Graph<'_> {
             &plans,
             &empty_done[..plans.len()],
             &empty_results[..plans.len()],
+            expert_capacity,
             per_expert_capacity,
             overlap_capacity,
-        );
+        )?;
         let overlap =
             if mode(&self.runtime.cfg, self.original) == "research" && !overlap_wave.is_empty() {
                 let mut combined_routes = expert_wave_routes(&overlap_wave, &routed_runtimes);
@@ -572,6 +644,7 @@ impl Graph<'_> {
                     "expert_id":bound.plan.id,
                     "version":bound.plan.version,
                     "model_selection":bound.plan.model_selection,
+                    "dependencies":bound.dependencies,
                     "declared_context_tokens":bound.plan.registered_model.as_ref().map(|model|model.manifest.context_tokens)
                 })).collect::<Vec<_>>(),
                 "steps":step_count,
@@ -608,9 +681,10 @@ impl Graph<'_> {
                     &plans,
                     &done,
                     &results,
+                    expert_capacity,
                     per_expert_capacity,
                     first_wave_capacity,
-                )
+                )?
             };
             if !use_first_wave {
                 while !ready.is_empty()
@@ -698,12 +772,16 @@ impl Graph<'_> {
             .iter()
             .enumerate()
             .map(|(index, bound)| {
-                json!({
+                let mut summary = json!({
                     "capability":bound.capability,
                     "expert_id":bound.plan.id,
                     "version":bound.plan.version,
                     "results":results[index]
-                })
+                });
+                if dependency_graph {
+                    summary["dependencies"] = json!(bound.dependencies);
+                }
+                summary
             })
             .collect::<Vec<_>>();
         let summary = if summaries.len() == 1 {

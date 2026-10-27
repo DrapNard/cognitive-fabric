@@ -238,7 +238,7 @@ backends must support role selection before accepting this configuration.
 workflow experts, including structured multi-step workflows; `1` restores
 sequential selection. Batches require
 distinct explicit requested-capability bindings, pinned compatible manifests and
-empty pinned cross-expert dependency declarations. Version requirements from the
+complete version-compatible workflow dependency closures. Version requirements from the
 language interpretation must match declared capability versions. The session
 opening snapshot contains at most three ranked expert entries; this is not
 discovery of every registry expert after interpretation. Legacy snapshots without
@@ -267,7 +267,8 @@ Research-mode first waves may reserve two slots for planner/explorer. The exact
 same expert wave is used for capacity preflight and dispatch, so advisory overlap
 cannot exceed the global cap. Whole-workflow prompt admission includes bounded,
 maximally escaped outputs for every step, covering any completed-results context.
-Fallback to one workflow happens before model-call reservations. All sibling
+Fallback to one workflow happens before model-call reservations for independent
+work; a dependency graph is never flattened into a lone dependent. All sibling
 outcomes are awaited; failures retain charges and do not trigger another expert
 or provider retry. Dependencies are never satisfied by a sibling in the same wave.
 One bounded internal workflow-advice reservation covers the batch; every model
@@ -278,7 +279,34 @@ workflow/model pins. Continuation rejects modified declarations. This links
 operator metadata, not trained weights or proof that an expert is competent.
 Configured resource preflight is an instantaneous advisory check; generation
 still acquires individual leases and may queue. Client mid-reasoning crash
-recovery, general cross-expert dependencies and measured performance remain open.
+recovery, larger dependency graphs and measured performance remain open.
+
+### Pinned cross-expert workflow dependencies
+
+Client selection expands each requested root into its complete dependency closure
+within the opening snapshot's maximum of three expert entries. Prerequisite IDs
+and semantic-version requirements come from the hash-pinned manifest declarations.
+Only executable workflow prerequisites with complete metadata/model pins are
+supported. Missing, incompatible, cyclic or unsupported closures are skipped and
+reported. Selection stays within pinned candidates, without a registry reread
+or automatic download. No dispatched call is retried.
+Shared prerequisites execute once in the selected graph.
+
+An expert becomes ready only after every step of every direct prerequisite has
+completed in earlier waves. Its request contains bounded prerequisite results,
+exact expert IDs/versions and explicit untrusted-data labels alongside its own
+step history. Whole-graph prompt admission uses complete worst-case result maps
+with nested JSON escaping. The final structured advice preserves dependency IDs.
+`expert_parallelism` caps active experts independently of each expert's
+`subtask_parallelism`; the existing total call cap still applies.
+
+The graph retains the original session budget, deadline, permissions and per-call
+reservation rules. If a prerequisite route is unavailable or the whole graph
+cannot fit the budget, the graph is skipped before any expert inference. Model
+preparation remains serialized under native lifecycle rules, while admitted ready
+inference can overlap. Legacy snapshots lacking dependency pins retain their
+historical single-workflow behavior and cannot authorize new graph execution.
+Static checks only; runtime dependency execution and performance remain unverified.
 
 ## Client advisory concurrency
 

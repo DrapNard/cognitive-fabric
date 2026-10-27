@@ -1,5 +1,24 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Pinned client expert dependency graphs — 2026-10-27
+
+**Partial network integration; runtime unverified.**
+`src/agent/expert_workflow.rs` expands requested workflow roots into complete
+version-compatible prerequisite closures within the three captured expert entries.
+Missing/cyclic/nonexecutable/unpinned prerequisites skip the root with bounded
+diagnostics. `src/agent/collective/experts.rs` gates dependent readiness on all
+prerequisite steps, supplies structured prerequisite evidence, and preflights
+complete worst-case dependency context. Active expert, per-expert step and total
+concurrency limits are independent. Shared prerequisites execute once. Graphs
+cannot be truncated into incomplete single-workflow fallbacks; unsupported routes
+or insufficient whole-graph budgets cause omission before expert inference. Original calls,
+tokens, tool slots, deadlines, resource leases and language-model exclusion remain.
+Legacy capability-only snapshots keep their original single-workflow semantics.
+Larger graphs, non-workflow prerequisites and client mid-reasoning crash recovery
+remain incomplete. Formatting, workspace/all-target compilation and strict Clippy
+pass. No tests, benchmarks, live inference or model lifecycle
+operations were run.
+
 ## Independent client expert workflows — 2026-10-26
 
 **Partial network integration; runtime unverified.** Client collective scheduling
