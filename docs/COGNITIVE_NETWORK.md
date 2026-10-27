@@ -1,5 +1,36 @@
 # Cognitive network implementation
 
+## Rolling typed dependency execution — 2026-10-27
+
+**Implemented rolling typed scheduling; runtime/performance unverified.**
+`src/agent/sessions.rs::PreparedTypedWork::execute` now polls a bounded set of
+locally owned operations and refills available slots after each completion set.
+A dependent operation can start after its own prerequisites pass compiled checks,
+while unrelated slower operations remain in flight. It no longer waits for the
+entire previous ready wave. All currently ready completions are processed before
+new launches, so an observed sibling failure prevents further scheduling.
+
+`src/agent/graph_schedule.rs` represents in-flight nodes explicitly and counts
+them against total, group and per-group caps. Running work cannot be selected
+again and never satisfies a checked dependency. `src/agent/collective/experts.rs`
+keeps its existing wave behavior with no in-flight nodes in its snapshots.
+Typed readiness snapshots include pending, running and checked-complete IDs;
+checked outputs alone feed argument bindings. Original provider proofs, source
+freezes, charge-before-dispatch accounting and final declaration-order assembly
+remain. Bounds still come from the original admitted typed width, including any
+reduction for concurrent model work.
+
+Binding, provider, audit and clock errors are latched: new launches stop and every
+already-admitted in-flight future settles before the first error propagates.
+No operation is retried or refunded. Parent cancellation still follows existing
+owned cleanup; a timeout does not independently prove physical provider stop.
+This removes a source-level wave barrier, not provider queueing, worker limits or
+lifecycle serialization. Model-expert workflows still use bounded waves, and
+arbitrary heterogeneous per-node dataflow/interrupted-provider recovery remain
+Partial. Static formatting, locked workspace/all-target compilation, strict Clippy
+and whitespace checks are the validation scope. No tests, benchmarks, live calls,
+model activation or recovery execution were performed; no speedup is claimed.
+
 ## Overlap independent model-expert workflows with typed work — 2026-10-27
 
 **Implemented bounded independent workflow overlap; arbitrary mixed DAG Partial,

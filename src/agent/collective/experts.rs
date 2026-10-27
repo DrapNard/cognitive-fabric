@@ -65,6 +65,7 @@ fn ready_expert_wave(
             }
             Ok(Node {
                 group: plan_index,
+                in_flight: false,
                 dependencies: sources
                     .into_iter()
                     .map(|node| Dependency {

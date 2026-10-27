@@ -91,6 +91,44 @@ impl TypedResult {
     }
 }
 
+type TypedOperation =
+    std::pin::Pin<Box<dyn Future<Output = (super::typed_experts::Entry, Result<String>)> + Send>>;
+
+/// Poll every owned operation on each wake. Completed work is removed so the
+/// caller can release dependent nodes while slower independent work continues.
+async fn ready_typed_operations(
+    operations: &mut Vec<(String, TypedOperation)>,
+) -> Vec<(String, super::typed_experts::Entry, Result<String>)> {
+    use std::future::poll_fn;
+    use std::task::Poll;
+    let ready = poll_fn(|context| {
+        let mut ready = Vec::new();
+        for (index, (id, operation)) in operations.iter_mut().enumerate() {
+            if let Poll::Ready((entry, result)) = operation.as_mut().poll(context) {
+                ready.push((index, id.clone(), entry, result));
+            }
+        }
+        if ready.is_empty() {
+            Poll::Pending
+        } else {
+            Poll::Ready(ready)
+        }
+    })
+    .await;
+    let mut indices = ready
+        .iter()
+        .map(|(index, _, _, _)| *index)
+        .collect::<Vec<_>>();
+    indices.sort_unstable_by(|left, right| right.cmp(left));
+    for index in indices {
+        drop(operations.swap_remove(index));
+    }
+    ready
+        .into_iter()
+        .map(|(_, id, entry, result)| (id, entry, result))
+        .collect()
+}
+
 impl PreparedTypedWork {
     /// Hold model-wave capacity without increasing the admitted typed width.
     pub(super) fn limit_concurrency(&mut self, limit: usize) -> Result<()> {
@@ -102,137 +140,200 @@ impl PreparedTypedWork {
     }
 
     pub async fn execute(self) -> Result<TypedResult> {
+        use super::graph_schedule::{self, Dependency, Evidence, Node};
         remaining(&self.clock)?;
         let mut pending = self.entries;
         let mut parts = Vec::<TypedPart>::new();
         let mut checked_outputs = std::collections::BTreeMap::<String, String>::new();
-        while !pending.is_empty() {
-            use super::graph_schedule::{self, Dependency, Evidence, Node};
-            let ids = pending
-                .iter()
-                .map(|entry| entry.id.as_str())
-                .chain(parts.iter().map(|part| part.id.as_str()))
-                .collect::<Vec<_>>();
-            let mut nodes = pending
-                .iter()
-                .map(|entry| {
-                    let dependencies = entry
-                        .template
-                        .as_ref()
-                        .map(|template| template.dependencies())
-                        .unwrap_or_default()
+        let mut in_flight = Vec::<(String, TypedOperation)>::new();
+        let mut failure = None;
+
+        while !pending.is_empty() || !in_flight.is_empty() {
+            if failure.is_none() && !pending.is_empty() {
+                if let Err(error) = remaining(&self.clock) {
+                    failure = Some(error);
+                } else {
+                    let ids = pending
                         .iter()
-                        .map(|id| {
-                            let node = ids
-                                .iter()
-                                .position(|candidate| *candidate == id)
-                                .ok_or_else(|| {
-                                    anyhow::anyhow!("Typed graph dependency is missing")
-                                })?;
-                            Ok(Dependency {
-                                node,
-                                evidence: Evidence::Checked,
+                        .map(|entry| entry.id.as_str())
+                        .chain(in_flight.iter().map(|(id, _)| id.as_str()))
+                        .chain(parts.iter().map(|part| part.id.as_str()))
+                        .collect::<Vec<_>>();
+                    let built_nodes = (|| -> Result<Vec<Node>> {
+                        let mut nodes = pending
+                            .iter()
+                            .map(|entry| {
+                                let dependencies = entry
+                                    .template
+                                    .as_ref()
+                                    .map(|template| template.dependencies())
+                                    .unwrap_or_default()
+                                    .iter()
+                                    .map(|id| {
+                                        let node = ids
+                                            .iter()
+                                            .position(|candidate| *candidate == id)
+                                            .ok_or_else(|| {
+                                                anyhow::anyhow!("Typed graph dependency is missing")
+                                            })?;
+                                        Ok(Dependency {
+                                            node,
+                                            evidence: Evidence::Checked,
+                                        })
+                                    })
+                                    .collect::<Result<Vec<_>>>()?;
+                                Ok(Node {
+                                    group: 0,
+                                    dependencies,
+                                    completed: None,
+                                    in_flight: false,
+                                })
                             })
-                        })
-                        .collect::<Result<Vec<_>>>()?;
-                    Ok(Node {
-                        group: 0,
-                        dependencies,
-                        completed: None,
-                    })
-                })
-                .collect::<Result<Vec<_>>>()?;
-            nodes.extend(parts.iter().map(|_| Node {
-                group: 0,
-                dependencies: Vec::new(),
-                completed: Some(Evidence::Checked),
-            }));
-            let ready = graph_schedule::ready_wave(&nodes, 1, self.concurrency, self.concurrency)?;
-            if ready.is_empty() {
-                bail!("Typed graph has no dependency-ready operation")
-            }
-            let mut wave = ready
-                .into_iter()
-                .rev()
-                .map(|index| pending.remove(index))
-                .collect::<Vec<_>>();
-            wave.reverse();
-            remaining(&self.clock)?;
-            for entry in &mut wave {
-                if let Some(template) = &entry.template {
-                    let capability = entry.work.capability();
-                    let (resolved, binding_audit) = template.resolve(&checked_outputs)?;
-                    if resolved.capability() != capability
-                        || resolved.translated() != entry.work.translated()
-                    {
-                        bail!("Typed graph binding changed its admitted capability or origin")
+                            .collect::<Result<Vec<_>>>()?;
+                        nodes.extend(in_flight.iter().map(|_| Node {
+                            group: 0,
+                            dependencies: Vec::new(),
+                            completed: None,
+                            in_flight: true,
+                        }));
+                        nodes.extend(parts.iter().map(|_| Node {
+                            group: 0,
+                            dependencies: Vec::new(),
+                            completed: Some(Evidence::Checked),
+                            in_flight: false,
+                        }));
+                        Ok(nodes)
+                    })();
+                    match built_nodes {
+                        Err(error) => failure = Some(error),
+                        Ok(nodes) => {
+                            let available = self.concurrency.saturating_sub(in_flight.len());
+                            let ready = if available == 0 {
+                                Vec::new()
+                            } else {
+                                match graph_schedule::ready_wave(
+                                    &nodes,
+                                    1,
+                                    self.concurrency,
+                                    self.concurrency,
+                                ) {
+                                    Ok(ready) => ready,
+                                    Err(error) => {
+                                        failure = Some(error);
+                                        Vec::new()
+                                    }
+                                }
+                            };
+                            if ready.is_empty() && in_flight.is_empty() && !pending.is_empty() {
+                                failure.get_or_insert_with(|| {
+                                    anyhow::anyhow!("Typed graph has no dependency-ready operation")
+                                });
+                            }
+
+                            // Remove selected entries in reverse index order, then
+                            // restore stable graph order for preparation and dispatch.
+                            let mut selected = ready
+                                .into_iter()
+                                .rev()
+                                .map(|index| pending.remove(index))
+                                .collect::<Vec<_>>();
+                            selected.reverse();
+                            for mut entry in selected {
+                                if failure.is_some() {
+                                    break;
+                                }
+                                let preparation = (|| -> Result<()> {
+                                    if let Some(template) = &entry.template {
+                                        let capability = entry.work.capability();
+                                        let (resolved, binding_audit) =
+                                            template.resolve(&checked_outputs)?;
+                                        if resolved.capability() != capability
+                                            || resolved.translated() != entry.work.translated()
+                                        {
+                                            bail!("Typed graph binding changed its admitted capability or origin")
+                                        }
+                                        entry.work = resolved;
+                                        let mut source_evidence = std::collections::BTreeMap::new();
+                                        for source in template.dependencies() {
+                                            let part = parts
+                                                .iter()
+                                                .find(|part| part.id == *source)
+                                                .ok_or_else(|| {
+                                                    anyhow::anyhow!(
+                                                    "Typed graph prerequisite evidence is missing"
+                                                )
+                                                })?;
+                                            source_evidence.insert(
+                                                source,
+                                                json!({
+                                                    "result_sha256":sha256(part.value.as_bytes()),
+                                                    "criterion_sha256":part.work.criterion_digest(),
+                                                    "compiled_criterion_match":true,
+                                                    "provider_identity":part.provider_identity
+                                                }),
+                                            );
+                                        }
+                                        self.store.event(&self.task, "agent_typed_graph_binding", "jev-plus", json!({
+                                            "format_version":1, "operation_id":entry.id,
+                                            "root_query_sha256":self.identity.query_digest(), "snapshot_sha256":self.snapshot.digest(),
+                                            "resolved_criterion_sha256":entry.work.criterion_digest(),
+                                            "source_evidence":source_evidence,
+                                            "binding":binding_audit, "permissions_granted":false, "execution_started":false
+                                        }))?;
+                                    }
+                                    Ok(())
+                                })();
+                                if let Err(error) = preparation {
+                                    failure = Some(error);
+                                    break;
+                                }
+                                let id = entry.id.clone();
+                                let snapshot = self.snapshot.clone();
+                                let task = self.task.clone();
+                                let deadline = self.deadline;
+                                let store = self.store.clone();
+                                let root_query_sha256 = self.identity.query_digest().to_owned();
+                                let operation = Box::pin(async move {
+                                    let result = match TaskPolicy::client_collective(&task) {
+                                        Ok(policy) => {
+                                            snapshot
+                                                .evaluate(
+                                                    &task,
+                                                    &entry,
+                                                    &store,
+                                                    &root_query_sha256,
+                                                    deadline,
+                                                    &policy,
+                                                )
+                                                .await
+                                        }
+                                        Err(error) => Err(error),
+                                    };
+                                    (entry, result)
+                                })
+                                    as TypedOperation;
+                                in_flight.push((id, operation));
+                            }
+                        }
                     }
-                    entry.work = resolved;
-                    let mut source_evidence = std::collections::BTreeMap::new();
-                    for source in template.dependencies() {
-                        let part =
-                            parts
-                                .iter()
-                                .find(|part| part.id == *source)
-                                .ok_or_else(|| {
-                                    anyhow::anyhow!("Typed graph prerequisite evidence is missing")
-                                })?;
-                        source_evidence.insert(
-                            source,
-                            json!({
-                                "result_sha256":sha256(part.value.as_bytes()),
-                                "criterion_sha256":part.work.criterion_digest(),
-                                "compiled_criterion_match":true,
-                                "provider_identity":part.provider_identity
-                            }),
-                        );
-                    }
-                    self.store.event(&self.task, "agent_typed_graph_binding", "jev-plus", json!({
-                        "format_version":1, "operation_id":entry.id,
-                        "root_query_sha256":self.identity.query_digest(), "snapshot_sha256":self.snapshot.digest(),
-                        "resolved_criterion_sha256":entry.work.criterion_digest(),
-                        "source_evidence":source_evidence,
-                        "binding":binding_audit, "permissions_granted":false, "execution_started":false
-                    }))?;
                 }
             }
-            type Operation = std::pin::Pin<
-                Box<dyn Future<Output = (super::typed_experts::Entry, Result<String>)> + Send>,
-            >;
-            let futures = wave
-                .into_iter()
-                .map(|entry| {
-                    let snapshot = self.snapshot.clone();
-                    let task = self.task.clone();
-                    let deadline = self.deadline;
-                    let store = self.store.clone();
-                    let root_query_sha256 = self.identity.query_digest().to_owned();
-                    Box::pin(async move {
-                        let result = match TaskPolicy::client_collective(&task) {
-                            Ok(policy) => {
-                                snapshot
-                                    .evaluate(
-                                        &task,
-                                        &entry,
-                                        &store,
-                                        &root_query_sha256,
-                                        deadline,
-                                        &policy,
-                                    )
-                                    .await
-                            }
-                            Err(error) => Err(error),
-                        };
-                        (entry, result)
-                    }) as Operation
-                })
-                .collect();
-            let reports = crate::reasoning::parallel::join_all(futures).await;
-            // Await every owned operation in the wave, even when a sibling
-            // failed. Later waves never start after an uncertain result.
-            let mut failed = false;
-            for (entry, result) in reports {
-                self.store.event(&self.task, "agent_typed_expert_result", "jev-plus", json!({
+
+            if in_flight.is_empty() {
+                break;
+            }
+            // Poll every owned sibling on each wake and account for every
+            // completion before considering newly unblocked dependent work.
+            let completed = ready_typed_operations(&mut in_flight).await;
+            for (id, entry, result) in completed {
+                if id != entry.id {
+                    failure.get_or_insert_with(|| {
+                        anyhow::anyhow!(
+                            "Typed operation completion did not match its in-flight identity"
+                        )
+                    });
+                }
+                let event_result = self.store.event(&self.task, "agent_typed_expert_result", "jev-plus", json!({
                     "operation_id":entry.id, "root_query_sha256":self.identity.query_digest(),
                     "capability":entry.work.capability().as_str(),
                     "snapshot_sha256":self.snapshot.digest(),
@@ -244,44 +345,61 @@ impl PreparedTypedWork {
                     "language_translated":self.identity.translated(), "checker":entry.work.checker(),
                     "presented_answer_verified":false, "automatic_retry":false,
                     "prepared_provider_route":entry.provider_route.as_ref().map(|proof|proof.audit_metadata())
-                }))?;
+                }));
+                if let Err(error) = event_result {
+                    failure.get_or_insert(error);
+                }
                 match result {
-                    Ok(value) => {
-                        let proof = entry.provider_route.as_ref().ok_or_else(|| {
-                            anyhow::anyhow!("Checked typed result has no prepared provider route")
-                        })?;
-                        let metadata = proof.audit_metadata();
-                        let mut provider_identity = serde_json::Map::new();
-                        for key in [
-                            "route",
-                            "catalog_sha256",
-                            "expert_id",
-                            "expert_version",
-                            "canonical_manifest_sha256",
-                            "provider_module_id",
-                            "provider_module_version",
-                            "capability",
-                            "capability_version",
-                        ] {
-                            if let Some(value) = metadata.get(key) {
-                                provider_identity.insert(key.to_owned(), value.clone());
+                    Ok(value) => match entry.provider_route.as_ref() {
+                        Some(proof) => {
+                            let metadata = proof.audit_metadata();
+                            let mut provider_identity = serde_json::Map::new();
+                            for key in [
+                                "route",
+                                "catalog_sha256",
+                                "expert_id",
+                                "expert_version",
+                                "canonical_manifest_sha256",
+                                "provider_module_id",
+                                "provider_module_version",
+                                "capability",
+                                "capability_version",
+                            ] {
+                                if let Some(value) = metadata.get(key) {
+                                    provider_identity.insert(key.to_owned(), value.clone());
+                                }
                             }
+                            checked_outputs.insert(entry.id.clone(), value.clone());
+                            parts.push(TypedPart {
+                                id: entry.id,
+                                value,
+                                work: entry.work,
+                                provider_identity: serde_json::Value::Object(provider_identity),
+                            });
                         }
-                        checked_outputs.insert(entry.id.clone(), value.clone());
-                        parts.push(TypedPart {
-                            id: entry.id,
-                            value,
-                            work: entry.work,
-                            provider_identity: serde_json::Value::Object(provider_identity),
+                        None => {
+                            failure.get_or_insert_with(|| {
+                                anyhow::anyhow!(
+                                    "Checked typed result has no prepared provider route"
+                                )
+                            });
+                        }
+                    },
+                    Err(_) => {
+                        failure.get_or_insert_with(|| {
+                            anyhow::anyhow!(
+                                "Typed expert operation failed; no operation will be replayed"
+                            )
                         });
                     }
-                    Err(_) => failed = true,
+                }
+                if let Err(error) = remaining(&self.clock) {
+                    failure.get_or_insert(error);
                 }
             }
-            remaining(&self.clock)?;
-            if failed {
-                bail!("Typed expert wave failed; no operation will be replayed")
-            }
+        }
+        if let Some(error) = failure {
+            return Err(error);
         }
         // Final checking uses the original declared operation order, even when
         // dependencies caused execution to complete in a different order.

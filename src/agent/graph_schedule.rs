@@ -17,6 +17,8 @@ pub(super) struct Dependency {
 pub(super) struct Node {
     pub group: usize,
     pub dependencies: Vec<Dependency>,
+    /// Already-started work occupies capacity and cannot be selected again.
+    pub in_flight: bool,
     /// Host assertion after successful result admission, never model-provided.
     /// Checked means the operation contract passed, not natural-goal verification.
     pub completed: Option<Evidence>,
@@ -24,7 +26,8 @@ pub(super) struct Node {
 
 /// Select a stable round-robin ready wave. Pending nodes never satisfy edges in
 /// the same wave. Checked evidence can feed advisory work; advice cannot satisfy
-/// a checked edge. Callers retain route, budget, deadline and output validation.
+/// a checked edge. In-flight work consumes the supplied total/group limits.
+/// Callers retain route, budget, deadline and output validation.
 pub(super) fn ready_wave(
     nodes: &[Node],
     group_limit: usize,
@@ -40,7 +43,10 @@ pub(super) fn ready_wave(
         bail!("Shared graph scheduling exceeds its node or concurrency limits")
     }
     for (index, node) in nodes.iter().enumerate() {
-        if node.group >= 16 || node.dependencies.len() > 15 {
+        if node.group >= 16
+            || node.dependencies.len() > 15
+            || (node.in_flight && node.completed.is_some())
+        {
             bail!("Shared graph group or dependency list exceeds its bound")
         }
         let mut seen = BTreeSet::new();
@@ -73,11 +79,22 @@ pub(super) fn ready_wave(
     let groups = nodes.iter().map(|node| node.group).collect::<BTreeSet<_>>();
     let mut selected = Vec::new();
     let mut counts = [0usize; 16];
-    let mut active_groups = 0;
-    while selected.len() < global_limit {
+    let mut running = 0;
+    for node in nodes.iter().filter(|node| node.in_flight) {
+        running += 1;
+        counts[node.group] += 1;
+    }
+    let mut active_groups = counts.iter().filter(|count| **count != 0).count();
+    if running > global_limit
+        || active_groups > group_limit
+        || counts.iter().any(|count| *count > per_group_limit)
+    {
+        bail!("In-flight graph work exceeds its admitted concurrency limits")
+    }
+    while selected.len() + running < global_limit {
         let previous = selected.len();
         for &group in &groups {
-            if selected.len() == global_limit
+            if selected.len() + running == global_limit
                 || counts[group] >= per_group_limit
                 || (counts[group] == 0 && active_groups >= group_limit)
             {
@@ -86,6 +103,7 @@ pub(super) fn ready_wave(
             let candidate = nodes.iter().enumerate().find(|(index, node)| {
                 node.group == group
                     && node.completed.is_none()
+                    && !node.in_flight
                     && !selected.contains(index)
                     && node
                         .dependencies
