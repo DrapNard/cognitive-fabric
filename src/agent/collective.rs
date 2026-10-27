@@ -573,9 +573,7 @@ pub(super) async fn run(
     session: &mut sessions::Lease,
 ) -> Result<Outcome> {
     let saved = session.state.clone();
-    if saved.typed_evidence_sha256.is_some() {
-        bail!("Mixed typed-evidence continuation cannot restore its checked result envelope; no work was replayed")
-    }
+    let restored_typed_evidence = session.restore_typed_evidence(request)?;
     let mode = saved.mode.as_str();
     let mut graph = Graph {
         session,
@@ -597,7 +595,7 @@ pub(super) async fn run(
         output_tokens: Some(0),
         checked: None,
         overlapped_pair: None,
-        typed_evidence: None,
+        typed_evidence: restored_typed_evidence,
     };
     let mut advice = saved.advice.clone();
     let mut typed_work = if saved.calls == 0

@@ -11,6 +11,7 @@ pub mod protocol;
 mod session_cleanup;
 mod session_context;
 mod sessions;
+mod typed_evidence;
 mod typed_experts;
 mod types;
 pub mod unix;

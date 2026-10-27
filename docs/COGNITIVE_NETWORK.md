@@ -1,5 +1,41 @@
 # Cognitive network implementation
 
+## Restore finalized checked evidence for client continuations — 2026-10-27
+
+**Implemented bounded evidence restoration; interrupted provider execution and
+general mixed DAG recovery remain Partial; runtime unverified.**
+`src/agent/sessions.rs` now publishes the structured checked-result envelope and
+its version-2 admission audit in the same task-claim/checksum transaction after all
+per-operation verification charges. A combined-checkpoint size preflight precedes
+those charges; neither the 16,384-byte envelope nor the 32,768-byte session limit
+is increased. Partial charges retain only a blocking marker.
+
+`src/agent/typed_evidence.rs` rejects duplicate/unknown fields, malformed identities,
+unknown capabilities, duplicate operation IDs, invalid provider projections and
+mismatched root/envelope/result digests. Raw values retain their exact JSON number
+spelling; result hashes cover the value excluding surrounding JSON framing
+whitespace. Original provider-output digests remain in the execution audits.
+Results retain their original untrusted-data status; a digest is an integrity link,
+not an independent signature or a fresh proof of computation.
+
+`src/agent/collective.rs` restores validated evidence when continuing the original
+client task, including tool-result continuations. The original message-history
+binding, same-boot clock, calls, tool charges and root policy still apply. The
+restoration query requires one task-specific finalized admission record, has a
+bounded payload/row count and a one-second SQLite progress limit. Restoration
+records a digest-only audit and never resolves providers, executes computations,
+recharges checks, grants capabilities or refreshes task limits. Reasoning receives
+the envelope again; language roles retain their existing reference-body boundary.
+
+Legacy hash-only or partial admission, missing/ambiguous audit records and changed
+evidence remain refused. This supersedes the blanket refusal of all finalized
+typed-evidence continuations, not the refusal to replay interrupted execution.
+The final natural-language answer remains semantically unverified. No automatic
+model training or raw prose memory is added; the saved object is a bounded result
+schema. Static formatting, locked workspace/all-target compilation, strict Clippy
+and whitespace checks are the validation scope. No tests, benchmarks, live
+inference, recovery execution, model activation or installation performed.
+
 ## Overlap typed work with independent Jev-R advice — 2026-10-27
 
 **Implemented bounded cross-kind overlap; general mixed DAG and recovery Partial,

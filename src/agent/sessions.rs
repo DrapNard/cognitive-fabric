@@ -32,6 +32,8 @@ pub(super) struct State {
     pub advice: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) typed_evidence_sha256: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    typed_evidence: Option<String>,
     history_len: usize,
     history_sha256: String,
     pending: Vec<String>,
@@ -475,6 +477,11 @@ impl State {
             || self.prompt_bytes > self.input_limit
             || self.proposals > self.tool_limit
             || self.advice.len() > 2000
+            || self.typed_evidence.as_ref().is_some_and(|raw| {
+                raw.len() > 16_384
+                    || self.typed_evidence_sha256.as_deref()
+                        != Some(sha256(raw.as_bytes()).as_str())
+            })
             || self.typed_evidence_sha256.as_ref().is_some_and(|digest| {
                 digest.len() != 64
                     || !digest
@@ -748,6 +755,7 @@ impl Lease {
             proposals: 0,
             advice: String::new(),
             typed_evidence_sha256: None,
+            typed_evidence: None,
             history_len: 0,
             history_sha256: sha256(b"[]"),
             pending: vec![],
@@ -1074,13 +1082,14 @@ impl Lease {
                 capability => capability.as_str(),
             };
             policy.authorize(&self.task, "jev-plus", capability)?;
+            let value = serde_json::value::RawValue::from_string(part.value.trim().to_owned())?;
             evidence.push(OperationEvidence {
                 operation_id: &part.id,
                 capability: part.work.capability().as_str(),
                 checker: part.work.checker(),
                 criterion_sha256: part.work.criterion_digest().to_owned(),
-                result_sha256: sha256(part.value.as_bytes()),
-                value: serde_json::value::RawValue::from_string(part.value.clone())?,
+                result_sha256: sha256(value.get().as_bytes()),
+                value,
                 provider: &part.provider_identity,
             });
         }
@@ -1101,6 +1110,14 @@ impl Lease {
             bail!("Typed evidence exceeds the bounded reasoning context")
         }
 
+        let digest = sha256(envelope.as_bytes());
+        super::typed_evidence::validate(&envelope, result.identity.query_digest(), &digest)?;
+        // Check the combined durable snapshot before charging verification. The
+        // existing 32 KiB limit also includes references and task history metadata.
+        let mut published = self.state.clone();
+        published.typed_evidence_sha256 = Some(digest.clone());
+        published.typed_evidence = Some(envelope.clone());
+        raw_state(&published)?;
         // Persist the evidence identity atomically with the first verifier
         // reservation. A later continuation cannot charge and admit it twice.
         self.state.typed_evidence_sha256 = Some(sha256(envelope.as_bytes()));
@@ -1127,12 +1144,15 @@ impl Lease {
             )?;
         }
         remaining(&self.state.clock)?;
-        self.store.event(
-            &self.task,
+        let mut next = self.state.clone();
+        next.typed_evidence = Some(envelope.clone());
+        self.write_active(
+            next,
             "agent_typed_evidence_admitted",
-            "verifier-r",
             json!({
-                "format_version":1,
+                "format_version":2,
+                "admission_generation":self.generation,
+                "verifier_charges_completed":true,
                 "root_query_sha256":result.identity.query_digest(),
                 "operation_count":result.parts.len(),
                 "independent_advisory_calls":2 * usize::from(overlapped_advisory_pair),
@@ -1145,6 +1165,71 @@ impl Lease {
             }),
         )?;
         Ok(envelope)
+    }
+
+    /// Restore only a finalized evidence checkpoint. This never reselects routes,
+    /// invokes providers, reruns checks, grants capabilities or refunds charges.
+    pub fn restore_typed_evidence(&self, request: &Turn) -> Result<Option<String>> {
+        let Some(digest) = self.state.typed_evidence_sha256.as_deref() else {
+            if self.state.typed_evidence.is_some() {
+                bail!("Typed evidence checkpoint has no integrity identity")
+            }
+            return Ok(None);
+        };
+        remaining(&self.state.clock)?;
+        let raw = self.state.typed_evidence.as_deref().ok_or_else(|| {
+            anyhow::anyhow!(
+                "Typed evidence admission is incomplete or legacy; no providers were replayed"
+            )
+        })?;
+        let root = sha256(self.original_objective(request)?.as_bytes());
+        let count = super::typed_evidence::validate(raw, &root, digest)?;
+        let db = self.store.lock()?;
+        let started = Instant::now();
+        db.progress_handler(
+            1000,
+            Some(move || started.elapsed() > Duration::from_secs(1)),
+        );
+        let scan_deadline = SessionSqlProgressReset(&db);
+        let mut statement = db.prepare(
+            "SELECT CASE WHEN length(CAST(payload AS BLOB))<=8192 THEN payload END FROM events WHERE task_id=?1 AND kind='agent_typed_evidence_admitted' AND source='jev-r' ORDER BY id LIMIT 2"
+        )?;
+        let records = statement
+            .query_map([&self.task], |row| row.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        if records.len() != 1 {
+            bail!("Typed evidence checkpoint has no unique finalized admission record")
+        }
+        let record = crate::strict_json::value(records[0].as_bytes(), 8192)?;
+        if record["format_version"] != 2
+            || record["admission_generation"] != 0
+            || record["evidence_sha256"].as_str() != Some(digest)
+            || record["root_query_sha256"].as_str() != Some(root.as_str())
+            || record["operation_count"].as_u64() != Some(count as u64)
+            || record["verifier_charges_completed"] != true
+            || record["compiled_operation_contracts_match"] != true
+            || record["original_goal_semantics_verified"] != false
+            || record["language_presentation_verified"] != false
+            || record["permissions_granted"] != false
+        {
+            bail!("Typed evidence admission record does not match the checkpoint")
+        }
+        drop(statement);
+        drop(scan_deadline);
+        drop(db);
+        remaining(&self.state.clock)?;
+        self.store.event(
+            &self.task,
+            "agent_typed_evidence_restored",
+            "verifier-r",
+            json!({
+                "format_version":1,"generation":self.generation,"root_query_sha256":root,
+                "evidence_sha256":digest,"operation_count":count,"providers_replayed":false,
+                "verification_charges_replayed":false,"original_goal_semantics_verified":false,
+                "permissions_granted":false
+            }),
+        )?;
+        Ok(Some(raw.to_owned()))
     }
 
     pub fn verify_typed_presentation(
