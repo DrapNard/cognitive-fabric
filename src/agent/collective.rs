@@ -60,6 +60,7 @@ struct Graph<'a> {
     checked: Option<(String, Option<bool>)>,
     overlapped_pair: Option<(Completion, Completion)>,
     typed_evidence: Option<String>,
+    expert_capability_scope: Option<Vec<String>>,
 }
 
 struct PreparedAdvisoryPair {
@@ -103,6 +104,28 @@ async fn dispatch_advisory_pair(
 }
 
 impl Graph<'_> {
+    fn expert_routing_interpretation(
+        &self,
+        original: &crate::language::Interpretation,
+    ) -> Result<crate::language::Interpretation> {
+        let mut routed = original.clone();
+        if let Some(scope) = &self.expert_capability_scope {
+            if scope
+                .iter()
+                .any(|capability| !original.required_capabilities.contains(capability))
+            {
+                bail!("Expert routing scope adds an undeclared capability")
+            }
+            routed
+                .required_capabilities
+                .retain(|capability| scope.contains(capability));
+            routed
+                .capability_versions
+                .retain(|capability, _| scope.contains(capability));
+        }
+        Ok(routed)
+    }
+
     fn turn(&self, role: &str, advice: &str, allocation: usize) -> Turn {
         let mut turn = self.original.clone();
         let language_boundary = self.runtime.cfg.language_model().is_some()
@@ -596,6 +619,7 @@ pub(super) async fn run(
         checked: None,
         overlapped_pair: None,
         typed_evidence: restored_typed_evidence,
+        expert_capability_scope: None,
     };
     let mut advice = saved.advice.clone();
     let mut typed_work = if saved.calls == 0
@@ -636,6 +660,7 @@ pub(super) async fn run(
         )?;
         let interpretation = parsed.interpretation;
         use_typed_evidence = parsed.typed_evidence;
+        graph.expert_capability_scope = parsed.reasoning_capabilities;
         if !using_typed {
             if let Some(translation) = parsed.typed_goal {
                 typed_work = graph
@@ -658,7 +683,23 @@ pub(super) async fn run(
             bail!("Requested typed evidence is outside the admitted provider route")
         }
         if !using_typed || use_typed_evidence {
-            graph.session.select_experts(runtime, &interpretation)?;
+            let routing = graph.expert_routing_interpretation(&interpretation)?;
+            if graph
+                .expert_capability_scope
+                .as_ref()
+                .is_none_or(|scope| !scope.is_empty())
+            {
+                graph.session.select_experts(runtime, &routing)?;
+            }
+            if use_typed_evidence {
+                runtime.store.event(task, "agent_mixed_expert_capability_scope", "jev-plus", json!({
+                    "format_version":1,"original_interpretation_sha256":sha256(&serde_json::to_vec(&interpretation)?),
+                    "expert_routing_interpretation_sha256":sha256(&serde_json::to_vec(&routing)?),
+                    "additional_reasoning_capabilities":routing.required_capabilities,
+                    "primary_solver_retains_original_goal":true,
+                    "translated_scope_semantics_verified":false,"permissions_granted":false
+                }))?;
+            }
         }
         advice = json!({"interpretation":interpretation,"trust":"advisory_original_goal_remains_authoritative"}).to_string();
         if advice.len() > 2000 {

@@ -344,6 +344,17 @@ impl Graph<'_> {
                 clarification: None,
             }
         };
+        // An explicit empty scope means typed work covers the advertised
+        // computations; it is not permission to use a legacy unrelated workflow.
+        if self
+            .expert_capability_scope
+            .as_ref()
+            .is_some_and(Vec::is_empty)
+        {
+            self.schedule("no_additional_model_expert_capabilities", false)?;
+            return Ok(None);
+        }
+        let interpretation = self.expert_routing_interpretation(&interpretation)?;
         let expert_capacity = self.runtime.cfg.expert_parallelism.unwrap_or(1).min(4);
         let selection = expert_workflow::Plan::bound_plans(
             &self.session.state.references,

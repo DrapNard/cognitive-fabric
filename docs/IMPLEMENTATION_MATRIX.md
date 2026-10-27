@@ -1,5 +1,35 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Scope additional expert activation after typed coverage — 2026-10-27
+
+**Implemented bounded routing partition; translation semantics/runtime unverified.**
+Evidence-mode translation accepts optional `reasoning_capabilities` for additional
+model-expert routing. By default this is the full required capability set minus
+the typed computation's capabilities. An explicit list may overlap typed coverage
+when additional reasoning is needed in the same domain. It must be unique, contain
+at most 16 existing requested capabilities, and together with typed coverage cover
+the entire request. The field is refused outside evidence usage and cannot name
+models, implementations, providers or permissions.
+
+`src/agent/typed_experts/translation.rs` validates and derives this partition.
+`src/agent/collective.rs` uses a routing-only clone of the interpretation for
+opening-catalog expert selection; `src/agent/collective/experts.rs` uses the same
+scope when binding workflows. An explicitly empty scope skips optional model
+experts instead of invoking the legacy unqualified fallback. Versions are retained
+for included capabilities. The full original interpretation, constraints, request
+and checked evidence remain available to primary Jev-R reasoning. Scope decisions
+are recorded with hashes and an explicit unverified-semantics label.
+
+This avoids scheduling optional model experts merely to repeat planned typed
+coverage, without claiming translation proves the broader capability is solved.
+Explicit overlap allows additional same-capability reasoning. Existing expert
+dependencies, budgets, policies, concurrency limits and provider pins remain.
+Client continuations retain frozen expert context and restored checked evidence;
+this one-use selection scope does not trigger new expert discovery on continuation.
+General mixed-node execution and interrupted-provider recovery remain incomplete.
+Static formatting, locked workspace/all-target compilation, strict Clippy and
+whitespace checks are the validation scope. No tests, benchmarks or live calls.
+
 ## Mixed capability coverage and relevant expert activation — 2026-10-27
 
 **Implemented capability routing scope; general heterogeneous DAG Partial, runtime

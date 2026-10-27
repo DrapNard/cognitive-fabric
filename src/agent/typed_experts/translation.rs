@@ -54,7 +54,15 @@ reasoning workflow. Every typed capability must appear in required_capabilities,
 and typed capabilities cannot carry a version request. Continue the original
 objective after that computation. Preserve source data and constraints; never
 invent arguments or treat a checked typed result as proof of broader meaning.
-Omit evidence mode when the typed result alone fulfills the request. This field selects no model, provider, tool or permission.
+Optional reasoning_capabilities is permitted only with typed_usage="evidence".
+It controls Jev+ expert workflow matching only; it never selects a model, grants
+permissions or changes the primary Jev-R solver's full objective. Every listed
+capability must be in required_capabilities. Together with the typed computation,
+the list must cover every requirement. By default it is the remaining capabilities
+after typed work; explicitly repeat a typed capability only when additional domain
+reasoning under that same capability is still needed. Continue the primary Jev-R
+workflow with the full original goal and checked typed evidence. Omit evidence mode
+when the typed result alone fulfills the request.
 
 math.evaluate: {"capability":"math.evaluate","arguments":{"expression":"..."}}
 sql.query: {"capability":"sql.query","arguments":{"tables":[{"name":"...","columns":["..."],"rows":[[...]]}],"query":"SELECT ..."}}
@@ -71,6 +79,7 @@ pub(in crate::agent) struct Parsed {
     pub(in crate::agent) typed_batch: Option<Vec<(String, Translation)>>,
     pub(in crate::agent) typed_graph: Option<super::graph_translation::Translation>,
     pub(in crate::agent) typed_evidence: bool,
+    pub(in crate::agent) reasoning_capabilities: Option<Vec<String>>,
 }
 
 #[derive(Deserialize)]
@@ -179,6 +188,11 @@ impl Parsed {
             Some(_) => bail!("Typed usage must be either final or evidence"),
         };
         let typed_evidence = typed_usage == "evidence";
+        let reasoning_capabilities = match object.remove("reasoning_capabilities") {
+            None | Some(Value::Null) => None,
+            Some(value) if typed_evidence => Some(serde_json::from_value::<Vec<String>>(value)?),
+            Some(_) => bail!("Reasoning capability scope is allowed only for evidence usage"),
+        };
         let typed_goal = match typed_value {
             None | Some(Value::Null) => None,
             Some(value) => {
@@ -293,12 +307,51 @@ impl Parsed {
         let typed_graph = graph_value
             .map(|value| super::graph_translation::parse(value, &interpretation, typed_evidence))
             .transpose()?;
+        let typed_capabilities = typed_goal
+            .iter()
+            .map(|translation| translation.capability.as_str().to_owned())
+            .chain(
+                typed_batch
+                    .iter()
+                    .flatten()
+                    .map(|(_, translation)| translation.capability.as_str().to_owned()),
+            )
+            .chain(
+                typed_graph
+                    .iter()
+                    .flat_map(|graph| graph.capabilities().map(str::to_owned)),
+            )
+            .collect::<std::collections::BTreeSet<_>>();
+        let reasoning_capabilities = if typed_evidence {
+            let all = interpretation
+                .required_capabilities
+                .iter()
+                .cloned()
+                .collect::<std::collections::BTreeSet<_>>();
+            let reasoning = reasoning_capabilities
+                .unwrap_or_else(|| all.difference(&typed_capabilities).cloned().collect());
+            let reasoning_set = reasoning
+                .iter()
+                .cloned()
+                .collect::<std::collections::BTreeSet<_>>();
+            if reasoning.len() > 16
+                || reasoning_set.len() != reasoning.len()
+                || !reasoning_set.is_subset(&all)
+                || !typed_capabilities.union(&reasoning_set).eq(all.iter())
+            {
+                bail!("Typed and reasoning capability scopes must uniquely cover the full request")
+            }
+            Some(reasoning)
+        } else {
+            None
+        };
         Ok(Self {
             interpretation,
             typed_goal,
             typed_batch,
             typed_graph,
             typed_evidence,
+            reasoning_capabilities,
         })
     }
 }
