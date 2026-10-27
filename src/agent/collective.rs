@@ -543,13 +543,22 @@ pub(super) async fn run(
         overlapped_pair: None,
     };
     let mut advice = saved.advice.clone();
+    let typed_arithmetic = saved.calls == 0
+        && runtime.cfg.language_model().is_some()
+        && graph.session.arithmetic_available()
+        && request
+            .tool_choice
+            .as_ref()
+            .is_none_or(|choice| choice != "required" && !choice.is_object())
+        && crate::math::extract(graph.session.original_objective(request)?).is_some();
     if runtime.cfg.language_model().is_some() && saved.calls == 0 {
         let allocation = runtime.cfg.interface_tokens;
-        if !graph.available(&[
-            ("interface", "", allocation),
-            ("solver", "", MIN_SOLVER_TOKENS),
-            ("synthesizer", "", allocation),
-        ])? {
+        let mut opening_calls = vec![("interface", "", allocation)];
+        if !typed_arithmetic {
+            opening_calls.push(("solver", "", MIN_SOLVER_TOKENS));
+        }
+        opening_calls.push(("synthesizer", "", allocation));
+        if !graph.available(&opening_calls)? {
             bail!("Root budget cannot cover language interpretation, reasoning and presentation")
         }
         let interpreted = graph.call("interface", "", allocation).await?;
@@ -560,6 +569,22 @@ pub(super) async fn run(
         if advice.len() > 2000 {
             bail!("Structured language interpretation exceeds client context bound")
         }
+    }
+    if typed_arithmetic {
+        graph.schedule("pinned_typed_arithmetic_expert", true)?;
+        let value = graph.session.evaluate_arithmetic(runtime, request).await?;
+        graph.cycles = 1;
+        let completion = Completion {
+            content: Some(value),
+            tool_calls: Vec::new(),
+            model: "typed-arithmetic-expert".into(),
+            finish_reason: "stop".into(),
+            input_tokens: None,
+            output_tokens: None,
+        };
+        return graph
+            .finish(completion, "typed_arithmetic_compiled_match", &advice)
+            .await;
     }
     if saved.calls == 0 {
         if let Some(expert_result) = graph.expert_workflow(&advice).await? {

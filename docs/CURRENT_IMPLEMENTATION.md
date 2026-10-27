@@ -1,5 +1,21 @@
 # Current Rust implementation
 
+## First-turn typed client arithmetic — 2026-10-27
+
+The explicit language-only client collective can attach a trusted same-Store
+module broker and pin its opening routes. Exact original arithmetic goals use
+interpretation, one charged typed provider invocation, then presentation, without
+model-backed reasoning calls. The internal value must match the compiled parser;
+presented wording remains unverified. The server connects the reviewed worker via
+its existing worker flag or the approved native policy setting, with separate
+native client/Engine registries and task-owned module binding. No model is loaded
+by this addition. Other typed capabilities, natural-language input translation,
+manifest-backed client provider selection and interrupted catalog recovery remain
+incomplete. No tests, benchmarks or live inference were run. See
+[the cognitive network guide](COGNITIVE_NETWORK.md#first-turn-typed-client-arithmetic-experts)
+and the latest implementation-matrix entry for scope and static check results.
+
+
 
 ## Task-pinned alternate typed expert providers — 2026-10-24
 

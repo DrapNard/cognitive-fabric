@@ -183,6 +183,27 @@ async fn main() -> Result<()> {
     } else {
         agent
     };
+    let client_typed_modules = args.typed_module_worker && cfg.language_model().is_some();
+    // Native Engine tasks install their own owned worker from the policy and
+    // require an empty template registry. Keep the client's host registry
+    // separate; each native client turn binds it to its existing owner.
+    let native_client_modules = if cfg.language_model().is_some()
+        && native_lifecycle
+            .as_ref()
+            .is_some_and(|policy| policy.typed_module_worker)
+    {
+        let broker = Arc::new(cogfabric::fabric::modules::Broker::new(store.clone()));
+        broker.register(
+            Arc::new(
+                cogfabric::fabric::modules::ProcessModule::builtin(store.clone())?
+                    .with_process_limits(cfg.worker_process_limits)?,
+            ),
+            cogfabric::fabric::modules::Limits::default(),
+        )?;
+        Some(broker)
+    } else {
+        None
+    };
     let engine = Engine::new(cfg, store);
     let engine = if args.typed_module_worker {
         engine.with_builtin_module_worker()?
@@ -198,6 +219,13 @@ async fn main() -> Result<()> {
             engine.with_approved_native_lifecycle(policy, args.approve_native_lifecycle)?
         }
         None => engine,
+    };
+    let agent = if client_typed_modules {
+        agent.with_typed_modules(engine.modules.clone())?
+    } else if let Some(broker) = native_client_modules {
+        agent.with_typed_modules(broker)?
+    } else {
+        agent
     };
     let server = cogfabric_server::Server::new(agent, engine, &token)?;
     let listener = tokio::net::TcpListener::bind(args.bind).await?;

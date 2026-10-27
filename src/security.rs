@@ -15,7 +15,7 @@ impl TaskPolicy {
 
     /// Narrow authority for a host-created client collective. Client-declared
     /// MCP/web/file tools are never grants; this policy allows bounded shared
-    /// retrieval and only the independent compiled checkers used by the core.
+    /// retrieval, host-routed pure arithmetic and the core compiled checkers.
     pub(crate) fn client_collective(task: &str) -> Result<Self> {
         Self::scoped(
             task,
@@ -23,6 +23,7 @@ impl TaskPolicy {
                 ("jev-r", "llm.generate"),
                 ("jev-plus", "knowledge.search"),
                 ("jev-plus", "expert.workflow.advice"),
+                ("jev-plus", "math.evaluate"),
                 ("jev-plus", "ordering.verify"),
                 ("jev-plus", "sorting.verify"),
                 ("jev-plus", "path.verify"),

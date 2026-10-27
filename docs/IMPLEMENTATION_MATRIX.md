@@ -2,6 +2,42 @@
 
 
 
+
+## First-turn typed client arithmetic experts — 2026-10-27
+
+**Implemented arithmetic route; broader typed client network Partial, runtime
+unverified.** Architecture sections 4, 6, 7 and 9: `src/agent/typed_experts.rs`
+retains opening host-module routes, hashes bounded identity/implementation/limit
+metadata and dispatches a one-grant typed arithmetic request with no replay after
+intent. `src/agent/mod.rs` exposes a same-Store trusted-host broker attachment and
+binds native module forks to the existing exclusive task owner. `src/agent/sessions.rs`
+captures and audits the snapshot in the opening transaction, charges the internal
+invocation through the existing active-claim/checksum CAS and audits result hashes.
+`src/security.rs` allows the compiled pure `math.evaluate` capability in the client
+policy; attaching a broker and exact original arithmetic input remain required.
+No client/model metadata registers implementation code or executable paths.
+
+`src/agent/collective.rs` routes eligible first-turn exact arithmetic through
+interpretation → typed provider → presentation, skipping model-backed reasoning
+roles and workflows. Required/named external tools retain their client path.
+Original budgets/deadline and independent final-answer verification remain;
+compiled parser agreement on the internal value does not verify Qwen's wording.
+The HTTP executable shares the Engine registry under `--typed-module-worker`
+when an explicit language profile is configured. An approved native policy's
+`typed_module_worker` setting installs a separate client registry so the Engine's
+native template remains empty; client process modules bind to task ownership.
+No model load is added.
+
+Only arithmetic is connected; natural-language typed input translation, other
+capabilities, manifest-backed client provider selection and typed catalog recovery
+remain incomplete. Snapshots stay in process memory; tool continuations never
+repin them. No automatic retry/refund, permission self-promotion or success stub
+is introduced. Metadata hashes do not attest executable behavior. Built-in worker
+concurrency remains one and no performance improvement is claimed. Formatting,
+locked workspace/all-target compilation, strict Clippy and diff whitespace checks
+passed. No tests, benchmarks, live providers, model operations or installation
+were run.
+
 ## Restrict client language and advisory request scope — 2026-10-27
 
 **Implemented request projection; runtime unverified.** Architecture sections 4,

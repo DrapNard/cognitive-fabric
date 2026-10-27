@@ -10,6 +10,7 @@ pub mod protocol;
 mod session_cleanup;
 mod session_context;
 mod sessions;
+mod typed_experts;
 mod types;
 pub mod unix;
 use crate::{
@@ -99,6 +100,7 @@ pub struct AgentRuntime {
     native_owner: Option<Arc<crate::residency::lifecycle::Ownership>>,
     native_on_demand: bool,
     resource_pool: Option<Arc<crate::resource_scheduler::ResourcePool>>,
+    typed_modules: Option<Arc<crate::fabric::modules::Broker>>,
 }
 impl AgentRuntime {
     pub fn local(cfg: Config, store: Arc<Store>) -> Result<Self> {
@@ -153,7 +155,21 @@ impl AgentRuntime {
             native_owner: None,
             native_on_demand: false,
             resource_pool,
+            typed_modules: None,
         })
+    }
+    /// Share a trusted host registry with first-turn client expert execution.
+    /// Metadata from the client or model cannot register code or enable this path.
+    pub fn with_typed_modules(
+        mut self,
+        broker: Arc<crate::fabric::modules::Broker>,
+    ) -> Result<Self> {
+        broker.require_store(&self.store)?;
+        if self.cfg.language_model().is_none() || !self.collective_enabled() {
+            bail!("Typed client experts require explicit language-only collective routing")
+        }
+        self.typed_modules = Some(broker);
+        Ok(self)
     }
     /// Bind existing managed model instances to each durable client session.
     /// OpenAI tool proposals identify a model key, not the generating instance;
@@ -620,6 +636,15 @@ impl AgentRuntime {
                 scoped.native_owner = Some(crate::residency::lifecycle::Ownership::acquire(
                     self.store.clone(),
                 )?);
+            }
+            if let Some(owner) = &scoped.native_owner {
+                // Process-backed experts must share the existing exclusive
+                // workspace owner rather than acquiring a conflicting lease.
+                scoped.typed_modules = self
+                    .typed_modules
+                    .as_ref()
+                    .map(|broker| broker.fork_owned(owner.clone()))
+                    .transpose()?;
             }
             scoped.resource_pool = self
                 .cfg

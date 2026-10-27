@@ -45,6 +45,7 @@ pub(super) struct Lease {
     pub state: State,
     pub deadline: Instant,
     expert_catalog: Option<super::session_context::ExpertCatalog>,
+    typed_experts: Option<super::typed_experts::Snapshot>,
     done: bool,
 }
 
@@ -408,6 +409,7 @@ impl Lease {
                     state,
                     deadline,
                     expert_catalog: None,
+                    typed_experts: None,
                     done: false,
                 });
             }
@@ -454,6 +456,12 @@ impl Lease {
                 runtime.cfg.language_model().is_some(),
             )?;
         let internal_tools = u32::from(include_retrieval);
+        let typed_experts = runtime
+            .typed_modules
+            .as_ref()
+            .filter(|_| include_retrieval)
+            .map(|broker| super::typed_experts::Snapshot::capture(broker.clone(), &task))
+            .transpose()?;
         let state = State {
             version: 1,
             wall_seconds: runtime.cfg.max_wall_seconds,
@@ -491,6 +499,14 @@ impl Lease {
             "agent_session_start",
             json!({"format_version":1,"mode":state.mode,"call_limit":state.call_limit,"cycle_limit":state.cycle_limit,"output_limit":state.output_limit,"input_limit":state.input_limit,"tool_limit":state.tool_limit,"session_budget_scope":"tool_loop","raw_history_stored":false,"sensitive_derived_advice_stored":true,"reference_pins":state.reference_pins,"internal_tools":state.internal_tools}),
         )?;
+        if let Some(snapshot) = &typed_experts {
+            audit(
+                &tx,
+                &task,
+                "agent_typed_expert_snapshot",
+                snapshot.audit_metadata(),
+            )?;
+        }
         tx.commit()?;
         Ok(Self {
             store: runtime.store.clone(),
@@ -502,8 +518,87 @@ impl Lease {
             state,
             deadline: start.deadline,
             expert_catalog,
+            typed_experts,
             done: false,
         })
+    }
+
+    pub fn original_objective<'a>(&self, request: &'a Turn) -> Result<&'a str> {
+        request
+            .messages
+            .get(self.state.objective_index)
+            .and_then(|message| message.content.as_deref())
+            .ok_or_else(|| anyhow::anyhow!("Original collective objective is missing"))
+    }
+
+    pub fn arithmetic_available(&self) -> bool {
+        self.generation == 0
+            && self
+                .state
+                .proposals
+                .saturating_add(self.state.internal_tools)
+                < self.state.tool_limit
+            && self
+                .typed_experts
+                .as_ref()
+                .is_some_and(|snapshot| snapshot.arithmetic_available())
+    }
+
+    /// Dispatch once from the opening host snapshot. Interrupted or uncertain
+    /// operations are charged and cannot be restored or retried through a tool turn.
+    pub async fn evaluate_arithmetic(
+        &mut self,
+        runtime: &AgentRuntime,
+        request: &Turn,
+    ) -> Result<String> {
+        if !self.arithmetic_available()
+            || self.state.calls != 1
+            || self.state.cycles != 0
+            || !self.state.pending.is_empty()
+            || self.state.configuration != sha256(&serde_json::to_vec(&runtime.cfg)?)
+            || !Arc::ptr_eq(&self.store, &runtime.store)
+        {
+            bail!("Typed arithmetic is outside the original interpretation boundary")
+        }
+        let expression =
+            crate::math::extract(self.original_objective(request)?).ok_or_else(|| {
+                anyhow::anyhow!("Typed arithmetic requires an exact original arithmetic goal")
+            })?;
+        let snapshot = self
+            .typed_experts
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("Opening typed expert snapshot is unavailable"))?;
+        self.reserve_internal_tool(
+            "jev-plus",
+            "math.evaluate",
+            json!({
+                "snapshot_sha256":snapshot.digest(),
+                "module_count":snapshot.module_count(),
+                "request_sha256":sha256(expression.as_bytes()),
+                "permissions_granted":false,
+                "model_selected_input":false
+            }),
+        )?;
+        let deadline = self
+            .deadline
+            .min(remaining(&self.state.clock)?)
+            .min(Instant::now() + Duration::from_secs(runtime.cfg.timeout_seconds.min(300)));
+        let result = snapshot
+            .evaluate_arithmetic(
+                &self.task,
+                expression,
+                deadline,
+                &TaskPolicy::client_collective(&self.task)?,
+            )
+            .await?;
+        remaining(&self.state.clock)?;
+        self.store.event(&self.task, "agent_typed_expert_result", "jev-plus", json!({
+            "capability":"math.evaluate", "snapshot_sha256":snapshot.digest(),
+            "request_sha256":sha256(expression.as_bytes()), "result_sha256":sha256(result.as_bytes()),
+            "compiled_arithmetic_match":true, "checker":"compiled_arithmetic_parser",
+            "presented_answer_verified":false
+        }))?;
+        Ok(result)
     }
 
     /// Refine the first expert selection from the catalog frozen at opening.

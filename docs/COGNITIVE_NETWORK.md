@@ -79,6 +79,54 @@ configurations retain their reference bodies. Client deterministic typed-provide
 execution remains incomplete; current client expert workflows still use configured
 reasoning backends, distinct from the explicit language model.
 
+## First-turn typed client arithmetic experts
+
+With an explicit language profile, a trusted embedding host can attach its typed
+module broker through `AgentRuntime::with_typed_modules`. The broker must belong
+to the same Store. The HTTP executable shares the Engine broker when started
+with its existing `--typed-module-worker` option and a language profile. This
+registers the reviewed built-in worker; it does not load a model. Under an
+approved native lifecycle policy, `typed_module_worker: true` instead installs a
+separate client registry, preserving the empty Engine template required by native
+task setup. The explicit CLI flag remains forbidden alongside a native policy.
+Without an attached arithmetic provider, the previous bounded reasoning route
+remains.
+
+The opening transaction freezes the broker's active task routes and retains the
+exact implementations in process memory. A bounded metadata digest, broker ID and
+count are audited; the full catalog is not persisted or passed to Qwen. These
+host module routes are distinct from manifest-backed Expert Network bindings.
+Metadata cannot register code, choose executable paths or grant capabilities.
+
+For an exact original `calc:`, `calculate:` or `math:` objective, an available
+pinned arithmetic route and remaining internal tool allowance allow the client
+collective to run interpretation, one typed arithmetic request, then presentation.
+Required or named external tool choices keep the normal client-tool path. No
+model-backed workflow, planner, solver, critic or reflector runs on this route.
+Natural-language arithmetic translation and other typed capabilities are not yet
+connected to this client fast path. Interpretation cannot replace the original
+expression or pick a module. The expression retains the compiled 120-byte/parser
+complexity limits; malformed arithmetic fails rather than falling back after charge.
+
+The internal invocation is irreversibly charged with the active session CAS before
+provider admission. The broker selects only opening candidates, mints a one-call
+`math.evaluate` grant, records dispatch intent and applies its deadline/queue/result
+bounds. Unknown outcomes fail the turn without an alternate-provider replay.
+Returned values must match the compiled arithmetic parser. Presentation remains
+unverified and cannot inherit that internal check. Original model/token/input/tool
+and same-boot wall budgets remain in effect. Tool continuations do not refreeze or
+restore the typed catalog; interrupted execution is not recoverable through this
+slice. A new client request is a new task, not global duplicate suppression.
+
+Native client requests fork host module implementations under their existing
+exclusive workspace ownership before pinning; process workers retain that owner
+instead of acquiring a conflicting runtime lease. Trusted Rust modules are not
+sandboxed, and the reviewed worker process is a process boundary, not a sandbox.
+The built-in broker still defaults to one worker execution at a time. This slice
+adds a deterministic route; it does not establish general expert parallelism,
+latency improvement, reasoning quality or full client Expert Network execution.
+No tests, benchmarks, live provider calls or recovery operations were run.
+
 ## Bounded parallel work
 
 In initial Research-mode client conversations, the first expert-workflow wave
