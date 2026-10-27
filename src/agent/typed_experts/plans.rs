@@ -22,6 +22,7 @@ pub(in crate::agent) struct Entry {
     pub(in crate::agent) work: Work,
     pub(in crate::agent) expert: Option<super::providers::Selection>,
     pub(in crate::agent) capability_requirement: Option<String>,
+    pub(in crate::agent) template: Option<super::graphs::Template>,
 }
 
 /// A validated collection of independent typed operations.
@@ -38,6 +39,7 @@ pub(in crate::agent) struct PlanIdentity {
     batch: bool,
     translated: bool,
     entry_ids: Vec<String>,
+    frozen_outputs: HashSet<String>,
     output_contract: &'static str,
 }
 
@@ -62,6 +64,15 @@ impl Plan {
     /// Parse either one legacy typed query or the strict independent-batch form.
     /// Unrecognized ordinary language remains available to the normal path.
     pub(in crate::agent) fn from_query(query: &str) -> Result<Option<Self>> {
+        if let Some(entries) = super::graphs::parse(query)? {
+            return Ok(Some(Self {
+                query_digest: crate::store::sha256(query.as_bytes()),
+                entries,
+                batch: true,
+                translated: false,
+            }));
+        }
+
         if let Some(encoded) = query.strip_prefix(BATCH_PREFIX) {
             let value = crate::strict_json::value(encoded.as_bytes(), MAX_PLAN_BYTES)?;
             let document: BatchDocument = serde_json::from_value(value)?;
@@ -95,6 +106,7 @@ impl Plan {
                     work,
                     expert: operation.expert,
                     capability_requirement: operation.capability_requirement,
+                    template: None,
                 });
             }
 
@@ -116,6 +128,7 @@ impl Plan {
                 work,
                 expert: None,
                 capability_requirement: None,
+                template: None,
             }],
             batch: false,
             translated: false,
@@ -137,6 +150,7 @@ impl Plan {
                 work,
                 expert: None,
                 capability_requirement: None,
+                template: None,
             }],
             batch: false,
             translated: true,
@@ -172,6 +186,7 @@ impl Plan {
                 work,
                 expert: None,
                 capability_requirement: None,
+                template: None,
             });
         }
 
@@ -204,6 +219,14 @@ impl Plan {
     }
 
     pub(in crate::agent) fn output_contract(&self) -> &'static str {
+        if self.entries.iter().any(|entry| {
+            entry
+                .template
+                .as_ref()
+                .is_some_and(|template| template.binding_sources().next().is_some())
+        }) {
+            return "Return exactly one JSON object with exactly every operation ID as a key. For each dependency source, copy the verified output value exactly as supplied, preserving its numeric text and JSON representation. Do not modify dependency values or add prose, claims, or code fences.";
+        }
         if self.batch {
             "Return exactly one JSON object whose keys are every operation ID and whose values are that operation's verified numeric or JSON answer; include no extra keys, prose, code fences, or added claims."
         } else {
@@ -213,11 +236,18 @@ impl Plan {
 
     pub(in crate::agent) fn into_parts(self) -> (PlanIdentity, Vec<Entry>) {
         let output_contract = self.output_contract();
+        let frozen_outputs = self
+            .entries
+            .iter()
+            .filter_map(|entry| entry.template.as_ref())
+            .flat_map(|template| template.binding_sources().map(str::to_owned))
+            .collect();
         let identity = PlanIdentity {
             query_digest: self.query_digest,
             batch: self.batch,
             translated: self.translated,
             entry_ids: self.entries.iter().map(|entry| entry.id.clone()).collect(),
+            frozen_outputs,
             output_contract,
         };
         (identity, self.entries)
@@ -229,12 +259,20 @@ impl PlanIdentity {
         &self.query_digest
     }
 
+    pub(in crate::agent) fn entry_ids(&self) -> impl Iterator<Item = &str> {
+        self.entry_ids.iter().map(String::as_str)
+    }
+
     pub(in crate::agent) fn translated(&self) -> bool {
         self.translated
     }
 
     pub(in crate::agent) fn output_contract(&self) -> &'static str {
         self.output_contract
+    }
+
+    pub(in crate::agent) fn requires_exact_output(&self, id: &str) -> bool {
+        self.frozen_outputs.contains(id)
     }
 
     /// Assemble verified per-operation answers into the public response shape.

@@ -72,8 +72,56 @@ impl Work {
                     | "path"
                     | "csp"
                     | "typed-batch"
+                    | "typed-graph"
             )
         })
+    }
+
+    /// Build host-pinned typed work from an exact typed-graph node argument
+    /// object. The arguments contain only domain data; capability selection is
+    /// supplied separately by the trusted graph binding.
+    pub(in crate::agent) fn from_arguments(
+        capability: Capability,
+        args: &serde_json::Value,
+    ) -> Result<Self> {
+        let object = args
+            .as_object()
+            .ok_or_else(|| anyhow::anyhow!("Typed graph arguments must be a JSON object"))?;
+
+        let query = if capability == Capability::MathEvaluate {
+            if object.len() != 1 || !object.contains_key("expression") {
+                bail!("Arithmetic graph arguments must contain only expression")
+            }
+            let expression = object["expression"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Arithmetic expression must be a string"))?;
+            if !(1..=120).contains(&expression.len()) {
+                bail!("Arithmetic expression must be 1 to 120 bytes")
+            }
+            format!("calc:{expression}")
+        } else {
+            let (prefix, max_bytes) = match capability {
+                Capability::SqlQuery => ("sql", 32_000),
+                Capability::SortingVerify => ("sort", 10_000),
+                Capability::OrderingVerify => ("order", 10_000),
+                Capability::PathVerify => ("path", 10_000),
+                Capability::ConstraintsSolve => ("csp", 10_000),
+                Capability::MathEvaluate => unreachable!("handled above"),
+            };
+            let serialized = serde_json::to_string(args)?;
+            if serialized.len() > max_bytes {
+                bail!("Typed graph arguments exceed the capability byte limit")
+            }
+            format!("{prefix}:{serialized}")
+        };
+
+        let work = Self::from_query(&query)?
+            .ok_or_else(|| anyhow::anyhow!("Typed graph arguments produced no typed work"))?;
+        if work.capability() != capability {
+            bail!("Typed graph arguments produced an unexpected typed capability")
+        }
+        work.request.validate()?;
+        Ok(work)
     }
 
     pub(in crate::agent) fn from_translation(

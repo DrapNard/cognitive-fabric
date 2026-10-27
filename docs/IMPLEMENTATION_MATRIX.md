@@ -7,6 +7,42 @@
 
 
 
+
+## Exact typed dependency graphs and checked dataflow — 2026-10-27
+
+**Implemented bounded exact graph scheduling/dataflow; mixed/natural-language
+network Partial, runtime unverified.** Architecture sections 4, 6, 7 and 9:
+`src/agent/typed_experts/graphs.rs` validates strict 32,000-byte, one-to-four-node
+DAGs, fixed capabilities, existing schema-valid argument templates, exact provider
+selectors, dependencies and disjoint bounded RFC 6901 bindings. Only checked source
+results can enter existing argument fields. SQL query text cannot be a binding
+target; math expression bindings require a whole plain numeric token. Original
+and resolved arguments pass the same typed domain validation with bounded source
+expansion, copied values and argument bytes. `src/fabric/modules.rs` exposes the
+existing request-bound validator within the crate; initial plan admission and
+resolved arguments apply it before provider execution, without granting authority.
+
+`src/agent/typed_experts/goals.rs` supplies a fixed-capability argument adapter and
+protects graph syntax from language rewrites. `src/agent/typed_experts/plans.rs`
+captures graph identity, declared IDs, dependency-source output freezes and the
+strict final-output contract. `src/agent/sessions.rs` keeps the original complete
+invocation charges, uses dependency-ready owned waves with the same total/expert
+limits and shared deadlines, audits each binding before dispatch (including source
+result AND criterion hashes), and restores declared order for aggregate final
+checking. Resolved arguments cannot change the admitted capability/origin, expert
+selection, module pin or grants. Consumed source values must remain exactly the
+ones used during execution; alternative valid witnesses cannot invalidate the
+reported dataflow. Per-operation final checking and no-replay/refund behavior remain.
+
+No protocol/schema, code/model permission, model activation, trained weights or
+persistent plaintext project-memory path is added. Natural graph translation,
+manifest dependency/model combinations, interrupted restore, physical completion
+and measured quality/speed remain incomplete. Exact graph templates require valid
+concrete placeholders; later data that violates a domain fails without fallback.
+No tests, benchmarks, live providers, installation, model operations or recovery
+execution were run. Formatting, locked workspace/all-target compilation, strict
+Clippy and diff whitespace checks passed.
+
 ## Frozen manifest-bound client typed providers — 2026-10-27
 
 **Implemented independent typed bindings; dependent/mixed network Partial,

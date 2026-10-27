@@ -188,6 +188,11 @@ pub enum Request {
 }
 
 impl Request {
+    /// Apply the broker's bounded typed contract without starting a provider.
+    pub(crate) fn validate(&self) -> Result<()> {
+        self.validate_and_size().map(|_| ())
+    }
+
     pub fn capability(&self) -> Capability {
         match self {
             Self::Arithmetic { .. } => Capability::MathEvaluate,

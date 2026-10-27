@@ -6,6 +6,7 @@
 //! preserve provenance, not executable behavior or model-weight attestations.
 
 mod goals;
+mod graphs;
 mod plans;
 mod providers;
 pub(super) mod translation;
@@ -128,6 +129,7 @@ impl Snapshot {
     }
 
     pub(super) fn supports(&self, entry: &Entry) -> Result<bool> {
+        entry.work.request().validate()?;
         self.providers.resolve(
             entry.work.capability(),
             entry.expert.as_ref(),

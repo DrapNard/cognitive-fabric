@@ -1,5 +1,23 @@
 # Current Rust implementation
 
+## Exact typed dependency graphs and checked dataflow — 2026-10-27
+
+`typed-graph:` now expresses up to four fixed-capability operations with validated
+DAG dependencies and bounded JSON-pointer data bindings. Entire-plan validation and
+invocation charges precede owned dependency-ready waves. Sources must pass compiled
+checks before values enter dependent arguments; the resolved typed request is
+validated again under the same pinned provider, capability, clock and budget.
+SQL query bindings and arbitrary math expression strings are refused. Audits link
+upstream result/criterion hashes to each resolved criterion. Consumed source values
+are frozen exactly in final presentation, preventing inconsistent witness changes.
+Declared operation order is restored for final checks even when execution followed
+a different topological order. This supersedes the preceding absence of all typed
+dataflow. Natural-language graph translation, manifest dependency/model execution,
+interrupted recovery and measured performance remain incomplete. No tests,
+benchmarks or live providers were run. See
+[typed dependency graphs](COGNITIVE_NETWORK.md#typed-dependency-graphs-and-checked-data-bindings).
+
+
 ## Frozen manifest-bound client typed providers — 2026-10-27
 
 Client typed sessions capture active provider declarations with opening exact

@@ -272,8 +272,9 @@ value is approved. Exact batches retain original-criterion verification;
 translated batches retain their original-meaning limitation. The built-in worker
 still has one execution slot, so parallel futures can queue behind that worker.
 
-These are independent batches: there is no dependency graph, output substitution,
-cross-operation iterative reasoning or interrupted typed-plan restoration. There
+These remain independent batches; the separate `typed-graph:` syntax below
+handles declared dependencies and checked data bindings. Cross-operation iterative
+reasoning and interrupted typed-plan restoration remain incomplete. There
 is no new permission, protocol/schema change, model activation or speed claim.
 No tests, benchmarks or live provider calls were run for this addition.
 
@@ -304,8 +305,8 @@ bound routes reserve the exact pinned module and never substitute another provid
 because of queue capacity, failure or timeout. Generic host-only routes preserve
 their prior bounded candidate selection before dispatch intent.
 
-Exact `typed-batch:` operations may additionally name an expert and/or capability
-version requirement. For example, with an already published and active expert:
+Exact `typed-batch:` and `typed-graph:` operations may additionally name an expert
+and/or capability version requirement. For example, with an already published and active expert:
 
 ```text
 typed-batch:{"operations":[{"id":"total","query":"calc:2+2","expert":{"id":"math.reviewed","version":"1.0.0"},"capability_requirement":"^1.2"}]}
@@ -333,6 +334,81 @@ provider program and grants no extra steps. Typed provider dependency orchestrat
 mixed provider/model execution, calibrated ranking and interrupted restoration
 remain incomplete. No model is loaded, trained or promoted by provider selection.
 No tests, benchmarks or live provider operations were run for this addition.
+
+## Typed dependency graphs and checked data bindings
+
+The exact `typed-graph:` input describes up to four typed operations as a bounded
+DAG. Each operation declares an ID, one fixed capability, concrete arguments,
+optional `depends_on`, optional `bindings`, and the same optional expert/version
+selectors available to exact batches. The entire graph is strict JSON capped at
+32,000 bytes. Unknown IDs, self-dependencies, duplicate edges/IDs, cycles, unknown
+fields and unsupported capabilities fail before provider execution.
+
+```text
+typed-graph:{
+  "operations":[
+    {"id":"descending","capability":"sorting.verify",
+     "arguments":{"values":[0],"descending":true},
+     "depends_on":["ascending"],
+     "bindings":[{"target":"/values","source":"ascending","pointer":""}]},
+    {"id":"ascending","capability":"sorting.verify",
+     "arguments":{"values":[3,1,2]}},
+    {"id":"total","capability":"math.evaluate",
+     "arguments":{"expression":"2+2"}}
+  ]
+}
+```
+
+`ascending` and `total` can start independently, while `descending` waits for
+`ascending` to pass its compiled check. Declared order need not be topological;
+result checking restores declared order before matching IDs. The final result is
+one object such as `{"ascending":[1,2,3],"descending":[3,2,1],"total":4}`.
+
+Arguments must initially pass their existing capability schema/domain checks;
+use concrete valid placeholders for fields that will later be bound. Each binding
+replaces an entire existing argument value. Its `source` must also occur in that
+operation's dependency list. `pointer` selects a JSON value in a previously checked
+source result; the empty pointer means the complete result. `target` selects a
+field within the destination arguments, never the operation/capability/provider
+metadata. Pointers use strict RFC 6901 escaping, at most 256 bytes and eight path
+segments. Array indices are canonical nonnegative integers; append syntax,
+missing targets, root replacement and overlapping/ancestor targets are refused.
+There are at most three dependencies and eight bindings per operation.
+
+Default `value` bindings transfer structured data. SQL query text cannot be bound
+from a result; the SELECT remains literal and the existing inline-data sandbox
+still applies. A math expression target requires `mode: "numeric_expression"`,
+which accepts only a whole checked JSON number and wraps its exact numeric token
+as a parenthesized expression. It does not interpolate arbitrary strings or accept
+exponent tokens unsupported by the math parser. Other data/type mismatches and
+all original domain/size limits are checked again after binding. Copied values,
+source expansion and resolved arguments have bounded 32,000-byte ceilings; the
+capability may impose a stricter bound.
+
+The host validates all routes and charges all declared invocations before polling
+any. Only operations whose prerequisites have checked results enter a wave; ready
+unrelated nodes share the existing bounded concurrency. No new deadline or budget
+is minted between waves. Binding audit precedes queue dispatch and links the root,
+operation, graph-template hash, prerequisite result **and criterion** hashes, and
+the resolved criterion. All result data stays in one-use host memory and cannot
+select code, models or permissions. A binding or provider failure stops further
+waves without replay/refund; started siblings still settle.
+
+Any output consumed by a later binding is frozen in final presentation. Qwen must
+copy that source's verified JSON representation exactly, in addition to the usual
+per-operation checks. This prevents substituting a different valid CSP/path witness
+after a dependent operation used the original witness. Whitespace changes inside
+such a source value, or equivalent numeric spellings, can therefore be refused.
+Leaf values retain their existing criterion checks. Aggregate output remains
+capped at 16,384 bytes and final checks remain charged per operation.
+
+This adds exact structured dataflow. Natural-language graph translation is not
+implemented; the existing optional `typed_batch` remains independent. Graph edges
+do not satisfy an expert manifest's declared dependency/model requirements: those
+mixed bindings remain refused. Interrupted graph restoration, mixed neural work,
+physical termination guarantees and measured speed/quality remain incomplete.
+No model is activated by binding resolution. No tests, benchmarks or live provider
+operations were run for this addition.
 
 ## Bounded parallel work
 

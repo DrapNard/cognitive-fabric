@@ -89,14 +89,71 @@ impl TypedResult {
 impl PreparedTypedWork {
     pub async fn execute(self) -> Result<TypedResult> {
         remaining(&self.clock)?;
-        let mut entries = self.entries.into_iter();
-        let mut parts = Vec::new();
-        loop {
-            let wave = entries.by_ref().take(self.concurrency).collect::<Vec<_>>();
-            if wave.is_empty() {
-                break;
+        let mut pending = self.entries;
+        let mut parts = Vec::<TypedPart>::new();
+        let mut checked_outputs = std::collections::BTreeMap::<String, String>::new();
+        while !pending.is_empty() {
+            let ready = pending
+                .iter()
+                .enumerate()
+                .filter(|(_, entry)| {
+                    entry.template.as_ref().is_none_or(|template| {
+                        template
+                            .dependencies()
+                            .iter()
+                            .all(|id| checked_outputs.contains_key(id))
+                    })
+                })
+                .take(self.concurrency)
+                .map(|(index, _)| index)
+                .collect::<Vec<_>>();
+            if ready.is_empty() {
+                bail!("Typed graph has no dependency-ready operation")
             }
+            let mut wave = ready
+                .into_iter()
+                .rev()
+                .map(|index| pending.remove(index))
+                .collect::<Vec<_>>();
+            wave.reverse();
             remaining(&self.clock)?;
+            for entry in &mut wave {
+                if let Some(template) = &entry.template {
+                    let capability = entry.work.capability();
+                    let (resolved, binding_audit) = template.resolve(&checked_outputs)?;
+                    if resolved.capability() != capability
+                        || resolved.translated() != entry.work.translated()
+                    {
+                        bail!("Typed graph binding changed its admitted capability or origin")
+                    }
+                    entry.work = resolved;
+                    let mut source_evidence = std::collections::BTreeMap::new();
+                    for source in template.dependencies() {
+                        let part =
+                            parts
+                                .iter()
+                                .find(|part| part.id == *source)
+                                .ok_or_else(|| {
+                                    anyhow::anyhow!("Typed graph prerequisite evidence is missing")
+                                })?;
+                        source_evidence.insert(
+                            source,
+                            json!({
+                                "result_sha256":sha256(part.value.as_bytes()),
+                                "criterion_sha256":part.work.criterion_digest(),
+                                "compiled_criterion_match":true
+                            }),
+                        );
+                    }
+                    self.store.event(&self.task, "agent_typed_graph_binding", "jev-plus", json!({
+                        "format_version":1, "operation_id":entry.id,
+                        "root_query_sha256":self.identity.query_digest(), "snapshot_sha256":self.snapshot.digest(),
+                        "resolved_criterion_sha256":entry.work.criterion_digest(),
+                        "source_evidence":source_evidence,
+                        "binding":binding_audit, "permissions_granted":false, "execution_started":false
+                    }))?;
+                }
+            }
             type Operation = std::pin::Pin<
                 Box<dyn Future<Output = (super::typed_experts::Entry, Result<String>)> + Send>,
             >;
@@ -146,11 +203,14 @@ impl PreparedTypedWork {
                     "presented_answer_verified":false, "automatic_retry":false
                 }))?;
                 match result {
-                    Ok(value) => parts.push(TypedPart {
-                        id: entry.id,
-                        value,
-                        work: entry.work,
-                    }),
+                    Ok(value) => {
+                        checked_outputs.insert(entry.id.clone(), value.clone());
+                        parts.push(TypedPart {
+                            id: entry.id,
+                            value,
+                            work: entry.work,
+                        });
+                    }
                     Err(_) => failed = true,
                 }
             }
@@ -159,6 +219,16 @@ impl PreparedTypedWork {
                 bail!("Typed expert wave failed; no operation will be replayed")
             }
         }
+        // Final checking uses the original declared operation order, even when
+        // dependencies caused execution to complete in a different order.
+        let mut ordered = Vec::with_capacity(parts.len());
+        for id in self.identity.entry_ids() {
+            let index = parts.iter().position(|part| part.id == id).ok_or_else(|| {
+                anyhow::anyhow!("Typed graph result is missing a declared operation")
+            })?;
+            ordered.push(parts.remove(index));
+        }
+        let parts = ordered;
         let values = parts
             .iter()
             .map(|part| (part.id.clone(), part.value.clone()))
@@ -793,6 +863,7 @@ impl Lease {
         }
         let query = self.original_objective(request)?;
         if !query.starts_with("typed-batch:")
+            && !query.starts_with("typed-graph:")
             && super::typed_experts::Work::capability_hint(query).is_none()
         {
             return Ok(None);
@@ -900,6 +971,11 @@ impl Lease {
                 .collect::<Vec<_>>();
             let presented = result.identity.presentation_parts(&ids, answer)?;
             for (part, presented) in result.parts.iter().zip(presented) {
+                if result.identity.requires_exact_output(&part.id)
+                    && presented.trim() != part.value.trim()
+                {
+                    bail!("Typed graph presentation changed a consumed dependency result")
+                }
                 part.work.verify_presentation(&part.value, &presented)?;
             }
             Ok(())
