@@ -13,10 +13,13 @@ use rusqlite::Connection;
 use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 const MAX_MANIFESTS: usize = 256;
 const MAX_CATALOG_BYTES: usize = 1024 * 1024;
+const MAX_PLAN_OPERATIONS: usize = 4;
+const MAX_PLAN_STATES: usize = 4096;
+const MAX_ROUTE_AUDIT_BYTES: usize = 4096;
 
 /// A caller-selected, immutable expert manifest version.
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -42,6 +45,16 @@ impl Selection {
 struct DeclaredCapability {
     id: String,
     version: String,
+    #[serde(skip)]
+    parsed_version: Version,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct DeclaredDependency {
+    id: String,
+    requirement: String,
+    #[serde(skip)]
+    parsed_requirement: VersionReq,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -58,7 +71,7 @@ struct Metadata {
     id: String,
     version: String,
     capabilities: Vec<DeclaredCapability>,
-    dependencies_present: bool,
+    dependencies: Vec<DeclaredDependency>,
     model_present: bool,
     provider: ProviderDeclaration,
     canonical_manifest_sha256: String,
@@ -66,6 +79,7 @@ struct Metadata {
 
 struct Record {
     metadata: Metadata,
+    parsed_version: Version,
     pin: Option<Pin>,
 }
 
@@ -74,9 +88,26 @@ pub(in crate::agent) struct Catalog {
     digest: String,
 }
 
+#[derive(Clone)]
 pub(in crate::agent) enum Route {
     Host,
     Bound { pin: Pin, audit: Value },
+}
+
+/// Host-only proof that a route was selected against the frozen catalog and
+/// this exact task operation. It intentionally cannot be deserialized.
+#[derive(Clone)]
+pub(in crate::agent) struct PreparedRoute {
+    catalog_digest: String,
+    input_digest: String,
+    route: Route,
+    audit: Value,
+}
+
+impl PreparedRoute {
+    pub(in crate::agent) fn audit_metadata(&self) -> Value {
+        self.audit.clone()
+    }
 }
 
 impl Catalog {
@@ -98,18 +129,28 @@ impl Catalog {
                 continue;
             };
             let canonical = serde_json::to_vec(&manifest)?;
+            let parsed_version = Version::parse(&manifest.version)?;
+            let mut capabilities = Vec::with_capacity(manifest.capabilities.len());
+            for capability in &manifest.capabilities {
+                capabilities.push(DeclaredCapability {
+                    id: capability.id.clone(),
+                    version: capability.version.clone(),
+                    parsed_version: Version::parse(&capability.version)?,
+                });
+            }
+            let mut dependencies = Vec::with_capacity(manifest.dependencies.len());
+            for dependency in &manifest.dependencies {
+                dependencies.push(DeclaredDependency {
+                    id: dependency.id.clone(),
+                    requirement: dependency.requirement.clone(),
+                    parsed_requirement: VersionReq::parse(&dependency.requirement)?,
+                });
+            }
             let metadata = Metadata {
                 id: manifest.id.clone(),
                 version: manifest.version.clone(),
-                capabilities: manifest
-                    .capabilities
-                    .iter()
-                    .map(|capability| DeclaredCapability {
-                        id: capability.id.clone(),
-                        version: capability.version.clone(),
-                    })
-                    .collect(),
-                dependencies_present: !manifest.dependencies.is_empty(),
+                capabilities,
+                dependencies,
                 model_present: manifest.model.is_some(),
                 provider: ProviderDeclaration {
                     module_id: provider.module_id.clone(),
@@ -123,7 +164,11 @@ impl Catalog {
                 canonical_manifest_sha256: sha256(&canonical),
             };
             let pin = exact_opening_pin(&manifest, provider.capabilities.first().copied(), routes);
-            records.push(Record { metadata, pin });
+            records.push(Record {
+                metadata,
+                parsed_version,
+                pin,
+            });
         }
 
         let encoded = records
@@ -147,8 +192,7 @@ impl Catalog {
     }
 
     /// Resolve solely against the immutable catalog captured at task opening.
-    /// A declared but unavailable or unsupported provider never falls back to a
-    /// host implementation.
+    /// This discovery API has no graph execution authority.
     pub(in crate::agent) fn resolve(
         &self,
         capability: Capability,
@@ -197,6 +241,260 @@ impl Catalog {
             (None, false, _) => Ok(Route::Host),
         }
     }
+
+    /// Jointly bind every operation to one frozen route assignment. A manifest
+    /// dependency can only be met by a directly declared graph prerequisite.
+    pub(in crate::agent) fn bind_plan(
+        &self,
+        entries: &[&super::Entry],
+        root_query_sha256: &str,
+        task: &str,
+    ) -> Result<Vec<PreparedRoute>> {
+        validate_root_digest(root_query_sha256)?;
+        let task_uuid = uuid::Uuid::parse_str(task)
+            .map_err(|_| anyhow::anyhow!("Prepared provider routes require a task UUID"))?;
+        let task = task_uuid.to_string();
+        if entries.is_empty() || entries.len() > MAX_PLAN_OPERATIONS {
+            bail!("Provider route plan must contain between one and four operations")
+        }
+
+        let mut ids = HashMap::with_capacity(entries.len());
+        for (index, entry) in entries.iter().enumerate() {
+            if entry.id.is_empty()
+                || entry.id.len() > 64
+                || ids.insert(entry.id.as_str(), index).is_some()
+            {
+                bail!("Provider route plan operation IDs must be valid and distinct")
+            }
+        }
+        let direct_dependencies = entries
+            .iter()
+            .enumerate()
+            .map(|(entry_index, entry)| {
+                let dependencies = entry
+                    .template
+                    .as_ref()
+                    .map(|template| template.dependencies())
+                    .unwrap_or_default();
+                let mut indexes = Vec::with_capacity(dependencies.len());
+                if dependencies.len() > MAX_PLAN_OPERATIONS - 1 {
+                    bail!("Provider route graph exceeds the direct dependency bound")
+                }
+                let mut unique = HashSet::with_capacity(dependencies.len());
+                for dependency in dependencies {
+                    if !unique.insert(dependency.as_str()) {
+                        bail!("Provider route graph repeats a direct dependency")
+                    }
+                    let index = *ids.get(dependency.as_str()).ok_or_else(|| {
+                        anyhow::anyhow!("Provider route graph references an unknown dependency")
+                    })?;
+                    if index == entry_index {
+                        bail!("Provider route graph contains a self dependency")
+                    }
+                    indexes.push(index);
+                }
+                Ok(indexes)
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let order = topological_order(&direct_dependencies)?;
+
+        let mut pools = Vec::with_capacity(entries.len());
+        for entry in entries {
+            let capability = entry.work.capability();
+            let req = entry
+                .capability_requirement
+                .as_deref()
+                .map(parse_requirement)
+                .transpose()?;
+            if let Some(selection) = &entry.expert {
+                selection.validate()?;
+            }
+            let declared = self
+                .records
+                .iter()
+                .any(|record| record_covers(record, capability, req.as_ref()));
+            let mut candidates = Vec::new();
+            if let Some(selection) = &entry.expert {
+                let record = self
+                    .records
+                    .iter()
+                    .find(|record| {
+                        record.metadata.id == selection.id
+                            && record.metadata.version == selection.version
+                    })
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("Selected expert version is not in the opening catalog")
+                    })?;
+                if !record_covers(record, capability, req.as_ref()) {
+                    bail!("Selected expert does not declare a compatible capability version")
+                }
+                if eligible(record) {
+                    candidates.push(Some(self.record_index(record)?));
+                } else {
+                    bail!(
+                        "Selected provider requires a model binding or an unavailable exact module"
+                    )
+                }
+            } else {
+                for (record_index, record) in self.records.iter().enumerate() {
+                    if record_covers(record, capability, req.as_ref()) && eligible(record) {
+                        candidates.push(Some(record_index));
+                    }
+                }
+                if candidates.is_empty() {
+                    if req.is_some() {
+                        bail!("No opening provider satisfies the requested capability version")
+                    }
+                    if declared {
+                        bail!(
+                            "Declared providers for this capability are unavailable or unsupported"
+                        )
+                    }
+                    if entry.expert.is_none() && entry.capability_requirement.is_none() {
+                        candidates.push(None);
+                    } else {
+                        bail!("An explicit provider selector cannot resolve to the host route")
+                    }
+                }
+            }
+            if candidates.len() > MAX_MANIFESTS {
+                bail!("Provider candidate pool exceeds its manifest bound")
+            }
+            pools.push(candidates);
+        }
+
+        let mut assignment = vec![None; entries.len()];
+        let mut state_count = 0usize;
+        if !search_assignment(
+            0,
+            &order,
+            &direct_dependencies,
+            &pools,
+            &self.records,
+            &mut assignment,
+            &mut state_count,
+        )? {
+            bail!("No bounded provider assignment satisfies the direct manifest dependencies")
+        }
+
+        let mut prepared = Vec::with_capacity(entries.len());
+        for (index, entry) in entries.iter().enumerate() {
+            let route = match assignment[index] {
+                None => Route::Host,
+                Some(record_index) => {
+                    let record = &self.records[record_index];
+                    let mut route = bound(record, entry.work.capability())?;
+                    if let Route::Bound { audit, .. } = &mut route {
+                        audit["dependency_operations"] = dependency_audit(
+                            record,
+                            &direct_dependencies[index],
+                            entries,
+                            &assignment,
+                            &self.records,
+                        )?;
+                    }
+                    route
+                }
+            };
+            let input_digest = route_input_digest(&self.digest, &task, root_query_sha256, entry)?;
+            let audit = match &route {
+                Route::Host => json!({
+                    "route": "host_registry",
+                    "catalog_sha256": self.digest,
+                    "permissions_granted": false,
+                }),
+                Route::Bound { audit, .. } => {
+                    let mut value = audit.clone();
+                    value["catalog_sha256"] = json!(self.digest);
+                    value
+                }
+            };
+            let mut audit = audit;
+            audit["selection_search_states"] = json!(state_count);
+            audit["selection_search_limit"] = json!(MAX_PLAN_STATES);
+            if serde_json::to_vec(&audit)?.len() > MAX_ROUTE_AUDIT_BYTES {
+                bail!("Prepared provider route audit exceeds its byte limit")
+            }
+            prepared.push(PreparedRoute {
+                catalog_digest: self.digest.clone(),
+                input_digest,
+                route,
+                audit,
+            });
+        }
+        Ok(prepared)
+    }
+
+    /// Validate a prepared proof and return its frozen route without reselecting.
+    pub(in crate::agent) fn route_for(
+        &self,
+        entry: &super::Entry,
+        root_query_sha256: &str,
+        task: &str,
+        proof: &PreparedRoute,
+    ) -> Result<Route> {
+        validate_root_digest(root_query_sha256)?;
+        let task_uuid = uuid::Uuid::parse_str(task)
+            .map_err(|_| anyhow::anyhow!("Prepared provider routes require a task UUID"))?;
+        if proof.catalog_digest != self.digest
+            || proof.input_digest
+                != route_input_digest(
+                    &self.digest,
+                    &task_uuid.to_string(),
+                    root_query_sha256,
+                    entry,
+                )?
+        {
+            bail!("Prepared provider route proof does not match this catalog and operation")
+        }
+        if serde_json::to_vec(&proof.audit)?.len() > MAX_ROUTE_AUDIT_BYTES {
+            bail!("Prepared provider route audit exceeds its byte limit")
+        }
+        Ok(proof.route.clone())
+    }
+
+    fn record_index(&self, needle: &Record) -> Result<usize> {
+        self.records
+            .iter()
+            .position(|record| std::ptr::eq(record, needle))
+            .ok_or_else(|| anyhow::anyhow!("Selected provider is absent from its frozen catalog"))
+    }
+}
+
+fn validate_root_digest(digest: &str) -> Result<()> {
+    if digest.len() != 64
+        || !digest
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+    {
+        bail!("Prepared provider routes require a lowercase SHA-256 root query digest")
+    }
+    Ok(())
+}
+
+fn route_input_digest(
+    catalog_digest: &str,
+    task: &str,
+    root_query_sha256: &str,
+    entry: &super::Entry,
+) -> Result<String> {
+    let dependencies = entry
+        .template
+        .as_ref()
+        .map(|template| template.dependencies())
+        .unwrap_or_default();
+    let value = json!({
+        "catalog_sha256": catalog_digest,
+        "task": task,
+        "root_query_sha256": root_query_sha256,
+        "operation_id": entry.id,
+        "capability": provider_capability(entry.work.capability()).as_str(),
+        "expert_selector": entry.expert,
+        "capability_requirement": entry.capability_requirement,
+        "direct_dependency_ids": dependencies,
+        "translated": entry.work.translated(),
+    });
+    Ok(sha256(&serde_json::to_vec(&value)?))
 }
 
 fn parse_requirement(requirement: &str) -> Result<VersionReq> {
@@ -229,18 +527,16 @@ fn record_covers(
     else {
         return false;
     };
-    requirement.is_none_or(|req| {
-        Version::parse(&declared.version).is_ok_and(|version| req.matches(&version))
-    })
+    requirement.is_none_or(|req| req.matches(&declared.parsed_version))
 }
 
 fn eligible(record: &Record) -> bool {
-    !record.metadata.dependencies_present && !record.metadata.model_present && record.pin.is_some()
+    !record.metadata.model_present && record.pin.is_some()
 }
 
 fn bound(record: &Record, capability: Capability) -> Result<Route> {
     if !eligible(record) {
-        bail!("Selected provider requires unsupported dependencies, a model binding, or an unavailable exact module")
+        bail!("Selected provider requires a model binding or an unavailable exact module")
     }
     let pin = record
         .pin
@@ -266,9 +562,148 @@ fn bound(record: &Record, capability: Capability) -> Result<Route> {
             "capability_version": capability_version,
             "provider_module_id": record.metadata.provider.module_id,
             "provider_module_version": record.metadata.provider.module_version,
-            "permissions_granted": false
+            "permissions_granted": false,
         }),
     })
+}
+
+fn topological_order(dependencies: &[Vec<usize>]) -> Result<Vec<usize>> {
+    let mut state = vec![0u8; dependencies.len()];
+    let mut order = Vec::with_capacity(dependencies.len());
+    fn visit(
+        node: usize,
+        dependencies: &[Vec<usize>],
+        state: &mut [u8],
+        order: &mut Vec<usize>,
+    ) -> Result<()> {
+        if state[node] == 1 {
+            bail!("Provider route graph contains a dependency cycle")
+        }
+        if state[node] == 2 {
+            return Ok(());
+        }
+        state[node] = 1;
+        for &dependency in &dependencies[node] {
+            if dependency >= dependencies.len() || dependency == node {
+                bail!("Provider route graph contains an invalid dependency")
+            }
+            visit(dependency, dependencies, state, order)?;
+        }
+        state[node] = 2;
+        order.push(node);
+        Ok(())
+    }
+    for node in 0..dependencies.len() {
+        visit(node, dependencies, &mut state, &mut order)?;
+    }
+    Ok(order)
+}
+
+fn search_assignment(
+    depth: usize,
+    order: &[usize],
+    direct_dependencies: &[Vec<usize>],
+    pools: &[Vec<Option<usize>>],
+    records: &[Record],
+    assignment: &mut [Option<usize>],
+    state_count: &mut usize,
+) -> Result<bool> {
+    if depth == order.len() {
+        return Ok(true);
+    }
+    let operation = order[depth];
+    for &candidate in &pools[operation] {
+        *state_count = (*state_count).saturating_add(1);
+        if *state_count > MAX_PLAN_STATES {
+            bail!("Provider route search exceeded its 4096-state safety bound")
+        }
+        if let Some(record_index) = candidate {
+            let record = &records[record_index];
+            if !dependencies_satisfied(
+                record,
+                &direct_dependencies[operation],
+                assignment,
+                records,
+            )? {
+                continue;
+            }
+        }
+        assignment[operation] = candidate;
+        if search_assignment(
+            depth + 1,
+            order,
+            direct_dependencies,
+            pools,
+            records,
+            assignment,
+            state_count,
+        )? {
+            return Ok(true);
+        }
+        assignment[operation] = None;
+    }
+    Ok(false)
+}
+
+fn dependencies_satisfied(
+    record: &Record,
+    direct_dependencies: &[usize],
+    assignment: &[Option<usize>],
+    records: &[Record],
+) -> Result<bool> {
+    for required in &record.metadata.dependencies {
+        let matched = direct_dependencies.iter().copied().any(|operation| {
+            let Some(prerequisite_record) = assignment[operation] else {
+                return false;
+            };
+            let prerequisite = &records[prerequisite_record];
+            prerequisite.metadata.id == required.id
+                && required
+                    .parsed_requirement
+                    .matches(&prerequisite.parsed_version)
+        });
+        if !matched {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+fn dependency_audit(
+    record: &Record,
+    direct_dependencies: &[usize],
+    entries: &[&super::Entry],
+    assignment: &[Option<usize>],
+    records: &[Record],
+) -> Result<Value> {
+    let mut result = Vec::with_capacity(record.metadata.dependencies.len());
+    for required in &record.metadata.dependencies {
+        let operation = direct_dependencies
+            .iter()
+            .copied()
+            .find(|operation| {
+                let Some(prerequisite_record) = assignment[*operation] else {
+                    return false;
+                };
+                let prerequisite = &records[prerequisite_record];
+                prerequisite.metadata.id == required.id
+                    && required
+                        .parsed_requirement
+                        .matches(&prerequisite.parsed_version)
+            })
+            .ok_or_else(|| anyhow::anyhow!("Selected provider dependency proof is missing"))?;
+        let selected = assignment[operation]
+            .ok_or_else(|| anyhow::anyhow!("Selected provider dependency has no expert route"))?;
+        let prerequisite = &records[selected];
+        result.push(json!({
+            "operation_id": entries[operation].id,
+            "expert_id": prerequisite.metadata.id,
+            "expert_version": prerequisite.metadata.version,
+            "required_version": required.requirement,
+            "canonical_manifest_sha256": prerequisite.metadata.canonical_manifest_sha256,
+        }));
+    }
+    Ok(Value::Array(result))
 }
 
 fn exact_opening_pin(

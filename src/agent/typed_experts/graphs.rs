@@ -263,6 +263,7 @@ pub(in crate::agent) fn parse(query: &str) -> Result<Option<Vec<Entry>>> {
             expert: operation.expert,
             capability_requirement: operation.capability_requirement,
             template: Some(template),
+            provider_route: None,
         });
     }
     Ok(Some(entries))

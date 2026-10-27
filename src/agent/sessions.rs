@@ -66,6 +66,7 @@ struct TypedPart {
     id: String,
     value: String,
     work: super::typed_experts::Work,
+    provider_identity: serde_json::Value,
 }
 
 pub(super) struct TypedResult {
@@ -141,7 +142,8 @@ impl PreparedTypedWork {
                             json!({
                                 "result_sha256":sha256(part.value.as_bytes()),
                                 "criterion_sha256":part.work.criterion_digest(),
-                                "compiled_criterion_match":true
+                                "compiled_criterion_match":true,
+                                "provider_identity":part.provider_identity
                             }),
                         );
                     }
@@ -200,15 +202,37 @@ impl PreparedTypedWork {
                     "compiled_criterion_match":result.is_ok(),
                     "original_goal_semantics_verified":result.is_ok() && !self.identity.translated(),
                     "language_translated":self.identity.translated(), "checker":entry.work.checker(),
-                    "presented_answer_verified":false, "automatic_retry":false
+                    "presented_answer_verified":false, "automatic_retry":false,
+                    "prepared_provider_route":entry.provider_route.as_ref().map(|proof|proof.audit_metadata())
                 }))?;
                 match result {
                     Ok(value) => {
+                        let proof = entry.provider_route.as_ref().ok_or_else(|| {
+                            anyhow::anyhow!("Checked typed result has no prepared provider route")
+                        })?;
+                        let metadata = proof.audit_metadata();
+                        let mut provider_identity = serde_json::Map::new();
+                        for key in [
+                            "route",
+                            "catalog_sha256",
+                            "expert_id",
+                            "expert_version",
+                            "canonical_manifest_sha256",
+                            "provider_module_id",
+                            "provider_module_version",
+                            "capability",
+                            "capability_version",
+                        ] {
+                            if let Some(value) = metadata.get(key) {
+                                provider_identity.insert(key.to_owned(), value.clone());
+                            }
+                        }
                         checked_outputs.insert(entry.id.clone(), value.clone());
                         parts.push(TypedPart {
                             id: entry.id,
                             value,
                             work: entry.work,
+                            provider_identity: serde_json::Value::Object(provider_identity),
                         });
                     }
                     Err(_) => failed = true,
@@ -771,7 +795,7 @@ impl Lease {
     fn typed_plan_eligible(
         &self,
         request: &Turn,
-        plan: &super::typed_experts::Plan,
+        plan: &mut super::typed_experts::Plan,
         calls: usize,
     ) -> Result<bool> {
         if self.generation != 0
@@ -803,10 +827,8 @@ impl Lease {
         let Some(snapshot) = &self.typed_experts else {
             return Ok(false);
         };
-        for entry in plan.entries() {
-            if !snapshot.supports(entry)? {
-                return Ok(false);
-            }
+        if !snapshot.bind_plan(plan)? {
+            return Ok(false);
         }
         let policy = TaskPolicy::client_collective(&self.task)?;
         for work in plan.works() {
@@ -825,11 +847,11 @@ impl Lease {
         {
             return Ok(None);
         }
-        let plan = super::typed_experts::Plan::from_translation(
+        let mut plan = super::typed_experts::Plan::from_translation(
             self.original_objective(request)?,
             translation,
         )?;
-        if self.typed_plan_eligible(request, &plan, 1)? {
+        if self.typed_plan_eligible(request, &mut plan, 1)? {
             Ok(Some(plan))
         } else {
             Ok(None)
@@ -846,11 +868,11 @@ impl Lease {
         {
             return Ok(None);
         }
-        let plan = super::typed_experts::Plan::from_translated_entries(
+        let mut plan = super::typed_experts::Plan::from_translated_entries(
             self.original_objective(request)?,
             translations,
         )?;
-        if self.typed_plan_eligible(request, &plan, 1)? {
+        if self.typed_plan_eligible(request, &mut plan, 1)? {
             Ok(Some(plan))
         } else {
             Ok(None)
@@ -867,11 +889,11 @@ impl Lease {
         {
             return Ok(None);
         }
-        let plan = super::typed_experts::Plan::from_translated_graph(
+        let mut plan = super::typed_experts::Plan::from_translated_graph(
             self.original_objective(request)?,
             translation,
         )?;
-        if self.typed_plan_eligible(request, &plan, 1)? {
+        if self.typed_plan_eligible(request, &mut plan, 1)? {
             Ok(Some(plan))
         } else {
             Ok(None)
@@ -889,10 +911,10 @@ impl Lease {
         {
             return Ok(None);
         }
-        let Some(plan) = super::typed_experts::Plan::from_query(query)? else {
+        let Some(mut plan) = super::typed_experts::Plan::from_query(query)? else {
             return Ok(None);
         };
-        if self.typed_plan_eligible(request, &plan, 0)? {
+        if self.typed_plan_eligible(request, &mut plan, 0)? {
             Ok(Some(plan))
         } else {
             Ok(None)
@@ -905,10 +927,10 @@ impl Lease {
         &mut self,
         runtime: &AgentRuntime,
         request: &Turn,
-        plan: super::typed_experts::Plan,
+        mut plan: super::typed_experts::Plan,
     ) -> Result<PreparedTypedWork> {
         let interpreted_calls = usize::from(plan.translated());
-        if !self.typed_plan_eligible(request, &plan, interpreted_calls)?
+        if !self.typed_plan_eligible(request, &mut plan, interpreted_calls)?
             || runtime.cfg.language_model().is_none()
             || self.state.configuration != sha256(&serde_json::to_vec(&runtime.cfg)?)
             || !Arc::ptr_eq(&self.store, &runtime.store)

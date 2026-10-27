@@ -404,9 +404,8 @@ capped at 16,384 bytes and final checks remain charged per operation.
 
 This adds exact structured dataflow. The client-only natural-language graph
 extension below uses the same validated dataflow; `typed_batch` remains independent.
-Graph edges
-do not satisfy an expert manifest's declared dependency/model requirements: those
-mixed bindings remain refused. Interrupted graph restoration, mixed neural work,
+Graph edges can satisfy manifest-declared expert prerequisites under the frozen
+provider routing rules below. Simultaneous model/provider bindings remain refused. Interrupted graph restoration, mixed neural work,
 physical termination guarantees and measured speed/quality remain incomplete.
 No model is activated by binding resolution. No tests, benchmarks or live provider
 operations were run for this addition.
@@ -1290,3 +1289,29 @@ Static formatting, compilation and lint inspection only. No tests, benchmarks,
 provider calls, model loads/unloads, configuration changes or installation were
 performed during implementation. End-to-end runtime behavior and reasoning speed
 remain unverified; general intermediate reasoning recovery remains incomplete.
+
+## Frozen typed provider prerequisites
+
+Typed provider selection now considers the entire bounded graph before dispatch.
+Each manifest dependency must match the expert ID and expert-version requirement
+of a selected direct predecessor operation. Capability versions and provider-module
+versions remain separate constraints. The runtime never invents prerequisite
+arguments, operations or edges; missing prerequisites fail admission.
+
+Topological joint selection can backtrack earlier provider choices, with at most
+4,096 candidate probes across at most four operations. Reaching this bound refuses
+the plan even if a later feasible assignment might exist. Host fallback cannot
+satisfy a named expert dependency. All route choices are frozen in host-only proofs
+bound to the opening catalog, task, root request and operation routing metadata.
+Checked dataflow may resolve arguments without selecting another provider.
+
+Dependent operations start only after direct predecessors produce checked results.
+Independent ready operations retain configured bounded parallelism; worker limits
+can still serialize them. Audits record matched prerequisite identities and hashes,
+actual checked result/criterion hashes, and bounded selection effort. Permissions,
+original deadlines, invocation charges and no-replay behavior remain enforced.
+These proofs are internal routing guards, not independent security attestations.
+
+Mixed neural/provider execution and interrupted graph restoration remain Partial.
+Natural-language translation remains semantically unverified. Static compilation
+and lint checks passed; no tests, benchmarks or live provider calls were run.

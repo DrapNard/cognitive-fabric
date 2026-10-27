@@ -23,6 +23,7 @@ pub(in crate::agent) struct Entry {
     pub(in crate::agent) expert: Option<super::providers::Selection>,
     pub(in crate::agent) capability_requirement: Option<String>,
     pub(in crate::agent) template: Option<super::graphs::Template>,
+    pub(in crate::agent) provider_route: Option<super::providers::PreparedRoute>,
 }
 
 /// A validated collection of independent typed operations.
@@ -107,6 +108,7 @@ impl Plan {
                     expert: operation.expert,
                     capability_requirement: operation.capability_requirement,
                     template: None,
+                    provider_route: None,
                 });
             }
 
@@ -129,6 +131,7 @@ impl Plan {
                 expert: None,
                 capability_requirement: None,
                 template: None,
+                provider_route: None,
             }],
             batch: false,
             translated: false,
@@ -151,6 +154,7 @@ impl Plan {
                 expert: None,
                 capability_requirement: None,
                 template: None,
+                provider_route: None,
             }],
             batch: false,
             translated: true,
@@ -227,6 +231,7 @@ impl Plan {
                 expert: None,
                 capability_requirement: None,
                 template: None,
+                provider_route: None,
             });
         }
 
@@ -252,6 +257,36 @@ impl Plan {
 
     pub(in crate::agent) fn entries(&self) -> impl Iterator<Item = &Entry> {
         self.entries.iter()
+    }
+
+    /// Bind the provider's prepared routing proofs to entries in plan order.
+    /// Existing proofs are immutable and cannot be silently replaced.
+    pub(in crate::agent) fn bind_routes(
+        &mut self,
+        routes: Vec<super::providers::PreparedRoute>,
+    ) -> Result<()> {
+        if routes.len() != self.entries.len() {
+            bail!("Prepared route count does not match typed plan entries")
+        }
+        if self
+            .entries
+            .iter()
+            .any(|entry| entry.provider_route.is_some())
+        {
+            bail!("Typed plan already has prepared provider routes")
+        }
+        for (entry, route) in self.entries.iter_mut().zip(routes) {
+            entry.provider_route = Some(route);
+        }
+        Ok(())
+    }
+
+    /// Count entries with a provider routing proof, including partial bindings.
+    pub(in crate::agent) fn routes_present(&self) -> usize {
+        self.entries
+            .iter()
+            .filter(|entry| entry.provider_route.is_some())
+            .count()
     }
 
     pub(in crate::agent) fn translated(&self) -> bool {

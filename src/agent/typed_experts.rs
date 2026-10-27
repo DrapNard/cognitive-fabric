@@ -40,6 +40,7 @@ pub(super) struct Snapshot {
     digest: String,
     module_count: usize,
     broker_id: String,
+    task: String,
     module_digest: String,
     providers: providers::Catalog,
 }
@@ -112,6 +113,7 @@ impl Snapshot {
             digest,
             module_count: pins.len(),
             broker_id,
+            task: task.to_owned(),
             module_digest,
             providers,
         })
@@ -130,14 +132,36 @@ impl Snapshot {
             && self.providers.resolve(capability, None, None).is_ok()
     }
 
-    pub(super) fn supports(&self, entry: &Entry) -> Result<bool> {
-        entry.work.request().validate()?;
-        self.providers.resolve(
-            entry.work.capability(),
-            entry.expert.as_ref(),
-            entry.capability_requirement.as_deref(),
-        )?;
-        Ok(self.routes.contains_key(&entry.work.capability()))
+    pub(super) fn bind_plan(&self, plan: &mut Plan) -> Result<bool> {
+        for entry in plan.entries() {
+            entry.work.request().validate()?;
+        }
+        if plan.routes_present() != 0 {
+            if plan.routes_present() != plan.len() {
+                bail!("Typed plan has partially pinned provider routes")
+            }
+            for entry in plan.entries() {
+                let proof = entry
+                    .provider_route
+                    .as_ref()
+                    .ok_or_else(|| anyhow::anyhow!("Typed provider route proof is missing"))?;
+                self.providers
+                    .route_for(entry, plan.query_digest(), &self.task, proof)?;
+            }
+            return Ok(true);
+        }
+        let entries = plan.entries().collect::<Vec<_>>();
+        let proofs = self
+            .providers
+            .bind_plan(&entries, plan.query_digest(), &self.task)?;
+        if entries
+            .iter()
+            .any(|entry| !self.routes.contains_key(&entry.work.capability()))
+        {
+            return Ok(false);
+        }
+        plan.bind_routes(proofs)?;
+        Ok(true)
     }
 
     /// Bounded audit summary only; never includes module bodies, requests, or results.
@@ -180,11 +204,16 @@ impl Snapshot {
             bail!("Typed expert snapshot belongs to another task")
         }
         let operation = async {
-            let route = self.providers.resolve(
-                capability,
-                entry.expert.as_ref(),
-                entry.capability_requirement.as_deref(),
-            )?;
+            if self.task != task {
+                bail!("Typed provider snapshot belongs to another task")
+            }
+            let proof = entry
+                .provider_route
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("Typed operation has no admitted provider plan"))?;
+            let route = self
+                .providers
+                .route_for(entry, root_query_sha256, task, proof)?;
             let (reservation, binding) = match route {
                 providers::Route::Host => (
                     self.broker

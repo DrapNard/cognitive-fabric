@@ -1,5 +1,25 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Frozen typed provider prerequisite routing — 2026-10-27
+
+**Implemented bounded routing mechanics; mixed neural/provider execution and
+interrupted restoration Partial; runtime unverified.** Typed graph routes jointly
+select opening-catalog providers, matching each manifest prerequisite against a
+direct predecessor's selected expert ID/version. A 4,096-probe bounded search can
+backtrack earlier selections. Immutable host-only route proofs precede dispatch;
+checked predecessor outputs gate dependent calls and independent ready work retains
+bounded concurrency. No prerequisite arguments or edges are invented.
+
+Files: `src/agent/typed_experts/providers.rs`, `plans.rs`, `graphs.rs`,
+`src/agent/typed_experts.rs`, `src/agent/sessions.rs`. Provider/result identities
+are retained in bounded audits; existing task charges and deadlines remain.
+This supersedes earlier blanket refusal of manifest dependencies, not the refusal
+of simultaneous model/provider bindings. See
+[provider prerequisites](COGNITIVE_NETWORK.md#frozen-typed-provider-prerequisites).
+Validation: formatting, locked workspace/all-target compilation, strict Clippy and
+diff whitespace checks. No tests, benchmarks or live inference run; no speed or
+reasoning-quality claims.
+
 
 
 
