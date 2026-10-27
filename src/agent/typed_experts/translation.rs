@@ -64,6 +64,14 @@ reasoning under that same capability is still needed. Continue the primary Jev-R
 workflow with the full original goal and checked typed evidence. Omit evidence mode
 when the typed result alone fulfills the request.
 
+Optional expert_dependency: "typed_results" (default) or "independent" is allowed
+only in evidence usage. It applies only to the optional Jev+ model-expert advisory
+workflow. "independent" declares those expert inputs do not need typed results,
+so that advisory work may overlap typed computation; the final Jev-R solver always
+waits for both. This declaration is unverified translation guidance. It selects no
+model, provider, permission or tool.
+
+
 math.evaluate: {"capability":"math.evaluate","arguments":{"expression":"..."}}
 sql.query: {"capability":"sql.query","arguments":{"tables":[{"name":"...","columns":["..."],"rows":[[...]]}],"query":"SELECT ..."}}
 sorting.verify: {"capability":"sorting.verify","arguments":{"values":[1,2],"descending":false}}
@@ -80,6 +88,7 @@ pub(in crate::agent) struct Parsed {
     pub(in crate::agent) typed_graph: Option<super::graph_translation::Translation>,
     pub(in crate::agent) typed_evidence: bool,
     pub(in crate::agent) reasoning_capabilities: Option<Vec<String>>,
+    pub(in crate::agent) independent_experts: bool,
 }
 
 #[derive(Deserialize)]
@@ -188,6 +197,14 @@ impl Parsed {
             Some(_) => bail!("Typed usage must be either final or evidence"),
         };
         let typed_evidence = typed_usage == "evidence";
+        let independent_experts = match object.remove("expert_dependency") {
+            None => false,
+            Some(Value::String(value)) if typed_evidence && value == "typed_results" => false,
+            Some(Value::String(value)) if typed_evidence && value == "independent" => true,
+            Some(_) => bail!(
+                "Expert dependency must be typed_results or independent within evidence usage"
+            ),
+        };
         let reasoning_capabilities = match object.remove("reasoning_capabilities") {
             None | Some(Value::Null) => None,
             Some(value) if typed_evidence => Some(serde_json::from_value::<Vec<String>>(value)?),
@@ -352,6 +369,7 @@ impl Parsed {
             typed_graph,
             typed_evidence,
             reasoning_capabilities,
+            independent_experts,
         })
     }
 }

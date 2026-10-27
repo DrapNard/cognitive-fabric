@@ -1,5 +1,43 @@
 # Cognitive network implementation
 
+## Overlap independent model-expert workflows with typed work — 2026-10-27
+
+**Implemented bounded independent workflow overlap; arbitrary mixed DAG Partial,
+runtime unverified.** Evidence-mode interpretation accepts optional
+`expert_dependency: "typed_results" | "independent"`, defaulting to typed results.
+It applies only to optional model-expert advisory workflows. An independent
+workflow must use original request/context inputs rather than the pending typed
+outputs; the primary Jev-R solver still waits for both paths. This declaration
+is advisory translation, not independent proof of semantic independence.
+
+`src/agent/collective.rs` can join typed execution with the selected model-expert
+workflow when at least two subtask slots and a nonempty additional-expert scope
+are available. It partitions configured width between typed and model work, never
+increases admitted typed width, and reuses the completed expert result afterward.
+No duplicate workflow is attempted when the independent attempt returns no plan.
+Serial/low-width and dependent requests retain their ordered path.
+
+`src/agent/collective/experts.rs` clamps every expert ready wave and its optional
+advisory overlap to the model partition. Pending typed-verification slots remain
+held during expert-workflow tool admission. Each model wave retains its original
+policy, route selection, durable call reservation and provider resource checks;
+typed invocations are charged before the joined phase. Both futures settle before
+failure propagates, without sibling-error cancellation, replay or refunds. Parent
+request cancellation can still interrupt the joined futures under existing cleanup.
+
+`src/agent/sessions.rs` admits evidence against the exact bounded count of already
+charged independent model calls, preserving the original task counters.
+
+After both paths finish, actual checked-evidence input is re-admitted before later
+reasoning, and model advice retains its untrusted status. Qwen remains language
+interface/presentation under explicit network routing. No provider concurrency or
+latency improvement is established: queues and lifecycle locks may serialize work.
+This supports concurrent typed and model workflows with a declared phase edge;
+arbitrary per-node heterogeneous dataflow and interrupted-provider recovery remain
+incomplete. Static formatting, locked workspace/all-target compilation, strict
+Clippy and whitespace checks are the validation scope. No tests, benchmarks, live
+model calls, recovery execution or model activation performed.
+
 ## Scope additional expert activation after typed coverage — 2026-10-27
 
 **Implemented bounded routing partition; translation semantics/runtime unverified.**

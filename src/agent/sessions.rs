@@ -1031,12 +1031,13 @@ impl Lease {
         &mut self,
         request: &Turn,
         result: &TypedResult,
-        overlapped_advisory_pair: bool,
+        independent_advisory_calls: usize,
     ) -> Result<String> {
         if self.generation != 0
             || self.state.typed_evidence_sha256.is_some()
+            || independent_advisory_calls > self.state.call_limit
             || self.state.calls
-                != usize::from(result.translated()) + 2 * usize::from(overlapped_advisory_pair)
+                != usize::from(result.translated()).saturating_add(independent_advisory_calls)
             || self.state.cycles != 0
             || result.identity.query_digest()
                 != sha256(self.original_objective(request)?.as_bytes())
@@ -1155,7 +1156,7 @@ impl Lease {
                 "verifier_charges_completed":true,
                 "root_query_sha256":result.identity.query_digest(),
                 "operation_count":result.parts.len(),
-                "independent_advisory_calls":2 * usize::from(overlapped_advisory_pair),
+                "independent_advisory_calls":independent_advisory_calls,
                 "evidence_sha256":sha256(envelope.as_bytes()),
                 "compiled_operation_contracts_match":true,
                 "original_goal_semantics_verified":false,

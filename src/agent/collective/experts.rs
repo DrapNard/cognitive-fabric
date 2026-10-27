@@ -331,6 +331,12 @@ impl Graph<'_> {
     }
 
     pub(super) async fn expert_workflow(&mut self, prior_advice: &str) -> Result<Option<String>> {
+        if self
+            .expert_wave_capacity
+            .is_some_and(|capacity| !(1..=4).contains(&capacity))
+        {
+            bail!("Expert role wave capacity is outside its shared task bound")
+        }
         let parsed_advice: serde_json::Value =
             serde_json::from_str(prior_advice).unwrap_or_else(|_| serde_json::json!({}));
         let interpretation = if let Some(value) = parsed_advice.get("interpretation") {
@@ -428,7 +434,10 @@ impl Graph<'_> {
             return Ok(None);
         }
         let per_expert_capacity = self.runtime.cfg.subtask_parallelism.unwrap_or(1).min(4);
-        let global_capacity = per_expert_capacity.max(expert_capacity).min(4);
+        let global_capacity = per_expert_capacity
+            .max(expert_capacity)
+            .min(4)
+            .min(self.expert_wave_capacity.unwrap_or(4));
         let empty_done = plans
             .iter()
             .map(|_| std::collections::BTreeSet::<String>::new())
@@ -663,7 +672,8 @@ impl Graph<'_> {
             .session
             .state
             .tool_limit
-            .saturating_sub(self.session.state.proposals + self.session.state.internal_tools);
+            .saturating_sub(self.session.state.proposals + self.session.state.internal_tools)
+            .saturating_sub(self.held_typed_checks);
         let client_requires_tool = self
             .original
             .tool_choice
@@ -674,6 +684,7 @@ impl Graph<'_> {
             .state
             .proposals
             .saturating_add(self.session.state.internal_tools)
+            .saturating_add(self.held_typed_checks)
             >= self.session.state.tool_limit
             || (client_requires_tool && remaining_tool_slots <= 1)
             || !self.available_turns(&hypothetical)?

@@ -61,6 +61,8 @@ struct Graph<'a> {
     overlapped_pair: Option<(Completion, Completion)>,
     typed_evidence: Option<String>,
     expert_capability_scope: Option<Vec<String>>,
+    expert_wave_capacity: Option<usize>,
+    held_typed_checks: u32,
 }
 
 struct PreparedAdvisoryPair {
@@ -620,6 +622,8 @@ pub(super) async fn run(
         overlapped_pair: None,
         typed_evidence: restored_typed_evidence,
         expert_capability_scope: None,
+        expert_wave_capacity: None,
+        held_typed_checks: 0,
     };
     let mut advice = saved.advice.clone();
     let mut typed_work = if saved.calls == 0
@@ -635,6 +639,9 @@ pub(super) async fn run(
     };
     let mut using_typed = typed_work.is_some();
     let mut use_typed_evidence = false;
+    let mut independent_experts = false;
+    let mut independent_expert_attempted = false;
+    let mut independent_expert_result = None;
     if using_typed {
         graph.schedule(
             "validated_typed_program_skips_language_interpretation",
@@ -660,6 +667,7 @@ pub(super) async fn run(
         )?;
         let interpretation = parsed.interpretation;
         use_typed_evidence = parsed.typed_evidence;
+        independent_experts = parsed.independent_experts;
         graph.expert_capability_scope = parsed.reasoning_capabilities;
         if !using_typed {
             if let Some(translation) = parsed.typed_goal {
@@ -720,7 +728,15 @@ pub(super) async fn run(
             bail!("Typed evidence task cannot cover reasoning and final presentation")
         }
         let total_capacity = runtime.cfg.subtask_parallelism.unwrap_or(1).clamp(1, 4);
+        let expert_overlap = use_typed_evidence
+            && independent_experts
+            && total_capacity >= 2
+            && graph
+                .expert_capability_scope
+                .as_ref()
+                .is_some_and(|scope| !scope.is_empty());
         let overlap = use_typed_evidence
+            && !expert_overlap
             && mode == "research"
             && total_capacity >= 3
             && graph.available(&[
@@ -733,8 +749,39 @@ pub(super) async fn run(
                 ("planner", graph.backend.clone()),
                 ("explorer", graph.backend.clone()),
             ])?;
+        let typed_checks = plan.len() as u32;
+        let phase_opening_calls = graph.calls;
         let mut prepared = graph.session.reserve_typed_work(runtime, request, plan)?;
-        let value = if overlap {
+        let value = if expert_overlap {
+            let typed_width = total_capacity / 2;
+            prepared.limit_concurrency(typed_width)?;
+            graph.expert_wave_capacity = Some(total_capacity - typed_width);
+            graph.held_typed_checks = typed_checks;
+            runtime.store.event(
+                task,
+                "agent_typed_model_expert_overlap",
+                "jev-plus",
+                json!({
+                    "format_version":1,"concurrency_limit":total_capacity,
+                    "typed_concurrency_limit":typed_width,
+                    "model_concurrency_limit":total_capacity - typed_width,
+                    "expert_inputs_independent_of_typed_results":true,
+                    "independence_semantics_verified":false,
+                    "typed_invocations_reserved_before_poll":true,
+                    "model_waves_reserve_before_their_dispatch":true,
+                    "typed_verification_slots_held":typed_checks,"permissions_granted":false
+                }),
+            )?;
+            independent_expert_attempted = true;
+            let (typed_result, expert_result) =
+                tokio::join!(prepared.execute(), graph.expert_workflow(&advice));
+            // Both paths retain owned cleanup and their original ledger. A
+            // sibling failure never causes another provider call or a refund.
+            graph.expert_wave_capacity = None;
+            graph.held_typed_checks = 0;
+            independent_expert_result = expert_result?;
+            typed_result?
+        } else if overlap {
             prepared.limit_concurrency(total_capacity - 2)?;
             let pair = graph.reserve_advisory_pair(&advice)?;
             let routes = runtime
@@ -774,9 +821,14 @@ pub(super) async fn run(
             prepared.execute().await?
         };
         if use_typed_evidence {
-            let evidence = graph
-                .session
-                .admit_typed_evidence(request, &value, overlap)?;
+            let evidence = graph.session.admit_typed_evidence(
+                request,
+                &value,
+                graph
+                    .calls
+                    .checked_sub(phase_opening_calls)
+                    .ok_or_else(|| anyhow::anyhow!("Mixed phase call accounting regressed"))?,
+            )?;
             graph.typed_evidence = Some(evidence);
             if !graph.available(&[
                 ("solver", &advice, MIN_SOLVER_TOKENS),
@@ -806,7 +858,12 @@ pub(super) async fn run(
         }
     }
     if saved.calls == 0 {
-        if let Some(expert_result) = graph.expert_workflow(&advice).await? {
+        let expert_result = if independent_expert_attempted {
+            independent_expert_result.take()
+        } else {
+            graph.expert_workflow(&advice).await?
+        };
+        if let Some(expert_result) = expert_result {
             advice = serde_json::json!({
                 "prior_advisory_context": advice,
                 "expert_workflow_result": serde_json::from_str::<serde_json::Value>(&expert_result)?,
