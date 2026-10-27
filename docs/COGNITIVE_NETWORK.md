@@ -1,5 +1,21 @@
 # Cognitive network implementation
 
+## Concurrent client route preparation — 2026-10-27
+
+**Implemented scheduling mechanics; runtime and speed unverified.** Already
+reserved client role waves now poll preparation concurrently for up to four pinned
+routes (`src/agent/mod.rs`). Each preparation retains task authorization, resource
+admission and the original deadline. All started preparations settle before any
+error propagates; a failed wave starts no generation and is never retried here.
+The owned-future join accepts borrowed routes (`src/reasoning/parallel.rs`), without
+detached tasks. Native lifecycle mutation locks still serialize model loads;
+backend queue limits may serialize other work. Cancellation can leave provider
+outcomes unknown, as before. This does not add implicit model activation rights.
+
+Validation uses formatting, locked workspace/all-target compilation, strict Clippy
+and whitespace checks only. No tests, benchmarks or live provider calls. Mixed
+neural/provider graphs and interrupted graph restoration remain Partial.
+
 The target remains the seven-layer architecture in `ARCHITECTURE.md`. The network
 is **Partial**. Existing models and deterministic Rust services implement roles;
 these changes do not create newly trained Jev+ or Jev-R weights or establish speed.

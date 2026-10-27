@@ -479,7 +479,8 @@ impl AgentRuntime {
     }
 
     /// Select all wave routes before lifecycle preparation, then prepare them
-    /// before polling any generation. Call only after the full wave reservation.
+    /// before polling any generation. Call only after full call/tool budget
+    /// reservation; resource capacity is admitted separately per preparation.
     async fn prepare_role_wave(
         &self,
         backend: Arc<dyn ChatBackend>,
@@ -501,40 +502,61 @@ impl AgentRuntime {
                 Ok(route.unwrap_or_else(|| backend.clone()))
             })
             .collect::<Result<Vec<_>>>()?;
-        for (role, route) in roles.iter().zip(&selected) {
-            if !route.requires_preparation() {
-                continue;
-            }
-            let timeout = Duration::from_secs(self.cfg.timeout_seconds)
-                .min(deadline.saturating_duration_since(Instant::now()));
-            if timeout.is_zero() {
-                bail!("Client role wave deadline exhausted before preparation")
-            }
-            let prepare = async {
-                match (&self.cfg.resource_admission, &self.resource_pool) {
-                    (Some(configuration), Some(pool))
-                        if pool.matches(&self.store, configuration) =>
-                    {
-                        pool.prepare_route(
-                            task,
-                            role,
-                            configuration.allocation,
-                            !configuration.working_profiles.is_empty(),
-                            || route.inference_target(),
-                            || route.prepare_for(task),
-                        )
-                        .await?;
-                    }
-                    (None, None) => route.prepare_for(task).await?,
-                    _ => bail!("Configured client preparation resource pool is missing or changed"),
-                }
-                Ok::<(), anyhow::Error>(())
-            };
-            tokio::time::timeout(timeout, prepare)
-                .await
-                .map_err(|_| anyhow::anyhow!("Client role wave preparation timed out"))??;
+        let preparations = roles
+            .iter()
+            .zip(&selected)
+            .map(|(role, route)| {
+                Box::pin(self.prepare_selected_route(task, role, route, deadline))
+                    as Pin<Box<dyn Future<Output = Result<()>> + Send + '_>>
+            })
+            .collect();
+        // Settle every started preparation before propagating any failure. No
+        // generation starts for a partially prepared wave and nothing is retried.
+        let outcomes = crate::reasoning::parallel::join_all(preparations).await;
+        for outcome in outcomes {
+            outcome?;
         }
         Ok(selected)
+    }
+
+    async fn prepare_selected_route(
+        &self,
+        task: &str,
+        role: &str,
+        route: &Arc<dyn ChatBackend>,
+        deadline: Instant,
+    ) -> Result<()> {
+        if !route.requires_preparation() {
+            return Ok(());
+        }
+        let timeout = Duration::from_secs(self.cfg.timeout_seconds)
+            .min(deadline.saturating_duration_since(Instant::now()));
+        if timeout.is_zero() {
+            bail!("Client role wave deadline exhausted before preparation")
+        }
+        let prepare = async {
+            match (&self.cfg.resource_admission, &self.resource_pool) {
+                (Some(configuration), Some(pool)) if pool.matches(&self.store, configuration) => {
+                    pool.prepare_route(
+                        task,
+                        role,
+                        configuration.allocation,
+                        !configuration.working_profiles.is_empty(),
+                        || route.inference_target(),
+                        || route.prepare_for(task),
+                    )
+                    .await?;
+                }
+                (None, None) => route.prepare_for(task).await?,
+                _ => bail!("Configured client preparation resource pool is missing or changed"),
+            }
+            Ok::<(), anyhow::Error>(())
+        };
+        tokio::time::timeout(timeout, prepare).await.map_err(|_| {
+            anyhow::anyhow!(
+                "Client role wave preparation timed out; lifecycle outcome may be unknown"
+            )
+        })?
     }
 
     async fn dispatch_selected_role(

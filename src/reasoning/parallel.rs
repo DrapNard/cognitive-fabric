@@ -142,7 +142,9 @@ pub(crate) fn remaining_plan_admission(
 
 /// Poll a bounded set of locally owned futures without spawning detached tasks.
 /// Dropping this future drops every unfinished backend future.
-pub(crate) async fn join_all<T>(futures: Vec<Pin<Box<dyn Future<Output = T> + Send>>>) -> Vec<T> {
+pub(crate) async fn join_all<'a, T>(
+    futures: Vec<Pin<Box<dyn Future<Output = T> + Send + 'a>>>,
+) -> Vec<T> {
     let count = futures.len();
     let mut futures = futures.into_iter().map(Some).collect::<Vec<_>>();
     let mut remaining = count;
