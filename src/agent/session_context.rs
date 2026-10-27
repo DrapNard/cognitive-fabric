@@ -4,6 +4,8 @@ use rusqlite::Connection;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
+mod experts;
+
 const MAX_REFERENCE_BYTES: usize = 8_000;
 const MAX_PIN_BYTES: usize = 4_096;
 const DOCUMENT_PREFIX_BYTES: usize = 1_000;
@@ -302,7 +304,7 @@ pub(super) fn capture_with_memory_policy(
     }
 
     // Capture explicit structured project memory before ordinary retrieval can
-    // consume the context. Keep half the remaining bytes for documents/skills.
+    // consume the context. Keep half the remaining bytes for experts/retrieval.
     // The same opening transaction pins the immutable revision for continuation.
     if include_retrieval {
         if let Some(reference_name) = project_reference {
@@ -319,6 +321,28 @@ pub(super) fn capture_with_memory_policy(
             }
         }
     }
+
+    let project_pin = project_profile.as_ref().map(
+        |profile| json!({"id":profile.id,"version":profile.version,"sha256":profile.checksum}),
+    );
+    let mut pins = json!({
+        "format_version": 1,
+        "query_sha256": crate::store::sha256(query.as_bytes()),
+        "documents": [],
+        "memories": [],
+        "project_memories": project_memory_pins,
+        "skills": [],
+        "manifests": [],
+        "project_profile": project_pin,
+        "permissions_granted": false,
+        "raw_reference_bodies_persisted": false
+    });
+    if encoded_len(&pins)? > MAX_PIN_BYTES {
+        bail!("Project context pins exceed their metadata bound")
+    }
+    // Complete expert groups precede optional retrieval. They cannot displace
+    // structured project memory, and both durable envelopes are checked together.
+    experts::capture(db, &mut reference, &mut pins, context.as_ref(), query)?;
 
     for document in context
         .as_ref()
@@ -416,147 +440,29 @@ pub(super) fn capture_with_memory_policy(
         }
     }
 
-    let query_terms = query_terms(query);
-    let mut ranked = context
-        .as_ref()
-        .into_iter()
-        .flat_map(|context| &context.manifests)
-        .filter_map(|manifest| {
-            let score = manifest_terms(manifest).intersection(&query_terms).count();
-            (score > 0).then_some((score, manifest))
-        })
-        .collect::<Vec<_>>();
-    ranked.sort_by(|(left_score, left), (right_score, right)| {
-        right_score
-            .cmp(left_score)
-            .then_with(|| left.id.cmp(&right.id))
-    });
-
-    let mut manifest_pins = Vec::new();
-    for (_, manifest) in ranked.into_iter().take(MAX_EXPERT_ADVICE) {
-        let encoded = serde_json::to_vec(manifest)?;
-        let registered_model = manifest
-            .model
-            .as_ref()
-            .map(|selection| crate::models::registered_from(db, selection))
-            .transpose()?
-            .flatten();
-        let registered_model_enabled = registered_model
-            .as_ref()
-            .is_some_and(|registered| registered.enabled);
-        let model_binding_is_usable = manifest.model.is_none()
-            || registered_model_enabled
-                && registered_model
-                    .as_ref()
-                    .is_some_and(|registered| registered.manifest.max_output_tokens >= 128);
-        let registered_model_value = registered_model
-            .as_ref()
-            .map(serde_json::to_value)
-            .transpose()?
-            .unwrap_or(Value::Null);
-        let routing_declarations_sha256 = crate::store::sha256(&serde_json::to_vec(&json!({
-            "capabilities": manifest.capabilities,
-            "dependencies": manifest.dependencies
-        }))?);
-        let mut advice = json!({
-            "id": manifest.id,
-            "version": manifest.version,
-            "kind": manifest.kind,
-            "description": manifest.description,
-            "tags": manifest.tags,
-            "declared_capabilities": manifest.capabilities,
-            "declared_dependencies": manifest.dependencies,
-            "routing_declarations_sha256": routing_declarations_sha256,
-            "workflow_plan": workflow_plan(manifest)?,
-            "model_selection": manifest.model,
-            "registered_model": registered_model_value,
-            "trust": "untrusted_operator_published_advice",
-            "permissions_granted": false,
-            "executable_by_client_collective": manifest.kind == "workflow"
-                && model_binding_is_usable
-                && manifest.provider.is_none(),
-            "execution_status": if manifest.kind != "workflow" {
-                "metadata_only"
-            } else if manifest.provider.is_some() {
-                "advisory_only_provider_backend_unsupported"
-            } else if manifest.model.is_some() && !model_binding_is_usable {
-                "advisory_only_registered_model_unavailable"
-            } else if manifest.model.is_some() {
-                "bounded_registered_expert_model"
-            } else {
-                "bounded_shared_solver_model"
-            },
-            "manifest_sha256": crate::store::sha256(&encoded),
-            "workflow_plan_sha256": crate::store::sha256(&serde_json::to_vec(&workflow_plan(manifest)?)?)
-        });
-        let mut candidate = reference.clone();
-        candidate["expert_advice"]
-            .as_array_mut()
-            .expect("expert advice array")
-            .push(advice.clone());
-        if encoded_len(&candidate)? > MAX_REFERENCE_BYTES {
-            advice["workflow_plan"] = Value::Null;
-            advice["executable_by_client_collective"] = json!(false);
-            advice["execution_status"] = json!("advisory_only_context_bound");
-            let workflow_plan_sha256 =
-                crate::store::sha256(&serde_json::to_vec(&advice["workflow_plan"])?);
-            advice["workflow_plan_sha256"] = json!(workflow_plan_sha256);
-            candidate = reference.clone();
-            candidate["expert_advice"]
+    pins["documents"] = json!(document_pins);
+    pins["memories"] = json!(memory_pins);
+    pins["skills"] = json!(skill_pins);
+    // Optional retrieval must not displace an admitted graph or structured
+    // memory. Remove matching complete entries and pins if metadata is full.
+    for field in ["memories", "documents", "skills"] {
+        while encoded_len(&pins)? > MAX_PIN_BYTES
+            && pins[field]
+                .as_array()
+                .is_some_and(|items| !items.is_empty())
+        {
+            pins[field]
                 .as_array_mut()
-                .expect("expert advice array")
-                .push(advice);
-        }
-        if encoded_len(&candidate)? <= MAX_REFERENCE_BYTES {
-            let workflow_plan_sha256 = crate::store::sha256(&serde_json::to_vec(
-                &candidate["expert_advice"]
-                    .as_array()
-                    .expect("expert advice array")
-                    .last()
-                    .expect("inserted expert advice")["workflow_plan"],
-            )?);
-            reference = candidate;
-            manifest_pins.push(json!({
-                "id": manifest.id,
-                "version": manifest.version,
-                "sha256": crate::store::sha256(&encoded),
-                "workflow_plan_sha256": workflow_plan_sha256,
-                "routing_declarations_sha256": routing_declarations_sha256,
-                "registered_model_sha256": if registered_model_value.is_null() {
-                    Value::Null
-                } else {
-                    json!(crate::store::sha256(&serde_json::to_vec(&registered_model_value)?))
-                },
-                "role": "advisory_context_only"
-            }));
+                .ok_or_else(|| anyhow::anyhow!("Invalid retrieval pin array"))?
+                .pop();
+            reference[field]
+                .as_array_mut()
+                .ok_or_else(|| anyhow::anyhow!("Invalid retrieval reference array"))?
+                .pop();
         }
     }
-
-    let project_pin = project_profile.as_ref().map(
-        |profile| json!({"id":profile.id,"version":profile.version,"sha256":profile.checksum}),
-    );
-
-    let mut pins = json!({
-        "format_version": 1,
-        "query_sha256": crate::store::sha256(query.as_bytes()),
-        "documents": document_pins,
-        "memories": memory_pins,
-        "project_memories": project_memory_pins,
-        "skills": skill_pins,
-        "manifests": manifest_pins,
-        "project_profile": project_pin,
-        "permissions_granted": false,
-        "raw_reference_bodies_persisted": false
-    });
-    let pin_bytes = encoded_len(&pins)?;
-    if pin_bytes > MAX_PIN_BYTES {
-        // Project context is advisory. If the durable pins do not fit, omit the
-        // complete projection and its pin rather than emitting an unpinned claim.
-        reference["project_memories"] = json!([]);
-        pins["project_memories"] = json!([]);
-        if encoded_len(&pins)? > MAX_PIN_BYTES {
-            bail!("Client collective reference pins exceed their metadata bound")
-        }
+    if encoded_len(&pins)? > MAX_PIN_BYTES {
+        bail!("Client collective reference pins exceed their metadata bound")
     }
 
     let reference = serde_json::to_string(&reference)?;
@@ -577,10 +483,16 @@ fn query_terms(query: &str) -> std::collections::BTreeSet<String> {
 
 fn manifest_terms(manifest: &crate::registry::Manifest) -> std::collections::BTreeSet<String> {
     let source = format!(
-        "{} {} {}",
+        "{} {} {} {}",
         manifest.id,
         manifest.description,
-        manifest.tags.join(" ")
+        manifest.tags.join(" "),
+        manifest
+            .capabilities
+            .iter()
+            .map(|capability| capability.id.as_str())
+            .collect::<Vec<_>>()
+            .join(" ")
     );
     query_terms(&source)
 }

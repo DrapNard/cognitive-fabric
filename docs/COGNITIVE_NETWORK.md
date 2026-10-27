@@ -175,7 +175,8 @@ or acceptance-rule overrides.
 
 New client sessions capture project memory before ordinary document/skill
 retrieval consumes the context. The projection may use up to half the bytes left
-after the project profile; the other half remains available for retrieval. Whole
+after the project profile; the other half remains available for expert groups
+and retrieval. Whole
 claims and their evidence are retained, and oversized claims are omitted rather
 than cut into invalid fragments. The existing total context and pin limits apply.
 
@@ -240,7 +241,8 @@ sequential selection. Batches require
 distinct explicit requested-capability bindings, pinned compatible manifests and
 complete version-compatible workflow dependency closures. Version requirements from the
 language interpretation must match declared capability versions. The session
-opening snapshot contains at most three ranked expert entries; this is not
+opening snapshot contains at most three entries across ranked roots and their
+complete prerequisites; this is not
 discovery of every registry expert after interpretation. Legacy snapshots without
 routing-declaration pins retain the single-workflow path. All calls are admitted and durably reserved against
 the same task ledger before their futures run. Each expert receives a first dependency-ready step before spare slots are filled
@@ -307,6 +309,24 @@ preparation remains serialized under native lifecycle rules, while admitted read
 inference can overlap. Legacy snapshots lacking dependency pins retain their
 historical single-workflow behavior and cannot authorize new graph execution.
 Static checks only; runtime dependency execution and performance remain unverified.
+
+Opening capture (`agent/session_context/experts.rs`) resolves each ranked root's
+prerequisites against the same transaction's full active registry snapshot.
+Prerequisites need not match query words. Capability IDs participate in root
+ranking alongside IDs, descriptions and tags. Runnable complete groups take
+precedence over metadata-only advice, with stable relevance/ID ordering within
+each class. Shared prerequisite entries are pinned once.
+
+Each group commits its context and immutable pins together only if the complete
+union fits the three-entry, 8,000-byte reference and 4,096-byte pin bounds.
+Incomplete, unsupported or oversized runnable groups are omitted in full.
+Snapshot order preserves ranked roots for capability-free fallback; execution
+order is independently derived from the pinned dependency graph. Graph capture
+precedes optional document/legacy-memory/skill retrieval, while retaining the
+structured project-memory reservation. Optional retrieval entries and their pins
+are removed in pairs if metadata fills up; they cannot displace a captured graph
+or structured memory. This changes advisory selection priority, not tool grants,
+model loading authority or provider parallel capacity.
 
 ## Client advisory concurrency
 

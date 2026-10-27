@@ -1,5 +1,23 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Capture complete client expert groups before optional retrieval — 2026-10-27
+
+**Implemented capture; runtime unverified.**
+`src/agent/session_context/experts.rs` resolves ranked workflow roots against the
+same opening transaction's full active registry, includes version-compatible
+prerequisites without requiring lexical relevance, and commits each complete
+group and its pins atomically within the existing three-entry/8,000-byte/4,096-byte
+bounds. Runnable groups precede metadata-only advice. Root routing priority is
+preserved separately from runtime topological execution. Shared prerequisites
+are pinned once; missing/cyclic/unsupported/oversized runnable closures are omitted.
+`src/agent/session_context.rs` reserves schema memory and expert graphs before
+optional retrieval, includes capability IDs in root ranking, and trims optional
+reference/pin pairs together rather than displacing schema memory or graphs.
+No model call, permission expansion, automatic load or schema migration is added.
+Post-interpretation full-registry discovery and larger captured graphs remain
+incomplete. Formatting, workspace/all-target compilation and strict Clippy pass.
+No tests, benchmarks or live backend operations were run.
+
 ## Pinned client expert dependency graphs — 2026-10-27
 
 **Partial network integration; runtime unverified.**
