@@ -285,6 +285,53 @@ impl Graph<'_> {
             }),
         )
     }
+    /// Both operations use the original request, so neither needs the other's
+    /// output. Reserve both budgets before polling either owned future.
+    async fn typed_opening_pair(
+        &mut self,
+        work: super::typed_experts::Work,
+        allocation: usize,
+    ) -> Result<(Completion, sessions::TypedResult)> {
+        if !self.available(&[("interface", "", allocation)])? {
+            bail!("Client language/expert opening exceeds the original budget")
+        }
+        let turn = self.turn("interface", "", allocation);
+        let bytes = serde_json::to_vec(&turn)?;
+        TaskPolicy::agent(self.task)?.authorize(self.task, "jev-r", "llm.generate")?;
+        self.session
+            .reserve("interface", allocation, &bytes, self.cycles)?;
+        self.calls += 1;
+        self.reserved += allocation;
+        self.prompt_bytes += bytes.len();
+        let prepared = self
+            .session
+            .reserve_typed_work(self.runtime, self.original, work)?;
+        self.schedule("independent_language_typed_expert_wave", true)?;
+        let timeout = Duration::from_secs(self.runtime.cfg.timeout_seconds)
+            .min(self.deadline.saturating_duration_since(Instant::now()));
+        let language = tokio::time::timeout(
+            timeout,
+            self.runtime.dispatch_role(
+                self.backend.clone(),
+                self.task,
+                "interface",
+                &turn,
+                allocation,
+                self.deadline,
+            ),
+        );
+        let (language, expert) = tokio::join!(language, prepared.execute());
+        // Reconcile both operations before propagating either failure. No
+        // sibling is restarted or abandoned because the other returned early.
+        let interpreted = language
+            .map_err(|_| anyhow::anyhow!("Client language opening deadline exhausted"))
+            .and_then(|result| result)
+            .and_then(|completion| {
+                self.record_completion("interface", self.calls, allocation, &turn, completion)
+            });
+        Ok((interpreted?, expert?))
+    }
+
     async fn call(&mut self, role: &str, advice: &str, allocation: usize) -> Result<Completion> {
         if !self.available(&[(role, advice, allocation)])? {
             bail!("Client collective inference budget exhausted before dispatch")
@@ -441,9 +488,18 @@ impl Graph<'_> {
     }
     async fn finish(
         &mut self,
+        completion: Completion,
+        reason: &str,
+        advice: &str,
+    ) -> Result<Outcome> {
+        self.finish_inner(completion, reason, advice, None).await
+    }
+    async fn finish_inner(
+        &mut self,
         mut completion: Completion,
         reason: &str,
         advice: &str,
+        typed: Option<&sessions::TypedResult>,
     ) -> Result<Outcome> {
         if self.runtime.cfg.language_model().is_some() && completion.tool_calls.is_empty() {
             let result = json!({
@@ -451,7 +507,8 @@ impl Graph<'_> {
                 "reasoning_model": completion.model,
                 "stop_reason": reason,
                 "verification":"unverified_until_original_compiled_check",
-                "client_tools_executed":false
+                "client_tools_executed":false,
+                "typed_output_contract":typed.map(|result| result.output_contract())
             })
             .to_string();
             if result.len() > self.runtime.cfg.max_input_bytes {
@@ -462,7 +519,14 @@ impl Graph<'_> {
                 .await?;
         }
         // Presentation cannot inherit the solver's proof; check the actual returned answer.
-        let verification = self.check_candidate(&completion)?;
+        let verification = if let Some(typed) = typed {
+            Some(
+                self.session
+                    .verify_typed_presentation(self.original, typed, &completion)?,
+            )
+        } else {
+            self.check_candidate(&completion)?
+        };
         completion.validate(self.original, self.runtime.cfg.max_tool_calls)?;
         self.runtime.store.event(
             self.task,
@@ -470,7 +534,7 @@ impl Graph<'_> {
             "verifier-r",
             json!({
                 "structurally_valid":true,"verified":verification == Some(true),"client_results_verified":false,
-                "reason":if verification.is_some() { "Original compiled criterion checked" } else { "No independent executable criterion for the client conversation" },
+                "reason":if verification.is_some() { "Original compiled check applied to returned answer" } else { "No independent executable criterion for the client conversation" },
                 "stop_reason":reason,"calls":self.calls,"cycles":self.cycles,
                 "reserved_output_tokens":self.reserved,"prompt_bytes":self.prompt_bytes,
                 "tools_executed":0
@@ -543,47 +607,80 @@ pub(super) async fn run(
         overlapped_pair: None,
     };
     let mut advice = saved.advice.clone();
-    let typed_arithmetic = saved.calls == 0
+    let mut typed_work = if saved.calls == 0
         && runtime.cfg.language_model().is_some()
-        && graph.session.arithmetic_available()
         && request
             .tool_choice
             .as_ref()
             .is_none_or(|choice| choice != "required" && !choice.is_object())
-        && crate::math::extract(graph.session.original_objective(request)?).is_some();
+    {
+        graph.session.prepare_typed_work(request)?
+    } else {
+        None
+    };
+    let using_typed = typed_work.is_some();
+    let mut typed_value = None;
     if runtime.cfg.language_model().is_some() && saved.calls == 0 {
         let allocation = runtime.cfg.interface_tokens;
         let mut opening_calls = vec![("interface", "", allocation)];
-        if !typed_arithmetic {
+        if !using_typed {
             opening_calls.push(("solver", "", MIN_SOLVER_TOKENS));
         }
         opening_calls.push(("synthesizer", "", allocation));
         if !graph.available(&opening_calls)? {
             bail!("Root budget cannot cover language interpretation, reasoning and presentation")
         }
-        let interpreted = graph.call("interface", "", allocation).await?;
+        let interpreted = if runtime.cfg.subtask_parallelism.unwrap_or(1) >= 2 && using_typed {
+            let work = typed_work
+                .take()
+                .ok_or_else(|| anyhow::anyhow!("Typed opening work disappeared"))?;
+            let (interpreted, value) = graph.typed_opening_pair(work, allocation).await?;
+            typed_value = Some(value);
+            interpreted
+        } else {
+            graph.call("interface", "", allocation).await?
+        };
         let interpretation =
             crate::language::Interpretation::parse(interpreted.content.as_deref().unwrap_or(""))?;
-        graph.session.select_experts(runtime, &interpretation)?;
+        if !using_typed {
+            graph.session.select_experts(runtime, &interpretation)?;
+        }
         advice = json!({"interpretation":interpretation,"trust":"advisory_original_goal_remains_authoritative"}).to_string();
         if advice.len() > 2000 {
             bail!("Structured language interpretation exceeds client context bound")
         }
     }
-    if typed_arithmetic {
-        graph.schedule("pinned_typed_arithmetic_expert", true)?;
-        let value = graph.session.evaluate_arithmetic(runtime, request).await?;
+    if using_typed {
+        let value = match typed_value {
+            Some(value) => value,
+            None => {
+                let work = typed_work
+                    .take()
+                    .ok_or_else(|| anyhow::anyhow!("Typed expert work disappeared"))?;
+                graph.schedule("pinned_typed_expert", true)?;
+                graph
+                    .session
+                    .reserve_typed_work(runtime, request, work)?
+                    .execute()
+                    .await?
+            }
+        };
         graph.cycles = 1;
         let completion = Completion {
-            content: Some(value),
+            content: Some(value.value().to_owned()),
             tool_calls: Vec::new(),
-            model: "typed-arithmetic-expert".into(),
+            model: "typed-client-expert".into(),
             finish_reason: "stop".into(),
             input_tokens: None,
             output_tokens: None,
         };
         return graph
-            .finish(completion, "typed_arithmetic_compiled_match", &advice)
+            .finish_inner(
+                completion,
+                "typed_expert_compiled_match",
+                &advice,
+                Some(&value),
+            )
             .await;
     }
     if saved.calls == 0 {

@@ -49,6 +49,64 @@ pub(super) struct Lease {
     done: bool,
 }
 
+/// Owned, irreversibly charged typed operation. No model or registry lookup
+/// occurs after construction; concurrent language work cannot change its input.
+pub(super) struct PreparedTypedWork {
+    store: Arc<Store>,
+    task: String,
+    clock: Snapshot,
+    snapshot: super::typed_experts::Snapshot,
+    work: super::typed_experts::Work,
+    deadline: Instant,
+}
+
+pub(super) struct TypedResult {
+    value: String,
+    work: super::typed_experts::Work,
+}
+
+impl TypedResult {
+    pub fn value(&self) -> &str {
+        &self.value
+    }
+    pub fn output_contract(&self) -> &'static str {
+        self.work.output_contract()
+    }
+}
+
+impl PreparedTypedWork {
+    pub async fn execute(self) -> Result<TypedResult> {
+        remaining(&self.clock)?;
+        let value = self
+            .snapshot
+            .evaluate(
+                &self.task,
+                &self.work,
+                self.deadline,
+                &TaskPolicy::client_collective(&self.task)?,
+            )
+            .await?;
+        remaining(&self.clock)?;
+        self.store.event(
+            &self.task,
+            "agent_typed_expert_result",
+            "jev-plus",
+            json!({
+                "capability":self.work.capability().as_str(),
+                "snapshot_sha256":self.snapshot.digest(),
+                "original_query_sha256":self.work.query_digest(),
+                "result_sha256":sha256(value.as_bytes()),
+                "compiled_original_goal_match":true, "checker":self.work.checker(),
+                "presented_answer_verified":false
+            }),
+        )?;
+        Ok(TypedResult {
+            value,
+            work: self.work,
+        })
+    }
+}
+
 pub(super) struct NativeScopeSessionSnapshot {
     pub clock: Snapshot,
     pub generation: usize,
@@ -531,74 +589,125 @@ impl Lease {
             .ok_or_else(|| anyhow::anyhow!("Original collective objective is missing"))
     }
 
-    pub fn arithmetic_available(&self) -> bool {
-        self.generation == 0
-            && self
+    pub fn prepare_typed_work(&self, request: &Turn) -> Result<Option<super::typed_experts::Work>> {
+        if self.generation != 0
+            || self.state.calls != 0
+            || self.state.cycles != 0
+            || self
                 .state
                 .proposals
                 .saturating_add(self.state.internal_tools)
-                < self.state.tool_limit
-            && self
-                .typed_experts
-                .as_ref()
-                .is_some_and(|snapshot| snapshot.arithmetic_available())
+                .saturating_add(2)
+                > self.state.tool_limit
+        {
+            return Ok(None);
+        }
+        let Some(snapshot) = &self.typed_experts else {
+            return Ok(None);
+        };
+        let query = self.original_objective(request)?;
+        let Some(capability) = super::typed_experts::Work::capability_hint(query) else {
+            return Ok(None);
+        };
+        if !snapshot.available(capability) {
+            return Ok(None);
+        }
+        super::typed_experts::Work::from_query(query)
     }
 
-    /// Dispatch once from the opening host snapshot. Interrupted or uncertain
-    /// operations are charged and cannot be restored or retried through a tool turn.
-    pub async fn evaluate_arithmetic(
+    /// Charge once before either queue admission or expert execution. The
+    /// returned future owns its snapshot and cannot mutate or renew this lease.
+    pub fn reserve_typed_work(
         &mut self,
         runtime: &AgentRuntime,
         request: &Turn,
-    ) -> Result<String> {
-        if !self.arithmetic_available()
+        work: super::typed_experts::Work,
+    ) -> Result<PreparedTypedWork> {
+        if self.generation != 0
             || self.state.calls != 1
             || self.state.cycles != 0
             || !self.state.pending.is_empty()
+            || runtime.cfg.language_model().is_none()
             || self.state.configuration != sha256(&serde_json::to_vec(&runtime.cfg)?)
             || !Arc::ptr_eq(&self.store, &runtime.store)
+            || work.query_digest() != sha256(self.original_objective(request)?.as_bytes())
         {
-            bail!("Typed arithmetic is outside the original interpretation boundary")
+            bail!("Typed expert work is outside the original interpretation boundary")
         }
-        let expression =
-            crate::math::extract(self.original_objective(request)?).ok_or_else(|| {
-                anyhow::anyhow!("Typed arithmetic requires an exact original arithmetic goal")
-            })?;
         let snapshot = self
             .typed_experts
             .take()
             .ok_or_else(|| anyhow::anyhow!("Opening typed expert snapshot is unavailable"))?;
+        if !snapshot.available(work.capability()) {
+            bail!("Opening typed expert route is unavailable")
+        }
         self.reserve_internal_tool(
             "jev-plus",
-            "math.evaluate",
+            work.capability().as_str(),
             json!({
-                "snapshot_sha256":snapshot.digest(),
-                "module_count":snapshot.module_count(),
-                "request_sha256":sha256(expression.as_bytes()),
-                "permissions_granted":false,
-                "model_selected_input":false
+                "snapshot_sha256":snapshot.digest(), "module_count":snapshot.module_count(),
+                "original_query_sha256":work.query_digest(),
+                "permissions_granted":false, "model_selected_input":false
             }),
         )?;
         let deadline = self
             .deadline
             .min(remaining(&self.state.clock)?)
             .min(Instant::now() + Duration::from_secs(runtime.cfg.timeout_seconds.min(300)));
-        let result = snapshot
-            .evaluate_arithmetic(
-                &self.task,
-                expression,
-                deadline,
-                &TaskPolicy::client_collective(&self.task)?,
-            )
-            .await?;
+        Ok(PreparedTypedWork {
+            store: self.store.clone(),
+            task: self.task.clone(),
+            clock: self.state.clock.clone(),
+            snapshot,
+            work,
+            deadline,
+        })
+    }
+
+    pub fn verify_typed_presentation(
+        &mut self,
+        request: &Turn,
+        result: &TypedResult,
+        completion: &Completion,
+    ) -> Result<bool> {
+        if self.generation != 0
+            || self.state.calls != 2
+            || self.state.cycles != 1
+            || !completion.tool_calls.is_empty()
+            || result.work.query_digest() != sha256(self.original_objective(request)?.as_bytes())
+        {
+            bail!("Typed presentation is outside the original expert task")
+        }
+        let capability = match result.work.capability() {
+            crate::fabric::modules::Capability::ConstraintsSolve => "constraints.verify",
+            capability => capability.as_str(),
+        };
+        let answer = completion.content.as_deref().unwrap_or("");
+        self.reserve_internal_tool(
+            "jev-plus",
+            capability,
+            json!({
+                "original_query_sha256":result.work.query_digest(),
+                "result_sha256":sha256(result.value.as_bytes()),
+                "answer_sha256":sha256(answer.as_bytes()), "checker":result.work.checker(),
+                "presentation_check":true, "client_tools_executed":false
+            }),
+        )?;
         remaining(&self.state.clock)?;
-        self.store.event(&self.task, "agent_typed_expert_result", "jev-plus", json!({
-            "capability":"math.evaluate", "snapshot_sha256":snapshot.digest(),
-            "request_sha256":sha256(expression.as_bytes()), "result_sha256":sha256(result.as_bytes()),
-            "compiled_arithmetic_match":true, "checker":"compiled_arithmetic_parser",
-            "presented_answer_verified":false
-        }))?;
-        Ok(result)
+        let checked = result.work.verify_presentation(&result.value, answer);
+        remaining(&self.state.clock)?;
+        self.store.event(
+            &self.task,
+            "agent_typed_presentation_check",
+            "verifier-r",
+            json!({
+                "original_query_sha256":result.work.query_digest(),
+                "answer_sha256":sha256(answer.as_bytes()), "verified":checked.is_ok(),
+                "checker":result.work.checker(), "client_results_verified":false
+            }),
+        )?;
+        checked?;
+        Ok(true)
     }
 
     /// Refine the first expert selection from the catalog frozen at opening.

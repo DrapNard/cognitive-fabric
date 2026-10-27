@@ -79,53 +79,77 @@ configurations retain their reference bodies. Client deterministic typed-provide
 execution remains incomplete; current client expert workflows still use configured
 reasoning backends, distinct from the explicit language model.
 
-## First-turn typed client arithmetic experts
+## First-turn typed client experts
 
 With an explicit language profile, a trusted embedding host can attach its typed
 module broker through `AgentRuntime::with_typed_modules`. The broker must belong
-to the same Store. The HTTP executable shares the Engine broker when started
-with its existing `--typed-module-worker` option and a language profile. This
-registers the reviewed built-in worker; it does not load a model. Under an
-approved native lifecycle policy, `typed_module_worker: true` instead installs a
-separate client registry, preserving the empty Engine template required by native
-task setup. The explicit CLI flag remains forbidden alongside a native policy.
-Without an attached arithmetic provider, the previous bounded reasoning route
-remains.
+to the same Store. The HTTP executable shares the Engine broker under its existing
+`--typed-module-worker` option. An approved native policy's
+`typed_module_worker: true` instead installs a separate client registry, preserving
+the empty Engine template required for native task setup. The explicit worker flag
+remains forbidden alongside a native policy. This configuration registers reviewed
+worker code; it does not load a model.
 
-The opening transaction freezes the broker's active task routes and retains the
-exact implementations in process memory. A bounded metadata digest, broker ID and
-count are audited; the full catalog is not persisted or passed to Qwen. These
-host module routes are distinct from manifest-backed Expert Network bindings.
-Metadata cannot register code, choose executable paths or grant capabilities.
+The opening transaction freezes active task routes and retains exact module
+implementations in process memory. A bounded metadata digest, broker ID and count
+are audited; the full catalog is not persisted or sent to Qwen. These trusted
+host routes are distinct from manifest-backed Expert Network bindings. Metadata
+cannot register code, select executable paths or grant capabilities.
 
-For an exact original `calc:`, `calculate:` or `math:` objective, an available
-pinned arithmetic route and remaining internal tool allowance allow the client
-collective to run interpretation, one typed arithmetic request, then presentation.
-Required or named external tool choices keep the normal client-tool path. No
-model-backed workflow, planner, solver, critic or reflector runs on this route.
-Natural-language arithmetic translation and other typed capabilities are not yet
-connected to this client fast path. Interpretation cannot replace the original
-expression or pick a module. The expression retains the compiled 120-byte/parser
-complexity limits; malformed arithmetic fails rather than falling back after charge.
+Supported exact original inputs are:
 
-The internal invocation is irreversibly charged with the active session CAS before
-provider admission. The broker selects only opening candidates, mints a one-call
-`math.evaluate` grant, records dispatch intent and applies its deadline/queue/result
-bounds. Unknown outcomes fail the turn without an alternate-provider replay.
-Returned values must match the compiled arithmetic parser. Presentation remains
-unverified and cannot inherit that internal check. Original model/token/input/tool
-and same-boot wall budgets remain in effect. Tool continuations do not refreeze or
-restore the typed catalog; interrupted execution is not recoverable through this
-slice. A new client request is a new task, not global duplicate suppression.
+| Input | Typed operation | Independent result check |
+| --- | --- | --- |
+| `calc:`, `calculate:`, `math:` | Bounded expression evaluation | Compiled arithmetic parser |
+| `sql:` | Bounded SELECT over inline task data | Separate execution of the original inline task |
+| `sort:` | Rust builds a sorted candidate; typed module diagnoses it | Original multiset/direction criterion |
+| `order:` | Rust builds a deterministic topological candidate; typed module diagnoses it | Original dependency criterion |
+| `path:` | Rust builds a shortest path; typed module diagnoses it | Original directed shortest-path criterion |
+| `csp:` | Typed bounded finite-domain search supplies an assignment | Original finite-domain criterion |
 
-Native client requests fork host module implementations under their existing
-exclusive workspace ownership before pinning; process workers retain that owner
-instead of acquiring a conflicting runtime lease. Trusted Rust modules are not
+Recognized structured inputs reject duplicate JSON keys and retain their existing
+domain, byte and complexity bounds. SQL never opens a host database; its existing
+authorizer, progress limits, cancellation and capacity controls remain. SQL checking
+uses a separate execution of the same SQLite adapter used by the bundled module,
+not an independently implemented SQL engine. CSP failures
+do not prove unsatisfiability: no assignment may mean exhausted search, provider
+failure or an unsatisfiable goal. The built-in worker uses checked i128 linear sums
+consistent with the original criterion, and unreachable paths accept `[]`.
+
+These routes use Qwen only for interpretation and final presentation. They skip
+model-backed expert workflows and planner/solver/critic/reflector calls. The Rust
+request and acceptance criterion come from the original input, never Qwen's rewrite.
+When `subtask_parallelism` is at least two, interpretation and the single typed
+operation run concurrently because neither consumes the other's output. Both
+reservations commit before either future is polled; both outcomes settle before
+failure propagation. With one slot they run sequentially. Cancellation drops both
+owned futures; it does not establish that an already-started external operation
+physically stopped. No unknown outcome is replayed or refunded.
+
+Eligibility requires an available opening route and two remaining internal tool
+slots: expert work and final presentation checking. Required/named client tools
+retain the ordinary client-tool path. Without eligibility, the previous bounded
+reasoning path remains. Natural-language translation into typed arguments,
+manifest-bound client provider selection, composite multi-capability requests and
+catalog restoration after interrupted execution remain incomplete.
+
+The typed result stays in memory through presentation. Qwen receives a strict
+numeric/JSON output contract; the actual returned answer is checked against the
+retained value or original criterion under an additional charged internal check.
+Changed values, wrapped prose or invalid structured results fail without a fresh
+model budget or fallback. Internal correctness cannot be inherited by presentation.
+The original model/token/input/tool and same-boot wall ceilings remain. The entire
+typed dispatch and result verification, including SQL re-execution, share one
+bounded deadline. Final presentation/checking remains under the root deadline.
+
+Native client turns bind module forks to their existing exclusive workspace owner;
+process workers avoid a conflicting runtime lease. Trusted Rust modules are not
 sandboxed, and the reviewed worker process is a process boundary, not a sandbox.
-The built-in broker still defaults to one worker execution at a time. This slice
-adds a deterministic route; it does not establish general expert parallelism,
-latency improvement, reasoning quality or full client Expert Network execution.
-No tests, benchmarks, live provider calls or recovery operations were run.
+Tool continuations do not refreeze the typed catalog. New requests are new tasks,
+not global duplicate suppression. Built-in worker concurrency still defaults to
+one; this change does not prove physical resource enforcement, general reasoning
+quality, a speedup or a finished cognitive network. No tests, benchmarks, live
+provider calls or recovery operations were run.
 
 ## Bounded parallel work
 

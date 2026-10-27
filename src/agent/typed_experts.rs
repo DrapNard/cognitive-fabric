@@ -5,9 +5,11 @@
 //! Network, and the metadata digest is provenance bookkeeping rather than an
 //! attestation of executable code or model weights.
 
+mod goals;
+pub(super) use goals::Work;
+
 use crate::{
-    fabric::modules::{Broker, Capability, Grant, Request, Response, TaskRoutes},
-    math,
+    fabric::modules::{Broker, Capability, Grant, TaskRoutes},
     security::TaskPolicy,
 };
 use anyhow::{bail, Result};
@@ -18,7 +20,6 @@ use std::{
 };
 
 const MAX_SNAPSHOT_BYTES: usize = 64 * 1024;
-const MAX_EXPRESSION_BYTES: usize = 120;
 const MAX_MODULE_DEADLINE: Duration = Duration::from_secs(300);
 
 /// Immutable first-turn routing snapshot for trusted, typed host experts.
@@ -104,8 +105,8 @@ impl Snapshot {
         self.module_count
     }
 
-    pub(super) fn arithmetic_available(&self) -> bool {
-        self.routes.contains_key(&Capability::MathEvaluate)
+    pub(super) fn available(&self, capability: Capability) -> bool {
+        self.routes.contains_key(&capability)
     }
 
     /// Bounded audit summary only; never includes module bodies, requests, or results.
@@ -117,54 +118,49 @@ impl Snapshot {
         })
     }
 
-    /// Evaluate through the first-turn pinned arithmetic route and independently
-    /// check its result with the compiled parser before returning it.
-    pub(super) async fn evaluate_arithmetic(
+    /// Dispatch validated original-goal work through its first-turn pinned route
+    /// and verify the typed response before returning it.
+    pub(super) async fn evaluate(
         &self,
         task: &str,
-        expression: &str,
+        work: &Work,
         deadline: Instant,
         policy: &TaskPolicy,
     ) -> Result<String> {
-        policy.authorize(task, "jev-plus", "math.evaluate")?;
+        let capability = work.capability();
+        policy.authorize(task, "jev-plus", capability.as_str())?;
         let remaining = deadline.saturating_duration_since(Instant::now());
         if remaining.is_zero() || remaining > MAX_MODULE_DEADLINE {
-            bail!("Typed arithmetic deadline is expired or exceeds the task limit")
+            bail!("Typed expert deadline is expired or exceeds the task limit")
         }
-        if expression.trim().is_empty() || expression.len() > MAX_EXPRESSION_BYTES {
-            bail!("Invalid typed arithmetic expression")
-        }
-        let expected = math::calculate(expression)?;
-        let candidates = self.routes.get(&Capability::MathEvaluate).ok_or_else(|| {
-            anyhow::anyhow!("No first-turn pinned arithmetic expert is available")
-        })?;
+        let candidates = self
+            .routes
+            .get(&capability)
+            .ok_or_else(|| anyhow::anyhow!("No first-turn pinned typed expert is available"))?;
         if candidates.task() != task {
-            bail!("Typed arithmetic snapshot belongs to another task")
+            bail!("Typed expert snapshot belongs to another task")
         }
-        let reservation = self
-            .broker
-            .reserve_candidate(candidates, Capability::MathEvaluate, deadline)
-            .await?;
-        let grant = Grant::narrow(task, "jev-plus", [Capability::MathEvaluate], 1, policy)?;
-        match self
-            .broker
-            .dispatch_reserved(
-                reservation,
-                &grant,
-                policy,
-                "jev-plus",
-                Request::Arithmetic {
-                    expression: expression.to_owned(),
-                },
-                deadline,
-            )
-            .await?
-        {
-            Response::Arithmetic { value } if value == expected => Ok(value),
-            Response::Arithmetic { .. } => {
-                bail!("Typed arithmetic expert failed independent verification")
-            }
-            _ => bail!("Typed arithmetic expert returned another response kind"),
-        }
+        let operation = async {
+            let reservation = self
+                .broker
+                .reserve_candidate(candidates, capability, deadline)
+                .await?;
+            let grant = Grant::narrow(task, "jev-plus", [capability], 1, policy)?;
+            let response = self
+                .broker
+                .dispatch_reserved(
+                    reservation,
+                    &grant,
+                    policy,
+                    "jev-plus",
+                    work.request().clone(),
+                    deadline,
+                )
+                .await?;
+            work.verify_response(response).await
+        };
+        tokio::time::timeout_at(tokio::time::Instant::from_std(deadline), operation)
+            .await
+            .map_err(|_| anyhow::anyhow!("Typed expert deadline exhausted"))?
     }
 }

@@ -3,6 +3,46 @@
 
 
 
+
+## Typed client capabilities and independent opening wave — 2026-10-27
+
+**Implemented exact-input adapters and bounded wave; broader network Partial,
+runtime unverified.** Architecture sections 4, 6, 7 and 9:
+`src/agent/typed_experts/goals.rs` converts original exact arithmetic/SQL/sort/
+order/path/CSP requests into typed work with strict JSON/domain checks.
+`src/verification.rs` and `src/verification/path.rs` construct deterministic
+sort/order/shortest-path candidates without changing independent acceptance rules.
+Typed diagnostics alone cannot approve results. SQL is checked by bounded original
+inline-task re-execution through the same SQL adapter used by the bundled worker;
+finite assignments must satisfy the original criterion.
+No CSP failure is reported as an unsatisfiability proof.
+
+`src/agent/sessions.rs` charges and detaches a one-use prepared operation from the
+active lease, retains original Work with its checked value through presentation,
+and charges/checks the actual final answer. `src/agent/typed_experts.rs` bounds
+queue admission, dispatch and verification with one deadline and a one-call grant.
+`src/agent/collective.rs` overlaps interface and typed work when configured
+concurrency is at least two, reserving both before polling and awaiting both
+outcomes before propagating errors. One-slot execution stays sequential. Eligible
+typed routes skip model-backed expert/reasoning roles and do not reselect manifests.
+Two internal slots are required for expert work plus final checking; required or
+named external tools retain the ordinary client path. Qwen gets a strict output
+contract and invalid presentation fails without a retry/fallback or fresh budget.
+
+`src/security.rs` adds compiled task-local SQL and finite search to the bounded
+client policy; host attachment and exact original input remain necessary.
+`src/fabric/modules/process.rs` aligns unreachable-path diagnostics and checked
+i128 finite linear sums with the independent checker. This supersedes the preceding
+arithmetic-only/unchecked-presentation limitation. Model calls remain the original
+interpretation/presentation calls, not new always-resident models. No internal
+IPC or durable schema change is made; raw typed inputs/results stay in process
+memory and ordinary audits retain hashes/identities only. Natural-language typed
+translation, manifest bindings, composite typed requests, interrupted restoration,
+physical resource enforcement and measured speed/quality remain incomplete.
+Built-in worker concurrency remains one. No tests, benchmarks, live providers,
+model operations, installation or recovery execution were run. Formatting, locked
+workspace/all-target compilation, strict Clippy and diff whitespace checks passed.
+
 ## First-turn typed client arithmetic experts — 2026-10-27
 
 **Implemented arithmetic route; broader typed client network Partial, runtime

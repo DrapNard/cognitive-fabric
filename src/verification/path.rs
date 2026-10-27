@@ -84,6 +84,67 @@ impl ShortestPath {
         Ok(())
     }
 
+    pub(super) fn deterministic_answer(&self) -> Result<String> {
+        if self.start == self.goal {
+            let answer = serde_json::to_string(&[self.start.as_str()])?;
+            if answer.len() > 4096 {
+                bail!("Path answer exceeds byte limit")
+            }
+            return Ok(answer);
+        }
+
+        let mut outgoing = self
+            .nodes
+            .iter()
+            .map(|node| (node.as_str(), Vec::new()))
+            .collect::<BTreeMap<_, _>>();
+        for [from, to] in &self.edges {
+            let Some(neighbors) = outgoing.get_mut(from.as_str()) else {
+                bail!("Path criterion references an unknown node")
+            };
+            neighbors.push(to.as_str());
+        }
+        for neighbors in outgoing.values_mut() {
+            neighbors.sort_unstable();
+        }
+
+        let start = self.start.as_str();
+        let goal = self.goal.as_str();
+        let mut visited = BTreeSet::from([start]);
+        let mut predecessor: BTreeMap<&str, &str> = BTreeMap::new();
+        let mut queue = VecDeque::from([start]);
+        while let Some(node) = queue.pop_front() {
+            let Some(neighbors) = outgoing.get(node) else {
+                bail!("Path criterion references an unknown node")
+            };
+            for neighbor in neighbors {
+                if visited.insert(*neighbor) {
+                    predecessor.insert(*neighbor, node);
+                    if *neighbor == goal {
+                        let mut path = vec![goal];
+                        let mut current = goal;
+                        while current != start {
+                            let Some(previous) = predecessor.get(current) else {
+                                bail!("Path predecessor chain is incomplete")
+                            };
+                            current = *previous;
+                            path.push(current);
+                        }
+                        path.reverse();
+                        let answer = serde_json::to_string(&path)?;
+                        if answer.len() > 4096 {
+                            bail!("Path answer exceeds byte limit")
+                        }
+                        return Ok(answer);
+                    }
+                    queue.push_back(*neighbor);
+                }
+            }
+        }
+
+        Ok("[]".to_owned())
+    }
+
     /// Return a bounded, criterion-derived structural/length deficit. This is
     /// a stopping hint only; `check` remains the sole acceptance test.
     pub(super) fn progress_score(&self, answer: &str) -> Option<u32> {

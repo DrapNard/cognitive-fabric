@@ -687,7 +687,9 @@ fn path_is_shortest(
         }
     }
     let Some(shortest) = distance.get(goal).copied() else {
-        return false;
+        // The independent path criterion defines the empty candidate as the
+        // valid result when the goal is unreachable.
+        return candidate.is_empty();
     };
     if candidate.first().map(String::as_str) != Some(start)
         || candidate.last().map(String::as_str) != Some(goal)
@@ -788,16 +790,16 @@ fn satisfies(constraint: &FiniteConstraint, values: &BTreeMap<String, i64>) -> b
     }
 }
 
-fn checked_linear_sum(terms: &[LinearTerm], values: &BTreeMap<String, i64>) -> Option<i64> {
-    terms.iter().try_fold(0i64, |sum, term| {
-        values
-            .get(&term.variable)?
-            .checked_mul(term.coefficient)?
+fn checked_linear_sum(terms: &[LinearTerm], values: &BTreeMap<String, i64>) -> Option<i128> {
+    terms.iter().try_fold(0i128, |sum, term| {
+        i128::from(*values.get(&term.variable)?)
+            .checked_mul(i128::from(term.coefficient))?
             .checked_add(sum)
     })
 }
 
-fn compare(value: i64, relation: Relation, rhs: i64) -> bool {
+fn compare(value: i128, relation: Relation, rhs: i64) -> bool {
+    let rhs = i128::from(rhs);
     match relation {
         Relation::Equal => value == rhs,
         Relation::NotEqual => value != rhs,

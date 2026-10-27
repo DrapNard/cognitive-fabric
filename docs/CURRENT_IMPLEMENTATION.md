@@ -1,5 +1,23 @@
 # Current Rust implementation
 
+## Typed client capability routes and independent opening wave — 2026-10-27
+
+The host-attached client typed route now covers exact arithmetic, task-local SQL,
+sorting, dependency ordering, shortest-path and finite-domain assignment requests.
+Inputs and checkers derive from the original goal. With at least two configured
+slots, language interpretation overlaps the single typed operation after both
+budgets commit. Qwen final output follows a strict numeric/JSON contract and is
+checked against the retained result/original criterion in a charged final check.
+Other model-backed reasoning roles are skipped for eligible typed inputs. Native
+ownership and all original deadlines/limits remain. Worker semantics now agree
+with the criterion on unreachable paths and checked i128 finite linear sums.
+This supersedes the preceding arithmetic-only scope and unchecked-presentation
+limitations. General natural-language typed translation, manifest-backed client
+provider selection, composite requests and interrupted typed restoration remain
+incomplete. No tests, benchmarks or live inference were run. See
+[typed client experts](COGNITIVE_NETWORK.md#first-turn-typed-client-experts).
+
+
 ## First-turn typed client arithmetic — 2026-10-27
 
 The explicit language-only client collective can attach a trusted same-Store
@@ -12,7 +30,7 @@ native client/Engine registries and task-owned module binding. No model is loade
 by this addition. Other typed capabilities, natural-language input translation,
 manifest-backed client provider selection and interrupted catalog recovery remain
 incomplete. No tests, benchmarks or live inference were run. See
-[the cognitive network guide](COGNITIVE_NETWORK.md#first-turn-typed-client-arithmetic-experts)
+[the cognitive network guide](COGNITIVE_NETWORK.md#first-turn-typed-client-experts)
 and the latest implementation-matrix entry for scope and static check results.
 
 

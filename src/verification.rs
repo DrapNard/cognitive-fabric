@@ -87,6 +87,67 @@ impl Ordering {
         }
         Ok(())
     }
+
+    fn deterministic_answer(&self) -> Result<String> {
+        let mut indegree = self
+            .nodes
+            .iter()
+            .map(|node| (node.as_str(), 0usize))
+            .collect::<BTreeMap<_, _>>();
+        let mut outgoing = self
+            .nodes
+            .iter()
+            .map(|node| (node.as_str(), Vec::new()))
+            .collect::<BTreeMap<_, _>>();
+        for [before, after] in &self.before {
+            let Some(degree) = indegree.get_mut(after.as_str()) else {
+                bail!("Ordering criterion references an unknown node")
+            };
+            *degree = degree
+                .checked_add(1)
+                .ok_or_else(|| anyhow::anyhow!("Ordering indegree overflow"))?;
+            let Some(edges) = outgoing.get_mut(before.as_str()) else {
+                bail!("Ordering criterion references an unknown node")
+            };
+            edges.push(after.as_str());
+        }
+        for edges in outgoing.values_mut() {
+            edges.sort_unstable();
+        }
+
+        // Choosing the smallest currently available identifier makes ties
+        // deterministic without changing the validity rule in `check`.
+        let mut available = indegree
+            .iter()
+            .filter_map(|(node, degree)| (*degree == 0).then_some(*node))
+            .collect::<BTreeSet<_>>();
+        let mut order = Vec::with_capacity(self.nodes.len());
+        while let Some(node) = available.pop_first() {
+            order.push(node);
+            let Some(edges) = outgoing.get(node) else {
+                bail!("Ordering criterion references an unknown node")
+            };
+            for successor in edges.iter().copied() {
+                let Some(degree) = indegree.get_mut(successor) else {
+                    bail!("Ordering criterion references an unknown node")
+                };
+                *degree = degree
+                    .checked_sub(1)
+                    .ok_or_else(|| anyhow::anyhow!("Ordering indegree underflow"))?;
+                if *degree == 0 {
+                    available.insert(successor);
+                }
+            }
+        }
+        if order.len() != self.nodes.len() {
+            bail!("Ordering criterion contains a dependency cycle")
+        }
+        let answer = serde_json::to_string(&order)?;
+        if answer.len() > 4096 {
+            bail!("Ordering answer exceeds byte limit")
+        }
+        Ok(answer)
+    }
 }
 
 /// Checks an operator-supplied multiset and direction; no model confidence is used.
@@ -122,6 +183,19 @@ impl Sorting {
             bail!("Answer must preserve every integer and multiplicity in the requested order")
         }
         Ok(())
+    }
+
+    fn deterministic_answer(&self) -> Result<String> {
+        let mut values = self.values.clone();
+        values.sort_unstable();
+        if self.descending {
+            values.reverse();
+        }
+        let answer = serde_json::to_string(&values)?;
+        if answer.len() > 8192 {
+            bail!("Sorting answer exceeds byte limit")
+        }
+        Ok(answer)
     }
 }
 
@@ -174,6 +248,17 @@ impl Criterion {
             Self::Sorting(c) => c.check(answer),
             Self::ShortestPath(c) => c.check(answer),
             Self::FiniteDomain(c) => c.check(answer),
+        }
+    }
+
+    /// Produce a bounded witness for criteria with a deterministic structured
+    /// solution. Finite-domain search remains delegated to its typed solver.
+    pub(crate) fn deterministic_answer(&self) -> Result<Option<String>> {
+        match self {
+            Self::Ordering(criterion) => Ok(Some(criterion.deterministic_answer()?)),
+            Self::Sorting(criterion) => Ok(Some(criterion.deterministic_answer()?)),
+            Self::ShortestPath(criterion) => Ok(Some(criterion.deterministic_answer()?)),
+            Self::FiniteDomain(_) => Ok(None),
         }
     }
 
