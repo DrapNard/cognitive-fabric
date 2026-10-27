@@ -6,6 +6,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::*;
 
+mod catalog;
+pub(in crate::agent) use catalog::ExpertCatalog;
+pub(super) use catalog::{capture_catalog, select_from_catalog};
+
 /// Append ranked expert advice and immutable pins as complete dependency
 /// groups. A group is admitted only when its entire new closure fits both
 /// durable envelopes.
@@ -231,6 +235,10 @@ fn workflow_closure<'a>(
 
 #[derive(Clone)]
 struct ExpertRecord {
+    id: String,
+    version: String,
+    capabilities: Vec<crate::registry::Capability>,
+    dependencies: Vec<crate::registry::Dependency>,
     advice: Value,
     pin: Value,
     executable: bool,
@@ -309,6 +317,10 @@ impl ExpertRecord {
             "role": "advisory_context_only"
         });
         Ok(Self {
+            id: manifest.id.clone(),
+            version: manifest.version.clone(),
+            capabilities: manifest.capabilities.clone(),
+            dependencies: manifest.dependencies.clone(),
             advice,
             pin,
             executable,

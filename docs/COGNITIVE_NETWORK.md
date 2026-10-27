@@ -240,10 +240,22 @@ workflow experts, including structured multi-step workflows; `1` restores
 sequential selection. Batches require
 distinct explicit requested-capability bindings, pinned compatible manifests and
 complete version-compatible workflow dependency closures. Version requirements from the
-language interpretation must match declared capability versions. The session
-opening snapshot contains at most three entries across ranked roots and their
-complete prerequisites; this is not
-discovery of every registry expert after interpretation. Legacy snapshots without
+language interpretation must match declared capability versions. With an explicit language profile, the opening transaction freezes the active
+catalog (at most 256 entries and 16 MiB of encoded metadata), including registered
+model snapshots, in one-use host memory. Only its digest is added to durable pins.
+After interpretation, exact capability/version matching selects complete workflow
+groups from this frozen catalog without rereading the registry or calling a model.
+Configured language, native endpoint and resource declarations filter candidates;
+normal dispatch still performs independent admission. Unsupported or oversized
+candidates can yield to another candidate. The selected context remains bounded
+to three entries, 8,000 reference bytes and 4,096 pin bytes. Schema memory is
+preserved and optional retrieval pairs are restored only when they fit.
+The selected subset and audit metadata are saved atomically under the original
+claim, budgets and deadline. Tool continuations reuse that subset. The full
+catalog is not persisted or recoverable after process loss; client mid-reasoning
+crash recovery remains unsupported. Legacy sessions or catalog size refusal retain
+query-ranked opening context. The digest links trusted host metadata and does not
+attest immutable model weights or expert competence. Legacy snapshots without
 routing-declaration pins retain the single-workflow path. All calls are admitted and durably reserved against
 the same task ledger before their futures run. Each expert receives a first dependency-ready step before spare slots are filled
 with additional ready steps, within the per-expert subtask cap.

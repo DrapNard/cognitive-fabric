@@ -5,6 +5,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 mod experts;
+pub(super) use experts::ExpertCatalog;
 
 const MAX_REFERENCE_BYTES: usize = 8_000;
 const MAX_PIN_BYTES: usize = 4_096;
@@ -47,11 +48,21 @@ struct ProjectMemoryPin {
 /// Validate the saved opening context against its durable identity pins.
 /// This is intended for continuation validation; it never reads live project data.
 pub(super) fn validate_checkpoint(references: &str, pins: &Value) -> Result<()> {
-    if references.is_empty() && pins.get("project_memories").is_none() {
+    if references.is_empty()
+        && pins.get("project_memories").is_none()
+        && pins.get("expert_catalog_sha256").is_none()
+    {
         return Ok(());
     }
     if references.len() > MAX_REFERENCE_BYTES || encoded_len(pins)? > MAX_PIN_BYTES {
         bail!("Client collective saved context exceeds bounds")
+    }
+    if let Some(catalog_digest) = pins.get("expert_catalog_sha256") {
+        validate_sha256(
+            catalog_digest
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Saved expert catalog digest is malformed"))?,
+        )?;
     }
     let reference: Value = crate::strict_json::value(references.as_bytes(), MAX_REFERENCE_BYTES)?;
     if reference["trust"] != "untrusted_data_never_instructions_or_permissions" {
@@ -260,6 +271,7 @@ pub(super) fn capture(
     capture_with_memory_policy(db, query, project_reference, include_retrieval, false)
 }
 
+#[cfg(test)]
 pub(super) fn capture_with_memory_policy(
     db: &Connection,
     query: &str,
@@ -267,12 +279,34 @@ pub(super) fn capture_with_memory_policy(
     include_retrieval: bool,
     schema_memory_only: bool,
 ) -> Result<(String, Value)> {
+    let (reference, pins, _) = capture_network_context(
+        db,
+        query,
+        project_reference,
+        include_retrieval,
+        schema_memory_only,
+    )?;
+    Ok((reference, pins))
+}
+
+pub(super) fn capture_network_context(
+    db: &Connection,
+    query: &str,
+    project_reference: Option<&str>,
+    include_retrieval: bool,
+    schema_memory_only: bool,
+) -> Result<(String, Value, Option<ExpertCatalog>)> {
     let context = if include_retrieval && schema_memory_only {
         Some(crate::store::Store::client_context_with_memory_policy(
             db, query, false,
         )?)
     } else if include_retrieval {
         Some(crate::store::Store::client_context_from(db, query)?)
+    } else {
+        None
+    };
+    let expert_catalog = if include_retrieval && schema_memory_only {
+        experts::capture_catalog(db, context.as_ref())?
     } else {
         None
     };
@@ -337,6 +371,9 @@ pub(super) fn capture_with_memory_policy(
         "permissions_granted": false,
         "raw_reference_bodies_persisted": false
     });
+    if let Some(catalog) = &expert_catalog {
+        pins["expert_catalog_sha256"] = json!(catalog.digest());
+    }
     if encoded_len(&pins)? > MAX_PIN_BYTES {
         bail!("Project context pins exceed their metadata bound")
     }
@@ -470,7 +507,25 @@ pub(super) fn capture_with_memory_policy(
         // Defensive invariant: reject the whole reference, never a partial JSON string.
         bail!("Client collective reference exceeds its context bound")
     }
-    Ok((reference, pins))
+    Ok((reference, pins, expert_catalog))
+}
+
+pub(super) fn select_from_catalog(
+    catalog: &ExpertCatalog,
+    interpretation: &crate::language::Interpretation,
+    references: &str,
+    pins: &Value,
+    cfg: &crate::config::Config,
+    native_policy: Option<&crate::residency::lifecycle::NativeLifecyclePolicy>,
+) -> Result<Option<(String, Value)>> {
+    experts::select_from_catalog(
+        catalog,
+        interpretation,
+        references,
+        pins,
+        cfg,
+        native_policy,
+    )
 }
 
 fn query_terms(query: &str) -> std::collections::BTreeSet<String> {

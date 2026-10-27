@@ -44,6 +44,7 @@ pub(super) struct Lease {
     checksum: String,
     pub state: State,
     pub deadline: Instant,
+    expert_catalog: Option<super::session_context::ExpertCatalog>,
     done: bool,
 }
 
@@ -406,6 +407,7 @@ impl Lease {
                     checksum,
                     state,
                     deadline,
+                    expert_catalog: None,
                     done: false,
                 });
             }
@@ -443,13 +445,14 @@ impl Lease {
                 "knowledge.search",
             )?;
         }
-        let (references, reference_pins) = super::session_context::capture_with_memory_policy(
-            &tx,
-            &objective[..query_end],
-            runtime.cfg.agent_project_profile.as_deref(),
-            include_retrieval,
-            runtime.cfg.language_model().is_some(),
-        )?;
+        let (references, reference_pins, expert_catalog) =
+            super::session_context::capture_network_context(
+                &tx,
+                &objective[..query_end],
+                runtime.cfg.agent_project_profile.as_deref(),
+                include_retrieval,
+                runtime.cfg.language_model().is_some(),
+            )?;
         let internal_tools = u32::from(include_retrieval);
         let state = State {
             version: 1,
@@ -498,8 +501,88 @@ impl Lease {
             checksum,
             state,
             deadline: start.deadline,
+            expert_catalog,
             done: false,
         })
+    }
+
+    /// Refine the first expert selection from the catalog frozen at opening.
+    /// The catalog is one-use process memory; tool continuations keep the saved
+    /// selected subset and never discover newer registrations or model settings.
+    pub fn select_experts(
+        &mut self,
+        runtime: &AgentRuntime,
+        interpretation: &crate::language::Interpretation,
+    ) -> Result<bool> {
+        let Some(catalog) = self.expert_catalog.take() else {
+            return Ok(false);
+        };
+        if self.generation != 0
+            || self.state.calls != 1
+            || self.state.cycles != 0
+            || self.state.internal_tools == 0
+            || !self.state.pending.is_empty()
+            || runtime.cfg.language_model().is_none()
+            || self.state.configuration != sha256(&serde_json::to_vec(&runtime.cfg)?)
+            || !Arc::ptr_eq(&self.store, &runtime.store)
+        {
+            bail!(
+                "Expert catalog selection is outside the original language interpretation boundary"
+            )
+        }
+        remaining(&self.state.clock)?;
+        TaskPolicy::client_collective(&self.task)?.authorize(
+            &self.task,
+            "jev-plus",
+            "knowledge.search",
+        )?;
+        let selected = super::session_context::select_from_catalog(
+            &catalog,
+            interpretation,
+            &self.state.references,
+            &self.state.reference_pins,
+            &runtime.cfg,
+            runtime.native_policy.as_deref(),
+        )?;
+        remaining(&self.state.clock)?;
+        let Some((references, reference_pins)) = selected else {
+            self.write_active(
+                self.state.clone(),
+                "agent_expert_catalog_selection",
+                json!({
+                    "format_version":1,
+                    "catalog_sha256":catalog.digest(),
+                    "catalog_entries":catalog.len(),
+                    "interpretation_sha256":sha256(&serde_json::to_vec(interpretation)?),
+                    "replaced":false,
+                    "reason":"no_supported_context_replacement",
+                    "original_budget_preserved":true,
+                    "permissions_granted":false,
+                    "live_registry_read":false
+                }),
+            )?;
+            return Ok(false);
+        };
+        let mut next = self.state.clone();
+        let previous_sha256 = sha256(next.references.as_bytes());
+        next.references = references;
+        next.reference_pins = reference_pins;
+        next.validate(&runtime.cfg)?;
+        let payload = json!({
+            "format_version":1,
+            "catalog_sha256":catalog.digest(),
+            "catalog_entries":catalog.len(),
+            "interpretation_sha256":sha256(&serde_json::to_vec(interpretation)?),
+            "previous_reference_sha256":previous_sha256,
+            "selected_reference_sha256":sha256(next.references.as_bytes()),
+            "selected_pins_sha256":sha256(&serde_json::to_vec(&next.reference_pins)?),
+            "replaced":true,
+            "original_budget_preserved":true,
+            "permissions_granted":false,
+            "live_registry_read":false
+        });
+        self.write_active(next, "agent_expert_catalog_selection", payload)?;
+        Ok(true)
     }
     pub fn reserve(
         &mut self,

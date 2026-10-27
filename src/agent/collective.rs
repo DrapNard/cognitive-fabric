@@ -537,6 +537,7 @@ pub(super) async fn run(
         let interpreted = graph.call("interface", "", allocation).await?;
         let interpretation =
             crate::language::Interpretation::parse(interpreted.content.as_deref().unwrap_or(""))?;
+        graph.session.select_experts(runtime, &interpretation)?;
         advice = json!({"interpretation":interpretation,"trust":"advisory_original_goal_remains_authoritative"}).to_string();
         if advice.len() > 2000 {
             bail!("Structured language interpretation exceeds client context bound")

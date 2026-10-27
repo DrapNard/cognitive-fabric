@@ -1,5 +1,30 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+
+## Select client experts from the frozen opening catalog — 2026-10-27
+
+**Implemented discovery; partial network integration, runtime unverified.**
+`src/agent/session_context/experts/catalog.rs` freezes up to 256 active expert
+records and exact registered model snapshots in the opening transaction, bounded
+to 16 MiB of encoded metadata. This immutable catalog stays in a one-use
+`src/agent/sessions.rs` lease; only its digest and the selected subset are durable.
+After initial interpretation, `src/agent/collective.rs` selects exact requested
+capability versions and complete prerequisite closures without live registry reads
+or another model call. Configured language/native/resource declarations filter
+routes; dispatch admission remains independent. Whole candidate groups must fit
+the existing three-entry/8,000-reference-byte/4,096-pin-byte bounds; unsupported or
+oversized candidates yield to later candidates. Schema memory survives selection;
+optional retrieval references and matching pins are restored together if they fit.
+Selected context and audit hashes are saved with the active claim/checksum CAS,
+preserving original calls, tokens, tool allowance and deadline. Tool continuations
+reuse the subset. Legacy/catalog-refusal paths retain opening query-ranked context.
+Encoded bounds do not enforce physical RAM use; the digest does not attest weights
+or competence. Full catalog recovery, client mid-reasoning crash recovery, larger
+graphs and runtime speed/quality verification remain incomplete. No training,
+LoRA, permission expansion or automatic activation is added. Formatting, locked
+workspace/all-target compilation, strict Clippy and diff whitespace checks passed.
+No tests, benchmarks or live backend operations were run.
+
 ## Capture complete client expert groups before optional retrieval — 2026-10-27
 
 **Implemented capture; runtime unverified.**
