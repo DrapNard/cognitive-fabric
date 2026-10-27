@@ -129,9 +129,9 @@ physically stopped. No unknown outcome is replayed or refunded.
 Eligibility requires an available opening route and two remaining internal tool
 slots: expert work and final presentation checking. Required/named client tools
 retain the ordinary client-tool path. Without eligibility, the previous bounded
-reasoning path remains. Natural-language translation into typed arguments,
-manifest-bound client provider selection, composite multi-capability requests and
-catalog restoration after interrupted execution remain incomplete.
+reasoning path remains. Single-operation natural-language translation uses the separate, semantically
+unverified route below. Manifest-bound client provider selection, composite
+multi-capability requests and interrupted catalog restoration remain incomplete.
 
 The typed result stays in memory through presentation. Qwen receives a strict
 numeric/JSON output contract; the actual returned answer is checked against the
@@ -150,6 +150,61 @@ not global duplicate suppression. Built-in worker concurrency still defaults to
 one; this change does not prove physical resource enforcement, general reasoning
 quality, a speedup or a finished cognitive network. No tests, benchmarks, live
 provider calls or recovery operations were run.
+
+## Natural-language typed translation
+
+When an explicit language profile has a host-attached typed broker and two spare
+internal tool slots, the client interface prompt can advertise an optional
+`typed_goal` alongside its existing interpretation fields. The host supplies the
+finite list of capabilities available in the opening snapshot. For example:
+
+```json
+{
+  "objective": "Compute twice the sum of three and four",
+  "constraints": [],
+  "required_capabilities": ["math.evaluate"],
+  "clarification": null,
+  "typed_goal": {
+    "capability": "math.evaluate",
+    "arguments": {"expression": "2*(3+4)"}
+  }
+}
+```
+
+This is a client-only extension. The public `language::Interpretation` and Engine
+formats remain unchanged; legacy client interpretations without `typed_goal`
+remain valid. The envelope rejects unknown fields, duplicate keys, surrounding
+prose, unsupported capabilities, non-object arguments, unresolved clarification,
+multiple requested capabilities and a requested semantic capability version that
+the typed host protocol cannot attest. Existing domain parsers validate math,
+inline SQL, sorting, ordering, paths and finite-domain arguments before dispatch.
+Missing data must not be invented; ambiguous requests should omit the extension.
+Schema validation cannot prove that the model followed that instruction.
+
+Original exact typed prefixes cannot be replaced by a translation. Required or
+named external tool choices keep their ordinary client path. A translated request
+is admitted only after the interface reply, only against its frozen available
+route, and only within the original tool/call/token/input/deadline limits. There
+is no model-selected executable, module, provider, model key or permission grant.
+Natural-language work cannot overlap its own translation because it depends on
+that output; exact-input expert/language overlap remains available separately.
+No extra interpretation model call, automatic activation or fresh budget is added.
+
+The Work object retains separate hashes for the original natural request and
+canonical translated criterion, and marks its origin as a language translation.
+Result, dispatch and final-presentation audits preserve this distinction. Typed
+computation and strict final numeric/JSON formatting are checked, but a translated
+task still finishes `unverified`: these checks do not prove that the translation
+preserved the original meaning, constraints or all requested work. The standard
+completion content is not a verification certificate; operators can inspect the
+task status and audit. No newly trained model or neural safety claim follows.
+Raw translated criteria remain in one-use process memory rather than persistent
+project memory. Tool continuations do not refreeze or restore this typed work.
+
+This implements single-operation translation mechanics, not measured translation
+quality, composite task execution, manifest-backed provider selection or recovery
+of interrupted typed work. No tests, benchmarks or live model/provider calls were
+run for this addition.
 
 ## Bounded parallel work
 

@@ -1,0 +1,199 @@
+//! Optional language-interface translation into the existing typed client route.
+//!
+//! This envelope is local to the client collective. It deliberately leaves the
+//! public language interpretation and Engine response formats unchanged.
+
+use crate::{fabric::modules::Capability, language};
+use anyhow::{bail, Result};
+use serde::Deserialize;
+use serde_json::Value;
+
+const MAX_TRANSLATION_BYTES: usize = 16_000;
+const MAX_SQL_ARGUMENT_BYTES: usize = 32_000;
+const MAX_STRUCTURED_ARGUMENT_BYTES: usize = 10_000;
+
+/// Contract appended only when the host has an eligible typed route and budget.
+/// The model may translate a clear request, but it cannot choose modules,
+/// permissions, providers, or tools.
+pub(in crate::agent) const INTERFACE_TRANSLATION_CONTRACT: &str = r#"
+Optional typed_goal: use only for a single operation when the user's request unambiguously matches one
+listed schema and all required data is present. Otherwise omit typed_goal or set
+it to null, preserve the user's objective and constraints, and ask for missing
+information through clarification. Never guess tables, rows, domains, variables,
+edges, nodes, or other task data. This field is an advisory translation only; it
+does not select tools, models, providers, modules, or permissions.
+
+math.evaluate: {"capability":"math.evaluate","arguments":{"expression":"..."}}
+sql.query: {"capability":"sql.query","arguments":{"tables":[{"name":"...","columns":["..."],"rows":[[...]]}],"query":"SELECT ..."}}
+sorting.verify: {"capability":"sorting.verify","arguments":{"values":[1,2],"descending":false}}
+ordering.verify: {"capability":"ordering.verify","arguments":{"nodes":["a","b"],"before":[["a","b"]]}}
+path.verify: {"capability":"path.verify","arguments":{"nodes":["a","b"],"edges":[["a","b"]],"start":"a","goal":"b"}}
+constraints.solve: {"capability":"constraints.solve","arguments":{"variables":[{"id":"x","domain":[1,2]}],"constraints":[{"kind":"linear","terms":[{"variable":"x","coefficient":1}],"relation":"eq","rhs":1}]}}
+"#;
+
+/// A strict envelope around the stable public language interpretation.
+pub(in crate::agent) struct Parsed {
+    pub(in crate::agent) interpretation: language::Interpretation,
+    pub(in crate::agent) typed_goal: Option<Translation>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TypedGoal {
+    capability: TypedCapability,
+    arguments: Value,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+enum TypedCapability {
+    #[serde(rename = "math.evaluate")]
+    MathEvaluate,
+    #[serde(rename = "sql.query")]
+    SqlQuery,
+    #[serde(rename = "sorting.verify")]
+    SortingVerify,
+    #[serde(rename = "ordering.verify")]
+    OrderingVerify,
+    #[serde(rename = "path.verify")]
+    PathVerify,
+    #[serde(rename = "constraints.solve")]
+    ConstraintsSolve,
+}
+
+impl TypedCapability {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::MathEvaluate => "math.evaluate",
+            Self::SqlQuery => "sql.query",
+            Self::SortingVerify => "sorting.verify",
+            Self::OrderingVerify => "ordering.verify",
+            Self::PathVerify => "path.verify",
+            Self::ConstraintsSolve => "constraints.solve",
+        }
+    }
+
+    fn capability(self) -> Capability {
+        match self {
+            Self::MathEvaluate => Capability::MathEvaluate,
+            Self::SqlQuery => Capability::SqlQuery,
+            Self::SortingVerify => Capability::SortingVerify,
+            Self::OrderingVerify => Capability::OrderingVerify,
+            Self::PathVerify => Capability::PathVerify,
+            Self::ConstraintsSolve => Capability::ConstraintsSolve,
+        }
+    }
+
+    fn prefix(self) -> &'static str {
+        match self {
+            Self::MathEvaluate => "calc:",
+            Self::SqlQuery => "sql:",
+            Self::SortingVerify => "sort:",
+            Self::OrderingVerify => "order:",
+            Self::PathVerify => "path:",
+            Self::ConstraintsSolve => "csp:",
+        }
+    }
+}
+
+/// Validated model translation that can only express one existing typed route.
+/// Fields stay private so callers cannot forge a capability/argument pairing.
+pub(in crate::agent) struct Translation {
+    capability: TypedCapability,
+    arguments: Value,
+}
+
+impl Parsed {
+    /// Parse the existing interpretation plus the optional client-only extension.
+    /// The shared strict parser rejects duplicate keys and surrounding prose;
+    /// the stable public Interpretation parser remains authoritative for its
+    /// original fields and bounds.
+    pub(in crate::agent) fn parse(text: &str) -> Result<Self> {
+        let mut envelope: Value = crate::structured::parse(text, MAX_TRANSLATION_BYTES)?;
+        let object = envelope
+            .as_object_mut()
+            .ok_or_else(|| anyhow::anyhow!("Language response must be a JSON object"))?;
+        let typed_value = object.remove("typed_goal");
+        let typed_goal = match typed_value {
+            None | Some(Value::Null) => None,
+            Some(value) => {
+                let goal: TypedGoal = serde_json::from_value(value)?;
+                if !goal.arguments.is_object() {
+                    bail!("Typed goal arguments must be a JSON object")
+                }
+                Some(goal)
+            }
+        };
+
+        let interpretation_json = serde_json::to_string(&envelope)?;
+        let interpretation = language::Interpretation::parse(&interpretation_json)?;
+
+        let typed_goal = typed_goal
+            .map(|goal| {
+                let capability = goal.capability;
+                if interpretation.clarification.is_some()
+                    || interpretation.required_capabilities.len() != 1
+                    || !interpretation
+                        .required_capabilities
+                        .iter()
+                        .any(|required| required == capability.as_str())
+                {
+                    bail!("Typed goal is incompatible with the language interpretation")
+                }
+                if interpretation
+                    .capability_versions
+                    .contains_key(capability.as_str())
+                {
+                    bail!("Typed route does not support a requested capability version")
+                }
+                Ok(Translation {
+                    capability,
+                    arguments: goal.arguments,
+                })
+            })
+            .transpose()?;
+
+        Ok(Self {
+            interpretation,
+            typed_goal,
+        })
+    }
+}
+
+impl Translation {
+    pub(in crate::agent) fn capability(&self) -> Capability {
+        self.capability.capability()
+    }
+
+    /// Convert the bounded structured arguments to the existing exact-prefix
+    /// host parser input. Domain validation remains in `Work::from_query`.
+    pub(in crate::agent) fn canonical_query(&self) -> Result<String> {
+        let object = self
+            .arguments
+            .as_object()
+            .ok_or_else(|| anyhow::anyhow!("Typed goal arguments must be a JSON object"))?;
+
+        if self.capability == TypedCapability::MathEvaluate {
+            if object.len() != 1 {
+                bail!("Arithmetic arguments must contain only expression")
+            }
+            let expression = object["expression"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Arithmetic expression must be a string"))?;
+            if expression.trim().is_empty() || expression.len() > 120 {
+                bail!("Arithmetic expression is empty or exceeds its byte limit")
+            }
+            return Ok(format!("calc:{expression}"));
+        }
+
+        let encoded = serde_json::to_string(&self.arguments)?;
+        let max_bytes = if self.capability == TypedCapability::SqlQuery {
+            MAX_SQL_ARGUMENT_BYTES
+        } else {
+            MAX_STRUCTURED_ARGUMENT_BYTES
+        };
+        if encoded.len() > max_bytes {
+            bail!("Typed structured arguments exceed their byte limit")
+        }
+        Ok(format!("{}{encoded}", self.capability.prefix()))
+    }
+}

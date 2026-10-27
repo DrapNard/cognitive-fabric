@@ -2,7 +2,9 @@
 //!
 //! These adapters are trusted host code, separate from manifest-backed Expert
 //! Network providers. Requests and acceptance criteria come only from the
-//! caller's original query; interface-model interpretations cannot rewrite them.
+//! caller's exact typed query or an explicitly labeled language translation.
+//! A translated criterion cannot prove fidelity to the original natural-language
+//! request, even when its computation and final payload pass compiled checks.
 
 use crate::{
     fabric::modules::{Capability, Request, Response},
@@ -15,14 +17,17 @@ use anyhow::{bail, Result};
 const MAX_STRUCTURED_OUTPUT_BYTES: usize = 8_192;
 const MAX_SQL_OUTPUT_BYTES: usize = 16_384;
 
-/// Validated, task-independent typed work derived from one exact original goal.
+/// Validated typed work from exact input or a labeled language translation.
 ///
 /// The candidate is present only when a deterministic host solver supplies a
 /// candidate that a registered expert can diagnose. SQL and finite-domain work
 /// require the registered expert to produce a result. The original criterion is
-/// retained for independent validation after dispatch.
+/// retained for deterministic validation after dispatch. A translated criterion
+/// does not prove fidelity to the user's original meaning.
 pub(in crate::agent) struct Work {
-    original_query: String,
+    criterion_query: String,
+    source_query_sha256: String,
+    translated: bool,
     request: Request,
     candidate: Option<String>,
     criterion: Option<Criterion>,
@@ -54,6 +59,34 @@ impl Work {
         None
     }
 
+    pub(in crate::agent) fn has_explicit_prefix(query: &str) -> bool {
+        query.split_once(':').is_some_and(|(prefix, _)| {
+            matches!(
+                prefix.trim().to_ascii_lowercase().as_str(),
+                "calc" | "calculate" | "math" | "sql" | "sort" | "order" | "path" | "csp"
+            )
+        })
+    }
+
+    pub(in crate::agent) fn from_translation(
+        original: &str,
+        translation: &super::translation::Translation,
+    ) -> Result<Self> {
+        if Self::has_explicit_prefix(original) {
+            bail!("Language translation cannot replace an explicit typed goal")
+        }
+        let query = translation.canonical_query()?;
+        let mut work = Self::from_query(&query)?.ok_or_else(|| {
+            anyhow::anyhow!("Language translation has no supported typed request")
+        })?;
+        if work.capability() != translation.capability() {
+            bail!("Language translation changed its declared typed capability")
+        }
+        work.source_query_sha256 = crate::store::sha256(original.as_bytes());
+        work.translated = true;
+        Ok(work)
+    }
+
     /// Build typed work only for supported exact prefixes or bounded math syntax.
     /// Malformed recognized goals fail closed; unrelated language remains for the
     /// ordinary language-interface path.
@@ -61,7 +94,9 @@ impl Work {
         if let Some(expression) = math::extract(query) {
             let candidate = math::calculate(expression)?;
             return Ok(Some(Self {
-                original_query: query.to_owned(),
+                criterion_query: query.to_owned(),
+                source_query_sha256: crate::store::sha256(query.as_bytes()),
+                translated: false,
                 request: Request::Arithmetic {
                     expression: expression.to_owned(),
                 },
@@ -82,7 +117,9 @@ impl Work {
                 bail!("SQL adapter produced an unexpected typed capability")
             }
             return Ok(Some(Self {
-                original_query: query.to_owned(),
+                criterion_query: query.to_owned(),
+                source_query_sha256: crate::store::sha256(query.as_bytes()),
+                translated: false,
                 request,
                 candidate: None,
                 criterion: None,
@@ -115,7 +152,9 @@ impl Work {
                     bail!("Finite-domain adapter produced an unexpected typed capability")
                 }
                 return Ok(Some(Self {
-                    original_query: query.to_owned(),
+                    criterion_query: query.to_owned(),
+                    source_query_sha256: crate::store::sha256(query.as_bytes()),
+                    translated: false,
                     request,
                     candidate: None,
                     criterion: Some(criterion),
@@ -137,7 +176,9 @@ impl Work {
                 bail!("Structured adapter produced an unexpected typed capability")
             }
             return Ok(Some(Self {
-                original_query: query.to_owned(),
+                criterion_query: query.to_owned(),
+                source_query_sha256: crate::store::sha256(query.as_bytes()),
+                translated: false,
                 request,
                 candidate: Some(candidate),
                 criterion: Some(criterion),
@@ -157,7 +198,15 @@ impl Work {
     }
 
     pub(in crate::agent) fn query_digest(&self) -> String {
-        crate::store::sha256(self.original_query.as_bytes())
+        self.source_query_sha256.clone()
+    }
+
+    pub(in crate::agent) fn criterion_digest(&self) -> String {
+        crate::store::sha256(self.criterion_query.as_bytes())
+    }
+
+    pub(in crate::agent) fn translated(&self) -> bool {
+        self.translated
     }
 
     pub(in crate::agent) fn checker(&self) -> &'static str {
@@ -226,7 +275,7 @@ impl Work {
         Ok(())
     }
 
-    /// Validate a trusted expert's typed response against the original request.
+    /// Validate a trusted expert's response against the retained typed criterion.
     /// No diagnostic flag or assignment is accepted without the independent
     /// compiled host checker.
     pub(in crate::agent) async fn verify_response(&self, response: Response) -> Result<String> {
@@ -243,7 +292,7 @@ impl Work {
             }
             (Capability::SqlQuery, response @ Response::Sql { .. }) => {
                 let raw = self
-                    .original_query
+                    .criterion_query
                     .strip_prefix("sql:")
                     .ok_or_else(|| anyhow::anyhow!("Original SQL request is missing"))?;
                 let actual = modules::sql_response(response)?;

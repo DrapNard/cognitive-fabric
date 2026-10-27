@@ -6,6 +6,7 @@
 //! attestation of executable code or model weights.
 
 mod goals;
+pub(super) mod translation;
 pub(super) use goals::Work;
 
 use crate::{

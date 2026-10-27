@@ -4,6 +4,39 @@
 
 
 
+
+## Client language-to-typed request translation — 2026-10-27
+
+**Implemented bounded translation mechanics; semantic fidelity and broader
+network Partial, runtime unverified.** Architecture sections 4, 6, 7 and 9:
+`src/agent/typed_experts/translation.rs` parses a client-only optional `typed_goal`
+without changing the public Interpretation or Engine format. It allows one of
+six fixed capabilities, bounded object arguments, one matching requested capability,
+no unresolved clarification and no unsupported semantic version requirement.
+Strict JSON/domain validation rejects hidden selectors, duplicate keys and extra
+schema fields. Original exact typed syntax cannot be rewritten.
+
+`src/agent/sessions.rs` advertises available opening capabilities only within the
+existing first-turn/tool budget boundary, validates translated work after the
+interface result, and preserves pinned routes, original CAS charges and deadlines.
+`src/agent/typed_experts/goals.rs` separates the original-source hash from the
+canonical criterion hash and privately marks translation origin. Exact typed
+requests retain their previous original-criterion behavior. `src/agent/collective.rs`
+uses translated typed work without model-backed reasoning calls when eligible;
+translation and dependent execution remain sequential. Exact-input overlap remains.
+
+Translated dispatch/results/presentation explicitly record that original meaning
+is unverified. Computation and final output must pass the translated criterion,
+but final task verification remains absent and status stays `unverified`. There
+is no semantic-equivalence proof, new permission, executable/model/provider
+selector, replay/refund, fresh budget, model activation or learned adaptation.
+Raw translated criteria are not new persistent project memory. Existing typed
+output/deadline limits, role isolation and external-tool ownership remain.
+Composite translation, manifest binding, interrupted recovery and measured
+language quality/speed remain incomplete. No tests, benchmarks, live inference,
+model operations, installation or recovery execution were run. Formatting, locked
+workspace/all-target compilation, strict Clippy and diff whitespace checks passed.
+
 ## Typed client capabilities and independent opening wave — 2026-10-27
 
 **Implemented exact-input adapters and bounded wave; broader network Partial,

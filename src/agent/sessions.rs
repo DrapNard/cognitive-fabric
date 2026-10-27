@@ -72,6 +72,9 @@ impl TypedResult {
     pub fn output_contract(&self) -> &'static str {
         self.work.output_contract()
     }
+    pub fn translated(&self) -> bool {
+        self.work.translated()
+    }
 }
 
 impl PreparedTypedWork {
@@ -95,8 +98,11 @@ impl PreparedTypedWork {
                 "capability":self.work.capability().as_str(),
                 "snapshot_sha256":self.snapshot.digest(),
                 "original_query_sha256":self.work.query_digest(),
+                "criterion_sha256":self.work.criterion_digest(),
                 "result_sha256":sha256(value.as_bytes()),
-                "compiled_original_goal_match":true, "checker":self.work.checker(),
+                "compiled_criterion_match":true,
+                "original_goal_semantics_verified":!self.work.translated(),
+                "language_translated":self.work.translated(), "checker":self.work.checker(),
                 "presented_answer_verified":false
             }),
         )?;
@@ -589,6 +595,92 @@ impl Lease {
             .ok_or_else(|| anyhow::anyhow!("Original collective objective is missing"))
     }
 
+    pub fn typed_translation_contract(&self, request: &Turn) -> Option<String> {
+        if self.generation != 0
+            || self.state.calls != 0
+            || self.state.cycles != 0
+            || self
+                .state
+                .proposals
+                .saturating_add(self.state.internal_tools)
+                .saturating_add(2)
+                > self.state.tool_limit
+            || request
+                .tool_choice
+                .as_ref()
+                .is_some_and(|choice| choice == "required" || choice.is_object())
+        {
+            return None;
+        }
+        let query = self.original_objective(request).ok()?;
+        if super::typed_experts::Work::has_explicit_prefix(query) {
+            return None;
+        }
+        let snapshot = self.typed_experts.as_ref()?;
+        use crate::fabric::modules::Capability;
+        let capabilities = [
+            Capability::MathEvaluate,
+            Capability::SqlQuery,
+            Capability::SortingVerify,
+            Capability::OrderingVerify,
+            Capability::PathVerify,
+            Capability::ConstraintsSolve,
+        ]
+        .into_iter()
+        .filter(|capability| snapshot.available(*capability))
+        .map(Capability::as_str)
+        .collect::<Vec<_>>();
+        if capabilities.is_empty() {
+            return None;
+        }
+        Some(format!("{}\nHost-available typed capabilities: {}. Include the chosen capability in required_capabilities. Do not request a capability version for this typed route.",
+            super::typed_experts::translation::INTERFACE_TRANSLATION_CONTRACT,
+            json!(capabilities)))
+    }
+
+    pub fn prepare_translated_work(
+        &self,
+        request: &Turn,
+        translation: &super::typed_experts::translation::Translation,
+    ) -> Result<Option<super::typed_experts::Work>> {
+        if self.generation != 0
+            || self.state.calls != 1
+            || self.state.cycles != 0
+            || !self.state.pending.is_empty()
+            || self
+                .state
+                .proposals
+                .saturating_add(self.state.internal_tools)
+                .saturating_add(2)
+                > self.state.tool_limit
+            || request
+                .tool_choice
+                .as_ref()
+                .is_some_and(|choice| choice == "required" || choice.is_object())
+        {
+            return Ok(None);
+        }
+        let original = self.original_objective(request)?;
+        if super::typed_experts::Work::has_explicit_prefix(original) {
+            return Ok(None);
+        }
+        let Some(snapshot) = &self.typed_experts else {
+            return Ok(None);
+        };
+        if !snapshot.available(translation.capability()) {
+            return Ok(None);
+        }
+        TaskPolicy::client_collective(&self.task)?.authorize(
+            &self.task,
+            "jev-plus",
+            translation.capability().as_str(),
+        )?;
+        Ok(Some(super::typed_experts::Work::from_translation(
+            original,
+            translation,
+        )?))
+    }
+
     pub fn prepare_typed_work(&self, request: &Turn) -> Result<Option<super::typed_experts::Work>> {
         if self.generation != 0
             || self.state.calls != 0
@@ -647,7 +739,9 @@ impl Lease {
             json!({
                 "snapshot_sha256":snapshot.digest(), "module_count":snapshot.module_count(),
                 "original_query_sha256":work.query_digest(),
-                "permissions_granted":false, "model_selected_input":false
+                "criterion_sha256":work.criterion_digest(),
+                "permissions_granted":false, "model_selected_input":work.translated(),
+                "original_goal_semantics_verified":!work.translated()
             }),
         )?;
         let deadline = self
@@ -669,7 +763,7 @@ impl Lease {
         request: &Turn,
         result: &TypedResult,
         completion: &Completion,
-    ) -> Result<bool> {
+    ) -> Result<Option<bool>> {
         if self.generation != 0
             || self.state.calls != 2
             || self.state.cycles != 1
@@ -702,12 +796,17 @@ impl Lease {
             "verifier-r",
             json!({
                 "original_query_sha256":result.work.query_digest(),
-                "answer_sha256":sha256(answer.as_bytes()), "verified":checked.is_ok(),
+                "answer_sha256":sha256(answer.as_bytes()),
+                "criterion_sha256":result.work.criterion_digest(),
+                "presentation_matches_criterion":checked.is_ok(),
+                "verified":checked.is_ok() && !result.work.translated(),
+                "original_goal_semantics_verified":!result.work.translated(),
+                "language_translated":result.work.translated(),
                 "checker":result.work.checker(), "client_results_verified":false
             }),
         )?;
         checked?;
-        Ok(true)
+        Ok((!result.work.translated()).then_some(true))
     }
 
     /// Refine the first expert selection from the catalog frozen at opening.

@@ -1,5 +1,23 @@
 # Current Rust implementation
 
+## Client-only natural-language typed translation — 2026-10-27
+
+The client language interface can emit one optional bounded `typed_goal` for an
+opening host-pinned capability. Its strict wrapper preserves the existing public
+Interpretation/Engine shape and legacy client replies. Original exact typed goals
+cannot be rewritten; requested external tools, missing route/budget and ambiguous
+translation retain their respective safeguards. Natural typed execution follows
+interpretation, validates the translated arguments, uses the original budgets and
+checks its final numeric/JSON output. Original-source and translated-criterion
+hashes remain separate throughout dispatch/result/presentation audit. Such tasks
+remain semantically `unverified`; a correct translated computation does not prove
+fidelity to the original request. This supersedes the preceding note that all
+natural-language typed translation is absent. Composite work, manifest bindings,
+interrupted typed restoration and measured translation quality remain incomplete.
+No tests, benchmarks or live provider calls were run. See
+[natural-language typed translation](COGNITIVE_NETWORK.md#natural-language-typed-translation).
+
+
 ## Typed client capability routes and independent opening wave — 2026-10-27
 
 The host-attached client typed route now covers exact arithmetic, task-local SQL,
