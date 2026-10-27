@@ -1,5 +1,72 @@
 # Current Rust implementation
 
+## Checked typed evidence in the reasoning workflow — 2026-10-27
+
+**Implemented one-way typed-to-reasoning flow; continuation and unified DAG
+Partial, runtime unverified.** The language envelope accepts `typed_usage: "evidence"`
+with one complete typed goal, batch or graph. CGF executes it through the opening
+provider snapshot, admits each operation's compiled-check result under the existing
+per-operation verifier tool charge, and sends a bounded structured envelope to
+reasoning roles. Raw JSON values are serialized without converting through `Value`,
+so numeric spellings remain intact. Evidence includes operation and provider
+identity, criterion and result digests, and an explicit untrusted-data label.
+
+Jev-R/advisory model roles receive this evidence with their assigned input. The
+language interface keeps its existing boundary. Successful operation checks do
+not establish translation meaning or verify the model's final answer; the ordinary
+conversation checker cannot promote a candidate to verified on this path. The
+original call, token, input, wall and tool budgets apply, including final language
+presentation reservation.
+
+The opening checkpoint stores only the evidence digest. If a response hands off
+to client tools, continuation currently fails closed because the checked envelope
+is not restored; typed work is not silently replayed. A combined typed/model DAG
+and durable evidence restoration remain incomplete. Static formatting, locked
+workspace/all-target compilation, strict Clippy and whitespace checks only; no
+tests, benchmarks or live inference.
+
+## Checked typed evidence before model reasoning — 2026-10-27
+
+**Implemented staged typed-to-reasoning bridge; general mixed DAG Partial, runtime
+unverified.** The client interpretation envelope accepts optional
+`typed_usage: "evidence"` alongside one existing typed goal/batch/graph. The default
+remains `"final"`. Evidence usage requires complete, unambiguous intermediate
+computations with all input data; it cannot select a model, provider or permission.
+The stable public Interpretation schema is unchanged.
+
+`src/agent/collective.rs` executes the admitted typed phase, then supplies checked
+operation results to expert/model reasoning under the same task. Expert selection
+uses the original interpretation. Typed nodes retain their bounded parallel waves;
+model experts and eligible Jev-R advisory roles retain theirs. The bridge is an
+explicit phase dependency: reasoning starts after typed checks. It does not yet
+interleave independent model and typed nodes in one heterogeneous ready wave.
+
+`src/agent/sessions.rs::admit_typed_evidence` validates opening generation, root
+request, phase counters, remaining original clock, policy and held verifier slots.
+It serializes a structured envelope capped at 16,384 bytes with operation IDs,
+raw JSON values, criterion/result hashes, checker and provider identities. Raw
+values serialize directly without a floating-point conversion; reasoning receives
+the envelope as labeled data. Each operation consumes its existing verification
+slot. Actual role requests, including evidence, still pass original cumulative
+input/token/call admission; oversized evidence fails explicitly without truncation.
+Qwen receives interpretation/presentation work, not these additional reasoning
+reference bodies. Original client messages remain preserved.
+
+Operation checks do not verify translation semantics, the complete natural goal,
+or the final model answer. Mixed-path positive generic checks cannot promote its
+final answer to independently verified. A durable hash marker is recorded with
+the first evidence-check charge; repeated admission and unsupported subsequent
+continuation are refused rather than rerunning providers or silently losing
+evidence. Checked-envelope recovery and multi-turn client-tool continuation for
+this new mixed path remain incomplete. Existing final-only routes retain their
+prior behavior.
+
+Files: `src/agent/typed_experts/translation.rs`, `src/agent/sessions.rs`,
+`src/agent/collective.rs`. Static formatting, locked workspace/all-target
+compilation, strict Clippy and whitespace checks are the validation scope. No
+tests, benchmarks, live inference, installation or model activation performed;
+no latency or quality claim.
+
 ## Shared dependency readiness with explicit evidence kinds — 2026-10-27
 
 **Implemented shared scheduling foundation; heterogeneous execution Partial.**

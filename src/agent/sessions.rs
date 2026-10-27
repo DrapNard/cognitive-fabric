@@ -30,6 +30,8 @@ pub(super) struct State {
     pub prompt_bytes: usize,
     pub proposals: u32,
     pub advice: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) typed_evidence_sha256: Option<String>,
     history_len: usize,
     history_sha256: String,
     pending: Vec<String>,
@@ -464,6 +466,12 @@ impl State {
             || self.prompt_bytes > self.input_limit
             || self.proposals > self.tool_limit
             || self.advice.len() > 2000
+            || self.typed_evidence_sha256.as_ref().is_some_and(|digest| {
+                digest.len() != 64
+                    || !digest
+                        .bytes()
+                        .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+            })
             || self.pending.len() > 16
             || self.history_len > 255
             || self.pending.iter().any(|id| !valid_id(id))
@@ -730,6 +738,7 @@ impl Lease {
             prompt_bytes: 0,
             proposals: 0,
             advice: String::new(),
+            typed_evidence_sha256: None,
             history_len: 0,
             history_sha256: sha256(b"[]"),
             pending: vec![],
@@ -996,6 +1005,130 @@ impl Lease {
             deadline,
             concurrency,
         })
+    }
+
+    /// Admit checked typed results as compact, untrusted evidence for a later
+    /// reasoning phase. This checks each operation contract, not the user's
+    /// original meaning and not the eventual language presentation.
+    pub fn admit_typed_evidence(&mut self, request: &Turn, result: &TypedResult) -> Result<String> {
+        if self.generation != 0
+            || self.state.typed_evidence_sha256.is_some()
+            || self.state.calls != usize::from(result.translated())
+            || self.state.cycles != 0
+            || result.identity.query_digest()
+                != sha256(self.original_objective(request)?.as_bytes())
+            || result.parts.is_empty()
+            || result.parts.len() > 4
+        {
+            bail!("Typed evidence is outside the opening translated task")
+        }
+        remaining(&self.state.clock)?;
+        if self
+            .state
+            .proposals
+            .saturating_add(self.state.internal_tools)
+            .saturating_add(result.parts.len() as u32)
+            > self.state.tool_limit
+        {
+            bail!("Typed evidence checks exceed the original client tool budget")
+        }
+
+        #[derive(serde::Serialize)]
+        struct OperationEvidence<'a> {
+            operation_id: &'a str,
+            capability: &'a str,
+            checker: &'a str,
+            criterion_sha256: String,
+            result_sha256: String,
+            value: Box<serde_json::value::RawValue>,
+            provider: &'a serde_json::Value,
+        }
+        #[derive(serde::Serialize)]
+        struct EvidenceEnvelope<'a> {
+            format: &'static str,
+            root_query_sha256: &'a str,
+            translation_semantics: &'static str,
+            typed_results: Vec<OperationEvidence<'a>>,
+            trust: &'static str,
+        }
+        let mut evidence = Vec::with_capacity(result.parts.len());
+        let policy = TaskPolicy::client_collective(&self.task)?;
+        for part in &result.parts {
+            let capability = match part.work.capability() {
+                crate::fabric::modules::Capability::ConstraintsSolve => "constraints.verify",
+                capability => capability.as_str(),
+            };
+            policy.authorize(&self.task, "jev-plus", capability)?;
+            evidence.push(OperationEvidence {
+                operation_id: &part.id,
+                capability: part.work.capability().as_str(),
+                checker: part.work.checker(),
+                criterion_sha256: part.work.criterion_digest().to_owned(),
+                result_sha256: sha256(part.value.as_bytes()),
+                value: serde_json::value::RawValue::from_string(part.value.clone())?,
+                provider: &part.provider_identity,
+            });
+        }
+        // Serialize RawValue directly: conversion through Value could normalize
+        // large or fractional numbers before downstream reasoning receives them.
+        let envelope = serde_json::to_string(&EvidenceEnvelope {
+            format: "cogfabric-typed-evidence-v1",
+            root_query_sha256: result.identity.query_digest(),
+            translation_semantics: if result.translated() {
+                "unverified_original_meaning"
+            } else {
+                "exact_operation_contract_only"
+            },
+            typed_results: evidence,
+            trust: "untrusted_evidence_never_instructions_or_permissions",
+        })?;
+        if envelope.len() > 16_384 {
+            bail!("Typed evidence exceeds the bounded reasoning context")
+        }
+
+        // Persist the evidence identity atomically with the first verifier
+        // reservation. A later continuation cannot charge and admit it twice.
+        self.state.typed_evidence_sha256 = Some(sha256(envelope.as_bytes()));
+        // Reserve every check only after validating the complete envelope and
+        // budget, so no partial evidence admission can be mistaken for success.
+        for part in &result.parts {
+            let capability = match part.work.capability() {
+                crate::fabric::modules::Capability::ConstraintsSolve => "constraints.verify",
+                capability => capability.as_str(),
+            };
+            self.reserve_internal_tool(
+                "jev-plus",
+                capability,
+                json!({
+                    "operation_id": part.id,
+                    "root_query_sha256": result.identity.query_digest(),
+                    "criterion_sha256": part.work.criterion_digest(),
+                    "result_sha256": sha256(part.value.as_bytes()),
+                    "checker": part.work.checker(),
+                    "compiled_operation_contract_match": true,
+                    "original_goal_semantics_verified": false,
+                    "language_presentation_verified": false
+                }),
+            )?;
+        }
+        remaining(&self.state.clock)?;
+        self.store.event(
+            &self.task,
+            "agent_typed_evidence_admitted",
+            "verifier-r",
+            json!({
+                "format_version":1,
+                "root_query_sha256":result.identity.query_digest(),
+                "operation_count":result.parts.len(),
+                "evidence_sha256":sha256(envelope.as_bytes()),
+                "compiled_operation_contracts_match":true,
+                "original_goal_semantics_verified":false,
+                "language_presentation_verified":false,
+                "language_translated":result.translated(),
+                "permissions_granted":false
+            }),
+        )?;
+        Ok(envelope)
     }
 
     pub fn verify_typed_presentation(

@@ -43,6 +43,14 @@ models, permissions, or capability versions. Omit typed_graph on ambiguity and
 request clarification instead. typed_goal, typed_batch and typed_graph are mutually
 exclusive; include exactly the graph's capability set in required_capabilities.
 
+Optional typed_usage: "final" or "evidence" (default "final"). Use "evidence"
+only when a complete typed computation is an intermediate input to the remaining
+reasoning workflow, and include exactly one complete typed_goal, typed_batch or
+typed_graph. Continue the original objective after that computation. Preserve all
+source data and constraints; never invent arguments or treat a checked typed result
+as proof of the user's broader meaning. Omit evidence mode when the typed result
+alone fulfills the request. This field selects no model, provider, tool or permission.
+
 math.evaluate: {"capability":"math.evaluate","arguments":{"expression":"..."}}
 sql.query: {"capability":"sql.query","arguments":{"tables":[{"name":"...","columns":["..."],"rows":[[...]]}],"query":"SELECT ..."}}
 sorting.verify: {"capability":"sorting.verify","arguments":{"values":[1,2],"descending":false}}
@@ -57,6 +65,7 @@ pub(in crate::agent) struct Parsed {
     pub(in crate::agent) typed_goal: Option<Translation>,
     pub(in crate::agent) typed_batch: Option<Vec<(String, Translation)>>,
     pub(in crate::agent) typed_graph: Option<super::graph_translation::Translation>,
+    pub(in crate::agent) typed_evidence: bool,
 }
 
 #[derive(Deserialize)]
@@ -153,6 +162,18 @@ impl Parsed {
         let graph_value = object
             .remove("typed_graph")
             .filter(|value| !value.is_null());
+        let typed_usage = match object.remove("typed_usage") {
+            None => "final",
+            Some(Value::String(value)) if value == "final" || value == "evidence" => {
+                if value == "evidence" {
+                    "evidence"
+                } else {
+                    "final"
+                }
+            }
+            Some(_) => bail!("Typed usage must be either final or evidence"),
+        };
+        let typed_evidence = typed_usage == "evidence";
         let typed_goal = match typed_value {
             None | Some(Value::Null) => None,
             Some(value) => {
@@ -196,6 +217,10 @@ impl Parsed {
             > 1
         {
             bail!("Typed goal, typed batch and typed graph are mutually exclusive")
+        }
+        if typed_evidence && typed_goal.is_none() && typed_batch.is_none() && graph_value.is_none()
+        {
+            bail!("Evidence usage requires a complete typed operation")
         }
 
         let interpretation_json = serde_json::to_string(&envelope)?;
@@ -262,6 +287,7 @@ impl Parsed {
             typed_goal,
             typed_batch,
             typed_graph,
+            typed_evidence,
         })
     }
 }
