@@ -19,58 +19,76 @@ fn ready_expert_wave(
     per_expert_capacity: usize,
     global_capacity: usize,
 ) -> Result<Vec<(usize, usize, serde_json::Value)>> {
-    let mut counts = vec![0usize; plans.len()];
-    let mut selected = vec![std::collections::BTreeSet::<String>::new(); plans.len()];
-    let mut wave = Vec::new();
-    let mut active_experts = 0usize;
-    while wave.len() < global_capacity {
-        let mut progressed = false;
-        for (plan_index, bound) in plans.iter().enumerate() {
-            if wave.len() == global_capacity
-                || counts[plan_index] >= per_expert_capacity
-                || (counts[plan_index] == 0 && active_experts >= expert_capacity)
-            {
-                continue;
+    use super::super::graph_schedule::{self, Dependency, Evidence, Node};
+    if done.len() != plans.len() || results.len() != plans.len() {
+        bail!("Expert graph completion state does not match its plans")
+    }
+    let coordinates = plans
+        .iter()
+        .enumerate()
+        .flat_map(|(plan_index, bound)| {
+            (0..bound.plan.steps.len()).map(move |step_index| (plan_index, step_index))
+        })
+        .collect::<Vec<_>>();
+    let nodes = coordinates
+        .iter()
+        .map(|&(plan_index, step_index)| {
+            let bound = &plans[plan_index];
+            let step = &bound.plan.steps[step_index];
+            let mut sources = std::collections::BTreeSet::new();
+            for dependency in &step.depends_on {
+                let source = coordinates
+                    .iter()
+                    .position(|&(owner, index)| {
+                        owner == plan_index && plans[owner].plan.steps[index].id == *dependency
+                    })
+                    .ok_or_else(|| anyhow::anyhow!("Expert step dependency is missing"))?;
+                sources.insert(source);
             }
-            let mut prerequisites_complete = true;
             for dependency in &bound.dependencies {
-                let source = plans
+                let owner = plans
                     .iter()
                     .position(|candidate| candidate.plan.id == *dependency)
                     .ok_or_else(|| anyhow::anyhow!("Pinned expert dependency is missing"))?;
-                prerequisites_complete &= done[source].len() == plans[source].plan.steps.len();
+                sources.extend(
+                    coordinates
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, (candidate, _))| *candidate == owner)
+                        .map(|(index, _)| index),
+                );
             }
-            if !prerequisites_complete {
-                continue;
-            }
-            if let Some((step_index, step)) =
-                bound.plan.steps.iter().enumerate().find(|(_, step)| {
-                    !done[plan_index].contains(&step.id)
-                        && !selected[plan_index].contains(&step.id)
-                        && step
-                            .depends_on
-                            .iter()
-                            .all(|dependency| done[plan_index].contains(dependency))
-                })
-            {
-                selected[plan_index].insert(step.id.clone());
-                if counts[plan_index] == 0 {
-                    active_experts += 1;
-                }
-                counts[plan_index] += 1;
-                wave.push((
-                    plan_index,
-                    step_index,
-                    expert_prior(plans, plan_index, results)?,
-                ));
-                progressed = true;
-            }
-        }
-        if !progressed {
-            break;
-        }
-    }
-    Ok(wave)
+            Ok(Node {
+                group: plan_index,
+                dependencies: sources
+                    .into_iter()
+                    .map(|node| Dependency {
+                        node,
+                        evidence: Evidence::Advisory,
+                    })
+                    .collect(),
+                completed: done[plan_index]
+                    .contains(&step.id)
+                    .then_some(Evidence::Advisory),
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    graph_schedule::ready_wave(
+        &nodes,
+        expert_capacity,
+        per_expert_capacity,
+        global_capacity,
+    )?
+    .into_iter()
+    .map(|index| {
+        let (plan_index, step_index) = coordinates[index];
+        Ok((
+            plan_index,
+            step_index,
+            expert_prior(plans, plan_index, results)?,
+        ))
+    })
+    .collect()
 }
 
 fn expert_prior(

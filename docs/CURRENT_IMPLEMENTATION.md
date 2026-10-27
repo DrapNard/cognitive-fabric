@@ -1,5 +1,31 @@
 # Current Rust implementation
 
+## Shared dependency readiness with explicit evidence kinds — 2026-10-27
+
+**Implemented shared scheduling foundation; heterogeneous execution Partial.**
+`src/agent/graph_schedule.rs` owns bounded host-only node/edge readiness with
+`Advisory` and `Checked` completion kinds. Checked edges refuse advisory results;
+advisory edges accept either kind without granting permissions. Node indexes are
+local to the validated host-built graph, not model-selected global identifiers.
+The primitive validates references, duplicate edges and cycles, caps graphs at
+16 nodes and ready waves at four, and preserves round-robin group/per-group caps.
+A node selected in the current wave never satisfies another pending node's edge.
+
+`src/agent/sessions.rs` uses it for typed dependency waves with checked-only
+edges and stable operation order. `src/agent/collective/experts.rs` maps model
+workflow steps and cross-expert prerequisites into the same primitive, preserving
+the requirement that every prerequisite expert step finish before dependent work.
+Routes, budgets, policy checks, dataflow resolution and output checks remain owned
+by their existing executors. Completed typed nodes enter only after compiled
+checks; successful model steps enter only as advisory. This shares readiness, not
+verification claims.
+
+A unified external mixed-plan envelope, cross-kind evidence bindings, combined
+route admission and interrupted recovery remain incomplete. Existing typed and
+model executors still dispatch separately. No tests, benchmarks or live model calls
+were run; static formatting, workspace/all-target compilation, strict Clippy and
+whitespace checks are the validation scope. No speedup or quality claim.
+
 ## Concurrent preparation across expert runtimes — 2026-10-27
 
 **Implemented bounded expert scheduling; runtime unverified.**

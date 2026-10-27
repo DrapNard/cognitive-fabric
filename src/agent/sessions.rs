@@ -94,20 +94,47 @@ impl PreparedTypedWork {
         let mut parts = Vec::<TypedPart>::new();
         let mut checked_outputs = std::collections::BTreeMap::<String, String>::new();
         while !pending.is_empty() {
-            let ready = pending
+            use super::graph_schedule::{self, Dependency, Evidence, Node};
+            let ids = pending
                 .iter()
-                .enumerate()
-                .filter(|(_, entry)| {
-                    entry.template.as_ref().is_none_or(|template| {
-                        template
-                            .dependencies()
-                            .iter()
-                            .all(|id| checked_outputs.contains_key(id))
+                .map(|entry| entry.id.as_str())
+                .chain(parts.iter().map(|part| part.id.as_str()))
+                .collect::<Vec<_>>();
+            let mut nodes = pending
+                .iter()
+                .map(|entry| {
+                    let dependencies = entry
+                        .template
+                        .as_ref()
+                        .map(|template| template.dependencies())
+                        .unwrap_or_default()
+                        .iter()
+                        .map(|id| {
+                            let node = ids
+                                .iter()
+                                .position(|candidate| *candidate == id)
+                                .ok_or_else(|| {
+                                    anyhow::anyhow!("Typed graph dependency is missing")
+                                })?;
+                            Ok(Dependency {
+                                node,
+                                evidence: Evidence::Checked,
+                            })
+                        })
+                        .collect::<Result<Vec<_>>>()?;
+                    Ok(Node {
+                        group: 0,
+                        dependencies,
+                        completed: None,
                     })
                 })
-                .take(self.concurrency)
-                .map(|(index, _)| index)
-                .collect::<Vec<_>>();
+                .collect::<Result<Vec<_>>>()?;
+            nodes.extend(parts.iter().map(|_| Node {
+                group: 0,
+                dependencies: Vec::new(),
+                completed: Some(Evidence::Checked),
+            }));
+            let ready = graph_schedule::ready_wave(&nodes, 1, self.concurrency, self.concurrency)?;
             if ready.is_empty() {
                 bail!("Typed graph has no dependency-ready operation")
             }

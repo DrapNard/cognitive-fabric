@@ -2,6 +2,7 @@
 //! Tool calls are proposals; execution and approval belong to the client.
 mod collective;
 mod expert_workflow;
+mod graph_schedule;
 mod local;
 mod native_chat;
 pub mod native_scope;
