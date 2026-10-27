@@ -297,7 +297,7 @@ impl Graph<'_> {
     /// output. Reserve both budgets before polling either owned future.
     async fn typed_opening_pair(
         &mut self,
-        work: super::typed_experts::Work,
+        work: super::typed_experts::Plan,
         allocation: usize,
     ) -> Result<(Completion, sessions::TypedResult)> {
         if !self.available(&[("interface", "", allocation)])? {
@@ -313,7 +313,7 @@ impl Graph<'_> {
         self.prompt_bytes += bytes.len();
         let prepared = self
             .session
-            .reserve_typed_work(self.runtime, self.original, work)?;
+            .reserve_typed_work(self.runtime, self.original, work, true)?;
         self.schedule("independent_language_typed_expert_wave", true)?;
         let timeout = Duration::from_secs(self.runtime.cfg.timeout_seconds)
             .min(self.deadline.saturating_duration_since(Instant::now()));
@@ -662,6 +662,11 @@ pub(super) async fn run(
                     .session
                     .prepare_translated_work(request, &translation)?;
                 using_typed = typed_work.is_some();
+            } else if let Some(translations) = parsed.typed_batch {
+                typed_work = graph
+                    .session
+                    .prepare_translated_batch(request, translations)?;
+                using_typed = typed_work.is_some();
             }
         }
         if !using_typed {
@@ -682,7 +687,7 @@ pub(super) async fn run(
                 graph.schedule("pinned_typed_expert", true)?;
                 graph
                     .session
-                    .reserve_typed_work(runtime, request, work)?
+                    .reserve_typed_work(runtime, request, work, false)?
                     .execute()
                     .await?
             }

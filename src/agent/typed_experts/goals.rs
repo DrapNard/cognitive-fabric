@@ -63,7 +63,15 @@ impl Work {
         query.split_once(':').is_some_and(|(prefix, _)| {
             matches!(
                 prefix.trim().to_ascii_lowercase().as_str(),
-                "calc" | "calculate" | "math" | "sql" | "sort" | "order" | "path" | "csp"
+                "calc"
+                    | "calculate"
+                    | "math"
+                    | "sql"
+                    | "sort"
+                    | "order"
+                    | "path"
+                    | "csp"
+                    | "typed-batch"
             )
         })
     }

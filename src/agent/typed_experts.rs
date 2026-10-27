@@ -6,8 +6,10 @@
 //! attestation of executable code or model weights.
 
 mod goals;
+mod plans;
 pub(super) mod translation;
 pub(super) use goals::Work;
+pub(super) use plans::{Entry, Plan, PlanIdentity};
 
 use crate::{
     fabric::modules::{Broker, Capability, Grant, TaskRoutes},

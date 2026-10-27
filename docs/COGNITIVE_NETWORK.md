@@ -131,7 +131,7 @@ slots: expert work and final presentation checking. Required/named client tools
 retain the ordinary client-tool path. Without eligibility, the previous bounded
 reasoning path remains. Single-operation natural-language translation uses the separate, semantically
 unverified route below. Manifest-bound client provider selection, composite
-multi-capability requests and interrupted catalog restoration remain incomplete.
+typed dependency graphs and interrupted catalog restoration remain incomplete.
 
 The typed result stays in memory through presentation. Qwen receives a strict
 numeric/JSON output contract; the actual returned answer is checked against the
@@ -175,7 +175,7 @@ This is a client-only extension. The public `language::Interpretation` and Engin
 formats remain unchanged; legacy client interpretations without `typed_goal`
 remain valid. The envelope rejects unknown fields, duplicate keys, surrounding
 prose, unsupported capabilities, non-object arguments, unresolved clarification,
-multiple requested capabilities and a requested semantic capability version that
+invalid single-operation capability declarations and a requested semantic capability version that
 the typed host protocol cannot attest. Existing domain parsers validate math,
 inline SQL, sorting, ordering, paths and finite-domain arguments before dispatch.
 Missing data must not be invented; ambiguous requests should omit the extension.
@@ -201,10 +201,81 @@ task status and audit. No newly trained model or neural safety claim follows.
 Raw translated criteria remain in one-use process memory rather than persistent
 project memory. Tool continuations do not refreeze or restore this typed work.
 
-This implements single-operation translation mechanics, not measured translation
-quality, composite task execution, manifest-backed provider selection or recovery
-of interrupted typed work. No tests, benchmarks or live model/provider calls were
+Single-operation translation and independent batches use the same origin rules.
+Measured translation quality, dependent task execution, manifest-backed provider
+selection and interrupted typed recovery remain incomplete. No tests, benchmarks or live model/provider calls were
 run for this addition.
+
+## Independent composite typed requests
+
+`typed-batch:` groups one to four independent exact typed queries. The batch body
+is strict JSON capped at 32,000 bytes; each query keeps its original domain bounds.
+Operation IDs are distinct, at most 32 ASCII characters, start with a letter and
+contain only letters, digits or underscores. Nested batches, dependency fields and
+unknown fields are refused. For example:
+
+```text
+typed-batch:{"operations":[{"id":"sum","query":"calc:2+2"},{"id":"sorted","query":"sort:{\"values\":[3,1,3]}"}]}
+```
+
+The response is one JSON object, such as `{"sorted":[1,3,3],"sum":4}`. The
+final presentation must contain exactly the expected IDs and each value must pass
+its retained per-operation check. Strictly validated raw JSON values retain their
+numeric spelling during assembly and checking, so arithmetic cannot accept a
+different decimal merely because it rounds to the same floating-point value.
+Legacy single-operation text remains unchanged.
+The aggregate response is capped at 16,384 bytes. Larger outputs or exhausted
+language/token/input budgets fail instead of receiving another model allowance.
+
+The client-only interpretation extension also accepts an independent translation:
+
+```json
+{
+  "objective": "Compute two plus two and sort three, one, three",
+  "constraints": [],
+  "required_capabilities": ["math.evaluate", "sorting.verify"],
+  "clarification": null,
+  "typed_batch": {
+    "operations": [
+      {"id":"sum","capability":"math.evaluate","arguments":{"expression":"2+2"}},
+      {"id":"sorted","capability":"sorting.verify","arguments":{"values":[3,1,3]}}
+    ]
+  }
+}
+```
+
+`typed_goal` and `typed_batch` are mutually exclusive. Batch declarations must
+match the interpretation's complete capability set, without unresolved
+clarification or unsupported version requirements. The prompt advertises the
+current operation allowance from remaining tool slots and the opening pinned
+capabilities. Translated canonical queries together are capped at 32,000 bytes.
+A translated batch remains semantically `unverified`, even if every computation
+and final value is valid. No missing/extra declared operation is accepted as a
+partial answer, but schema checks cannot prove that Qwen captured the user's intent.
+
+The host validates the entire plan, requires every route to be present in the
+opening snapshot, and requires two internal tool slots per operation (invocation
+and final check). Every invocation is charged through the original session CAS
+before polling any expert. One immutable snapshot is shared across bounded owned
+waves. Concurrent operations respect both `subtask_parallelism` and
+`expert_parallelism`, each capped at four. Exact-input opening overlap reserves
+one total slot for language; natural-language operations wait for translation.
+All waves use one existing typed deadline and the original same-boot task clock.
+No later wave starts after a failed/unknown result; all started siblings settle,
+and reservations are not refunded or replayed. Cancellation still cannot prove
+physical termination of arbitrary trusted modules.
+
+Ordinary audits record `root_query_sha256` for the complete batch and separate
+per-operation source/criterion hashes and IDs. Raw inputs/results remain in
+one-use process objects. Final checks are charged per operation before any final
+value is approved. Exact batches retain original-criterion verification;
+translated batches retain their original-meaning limitation. The built-in worker
+still has one execution slot, so parallel futures can queue behind that worker.
+
+These are independent batches: there is no dependency graph, output substitution,
+cross-operation iterative reasoning or interrupted typed-plan restoration. There
+is no new permission, protocol/schema change, model activation or speed claim.
+No tests, benchmarks or live provider calls were run for this addition.
 
 ## Bounded parallel work
 

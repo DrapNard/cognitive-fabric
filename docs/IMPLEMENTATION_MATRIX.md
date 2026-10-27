@@ -5,6 +5,45 @@
 
 
 
+
+## Independent composite typed client requests — 2026-10-27
+
+**Implemented bounded independent plans and waves; dependent network Partial,
+runtime unverified.** Architecture sections 4, 6, 7 and 9:
+`src/agent/typed_experts/plans.rs` validates one-to-four-operation exact
+`typed-batch:` inputs and translated plans, preserving distinct root/source/
+criterion identities. Strict JSON, IDs, complete route availability, per-domain
+limits, 32,000-byte batch/translated aggregate inputs and a 16,384-byte result cap
+bound the plan. Nested batches, unknown/dependency fields and partial result sets
+are refused. The existing serde_json dependency enables `raw_value`; bounded
+strict validation precedes raw value wrapping/extraction, preserving numeric text
+through assembly and final comparison without decimal rounding aliases. Legacy
+single-result formatting remains unchanged.
+
+`src/agent/typed_experts/translation.rs` accepts mutually exclusive `typed_goal`
+or independent `typed_batch` extensions, requires an exact declared capability set,
+and rejects ambiguity/unsupported versions. `src/agent/typed_experts/goals.rs`
+protects exact batch syntax from language rewriting.
+`src/agent/sessions.rs` validates the whole plan, requires two internal tool slots
+per operation and charges every invocation before polling. One immutable snapshot
+is shared through owned waves bounded by total/expert concurrency, subtracting
+one language slot during opening overlap. All waves retain one typed deadline
+and the original root clock. Started siblings settle before failure propagation;
+later waves do not start after an error. No uncertain operation is replayed and
+unused reservations are not refunded. Final checks are charged per operation and
+require exactly the original ID set plus each retained numeric/JSON criterion.
+`src/agent/collective.rs` retains the existing two language calls and connects
+batch plans to the same opening/presentation route. Natural translations remain
+unverified for original semantics. Built-in worker concurrency still defaults to
+one, so queued execution may serialize even when futures overlap.
+
+No model/provider/executable permissions, protocol/schema changes, automatic
+activation or learned weights are added. Typed dependency graphs, output
+substitution, manifest binding, interrupted recovery, physical resource guarantees
+and measured speed/quality remain incomplete. No tests, benchmarks, live inference,
+model operations, installation or recovery execution were run. Formatting, locked
+workspace/all-target compilation, strict Clippy and diff whitespace checks passed.
+
 ## Client language-to-typed request translation — 2026-10-27
 
 **Implemented bounded translation mechanics; semantic fidelity and broader

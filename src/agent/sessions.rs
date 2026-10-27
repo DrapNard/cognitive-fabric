@@ -55,14 +55,23 @@ pub(super) struct PreparedTypedWork {
     store: Arc<Store>,
     task: String,
     clock: Snapshot,
-    snapshot: super::typed_experts::Snapshot,
-    work: super::typed_experts::Work,
+    snapshot: Arc<super::typed_experts::Snapshot>,
+    identity: super::typed_experts::PlanIdentity,
+    entries: Vec<super::typed_experts::Entry>,
     deadline: Instant,
+    concurrency: usize,
+}
+
+struct TypedPart {
+    id: String,
+    value: String,
+    work: super::typed_experts::Work,
 }
 
 pub(super) struct TypedResult {
     value: String,
-    work: super::typed_experts::Work,
+    identity: super::typed_experts::PlanIdentity,
+    parts: Vec<TypedPart>,
 }
 
 impl TypedResult {
@@ -70,45 +79,86 @@ impl TypedResult {
         &self.value
     }
     pub fn output_contract(&self) -> &'static str {
-        self.work.output_contract()
+        self.identity.output_contract()
     }
     pub fn translated(&self) -> bool {
-        self.work.translated()
+        self.identity.translated()
     }
 }
 
 impl PreparedTypedWork {
     pub async fn execute(self) -> Result<TypedResult> {
         remaining(&self.clock)?;
-        let value = self
-            .snapshot
-            .evaluate(
-                &self.task,
-                &self.work,
-                self.deadline,
-                &TaskPolicy::client_collective(&self.task)?,
-            )
-            .await?;
-        remaining(&self.clock)?;
-        self.store.event(
-            &self.task,
-            "agent_typed_expert_result",
-            "jev-plus",
-            json!({
-                "capability":self.work.capability().as_str(),
-                "snapshot_sha256":self.snapshot.digest(),
-                "original_query_sha256":self.work.query_digest(),
-                "criterion_sha256":self.work.criterion_digest(),
-                "result_sha256":sha256(value.as_bytes()),
-                "compiled_criterion_match":true,
-                "original_goal_semantics_verified":!self.work.translated(),
-                "language_translated":self.work.translated(), "checker":self.work.checker(),
-                "presented_answer_verified":false
-            }),
-        )?;
+        let mut entries = self.entries.into_iter();
+        let mut parts = Vec::new();
+        loop {
+            let wave = entries.by_ref().take(self.concurrency).collect::<Vec<_>>();
+            if wave.is_empty() {
+                break;
+            }
+            remaining(&self.clock)?;
+            type Operation = std::pin::Pin<
+                Box<dyn Future<Output = (super::typed_experts::Entry, Result<String>)> + Send>,
+            >;
+            let futures = wave
+                .into_iter()
+                .map(|entry| {
+                    let snapshot = self.snapshot.clone();
+                    let task = self.task.clone();
+                    let deadline = self.deadline;
+                    Box::pin(async move {
+                        let result = match TaskPolicy::client_collective(&task) {
+                            Ok(policy) => {
+                                snapshot
+                                    .evaluate(&task, &entry.work, deadline, &policy)
+                                    .await
+                            }
+                            Err(error) => Err(error),
+                        };
+                        (entry, result)
+                    }) as Operation
+                })
+                .collect();
+            let reports = crate::reasoning::parallel::join_all(futures).await;
+            // Await every owned operation in the wave, even when a sibling
+            // failed. Later waves never start after an uncertain result.
+            let mut failed = false;
+            for (entry, result) in reports {
+                self.store.event(&self.task, "agent_typed_expert_result", "jev-plus", json!({
+                    "operation_id":entry.id, "root_query_sha256":self.identity.query_digest(),
+                    "capability":entry.work.capability().as_str(),
+                    "snapshot_sha256":self.snapshot.digest(),
+                    "original_query_sha256":entry.work.query_digest(),
+                    "criterion_sha256":entry.work.criterion_digest(),
+                    "result_sha256":result.as_ref().ok().map(|value|sha256(value.as_bytes())),
+                    "compiled_criterion_match":result.is_ok(),
+                    "original_goal_semantics_verified":result.is_ok() && !self.identity.translated(),
+                    "language_translated":self.identity.translated(), "checker":entry.work.checker(),
+                    "presented_answer_verified":false, "automatic_retry":false
+                }))?;
+                match result {
+                    Ok(value) => parts.push(TypedPart {
+                        id: entry.id,
+                        value,
+                        work: entry.work,
+                    }),
+                    Err(_) => failed = true,
+                }
+            }
+            remaining(&self.clock)?;
+            if failed {
+                bail!("Typed expert wave failed; no operation will be replayed")
+            }
+        }
+        let values = parts
+            .iter()
+            .map(|part| (part.id.clone(), part.value.clone()))
+            .collect::<Vec<_>>();
+        let value = self.identity.assemble(&values)?;
         Ok(TypedResult {
             value,
-            work: self.work,
+            identity: self.identity,
+            parts,
         })
     }
 }
@@ -633,117 +683,162 @@ impl Lease {
         if capabilities.is_empty() {
             return None;
         }
-        Some(format!("{}\nHost-available typed capabilities: {}. Include the chosen capability in required_capabilities. Do not request a capability version for this typed route.",
+        Some(format!("{}\nHost-available typed capabilities: {}. Maximum independent typed operations: {}. Include exactly the chosen capability set in required_capabilities. Do not request capability versions for typed routes.",
             super::typed_experts::translation::INTERFACE_TRANSLATION_CONTRACT,
-            json!(capabilities)))
+            json!(capabilities),
+            self.state.tool_limit.saturating_sub(self.state.proposals.saturating_add(self.state.internal_tools)).saturating_div(2).min(4)))
     }
 
-    pub fn prepare_translated_work(
+    fn typed_plan_eligible(
         &self,
         request: &Turn,
-        translation: &super::typed_experts::translation::Translation,
-    ) -> Result<Option<super::typed_experts::Work>> {
+        plan: &super::typed_experts::Plan,
+        calls: usize,
+    ) -> Result<bool> {
         if self.generation != 0
-            || self.state.calls != 1
+            || self.state.calls != calls
             || self.state.cycles != 0
             || !self.state.pending.is_empty()
             || self
                 .state
                 .proposals
                 .saturating_add(self.state.internal_tools)
-                .saturating_add(2)
+                .saturating_add((plan.len() as u32).saturating_mul(2))
                 > self.state.tool_limit
             || request
                 .tool_choice
                 .as_ref()
                 .is_some_and(|choice| choice == "required" || choice.is_object())
         {
-            return Ok(None);
+            return Ok(false);
         }
-        let original = self.original_objective(request)?;
-        if super::typed_experts::Work::has_explicit_prefix(original) {
-            return Ok(None);
+        if plan.query_digest() != sha256(self.original_objective(request)?.as_bytes()) {
+            bail!("Typed plan differs from the original request")
+        }
+        if plan
+            .works()
+            .any(|work| work.translated() != plan.translated())
+        {
+            bail!("Typed plan contains inconsistent criterion origins")
         }
         let Some(snapshot) = &self.typed_experts else {
-            return Ok(None);
+            return Ok(false);
         };
-        if !snapshot.available(translation.capability()) {
-            return Ok(None);
+        if plan
+            .works()
+            .any(|work| !snapshot.available(work.capability()))
+        {
+            return Ok(false);
         }
-        TaskPolicy::client_collective(&self.task)?.authorize(
-            &self.task,
-            "jev-plus",
-            translation.capability().as_str(),
-        )?;
-        Ok(Some(super::typed_experts::Work::from_translation(
-            original,
-            translation,
-        )?))
+        let policy = TaskPolicy::client_collective(&self.task)?;
+        for work in plan.works() {
+            policy.authorize(&self.task, "jev-plus", work.capability().as_str())?;
+        }
+        Ok(true)
     }
 
-    pub fn prepare_typed_work(&self, request: &Turn) -> Result<Option<super::typed_experts::Work>> {
-        if self.generation != 0
-            || self.state.calls != 0
-            || self.state.cycles != 0
-            || self
-                .state
-                .proposals
-                .saturating_add(self.state.internal_tools)
-                .saturating_add(2)
-                > self.state.tool_limit
+    pub fn prepare_translated_work(
+        &self,
+        request: &Turn,
+        translation: &super::typed_experts::translation::Translation,
+    ) -> Result<Option<super::typed_experts::Plan>> {
+        if self.typed_experts.is_none()
+            || super::typed_experts::Work::has_explicit_prefix(self.original_objective(request)?)
         {
             return Ok(None);
         }
-        let Some(snapshot) = &self.typed_experts else {
-            return Ok(None);
-        };
-        let query = self.original_objective(request)?;
-        let Some(capability) = super::typed_experts::Work::capability_hint(query) else {
-            return Ok(None);
-        };
-        if !snapshot.available(capability) {
-            return Ok(None);
+        let plan = super::typed_experts::Plan::from_translation(
+            self.original_objective(request)?,
+            translation,
+        )?;
+        if self.typed_plan_eligible(request, &plan, 1)? {
+            Ok(Some(plan))
+        } else {
+            Ok(None)
         }
-        super::typed_experts::Work::from_query(query)
     }
 
-    /// Charge once before either queue admission or expert execution. The
-    /// returned future owns its snapshot and cannot mutate or renew this lease.
+    pub fn prepare_translated_batch(
+        &self,
+        request: &Turn,
+        translations: Vec<(String, super::typed_experts::translation::Translation)>,
+    ) -> Result<Option<super::typed_experts::Plan>> {
+        if self.typed_experts.is_none()
+            || super::typed_experts::Work::has_explicit_prefix(self.original_objective(request)?)
+        {
+            return Ok(None);
+        }
+        let plan = super::typed_experts::Plan::from_translated_entries(
+            self.original_objective(request)?,
+            translations,
+        )?;
+        if self.typed_plan_eligible(request, &plan, 1)? {
+            Ok(Some(plan))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn prepare_typed_work(&self, request: &Turn) -> Result<Option<super::typed_experts::Plan>> {
+        if self.typed_experts.is_none() {
+            return Ok(None);
+        }
+        let query = self.original_objective(request)?;
+        if !query.starts_with("typed-batch:")
+            && super::typed_experts::Work::capability_hint(query).is_none()
+        {
+            return Ok(None);
+        }
+        let Some(plan) = super::typed_experts::Plan::from_query(query)? else {
+            return Ok(None);
+        };
+        if self.typed_plan_eligible(request, &plan, 0)? {
+            Ok(Some(plan))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Reserve every independent invocation before polling any operation. The
+    /// remaining tool slots are held by this exclusive task claim for final checks.
     pub fn reserve_typed_work(
         &mut self,
         runtime: &AgentRuntime,
         request: &Turn,
-        work: super::typed_experts::Work,
+        plan: super::typed_experts::Plan,
+        alongside_language: bool,
     ) -> Result<PreparedTypedWork> {
-        if self.generation != 0
-            || self.state.calls != 1
-            || self.state.cycles != 0
-            || !self.state.pending.is_empty()
+        if !self.typed_plan_eligible(request, &plan, 1)?
             || runtime.cfg.language_model().is_none()
             || self.state.configuration != sha256(&serde_json::to_vec(&runtime.cfg)?)
             || !Arc::ptr_eq(&self.store, &runtime.store)
-            || work.query_digest() != sha256(self.original_objective(request)?.as_bytes())
         {
-            bail!("Typed expert work is outside the original interpretation boundary")
+            bail!("Typed expert plan is outside its original admission boundary")
         }
-        let snapshot = self
-            .typed_experts
-            .take()
-            .ok_or_else(|| anyhow::anyhow!("Opening typed expert snapshot is unavailable"))?;
-        if !snapshot.available(work.capability()) {
-            bail!("Opening typed expert route is unavailable")
+        let total = runtime.cfg.subtask_parallelism.unwrap_or(1).clamp(1, 4);
+        if alongside_language && total < 2 {
+            bail!("Typed opening wave exceeds configured concurrency")
         }
-        self.reserve_internal_tool(
-            "jev-plus",
-            work.capability().as_str(),
-            json!({
-                "snapshot_sha256":snapshot.digest(), "module_count":snapshot.module_count(),
-                "original_query_sha256":work.query_digest(),
-                "criterion_sha256":work.criterion_digest(),
-                "permissions_granted":false, "model_selected_input":work.translated(),
-                "original_goal_semantics_verified":!work.translated()
-            }),
-        )?;
+        let concurrency = total
+            .saturating_sub(usize::from(alongside_language))
+            .min(runtime.cfg.expert_parallelism.unwrap_or(1).clamp(1, 4))
+            .max(1);
+        let snapshot = Arc::new(
+            self.typed_experts
+                .take()
+                .ok_or_else(|| anyhow::anyhow!("Opening typed expert snapshot is unavailable"))?,
+        );
+        let translated = plan.translated();
+        let (identity, entries) = plan.into_parts();
+        for entry in &entries {
+            self.reserve_internal_tool("jev-plus",entry.work.capability().as_str(),json!({
+                "operation_id":entry.id,"root_query_sha256":identity.query_digest(),
+                "snapshot_sha256":snapshot.digest(),"module_count":snapshot.module_count(),
+                "original_query_sha256":entry.work.query_digest(),"criterion_sha256":entry.work.criterion_digest(),
+                "permissions_granted":false,"model_selected_input":translated,
+                "criterion_origin":if translated {"language_translation"} else {"original_exact_goal"}
+            }))?;
+        }
         let deadline = self
             .deadline
             .min(remaining(&self.state.clock)?)
@@ -753,8 +848,10 @@ impl Lease {
             task: self.task.clone(),
             clock: self.state.clock.clone(),
             snapshot,
-            work,
+            identity,
+            entries,
             deadline,
+            concurrency,
         })
     }
 
@@ -768,45 +865,47 @@ impl Lease {
             || self.state.calls != 2
             || self.state.cycles != 1
             || !completion.tool_calls.is_empty()
-            || result.work.query_digest() != sha256(self.original_objective(request)?.as_bytes())
+            || result.identity.query_digest()
+                != sha256(self.original_objective(request)?.as_bytes())
         {
             bail!("Typed presentation is outside the original expert task")
         }
-        let capability = match result.work.capability() {
-            crate::fabric::modules::Capability::ConstraintsSolve => "constraints.verify",
-            capability => capability.as_str(),
-        };
         let answer = completion.content.as_deref().unwrap_or("");
-        self.reserve_internal_tool(
-            "jev-plus",
-            capability,
-            json!({
-                "original_query_sha256":result.work.query_digest(),
-                "result_sha256":sha256(result.value.as_bytes()),
-                "answer_sha256":sha256(answer.as_bytes()), "checker":result.work.checker(),
-                "presentation_check":true, "client_tools_executed":false
-            }),
-        )?;
+        for part in &result.parts {
+            let capability = match part.work.capability() {
+                crate::fabric::modules::Capability::ConstraintsSolve => "constraints.verify",
+                capability => capability.as_str(),
+            };
+            self.reserve_internal_tool("jev-plus",capability,json!({
+                "operation_id":part.id,"root_query_sha256":result.identity.query_digest(),
+                "original_query_sha256":part.work.query_digest(),"criterion_sha256":part.work.criterion_digest(),
+                "result_sha256":sha256(part.value.as_bytes()),"answer_sha256":sha256(answer.as_bytes()),
+                "checker":part.work.checker(),"presentation_check":true,"client_tools_executed":false
+            }))?;
+        }
         remaining(&self.state.clock)?;
-        let checked = result.work.verify_presentation(&result.value, answer);
+        let checked = (|| -> Result<()> {
+            let ids = result
+                .parts
+                .iter()
+                .map(|part| part.id.as_str())
+                .collect::<Vec<_>>();
+            let presented = result.identity.presentation_parts(&ids, answer)?;
+            for (part, presented) in result.parts.iter().zip(presented) {
+                part.work.verify_presentation(&part.value, &presented)?;
+            }
+            Ok(())
+        })();
         remaining(&self.state.clock)?;
-        self.store.event(
-            &self.task,
-            "agent_typed_presentation_check",
-            "verifier-r",
-            json!({
-                "original_query_sha256":result.work.query_digest(),
-                "answer_sha256":sha256(answer.as_bytes()),
-                "criterion_sha256":result.work.criterion_digest(),
-                "presentation_matches_criterion":checked.is_ok(),
-                "verified":checked.is_ok() && !result.work.translated(),
-                "original_goal_semantics_verified":!result.work.translated(),
-                "language_translated":result.work.translated(),
-                "checker":result.work.checker(), "client_results_verified":false
-            }),
-        )?;
+        self.store.event(&self.task,"agent_typed_presentation_check","verifier-r",json!({
+            "original_query_sha256":result.identity.query_digest(),"operations":result.parts.len(),
+            "answer_sha256":sha256(answer.as_bytes()),"presentation_matches_criterion":checked.is_ok(),
+            "verified":checked.is_ok() && !result.translated(),
+            "original_goal_semantics_verified":!result.translated(),
+            "language_translated":result.translated(),"client_results_verified":false
+        }))?;
         checked?;
-        Ok((!result.work.translated()).then_some(true))
+        Ok((!result.translated()).then_some(true))
     }
 
     /// Refine the first expert selection from the catalog frozen at opening.

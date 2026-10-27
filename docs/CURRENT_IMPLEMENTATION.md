@@ -1,5 +1,21 @@
 # Current Rust implementation
 
+## Independent composite typed client requests — 2026-10-27
+
+Exact `typed-batch:` requests and client-only `typed_batch` translations can group
+one to four independent typed operations. Entire-plan route/budget validation and
+all invocation charges precede dispatch. Owned waves share the opening snapshot,
+original clock and typed deadline; total/expert concurrency limits apply, including
+one held language slot during exact-input overlap. Failed waves settle all started
+operations and stop before later waves. Final JSON keys and every per-operation
+value are checked under per-operation charges. Exact batches preserve criterion
+verification; translated batches remain semantically unverified. This supersedes
+the earlier single-operation-only boundary. Typed dependencies/output substitution,
+manifest-backed selection and interrupted typed restoration remain incomplete.
+No tests, benchmarks or live inference were run. See
+[independent composite requests](COGNITIVE_NETWORK.md#independent-composite-typed-requests).
+
+
 ## Client-only natural-language typed translation — 2026-10-27
 
 The client language interface can emit one optional bounded `typed_goal` for an

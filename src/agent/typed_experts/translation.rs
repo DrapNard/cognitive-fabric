@@ -23,6 +23,15 @@ information through clarification. Never guess tables, rows, domains, variables,
 edges, nodes, or other task data. This field is an advisory translation only; it
 does not select tools, models, providers, modules, or permissions.
 
+Optional typed_batch: {"operations":[{"id":"sum","capability":"math.evaluate","arguments":{"expression":"..."}}]}
+Use it only for 1 to 4 independent operations, and only when every operation's
+required data is present. Operations cannot depend on each other, refer to prior
+outputs, or be partially selected. Never guess or omit an operation needed to
+fulfill the request; omit typed_batch when the complete independent operation
+set is ambiguous. The host advertises its operation budget and pinned
+capabilities separately. This is an advisory translation only; it does not
+select tools, models, providers, modules, or permissions.
+
 math.evaluate: {"capability":"math.evaluate","arguments":{"expression":"..."}}
 sql.query: {"capability":"sql.query","arguments":{"tables":[{"name":"...","columns":["..."],"rows":[[...]]}],"query":"SELECT ..."}}
 sorting.verify: {"capability":"sorting.verify","arguments":{"values":[1,2],"descending":false}}
@@ -35,11 +44,26 @@ constraints.solve: {"capability":"constraints.solve","arguments":{"variables":[{
 pub(in crate::agent) struct Parsed {
     pub(in crate::agent) interpretation: language::Interpretation,
     pub(in crate::agent) typed_goal: Option<Translation>,
+    pub(in crate::agent) typed_batch: Option<Vec<(String, Translation)>>,
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct TypedGoal {
+    capability: TypedCapability,
+    arguments: Value,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TypedBatch {
+    operations: Vec<TypedOperation>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TypedOperation {
+    id: String,
     capability: TypedCapability,
     arguments: Value,
 }
@@ -113,6 +137,7 @@ impl Parsed {
             .as_object_mut()
             .ok_or_else(|| anyhow::anyhow!("Language response must be a JSON object"))?;
         let typed_value = object.remove("typed_goal");
+        let batch_value = object.remove("typed_batch");
         let typed_goal = match typed_value {
             None | Some(Value::Null) => None,
             Some(value) => {
@@ -123,6 +148,36 @@ impl Parsed {
                 Some(goal)
             }
         };
+        let typed_batch = match batch_value {
+            None | Some(Value::Null) => None,
+            Some(value) => {
+                let batch: TypedBatch = serde_json::from_value(value)?;
+                if !(1..=4).contains(&batch.operations.len()) {
+                    bail!("Typed batch must contain between one and four operations")
+                }
+                let mut ids = std::collections::HashSet::with_capacity(batch.operations.len());
+                let mut translated = Vec::with_capacity(batch.operations.len());
+                for operation in batch.operations {
+                    if !valid_operation_id(&operation.id) || !ids.insert(operation.id.clone()) {
+                        bail!("Typed batch operation IDs must be unique valid ASCII identifiers")
+                    }
+                    if !operation.arguments.is_object() {
+                        bail!("Typed batch operation arguments must be a JSON object")
+                    }
+                    translated.push((
+                        operation.id,
+                        Translation {
+                            capability: operation.capability,
+                            arguments: operation.arguments,
+                        },
+                    ));
+                }
+                Some(translated)
+            }
+        };
+        if typed_goal.is_some() && typed_batch.is_some() {
+            bail!("Typed goal and typed batch are mutually exclusive")
+        }
 
         let interpretation_json = serde_json::to_string(&envelope)?;
         let interpretation = language::Interpretation::parse(&interpretation_json)?;
@@ -152,11 +207,49 @@ impl Parsed {
             })
             .transpose()?;
 
+        let typed_batch = typed_batch
+            .map(|entries| {
+                if interpretation.clarification.is_some() {
+                    bail!("Typed batch is incompatible with a clarification")
+                }
+                let batch_capabilities: std::collections::HashSet<_> = entries
+                    .iter()
+                    .map(|(_, translation)| translation.capability.as_str())
+                    .collect();
+                let required_capabilities: std::collections::HashSet<_> = interpretation
+                    .required_capabilities
+                    .iter()
+                    .map(String::as_str)
+                    .collect();
+                if batch_capabilities != required_capabilities {
+                    bail!("Typed batch capabilities do not match required capabilities")
+                }
+                if entries.iter().any(|(_, translation)| {
+                    interpretation
+                        .capability_versions
+                        .contains_key(translation.capability.as_str())
+                }) {
+                    bail!("Typed batch does not support a requested capability version")
+                }
+                Ok(entries)
+            })
+            .transpose()?;
+
         Ok(Self {
             interpretation,
             typed_goal,
+            typed_batch,
         })
     }
+}
+
+fn valid_operation_id(id: &str) -> bool {
+    let bytes = id.as_bytes();
+    (1..=32).contains(&bytes.len())
+        && bytes[0].is_ascii_alphabetic()
+        && bytes[1..]
+            .iter()
+            .all(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')
 }
 
 impl Translation {
