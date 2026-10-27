@@ -680,13 +680,64 @@ pub(super) async fn run(
         {
             bail!("Typed evidence task cannot cover reasoning and final presentation")
         }
-        let value = graph
-            .session
-            .reserve_typed_work(runtime, request, plan)?
-            .execute()
-            .await?;
+        let total_capacity = runtime.cfg.subtask_parallelism.unwrap_or(1).clamp(1, 4);
+        let overlap = use_typed_evidence
+            && mode == "research"
+            && total_capacity >= 3
+            && graph.available(&[
+                ("planner", &advice, ADVICE_TOKENS),
+                ("explorer", &advice, ADVICE_TOKENS),
+                ("solver", &"\0".repeat(2000), MIN_SOLVER_TOKENS),
+                ("synthesizer", "", runtime.cfg.interface_tokens),
+            ])?
+            && runtime.inference_wave_fits(&[
+                ("planner", graph.backend.clone()),
+                ("explorer", graph.backend.clone()),
+            ])?;
+        let mut prepared = graph.session.reserve_typed_work(runtime, request, plan)?;
+        let value = if overlap {
+            prepared.limit_concurrency(total_capacity - 2)?;
+            let pair = graph.reserve_advisory_pair(&advice)?;
+            let routes = runtime
+                .prepare_role_wave(
+                    graph.backend.clone(),
+                    task,
+                    &["planner", "explorer"],
+                    deadline,
+                )
+                .await?;
+            runtime.store.event(
+                task,
+                "agent_typed_reasoning_overlap",
+                "jev-plus",
+                json!({
+                    "format_version":1,"planner_call":pair.first_call,
+                    "explorer_call":pair.first_call + 1,"concurrency_limit":total_capacity,
+                    "typed_concurrency_limit":total_capacity - 2,
+                    "all_invocations_reserved_before_poll":true,
+                    "reasoning_inputs_independent_of_typed_results":true,
+                    "provider_preparation_completed":true,"permissions_granted":false
+                }),
+            )?;
+            let (typed_result, advisory_result) = tokio::join!(
+                prepared.execute(),
+                dispatch_advisory_pair(runtime, task, &routes, &pair, deadline)
+            );
+            // Account for every started model result before propagating a typed
+            // failure. Neither side is cancelled or replayed for a sibling error.
+            let pair_result = advisory_result.and_then(|(planner, explorer)| {
+                graph.record_advisory_pair(&pair, planner, explorer)
+            });
+            let value = typed_result?;
+            graph.overlapped_pair = Some(pair_result?);
+            value
+        } else {
+            prepared.execute().await?
+        };
         if use_typed_evidence {
-            let evidence = graph.session.admit_typed_evidence(request, &value)?;
+            let evidence = graph
+                .session
+                .admit_typed_evidence(request, &value, overlap)?;
             graph.typed_evidence = Some(evidence);
             if !graph.available(&[
                 ("solver", &advice, MIN_SOLVER_TOKENS),

@@ -20,6 +20,11 @@ fn ready_expert_wave(
     global_capacity: usize,
 ) -> Result<Vec<(usize, usize, serde_json::Value)>> {
     use super::super::graph_schedule::{self, Dependency, Evidence, Node};
+    // Optional overlap probes may have no remaining slots. They select no work,
+    // rather than submitting a zero-width wave to the shared scheduler.
+    if global_capacity == 0 {
+        return Ok(Vec::new());
+    }
     if done.len() != plans.len() || results.len() != plans.len() {
         bail!("Expert graph completion state does not match its plans")
     }
@@ -615,29 +620,31 @@ impl Graph<'_> {
             per_expert_capacity,
             overlap_capacity,
         )?;
-        let overlap =
-            if mode(&self.runtime.cfg, self.original) == "research" && !overlap_wave.is_empty() {
-                let mut combined_routes = expert_wave_routes(&overlap_wave, &routed_runtimes);
-                combined_routes.extend([
-                    ("planner", self.backend.clone()),
-                    ("explorer", self.backend.clone()),
-                ]);
-                let mut combined = hypothetical.clone();
-                if let Some((_, solver, _)) = combined.last_mut() {
-                    *solver = self.turn("solver", &"\0".repeat(2_000), MIN_SOLVER_TOKENS);
-                }
-                for role in ["planner", "explorer"] {
-                    combined.push((
-                        role,
-                        self.turn(role, prior_advice, ADVICE_TOKENS),
-                        ADVICE_TOKENS,
-                    ));
-                }
-                self.available_turns(&combined)?
-                    && self.runtime.inference_wave_fits(&combined_routes)?
-            } else {
-                false
-            };
+        let overlap = if mode(&self.runtime.cfg, self.original) == "research"
+            && self.overlapped_pair.is_none()
+            && !overlap_wave.is_empty()
+        {
+            let mut combined_routes = expert_wave_routes(&overlap_wave, &routed_runtimes);
+            combined_routes.extend([
+                ("planner", self.backend.clone()),
+                ("explorer", self.backend.clone()),
+            ]);
+            let mut combined = hypothetical.clone();
+            if let Some((_, solver, _)) = combined.last_mut() {
+                *solver = self.turn("solver", &"\0".repeat(2_000), MIN_SOLVER_TOKENS);
+            }
+            for role in ["planner", "explorer"] {
+                combined.push((
+                    role,
+                    self.turn(role, prior_advice, ADVICE_TOKENS),
+                    ADVICE_TOKENS,
+                ));
+            }
+            self.available_turns(&combined)?
+                && self.runtime.inference_wave_fits(&combined_routes)?
+        } else {
+            false
+        };
         if overlap {
             first_wave = overlap_wave;
         }

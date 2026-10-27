@@ -1,5 +1,36 @@
 # Current Rust implementation
 
+## Overlap typed work with independent Jev-R advice — 2026-10-27
+
+**Implemented bounded cross-kind overlap; general mixed DAG and recovery Partial,
+runtime unverified.** For translated intermediate typed evidence in RESEARCH mode,
+`src/agent/collective.rs` may run typed computation alongside the independent
+planner/explorer pair when configured subtask width is at least three. Both model
+calls and every typed invocation are reserved before either path runs. Model route
+preparation completes before inference; typed concurrency is reduced to the
+remaining width (total minus two), never increased above its original admission.
+Original task deadlines, policy, provider checks and cumulative budgets remain.
+
+Both paths settle before failures propagate, and model completion accounting runs
+even if typed work fails. The recorded pair is reused by the later Jev-R phase;
+`src/agent/collective/experts.rs` refuses to schedule another pair while it is held.
+Reasoning in the overlapping pair receives only original interpretation/context,
+not unavailable typed outputs. Expert steps and the final solver receive checked
+evidence afterward, with full actual-input admission.
+
+`src/agent/sessions.rs` caps the owned typed executor's width and explicitly
+accounts for zero or two already-reserved advisory calls when admitting evidence.
+The optional expert overlap preview now returns an empty wave for zero remaining
+slots, preserving serial/low-width behavior after shared scheduler integration.
+This corrects a source-level zero-capacity scheduling regression.
+
+Provider queues or lifecycle locks may still serialize work; no physical resource
+isolation or speedup is established. Only this explicitly independent pair
+overlaps typed work; arbitrary interleaved heterogeneous graphs and evidence
+restoration remain incomplete. Static formatting, locked workspace/all-target
+compilation, strict Clippy and whitespace checks are the validation scope.
+No tests, benchmarks or live model/provider calls were run.
+
 ## Checked typed evidence in the reasoning workflow — 2026-10-27
 
 **Implemented one-way typed-to-reasoning flow; continuation and unified DAG

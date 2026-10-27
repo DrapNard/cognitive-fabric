@@ -90,6 +90,15 @@ impl TypedResult {
 }
 
 impl PreparedTypedWork {
+    /// Hold model-wave capacity without increasing the admitted typed width.
+    pub(super) fn limit_concurrency(&mut self, limit: usize) -> Result<()> {
+        if !(1..=4).contains(&limit) {
+            bail!("Typed overlap concurrency must be between one and four")
+        }
+        self.concurrency = self.concurrency.min(limit);
+        Ok(())
+    }
+
     pub async fn execute(self) -> Result<TypedResult> {
         remaining(&self.clock)?;
         let mut pending = self.entries;
@@ -1010,10 +1019,16 @@ impl Lease {
     /// Admit checked typed results as compact, untrusted evidence for a later
     /// reasoning phase. This checks each operation contract, not the user's
     /// original meaning and not the eventual language presentation.
-    pub fn admit_typed_evidence(&mut self, request: &Turn, result: &TypedResult) -> Result<String> {
+    pub fn admit_typed_evidence(
+        &mut self,
+        request: &Turn,
+        result: &TypedResult,
+        overlapped_advisory_pair: bool,
+    ) -> Result<String> {
         if self.generation != 0
             || self.state.typed_evidence_sha256.is_some()
-            || self.state.calls != usize::from(result.translated())
+            || self.state.calls
+                != usize::from(result.translated()) + 2 * usize::from(overlapped_advisory_pair)
             || self.state.cycles != 0
             || result.identity.query_digest()
                 != sha256(self.original_objective(request)?.as_bytes())
@@ -1120,6 +1135,7 @@ impl Lease {
                 "format_version":1,
                 "root_query_sha256":result.identity.query_digest(),
                 "operation_count":result.parts.len(),
+                "independent_advisory_calls":2 * usize::from(overlapped_advisory_pair),
                 "evidence_sha256":sha256(envelope.as_bytes()),
                 "compiled_operation_contracts_match":true,
                 "original_goal_semantics_verified":false,
