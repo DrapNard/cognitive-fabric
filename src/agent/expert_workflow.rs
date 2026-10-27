@@ -149,61 +149,47 @@ impl Plan {
                 break;
             }
         }
-        // Unavailable exact bindings preserve the historical single pinned
-        // workflow route. Such a route never proves independent
-        // expert bindings and therefore cannot enter a multi-expert wave.
-        if selected.is_empty() {
-            if interpretation.required_capabilities.is_empty() {
-                for root in entries.iter().filter(|entry| entry.executable) {
-                    if root.metadata_pinned {
-                        if let Some(closure) = dependency_closure(root, &entries) {
-                            for entry in closure {
-                                let Some(plan) = entry.plan.clone() else {
-                                    bail!("Executable dependency closure has no validated workflow")
-                                };
-                                selected.push(BoundPlan {
-                                    capability: String::new(),
-                                    dependencies: entry
-                                        .dependencies
-                                        .iter()
-                                        .map(|dependency| dependency.id.clone())
-                                        .collect(),
-                                    plan,
-                                });
-                            }
-                        } else {
-                            skipped.push(SkippedRoot {
-                                expert_id: root.id.clone(),
-                                requested_capability: String::new(),
-                                reason: "incomplete_or_unsupported_pinned_dependency_closure",
+        // Unqualified workflows remain available only for legacy requests with
+        // no capability declarations. Explicit requirements never authorize an
+        // unrelated expert merely because all compatible routes are unavailable.
+        if selected.is_empty() && interpretation.required_capabilities.is_empty() {
+            for root in entries.iter().filter(|entry| entry.executable) {
+                if root.metadata_pinned {
+                    if let Some(closure) = dependency_closure(root, &entries) {
+                        for entry in closure {
+                            let Some(plan) = entry.plan.clone() else {
+                                bail!("Executable dependency closure has no validated workflow")
+                            };
+                            selected.push(BoundPlan {
+                                capability: String::new(),
+                                dependencies: entry
+                                    .dependencies
+                                    .iter()
+                                    .map(|dependency| dependency.id.clone())
+                                    .collect(),
+                                plan,
                             });
                         }
-                    } else if root.dependencies.is_empty() {
-                        let Some(plan) = root.plan.clone() else {
-                            bail!("Executable fallback has no validated workflow")
-                        };
-                        selected.push(BoundPlan {
-                            capability: String::new(),
-                            dependencies: Vec::new(),
-                            plan,
+                    } else {
+                        skipped.push(SkippedRoot {
+                            expert_id: root.id.clone(),
+                            requested_capability: String::new(),
+                            reason: "incomplete_or_unsupported_pinned_dependency_closure",
                         });
                     }
-                    if !selected.is_empty() {
-                        break;
-                    }
+                } else if root.dependencies.is_empty() {
+                    let Some(plan) = root.plan.clone() else {
+                        bail!("Executable fallback has no validated workflow")
+                    };
+                    selected.push(BoundPlan {
+                        capability: String::new(),
+                        dependencies: Vec::new(),
+                        plan,
+                    });
                 }
-            } else if let Some(entry) = entries
-                .iter()
-                .find(|entry| entry.executable && entry.dependencies.is_empty())
-            {
-                let Some(plan) = entry.plan.clone() else {
-                    bail!("Executable fallback has no validated workflow")
-                };
-                selected.push(BoundPlan {
-                    capability: String::new(),
-                    dependencies: Vec::new(),
-                    plan,
-                });
+                if !selected.is_empty() {
+                    break;
+                }
             }
         }
         Ok(PlanSelection {

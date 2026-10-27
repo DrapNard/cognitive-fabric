@@ -1,5 +1,37 @@
 # Current Rust implementation
 
+## Mixed capability coverage and relevant expert activation — 2026-10-27
+
+**Implemented capability routing scope; general heterogeneous DAG Partial, runtime
+unverified.** With `typed_usage: "evidence"`, the language interface may translate
+a complete intermediate goal/batch/graph whose non-empty capability set is a
+subset of the full request. The complete original interpretation and remaining
+reasoning capability versions are retained for Jev+ expert selection and the
+Jev-R workflow. Every typed capability must still be declared in that full set;
+unknown selectors, clarifications and typed version requests remain refused.
+Default/final usage still requires exact complete capability coverage.
+
+For example, an interpretation may request `math.evaluate` plus a published
+domain-reasoning capability, compute the fully specified arithmetic as typed
+evidence, and select a compatible pinned domain workflow for the remaining
+reasoning. This is a routing contract, not a benchmark or a guarantee that the
+domain expert is installed, competent or independently verified.
+
+`src/agent/typed_experts/translation.rs` and `graph_translation.rs` enforce the
+usage-specific scope; `src/agent/sessions.rs` advertises matching instructions.
+`src/agent/expert_workflow.rs` no longer activates an arbitrary dependency-free
+workflow when explicit capability requirements have no compatible binding. The
+legacy unqualified route remains only for interpretations without capability
+requirements. Explicitly unmatched work stays with the primary reasoning path;
+capability declarations never grant permissions or prove capability coverage.
+
+This supersedes the exact-set restriction for intermediate evidence only.
+Existing bounded overlap, checked-evidence restoration, task charges, deadlines
+and language-model boundaries remain. Arbitrary mixed-node interleaving and
+interrupted provider recovery remain incomplete. Static formatting, locked
+workspace/all-target compilation, strict Clippy and whitespace checks are the
+validation scope. No tests, benchmarks or live provider/model calls performed.
+
 ## Restore finalized checked evidence for client continuations — 2026-10-27
 
 **Implemented bounded evidence restoration; interrupted provider execution and

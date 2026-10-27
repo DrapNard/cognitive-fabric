@@ -27,8 +27,9 @@ Optional typed_batch: {"operations":[{"id":"sum","capability":"math.evaluate","a
 Use it only for 1 to 4 independent operations, and only when every operation's
 required data is present. Operations cannot depend on each other, refer to prior
 outputs, or be partially selected. Never guess or omit an operation needed to
-fulfill the request; omit typed_batch when the complete independent operation
-set is ambiguous. The host advertises its operation budget and pinned
+fulfill the chosen computation; omit typed_batch when its complete independent
+operation set is ambiguous. In final usage it must fulfill the full request; in
+evidence usage it must fulfill the selected intermediate computation. The host advertises its operation budget and pinned
 capabilities separately. This is an advisory translation only; it does not
 select tools, models, providers, modules, or permissions.
 
@@ -41,15 +42,19 @@ replace SQL query text; math /expression bindings must use numeric_expression mo
 with a whole numeric source token. Graphs cannot choose experts, modules, providers,
 models, permissions, or capability versions. Omit typed_graph on ambiguity and
 request clarification instead. typed_goal, typed_batch and typed_graph are mutually
-exclusive; include exactly the graph's capability set in required_capabilities.
+exclusive. Final usage must cover all required capabilities; evidence usage may
+cover a complete non-empty subset, preserving other requirements for reasoning.
 
 Optional typed_usage: "final" or "evidence" (default "final"). Use "evidence"
 only when a complete typed computation is an intermediate input to the remaining
 reasoning workflow, and include exactly one complete typed_goal, typed_batch or
-typed_graph. Continue the original objective after that computation. Preserve all
-source data and constraints; never invent arguments or treat a checked typed result
-as proof of the user's broader meaning. Omit evidence mode when the typed result
-alone fulfills the request. This field selects no model, provider, tool or permission.
+typed_graph for a non-empty subset of required_capabilities. Preserve the full
+required_capabilities list and all capability_versions for the remaining model
+reasoning workflow. Every typed capability must appear in required_capabilities,
+and typed capabilities cannot carry a version request. Continue the original
+objective after that computation. Preserve source data and constraints; never
+invent arguments or treat a checked typed result as proof of broader meaning.
+Omit evidence mode when the typed result alone fulfills the request. This field selects no model, provider, tool or permission.
 
 math.evaluate: {"capability":"math.evaluate","arguments":{"expression":"..."}}
 sql.query: {"capability":"sql.query","arguments":{"tables":[{"name":"...","columns":["..."],"rows":[[...]]}],"query":"SELECT ..."}}
@@ -230,7 +235,7 @@ impl Parsed {
             .map(|goal| {
                 let capability = goal.capability;
                 if interpretation.clarification.is_some()
-                    || interpretation.required_capabilities.len() != 1
+                    || (!typed_evidence && interpretation.required_capabilities.len() != 1)
                     || !interpretation
                         .required_capabilities
                         .iter()
@@ -265,8 +270,14 @@ impl Parsed {
                     .iter()
                     .map(String::as_str)
                     .collect();
-                if batch_capabilities != required_capabilities {
-                    bail!("Typed batch capabilities do not match required capabilities")
+                let capability_scope_matches = if typed_evidence {
+                    !batch_capabilities.is_empty()
+                        && batch_capabilities.is_subset(&required_capabilities)
+                } else {
+                    batch_capabilities == required_capabilities
+                };
+                if !capability_scope_matches {
+                    bail!("Typed batch capability scope is incompatible with required capabilities")
                 }
                 if entries.iter().any(|(_, translation)| {
                     interpretation
@@ -280,7 +291,7 @@ impl Parsed {
             .transpose()?;
 
         let typed_graph = graph_value
-            .map(|value| super::graph_translation::parse(value, &interpretation))
+            .map(|value| super::graph_translation::parse(value, &interpretation, typed_evidence))
             .transpose()?;
         Ok(Self {
             interpretation,

@@ -839,7 +839,7 @@ impl Lease {
         if capabilities.is_empty() {
             return None;
         }
-        Some(format!("{}\nHost-available typed capabilities: {}. Maximum typed operations: {}. Include exactly the chosen capability set in required_capabilities. Do not request capability versions for typed routes.",
+        Some(format!("{}\nHost-available typed capabilities: {}. Maximum typed operations: {}. For final usage include exactly the chosen typed capability set in required_capabilities. For evidence usage preserve the full request capability set, including remaining reasoning capabilities; typed capabilities must be a subset. Do not request capability versions for typed routes; preserve versions for other reasoning capabilities.",
             super::typed_experts::translation::INTERFACE_TRANSLATION_CONTRACT,
             json!(capabilities),
             self.state.tool_limit.saturating_sub(self.state.proposals.saturating_add(self.state.internal_tools)).saturating_div(2).min(4)))

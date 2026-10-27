@@ -69,6 +69,7 @@ impl Translation {
 pub(in crate::agent) fn parse(
     value: Value,
     interpretation: &Interpretation,
+    evidence_scope: bool,
 ) -> Result<Translation> {
     if interpretation.clarification.is_some() {
         bail!("Typed graph is incompatible with a clarification")
@@ -93,8 +94,13 @@ pub(in crate::agent) fn parse(
         .iter()
         .cloned()
         .collect();
-    if caps != required {
-        bail!("Typed graph capabilities do not match required capabilities")
+    let capability_scope_matches = if evidence_scope {
+        !caps.is_empty() && caps.is_subset(&required)
+    } else {
+        caps == required
+    };
+    if !capability_scope_matches {
+        bail!("Typed graph capability scope is incompatible with required capabilities")
     }
     if caps
         .iter()
