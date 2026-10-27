@@ -190,17 +190,32 @@ impl Graph<'_> {
                 "permissions_granted":false
             }),
         )?;
-        for call in &mut prepared {
-            call.backend = call
-                .runtime
-                .prepare_role_wave(
-                    call.runtime.backend.clone(),
-                    self.task,
-                    &[ROLE],
-                    self.deadline,
-                )
-                .await?
-                .remove(0);
+        let preparations = prepared
+            .iter()
+            .map(|call| {
+                Box::pin(async {
+                    let mut routes = call
+                        .runtime
+                        .prepare_role_wave(
+                            call.runtime.backend.clone(),
+                            self.task,
+                            &[ROLE],
+                            self.deadline,
+                        )
+                        .await?;
+                    routes
+                        .pop()
+                        .ok_or_else(|| anyhow::anyhow!("Prepared expert route is missing"))
+                })
+                    as Pin<Box<dyn Future<Output = Result<Arc<dyn ChatBackend>>> + Send + '_>>
+            })
+            .collect();
+        // Retain every expert runtime and settle all preparation outcomes before
+        // dispatch. A sibling failure never cancels another preparation or retries it.
+        let outcomes = crate::reasoning::parallel::join_all(preparations).await;
+        let routes = outcomes.into_iter().collect::<Result<Vec<_>>>()?;
+        for (call, route) in prepared.iter_mut().zip(routes) {
+            call.backend = route;
         }
         Ok(prepared)
     }

@@ -1,5 +1,26 @@
 # Current Rust implementation
 
+## Concurrent preparation across expert runtimes — 2026-10-27
+
+**Implemented bounded expert scheduling; runtime unverified.**
+`src/agent/collective/experts.rs::reserve_expert_wave` now prepares all selected
+expert runtimes concurrently after the complete wave's durable call reservations.
+The wave remains capped at four calls. Exact model routing, each expert's runtime,
+resource admission and original task deadline are retained. All preparation
+outcomes settle before error propagation or route assignment; any failure prevents
+that wave's generation, without retries or call refunds. Native lifecycle locks
+still serialize loads, and provider queues may serialize inference.
+
+The model-advisory and typed-provider graphs remain separate schedulers. A unified
+mixed DAG still requires host-owned node/result envelopes, frozen model/provider
+routes and explicit cross-kind evidence dependencies; concurrent preparation alone
+does not implement that bridge. Qwen remains restricted to language roles when
+the explicit language profile is configured.
+
+Static formatting, locked workspace/all-target compilation, strict Clippy and
+whitespace checks passed. No tests, benchmarks or live model calls; no measured
+speedup or reasoning-quality claim.
+
 ## Concurrent client route preparation — 2026-10-27
 
 **Implemented scheduling mechanics; runtime and speed unverified.** Already
