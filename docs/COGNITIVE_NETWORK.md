@@ -60,6 +60,25 @@ It does not delegate every conversation to the Engine or inherit every Engine
 recovery scope. Native activation remains explicit and experimental. These
 implemented paths do not establish a finished, runtime-verified cognitive network.
 
+## Client language request scope
+
+The explicit language profile receives the original validated conversation for
+interpretation and final wording. Its appended host context contains the supplied
+advice/result and the pinned-reference digest; expert workflow plans and retrieved
+reference bodies are retained for reasoning roles. A digest is an identity link,
+not evidence of correctness. This projection does not summarize, truncate or
+remove original client messages, including user constraints and correlated tool
+history; those messages can still contain large or untrusted text.
+
+Only the solver receives client tool definitions. Language and advisory roles
+omit the definitions and keep `tool_choice: none` and parallel tool proposals
+disabled. Exact serialized role requests still pass the same preflight and durable
+reservation before dispatch. This reduces repeated schema/reference payloads; it
+does not prove shorter wall time or backend concurrency. Legacy shared-model
+configurations retain their reference bodies. Client deterministic typed-provider
+execution remains incomplete; current client expert workflows still use configured
+reasoning backends, distinct from the explicit language model.
+
 ## Bounded parallel work
 
 In initial Research-mode client conversations, the first expert-workflow wave

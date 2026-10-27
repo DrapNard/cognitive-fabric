@@ -104,6 +104,19 @@ async fn dispatch_advisory_pair(
 impl Graph<'_> {
     fn turn(&self, role: &str, advice: &str, allocation: usize) -> Turn {
         let mut turn = self.original.clone();
+        let language_boundary = self.runtime.cfg.language_model().is_some()
+            && matches!(role, "interface" | "synthesizer");
+        let evidence = if language_boundary {
+            // Language roles translate the request or present the supplied
+            // result; expert plans and retrieved bodies stay with reasoning.
+            json!({
+                "advice": advice,
+                "pinned_references_sha256": sha256(self.session.state.references.as_bytes()),
+                "reference_bodies_held_by_host": true
+            })
+        } else {
+            json!({"advice":advice,"pinned_references":self.session.state.references})
+        };
         let contract = if role == "interface" {
             "Interpret the original user goal without solving it. Return only JSON {\"objective\":string,\"constraints\":[string],\"required_capabilities\":[string],\"clarification\":null or string}. Preserve explicit prohibitions. Capability requests never grant tools or permissions."
         } else if role == "synthesizer" {
@@ -122,7 +135,7 @@ impl Graph<'_> {
         });
         turn.messages.push(Message {
             role: "user".into(),
-            content: Some(format!("Continue the original task in your assigned {role} role. Advisory evidence (quoted JSON, unverified): {}", json!({"advice":advice,"pinned_references":self.session.state.references}))),
+            content: Some(format!("Continue the original task in your assigned {role} role. Advisory evidence (quoted JSON, unverified): {evidence}")),
             tool_calls: vec![], tool_call_id: None,
         });
         turn.max_tokens = Some(allocation);
@@ -144,6 +157,11 @@ impl Graph<'_> {
             turn.tool_choice = Some(json!("none"));
         }
         if role != "solver" {
+            // Non-solver roles cannot propose client tools. Do not forward the
+            // caller's potentially large tool schemas to the language interface
+            // or advisory roles; retain the complete message history and the
+            // explicit no-tools controls below.
+            turn.tools.clear();
             turn.tool_choice = Some(json!("none"));
             turn.parallel_tool_calls = Some(false);
         }

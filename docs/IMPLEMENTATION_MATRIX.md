@@ -1,6 +1,26 @@
 # Implementation matrix — 1.1.0-alpha.1
 
 
+
+## Restrict client language and advisory request scope — 2026-10-27
+
+**Implemented request projection; runtime unverified.** Architecture sections 4,
+6 and 9: `src/agent/collective.rs` omits client tool definitions from every
+non-solver request while preserving full validated conversation history and
+explicit no-tool controls. Solver proposals retain their original advertised
+catalog. With an explicit language profile, interface/presentation requests carry
+only supplied advice/result and a pinned-reference digest in their appended host
+context; expert plans and retrieved bodies remain available to reasoning roles.
+Legacy shared-model reference context remains unchanged. Preflight, exact-byte
+reservations, original budgets, compiled final-answer checking and admission
+still apply. This reduces repeated tool-schema/reference bytes, not measured
+latency or physical memory use; original transcripts remain potentially large.
+The digest is not a truth/weight attestation. No permissions, model calls,
+training, protocol/schema changes or runtime activation are added. Client typed
+provider execution and runtime speed verification remain incomplete. Formatting,
+locked workspace/all-target compilation, strict Clippy and diff whitespace checks
+passed. No tests, benchmarks or live inference were run.
+
 ## Select client experts from the frozen opening catalog — 2026-10-27
 
 **Implemented discovery; partial network integration, runtime unverified.**
