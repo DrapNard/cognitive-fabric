@@ -699,6 +699,24 @@ fn core_record(
     }
 }
 
+fn core_provider_identity(
+    provider: &serde_json::Value,
+    inputs: &serde_json::Value,
+) -> Result<String> {
+    let mut provider = provider
+        .as_object()
+        .cloned()
+        .ok_or_else(|| anyhow::anyhow!("Core provider provenance must be an object"))?;
+    if !inputs.is_null()
+        && provider
+            .insert("checked_memory_inputs".to_owned(), inputs.clone())
+            .is_some()
+    {
+        bail!("Core provider provenance contains a reserved input field")
+    }
+    Ok(serde_json::to_string(&provider)?)
+}
+
 fn audit(
     db: &rusqlite::Connection,
     task: &str,
@@ -1307,8 +1325,8 @@ impl Lease {
         }
     }
 
-    /// Advertise only first-turn host functions whose typed routes and policy
-    /// grants were frozen when this task opened.
+    /// Advertise task-opening or exactly restored host routes only when the
+    /// independent task policy and remaining budgets admit their capabilities.
     pub(super) fn core_catalog(
         &self,
         runtime: &AgentRuntime,
@@ -1415,14 +1433,26 @@ impl Lease {
                 bail!("Repeated model-requested core operation")
             }
         }
+        let outputs = memory.outputs()?;
+        let resolved = proposals
+            .iter()
+            .map(|proposal| {
+                super::core_memory_bindings::resolve(
+                    proposal.capability,
+                    &proposal.arguments,
+                    &outputs,
+                )
+            })
+            .collect::<Result<Vec<_>>>()?;
         let operations = proposals
             .iter()
+            .zip(&resolved)
             .enumerate()
-            .map(|(index, proposal)| {
+            .map(|(index, (proposal, (arguments, _)))| {
                 (
                     format!("core_{}_{}", self.state.calls, index),
                     proposal.capability,
-                    proposal.arguments.clone(),
+                    arguments.clone(),
                 )
             })
             .collect::<Vec<_>>();
@@ -1462,7 +1492,10 @@ impl Lease {
                 operation_id,
                 self.state.calls,
                 entry.work.criterion_digest().to_owned(),
-                serde_json::to_string(&serde_json::Value::Object(provider_identity))?,
+                core_provider_identity(
+                    &serde_json::Value::Object(provider_identity),
+                    &resolved[index].1,
+                )?,
                 "null".to_owned(),
             ))?;
         }
@@ -1476,7 +1509,9 @@ impl Lease {
             .deadline
             .min(remaining(&self.state.clock)?)
             .min(Instant::now() + Duration::from_secs(runtime.cfg.timeout_seconds.min(300)));
-        for (proposal, entry) in proposals.iter().zip(plan.entries()) {
+        for ((proposal, entry), (_, input_provenance)) in
+            proposals.iter().zip(plan.entries()).zip(&resolved)
+        {
             let capability = proposal.capability.as_str();
             let verifier = core_verifier_capability(proposal.capability);
             policy.authorize(&self.task, "jev-plus", capability)?;
@@ -1486,6 +1521,7 @@ impl Lease {
                 "proposal_id":proposal.call_id,
                 "name":proposal.name,
                 "arguments_sha256":sha256(proposal.arguments_json.as_bytes()),
+                "checked_memory_inputs":input_provenance,
                 "root_query_sha256":sha256(root.as_bytes()),
                 "snapshot_sha256":snapshot.digest(),
                 "criterion_sha256":entry.work.criterion_digest(),
@@ -1550,6 +1586,9 @@ impl Lease {
             }
             None => super::core_tools::Memory::new(root)?,
         };
+        // Freeze the pre-batch memory: siblings cannot consume each other's
+        // outputs merely because their completion happened to arrive first.
+        let outputs = memory.outputs()?;
         for (index, proposal) in proposals.iter().enumerate() {
             let operation_id = format!("core_{}_{}", model_call_index, index);
             let part = result
@@ -1557,10 +1596,13 @@ impl Lease {
                 .iter()
                 .find(|part| part.id == operation_id)
                 .ok_or_else(|| anyhow::anyhow!("A proposed core result is missing"))?;
-            let mut expected_work = super::typed_experts::Work::from_arguments(
+            let (arguments, input_provenance) = super::core_memory_bindings::resolve(
                 proposal.capability,
                 &proposal.arguments,
+                &outputs,
             )?;
+            let mut expected_work =
+                super::typed_experts::Work::from_arguments(proposal.capability, &arguments)?;
             expected_work.mark_translated_digest(&root_digest)?;
             if part.work.capability() != proposal.capability
                 || part.work.criterion_digest() != expected_work.criterion_digest()
@@ -1569,7 +1611,8 @@ impl Lease {
             {
                 bail!("Checked core result does not match its proposal")
             }
-            let provider_identity = serde_json::to_string(&part.provider_identity)?;
+            let provider_identity =
+                core_provider_identity(&part.provider_identity, &input_provenance)?;
             memory.append(core_record(
                 proposal,
                 part.id.clone(),

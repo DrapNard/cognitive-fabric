@@ -227,6 +227,17 @@ impl Memory {
         self.records.len()
     }
 
+    /// Exact finalized operation outputs available to checked-data references.
+    /// The checkpoint is revalidated before exposing any result to the resolver.
+    pub(super) fn outputs(&self) -> Result<std::collections::BTreeMap<String, String>> {
+        self.validate_checkpoint()?;
+        Ok(self
+            .records
+            .iter()
+            .map(|record| (record.operation_id.clone(), record.result_json.clone()))
+            .collect())
+    }
+
     pub(super) fn append(&mut self, record: Record) -> Result<()> {
         validate_record(&record)?;
         let fingerprint =
@@ -351,7 +362,7 @@ fn capability_for_name(name: &str) -> Option<Capability> {
 }
 
 fn definition(capability: Capability) -> Option<(&'static str, &'static str, Value)> {
-    let (name, description, parameters) = match capability {
+    let (name, description, mut parameters) = match capability {
         Capability::MathEvaluate => (
             "cgf_core_math",
             "Evaluate a bounded arithmetic expression with the host math module.",
@@ -383,5 +394,22 @@ fn definition(capability: Capability) -> Option<(&'static str, &'static str, Val
             json!({"type":"object","properties":{"variables":{"type":"array","minItems":1,"maxItems":32,"items":{"type":"object","properties":{"id":{"type":"string","minLength":1,"maxLength":32},"domain":{"type":"array","minItems":1,"maxItems":64,"uniqueItems":true,"items":{"type":"integer"}}},"required":["id","domain"],"additionalProperties":false}},"constraints":{"type":"array","minItems":1,"maxItems":128,"items":{"oneOf":[{"type":"object","properties":{"kind":{"const":"linear"},"terms":{"type":"array","minItems":1,"maxItems":16,"items":{"type":"object","properties":{"variable":{"type":"string"},"coefficient":{"type":"integer"}},"required":["variable","coefficient"],"additionalProperties":false}},"relation":{"enum":["eq","ne","le","ge"]},"rhs":{"type":"integer"}},"required":["kind","terms","relation","rhs"],"additionalProperties":false},{"type":"object","properties":{"kind":{"const":"all_different"},"variables":{"type":"array","items":{"type":"string"},"uniqueItems":true}},"required":["kind","variables"],"additionalProperties":false}]}}},"required":["variables","constraints"],"additionalProperties":false}),
         ),
     };
+    parameters["properties"]["_cgf_inputs"] = json!({
+        "type":"array",
+        "minItems":1,
+        "maxItems":8,
+        "description":"Optional checked-result references. Each source must name an earlier finalized core_* operation in this task's structured memory; same-batch, future, and unknown operations are unavailable.",
+        "items":{
+            "type":"object",
+            "properties":{
+                "target":{"type":"string","minLength":1,"maxLength":256,"description":"RFC 6901 pointer to an existing non-root field in this function's arguments."},
+                "operation_id":{"type":"string","pattern":"^core_[1-9][0-9]*_[0-3]$"},
+                "pointer":{"type":"string","maxLength":256,"description":"RFC 6901 pointer into the finalized result; empty string selects the whole result."},
+                "mode":{"type":"string","enum":["value","numeric_expression"],"default":"value"}
+            },
+            "required":["target","operation_id"],
+            "additionalProperties":false
+        }
+    });
     Some((name, description, parameters))
 }

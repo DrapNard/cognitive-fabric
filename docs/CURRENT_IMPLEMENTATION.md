@@ -1,5 +1,46 @@
 # Current Rust implementation
 
+## Reuse checked core results through structured references — 2026-10-28
+
+**Implemented bounded checked-memory inputs; runtime/provider behavior unverified.**
+Every solver-only `cgf_core_*` function now accepts an optional `_cgf_inputs`
+array of one to eight bindings. Each binding names an earlier finalized core
+operation, an optional source JSON pointer, an existing argument target pointer,
+and `value` (default) or `numeric_expression` mode. Required argument placeholders
+remain present; references cannot add fields, replace the root, overlap targets
+or select capabilities/providers. Same-batch, future and missing operation IDs
+are unavailable. Qwen remains outside this computation/data-transfer path.
+
+`src/agent/core_memory_bindings.rs` resolves these references from a validated,
+frozen copy of the task's checked-result memory before provider selection or
+operation charging. Pointer bytes/depth, unique source bytes, copied values,
+resolved arguments and provenance are bounded. SQL query-text targets are
+forbidden. Numeric-expression mode accepts only a whole plain JSON-number token
+and replaces the entire math expression; it does not evaluate model-selected
+templates or concatenate executable text. Ordinary value bindings remain data
+and must pass the destination's existing typed Work parser.
+
+`core_tools.rs::Memory::outputs` exposes exact finalized JSON result strings after
+checkpoint validation. `sessions.rs` retains original canonical proposal arguments
+and fingerprints, reserves each destination's ordinary operation/verifier slots,
+and records source-result/selected-value hashes and pointer provenance alongside
+the provider identity. Known provenance/checkpoint sizes are preflighted before
+work. Completion re-resolves against the same pre-batch memory and requires the
+checked criterion to match before atomic publication. Existing 2 KiB provider
+provenance, 12 KiB memory and 32 KiB checkpoint caps can refuse an otherwise valid
+large binding set; these caps are not increased or silently truncated.
+
+This works with restored pinned routes after validated client handoffs. It does
+not replay earlier work or raise quotas. It reduces model-mediated value copying;
+there is no measured speed or quality claim. References cover finalized core
+working memory, not arbitrary retrieved documents, unfinished graphs or a new
+permission source. General mixed neural/typed DAGs, independently proven reasoning
+quality and evaluated project LoRA remain incomplete or unverified.
+
+Validation is limited to formatting, locked workspace/all-target compilation,
+strict Clippy and whitespace checks. No tests, benchmarks, live provider calls,
+model activation, installation or recovery execution were run.
+
 ## Preserve typed core routes across client handoffs — 2026-10-28
 
 **Implemented bounded exact-route restoration; runtime behavior unverified.**
