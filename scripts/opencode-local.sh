@@ -32,6 +32,9 @@ TMP_DIR=""
 API_KEY="${COGFABRIC_SERVER_API_KEY:-}"
 AUTO_LOAD="${COGFABRIC_OPENCODE_AUTO_LOAD:-1}"
 KV_GPU="${COGFABRIC_OPENCODE_KV_GPU:-false}"
+NATIVE_POLICY="${COGFABRIC_NATIVE_POLICY:-}"
+NATIVE_APPROVED="${COGFABRIC_NATIVE_ACTIVATION_APPROVED:-0}"
+NATIVE_KEY_APPROVED="${COGFABRIC_NATIVE_MODEL_KEY_EVIDENCE_APPROVED:-0}"
 
 die() {
     printf 'cognitive-fabric: %s\n' "$*" >&2
@@ -40,6 +43,14 @@ die() {
 
 [[ "$AUTO_LOAD" == 0 || "$AUTO_LOAD" == 1 ]] || die 'COGFABRIC_OPENCODE_AUTO_LOAD must be 0 or 1.'
 [[ "$KV_GPU" == true || "$KV_GPU" == false ]] || die 'COGFABRIC_OPENCODE_KV_GPU must be true or false.'
+[[ "$NATIVE_APPROVED" == 0 || "$NATIVE_APPROVED" == 1 ]] || die 'COGFABRIC_NATIVE_ACTIVATION_APPROVED must be 0 or 1.'
+[[ "$NATIVE_KEY_APPROVED" == 0 || "$NATIVE_KEY_APPROVED" == 1 ]] || die 'COGFABRIC_NATIVE_MODEL_KEY_EVIDENCE_APPROVED must be 0 or 1.'
+if [[ -n "$NATIVE_POLICY" ]]; then
+    [[ "$NATIVE_APPROVED" == 1 && "$NATIVE_KEY_APPROVED" == 1 ]] || die 'On-demand native activation requires both explicit activation and model-key evidence approval.'
+    [[ -f "$NATIVE_POLICY" && ! -L "$NATIVE_POLICY" ]] || die 'The native lifecycle policy must be a regular, non-symlink file.'
+elif [[ "$NATIVE_APPROVED" == 1 || "$NATIVE_KEY_APPROVED" == 1 ]]; then
+    die 'Native activation approvals require COGFABRIC_NATIVE_POLICY.'
+fi
 
 # A remote/background OpenCode process cannot inherit this launcher's ephemeral
 # CGF credential. Keep the inference client in this invocation's environment.
@@ -182,6 +193,7 @@ jq -e '.backend == "openai-local" and (.max_tokens | type == "number" and . >= 1
 # OpenAI-compatible providers do not have a common context-inventory API.
 configured_api_base="$(jq -r '.api_base // empty' "$TMP_DIR/config.json")"
 configured_model="$(jq -r '.model // empty' "$TMP_DIR/config.json")"
+if [[ -z "$NATIVE_POLICY" ]]; then
 native_authority="$(jq -r '.api_base | try capture("^http://(?<authority>[^/]+)/(?:api/)?v1/?$").authority catch empty' "$TMP_DIR/config.json" 2>/dev/null || true)"
 if [[ -n "$native_authority" ]]; then
     native_api_base="http://${native_authority}/api/v1"
@@ -235,13 +247,22 @@ if [[ -n "$native_authority" ]]; then
 else
     printf 'Warning: configured API base %s does not expose the standard LM Studio /v1 path; actual loaded context is unknown. Continuing with the configured %s-token OpenCode declaration.\n' "$configured_api_base" "$CONTEXT_LIMIT" >&2
 fi
+else
+    printf 'On-demand native activation is enabled under the supplied policy; the launcher will not preload models.\n'
+fi
 
-if ! timeout 20 "$CF_BIN" --home "$CF_HOME" --json diagnostics --probe-inference >"$TMP_DIR/diagnostics.json" 2>"$CHECK_LOG"; then
+diagnostics_args=(--home "$CF_HOME" --json diagnostics)
+if [[ -z "$NATIVE_POLICY" ]]; then
+    diagnostics_args+=(--probe-inference)
+fi
+if ! timeout 20 "$CF_BIN" "${diagnostics_args[@]}" >"$TMP_DIR/diagnostics.json" 2>"$CHECK_LOG"; then
     die "The configured upstream inference service did not pass diagnostics. Start the inference server, then retry. Automatic loading requires the native LM Studio API. See docs/OPENCODE.md and the private diagnostic log: $CHECK_LOG"
 fi
-jq -e '.inference_discovery.status == "responded" and .inference_discovery.all_configured_models_advertised == true' \
-    "$TMP_DIR/diagnostics.json" >/dev/null 2>&1 \
-    || die "The configured upstream server is not advertising every configured model. Start the model server and check its configured model; automatic loading requires the native LM Studio API. See the private diagnostic log: $CHECK_LOG"
+if [[ -z "$NATIVE_POLICY" ]]; then
+    jq -e '.inference_discovery.status == "responded" and .inference_discovery.all_configured_models_advertised == true' \
+        "$TMP_DIR/diagnostics.json" >/dev/null 2>&1 \
+        || die "The configured upstream server is not advertising every configured model. Start the model server and check its configured model; automatic loading requires the native LM Studio API. See the private diagnostic log: $CHECK_LOG"
+fi
 
 # Configure a private curl file so the bearer key does not appear in process
 # arguments. It is deleted after the one local service probe.
@@ -265,6 +286,7 @@ probe_server() {
 
 http_status="$(probe_server)"
 if [[ "$http_status" =~ ^2[0-9][0-9]$ ]]; then
+    [[ -z "$NATIVE_POLICY" ]] || die 'On-demand activation requires a server started with the supplied policy; an existing server cannot be verified and was left running.'
     jq -e --arg id "$MODEL_ID" '.data | any(.id == $id)' "$TMP_DIR/models.json" >/dev/null 2>&1 \
         || die "An authenticated service is already listening at 127.0.0.1:8234 but does not offer $MODEL_ID. Its process was left running."
     SERVER_PID=""
@@ -275,7 +297,11 @@ elif [[ "$http_status" == 000 || -z "$http_status" ]]; then
         [[ "$API_KEY" =~ ^[A-Fa-f0-9]{64}$ ]] || die 'OpenSSL returned an invalid ephemeral key.'
     fi
     export COGFABRIC_SERVER_API_KEY="$API_KEY"
-    "$SERVER_BIN" --home "$CF_HOME" --bind 127.0.0.1:8234 >"$SERVER_LOG" 2>&1 &
+    server_args=(--home "$CF_HOME" --bind 127.0.0.1:8234)
+    if [[ -n "$NATIVE_POLICY" ]]; then
+        server_args+=(--native-lifecycle-policy "$NATIVE_POLICY" --approve-native-lifecycle --activate-client-native-models --allow-client-model-key-evidence)
+    fi
+    "$SERVER_BIN" "${server_args[@]}" >"$SERVER_LOG" 2>&1 &
     SERVER_PID=$!
     write_curl_auth
     ready=0

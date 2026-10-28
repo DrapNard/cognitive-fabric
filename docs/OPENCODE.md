@@ -7,6 +7,28 @@ already listening, it reuses that process and leaves it running after OpenCode
 exits. The helper requires a running inference provider and can load the
 configured installed LM Studio model automatically.
 
+For a separately configured language/reasoning network, the experimental
+on-demand native mode can activate an approved model only when an admitted
+client role needs it. Supply an already reviewed lifecycle policy and explicitly
+approve both activation and model-key evidence:
+
+```sh
+export COGFABRIC_NATIVE_POLICY=/absolute/path/to/reviewed-policy.json
+export COGFABRIC_NATIVE_ACTIVATION_APPROVED=1
+export COGFABRIC_NATIVE_MODEL_KEY_EVIDENCE_APPROVED=1
+cogfabric-opencode
+```
+
+The helper passes these approvals to a new local server, skips eager model loads
+and does not require unloaded models to appear in the OpenAI model list. It
+refuses to reuse an existing server because it cannot verify that server's pinned
+policy. The policy and task gates still determine which installed models may be
+loaded; no model is downloaded or automatically retried after an uncertain
+outcome. Model-key/inventory evidence is weaker than response-instance
+attestation. Start the native provider yourself. This mode is not a readiness
+or performance guarantee. The same server flags also support other compatible
+clients; see [on-demand client activation](COGNITIVE_NETWORK.md#on-demand-client-model-activation-experimental).
+
 The launcher always adds `--standalone` to OpenCode. Its private session inherits
 the current ephemeral `COGFABRIC_SERVER_API_KEY`; an already-running background
 OpenCode service can retain an older environment and fail with `A valid server
@@ -29,7 +51,8 @@ The same path carries client-loaded skill text, web results and tool errors. The
 remain untrusted conversation data, never kernel permissions or independently
 verified evidence. CGF preserves correlated historical results even when a tool is
 removed from the current catalog, but new proposals must use the current catalog.
-Reasoning effort applies to the same configured model throughout the loop.
+Reasoning effort follows the configured reasoning routes; an explicit
+language-only model remains assigned to interpretation and presentation.
 
 Each turn accepts up to 128 function definitions, subject to the existing request,
 per-schema and typed IPC frame limits. A large catalog can exhaust those limits
@@ -39,10 +62,10 @@ The audit stores catalog names and description/schema hashes, not raw skill text
 schemas or result bodies. Names can themselves be sensitive; avoid secrets in names.
 
 This is bounded text/function Chat Completions compatibility, not support for every
-client API or multimodal MCP result. The agent endpoint performs one model turn at
-a time; it does not run the full Jev-R collective. The inference model still needs
-reliable tool-calling ability. Collective workflow aliases do not accept client
-history and tool catalogs.
+client API or multimodal MCP result. The default agent endpoint can run a single
+model turn; an explicitly configured client collective adds bounded Jev+ and Jev-R
+orchestration. General heterogeneous reasoning and recovery remain incomplete.
+The selected model still needs reliable tool-calling ability for client tools.
 
 An opt-in installed OpenCode test exercises project skill loading and synthetic
 REA/web MCP tools through an isolated loopback fixture:

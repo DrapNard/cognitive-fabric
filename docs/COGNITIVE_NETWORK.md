@@ -1,5 +1,22 @@
 # Cognitive network implementation
 
+## Launcher support for on-demand native client routes — 2026-10-28
+
+**Implemented opt-in launcher wiring; runtime unverified.** The OpenCode helper
+can pass an existing reviewed policy and explicit operator approvals to the
+HTTP server's existing on-demand client activation mode. In this mode the
+helper skips its default eager load of the configured default model and does
+not require unloaded models to appear in the OpenAI listing. It refuses to
+reuse an existing server because its active policy cannot be established by
+the launcher. Lifecycle authorization, approved models, context settings,
+uncertainty blocking and server validation remain authoritative.
+
+The server mode itself is client-independent; the helper is optional. No policy
+is generated or approved by CGF, and no models are downloaded. The launcher
+does not probe provider availability in this mode, so a missing provider fails
+when the task requests activation. See [OpenCode setup](OPENCODE.md). No tests,
+benchmarks, model loads, installation or live inference ran for this change.
+
 ## Bound single-expert workflow prompts from structured inputs — 2026-10-28
 
 **Implemented tighter admission bounds; runtime unverified.** Single-expert

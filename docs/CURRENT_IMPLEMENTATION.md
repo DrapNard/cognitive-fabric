@@ -1,5 +1,13 @@
 # Current Rust implementation
 
+## Launcher support for on-demand native client routes — 2026-10-28
+
+**Implemented; runtime unverified.** With a reviewed native policy and explicit
+operator approval, the OpenCode helper starts the existing client-independent
+HTTP on-demand activation mode without preloading the default model. Existing
+servers cannot be reused in this mode. See [OpenCode setup](OPENCODE.md). No
+tests, benchmarks, model loads, installation or live inference ran.
+
 ## Bound single-expert workflow prompts — 2026-10-28
 
 **Implemented; runtime unverified.** The single-expert path projects actual

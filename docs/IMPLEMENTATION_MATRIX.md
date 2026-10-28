@@ -1,5 +1,14 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Launcher support for on-demand native client routes — 2026-10-28
+
+**Implemented; runtime unverified.** `scripts/opencode-local.sh` passes an
+operator-supplied policy and explicit approvals to the HTTP server's existing
+on-demand activation mode, skips eager loading, and refuses unverified existing
+servers. Provider availability is checked at use rather than launcher startup.
+See [OpenCode setup](OPENCODE.md). No tests, benchmarks, model loads,
+installation or live inference ran.
+
 ## Bound single-expert workflow prompts — 2026-10-28
 
 **Implemented; runtime unverified.** `reasoning.rs` shares structured step
