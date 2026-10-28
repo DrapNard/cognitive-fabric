@@ -1,5 +1,20 @@
 # Cognitive network implementation
 
+## Advertise live coalescible work to later expert steps — 2026-10-28
+
+**Implemented bounded catalog availability; runtime unverified.** When the
+current expert workflow owns an eligible in-flight core batch, later ready
+steps may receive the existing computation catalog even after ordinary tool
+slots are exhausted. The decision uses the workflow's live owner map, not a
+persisted pending marker, which can survive an interrupted operation. The
+existing reuse-only prompt applies when no capacity remains; matching still
+requires the exact task-local batch, a paid caller and the original policies.
+An unmatched request cannot acquire extra dispatch capacity. If the source
+finishes first, the normal checked-memory reuse path applies; failures and
+unknown outcomes do not trigger a retry. Model, memory and tool budgets remain
+unchanged. Static checks alone do not prove behavior or improved throughput;
+no tests, benchmarks or live inference were performed.
+
 
 ## Share exact expert core computations — 2026-10-28
 
@@ -16,7 +31,7 @@ one in-flight source, or reuses an already committed checked result. Waiting
 steps remain in flight, do not unlock dependents until publication, and fail
 with the source if it fails or its outcome is unknown. They do not retry it.
 Later steps can propose reuse only when their captured catalog is available;
-an in-flight reservation alone does not make that catalog available.
+a persisted in-flight reservation alone does not make that catalog available.
 Logical slot accounting remains conservative, so capacity is not necessarily
 fully utilized. Matching is task-local and requires the original root and pinned
 configuration; there is no cross-task cache or provider selection.

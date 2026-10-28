@@ -1,5 +1,14 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Reuse live work with exhausted tool slots — 2026-10-28
+
+**Implemented; runtime unverified.** The expert catalog can be offered to
+later ready steps when this workflow owns a live eligible batch, even if no
+new tool slots remain. Only an exact match may share its checked result; a
+persisted reservation alone is not a live owner or dispatch authority. See
+[cognitive network](COGNITIVE_NETWORK.md). No tests, benchmarks or live
+inference ran; throughput and general heterogeneous orchestration remain unproven.
+
 
 ## Share exact expert core computations — 2026-10-28
 

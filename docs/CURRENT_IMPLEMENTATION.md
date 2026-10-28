@@ -1,5 +1,14 @@
 # Current Rust implementation
 
+## Reuse live work with exhausted tool slots — 2026-10-28
+
+**Implemented; runtime unverified.** Later expert steps can receive the
+computation catalog while this workflow owns a live coalescible batch, even
+without free tool slots. Exact matching and existing policy and budget checks
+still apply; stale persisted reservations do not enable this path. See
+[cognitive network](COGNITIVE_NETWORK.md). No tests, benchmarks or live
+inference ran; throughput and general heterogeneous orchestration remain unproven.
+
 
 ## Share exact expert core computations — 2026-10-28
 

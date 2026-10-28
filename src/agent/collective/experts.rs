@@ -343,8 +343,11 @@ fn expert_wave_routes(
 
 impl Graph<'_> {
     /// Reuse only the opening, policy-filtered catalog while this workflow
-    /// can dispatch checked work or reuse checked work.
-    pub(super) fn expert_core_catalog(&self) -> Option<super::super::core_tools::Catalog> {
+    /// can dispatch checked work or reuse checked or live coalescible work.
+    pub(super) fn expert_core_catalog(
+        &self,
+        live_reusable_work: bool,
+    ) -> Option<super::super::core_tools::Catalog> {
         let catalog = self.core_catalog.as_ref()?;
         let available_slots = self.session.state.tool_limit.saturating_sub(
             self.session
@@ -357,7 +360,7 @@ impl Graph<'_> {
             && self.output_limit.saturating_sub(self.reserved)
                 >= MIN_SOLVER_TOKENS * 2 + self.runtime.cfg.interface_tokens
             && self.session.core_memory_len() <= 16
-            && (available_slots >= 2 || self.session.core_memory_len() > 0))
+            && (available_slots >= 2 || self.session.core_memory_len() > 0 || live_reusable_work))
             .then(|| catalog.clone())
     }
 
@@ -396,13 +399,14 @@ impl Graph<'_> {
         runtimes: &[AgentRuntime],
         ready: &[(usize, usize, serde_json::Value)],
         record_bytes: usize,
+        live_reusable_work: bool,
     ) -> Result<Vec<PreparedExpertCall>> {
         const ROLE: &str = "solver";
         if ready.is_empty() || ready.len() > 4 {
             bail!("Client expert wave is outside its concurrency bound")
         }
         let core_catalog = if record_bytes >= 200 {
-            self.expert_core_catalog()
+            self.expert_core_catalog(live_reusable_work)
         } else {
             None
         };
@@ -1002,7 +1006,7 @@ impl Graph<'_> {
             return Ok(None);
         }
         let preflight_core_catalog = if step_advice_budget >= 200 {
-            self.expert_core_catalog()
+            self.expert_core_catalog(false)
         } else {
             None
         };
@@ -1299,6 +1303,7 @@ impl Graph<'_> {
                     &routed_runtimes,
                     &overlap_experts,
                     step_advice_budget,
+                    false,
                 )?
             };
             for plan_index in prepared
@@ -1453,6 +1458,7 @@ impl Graph<'_> {
                             &routed_runtimes,
                             &ready,
                             step_advice_budget,
+                            !active_core_batches.is_empty(),
                         ) {
                             Ok(prepared) => {
                                 for plan_index in prepared
