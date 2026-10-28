@@ -1,5 +1,48 @@
 # Cognitive network implementation
 
+## Store structured expert conclusions — 2026-10-28
+
+**Implemented for new Expert Network step summaries; broader reasoning memory
+remains Partial and runtime/provider compatibility is unverified.**
+`src/agent/advisory_record.rs` validates compact JSON with `v: 1` and bounded
+`claims`, `actions`, and `unknowns` arrays. Claims distinguish `supplied` from
+`hypothesis` and may carry proposed SHA-256 references; actions use a finite
+kind enum. These fields describe untrusted conclusions, not a reasoning trace,
+checked facts or executable permissions. References are syntax-validated model
+claims, not proof that a matching source exists or supports the claim.
+
+Each array has at most four entries. Claim/uncertainty strings are capped at
+256 bytes, action targets at 128 bytes, and references at four lowercase hashes.
+Unknown keys, duplicate JSON keys, null/wrong-type fields, empty records and
+oversized payloads fail explicitly. The actual per-step canonical byte allocation
+is included in the expert prompt and remains inside the existing shared
+600-byte content and 1,200-byte summary budgets. No additional model is loaded.
+
+`collective/experts.rs` parses complete responses without prose fallback or
+truncation. Only provider `stop` responses may become `partial: false` results;
+token-limited output refuses admission even when its prefix is valid JSON.
+Failures retain charged calls, stop new workflow admissions and drain existing
+owned work. Disposable schema-valid sizing values are used only for cost
+projection; actual turns are admitted again before reservation. Insufficient
+space skips the optional workflow or refuses publication without raising quotas.
+
+`expert_advice.rs` writes version-2 summaries whose result advice is a validated
+object. Root/reference pins, canonical hashes and the 2 KiB context limit are
+preserved. Version-1 string summaries remain readable as untrusted legacy data;
+new v2 records cannot silently fall back to strings. Client continuations restore
+records without replaying inference or promoting claims into facts or weights.
+
+This change affects expert workflow conclusions. Planner, explorer, reflector
+and the broader session-advice path still use separate free-form strings;
+structured memory across the entire network is not complete. Curated project
+memory and optional evaluated project LoRA remain separate, with existing
+operator/evaluation gates. No training or promotion occurs here.
+
+Validation: formatting, locked workspace/all-target compilation, strict Clippy,
+whitespace checks and source review. No tests, benchmarks, live inference, model
+activation, installation or recovery execution ran. No speed or quality result
+is claimed.
+
 ## Share execution capacity across typed and model experts — 2026-10-28
 
 **Implemented shared mixed-phase task slots; runtime/provider behavior unverified.**

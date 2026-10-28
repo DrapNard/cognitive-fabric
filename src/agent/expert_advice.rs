@@ -29,9 +29,9 @@ impl Record {
             bail!("Expert advice summary exceeds its byte bound")
         }
         let summary = crate::strict_json::value(raw_summary.as_bytes(), MAX_SUMMARY_BYTES)?;
-        validate_summary(&summary)?;
+        validate_summary(&summary, 2)?;
         let record = Self {
-            version: 1,
+            version: 2,
             root_sha256: root_sha.to_owned(),
             references_sha256: references_sha.to_owned(),
             summary_sha256: crate::store::sha256(summary.to_string().as_bytes()),
@@ -52,7 +52,7 @@ impl Record {
 
     /// Validate the durable record where the original request is no longer present.
     pub(super) fn validate_checkpoint(&self, expected_refs: &str) -> Result<()> {
-        if self.version != 1
+        if !matches!(self.version, 1 | 2)
             || self.trust != TRUST
             || !is_sha256(&self.root_sha256)
             || !is_sha256(&self.references_sha256)
@@ -63,7 +63,7 @@ impl Record {
         if self.references_sha256 != expected_refs {
             bail!("Expert advice record belongs to a different reference snapshot")
         }
-        validate_summary(&self.summary)?;
+        validate_summary(&self.summary, self.version)?;
         let canonical = self.summary.to_string();
         if canonical.len() > MAX_SUMMARY_BYTES
             || crate::store::sha256(canonical.as_bytes()) != self.summary_sha256
@@ -77,7 +77,7 @@ impl Record {
     pub(super) fn context(&self) -> Result<String> {
         self.validate_checkpoint(&self.references_sha256)?;
         let envelope = serde_json::json!({
-            "format": "cogfabric-expert-advice-v1",
+            "format": format!("cogfabric-expert-advice-v{}", self.version),
             "version": self.version,
             "root_sha256": self.root_sha256,
             "references_sha256": self.references_sha256,
@@ -105,7 +105,7 @@ fn is_sha256(value: &str) -> bool {
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
-fn validate_summary(summary: &Value) -> Result<()> {
+fn validate_summary(summary: &Value, version: u8) -> Result<()> {
     let object = summary
         .as_object()
         .ok_or_else(|| anyhow::anyhow!("Expert advice summary must be an object"))?;
@@ -145,7 +145,10 @@ fn validate_summary(summary: &Value) -> Result<()> {
                     bail!("Invalid expert capability identifier")
                 }
                 validate_identity(expert, &mut ids)?;
-                validate_results(expert.get("results").expect("required key checked"))?;
+                validate_results(
+                    expert.get("results").expect("required key checked"),
+                    version,
+                )?;
                 if let Some(dependencies) = expert.get("dependencies") {
                     let dependencies = dependencies
                         .as_array()
@@ -170,7 +173,10 @@ fn validate_summary(summary: &Value) -> Result<()> {
             require_trust(object)?;
             let mut ids = BTreeSet::new();
             validate_identity(object, &mut ids)?;
-            validate_results(object.get("results").expect("required key checked"))?;
+            validate_results(
+                object.get("results").expect("required key checked"),
+                version,
+            )?;
         }
     }
     if summary.to_string().len() > MAX_SUMMARY_BYTES {
@@ -204,7 +210,7 @@ fn validate_identity(object: &Map<String, Value>, ids: &mut BTreeSet<String>) ->
     Ok(())
 }
 
-fn validate_results(results: &Value) -> Result<()> {
+fn validate_results(results: &Value, version: u8) -> Result<()> {
     let results = results
         .as_object()
         .ok_or_else(|| anyhow::anyhow!("Expert results must be an object"))?;
@@ -219,12 +225,32 @@ fn validate_results(results: &Value) -> Result<()> {
             .as_object()
             .ok_or_else(|| anyhow::anyhow!("Expert result must be an object"))?;
         exact_keys(result, &["advice", "partial", "trust"])?;
-        let advice = string_field(result, "advice")?;
-        if advice.len() > MAX_SUMMARY_BYTES
-            || result.get("partial").and_then(Value::as_bool).is_none()
-            || string_field(result, "trust")? != TRUST
-        {
+        if string_field(result, "trust")? != TRUST {
             bail!("Invalid bounded expert result")
+        }
+        let partial = result
+            .get("partial")
+            .and_then(Value::as_bool)
+            .ok_or_else(|| anyhow::anyhow!("Expert partial marker must be boolean"))?;
+        let advice = result
+            .get("advice")
+            .ok_or_else(|| anyhow::anyhow!("Expert advice result is missing"))?;
+        match version {
+            1 => {
+                if advice
+                    .as_str()
+                    .is_none_or(|text| text.len() > MAX_SUMMARY_BYTES)
+                {
+                    bail!("Invalid legacy expert advice text")
+                }
+            }
+            2 => {
+                if partial {
+                    bail!("Structured expert memory cannot contain a partial result")
+                }
+                crate::agent::advisory_record::validate(advice, MAX_SUMMARY_BYTES)?;
+            }
+            _ => bail!("Unsupported expert memory schema"),
         }
     }
     Ok(())

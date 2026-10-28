@@ -1,5 +1,6 @@
 //! Transport-independent, bounded solver turns for external agent clients.
 //! Tool calls are proposals; execution and approval belong to the client.
+mod advisory_record;
 mod collective;
 mod core_batch;
 mod core_memory_bindings;

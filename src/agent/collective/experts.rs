@@ -337,6 +337,7 @@ impl Graph<'_> {
         plans: &[expert_workflow::BoundPlan],
         runtimes: &[AgentRuntime],
         ready: &[(usize, usize, serde_json::Value)],
+        record_bytes: usize,
     ) -> Result<Vec<PreparedExpertCall>> {
         const ROLE: &str = "solver";
         if ready.is_empty() || ready.len() > 4 {
@@ -354,7 +355,13 @@ impl Graph<'_> {
                     *plan_index,
                     *step_index,
                     allocation,
-                    self.expert_turn(plan, &plan.steps[*step_index], &prior, allocation),
+                    self.expert_turn(
+                        plan,
+                        &plan.steps[*step_index],
+                        &prior,
+                        allocation,
+                        record_bytes,
+                    ),
                 ))
             })
             .collect::<Result<Vec<_>>>()?;
@@ -449,16 +456,19 @@ impl Graph<'_> {
                 &call.turn,
                 completion,
             )?;
+            if completion.finish_reason != "stop" {
+                bail!("Structured expert advice requires a confirmed complete provider response")
+            }
             if !completion.tool_calls.is_empty() {
                 bail!("Expert advisory role proposed a client tool")
             }
             let content = completion.content.unwrap_or_default();
-            let (advice, partial) = bounded_json_string(&content, report.advice_budget);
+            let advice = crate::agent::advisory_record::parse(&content, report.advice_budget)?;
             results[call.plan_index].insert(
                 step_id.clone(),
                 json!({
                     "advice":advice,
-                    "partial":partial,
+                    "partial":false,
                     "trust":"untrusted_model_advisory_never_permissions"
                 }),
             );
@@ -474,6 +484,9 @@ impl Graph<'_> {
                 "step_id":step_id,
                 "call":call.call,
                 "result_state":outcome,
+                "advice_format_version":2,
+                "structured_advice_validated":true,
+                "advice_partial":false,
                 "permissions_granted":false
             }),
         )?;
@@ -705,6 +718,20 @@ impl Graph<'_> {
         const MAX_SUMMARY_ADVICE_BYTES: usize = 1_200;
         const MAX_SUMMARY_CONTENT_BYTES: usize = 600;
         let mut step_advice_budget = MAX_SUMMARY_CONTENT_BYTES / step_count;
+        if step_advice_budget < crate::agent::advisory_record::minimum_bytes() {
+            self.runtime.store.event(
+                self.task,
+                "expert_workflow_skipped",
+                "jev-plus",
+                json!({
+                    "reason":"structured_advice_minimum_exceeds_shared_summary_budget",
+                    "step_count":step_count,
+                    "step_advice_bytes":step_advice_budget,
+                    "permissions_granted":false
+                }),
+            )?;
+            return Ok(None);
+        }
         let mut hypothetical = Vec::new();
         let mut projected_summaries = Vec::new();
         loop {
@@ -713,16 +740,7 @@ impl Graph<'_> {
             let mut all_projected_results = Vec::with_capacity(plans.len());
             for bound in &plans {
                 let plan = &bound.plan;
-                // Quotes maximize escaping when scalar advice is embedded in
-                // JSON and then again in a chat request. Plain ASCII would
-                // underestimate the same bounded advice after nested encoding.
-                let quote_count = step_advice_budget.saturating_sub(2) / 2;
-                let used = 2 + quote_count * 2;
-                let placeholder = format!(
-                    "{}{}",
-                    "\"".repeat(quote_count),
-                    "x".repeat(step_advice_budget.saturating_sub(used) % 2)
-                );
+                let placeholder = crate::agent::advisory_record::sizing_value(step_advice_budget)?;
                 let mut projected_results = serde_json::Map::new();
                 for step in &plan.steps {
                     projected_results.insert(
@@ -751,7 +769,13 @@ impl Graph<'_> {
                     });
                     hypothetical.push((
                         "solver",
-                        self.expert_turn(plan, step, &maximum_prior, allocation),
+                        self.expert_turn(
+                            plan,
+                            step,
+                            &maximum_prior,
+                            allocation,
+                            step_advice_budget,
+                        ),
                         allocation,
                     ));
                 }
@@ -989,7 +1013,12 @@ impl Graph<'_> {
             let prepared = if overlap_experts.is_empty() {
                 Vec::new()
             } else {
-                self.reserve_expert_wave(&plans, &routed_runtimes, &overlap_experts)?
+                self.reserve_expert_wave(
+                    &plans,
+                    &routed_runtimes,
+                    &overlap_experts,
+                    step_advice_budget,
+                )?
             };
             for plan_index in prepared
                 .iter()
@@ -1130,7 +1159,12 @@ impl Graph<'_> {
                         }
                     };
                     if fits {
-                        match self.reserve_expert_wave(&plans, &routed_runtimes, &ready) {
+                        match self.reserve_expert_wave(
+                            &plans,
+                            &routed_runtimes,
+                            &ready,
+                            step_advice_budget,
+                        ) {
                             Ok(prepared) => {
                                 for plan_index in prepared
                                     .iter()

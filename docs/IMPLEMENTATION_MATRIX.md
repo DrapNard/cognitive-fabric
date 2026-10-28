@@ -1,5 +1,21 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Store structured expert conclusions — 2026-10-28
+
+**Implemented for new expert step summaries; network-wide memory remains Partial.**
+`advisory_record.rs` validates bounded claims, suggested actions and uncertainties.
+`collective/experts.rs` requires complete structured model responses and performs
+no prose truncation. `expert_advice.rs` writes v2 objects while reading v1 legacy
+strings as untrusted data. Original root/reference hashes, budgets and caps
+remain; no claims become verified facts, permissions or neural weights.
+
+Planner/explorer/reflector and broader session advice are still separate
+free-form paths. See [cognitive network](COGNITIVE_NETWORK.md) for schema limits
+and failure handling. Static formatting, locked workspace/all-target compilation,
+strict Clippy and whitespace checks are the validation scope. No tests,
+benchmarks or live inference ran. Runtime compatibility, full mixed workflows
+and evaluated project LoRA remain incomplete or unverified.
+
 ## Share execution capacity across typed and model experts — 2026-10-28
 
 **Implemented for mixed phases; runtime unverified.** `src/agent/network_slots.rs`

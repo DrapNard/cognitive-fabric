@@ -321,6 +321,7 @@ impl Graph<'_> {
         step: &expert_workflow::Step,
         prior_results: &serde_json::Value,
         allocation: usize,
+        record_bytes: usize,
     ) -> Turn {
         let step_input = expert_workflow::step_input(plan, step, prior_results);
         let advice = match &self.typed_evidence {
@@ -338,11 +339,14 @@ impl Graph<'_> {
         turn.tool_choice = Some(serde_json::json!("none"));
         turn.parallel_tool_calls = Some(false);
         if let Some(system) = turn.messages.first_mut() {
-            system.content = Some(EXPERT_STEP_CONTRACT.into());
+            system.content = Some(format!(
+                "{EXPERT_STEP_CONTRACT} {}",
+                super::advisory_record::contract()
+            ));
         }
         if let Some(user) = turn.messages.last_mut() {
             user.content = Some(format!(
-                "Original request context is present in the preceding messages. Complete this advisory step only. Structured input: {advice}"
+                "Original request context is present in the preceding messages. Complete this advisory step only. Return an advisory record of at most {record_bytes} canonical JSON bytes. Structured input: {advice}"
             ));
         }
         turn
@@ -600,22 +604,6 @@ fn bounded(text: &str, bytes: usize) -> &str {
         end -= 1;
     }
     &text[..end]
-}
-
-fn bounded_json_string(text: &str, encoded_bytes: usize) -> (&str, bool) {
-    let mut used = 2usize; // JSON string delimiters
-    let mut end = 0usize;
-    for (index, character) in text.char_indices() {
-        let encoded = serde_json::to_string(&character.to_string())
-            .map(|value| value.len().saturating_sub(2))
-            .unwrap_or(6);
-        if used.saturating_add(encoded) > encoded_bytes {
-            break;
-        }
-        used += encoded;
-        end = index + character.len_utf8();
-    }
-    (&text[..end], end < text.len())
 }
 
 pub(super) async fn run(

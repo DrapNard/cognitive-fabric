@@ -1,5 +1,15 @@
 # Reusable task memory
 
+New client Expert Network step summaries use bounded structured conclusions,
+separate from published episodes below. A minimal model record is
+`{"v":1,"unknowns":["Need evidence"]}`. Optional `claims` distinguish supplied
+statements from hypotheses; optional `actions` describe suggestions that grant
+no execution authority. Canonical source/reference hashes bind the surrounding
+task record, while any model-proposed reference remains unverified. New summaries
+use schema v2; legacy v1 text is read-only untrusted context. No model output is
+automatically published, indexed as fact or used to train a project adapter.
+See [cognitive network](COGNITIVE_NETWORK.md) for caps and incomplete role paths.
+
 Task/event history remains private to explicit conversation references by default.
 An operator can publish selected terminal task snapshots for later retrieval:
 
