@@ -1,5 +1,22 @@
 # Cognitive network implementation
 
+## Account for sibling results after audit failures — 2026-10-28
+
+**Implemented for engine expert waves; runtime unverified.** Multi-expert waves
+settle all provider futures and now process each result independently even when
+an earlier result's audit or metrics publication fails. The first error still
+fails the wave and incomplete usage remains explicitly marked; no failed work
+is retried. If a reasoning event was persisted but its notification failed,
+the node identity is retained in memory before processing a sibling. The same
+identity handling applies to the single-expert rolling scheduler, preventing a
+later sibling from reusing an already-persisted node ID.
+
+This does not guarantee that every audit write succeeds, prove provider
+cancellation, or change permissions or quotas. Multi-expert scheduling remains
+wave-based because its saved recovery format depends on those boundaries. No
+tests, benchmarks, live inference or recovery execution ran. Static checks do
+not establish runtime correctness or speed.
+
 ## Refill ready steps in a single engine expert workflow — 2026-10-28
 
 **Implemented rolling ready-step scheduling; runtime unverified.**

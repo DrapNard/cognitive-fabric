@@ -1,5 +1,14 @@
 # Current Rust implementation
 
+## Account for sibling results after audit failures — 2026-10-28
+
+**Implemented; runtime unverified.** Engine multi-expert waves process settled
+sibling results even after a result's audit fails, mark usage incomplete and
+return the error. Both multi-expert and rolling single-expert paths preserve
+persisted node identities after notification failure. See
+[cognitive network](COGNITIVE_NETWORK.md). No tests, benchmarks, live inference
+or recovery execution ran.
+
 ## Refill ready single-expert engine steps — 2026-10-28
 
 **Implemented; runtime unverified.** Dependency-ready steps in a single

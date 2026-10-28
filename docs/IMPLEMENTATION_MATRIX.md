@@ -1,5 +1,14 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Account for sibling results after audit failures — 2026-10-28
+
+**Implemented; runtime unverified.** `reasoning/expert_parallel.rs` continues
+accounting for settled siblings after individual audit errors, and it and
+`reasoning/parallel.rs` retain node identities for already-persisted events.
+Audit failures still fail the wave and usage can remain incomplete. Multi-expert
+rolling scheduling remains Partial. See [cognitive network](COGNITIVE_NETWORK.md).
+No tests, benchmarks, live inference or recovery execution ran.
+
 ## Refill ready single-expert engine steps — 2026-10-28
 
 **Implemented; runtime unverified.** `reasoning/parallel.rs` maintains bounded

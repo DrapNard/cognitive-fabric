@@ -504,14 +504,21 @@ impl Session {
                                 model: report.model,
                                 content_hash: crate::store::sha256(report.text.as_bytes()),
                             };
-                            self.store.event(&self.task,"reasoning","jev-r",json!({"call":call,"node":node,"text":report.text,"input_tokens":report.input_tokens,"output_tokens":report.output_tokens,"inference_ms":report.elapsed_ms,"queue_wait_ms":report.queue_wait_ms}))?;
+                            let recorded = self.store.event(&self.task,"reasoning","jev-r",json!({"call":call,"node":node,"text":report.text,"input_tokens":report.input_tokens,"output_tokens":report.output_tokens,"inference_ms":report.elapsed_ms,"queue_wait_ms":report.queue_wait_ms}));
+                            match recorded {
+                                Ok(()) => self.nodes.push(node.clone()),
+                                Err(error) if error.is::<crate::store::PersistedEventError>() => {
+                                    self.nodes.push(node.clone());
+                                    return Err(error);
+                                }
+                                Err(error) => return Err(error),
+                            }
                             self.record_provider_metrics(
                                 call,
                                 "solver",
                                 &node,
                                 report.provider_metrics.as_ref(),
                             )?;
-                            self.nodes.push(node);
                             let result = match crate::agent::advisory_record::parse(
                                 &report.text,
                                 600,
