@@ -1,5 +1,13 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Inspect configured network routes — 2026-10-28
+
+**Implemented; runtime unverified.** `diagnostics.rs` exposes effective role
+routes, language-boundary configuration and parallelism without a provider
+probe. It does not attest weights, server activation or physical concurrency.
+See [cognitive network](COGNITIVE_NETWORK.md). No tests, benchmarks, model loads
+or live inference ran; broader network implementation remains Partial.
+
 ## Launcher support for on-demand native client routes — 2026-10-28
 
 **Implemented; runtime unverified.** `scripts/opencode-local.sh` passes an

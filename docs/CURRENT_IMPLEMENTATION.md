@@ -1,5 +1,14 @@
 # Current Rust implementation
 
+## Inspect configured network routes — 2026-10-28
+
+**Implemented; runtime unverified.** Generic diagnostics report effective role
+model keys, the configured language boundary, client collective setting and
+parallelism limits without loading models. Running server activation, weights
+and physical concurrency remain unobserved. See
+[cognitive network](COGNITIVE_NETWORK.md). No tests, benchmarks, model loads or
+live inference ran.
+
 ## Launcher support for on-demand native client routes — 2026-10-28
 
 **Implemented; runtime unverified.** With a reviewed native policy and explicit

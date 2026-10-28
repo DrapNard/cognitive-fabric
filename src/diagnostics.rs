@@ -77,6 +77,25 @@ async fn advertised(cfg: &Config) -> Result<BTreeSet<String>> {
 
 pub async fn diagnose(cfg: &Config, store: &Store, probe_inference: bool) -> Result<Value> {
     cfg.validate()?;
+    let role_routes = ["interface", "planner", "solver", "explorer", "critic", "reflector", "synthesizer"]
+        .into_iter()
+        .map(|role| {
+            let (model, _) = cfg.model_settings(role)?;
+            Ok(json!({"role":role,"model":model,"purpose":if matches!(role,"interface" | "synthesizer") {"language"} else {"reasoning"}}))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let network = json!({
+        "format_version":1,
+        "language_boundary":if cfg.language_model().is_some() {"configured"} else {"not_configured"},
+        "routes":role_routes,
+        "client_collective_enabled":cfg.agent_collective || cfg.language_model().is_some(),
+        "subtask_parallelism":cfg.subtask_parallelism.unwrap_or(1),
+        "expert_parallelism":cfg.expert_parallelism.unwrap_or(1),
+        "route_identity_evidence":"configuration_only",
+        "runtime_model_activation":"not_observed",
+        "physical_parallelism_verified":false,
+        "model_weights_attested":false
+    });
     let registration = store.pin_model(cfg);
     let storage = store.storage_stats()?;
     let schema: u32 = store
@@ -107,7 +126,7 @@ pub async fn diagnose(cfg: &Config, store: &Store, probe_inference: bool) -> Res
     Ok(
         json!({"format_version":1,"backend":cfg.backend,"schema_version":schema,"storage":storage,"process_memory":crate::telemetry::process_memory(),
         "registered_selection_valid":registration.is_ok(),"registration_error":registration.err().map(|e| e.to_string()),
-        "inference_discovery":probe,"generation_tested":false,"weights_attested":false,
+        "inference_discovery":probe,"network_configuration":network,"generation_tested":false,"weights_attested":false,
         "limitations":["Model advertisement does not prove loaded weights or successful generation","Database statistics are not an integrity or backup test","Socket health requires service-status","Process memory excludes external inference servers and GPU memory"]}),
     )
 }

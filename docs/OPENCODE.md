@@ -29,6 +29,16 @@ attestation. Start the native provider yourself. This mode is not a readiness
 or performance guarantee. The same server flags also support other compatible
 clients; see [on-demand client activation](COGNITIVE_NETWORK.md#on-demand-client-model-activation-experimental).
 
+Inspect configured role routes without loading models:
+
+```sh
+cogfabric --home "$HOME/.local/share/cogfabric-http" --json diagnostics
+```
+
+The `network_configuration` section describes saved configuration, not a running
+server's policy, loaded models or proof that different model names mean different
+weights.
+
 The launcher always adds `--standalone` to OpenCode. Its private session inherits
 the current ephemeral `COGFABRIC_SERVER_API_KEY`; an already-running background
 OpenCode service can retain an older environment and fail with `A valid server

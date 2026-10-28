@@ -1,5 +1,19 @@
 # Cognitive network implementation
 
+## Inspect configured network routes — 2026-10-28
+
+**Implemented configuration-only diagnostics; runtime unverified.** Generic
+`cogfabric --json diagnostics` reports the effective model key for each language
+and reasoning role, whether the language boundary is configured, the client
+collective setting and configured parallelism limits. It needs no inference
+probe and does not load a model. Actual server activation, provider concurrency
+and weights remain unobserved or unattested; aliases cannot prove distinct weights.
+
+This reports current configuration, not the policy or state of an already running
+server or pinned session. On-demand activation still needs its separately
+reviewed policy and approvals. No tests, benchmarks, model loads, installation
+or live inference ran; static checks do not prove runtime behavior.
+
 ## Launcher support for on-demand native client routes — 2026-10-28
 
 **Implemented opt-in launcher wiring; runtime unverified.** The OpenCode helper
