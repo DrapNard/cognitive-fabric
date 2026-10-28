@@ -17,6 +17,7 @@ mod typed_evidence;
 mod typed_experts;
 mod typed_input;
 mod typed_progress;
+mod typed_snapshot_storage;
 mod types;
 pub mod unix;
 use crate::{
@@ -107,6 +108,7 @@ pub struct AgentRuntime {
     native_on_demand: bool,
     resource_pool: Option<Arc<crate::resource_scheduler::ResourcePool>>,
     typed_modules: Option<Arc<crate::fabric::modules::Broker>>,
+    retained_typed_modules: Option<Arc<crate::fabric::modules::Broker>>,
 }
 impl AgentRuntime {
     pub fn local(cfg: Config, store: Arc<Store>) -> Result<Self> {
@@ -162,6 +164,7 @@ impl AgentRuntime {
             native_on_demand: false,
             resource_pool,
             typed_modules: None,
+            retained_typed_modules: None,
         })
     }
     /// Share a trusted host registry with first-turn client expert execution.
@@ -668,6 +671,7 @@ impl AgentRuntime {
             if let Some(owner) = &scoped.native_owner {
                 // Process-backed experts must share the existing exclusive
                 // workspace owner rather than acquiring a conflicting lease.
+                scoped.retained_typed_modules = self.typed_modules.clone();
                 scoped.typed_modules = self
                     .typed_modules
                     .as_ref()

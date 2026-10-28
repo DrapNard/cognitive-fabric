@@ -536,6 +536,17 @@ pub struct TaskBinding {
     ownership: Arc<crate::residency::lifecycle::Ownership>,
 }
 
+/// Immutable trusted-host metadata required to rebuild a task-local registry
+/// from retained implementations. This type cannot construct module code; the
+/// source Broker must already retain the exact implementation versions.
+#[derive(Clone, Debug)]
+pub(crate) struct FrozenModule {
+    pub descriptor: Descriptor,
+    pub source_fingerprint: Option<String>,
+    pub implementation_identity: Option<serde_json::Value>,
+    pub limits: Limits,
+}
+
 /// Trusted Rust host implementation. Implementations receive no broker, Store,
 /// credentials, task policy or filesystem/network handle through this contract.
 /// A host can still capture such resources itself, so this is not a sandbox.
@@ -892,6 +903,124 @@ impl Broker {
             fork.register(implementation, limits)?;
         }
         Ok(fork)
+    }
+
+    /// Rebuild only the exact retained implementations named by an opening
+    /// snapshot, binding each to the current task ownership. This intentionally
+    /// never consults the source broker's active aliases. Snapshot metadata is
+    /// checked against retained trusted registrations before any binding hook
+    /// runs, and each bound adapter must preserve the same immutable identity.
+    pub(crate) fn fork_retained_owned(
+        self: &Arc<Self>,
+        task: &str,
+        ownership: Option<Arc<crate::residency::lifecycle::Ownership>>,
+        frozen: &[FrozenModule],
+    ) -> Result<(Arc<Self>, Vec<Pin>, TaskRoutes)> {
+        uuid::Uuid::parse_str(task)?;
+        if let Some(ownership) = &ownership {
+            ownership.validate(&self.store)?;
+        }
+        if frozen.len() > MAX_MODULES {
+            bail!("Frozen typed module registry exceeds its module bound")
+        }
+
+        // Resolve the whole frozen set first. In particular, do not invoke a
+        // trusted module's task-binding callback until every retained version
+        // and its immutable metadata has been validated.
+        let retained = {
+            let registry = self
+                .registry
+                .read()
+                .map_err(|_| anyhow!("Typed module registry poisoned"))?;
+            if *self.shutdown.borrow() {
+                bail!("Typed module registry is shut down")
+            }
+            let mut previous: Option<(&str, &str)> = None;
+            let mut seen = BTreeSet::new();
+            let mut retained = Vec::with_capacity(frozen.len());
+            for item in frozen {
+                item.descriptor.validate()?;
+                item.limits.validate()?;
+                if item
+                    .implementation_identity
+                    .as_ref()
+                    .is_some_and(|identity| identity.to_string().len() > 1024)
+                    || item.source_fingerprint.as_ref().is_some_and(|hash| {
+                        hash.len() != 64 || !hash.bytes().all(|byte| byte.is_ascii_hexdigit())
+                    })
+                    || !seen.insert((item.descriptor.id.clone(), item.descriptor.version.clone()))
+                {
+                    bail!("Frozen typed module metadata is invalid or duplicated")
+                }
+                let current = (
+                    item.descriptor.id.as_str(),
+                    item.descriptor.version.as_str(),
+                );
+                if previous.is_some_and(|prior| prior >= current) {
+                    bail!("Frozen typed module order is not canonical")
+                }
+                previous = Some(current);
+
+                let module = registry
+                    .versions
+                    .get(&(item.descriptor.id.clone(), item.descriptor.version.clone()))
+                    .filter(|module| {
+                        module.descriptor == item.descriptor
+                            && module.source_fingerprint == item.source_fingerprint.as_deref()
+                            && module.implementation_identity == item.implementation_identity
+                            && module.limits == item.limits
+                    })
+                    .cloned()
+                    .context("Frozen typed module is not retained with its original identity")?;
+                retained.push((item.clone(), module.implementation.clone()));
+            }
+            retained
+        };
+
+        // A non-native task already runs on the shared runtime broker. Reuse
+        // its exact retained registrations so all tasks still share the same
+        // queues and concurrency semaphores. Creating another broker here
+        // would silently multiply the configured module capacity.
+        if ownership.is_none() {
+            let mut modules = Vec::with_capacity(retained.len());
+            let mut candidates = BTreeMap::<Capability, Vec<Pin>>::new();
+            for (item, _) in retained {
+                let pin = self.pin_retained_candidate(task, &item.descriptor)?;
+                for capability in &pin.descriptor().capabilities {
+                    candidates.entry(*capability).or_default().push(pin.clone());
+                }
+                modules.push(pin);
+            }
+            let mut routes = TaskRoutes::new();
+            for (capability, pins) in candidates {
+                routes.insert(
+                    capability,
+                    self.retained_candidate_set(task, capability, pins)?,
+                );
+            }
+            return Ok((self.clone(), modules, routes));
+        }
+
+        let binding = TaskBinding {
+            store: self.store.clone(),
+            ownership: ownership.expect("native ownership was checked above"),
+        };
+        let fork = Arc::new(Self::new(self.store.clone()));
+        for (item, original) in retained {
+            let implementation = original.bind_task(&binding)?.unwrap_or(original);
+            if implementation.descriptor() != item.descriptor
+                || implementation.source_fingerprint() != item.source_fingerprint.as_deref()
+                || implementation.implementation_identity() != item.implementation_identity
+            {
+                bail!("Task binding changed a frozen module identity")
+            }
+            fork.register(implementation, item.limits)?;
+        }
+        let (pins, routes) = fork.pin_active_routes(task)?;
+        if pins.len() != frozen.len() {
+            bail!("Rebuilt typed registry differs from its frozen module set")
+        }
+        Ok((fork, pins, routes))
     }
 
     /// Process-local identity used to bind task snapshots to this Broker

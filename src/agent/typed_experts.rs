@@ -20,7 +20,7 @@ use crate::{
     security::TaskPolicy,
 };
 use anyhow::{bail, Result};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{
     sync::Arc,
     time::{Duration, Instant},
@@ -51,6 +51,37 @@ pub(super) struct Snapshot {
     task: String,
     module_digest: String,
     providers: providers::Catalog,
+    module_metadata: Vec<u8>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StoredModules {
+    format_version: u8,
+    broker_id: String,
+    modules: Vec<StoredModule>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StoredModule {
+    id: String,
+    version: String,
+    capabilities: Vec<String>,
+    source_fingerprint: Option<String>,
+    implementation_identity: Option<serde_json::Value>,
+    queue_capacity: usize,
+    concurrency: usize,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StoredSnapshot {
+    format_version: u8,
+    task: String,
+    digest: String,
+    modules: String,
+    providers: String,
 }
 
 #[derive(Serialize)]
@@ -124,6 +155,107 @@ impl Snapshot {
             task: task.to_owned(),
             module_digest,
             providers,
+            module_metadata: encoded,
+        })
+    }
+
+    /// Metadata only: executable implementations remain in the trusted broker.
+    pub(super) fn export_metadata(&self) -> Result<Vec<u8>> {
+        let stored = StoredSnapshot {
+            format_version: 1,
+            task: self.task.clone(),
+            digest: self.digest.clone(),
+            modules: String::from_utf8(self.module_metadata.clone())?,
+            providers: String::from_utf8(self.providers.export_metadata()?)?,
+        };
+        // Canonical outer encoding also gives durable chunk storage one stable hash.
+        Ok(serde_json::to_vec(&serde_json::to_value(stored)?)?)
+    }
+
+    /// Rebind exact retained host implementations under the current task owner.
+    /// No active registry aliases or manifest refresh participate in restoration.
+    pub(super) fn restore_metadata(
+        source: Arc<Broker>,
+        task: &str,
+        raw: &[u8],
+        ownership: Option<Arc<crate::residency::lifecycle::Ownership>>,
+    ) -> Result<Self> {
+        let stored: StoredSnapshot =
+            serde_json::from_value(crate::strict_json::value(raw, 2_500_000)?)?;
+        if stored.format_version != 1
+            || stored.task != task
+            || stored.modules.len() > MAX_SNAPSHOT_BYTES
+        {
+            bail!("Typed route metadata differs from the original task")
+        }
+        let modules: StoredModules = serde_json::from_value(crate::strict_json::value(
+            stored.modules.as_bytes(),
+            MAX_SNAPSHOT_BYTES,
+        )?)?;
+        if modules.format_version != 1 {
+            bail!("Unsupported frozen module metadata version")
+        }
+        uuid::Uuid::parse_str(&modules.broker_id)?;
+        // This UUID records the opening execution broker. Native tasks use
+        // fresh owner-bound brokers, so the retained source registry has a
+        // different UUID. Exact retained implementation metadata below, not
+        // equality with this historical UUID, authorizes reconstruction.
+        let mut frozen = Vec::with_capacity(modules.modules.len());
+        for module in modules.modules {
+            let mut capabilities = std::collections::BTreeSet::new();
+            for name in module.capabilities {
+                let capability = match name.as_str() {
+                    "math.evaluate" => Capability::MathEvaluate,
+                    "sql.query" => Capability::SqlQuery,
+                    "sorting.verify" => Capability::SortingVerify,
+                    "ordering.verify" => Capability::OrderingVerify,
+                    "path.verify" => Capability::PathVerify,
+                    "constraints.solve" => Capability::ConstraintsSolve,
+                    _ => bail!("Unknown frozen typed capability"),
+                };
+                if !capabilities.insert(capability) {
+                    bail!("Duplicate frozen typed capability")
+                }
+            }
+            frozen.push(crate::fabric::modules::FrozenModule {
+                descriptor: crate::fabric::modules::Descriptor {
+                    id: module.id,
+                    version: module.version,
+                    capabilities,
+                },
+                source_fingerprint: module.source_fingerprint,
+                implementation_identity: module.implementation_identity,
+                limits: crate::fabric::modules::Limits {
+                    queue_capacity: module.queue_capacity,
+                    concurrency: module.concurrency,
+                },
+            });
+        }
+        // Verify the combined frozen digest before any trusted bind callback.
+        let module_digest = crate::store::sha256(stored.modules.as_bytes());
+        let provider_digest = crate::store::sha256(stored.providers.as_bytes());
+        let digest = crate::store::sha256(&serde_json::to_vec(&serde_json::json!({
+            "format_version":2, "modules_sha256":module_digest,
+            "expert_providers_sha256":provider_digest
+        }))?);
+        if digest != stored.digest {
+            bail!("Frozen typed route metadata digest mismatch")
+        }
+        let (broker, pins, routes) = source.fork_retained_owned(task, ownership, &frozen)?;
+        let providers = providers::Catalog::restore_metadata(stored.providers.as_bytes(), &routes)?;
+        if providers.digest() != provider_digest {
+            bail!("Restored provider metadata differs from its frozen digest")
+        }
+        Ok(Self {
+            broker,
+            routes,
+            digest,
+            module_count: pins.len(),
+            broker_id: modules.broker_id,
+            task: task.to_owned(),
+            module_digest,
+            providers,
+            module_metadata: stored.modules.into_bytes(),
         })
     }
 

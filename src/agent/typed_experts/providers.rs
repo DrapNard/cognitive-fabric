@@ -17,6 +17,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 
 const MAX_MANIFESTS: usize = 256;
 const MAX_CATALOG_BYTES: usize = 1024 * 1024;
+const MAX_CATALOG_RECORD_BYTES: usize = MAX_CATALOG_BYTES;
 const MAX_PLAN_OPERATIONS: usize = 4;
 const MAX_PLAN_STATES: usize = 4096;
 const MAX_ROUTE_AUDIT_BYTES: usize = 4096;
@@ -41,23 +42,26 @@ impl Selection {
     }
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 struct DeclaredCapability {
     id: String,
     version: String,
-    #[serde(skip)]
+    #[serde(skip, default = "empty_version")]
     parsed_version: Version,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 struct DeclaredDependency {
     id: String,
     requirement: String,
-    #[serde(skip)]
+    #[serde(skip, default = "any_requirement")]
     parsed_requirement: VersionReq,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 struct ProviderDeclaration {
     module_id: String,
     module_version: String,
@@ -66,7 +70,8 @@ struct ProviderDeclaration {
 
 /// Safe-to-audit registry metadata. No workflow advice, descriptions, prompts,
 /// bodies, credentials, or model weights are retained here.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 struct Metadata {
     id: String,
     version: String,
@@ -180,6 +185,111 @@ impl Catalog {
             bail!("Opening provider catalog metadata exceeds its size limit")
         }
         let digest = sha256(&bytes);
+        Ok(Self { records, digest })
+    }
+
+    /// Export the frozen provider declarations as bounded canonical metadata.
+    /// Workflow bodies, descriptions, credentials, and model data are excluded.
+    pub(in crate::agent) fn export_metadata(&self) -> Result<Vec<u8>> {
+        let encoded = serde_json::to_vec(
+            &self
+                .records
+                .iter()
+                .map(|record| &record.metadata)
+                .collect::<Vec<_>>(),
+        )?;
+        if encoded.len() > MAX_CATALOG_BYTES || sha256(&encoded) != self.digest {
+            bail!("Frozen provider catalog metadata failed its integrity bound")
+        }
+        Ok(encoded)
+    }
+
+    /// Restore only the original frozen provider metadata and exact task pins.
+    /// This never consults the active expert registry or chooses a replacement.
+    pub(in crate::agent) fn restore_metadata(raw: &[u8], routes: &TaskRoutes) -> Result<Self> {
+        if raw.is_empty() || raw.len() > MAX_CATALOG_BYTES {
+            bail!("Frozen provider catalog metadata exceeds its size limit")
+        }
+        let mut metadata: Vec<Metadata> = serde_json::from_slice(raw)?;
+        if metadata.len() > MAX_MANIFESTS {
+            bail!("Frozen provider catalog exceeds its record limit")
+        }
+        let canonical = serde_json::to_vec(&metadata)?;
+        if canonical != raw || canonical.len() > MAX_CATALOG_RECORD_BYTES {
+            bail!("Frozen provider catalog is not canonical")
+        }
+        let digest = sha256(&canonical);
+        let mut records = Vec::with_capacity(metadata.len());
+        let mut previous: Option<(String, String)> = None;
+        for mut item in metadata.drain(..) {
+            if !registry::identifier(&item.id)
+                || item.version.len() > 64
+                || Version::parse(&item.version)?.to_string() != item.version
+                || previous
+                    .as_ref()
+                    .is_some_and(|key| key >= &(item.id.clone(), item.version.clone()))
+            {
+                bail!("Frozen provider catalog identity is invalid or unsorted")
+            }
+            previous = Some((item.id.clone(), item.version.clone()));
+            let parsed_version = Version::parse(&item.version)?;
+            if item.capabilities.len() > 16 {
+                bail!("Frozen provider capability list is outside bounds")
+            }
+            let mut capability_ids = BTreeSet::new();
+            for declared in &mut item.capabilities {
+                if !registry::identifier(&declared.id)
+                    || declared.id == item.id
+                    || declared.version.is_empty()
+                    || declared.version.len() > 64
+                    || !capability_ids.insert(declared.id.clone())
+                {
+                    bail!("Frozen provider capability declaration is invalid")
+                }
+                declared.parsed_version = Version::parse(&declared.version)?;
+                if declared.parsed_version.to_string() != declared.version {
+                    bail!("Frozen provider capability version is not canonical")
+                }
+            }
+            if item.dependencies.len() > 16 {
+                bail!("Frozen provider dependencies exceed bounds")
+            }
+            let mut dependency_ids = BTreeSet::new();
+            for dependency in &mut item.dependencies {
+                if !registry::identifier(&dependency.id)
+                    || dependency.requirement.is_empty()
+                    || dependency.requirement.len() > 64
+                    || !dependency_ids.insert(dependency.id.clone())
+                {
+                    bail!("Frozen provider dependency declaration is invalid")
+                }
+                dependency.parsed_requirement = VersionReq::parse(&dependency.requirement)?;
+            }
+            validate_sha256(&item.canonical_manifest_sha256)?;
+            let provider = &item.provider;
+            if !registry::identifier(&provider.module_id)
+                || provider.module_version.len() > 64
+                || Version::parse(&provider.module_version)?.to_string() != provider.module_version
+                || provider.capabilities.is_empty()
+                || provider.capabilities.len() > 8
+            {
+                bail!("Frozen provider module declaration is invalid")
+            }
+            let mut declared_provider_caps = BTreeSet::new();
+            for name in &provider.capabilities {
+                if !declared_provider_caps.insert(name.as_str())
+                    || !item.capabilities.iter().any(|c| c.id == *name)
+                {
+                    bail!("Frozen provider capability binding is inconsistent")
+                }
+            }
+            let pin = restore_exact_pin(&item, routes);
+            records.push(Record {
+                metadata: item,
+                parsed_version,
+                pin,
+            });
+        }
         Ok(Self { records, digest })
     }
 
@@ -753,6 +863,72 @@ fn exact_opening_pin(
         }
     }
     Some(pin.clone())
+}
+
+fn empty_version() -> Version {
+    Version::new(0, 0, 0)
+}
+
+fn any_requirement() -> VersionReq {
+    VersionReq::STAR
+}
+
+fn validate_sha256(value: &str) -> Result<()> {
+    if value.len() != 64
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        bail!("Frozen provider manifest digest is invalid")
+    }
+    Ok(())
+}
+
+fn parse_provider_capability(value: &str) -> Result<ProviderCapability> {
+    match value {
+        "math.evaluate" => Ok(ProviderCapability::MathEvaluate),
+        "sql.query" => Ok(ProviderCapability::SqlQuery),
+        "sorting.verify" => Ok(ProviderCapability::SortingVerify),
+        "ordering.verify" => Ok(ProviderCapability::OrderingVerify),
+        "path.verify" => Ok(ProviderCapability::PathVerify),
+        "constraints.solve" => Ok(ProviderCapability::ConstraintsSolve),
+        _ => bail!("Frozen provider capability is unsupported"),
+    }
+}
+
+fn descriptor_capabilities(pin: &Pin) -> BTreeSet<String> {
+    pin.descriptor()
+        .capabilities
+        .iter()
+        .map(|capability| capability.as_str().to_owned())
+        .collect()
+}
+
+fn declared_provider_capabilities(provider: &ProviderDeclaration) -> BTreeSet<String> {
+    provider.capabilities.iter().cloned().collect()
+}
+
+fn restore_exact_pin(metadata: &Metadata, routes: &TaskRoutes) -> Option<Pin> {
+    let provider = &metadata.provider;
+    let expected = declared_provider_capabilities(provider);
+    let mut selected: Option<Pin> = None;
+    for name in &provider.capabilities {
+        let capability = parse_provider_capability(name).ok()?;
+        let pin = routes
+            .get(&capability.module_capability())?
+            .exact(&provider.module_id, &provider.module_version)?;
+        if descriptor_capabilities(pin) != expected {
+            return None;
+        }
+        if selected
+            .as_ref()
+            .is_some_and(|previous| previous.descriptor() != pin.descriptor())
+        {
+            return None;
+        }
+        selected = Some(pin.clone());
+    }
+    selected
 }
 
 fn provider_capability(capability: Capability) -> ProviderCapability {

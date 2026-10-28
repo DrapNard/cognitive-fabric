@@ -3,6 +3,19 @@
 
 ## Task-pinned alternate typed providers
 
+Client-tool continuations persist a bounded, task-bound snapshot of the original
+typed module and provider declarations as digest-linked event chunks. Rebinding
+checks exact retained descriptors, implementation identities, source fingerprints,
+registration limits and candidate order; it does not refresh active aliases or
+load code from stored metadata. The original broker UUID records provenance, while
+native execution binds new pins to the current owner's broker. Non-native tasks
+reuse shared retained queues rather than allocating new capacity. Each new core
+invocation still needs its own deterministic policy decision and cumulative budget
+reservation. Restoring routes never replays a previous operation or resolves an
+unknown outcome. These metadata hashes do not defend against an operator who can
+replace the database, binary and trusted registry together. Runtime restoration
+has not been exercised; validation for this change is static only.
+
 Only the trusted host registers implementations. One registry read captures the
 exact task identities and candidate order; later publication cannot add a task
 candidate. A bounded queue permit binds the chosen implementation and its admitted

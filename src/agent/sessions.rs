@@ -38,6 +38,8 @@ pub(super) struct State {
     typed_evidence: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     core_memory: Option<super::core_tools::Memory>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    typed_routes_sha256: Option<String>,
     history_len: usize,
     history_sha256: String,
     pending: Vec<String>,
@@ -775,6 +777,12 @@ impl State {
                 .as_ref()
                 .is_some_and(|memory| memory.validate_checkpoint().is_err())
             || self.pending.len() > 16
+            || self.typed_routes_sha256.as_ref().is_some_and(|digest| {
+                digest.len() != 64
+                    || !digest
+                        .bytes()
+                        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+            })
             || self.history_len > 255
             || self.pending.iter().any(|id| !valid_id(id))
         {
@@ -825,7 +833,7 @@ impl Lease {
             if sha256(raw.as_bytes()) != checksum {
                 bail!("Collective checkpoint checksum mismatch")
             }
-            let state: State =
+            let mut state: State =
                 serde_json::from_value(crate::strict_json::value(raw.as_bytes(), 32768)?)?;
             if status != "closed" {
                 state.validate(&runtime.cfg)?;
@@ -941,6 +949,32 @@ impl Lease {
                 if task_state != "waiting_client" {
                     bail!("Collective task is not awaiting client results")
                 }
+                let core_typed_experts = match &state.typed_routes_sha256 {
+                    Some(digest) => {
+                        let raw = super::typed_snapshot_storage::restore(&tx, &task, digest)?;
+                        let broker = runtime
+                            .retained_typed_modules
+                            .as_ref()
+                            .or(runtime.typed_modules.as_ref())
+                            .ok_or_else(|| {
+                                anyhow::anyhow!(
+                                    "Original typed implementation registry is unavailable"
+                                )
+                            })?;
+                        broker.require_store(&runtime.store)?;
+                        Some(Arc::new(super::typed_experts::Snapshot::restore_metadata(
+                            broker.clone(),
+                            &task,
+                            &raw,
+                            runtime.native_owner.clone(),
+                        )?))
+                    }
+                    None => None,
+                };
+                // All pending handles and their immutable ledger were checked above.
+                // Clear only the local working copy; the next write still uses
+                // the original stored checksum for its compare-and-swap.
+                state.pending.clear();
                 if tx.execute("UPDATE agent_sessions SET state='active',claim=?2,updated=unixepoch() WHERE id=?1 AND state='waiting' AND generation=?3",params![id,claim,generation])? != 1 { bail!("Collective checkpoint was concurrently claimed") }
                 tx.execute(
                     "UPDATE tasks SET status='running',updated=unixepoch() WHERE id=?1",
@@ -964,7 +998,7 @@ impl Lease {
                     deadline,
                     expert_catalog: None,
                     typed_experts: None,
-                    core_typed_experts: None,
+                    core_typed_experts,
                     done: false,
                 });
             }
@@ -1018,6 +1052,10 @@ impl Lease {
             .map(|broker| super::typed_experts::Snapshot::capture(broker.clone(), &task, &tx))
             .transpose()?;
         let typed_experts = typed_snapshot.map(Arc::new);
+        let typed_routes_metadata = typed_experts
+            .as_ref()
+            .map(|snapshot| snapshot.export_metadata())
+            .transpose()?;
         let state = State {
             version: 1,
             wall_seconds: runtime.cfg.max_wall_seconds,
@@ -1046,12 +1084,16 @@ impl Lease {
             typed_evidence_sha256: None,
             typed_evidence: None,
             core_memory: None,
+            typed_routes_sha256: typed_routes_metadata.as_ref().map(|raw| sha256(raw)),
             history_len: 0,
             history_sha256: sha256(b"[]"),
             pending: vec![],
         };
         let (raw, checksum) = raw_state(&state)?;
         tx.execute("INSERT INTO tasks(id,query,mode,status,answer,created,updated) VALUES (?1,?2,?3,'running','',unixepoch(),unixepoch())",params![task,format!("Agent turn {}",sha256(&serde_json::to_vec(request)?)),mode])?;
+        if let Some(raw) = &typed_routes_metadata {
+            super::typed_snapshot_storage::persist(&tx, &task, raw)?;
+        }
         tx.execute("INSERT INTO agent_sessions(id,task_id,state,generation,claim,snapshot,snapshot_sha256,updated) VALUES (?1,?2,'active',0,?3,?4,?5,unixepoch())",params![id,task,claim,raw,checksum])?;
         audit(
             &tx,
@@ -1273,8 +1315,7 @@ impl Lease {
         request: &Turn,
     ) -> Result<Option<super::core_tools::Catalog>> {
         let root = self.original_objective(request)?;
-        if self.generation != 0
-            || self.state.calls == 0
+        if self.state.calls == 0
             || self.state.calls >= self.state.call_limit
             || runtime.cfg.language_model().is_none()
             || self.state.configuration != sha256(&serde_json::to_vec(&runtime.cfg)?)
@@ -1338,8 +1379,7 @@ impl Lease {
                 .proposals
                 .saturating_add(self.state.internal_tools),
         );
-        if self.generation != 0
-            || self.state.cycles == 0
+        if self.state.cycles == 0
             || self.state.calls == 0
             || self.state.calls >= self.state.call_limit
             || !self.state.pending.is_empty()
@@ -1350,7 +1390,7 @@ impl Lease {
             || self.state.configuration != sha256(&serde_json::to_vec(&runtime.cfg)?)
             || !Arc::ptr_eq(&self.store, &runtime.store)
         {
-            bail!("Model-requested core work is outside its opening task or solver budget")
+            bail!("Model-requested core work is outside its pinned task or solver budget")
         }
         let snapshot = self
             .core_typed_experts
@@ -1480,8 +1520,7 @@ impl Lease {
     ) -> Result<super::core_tools::Memory> {
         let root = self.original_objective(request)?;
         let root_digest = sha256(root.as_bytes());
-        if self.generation != 0
-            || !result.reasoning_arguments()
+        if !result.reasoning_arguments()
             || result.identity.query_digest() != root_digest
             || result.parts.is_empty()
             || result.parts.len() != proposals.len()

@@ -1,5 +1,51 @@
 # Current Rust implementation
 
+## Preserve typed core routes across client handoffs — 2026-10-28
+
+**Implemented bounded exact-route restoration; runtime behavior unverified.**
+The client collective can now restore its original typed core routes after a
+validated client-tool handoff, allowing the reasoning solver to request further
+host computation without a new language-interpretation call. Original model,
+token, tool, cycle and same-boot wall budgets remain cumulative. Legacy sessions
+without frozen route metadata retain their data-only continuation behavior.
+
+`src/agent/typed_snapshot_storage.rs` writes immutable, task-bound, digest-linked
+event chunks in the opening transaction. The checkpoint stores only their SHA-256.
+The canonical envelope is capped at 2,500,000 bytes (including escaped inner
+metadata); chunks are capped at 8 KiB and restoration has bounded row counts and
+a one-second SQLite progress deadline. Module metadata remains capped at 64 KiB,
+provider declarations at 1 MiB/256 entries. No workflow bodies, model weights or
+client history enter this route snapshot. Hex encoding adds storage overhead;
+the existing storage admission margin and database limits still apply.
+
+`typed_experts.rs` restores the original module descriptors, registration limits,
+source fingerprints, implementation identities and compact provider declarations.
+`typed_experts/providers.rs` rebuilds semantic-version caches and exact bindings
+from these frozen routes without reading current manifests. This does not grant
+permissions or attest trusted executable behavior. Unknown versions, changed
+metadata, incomplete chunks and mismatched digests refuse restoration.
+
+`fabric/modules.rs::fork_retained_owned` validates the complete frozen module set
+against trusted retained implementations before binding. Non-native restoration
+reuses the original broker's retained pins and shared queues. Native restoration
+uses the current exclusive owner and fresh task-bound adapters, never the prior
+request's ownership guard. The opening broker UUID remains historical provenance;
+the live execution broker may have a different UUID. Exact implementation metadata,
+not UUID equality, governs reconstruction. The runtime retains access to the
+unowned source registry across its per-request native fork.
+
+`sessions.rs` restores only after checking original configuration, history,
+pending opaque handles and the call ledger. It clears reconciled pending handles
+only in the local working copy and preserves the stored checksum for the next
+compare-and-swap. No prior operation, uncertain result or model call is replayed;
+new core requests still pass existing individual policy and budget reservations.
+Checked-result memory remains structured, bounded and untrusted as instructions.
+
+Validation: formatting, locked workspace/all-target compilation, strict Clippy
+and whitespace checks only. No tests, benchmarks, live inference, model activation,
+installation or recovery execution. General-purpose deterministic reasoning,
+measured speed/quality and evaluated project LoRA remain incomplete or unverified.
+
 ## Reasoning-model requests to the pinned typed core — 2026-10-28
 
 **Implemented bounded solver/core feedback; runtime/provider compatibility
