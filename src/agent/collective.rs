@@ -64,7 +64,7 @@ struct Graph<'a> {
     expert_capability_scope: Option<Vec<String>>,
     expert_wave_capacity: Option<usize>,
     typed_progress: Option<tokio::sync::watch::Receiver<super::typed_progress::Snapshot>>,
-    expert_typed_inputs: Option<std::collections::BTreeMap<String, Vec<String>>>,
+    expert_typed_inputs: Option<std::collections::BTreeMap<String, Vec<super::typed_input::Input>>>,
     held_typed_checks: u32,
 }
 

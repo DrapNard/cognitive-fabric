@@ -29,6 +29,14 @@ use std::{
 const MAX_SNAPSHOT_BYTES: usize = 64 * 1024;
 const MAX_MODULE_DEADLINE: Duration = Duration::from_secs(300);
 
+pub(super) fn validate_source_pointer(pointer: &str) -> Result<()> {
+    graphs::validate_source_pointer(pointer)
+}
+
+pub(super) fn select_raw_output(raw: &str, pointer: &str) -> Result<String> {
+    graphs::select_raw_output(raw, pointer)
+}
+
 /// Immutable first-turn routing snapshot for trusted, typed host experts.
 ///
 /// The snapshot retains the exact registered implementations via broker pins.

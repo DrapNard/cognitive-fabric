@@ -71,15 +71,19 @@ so that advisory work may overlap typed computation; the final Jev-R solver alwa
 waits for both. This declaration is unverified translation guidance. It selects no
 model, provider, permission or tool.
 
-Optional expert_typed_inputs: {"math.evaluate":["sum"],"sorting.verify":[]}
+Optional expert_typed_inputs: {"math.evaluate":[{"operation_id":"sum","pointer":"/0/total"}],"sorting.verify":[]}
 is allowed only with typed_usage="evidence", a typed_graph, and the default
 expert_dependency="typed_results". Keys must be selected reasoning_capabilities;
-each value names up to four unique operation IDs in typed_graph. Listed operations
-gate that capability's optional Jev+ expert advice until their typed results exist.
-An empty list means independent expert advice for that capability; an omitted
-capability defaults to depending on all typed inputs. This is unverified
-translation guidance. The primary Jev-R/final solver always waits for every typed
-result and reasons over the full original interpretation and version constraints.
+each value contains up to eight selectors. A legacy string names a whole operation
+result; an object selects an exact JSON pointer from that operation's checked
+result. Operation IDs must occur in typed_graph. Exact duplicate
+(operation_id,pointer) pairs are forbidden. Listed selections gate that capability's
+optional Jev+ expert advice until their typed results exist. An empty list means
+independent expert advice for that capability; an omitted capability defaults to
+depending on all typed inputs. This is unverified translation guidance and source
+provenance only; it does not verify semantic relevance, grant authority, or change
+permissions. The primary Jev-R/final solver always waits for every typed result and
+reasons over the full original interpretation and version constraints.
 
 
 math.evaluate: {"capability":"math.evaluate","arguments":{"expression":"..."}}
@@ -100,7 +104,7 @@ pub(in crate::agent) struct Parsed {
     pub(in crate::agent) reasoning_capabilities: Option<Vec<String>>,
     pub(in crate::agent) independent_experts: bool,
     pub(in crate::agent) expert_typed_inputs:
-        Option<std::collections::BTreeMap<String, Vec<String>>>,
+        Option<std::collections::BTreeMap<String, Vec<super::super::typed_input::Input>>>,
 }
 
 #[derive(Deserialize)]
@@ -227,20 +231,26 @@ impl Parsed {
             bail!("Expert typed inputs are allowed only for evidence usage")
         }
         let expert_typed_inputs = expert_typed_inputs_value
-            .map(serde_json::from_value::<std::collections::BTreeMap<String, Vec<String>>>)
+            .map(
+                serde_json::from_value::<
+                    std::collections::BTreeMap<String, Vec<super::super::typed_input::Input>>,
+                >,
+            )
             .transpose()?;
         if let Some(inputs) = &expert_typed_inputs {
             if inputs.is_empty() || inputs.len() > 16 {
                 bail!("Expert typed inputs must contain between one and sixteen capabilities")
             }
-            for operation_ids in inputs.values() {
-                let unique = operation_ids
-                    .iter()
-                    .collect::<std::collections::HashSet<_>>();
-                if operation_ids.len() > 4 || unique.len() != operation_ids.len() {
-                    bail!(
-                        "Each expert typed input list must contain up to four unique operation IDs"
-                    )
+            for selectors in inputs.values() {
+                if selectors.len() > 8 {
+                    bail!("Each expert typed input list must contain up to eight selectors")
+                }
+                let mut unique = std::collections::HashSet::new();
+                for selector in selectors {
+                    selector.validate()?;
+                    if !unique.insert((selector.operation_id(), selector.pointer())) {
+                        bail!("Expert typed input selectors must be unique")
+                    }
                 }
             }
         }
@@ -425,7 +435,7 @@ impl Parsed {
             if inputs
                 .values()
                 .flatten()
-                .any(|operation_id| !operation_ids.contains(operation_id.as_str()))
+                .any(|selector| !operation_ids.contains(selector.operation_id()))
             {
                 bail!("Expert typed inputs reference an unknown typed graph operation")
             }

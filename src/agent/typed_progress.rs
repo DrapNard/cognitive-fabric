@@ -47,35 +47,25 @@ struct Context<'a> {
     status: &'static str,
     root_query_sha256: &'a str,
     expected_operation_ids: Vec<&'a String>,
-    completed: Vec<&'a Part>,
+    completed: Vec<Projection<'a>>,
     original_goal_semantics_verified: bool,
     durable_final_proof: bool,
 }
 
-impl Serialize for Part {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        use serde::ser::SerializeStruct;
-        let mut state = serializer.serialize_struct("TypedProgressPart", 10)?;
-        state.serialize_field("operation_id", &self.operation_id)?;
-        let result = serde_json::value::RawValue::from_string(self.result.clone())
-            .map_err(serde::ser::Error::custom)?;
-        state.serialize_field("result", &result)?;
-        state.serialize_field("result_sha256", &self.result_sha256)?;
-        state.serialize_field("criterion_sha256", &self.criterion_sha256)?;
-        state.serialize_field("checker", &self.checker)?;
-        state.serialize_field("provider_identity", &self.provider_identity)?;
-        state.serialize_field("provider_identity_sha256", &self.provider_identity_sha256)?;
-        state.serialize_field("origin_query_sha256", &self.origin_query_sha256)?;
-        state.serialize_field(
-            "original_goal_semantics_verified",
-            &self.original_goal_semantics_verified,
-        )?;
-        state.serialize_field("language_translated", &self.language_translated)?;
-        state.end()
-    }
+#[derive(Serialize)]
+struct Projection<'a> {
+    operation_id: &'a str,
+    pointer: String,
+    result: Box<serde_json::value::RawValue>,
+    result_sha256: String,
+    source_result_sha256: &'a str,
+    criterion_sha256: &'a str,
+    checker: &'a str,
+    provider_identity: &'a Value,
+    provider_identity_sha256: &'a str,
+    origin_query_sha256: &'a str,
+    original_goal_semantics_verified: bool,
+    language_translated: bool,
 }
 
 impl Snapshot {
@@ -123,12 +113,47 @@ impl Snapshot {
         self.failed || self.complete()
     }
 
-    pub(super) fn context_for(&self, required: &BTreeSet<String>) -> Result<String> {
-        if required
-            .iter()
-            .any(|id| !self.expected_operation_ids.contains(id))
-        {
-            bail!("Typed context requested an unknown prerequisite")
+    pub(super) fn context_for(&self, required: &[super::typed_input::Input]) -> Result<String> {
+        if required.len() > 8 {
+            bail!("Typed input selector count exceeds its bound")
+        }
+        let mut selectors = BTreeSet::new();
+        let mut required_ids = BTreeSet::new();
+        let mut completed = Vec::new();
+        for input in required {
+            input.validate()?;
+            if !selectors.insert((input.operation_id(), input.pointer()))
+                || !self
+                    .expected_operation_ids
+                    .iter()
+                    .any(|id| id == input.operation_id())
+            {
+                bail!("Typed context selector is duplicated or names an unknown prerequisite")
+            }
+            required_ids.insert(input.operation_id());
+            if let Some(part) = self
+                .completed
+                .iter()
+                .find(|part| part.operation_id == input.operation_id())
+            {
+                let selected =
+                    super::typed_experts::select_raw_output(&part.result, input.pointer())?;
+                let result = serde_json::value::RawValue::from_string(selected)?;
+                completed.push(Projection {
+                    operation_id: &part.operation_id,
+                    pointer: input.pointer().to_owned(),
+                    result_sha256: crate::store::sha256(result.get().as_bytes()),
+                    result,
+                    source_result_sha256: &part.result_sha256,
+                    criterion_sha256: &part.criterion_sha256,
+                    checker: &part.checker,
+                    provider_identity: &part.provider_identity,
+                    provider_identity_sha256: &part.provider_identity_sha256,
+                    origin_query_sha256: &part.origin_query_sha256,
+                    original_goal_semantics_verified: part.original_goal_semantics_verified,
+                    language_translated: part.language_translated,
+                });
+            }
         }
         let status = if self.failed {
             "failed"
@@ -144,13 +169,9 @@ impl Snapshot {
             expected_operation_ids: self
                 .expected_operation_ids
                 .iter()
-                .filter(|id| required.contains(*id))
+                .filter(|id| required_ids.contains(id.as_str()))
                 .collect(),
-            completed: self
-                .completed
-                .iter()
-                .filter(|part| required.contains(&part.operation_id))
-                .collect(),
+            completed,
             // Typed operation criteria do not prove the user's original goal.
             original_goal_semantics_verified: false,
             durable_final_proof: false,

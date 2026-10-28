@@ -286,12 +286,13 @@ impl Graph<'_> {
             .expert_typed_inputs
             .as_ref()
             .and_then(|inputs| inputs.get(&bound.capability))
-            .map(|ids| {
-                ids.iter()
-                    .cloned()
-                    .collect::<std::collections::BTreeSet<_>>()
-            })
-            .unwrap_or_else(|| snapshot.expected_ids().map(str::to_owned).collect());
+            .cloned()
+            .unwrap_or_else(|| {
+                snapshot
+                    .expected_ids()
+                    .map(|id| super::super::typed_input::Input::Whole(id.to_owned()))
+                    .collect()
+            });
         if required.is_empty() {
             return Ok(prior.clone());
         }
@@ -574,7 +575,12 @@ impl Graph<'_> {
                     self.expert_typed_inputs
                         .as_ref()
                         .and_then(|inputs| inputs.get(&bound.capability))
-                        .map(|ids| ids.iter().cloned().collect())
+                        .map(|inputs| {
+                            inputs
+                                .iter()
+                                .map(|input| input.operation_id().to_owned())
+                                .collect()
+                        })
                         .unwrap_or_else(|| all.clone())
                 })
                 .collect::<Vec<std::collections::BTreeSet<String>>>()

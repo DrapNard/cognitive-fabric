@@ -1,5 +1,43 @@
 # Cognitive network implementation
 
+## Project checked subvalues into expert inputs — 2026-10-28
+
+**Implemented bounded typed-value projection; runtime/translation semantics
+unverified.** `expert_typed_inputs` retains whole-result strings and now accepts
+selectors such as `{"operation_id":"totals","pointer":"/0/total"}`. For a
+checked result shaped like `[{"total":5}]`, that pointer names the raw value `5`.
+This illustrates pointer semantics, not an assumed SQL/provider output schema.
+An expert capability can declare up to eight selectors, including different
+pointers into one operation; duplicate operation/pointer pairs are rejected.
+Empty lists remain independent and unspecified capabilities retain conservative
+all-operation dependencies. Existing evidence/graph/reasoning-scope restrictions
+remain unchanged.
+
+`src/agent/typed_input.rs` validates the selector schema and graph-compatible IDs.
+`translation.rs` checks every source against the same translated graph. Shared
+helpers in `typed_experts.rs` and `typed_experts/graphs.rs` reuse bounded RFC 6901
+parsing (256 bytes/eight segments), strict JSON validation, canonical array indices
+and raw-value traversal. There is no filesystem or provider access in selection.
+Missing paths, malformed escaping, scalar traversal and invalid array indices
+fail explicitly rather than returning invented or silently missing values.
+
+`src/agent/typed_progress.rs` projects only the requested subvalues into each
+expert prompt, preserving raw JSON number spelling. Every projection retains
+its source operation, pointer, selected-value digest, full-source digest and
+criterion/checker/provider/query provenance. Selection does not independently
+verify the broader meaning of the task. Gates in `collective/experts.rs` continue
+to wait on real checked operation IDs, regardless of how many pointers use one
+source. The actual projected turn is budget checked before its reservation.
+The unchanged 32-KiB context cap can reject overlapping/large selections without
+truncating them; final typed results and final-solver dependencies remain whole.
+
+This reduces source-level context duplication when only a subvalue is needed;
+no latency or quality improvement is measured. Model advice still cannot become
+checked-only typed input or grant a capability. General mixed dataflow, interrupted
+provider recovery and optional evaluated project LoRA remain incomplete. Static
+formatting, locked workspace/all-target compilation, strict Clippy and whitespace
+checks are the validation scope. No tests, benchmarks, live calls or recovery run.
+
 ## Live checked-input dependencies for model experts — 2026-10-28
 
 **Implemented typed-to-model capability dependencies; general bidirectional mixed

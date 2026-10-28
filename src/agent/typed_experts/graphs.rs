@@ -369,6 +369,19 @@ fn parse_pointer(pointer: &str) -> Result<Vec<String>> {
     Ok(parts)
 }
 
+pub(super) fn validate_source_pointer(pointer: &str) -> Result<()> {
+    parse_pointer(pointer).map(|_| ())
+}
+
+pub(super) fn select_raw_output(raw: &str, pointer: &str) -> Result<String> {
+    if raw.len() > MAX_RESULT_BYTES {
+        bail!("Typed graph dependency output exceeds its byte limit")
+    }
+    let _ = crate::strict_json::value(raw.as_bytes(), MAX_RESULT_BYTES)?;
+    let path = parse_pointer(pointer)?;
+    raw_pointer(raw, &path)
+}
+
 fn validate_existing_pointer(root: &Value, path: &[String]) -> Result<()> {
     if path.len() > MAX_POINTER_DEPTH {
         bail!("Typed graph target exceeds its nesting limit")
