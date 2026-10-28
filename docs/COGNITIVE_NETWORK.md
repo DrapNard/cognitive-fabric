@@ -1,5 +1,23 @@
 # Cognitive network implementation
 
+## Draft a native activation policy from configured routes — 2026-10-28
+
+**Implemented client-independent policy drafting; runtime unverified.**
+`cogfabric --json native-policy-draft` emits a version-3 policy containing the
+unique default and role model keys from an explicitly configured language-only
+network. The operator supplies the native endpoint and context length, and can
+add exact registered-expert model keys with `--extra-model`. The endpoint must
+share the configured provider origin, and all existing policy bounds apply.
+KV-cache placement and native authentication are explicit options; release and
+typed worker activation default off.
+
+The command does not inspect inventory, write a policy file, approve it, load
+models or attest weights. It cannot know which optional expert registrations
+will be needed, so their keys must be reviewed and supplied separately. A draft
+still requires operator review and the existing explicit lifecycle approvals.
+No tests, benchmarks, live inference or model activation ran; compilation and
+linting do not prove provider compatibility.
+
 ## Inspect configured network routes — 2026-10-28
 
 **Implemented configuration-only diagnostics; runtime unverified.** Generic

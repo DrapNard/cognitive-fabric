@@ -1,5 +1,14 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Draft a native activation policy — 2026-10-28
+
+**Implemented; runtime unverified.** `main.rs` and `residency/lifecycle.rs`
+derive an unapproved v3 on-demand policy from configured role keys and optional
+operator-supplied expert keys. Endpoint origin and existing policy bounds are
+validated; no provider operation or approval occurs. See
+[cognitive network](COGNITIVE_NETWORK.md). No tests, benchmarks, model loads or
+live inference ran.
+
 ## Inspect configured network routes — 2026-10-28
 
 **Implemented; runtime unverified.** `diagnostics.rs` exposes effective role

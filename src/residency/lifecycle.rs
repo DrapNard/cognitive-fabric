@@ -28,6 +28,51 @@ pub struct NativeLifecyclePolicy {
 }
 
 impl NativeLifecyclePolicy {
+    /// Construct a reviewable policy from configured model keys only. This
+    /// performs no provider operation and does not confer operator approval.
+    pub fn draft_for_config(
+        cfg: &Config,
+        api_base: String,
+        extra_models: Vec<String>,
+        context_length: u32,
+        offload_kv_cache_to_gpu: Option<bool>,
+        authenticate: bool,
+        max_lifecycle_seconds: u64,
+    ) -> Result<Self> {
+        cfg.validate()?;
+        if cfg.backend != "openai-local" || cfg.language_model().is_none() {
+            bail!("A network policy draft requires local inference and an explicit language-only model route")
+        }
+        if extra_models.len() > 8 {
+            bail!("Native policy draft allows at most eight additional model keys")
+        }
+        if url::Url::parse(&api_base)?.origin() != url::Url::parse(&cfg.api_base)?.origin() {
+            bail!("Native policy endpoint must match the configured provider origin")
+        }
+        let models = std::iter::once(&cfg.model)
+            .chain(cfg.role_profiles.values().map(|profile| &profile.model))
+            .chain(extra_models.iter())
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .map(|model| planning::EnsureLoaded {
+                model: model.clone(),
+                context_length,
+                offload_kv_cache_to_gpu,
+            })
+            .collect();
+        let policy = Self {
+            format_version: 3,
+            api_base,
+            authenticate,
+            models,
+            release_after: false,
+            typed_module_worker: false,
+            max_lifecycle_seconds,
+        };
+        policy.validate()?;
+        Ok(policy)
+    }
+
     /// Load a bounded owner-selected policy without following a symlink.
     pub fn load(path: impl AsRef<std::path::Path>) -> Result<Self> {
         let bytes = security::read_regular_bytes(path.as_ref(), 65_536)?;

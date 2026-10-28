@@ -1,5 +1,14 @@
 # Current Rust implementation
 
+## Draft a native activation policy — 2026-10-28
+
+**Implemented; runtime unverified.** `native-policy-draft` prints an unapproved
+on-demand policy based on configured language and reasoning model keys, an
+operator-selected endpoint and context length, and optional expert model keys.
+It does not load models or approve changes. See
+[cognitive network](COGNITIVE_NETWORK.md). No tests, benchmarks, model loads or
+live inference ran.
+
 ## Inspect configured network routes — 2026-10-28
 
 **Implemented; runtime unverified.** Generic diagnostics report effective role

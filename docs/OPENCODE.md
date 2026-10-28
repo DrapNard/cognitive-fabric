@@ -12,6 +12,18 @@ on-demand native mode can activate an approved model only when an admitted
 client role needs it. Supply an already reviewed lifecycle policy and explicitly
 approve both activation and model-key evidence:
 
+You can first print a draft for the saved network configuration. Choose the
+context length to match your provider and available memory; add each optional
+expert model with a separate `--extra-model MODEL_KEY` argument:
+
+```sh
+cogfabric --home "$HOME/.local/share/cogfabric-http" --json native-policy-draft \
+  --api-base http://127.0.0.1:1234/api/v1 --context-length 32768
+```
+
+Review the output, save it as a private policy file, and use that file below.
+Drafting does not check installed models, approve the policy or load anything.
+
 ```sh
 export COGFABRIC_NATIVE_POLICY=/absolute/path/to/reviewed-policy.json
 export COGFABRIC_NATIVE_ACTIVATION_APPROVED=1

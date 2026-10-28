@@ -482,6 +482,27 @@ enum Command {
         #[arg(long, default_value_t = 2, value_parser = clap::value_parser!(u64).range(1..=4))]
         expert_parallelism: u64,
     },
+    /// Print an unapproved on-demand native policy draft for configured network routes.
+    NativePolicyDraft {
+        /// Native provider API endpoint, for example http://127.0.0.1:1234/api/v1.
+        #[arg(long)]
+        api_base: String,
+        /// Additional exact model keys for independently registered experts.
+        #[arg(long = "extra-model")]
+        extra_models: Vec<String>,
+        /// Explicit context length applied to each configured route.
+        #[arg(long, value_parser = clap::value_parser!(u32).range(1..=32768))]
+        context_length: u32,
+        /// Optional explicit KV-cache placement for every model.
+        #[arg(long, action = clap::ArgAction::Set)]
+        offload_kv_cache_to_gpu: Option<bool>,
+        /// Use the separately configured native provider credential.
+        #[arg(long)]
+        authenticate: bool,
+        /// Maximum scope lifetime in seconds.
+        #[arg(long, default_value_t = 300, value_parser = clap::value_parser!(u64).range(1..=1800))]
+        max_lifecycle_seconds: u64,
+    },
     ConfigureAuth {
         #[arg(long, action = clap::ArgAction::Set)]
         enabled: bool,
@@ -2087,6 +2108,24 @@ async fn run_cli() -> Result<()> {
                 "verification":"Independent compiled kernel; no verifier-model override",
                 "active_sessions_reconfigured":false})
         }
+        Command::NativePolicyDraft {
+            api_base,
+            extra_models,
+            context_length,
+            offload_kv_cache_to_gpu,
+            authenticate,
+            max_lifecycle_seconds,
+        } => serde_json::to_value(
+            cogfabric::residency::lifecycle::NativeLifecyclePolicy::draft_for_config(
+                &cfg,
+                api_base,
+                extra_models,
+                context_length,
+                offload_kv_cache_to_gpu,
+                authenticate,
+                max_lifecycle_seconds,
+            )?,
+        )?,
         Command::ConfigureAuth { enabled } => {
             security::authorize("human-cli", "inference.auth.configure")?;
             let mut settings = cfg.clone();
