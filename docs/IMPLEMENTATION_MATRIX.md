@@ -1,5 +1,40 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Rolling model-expert dependency execution — 2026-10-28
+
+**Implemented completion-driven expert scheduling; runtime/performance unverified.**
+`src/agent/collective/experts.rs` now refills expert capacity after each completed
+result set instead of waiting for unrelated calls in the previous wave. Within-
+expert step edges and cross-expert manifest prerequisites retain their original
+meaning. In-flight coordinates count against shared group/per-group/global limits,
+including the reduced model partition during concurrent typed work.
+
+All requests and exact role routes in a launch batch are validated before its
+first durable call reservation. Lifecycle preparation and inference then live in
+locally owned futures that are polled together; preparing a new route cannot
+suspend polling of calls holding admission permits. Per-call preparation and
+generation retain their configured timeouts and original task deadline. Temporary
+resource unavailability defers refill while active work can free capacity; an
+unserviceable idle graph fails explicitly rather than spinning or changing limits.
+
+An overlapping planner/explorer pair occupies two slots until both settle. Both
+role results retain completion accounting even when a sibling fails. Later Jev-R
+uses the recorded pair without duplicate inference. Per-step completion/failure
+audits replace the whole-wave completion event; final workflow summaries retain
+their bounded structured advice, trust labels and launch-batch counts. Model
+outputs remain advisory and cannot satisfy checked-evidence dependencies.
+
+Reservation, preparation, provider and audit failures stop new launches while
+already-admitted owned work drains. Partial reservation failures remain charged
+and never dispatch or replay their incomplete batch. Parent cancellation and
+unknown physical provider outcomes retain existing cleanup limitations. Original
+policy, presentation/solver budget preflight, typed-verifier slot holds and frozen
+model selection remain. This removes model-wave barriers, not provider queueing
+or native lifecycle serialization. General per-node heterogeneous dataflow and
+interrupted-provider recovery remain Partial. Static formatting, locked workspace/
+all-target compilation, strict Clippy and whitespace checks are the validation
+scope. No tests, benchmarks, live model calls, activation or recovery run.
+
 ## Rolling typed dependency execution — 2026-10-27
 
 **Implemented rolling typed scheduling; runtime/performance unverified.**

@@ -5,10 +5,133 @@ struct PreparedExpertCall {
     plan_index: usize,
     step_index: usize,
     call: usize,
+    task: String,
     turn: Turn,
     allocation: usize,
     runtime: AgentRuntime,
     backend: Arc<dyn ChatBackend>,
+}
+
+type AdvisoryOutcome = Result<(Result<Completion>, Result<Completion>)>;
+
+struct ExpertReport {
+    call: PreparedExpertCall,
+    advice_budget: usize,
+    result: Result<Completion>,
+}
+
+enum RunningWork {
+    Expert(
+        (usize, usize),
+        std::pin::Pin<Box<dyn std::future::Future<Output = ExpertReport> + Send>>,
+    ),
+    Advisory(
+        std::pin::Pin<
+            Box<dyn std::future::Future<Output = (PreparedAdvisoryPair, AdvisoryOutcome)> + Send>,
+        >,
+    ),
+}
+
+fn expert_future(call: PreparedExpertCall, deadline: Instant, advice_budget: usize) -> RunningWork {
+    let coordinate = (call.plan_index, call.step_index);
+    RunningWork::Expert(
+        coordinate,
+        Box::pin(async move {
+            let runtime = call.runtime.clone();
+            let task = call.task.clone();
+            let result = async {
+                runtime
+                    .prepare_selected_route(&task, "solver", &call.backend, deadline)
+                    .await?;
+                let timeout = Duration::from_secs(runtime.cfg.timeout_seconds)
+                    .min(deadline.saturating_duration_since(Instant::now()));
+                if timeout.is_zero() {
+                    bail!("Expert advisory deadline exhausted after preparation")
+                }
+                tokio::time::timeout(
+                    timeout,
+                    runtime.dispatch_selected_role(
+                        call.backend.clone(),
+                        &task,
+                        "solver",
+                        &call.turn,
+                        call.allocation,
+                        deadline,
+                    ),
+                )
+                .await
+                .map_err(|_| {
+                    anyhow::anyhow!(
+                        "Expert advisory call timed out; provider outcome may be unknown"
+                    )
+                })?
+            }
+            .await;
+            ExpertReport {
+                call,
+                advice_budget,
+                result,
+            }
+        }),
+    )
+}
+
+fn advisory_future(
+    runtime: AgentRuntime,
+    backend: Arc<dyn ChatBackend>,
+    task: String,
+    deadline: Instant,
+    pair: PreparedAdvisoryPair,
+) -> RunningWork {
+    RunningWork::Advisory(Box::pin(async move {
+        let result = async {
+            let routes = runtime
+                .prepare_role_wave(backend, &task, &["planner", "explorer"], deadline)
+                .await?;
+            dispatch_advisory_pair(&runtime, &task, &routes, &pair, deadline).await
+        }
+        .await;
+        (pair, result)
+    }))
+}
+
+enum CompletedWork {
+    Expert(Box<ExpertReport>),
+    Advisory(Box<(PreparedAdvisoryPair, AdvisoryOutcome)>),
+}
+
+async fn ready_expert_work(operations: &mut Vec<RunningWork>) -> Vec<CompletedWork> {
+    use std::future::poll_fn;
+    use std::task::Poll;
+    let ready = poll_fn(|context| {
+        let mut ready = Vec::new();
+        for (index, operation) in operations.iter_mut().enumerate() {
+            match operation {
+                RunningWork::Expert(_, future) => {
+                    if let Poll::Ready(report) = future.as_mut().poll(context) {
+                        ready.push((index, CompletedWork::Expert(Box::new(report))));
+                    }
+                }
+                RunningWork::Advisory(future) => {
+                    if let Poll::Ready((pair, result)) = future.as_mut().poll(context) {
+                        ready.push((index, CompletedWork::Advisory(Box::new((pair, result)))));
+                    }
+                }
+            }
+        }
+        if ready.is_empty() {
+            Poll::Pending
+        } else {
+            Poll::Ready(ready)
+        }
+    })
+    .await;
+    let mut indices = ready.iter().map(|(index, _)| *index).collect::<Vec<_>>();
+    indices.sort_unstable_by(|left, right| right.cmp(left));
+    for index in indices {
+        drop(operations.swap_remove(index));
+    }
+    ready.into_iter().map(|(_, work)| work).collect()
 }
 
 fn ready_expert_wave(
@@ -18,6 +141,7 @@ fn ready_expert_wave(
     expert_capacity: usize,
     per_expert_capacity: usize,
     global_capacity: usize,
+    in_flight: &std::collections::BTreeSet<(usize, usize)>,
 ) -> Result<Vec<(usize, usize, serde_json::Value)>> {
     use super::super::graph_schedule::{self, Dependency, Evidence, Node};
     // Optional overlap probes may have no remaining slots. They select no work,
@@ -65,7 +189,7 @@ fn ready_expert_wave(
             }
             Ok(Node {
                 group: plan_index,
-                in_flight: false,
+                in_flight: in_flight.contains(&(plan_index, step_index)),
                 dependencies: sources
                     .into_iter()
                     .map(|node| Dependency {
@@ -136,7 +260,7 @@ fn expert_wave_routes(
 }
 
 impl Graph<'_> {
-    async fn reserve_expert_wave(
+    fn reserve_expert_wave(
         &mut self,
         plans: &[expert_workflow::BoundPlan],
         runtimes: &[AgentRuntime],
@@ -184,23 +308,38 @@ impl Graph<'_> {
             client_policy.authorize(self.task, "jev-plus", "expert.workflow.advice")?;
             agent_policy.authorize(self.task, "jev-r", "llm.generate")?;
         }
+        // Resolve every route and serialize every request before the first
+        // irreversible reservation. Inference futures never reselect a role.
+        let selected = turns
+            .iter()
+            .map(|(plan_index, _, _, turn)| {
+                let runtime = runtimes[*plan_index].clone();
+                let route = runtime.backend.for_role(ROLE)?;
+                if runtime.cfg.language_model().is_some() && route.is_none() {
+                    bail!("Pinned expert backend cannot honor the configured reasoning route")
+                }
+                let backend = route.unwrap_or_else(|| runtime.backend.clone());
+                Ok((runtime, backend, serde_json::to_vec(turn)?))
+            })
+            .collect::<Result<Vec<_>>>()?;
         let mut prepared = Vec::with_capacity(turns.len());
-        for (plan_index, step_index, allocation, turn) in turns {
-            let bytes = serde_json::to_vec(&turn)?;
+        for ((plan_index, step_index, allocation, turn), (runtime, backend, bytes)) in
+            turns.into_iter().zip(selected)
+        {
             self.session
                 .reserve("expert-advisory", allocation, &bytes, self.cycles)?;
             self.calls += 1;
             self.reserved += allocation;
             self.prompt_bytes += bytes.len();
-            let runtime = runtimes[plan_index].clone();
             prepared.push(PreparedExpertCall {
                 plan_index,
                 step_index,
                 call: self.calls,
+                task: self.task.to_owned(),
                 turn,
                 allocation,
                 runtime,
-                backend: runtimes[plan_index].backend.clone(),
+                backend,
             });
         }
         self.runtime.store.event(
@@ -214,121 +353,69 @@ impl Graph<'_> {
                 "permissions_granted":false
             }),
         )?;
-        let preparations = prepared
-            .iter()
-            .map(|call| {
-                Box::pin(async {
-                    let mut routes = call
-                        .runtime
-                        .prepare_role_wave(
-                            call.runtime.backend.clone(),
-                            self.task,
-                            &[ROLE],
-                            self.deadline,
-                        )
-                        .await?;
-                    routes
-                        .pop()
-                        .ok_or_else(|| anyhow::anyhow!("Prepared expert route is missing"))
-                })
-                    as Pin<Box<dyn Future<Output = Result<Arc<dyn ChatBackend>>> + Send + '_>>
-            })
-            .collect();
-        // Retain every expert runtime and settle all preparation outcomes before
-        // dispatch. A sibling failure never cancels another preparation or retries it.
-        let outcomes = crate::reasoning::parallel::join_all(preparations).await;
-        let routes = outcomes.into_iter().collect::<Result<Vec<_>>>()?;
-        for (call, route) in prepared.iter_mut().zip(routes) {
-            call.backend = route;
-        }
         Ok(prepared)
     }
 
-    async fn dispatch_expert_wave(
+    fn record_expert_completion(
         &mut self,
-        prepared: Vec<PreparedExpertCall>,
         plans: &[expert_workflow::BoundPlan],
-    ) -> Result<Vec<(usize, usize, String)>> {
-        let deadline = self.deadline;
-        let task = self.task.to_owned();
-        type WaveFuture = std::pin::Pin<
-            Box<dyn std::future::Future<Output = (PreparedExpertCall, Result<Completion>)> + Send>,
-        >;
-        let futures = prepared
-            .into_iter()
-            .map(|call| {
-                let runtime = call.runtime.clone();
-                let backend = call.backend.clone();
-                let timeout_seconds = runtime.cfg.timeout_seconds;
-                let task = task.clone();
-                Box::pin(async move {
-                    let result = if Instant::now() >= deadline {
-                        Err(anyhow::anyhow!(
-                            "Expert advisory wave deadline exhausted before dispatch"
-                        ))
-                    } else {
-                        let timeout = Duration::from_secs(timeout_seconds)
-                            .min(deadline.saturating_duration_since(Instant::now()));
-                        tokio::time::timeout(
-                            timeout,
-                            runtime.dispatch_selected_role(
-                                backend,
-                                &task,
-                                "solver",
-                                &call.turn,
-                                call.allocation,
-                                deadline,
-                            ),
-                        )
-                        .await
-                        .map_err(|_| anyhow::anyhow!("Expert advisory wave call timed out"))
-                        .and_then(|result| result)
-                    };
-                    (call, result)
-                }) as WaveFuture
-            })
-            .collect::<Vec<_>>();
-        let reports = crate::reasoning::parallel::join_all(futures).await;
-        let wave_size = reports.len();
-        let mut completions = Vec::with_capacity(reports.len());
-        let mut failed = false;
-        for (call, result) in reports {
-            match result {
-                Ok(completion) => match self.record_completion(
-                    "solver",
-                    call.call,
-                    call.allocation,
-                    &call.turn,
-                    completion,
-                ) {
-                    Ok(completion) if completion.tool_calls.is_empty() => completions.push((
-                        call.plan_index,
-                        call.step_index,
-                        completion.content.unwrap_or_default(),
-                    )),
-                    Ok(_) | Err(_) => failed = true,
-                },
-                Err(_) => failed = true,
+        report: ExpertReport,
+        results: &mut [serde_json::Map<String, serde_json::Value>],
+        done: &mut [std::collections::BTreeSet<String>],
+    ) -> Result<()> {
+        let call = report.call;
+        let step_id = plans[call.plan_index].plan.steps[call.step_index]
+            .id
+            .clone();
+        let completion = report.result?;
+        let outcome = {
+            let completion = self.record_completion(
+                "solver",
+                call.call,
+                call.allocation,
+                &call.turn,
+                completion,
+            )?;
+            if !completion.tool_calls.is_empty() {
+                bail!("Expert advisory role proposed a client tool")
             }
-        }
+            let content = completion.content.unwrap_or_default();
+            let (advice, partial) = bounded_json_string(&content, report.advice_budget);
+            results[call.plan_index].insert(
+                step_id.clone(),
+                json!({
+                    "advice":advice,
+                    "partial":partial,
+                    "trust":"untrusted_model_advisory_never_permissions"
+                }),
+            );
+            done[call.plan_index].insert(step_id.clone());
+            "completed"
+        };
         self.runtime.store.event(
             self.task,
-            "expert_workflow_wave_complete",
+            "expert_workflow_step_complete",
             "jev-plus",
             json!({
-                "expert_ids":completions.iter().map(|(plan_index, _, _)|plans[*plan_index].plan.id.as_str()).collect::<Vec<_>>(),
-                "results_received":completions.len(),
-                "wave_size":wave_size,
-                "failed_or_unknown":failed,
-                "retry_attempted":false,
-                "client_tools_executed":false
+                "expert_id":plans[call.plan_index].plan.id,
+                "step_id":step_id,
+                "call":call.call,
+                "result_state":outcome,
+                "permissions_granted":false
             }),
         )?;
-        if failed {
-            bail!("Expert workflow wave failed or has unknown provider outcomes; no calls were retried")
-        }
-        completions.sort_by_key(|(plan_index, index, _)| (*plan_index, *index));
-        Ok(completions)
+        Ok(())
+    }
+
+    fn record_advisory_completion(
+        &mut self,
+        pair: PreparedAdvisoryPair,
+        result: AdvisoryOutcome,
+    ) -> Result<()> {
+        let (planner, explorer) = result?;
+        let recorded = self.record_advisory_pair(&pair, planner, explorer)?;
+        self.overlapped_pair = Some(recorded);
+        Ok(())
     }
 
     pub(super) async fn expert_workflow(&mut self, prior_advice: &str) -> Result<Option<String>> {
@@ -455,6 +542,7 @@ impl Graph<'_> {
             expert_capacity,
             per_expert_capacity,
             first_wave_capacity,
+            &std::collections::BTreeSet::new(),
         )?;
         while !first_wave.is_empty()
             && !self
@@ -470,6 +558,7 @@ impl Graph<'_> {
                 expert_capacity,
                 per_expert_capacity,
                 first_wave_capacity,
+                &std::collections::BTreeSet::new(),
             )?;
         }
         if first_wave.is_empty()
@@ -496,6 +585,7 @@ impl Graph<'_> {
                 expert_capacity,
                 per_expert_capacity,
                 first_wave_capacity,
+                &std::collections::BTreeSet::new(),
             )?;
         }
         let mut step_count = plans
@@ -605,6 +695,7 @@ impl Graph<'_> {
                     expert_capacity,
                     per_expert_capacity,
                     first_wave_capacity,
+                    &std::collections::BTreeSet::new(),
                 )?;
                 continue;
             }
@@ -640,6 +731,7 @@ impl Graph<'_> {
             expert_capacity,
             per_expert_capacity,
             overlap_capacity,
+            &std::collections::BTreeSet::new(),
         )?;
         let overlap = if mode(&self.runtime.cfg, self.original) == "research"
             && self.overlapped_pair.is_none()
@@ -730,45 +822,11 @@ impl Graph<'_> {
             .collect::<Vec<_>>();
         let mut first_wave_pending = true;
         let mut wave_counts = vec![0usize; plans.len()];
-        while done
-            .iter()
-            .zip(&plans)
-            .any(|(done, plan)| done.len() < plan.plan.steps.len())
-        {
-            let use_first_wave = first_wave_pending;
-            let mut ready = if use_first_wave {
-                first_wave_pending = false;
-                first_wave.clone()
-            } else {
-                ready_expert_wave(
-                    &plans,
-                    &done,
-                    &results,
-                    expert_capacity,
-                    per_expert_capacity,
-                    first_wave_capacity,
-                )?
-            };
-            if !use_first_wave {
-                while !ready.is_empty()
-                    && ready.len() > 1
-                    && !self
-                        .runtime
-                        .inference_wave_fits(&expert_wave_routes(&ready, &routed_runtimes))?
-                {
-                    ready.pop();
-                }
-                if ready.is_empty()
-                    || !self
-                        .runtime
-                        .inference_wave_fits(&expert_wave_routes(&ready, &routed_runtimes))?
-                {
-                    bail!("A later expert dependency wave no longer fits the original resource admission")
-                }
-            }
-            let prepared = self
-                .reserve_expert_wave(&plans, &routed_runtimes, &ready)
-                .await?;
+        let mut running = Vec::<RunningWork>::new();
+        let mut failure: Option<anyhow::Error> = None;
+        let mut pair_active = false;
+        if let Some(pair) = pair.take() {
+            let prepared = self.reserve_expert_wave(&plans, &routed_runtimes, &first_wave)?;
             for plan_index in prepared
                 .iter()
                 .map(|call| call.plan_index)
@@ -776,60 +834,179 @@ impl Graph<'_> {
             {
                 wave_counts[plan_index] += 1;
             }
-            let completions = if let Some(pair) = pair.take() {
-                let runtime = self.runtime.clone();
-                let task = self.task.to_owned();
-                let deadline = self.deadline;
-                let routes = runtime
-                    .prepare_role_wave(
-                        self.backend.clone(),
-                        &task,
-                        &["planner", "explorer"],
-                        deadline,
+            self.runtime.store.event(
+                self.task,
+                "agent_overlap_wave",
+                "jev-plus",
+                json!({
+                    "planner_call":pair.first_call,
+                    "explorer_call":pair.first_call + 1,
+                    "expert_calls":prepared.iter().map(|call|call.call).collect::<Vec<_>>(),
+                    "concurrency_limit":global_capacity,
+                    "active_calls_bound":prepared.len() + 2,
+                    "original_advice_sha256":sha256(prior_advice.as_bytes()),
+                    "all_calls_reserved":true,
+                    "inputs_independent":true,
+                    "permissions_granted":false,
+                    "results_verified":false
+                }),
+            )?;
+            running.extend(
+                prepared
+                    .into_iter()
+                    .map(|call| expert_future(call, self.deadline, step_advice_budget)),
+            );
+            running.push(advisory_future(
+                self.runtime.clone(),
+                self.backend.clone(),
+                self.task.to_owned(),
+                self.deadline,
+                pair,
+            ));
+            pair_active = true;
+            first_wave_pending = false;
+        }
+        while done
+            .iter()
+            .zip(&plans)
+            .any(|(completed, plan)| completed.len() < plan.plan.steps.len())
+            || !running.is_empty()
+        {
+            if failure.is_none() {
+                let in_flight = running
+                    .iter()
+                    .filter_map(|work| match work {
+                        RunningWork::Expert(coordinate, _) => Some(*coordinate),
+                        RunningWork::Advisory(_) => None,
+                    })
+                    .collect::<std::collections::BTreeSet<_>>();
+                let capacity = global_capacity.saturating_sub(if pair_active { 2 } else { 0 });
+                let selected = if first_wave_pending {
+                    first_wave_pending = false;
+                    Ok(first_wave.clone())
+                } else {
+                    ready_expert_wave(
+                        &plans,
+                        &done,
+                        &results,
+                        expert_capacity,
+                        per_expert_capacity,
+                        capacity,
+                        &in_flight,
                     )
-                    .await?;
-                self.runtime.store.event(
-                    self.task,
-                    "agent_overlap_wave",
-                    "jev-plus",
-                    json!({
-                        "planner_call":pair.first_call,
-                        "explorer_call":pair.first_call + 1,
-                        "expert_calls":prepared.iter().map(|call|call.call).collect::<Vec<_>>(),
-                        "concurrency_limit":global_capacity,
-                        "active_calls_bound":prepared.len() + 2,
-                        "original_advice_sha256":sha256(prior_advice.as_bytes()),
-                        "all_calls_reserved":true,
-                        "inputs_independent":true,
-                        "permissions_granted":false,
-                        "results_verified":false
-                    }),
-                )?;
-                let (expert, advisory) = tokio::join!(
-                    self.dispatch_expert_wave(prepared, &plans),
-                    dispatch_advisory_pair(&runtime, &task, &routes, &pair, deadline)
-                );
-                let advisory = advisory.and_then(|(planner, explorer)| {
-                    self.record_advisory_pair(&pair, planner, explorer)
-                });
-                self.overlapped_pair = Some(advisory?);
-                expert?
-            } else {
-                self.dispatch_expert_wave(prepared, &plans).await?
-            };
-            for (plan_index, step_index, output) in completions {
-                let step = &plans[plan_index].plan.steps[step_index];
-                let (output, partial) = bounded_json_string(&output, step_advice_budget);
-                results[plan_index].insert(
-                    step.id.clone(),
-                    json!({
-                        "advice":output,
-                        "partial":partial,
-                        "trust":"untrusted_model_advisory_never_permissions"
-                    }),
-                );
-                done[plan_index].insert(step.id.clone());
+                };
+                let mut ready = match selected {
+                    Ok(ready) => ready,
+                    Err(error) => {
+                        failure = Some(error);
+                        Vec::new()
+                    }
+                };
+                if !ready.is_empty() {
+                    let mut fit_error = None;
+                    while !ready.is_empty() {
+                        match self
+                            .runtime
+                            .inference_wave_fits(&expert_wave_routes(&ready, &routed_runtimes))
+                        {
+                            Ok(true) => break,
+                            Ok(false) => {}
+                            Err(error) => {
+                                fit_error = Some(error);
+                                break;
+                            }
+                        }
+                        if ready.len() > 1 {
+                            ready.pop();
+                        } else {
+                            break;
+                        }
+                    }
+                    if let Some(error) = fit_error {
+                        failure = Some(error);
+                        ready.clear();
+                    }
+                    let fits = if ready.is_empty() {
+                        false
+                    } else {
+                        match self
+                            .runtime
+                            .inference_wave_fits(&expert_wave_routes(&ready, &routed_runtimes))
+                        {
+                            Ok(fits) => fits,
+                            Err(error) => {
+                                failure = Some(error);
+                                false
+                            }
+                        }
+                    };
+                    if fits {
+                        match self.reserve_expert_wave(&plans, &routed_runtimes, &ready) {
+                            Ok(prepared) => {
+                                for plan_index in prepared
+                                    .iter()
+                                    .map(|call| call.plan_index)
+                                    .collect::<std::collections::BTreeSet<_>>()
+                                {
+                                    wave_counts[plan_index] += 1;
+                                }
+                                running.extend(prepared.into_iter().map(|call| {
+                                    expert_future(call, self.deadline, step_advice_budget)
+                                }));
+                            }
+                            Err(error) => failure = Some(error),
+                        }
+                    } else if running.is_empty() {
+                        failure = Some(anyhow::anyhow!(
+                            "Ready expert calls do not fit shared resource admission"
+                        ));
+                    }
+                }
             }
+            if running.is_empty() {
+                if failure.is_some() {
+                    break;
+                }
+                if done
+                    .iter()
+                    .zip(&plans)
+                    .any(|(completed, plan)| completed.len() < plan.plan.steps.len())
+                {
+                    failure = Some(anyhow::anyhow!(
+                        "Expert workflow has unfinished steps with no ready or in-flight calls"
+                    ));
+                }
+                break;
+            }
+            let completed = ready_expert_work(&mut running).await;
+            for work in completed {
+                match work {
+                    CompletedWork::Expert(report) => {
+                        let call_id = report.call.call;
+                        if let Err(error) =
+                            self.record_expert_completion(&plans, *report, &mut results, &mut done)
+                        {
+                            let _ = self.runtime.store.event(self.task, "expert_workflow_step_failed", "jev-plus", json!({"call":call_id,"result_state":"failed_or_unknown","retry_attempted":false,"permissions_granted":false}));
+                            if failure.is_none() {
+                                failure = Some(error);
+                            }
+                        }
+                    }
+                    CompletedWork::Advisory(report) => {
+                        let (pair, result) = *report;
+                        pair_active = false;
+                        if let Err(error) = self.record_advisory_completion(pair, result) {
+                            let _ = self.runtime.store.event(self.task, "agent_overlap_wave_failed", "jev-plus", json!({"result_state":"failed_or_unknown","retry_attempted":false,"permissions_granted":false}));
+                            if failure.is_none() {
+                                failure = Some(error);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(error) = failure {
+            return Err(error);
         }
         let summaries = plans
             .iter()
