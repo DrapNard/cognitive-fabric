@@ -1,5 +1,15 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Describe live reusable computations — 2026-10-28
+
+**Implemented for client expert workflows; runtime unverified.**
+`collective/experts.rs` exposes bounded whole live candidate batches to later
+expert prompts; `collective.rs` and `expert_compute.rs` mark them as untrusted
+unchecked data and explain exact matching. Input admission may omit candidates;
+the kernel still checks callers, policy and published results. See
+[cognitive network](COGNITIVE_NETWORK.md). No tests, benchmarks or live
+inference ran; general orchestration remains Partial.
+
 ## Bind opening interpretation to task memory — 2026-10-28
 
 **Implemented for new client collective tasks; runtime unverified.**

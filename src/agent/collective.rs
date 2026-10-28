@@ -359,8 +359,9 @@ impl Graph<'_> {
         prior_results: &serde_json::Value,
         allocation: usize,
         record_bytes: usize,
-        core_catalog: Option<&super::core_tools::Catalog>,
+        core: (Option<&super::core_tools::Catalog>, &[serde_json::Value]),
     ) -> Turn {
+        let (core_catalog, reusable) = core;
         let step_input = expert_workflow::step_input(plan, step, prior_results);
         let advice = match &self.typed_evidence {
             Some(evidence) => json!({
@@ -401,6 +402,7 @@ impl Graph<'_> {
                 "request_format":"JSON computations entries with id, name, arguments; these are proposals, not executed tools",
                 "advice_and_result_reference_byte_budget":record_bytes,
                 "reuse_only":free_slots < 2 || self.session.core_memory_len() >= 16,
+                "in_flight_candidates":reusable,
                 "result_reference_allowance":"Leave at least 128 bytes per requested computation for host result references; the host performs the exact size check"
             }));
             user.content = Some(format!(

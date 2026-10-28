@@ -1,5 +1,14 @@
 # Current Rust implementation
 
+## Describe live reusable computations — 2026-10-28
+
+**Implemented for client expert workflows; runtime unverified.** Later expert
+steps can receive bounded, untrusted descriptions of whole eligible in-flight
+batches and request an exact match. If descriptions do not fit input admission,
+they are omitted before reservation. Existing matching, policy and task limits
+remain authoritative. See [cognitive network](COGNITIVE_NETWORK.md). No tests,
+benchmarks or live inference ran; throughput remains unmeasured.
+
 ## Bind opening interpretation to task memory — 2026-10-28
 
 **Implemented for new client collective tasks; runtime unverified.** The opening

@@ -1,5 +1,28 @@
 # Cognitive network implementation
 
+## Describe live reusable computations to experts — 2026-10-28
+
+**Implemented bounded in-flight candidate descriptions; runtime unverified.**
+The workflow's live owner map retains the names and arguments of eligible
+independent batches. Later expert prompts can include complete candidate batches
+within a shared 2,048-byte JSON budget, marked as unchecked untrusted data.
+Candidates are never represented as results or execution authority. An expert
+must request the complete batch in the same order with the same names and
+arguments; it supplies its own unique call IDs. Actual reuse still requires the
+existing exact fingerprint match, paid receipt, original task and policy checks,
+and publication of the source's checked result.
+
+Only whole candidates are included; oversized candidates are omitted. If the
+additional descriptions would exceed the actual token or task input admission,
+the wave is rebuilt without them before model-call reservation. The candidate
+snapshot is not a durable result, and a source failure or unknown outcome still
+fails its waiters without automatic retry. The metadata may repeat task-local
+argument data in a same-task expert prompt, but grants no new permissions and
+is not a cross-task cache. Limits on model calls, tool execution and memory are
+unchanged. General mixed workflows and structured memory remain incomplete;
+no speedup or runtime correctness is established. No tests, benchmarks or live
+inference were performed.
+
 ## Bind the opening language interpretation to task memory — 2026-10-28
 
 **Implemented for new client collective tasks; runtime unverified.** After the
