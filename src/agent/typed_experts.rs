@@ -140,6 +140,10 @@ impl Snapshot {
             && self.providers.resolve(capability, None, None).is_ok()
     }
 
+    pub(super) fn independent_available(&self, capability: Capability) -> bool {
+        self.routes.contains_key(&capability) && self.providers.independent_available(capability)
+    }
+
     pub(super) fn bind_plan(&self, plan: &mut Plan) -> Result<bool> {
         for entry in plan.entries() {
             entry.work.request().validate()?;

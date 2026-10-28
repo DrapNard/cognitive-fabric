@@ -1,5 +1,57 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Reasoning-model requests to the pinned typed core — 2026-10-28
+
+**Implemented bounded solver/core feedback; runtime/provider compatibility
+experimental and unverified.** With explicit language-only network routing and
+a host-attached typed broker, the opening solver phase can receive fixed
+`cgf_core_*` function schemas for available math, inline SQL, sorting, ordering,
+path and finite-domain computation. Only independently executable pinned provider
+routes are advertised; graph-dependent providers require their existing graph
+path. Schemas are host metadata, not capability grants. Qwen interface/presentation
+and optional advisory experts receive no host function definitions.
+
+`src/agent/core_tools.rs` parses at most four host proposals per response through
+strict JSON and rejects mixed host/client batches, collisions with client tool
+names and duplicate call identities. Named/required/disabled client tool choices
+do not enable the host catalog. Client-only proposals retain the existing handoff
+path. The reasoning adapter must support ordinary function-call proposals; this
+change does not relax the intentionally single-target exact-token adapter.
+
+`Plan::from_reasoning_arguments` validates fixed-capability arguments with existing
+Work parsers and marks their broader meaning unverified. `sessions.rs` retains
+an Arc of the task-opening typed snapshot, binds the entire batch before charges,
+then individually authorizes and reserves operation and verifier intent slots
+(two per operation) before polling. All calls retain original task/store/config,
+wall, queue and width limits; no registry discovery or module/model selection is
+accepted from function arguments. Execution reports distinguish reasoning-model
+arguments from language translation and never promote a candidate computation
+into proof of the original goal.
+
+`collective.rs` intercepts host calls before client handoff, executes the admitted
+typed batch, then resumes the same solver cycle using structured checked-result
+memory. Model calls, output reservations and operation slots never reset. Host
+functions are hidden when continuation/presentation call and minimum output
+budgets are unavailable. Canonical fingerprints reject repeated computations.
+Task memory is capped at 16 records/12,000 bytes, binds the original root, stores
+exact result JSON strings plus argument/criterion/provider digests, and labels
+model-selected semantics false. Known argument/metadata/checkpoint sizes are
+preflighted before computation using a disposable sizing value that is never
+published as a result. Actual feedback is input-admitted before memory publication.
+Unknown result growth may still cause bounded terminal refusal after work was
+charged; no quota is raised, data truncated, operation retried or charge refunded.
+The unchanged combined checkpoint cap remains 32 KiB.
+
+Only complete checked batches enter memory atomically with admission metadata.
+Client continuations restore data without replaying computations; executable pins
+are not recaptured on continuation, so new host-core requests remain opening-task
+functionality. Original client messages/tools and kernel checks remain authoritative.
+Standalone graph/provider failure, invalid data and unknown outcomes fail explicitly.
+General mixed dataflow, interrupted-provider recovery and optional evaluated LoRA
+remain Partial. Static formatting, locked workspace/all-target compilation, strict
+Clippy and whitespace checks are the validation scope. No tests, benchmarks, live
+provider calls, model activation, system installation or recovery execution run.
+
 ## Project checked subvalues into expert inputs — 2026-10-28
 
 **Implemented bounded typed-value projection; runtime/translation semantics

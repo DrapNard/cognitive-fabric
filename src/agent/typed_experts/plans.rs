@@ -5,6 +5,7 @@
 //! output into another operation's input.
 
 use super::{translation::Translation, Work};
+use crate::fabric::modules::Capability;
 use anyhow::{bail, Result};
 use serde::Deserialize;
 use serde_json::value::RawValue;
@@ -62,6 +63,46 @@ struct BatchOperation {
 }
 
 impl Plan {
+    /// Build a bounded candidate plan from model-selected typed arguments.
+    /// The original request is retained only as a digest; this does not prove
+    /// that the selected operations faithfully represent its meaning.
+    pub(in crate::agent) fn from_reasoning_arguments(
+        original: &str,
+        operations: Vec<(String, Capability, serde_json::Value)>,
+    ) -> Result<Self> {
+        if operations.is_empty() || operations.len() > MAX_ENTRIES {
+            bail!("Reasoning plan must contain between one and four operations")
+        }
+
+        let query_digest = crate::store::sha256(original.as_bytes());
+        let mut ids = HashSet::with_capacity(operations.len());
+        let mut entries = Vec::with_capacity(operations.len());
+        for (id, capability, arguments) in operations {
+            validate_id(&id)?;
+            if !ids.insert(id.clone()) {
+                bail!("Reasoning plan operation IDs must be distinct")
+            }
+
+            let mut work = Work::from_arguments(capability, &arguments)?;
+            work.mark_translated_digest(&query_digest)?;
+            entries.push(Entry {
+                id,
+                work,
+                expert: None,
+                capability_requirement: None,
+                template: None,
+                provider_route: None,
+            });
+        }
+
+        Ok(Self {
+            query_digest,
+            entries,
+            batch: true,
+            translated: true,
+        })
+    }
+
     /// Parse either one legacy typed query or the strict independent-batch form.
     /// Unrecognized ordinary language remains available to the normal path.
     pub(in crate::agent) fn from_query(query: &str) -> Result<Option<Self>> {

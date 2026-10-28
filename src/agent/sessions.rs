@@ -36,6 +36,8 @@ pub(super) struct State {
     pub(super) typed_evidence_sha256: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     typed_evidence: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    core_memory: Option<super::core_tools::Memory>,
     history_len: usize,
     history_sha256: String,
     pending: Vec<String>,
@@ -51,7 +53,8 @@ pub(super) struct Lease {
     pub state: State,
     pub deadline: Instant,
     expert_catalog: Option<super::session_context::ExpertCatalog>,
-    typed_experts: Option<super::typed_experts::Snapshot>,
+    typed_experts: Option<Arc<super::typed_experts::Snapshot>>,
+    core_typed_experts: Option<Arc<super::typed_experts::Snapshot>>,
     done: bool,
 }
 
@@ -66,6 +69,7 @@ pub(super) struct PreparedTypedWork {
     entries: Vec<super::typed_experts::Entry>,
     deadline: Instant,
     concurrency: usize,
+    reasoning_arguments: bool,
 }
 
 struct TypedPart {
@@ -79,6 +83,7 @@ pub(super) struct TypedResult {
     value: String,
     identity: super::typed_experts::PlanIdentity,
     parts: Vec<TypedPart>,
+    reasoning_arguments: bool,
 }
 
 impl TypedResult {
@@ -90,6 +95,10 @@ impl TypedResult {
     }
     pub fn translated(&self) -> bool {
         self.identity.translated()
+    }
+
+    pub(super) fn reasoning_arguments(&self) -> bool {
+        self.reasoning_arguments
     }
 }
 
@@ -399,8 +408,9 @@ impl PreparedTypedWork {
                     "criterion_sha256":entry.work.criterion_digest(),
                     "result_sha256":result.as_ref().ok().map(|value|sha256(value.as_bytes())),
                     "compiled_criterion_match":result.is_ok(),
-                    "original_goal_semantics_verified":result.is_ok() && !self.identity.translated(),
-                    "language_translated":self.identity.translated(), "checker":entry.work.checker(),
+                    "original_goal_semantics_verified":result.is_ok() && !self.reasoning_arguments && !self.identity.translated(),
+                    "criterion_origin":if self.reasoning_arguments {"reasoning_model_arguments"} else if self.identity.translated() {"language_translation"} else {"original_exact_goal"},
+                    "language_translated":self.identity.translated() && !self.reasoning_arguments, "checker":entry.work.checker(),
                     "presented_answer_verified":false, "automatic_retry":false,
                     "prepared_provider_route":entry.provider_route.as_ref().map(|proof|proof.audit_metadata())
                 }));
@@ -448,7 +458,7 @@ impl PreparedTypedWork {
                                             part.work.checker().to_owned(),
                                             part.provider_identity.clone(),
                                             part.work.query_digest().to_owned(),
-                                            part.work.translated(),
+                                            part.work.translated() && !self.reasoning_arguments,
                                         )
                                         .and_then(|progress_part| snapshot.record(progress_part))
                                         {
@@ -525,6 +535,7 @@ impl PreparedTypedWork {
             value,
             identity: self.identity,
             parts,
+            reasoning_arguments: self.reasoning_arguments,
         })
     }
 }
@@ -652,6 +663,40 @@ fn raw_state(state: &State) -> Result<(String, String)> {
     let checksum = sha256(raw.as_bytes());
     Ok((raw, checksum))
 }
+
+fn core_verifier_capability(capability: crate::fabric::modules::Capability) -> &'static str {
+    match capability {
+        crate::fabric::modules::Capability::ConstraintsSolve => "constraints.verify",
+        other => other.as_str(),
+    }
+}
+
+fn core_record(
+    proposal: &super::core_tools::Proposal,
+    operation_id: String,
+    model_call_index: usize,
+    criterion_sha256: String,
+    provider_identity: String,
+    result_json: String,
+) -> super::core_tools::Record {
+    super::core_tools::Record {
+        operation_id,
+        model_call_index,
+        proposal_id: proposal.call_id.clone(),
+        name: proposal.name.clone(),
+        capability: proposal.capability.as_str().to_owned(),
+        fingerprint: proposal.fingerprint.clone(),
+        arguments_json: proposal.arguments_json.clone(),
+        result_sha256: sha256(result_json.as_bytes()),
+        result_json,
+        criterion_sha256,
+        provider_sha256: sha256(provider_identity.as_bytes()),
+        provider_identity,
+        origin: "reasoning_model_arguments".to_owned(),
+        original_semantics_verified: false,
+    }
+}
+
 fn audit(
     db: &rusqlite::Connection,
     task: &str,
@@ -725,6 +770,10 @@ impl State {
                         .bytes()
                         .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
             })
+            || self
+                .core_memory
+                .as_ref()
+                .is_some_and(|memory| memory.validate_checkpoint().is_err())
             || self.pending.len() > 16
             || self.history_len > 255
             || self.pending.iter().any(|id| !valid_id(id))
@@ -915,6 +964,7 @@ impl Lease {
                     deadline,
                     expert_catalog: None,
                     typed_experts: None,
+                    core_typed_experts: None,
                     done: false,
                 });
             }
@@ -961,12 +1011,13 @@ impl Lease {
                 runtime.cfg.language_model().is_some(),
             )?;
         let internal_tools = u32::from(include_retrieval);
-        let typed_experts = runtime
+        let typed_snapshot = runtime
             .typed_modules
             .as_ref()
             .filter(|_| include_retrieval)
             .map(|broker| super::typed_experts::Snapshot::capture(broker.clone(), &task, &tx))
             .transpose()?;
+        let typed_experts = typed_snapshot.map(Arc::new);
         let state = State {
             version: 1,
             wall_seconds: runtime.cfg.max_wall_seconds,
@@ -994,6 +1045,7 @@ impl Lease {
             expert_advice: None,
             typed_evidence_sha256: None,
             typed_evidence: None,
+            core_memory: None,
             history_len: 0,
             history_sha256: sha256(b"[]"),
             pending: vec![],
@@ -1026,7 +1078,8 @@ impl Lease {
             state,
             deadline: start.deadline,
             expert_catalog,
-            typed_experts,
+            typed_experts: typed_experts.clone(),
+            core_typed_experts: typed_experts,
             done: false,
         })
     }
@@ -1212,6 +1265,347 @@ impl Lease {
         }
     }
 
+    /// Advertise only first-turn host functions whose typed routes and policy
+    /// grants were frozen when this task opened.
+    pub(super) fn core_catalog(
+        &self,
+        runtime: &AgentRuntime,
+        request: &Turn,
+    ) -> Result<Option<super::core_tools::Catalog>> {
+        let root = self.original_objective(request)?;
+        if self.generation != 0
+            || self.state.calls == 0
+            || self.state.calls >= self.state.call_limit
+            || runtime.cfg.language_model().is_none()
+            || self.state.configuration != sha256(&serde_json::to_vec(&runtime.cfg)?)
+            || !Arc::ptr_eq(&self.store, &runtime.store)
+            || request
+                .tool_choice
+                .as_ref()
+                .is_some_and(|choice| choice != "auto")
+            || self
+                .state
+                .proposals
+                .saturating_add(self.state.internal_tools)
+                .saturating_add(2)
+                > self.state.tool_limit
+        {
+            return Ok(None);
+        }
+        let Some(snapshot) = self.core_typed_experts.as_ref() else {
+            return Ok(None);
+        };
+        if let Some(memory) = &self.state.core_memory {
+            memory.validate(root)?;
+            if memory.len() >= 16 {
+                return Ok(None);
+            }
+        }
+        let policy = TaskPolicy::client_collective(&self.task)?;
+        let capabilities = [
+            crate::fabric::modules::Capability::MathEvaluate,
+            crate::fabric::modules::Capability::SqlQuery,
+            crate::fabric::modules::Capability::SortingVerify,
+            crate::fabric::modules::Capability::OrderingVerify,
+            crate::fabric::modules::Capability::PathVerify,
+            crate::fabric::modules::Capability::ConstraintsSolve,
+        ]
+        .into_iter()
+        .filter(|capability| snapshot.independent_available(*capability))
+        .filter(|capability| {
+            let verifier = core_verifier_capability(*capability);
+            policy
+                .authorize(&self.task, "jev-plus", capability.as_str())
+                .is_ok()
+                && policy.authorize(&self.task, "jev-plus", verifier).is_ok()
+        })
+        .collect::<Vec<_>>();
+        super::core_tools::Catalog::new(&capabilities, request)
+    }
+
+    /// Bind model-requested JSON arguments to the opening typed snapshot, and
+    /// reserve both invocation and verifier intent for every operation before
+    /// any provider is polled.
+    pub(super) fn prepare_core_work(
+        &mut self,
+        runtime: &AgentRuntime,
+        request: &Turn,
+        proposals: &[super::core_tools::Proposal],
+    ) -> Result<PreparedTypedWork> {
+        let root = self.original_objective(request)?;
+        let available_slots = self.state.tool_limit.saturating_sub(
+            self.state
+                .proposals
+                .saturating_add(self.state.internal_tools),
+        );
+        if self.generation != 0
+            || self.state.cycles == 0
+            || self.state.calls == 0
+            || self.state.calls >= self.state.call_limit
+            || !self.state.pending.is_empty()
+            || proposals.is_empty()
+            || proposals.len() > 4
+            || available_slots < (proposals.len() as u32).saturating_mul(2)
+            || runtime.cfg.language_model().is_none()
+            || self.state.configuration != sha256(&serde_json::to_vec(&runtime.cfg)?)
+            || !Arc::ptr_eq(&self.store, &runtime.store)
+        {
+            bail!("Model-requested core work is outside its opening task or solver budget")
+        }
+        let snapshot = self
+            .core_typed_experts
+            .as_ref()
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("Opening core expert snapshot is unavailable"))?;
+        let memory = match &self.state.core_memory {
+            Some(memory) => {
+                memory.validate(root)?;
+                memory.clone()
+            }
+            None => super::core_tools::Memory::new(root)?,
+        };
+        if memory.len().saturating_add(proposals.len()) > 16 {
+            bail!("Task core memory record limit exceeded")
+        }
+        let mut fingerprints = std::collections::BTreeSet::new();
+        for proposal in proposals {
+            if memory.contains_fingerprint(&proposal.fingerprint)
+                || !fingerprints.insert(proposal.fingerprint.as_str())
+            {
+                bail!("Repeated model-requested core operation")
+            }
+        }
+        let operations = proposals
+            .iter()
+            .enumerate()
+            .map(|(index, proposal)| {
+                (
+                    format!("core_{}_{}", self.state.calls, index),
+                    proposal.capability,
+                    proposal.arguments.clone(),
+                )
+            })
+            .collect::<Vec<_>>();
+        let mut plan = super::typed_experts::Plan::from_reasoning_arguments(root, operations)?;
+        if !snapshot.bind_plan(&mut plan)? {
+            bail!("No pinned typed route is available for a proposed core operation")
+        }
+        // Preflight all durable metadata before charging work. The synthetic
+        // JSON result is only a lower-bound size marker; it is dropped here and
+        // never persisted or exposed as evidence.
+        let mut projected_memory = memory.clone();
+        for (index, (proposal, entry)) in proposals.iter().zip(plan.entries()).enumerate() {
+            let metadata = entry
+                .provider_route
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("Pinned provider proof is missing"))?
+                .audit_metadata();
+            let mut provider_identity = serde_json::Map::new();
+            for key in [
+                "route",
+                "catalog_sha256",
+                "expert_id",
+                "expert_version",
+                "canonical_manifest_sha256",
+                "provider_module_id",
+                "provider_module_version",
+                "capability",
+                "capability_version",
+            ] {
+                if let Some(value) = metadata.get(key) {
+                    provider_identity.insert(key.to_owned(), value.clone());
+                }
+            }
+            let operation_id = format!("core_{}_{}", self.state.calls, index);
+            projected_memory.append(core_record(
+                proposal,
+                operation_id,
+                self.state.calls,
+                entry.work.criterion_digest().to_owned(),
+                serde_json::to_string(&serde_json::Value::Object(provider_identity))?,
+                "null".to_owned(),
+            ))?;
+        }
+        let mut projected_state = self.state.clone();
+        projected_state.core_memory = Some(projected_memory);
+        raw_state(&projected_state)?;
+        let policy = TaskPolicy::client_collective(&self.task)?;
+        let total = runtime.cfg.subtask_parallelism.unwrap_or(1).clamp(1, 4);
+        let concurrency = total.min(runtime.cfg.expert_parallelism.unwrap_or(1).clamp(1, 4));
+        let deadline = self
+            .deadline
+            .min(remaining(&self.state.clock)?)
+            .min(Instant::now() + Duration::from_secs(runtime.cfg.timeout_seconds.min(300)));
+        for (proposal, entry) in proposals.iter().zip(plan.entries()) {
+            let capability = proposal.capability.as_str();
+            let verifier = core_verifier_capability(proposal.capability);
+            policy.authorize(&self.task, "jev-plus", capability)?;
+            policy.authorize(&self.task, "jev-plus", verifier)?;
+            let details = json!({
+                "operation_id":entry.id,
+                "proposal_id":proposal.call_id,
+                "name":proposal.name,
+                "arguments_sha256":sha256(proposal.arguments_json.as_bytes()),
+                "root_query_sha256":sha256(root.as_bytes()),
+                "snapshot_sha256":snapshot.digest(),
+                "criterion_sha256":entry.work.criterion_digest(),
+                "criterion_origin":"reasoning_model_arguments",
+                "original_goal_semantics_verified":false,
+                "permissions_granted":false
+            });
+            self.reserve_internal_tool("jev-plus", capability, details.clone())?;
+            self.reserve_internal_tool("jev-plus", verifier, details)?;
+        }
+        let (identity, entries) = plan.into_parts();
+        Ok(PreparedTypedWork {
+            store: self.store.clone(),
+            task: self.task.clone(),
+            clock: self.state.clock.clone(),
+            snapshot,
+            identity,
+            entries,
+            deadline,
+            concurrency,
+            reasoning_arguments: true,
+        })
+    }
+
+    /// Build the exact memory candidate from a complete checked result set
+    /// without publishing it to the session checkpoint.
+    fn core_memory_from_result(
+        &self,
+        request: &Turn,
+        proposals: &[super::core_tools::Proposal],
+        result: &TypedResult,
+    ) -> Result<super::core_tools::Memory> {
+        let root = self.original_objective(request)?;
+        let root_digest = sha256(root.as_bytes());
+        if self.generation != 0
+            || !result.reasoning_arguments()
+            || result.identity.query_digest() != root_digest
+            || result.parts.is_empty()
+            || result.parts.len() != proposals.len()
+            || result.parts.len() > 4
+        {
+            bail!("Core result is incomplete or belongs to another task")
+        }
+        let result_ids = result
+            .parts
+            .iter()
+            .map(|part| part.id.clone())
+            .collect::<std::collections::BTreeSet<_>>();
+        if result_ids.len() != result.parts.len() {
+            bail!("Core result contains duplicate operation identities")
+        }
+        let model_call_index = self.state.calls;
+        let expected_ids = (0..proposals.len())
+            .map(|index| format!("core_{}_{}", model_call_index, index))
+            .collect::<std::collections::BTreeSet<_>>();
+        if result_ids != expected_ids {
+            bail!("Core result operation identities do not match its proposals")
+        }
+        let mut memory = match &self.state.core_memory {
+            Some(memory) => {
+                memory.validate(root)?;
+                memory.clone()
+            }
+            None => super::core_tools::Memory::new(root)?,
+        };
+        for (index, proposal) in proposals.iter().enumerate() {
+            let operation_id = format!("core_{}_{}", model_call_index, index);
+            let part = result
+                .parts
+                .iter()
+                .find(|part| part.id == operation_id)
+                .ok_or_else(|| anyhow::anyhow!("A proposed core result is missing"))?;
+            let mut expected_work = super::typed_experts::Work::from_arguments(
+                proposal.capability,
+                &proposal.arguments,
+            )?;
+            expected_work.mark_translated_digest(&root_digest)?;
+            if part.work.capability() != proposal.capability
+                || part.work.criterion_digest() != expected_work.criterion_digest()
+                || part.work.translated() != result.translated()
+                || memory.contains_fingerprint(&proposal.fingerprint)
+            {
+                bail!("Checked core result does not match its proposal")
+            }
+            let provider_identity = serde_json::to_string(&part.provider_identity)?;
+            memory.append(core_record(
+                proposal,
+                part.id.clone(),
+                model_call_index,
+                part.work.criterion_digest().to_owned(),
+                provider_identity,
+                part.value.clone(),
+            ))?;
+        }
+        memory.validate(root)?;
+        Ok(memory)
+    }
+
+    /// Preview the bounded, untrusted memory context before final presentation.
+    pub(super) fn preview_core_context(
+        &self,
+        request: &Turn,
+        proposals: &[super::core_tools::Proposal],
+        result: &TypedResult,
+    ) -> Result<String> {
+        self.core_memory_from_result(request, proposals, result)?
+            .context()
+    }
+
+    /// Persist only a complete checked result set, in the same checkpoint
+    /// update as its audit event. Model-selected operations remain unverified
+    /// as interpretations of the original user goal.
+    pub(super) fn complete_core_work(
+        &mut self,
+        request: &Turn,
+        proposals: &[super::core_tools::Proposal],
+        result: &TypedResult,
+    ) -> Result<String> {
+        let root = self.original_objective(request)?;
+        let root_digest = sha256(root.as_bytes());
+        let memory = self.core_memory_from_result(request, proposals, result)?;
+        let context = memory.context()?;
+        let digest = memory.digest()?;
+        let mut next = self.state.clone();
+        next.core_memory = Some(memory);
+        self.write_active(
+            next,
+            "agent_core_memory_admitted",
+            json!({
+                "format_version":1,
+                "root_query_sha256":root_digest,
+                "memory_sha256":digest,
+                "operation_count":proposals.len(),
+                "compiled_operation_contracts_match":true,
+                "original_goal_semantics_verified":false,
+                "criterion_origin":"reasoning_model_arguments",
+                "permissions_granted":false
+            }),
+        )?;
+        Ok(context)
+    }
+
+    /// Restore bounded task memory after a client-tool continuation without
+    /// recapturing or restoring executable provider pins.
+    pub(super) fn restore_core_memory(&self, request: &Turn) -> Result<Option<String>> {
+        let Some(memory) = &self.state.core_memory else {
+            return Ok(None);
+        };
+        remaining(&self.state.clock)?;
+        memory.validate(self.original_objective(request)?)?;
+        Ok(Some(memory.context()?))
+    }
+
+    pub(super) fn core_memory_len(&self) -> usize {
+        self.state
+            .core_memory
+            .as_ref()
+            .map_or(0, |memory| memory.len())
+    }
+
     /// Reserve every independent invocation before polling any operation. The
     /// remaining tool slots are held by this exclusive task claim for final checks.
     pub fn reserve_typed_work(
@@ -1230,11 +1624,10 @@ impl Lease {
         }
         let total = runtime.cfg.subtask_parallelism.unwrap_or(1).clamp(1, 4);
         let concurrency = total.min(runtime.cfg.expert_parallelism.unwrap_or(1).clamp(1, 4));
-        let snapshot = Arc::new(
-            self.typed_experts
-                .take()
-                .ok_or_else(|| anyhow::anyhow!("Opening typed expert snapshot is unavailable"))?,
-        );
+        let snapshot = self
+            .typed_experts
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("Opening typed expert snapshot is unavailable"))?;
         let translated = plan.translated();
         let (identity, entries) = plan.into_parts();
         for entry in &entries {
@@ -1259,6 +1652,7 @@ impl Lease {
             entries,
             deadline,
             concurrency,
+            reasoning_arguments: false,
         })
     }
 

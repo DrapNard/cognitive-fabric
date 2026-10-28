@@ -1,6 +1,7 @@
 //! Transport-independent, bounded solver turns for external agent clients.
 //! Tool calls are proposals; execution and approval belong to the client.
 mod collective;
+mod core_tools;
 mod expert_advice;
 mod expert_workflow;
 mod graph_schedule;
