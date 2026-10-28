@@ -3,6 +3,16 @@
 
 ## Task-pinned alternate typed providers
 
+An expert's optional computation envelope is only a proposal. Cycle-zero
+admission requires the matching paid expert dispatch/outcome receipts and the
+original pinned core routes; each operation and verifier is individually
+authorized and charged. Pending fingerprints block duplicate dispatch and
+checkpoint publication with unresolved work. Model claims and action fields
+cannot grant capabilities or bypass the parser. Checked computation results
+still apply only to their selected arguments, and reference digests do not
+attest model weights or the original goal's meaning. Runtime integration of
+this path remains unverified.
+
 Client-tool continuations persist a bounded, task-bound snapshot of the original
 typed module and provider declarations as digest-linked event chunks. Rebinding
 checks exact retained descriptors, implementation identities, source fingerprints,

@@ -1,5 +1,63 @@
 # Cognitive network implementation
 
+## Let expert steps request bounded typed computations — 2026-10-28
+
+**Implemented a bounded expert-model → typed-core → dependent-step bridge;
+runtime/provider behavior unverified and general heterogeneous workflows remain
+Partial.** A model-backed expert may return either its ordinary structured advice
+or an explicit JSON envelope with `advice` and one to four `computations`.
+Each computation names a host-advertised fixed function, an ID and typed argument
+data. `src/agent/expert_compute.rs` strictly parses the envelope and delegates
+name/argument/call-ID validation to the existing core catalog and graph path.
+Advisory `actions` never implicitly request execution.
+
+`collective.rs` places optional computation schemas in expert prompt metadata;
+actual model tool definitions remain empty and `tool_choice` remains `none`.
+The exact per-wave catalog is captured with the paid prompt and reused when
+parsing the response. Small record allocations (under 200 bytes), insufficient
+tool/headroom, missing task pins and client tool-choice restrictions keep this
+optional protocol unavailable. Schema visibility does not grant a capability.
+Advice plus exact host result-reference overhead must fit the existing per-step
+allocation; content/summary/checkpoint limits are not increased.
+
+`sessions.rs` validates a unique ordered paid `expert-advisory` dispatch receipt
+and matching model/content outcome before admitting cycle-zero core work. Receipt
+queries have payload/row/time bounds. Every operation and verifier still receives
+its own deterministic task-policy check and reservation, using original frozen
+routes and deadlines. Namespaces use the originating model-call index rather than
+the changing global counter. Durable pending fingerprints prevent duplicate or
+replayed in-flight work and count toward the original 16-record memory bound.
+Unresolved pending batches block checkpoint publication; failures are never
+automatically replayed, refunded or declared complete.
+
+`collective/experts.rs` stages requests until every simultaneously ready report
+has been validated, then checks aggregate tool space and duplicate fingerprints
+before new admissions. Original typed verification slots stay held. Core phases
+remain owned futures in the rolling scheduler and share task execution slots
+with model calls. The step stays in flight until its computations pass compiled
+checks and their bounded memory is admitted; only then do dependent steps become
+eligible. Newly ready model prompts inherit checked core memory. No extra Qwen
+translation or model call is needed solely to submit the computations.
+
+Version-3 `expert_advice.rs` summaries carry operation-ID/result-digest references.
+They are syntax-checked and cross-checked against the same-root checked core
+memory on publication and restoration. Version-1 text and version-2 advisory
+summaries remain readable under their original schemas. Actual solver/presentation
+input capacity is checked before publishing core feedback. Sizing hashes are
+disposable preflight markers and never enter actual checked-result references.
+
+These checks validate computations against model-selected arguments, not the
+broader meaning of the original request. Model advice remains unverified; no
+permissions, models, weights, registries or promotion thresholds are selected by
+its envelope. Duplicate work currently refuses rather than coalescing requests.
+General dynamic neural/typed graphs, unknown-provider recovery and evaluated
+project LoRA remain incomplete or unverified.
+
+Validation: formatting, locked workspace/all-target compilation, strict Clippy,
+whitespace checks and independent source review only. No tests, benchmarks,
+live provider calls, model activation, installation or recovery execution ran.
+No throughput or reasoning-quality result is claimed.
+
 ## Keep structured planner, explorer and reflector memory — 2026-10-28
 
 **Implemented for client collective role handoffs; runtime/provider compatibility

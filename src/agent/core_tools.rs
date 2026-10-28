@@ -227,6 +227,27 @@ impl Memory {
         self.records.len()
     }
 
+    pub(super) fn contains_call(&self, model_call_index: usize) -> bool {
+        self.records
+            .iter()
+            .any(|record| record.model_call_index == model_call_index)
+    }
+
+    pub(super) fn validate_digest(&self, expected_root: &str) -> Result<()> {
+        self.validate_checkpoint()?;
+        if self.root_sha256 != expected_root {
+            bail!("Task memory belongs to a different root")
+        }
+        Ok(())
+    }
+
+    pub(super) fn result_sha256(&self, operation_id: &str) -> Option<&str> {
+        self.records
+            .iter()
+            .find(|record| record.operation_id == operation_id)
+            .map(|record| record.result_sha256.as_str())
+    }
+
     /// Exact finalized operation outputs available to checked-data references.
     /// The checkpoint is revalidated before exposing any result to the resolver.
     pub(super) fn outputs(&self) -> Result<std::collections::BTreeMap<String, String>> {

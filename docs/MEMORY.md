@@ -1,5 +1,13 @@
 # Reusable task memory
 
+Expert summary schema v3 can reference checked core results by operation ID and
+result SHA-256. Publication and restoration require those references to match
+the same root task's validated core memory. Pending computations are separate
+durable intents; they are not completed evidence and prevent checkpoint
+publication until resolved by the owned execution path. Older v1/v2 summaries
+remain readable. Model-selected arguments and advice do not become proof of the
+original goal, tool permissions or training data.
+
 Client planner, explorer and reflector handoffs also use structured advisory
 records, with 400 bytes per role and a 2,000-byte task envelope. New envelopes
 bind the original request and reference snapshot, retain structured context and

@@ -10,6 +10,7 @@ struct PreparedExpertCall {
     allocation: usize,
     runtime: AgentRuntime,
     backend: Arc<dyn ChatBackend>,
+    core_catalog: Option<super::super::core_tools::Catalog>,
 }
 
 type AdvisoryOutcome = Result<(Result<Completion>, Result<Completion>)>;
@@ -18,6 +19,28 @@ struct ExpertReport {
     call: PreparedExpertCall,
     advice_budget: usize,
     result: Result<Completion>,
+}
+
+struct CoreReport {
+    plan_index: usize,
+    step_id: String,
+    call: usize,
+    original: Turn,
+    proposals: Vec<super::super::core_tools::Proposal>,
+    caller: super::super::sessions::ExpertCoreCall,
+    advice: serde_json::Value,
+    result: Result<super::super::sessions::TypedResult>,
+}
+
+struct PendingCore {
+    coordinate: (usize, usize),
+    plan_index: usize,
+    expert_id: String,
+    step_id: String,
+    call: usize,
+    proposals: Vec<super::super::core_tools::Proposal>,
+    caller: super::super::sessions::ExpertCoreCall,
+    advice: serde_json::Value,
 }
 
 enum RunningWork {
@@ -29,6 +52,10 @@ enum RunningWork {
         std::pin::Pin<
             Box<dyn std::future::Future<Output = (PreparedAdvisoryPair, AdvisoryOutcome)> + Send>,
         >,
+    ),
+    Core(
+        (usize, usize),
+        std::pin::Pin<Box<dyn std::future::Future<Output = CoreReport> + Send>>,
     ),
 }
 
@@ -128,6 +155,7 @@ fn advisory_future(
 enum CompletedWork {
     Expert(Box<ExpertReport>),
     Advisory(Box<(PreparedAdvisoryPair, AdvisoryOutcome)>),
+    Core(Box<CoreReport>),
 }
 
 async fn ready_expert_work(operations: &mut Vec<RunningWork>) -> Vec<CompletedWork> {
@@ -145,6 +173,11 @@ async fn ready_expert_work(operations: &mut Vec<RunningWork>) -> Vec<CompletedWo
                 RunningWork::Advisory(future) => {
                     if let Poll::Ready((pair, result)) = future.as_mut().poll(context) {
                         ready.push((index, CompletedWork::Advisory(Box::new((pair, result)))));
+                    }
+                }
+                RunningWork::Core(_, future) => {
+                    if let Poll::Ready(report) = future.as_mut().poll(context) {
+                        ready.push((index, CompletedWork::Core(Box::new(report))));
                     }
                 }
             }
@@ -303,6 +336,25 @@ fn expert_wave_routes(
 }
 
 impl Graph<'_> {
+    /// Reuse only the opening, policy-filtered catalog while this workflow
+    /// retains budget for a checked operation and its independent verifier.
+    pub(super) fn expert_core_catalog(&self) -> Option<super::super::core_tools::Catalog> {
+        let catalog = self.core_catalog.as_ref()?;
+        let available_slots = self.session.state.tool_limit.saturating_sub(
+            self.session
+                .state
+                .proposals
+                .saturating_add(self.session.state.internal_tools)
+                .saturating_add(self.held_typed_checks),
+        );
+        (self.call_limit.saturating_sub(self.calls) >= 3
+            && self.output_limit.saturating_sub(self.reserved)
+                >= MIN_SOLVER_TOKENS * 2 + self.runtime.cfg.interface_tokens
+            && self.session.core_memory_len() < 16
+            && available_slots >= 2)
+            .then(|| catalog.clone())
+    }
+
     fn prior_with_typed_inputs(
         &self,
         bound: &expert_workflow::BoundPlan,
@@ -343,6 +395,11 @@ impl Graph<'_> {
         if ready.is_empty() || ready.len() > 4 {
             bail!("Client expert wave is outside its concurrency bound")
         }
+        let core_catalog = if record_bytes >= 200 {
+            self.expert_core_catalog()
+        } else {
+            None
+        };
         let turns = ready
             .iter()
             .map(|(plan_index, step_index, prior)| {
@@ -361,10 +418,13 @@ impl Graph<'_> {
                         &prior,
                         allocation,
                         record_bytes,
+                        core_catalog.as_ref(),
                     ),
                 ))
             })
             .collect::<Result<Vec<_>>>()?;
+        // Capture the exact catalog used by this serialized prompt. A later
+        // budget or policy change must not make a request executable.
         let requests = turns
             .iter()
             .map(|(_, _, allocation, turn)| (ROLE, turn.clone(), *allocation))
@@ -420,6 +480,7 @@ impl Graph<'_> {
                 allocation,
                 runtime,
                 backend,
+                core_catalog: core_catalog.clone(),
             });
         }
         self.runtime.store.event(
@@ -442,12 +503,13 @@ impl Graph<'_> {
         report: ExpertReport,
         results: &mut [serde_json::Map<String, serde_json::Value>],
         done: &mut [std::collections::BTreeSet<String>],
-    ) -> Result<()> {
+    ) -> Result<Option<PendingCore>> {
         let call = report.call;
         let step_id = plans[call.plan_index].plan.steps[call.step_index]
             .id
             .clone();
         let completion = report.result?;
+        let mut pending_core = None;
         let outcome = {
             let completion = self.record_completion(
                 "solver",
@@ -463,18 +525,72 @@ impl Graph<'_> {
                 bail!("Expert advisory role proposed a client tool")
             }
             let content = completion.content.unwrap_or_default();
-            let advice = crate::agent::advisory_record::parse(&content, report.advice_budget)?;
-            results[call.plan_index].insert(
-                step_id.clone(),
-                json!({
-                    "advice":advice,
-                    "partial":false,
-                    "trust":"untrusted_model_advisory_never_permissions"
-                }),
-            );
-            done[call.plan_index].insert(step_id.clone());
-            "completed"
+            let parsed = super::super::expert_compute::parse(
+                &content,
+                report.advice_budget,
+                call.core_catalog.as_ref(),
+            )?;
+            if !parsed.proposals.is_empty() {
+                let dummy_references = (0..parsed.proposals.len())
+                    .map(|index| {
+                        json!({
+                            "operation_id":format!("core_{}_{}", call.call, index),
+                            "result_sha256":"0".repeat(64)
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                let references_overhead =
+                    serde_json::to_vec(&json!({"core_operations":dummy_references}))?
+                        .len()
+                        .saturating_sub(1);
+                let advice_size = serde_json::to_vec(&parsed.advice)?.len();
+                if advice_size.saturating_add(references_overhead) > report.advice_budget {
+                    bail!("Expert advice and checked-operation references exceed their preflighted output budget")
+                }
+                let required_slots = (parsed.proposals.len() as u32).saturating_mul(2);
+                let available_slots = self.session.state.tool_limit.saturating_sub(
+                    self.session
+                        .state
+                        .proposals
+                        .saturating_add(self.session.state.internal_tools)
+                        .saturating_add(self.held_typed_checks),
+                );
+                if required_slots > available_slots {
+                    bail!("Expert core requests would consume reserved typed verification slots")
+                }
+                let caller = super::super::sessions::ExpertCoreCall {
+                    call: call.call,
+                    request_sha256: sha256(&serde_json::to_vec(&call.turn)?),
+                    content_sha256: sha256(content.as_bytes()),
+                    model: completion.model,
+                };
+                pending_core = Some(PendingCore {
+                    coordinate: (call.plan_index, call.step_index),
+                    plan_index: call.plan_index,
+                    expert_id: plans[call.plan_index].plan.id.clone(),
+                    step_id: step_id.clone(),
+                    call: call.call,
+                    proposals: parsed.proposals,
+                    caller,
+                    advice: parsed.advice,
+                });
+                "core_pending"
+            } else {
+                results[call.plan_index].insert(
+                    step_id.clone(),
+                    json!({
+                        "advice":parsed.advice,
+                        "partial":false,
+                        "trust":"untrusted_model_advisory_never_permissions"
+                    }),
+                );
+                done[call.plan_index].insert(step_id.clone());
+                "completed"
+            }
         };
+        if let Some(pending) = pending_core {
+            return Ok(Some(pending));
+        }
         self.runtime.store.event(
             self.task,
             "expert_workflow_step_complete",
@@ -484,9 +600,117 @@ impl Graph<'_> {
                 "step_id":step_id,
                 "call":call.call,
                 "result_state":outcome,
-                "advice_format_version":2,
+                "advice_format_version":3,
                 "structured_advice_validated":true,
                 "advice_partial":false,
+                "permissions_granted":false
+            }),
+        )?;
+        Ok(None)
+    }
+
+    fn schedule_expert_core(&mut self, pending: PendingCore) -> Result<RunningWork> {
+        let available = self.session.state.tool_limit.saturating_sub(
+            self.session
+                .state
+                .proposals
+                .saturating_add(self.session.state.internal_tools)
+                .saturating_add(self.held_typed_checks),
+        );
+        if (pending.proposals.len() as u32).saturating_mul(2) > available {
+            bail!("Expert core work would consume held typed verification slots")
+        }
+        let mut prepared = self.session.prepare_expert_core_work(
+            self.runtime,
+            self.original,
+            &pending.proposals,
+            &pending.caller,
+        )?;
+        if let Some(slots) = self.network_slots.clone() {
+            prepared.share_slots(slots)?;
+        }
+        self.runtime.store.event(
+            self.task,
+            "expert_core_batch_scheduled",
+            "jev-plus",
+            json!({
+                "expert_id":pending.expert_id,
+                "step_id":pending.step_id,
+                "call":pending.call,
+                "operation_count":pending.proposals.len(),
+                "permissions_granted":false,
+                "provider_calls_reserved_before_poll":true
+            }),
+        )?;
+        let original = self.original.clone();
+        let coordinate = pending.coordinate;
+        Ok(RunningWork::Core(
+            coordinate,
+            Box::pin(async move {
+                let result = prepared.execute().await;
+                CoreReport {
+                    plan_index: pending.plan_index,
+                    step_id: pending.step_id,
+                    call: pending.call,
+                    original,
+                    proposals: pending.proposals,
+                    caller: pending.caller,
+                    advice: pending.advice,
+                    result,
+                }
+            }),
+        ))
+    }
+
+    fn record_expert_core_completion(
+        &mut self,
+        plans: &[expert_workflow::BoundPlan],
+        report: CoreReport,
+        results: &mut [serde_json::Map<String, serde_json::Value>],
+        done: &mut [std::collections::BTreeSet<String>],
+    ) -> Result<()> {
+        let result = report.result?;
+        let references = result.core_references();
+        let preview = self.session.preview_expert_core_context(
+            &report.original,
+            &report.proposals,
+            &result,
+            &report.caller,
+        )?;
+        let previous_context = self.core_context.replace(preview);
+        let admitted = self.available(&[("solver", &"\0".repeat(2000), MIN_SOLVER_TOKENS)]);
+        self.core_context = previous_context;
+        if !admitted? {
+            bail!("Checked expert core feedback exceeds the original solver and presentation input budget")
+        }
+        self.core_context = Some(self.session.complete_expert_core_work(
+            &report.original,
+            &report.proposals,
+            &result,
+            &report.caller,
+        )?);
+        results[report.plan_index].insert(
+            report.step_id.clone(),
+            json!({
+                "advice":report.advice,
+                "partial":false,
+                "trust":"untrusted_model_advisory_never_permissions",
+                "core_operations":references
+            }),
+        );
+        done[report.plan_index].insert(report.step_id.clone());
+        self.runtime.store.event(
+            self.task,
+            "expert_workflow_step_complete",
+            "jev-plus",
+            json!({
+                "expert_id":plans[report.plan_index].plan.id,
+                "step_id":report.step_id,
+                "call":report.call,
+                "result_state":"completed_with_checked_core_operations",
+                "advice_format_version":3,
+                "structured_advice_validated":true,
+                "core_operation_count":report.proposals.len(),
                 "permissions_granted":false
             }),
         )?;
@@ -638,6 +862,9 @@ impl Graph<'_> {
             .max(expert_capacity)
             .min(4)
             .min(self.expert_wave_capacity.unwrap_or(4));
+        if global_capacity > 0 && self.network_slots.is_none() {
+            self.network_slots = Some(super::super::network_slots::Budget::new(global_capacity)?);
+        }
         let empty_done = plans
             .iter()
             .map(|_| std::collections::BTreeSet::<String>::new())
@@ -732,6 +959,11 @@ impl Graph<'_> {
             )?;
             return Ok(None);
         }
+        let preflight_core_catalog = if step_advice_budget >= 200 {
+            self.expert_core_catalog()
+        } else {
+            None
+        };
         let mut hypothetical = Vec::new();
         let mut projected_summaries = Vec::new();
         loop {
@@ -775,6 +1007,7 @@ impl Graph<'_> {
                             &maximum_prior,
                             allocation,
                             step_advice_budget,
+                            preflight_core_catalog.as_ref(),
                         ),
                         allocation,
                     ));
@@ -1081,7 +1314,9 @@ impl Graph<'_> {
                 let in_flight = running
                     .iter()
                     .filter_map(|work| match work {
-                        RunningWork::Expert(coordinate, _) => Some(*coordinate),
+                        RunningWork::Expert(coordinate, _) | RunningWork::Core(coordinate, _) => {
+                            Some(*coordinate)
+                        }
                         RunningWork::Advisory(_) => None,
                     })
                     .collect::<std::collections::BTreeSet<_>>();
@@ -1263,16 +1498,24 @@ impl Graph<'_> {
             let Some(completed) = completed else {
                 continue;
             };
+            let mut pending_core = Vec::new();
             for work in completed {
                 match work {
                     CompletedWork::Expert(report) => {
                         let call_id = report.call.call;
-                        if let Err(error) =
-                            self.record_expert_completion(&plans, *report, &mut results, &mut done)
-                        {
-                            let _ = self.runtime.store.event(self.task, "expert_workflow_step_failed", "jev-plus", json!({"call":call_id,"result_state":"failed_or_unknown","retry_attempted":false,"permissions_granted":false}));
-                            if failure.is_none() {
-                                failure = Some(error);
+                        match self.record_expert_completion(
+                            &plans,
+                            *report,
+                            &mut results,
+                            &mut done,
+                        ) {
+                            Ok(Some(core)) => pending_core.push(core),
+                            Ok(None) => {}
+                            Err(error) => {
+                                let _ = self.runtime.store.event(self.task, "expert_workflow_step_failed", "jev-plus", json!({"call":call_id,"result_state":"failed_or_unknown","retry_attempted":false,"permissions_granted":false}));
+                                if failure.is_none() {
+                                    failure = Some(error);
+                                }
                             }
                         }
                     }
@@ -1284,6 +1527,62 @@ impl Graph<'_> {
                             if failure.is_none() {
                                 failure = Some(error);
                             }
+                        }
+                    }
+                    CompletedWork::Core(report) => {
+                        let call_id = report.call;
+                        if let Err(error) = self.record_expert_core_completion(
+                            &plans,
+                            *report,
+                            &mut results,
+                            &mut done,
+                        ) {
+                            let _ = self.runtime.store.event(self.task, "expert_workflow_step_failed", "jev-plus", json!({"call":call_id,"result_state":"failed_or_unknown","retry_attempted":false,"permissions_granted":false}));
+                            if failure.is_none() {
+                                failure = Some(error);
+                            }
+                        }
+                    }
+                }
+            }
+            if failure.is_none()
+                && self
+                    .typed_progress
+                    .as_ref()
+                    .is_some_and(|progress| progress.borrow().failed())
+            {
+                failure = Some(anyhow::anyhow!(
+                    "Typed operation producer failed; expert core admissions stopped"
+                ));
+            }
+            if failure.is_none() {
+                let requested = pending_core
+                    .iter()
+                    .map(|pending| pending.proposals.len() as u32 * 2)
+                    .sum::<u32>();
+                let available = self.session.state.tool_limit.saturating_sub(
+                    self.session
+                        .state
+                        .proposals
+                        .saturating_add(self.session.state.internal_tools)
+                        .saturating_add(self.held_typed_checks),
+                );
+                let mut fingerprints = std::collections::BTreeSet::new();
+                let duplicates = pending_core
+                    .iter()
+                    .flat_map(|pending| &pending.proposals)
+                    .any(|proposal| !fingerprints.insert(&proposal.fingerprint));
+                if requested > available || duplicates {
+                    failure = Some(anyhow::anyhow!("Ready expert core batches exceed shared tool capacity or repeat a computation"));
+                }
+            }
+            if failure.is_none() {
+                for pending in pending_core {
+                    match self.schedule_expert_core(pending) {
+                        Ok(core) => running.push(core),
+                        Err(error) => {
+                            failure = Some(error);
+                            break;
                         }
                     }
                 }

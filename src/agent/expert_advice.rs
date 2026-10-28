@@ -29,9 +29,9 @@ impl Record {
             bail!("Expert advice summary exceeds its byte bound")
         }
         let summary = crate::strict_json::value(raw_summary.as_bytes(), MAX_SUMMARY_BYTES)?;
-        validate_summary(&summary, 2)?;
+        validate_summary(&summary, 3)?;
         let record = Self {
-            version: 2,
+            version: 3,
             root_sha256: root_sha.to_owned(),
             references_sha256: references_sha.to_owned(),
             summary_sha256: crate::store::sha256(summary.to_string().as_bytes()),
@@ -52,7 +52,7 @@ impl Record {
 
     /// Validate the durable record where the original request is no longer present.
     pub(super) fn validate_checkpoint(&self, expected_refs: &str) -> Result<()> {
-        if !matches!(self.version, 1 | 2)
+        if !matches!(self.version, 1..=3)
             || self.trust != TRUST
             || !is_sha256(&self.root_sha256)
             || !is_sha256(&self.references_sha256)
@@ -96,6 +96,29 @@ impl Record {
     pub(super) fn digest(&self) -> &str {
         &self.summary_sha256
     }
+
+    /// Validate referenced core operation results against the task's durable
+    /// core memory. A record without references does not need core memory.
+    pub(super) fn validate_core_references(
+        &self,
+        memory: Option<&super::core_tools::Memory>,
+    ) -> Result<()> {
+        self.validate_checkpoint(&self.references_sha256)?;
+        let references = core_references(&self.summary, self.version)?;
+        if references.is_empty() {
+            return Ok(());
+        }
+        let memory = memory.ok_or_else(|| {
+            anyhow::anyhow!("Expert advice core references require task core memory")
+        })?;
+        memory.validate_digest(&self.root_sha256)?;
+        for (operation_id, expected_digest) in references {
+            if memory.result_sha256(&operation_id) != Some(expected_digest.as_str()) {
+                bail!("Expert advice core result reference does not match task memory")
+            }
+        }
+        Ok(())
+    }
 }
 
 fn is_sha256(value: &str) -> bool {
@@ -120,6 +143,7 @@ fn validate_summary(summary: &Value, version: u8) -> Result<()> {
                 bail!("Expert summary count is outside its bound")
             }
             let mut ids = BTreeSet::new();
+            let mut core_ids = BTreeSet::new();
             for expert in experts {
                 let expert = expert
                     .as_object()
@@ -148,6 +172,7 @@ fn validate_summary(summary: &Value, version: u8) -> Result<()> {
                 validate_results(
                     expert.get("results").expect("required key checked"),
                     version,
+                    &mut core_ids,
                 )?;
                 if let Some(dependencies) = expert.get("dependencies") {
                     let dependencies = dependencies
@@ -176,6 +201,7 @@ fn validate_summary(summary: &Value, version: u8) -> Result<()> {
             validate_results(
                 object.get("results").expect("required key checked"),
                 version,
+                &mut BTreeSet::new(),
             )?;
         }
     }
@@ -210,7 +236,7 @@ fn validate_identity(object: &Map<String, Value>, ids: &mut BTreeSet<String>) ->
     Ok(())
 }
 
-fn validate_results(results: &Value, version: u8) -> Result<()> {
+fn validate_results(results: &Value, version: u8, core_ids: &mut BTreeSet<String>) -> Result<()> {
     let results = results
         .as_object()
         .ok_or_else(|| anyhow::anyhow!("Expert results must be an object"))?;
@@ -224,7 +250,18 @@ fn validate_results(results: &Value, version: u8) -> Result<()> {
         let result = result
             .as_object()
             .ok_or_else(|| anyhow::anyhow!("Expert result must be an object"))?;
-        exact_keys(result, &["advice", "partial", "trust"])?;
+        if version == 3 {
+            if result.keys().any(|key| {
+                !["advice", "partial", "trust", "core_operations"].contains(&key.as_str())
+            }) || !["advice", "partial", "trust"]
+                .iter()
+                .all(|key| result.contains_key(*key))
+            {
+                bail!("Expert advice result contains missing or unknown fields")
+            }
+        } else {
+            exact_keys(result, &["advice", "partial", "trust"])?;
+        }
         if string_field(result, "trust")? != TRUST {
             bail!("Invalid bounded expert result")
         }
@@ -244,16 +281,111 @@ fn validate_results(results: &Value, version: u8) -> Result<()> {
                     bail!("Invalid legacy expert advice text")
                 }
             }
-            2 => {
+            2 | 3 => {
                 if partial {
                     bail!("Structured expert memory cannot contain a partial result")
                 }
                 crate::agent::advisory_record::validate(advice, MAX_SUMMARY_BYTES)?;
+                if version == 3 {
+                    if let Some(operations) = result.get("core_operations") {
+                        let operations = operations.as_array().ok_or_else(|| {
+                            anyhow::anyhow!("Core operation references must be an array")
+                        })?;
+                        if operations.is_empty() || operations.len() > 4 {
+                            bail!("Core operation reference count is outside its bound")
+                        }
+                        for operation in operations {
+                            let operation = operation.as_object().ok_or_else(|| {
+                                anyhow::anyhow!("Core operation reference must be an object")
+                            })?;
+                            exact_keys(operation, &["operation_id", "result_sha256"])?;
+                            let id = string_field(operation, "operation_id")?;
+                            let digest = string_field(operation, "result_sha256")?;
+                            if !is_core_operation_id(id)
+                                || !is_sha256(digest)
+                                || !core_ids.insert(id.to_owned())
+                            {
+                                bail!("Invalid or duplicate core operation reference")
+                            }
+                        }
+                    }
+                }
             }
             _ => bail!("Unsupported expert memory schema"),
         }
     }
     Ok(())
+}
+
+fn is_core_operation_id(value: &str) -> bool {
+    let Some(rest) = value.strip_prefix("core_") else {
+        return false;
+    };
+    let Some((call, index)) = rest.split_once('_') else {
+        return false;
+    };
+    if call.is_empty()
+        || index.is_empty()
+        || !call.bytes().all(|byte| byte.is_ascii_digit())
+        || !index.bytes().all(|byte| byte.is_ascii_digit())
+        || (call.len() > 1 && call.starts_with('0'))
+        || (index.len() > 1 && index.starts_with('0'))
+    {
+        return false;
+    }
+    matches!(call.parse::<u16>(), Ok(1..=u16::MAX)) && matches!(index.parse::<u8>(), Ok(0..=3))
+}
+
+fn core_references(summary: &Value, version: u8) -> Result<Vec<(String, String)>> {
+    if version != 3 {
+        return Ok(Vec::new());
+    }
+    let mut references = Vec::new();
+    let mut add_results = |results: &Value| -> Result<()> {
+        let results = results
+            .as_object()
+            .ok_or_else(|| anyhow::anyhow!("Expert results must be an object"))?;
+        for result in results.values() {
+            let Some(operations) = result.get("core_operations") else {
+                continue;
+            };
+            for operation in operations
+                .as_array()
+                .ok_or_else(|| anyhow::anyhow!("Core operation references must be an array"))?
+            {
+                let operation = operation
+                    .as_object()
+                    .ok_or_else(|| anyhow::anyhow!("Core operation reference must be an object"))?;
+                references.push((
+                    string_field(operation, "operation_id")?.to_owned(),
+                    string_field(operation, "result_sha256")?.to_owned(),
+                ));
+            }
+        }
+        Ok(())
+    };
+    let object = summary
+        .as_object()
+        .ok_or_else(|| anyhow::anyhow!("Expert advice summary must be an object"))?;
+    if let Some(experts) = object.get("experts") {
+        for expert in experts
+            .as_array()
+            .ok_or_else(|| anyhow::anyhow!("Expert summaries must be an array"))?
+        {
+            let expert = expert
+                .as_object()
+                .ok_or_else(|| anyhow::anyhow!("Expert summary entry must be an object"))?;
+            add_results(
+                expert
+                    .get("results")
+                    .ok_or_else(|| anyhow::anyhow!("Expert summary results are missing"))?,
+            )?;
+        }
+    } else if let Some(results) = object.get("results") {
+        add_results(results)?;
+    }
+    drop(add_results);
+    Ok(references)
 }
 
 fn string_field<'a>(object: &'a Map<String, Value>, key: &str) -> Result<&'a str> {

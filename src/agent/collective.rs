@@ -359,6 +359,7 @@ impl Graph<'_> {
         prior_results: &serde_json::Value,
         allocation: usize,
         record_bytes: usize,
+        core_catalog: Option<&super::core_tools::Catalog>,
     ) -> Turn {
         let step_input = expert_workflow::step_input(plan, step, prior_results);
         let advice = match &self.typed_evidence {
@@ -376,14 +377,27 @@ impl Graph<'_> {
         turn.tool_choice = Some(serde_json::json!("none"));
         turn.parallel_tool_calls = Some(false);
         if let Some(system) = turn.messages.first_mut() {
-            system.content = Some(format!(
+            let mut contract = format!(
                 "{EXPERT_STEP_CONTRACT} {}",
                 super::advisory_record::contract()
-            ));
+            );
+            if core_catalog.is_some() {
+                contract.push(' ');
+                contract.push_str(super::expert_compute::contract());
+            }
+            system.content = Some(contract);
         }
         if let Some(user) = turn.messages.last_mut() {
+            let computations = core_catalog.map(|catalog| json!({
+                "allowed_computations":catalog.tools(),
+                "permissions_granted":false,
+                "request_format":"JSON computations entries with id, name, arguments; these are proposals, not executed tools",
+                "advice_and_result_reference_byte_budget":record_bytes,
+                "result_reference_allowance":"Leave at least 128 bytes per requested computation for host result references; the host performs the exact size check"
+            }));
             user.content = Some(format!(
-                "Original request context is present in the preceding messages. Complete this advisory step only. Return an advisory record of at most {record_bytes} canonical JSON bytes. Structured input: {advice}"
+                "Original request context is present in the preceding messages. Complete this advisory step only. Return an advisory record of at most {record_bytes} canonical JSON bytes. Structured input: {advice}. Optional host computation declarations: {}",
+                computations.map_or_else(|| "none".to_owned(), |value| value.to_string())
             ));
         }
         turn

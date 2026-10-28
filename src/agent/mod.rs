@@ -6,6 +6,7 @@ mod core_batch;
 mod core_memory_bindings;
 mod core_tools;
 mod expert_advice;
+mod expert_compute;
 mod expert_workflow;
 mod graph_schedule;
 mod local;

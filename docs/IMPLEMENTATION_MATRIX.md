@@ -1,5 +1,24 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Bridge expert-model steps into the typed core — 2026-10-28
+
+**Implemented bounded expert → typed → dependent-step dataflow; general workflows
+remain Partial and runtime unverified.** `expert_compute.rs` parses optional
+explicit computation envelopes, while `collective/experts.rs` schedules owned
+core work beside models and releases dependencies only after checked admission.
+The exact prompt catalog, paid model receipts, original policies, shared slots,
+held verification budget and pending fingerprints govern execution.
+
+`sessions.rs` pins call namespaces, reserves pending work durably and refuses
+checkpoint publication while any batch is unresolved. `expert_advice.rs` writes
+v3 checked-core references and validates them against task memory; v1/v2 reads
+remain supported. Advice, summary, tool and memory caps are unchanged. See
+[cognitive network](COGNITIVE_NETWORK.md) for protocol limits and remaining gaps.
+Static formatting, locked workspace/all-target compilation, strict Clippy and
+whitespace checks plus source review are the validation scope. No tests,
+benchmarks or live inference ran. Arbitrary mixed graphs, unknown-outcome recovery
+and evaluated project LoRA remain incomplete or unverified.
+
 ## Keep structured reasoning-role memory — 2026-10-28
 
 **Implemented for client collective handoffs; broader memory remains Partial.**

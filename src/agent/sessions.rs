@@ -3,6 +3,7 @@ use super::*;
 use crate::execution_clock::{ExecutionStart, Snapshot};
 use rusqlite::{params, OptionalExtension, TransactionBehavior};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -38,6 +39,10 @@ pub(super) struct State {
     typed_evidence: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     core_memory: Option<super::core_tools::Memory>,
+    /// Model-call namespaces reserved for in-flight typed core batches. These
+    /// are intentionally not replayed after a crash or failed provider call.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    core_pending: BTreeMap<usize, Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     typed_routes_sha256: Option<String>,
     history_len: usize,
@@ -73,6 +78,16 @@ pub(super) struct PreparedTypedWork {
     concurrency: usize,
     shared_slots: Option<super::network_slots::Budget>,
     reasoning_arguments: bool,
+    core_call: Option<usize>,
+}
+
+/// Host evidence binding an expert's completed advisory call to its core batch.
+#[derive(Clone)]
+pub(super) struct ExpertCoreCall {
+    pub(super) call: usize,
+    pub(super) request_sha256: String,
+    pub(super) content_sha256: String,
+    pub(super) model: String,
 }
 
 struct TypedPart {
@@ -87,6 +102,7 @@ pub(super) struct TypedResult {
     identity: super::typed_experts::PlanIdentity,
     parts: Vec<TypedPart>,
     reasoning_arguments: bool,
+    core_call: Option<usize>,
 }
 
 impl TypedResult {
@@ -102,6 +118,18 @@ impl TypedResult {
 
     pub(super) fn reasoning_arguments(&self) -> bool {
         self.reasoning_arguments
+    }
+
+    pub(super) fn core_references(&self) -> Vec<serde_json::Value> {
+        self.parts
+            .iter()
+            .map(|part| {
+                json!({
+                    "operation_id": part.id,
+                    "result_sha256": sha256(part.value.as_bytes())
+                })
+            })
+            .collect()
     }
 }
 
@@ -554,6 +582,7 @@ impl PreparedTypedWork {
             identity: self.identity,
             parts,
             reasoning_arguments: self.reasoning_arguments,
+            core_call: self.core_call,
         })
     }
 }
@@ -662,6 +691,12 @@ fn valid_id(id: &str) -> bool {
                 .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
     })
 }
+fn valid_core_digest(digest: &str) -> bool {
+    digest.len() == 64
+        && digest
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
 fn remaining(clock: &Snapshot) -> Result<Instant> {
     let before = Instant::now();
     let observation = clock.remaining()?;
@@ -753,6 +788,7 @@ impl State {
         super::reasoning_memory::validate_checkpoint(&self.advice, &self.references)?;
         if let Some(advice) = &self.expert_advice {
             advice.validate_checkpoint(&sha256(self.references.as_bytes()))?;
+            advice.validate_core_references(self.core_memory.as_ref())?;
             advice.context()?;
         }
         super::session_context::validate_checkpoint(&self.references, &self.reference_pins)?;
@@ -811,6 +847,38 @@ impl State {
                 .core_memory
                 .as_ref()
                 .is_some_and(|memory| memory.validate_checkpoint().is_err())
+            || self.core_pending.len() > 4
+            || self.core_pending.iter().any(|(call, fingerprints)| {
+                *call == 0
+                    || *call > self.calls
+                    || fingerprints.is_empty()
+                    || fingerprints.len() > 4
+                    || fingerprints.iter().any(|digest| {
+                        digest.len() != 64
+                            || !digest
+                                .bytes()
+                                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+                    })
+            })
+            || self.core_pending.values().map(Vec::len).sum::<usize>() > 16
+            || self.core_memory.as_ref().map_or(0, |memory| memory.len())
+                + self.core_pending.values().map(Vec::len).sum::<usize>()
+                > 16
+            || self.core_memory.as_ref().is_some_and(|memory| {
+                self.core_pending
+                    .keys()
+                    .any(|call| memory.contains_call(*call))
+            })
+            || {
+                let mut pending_fingerprints = std::collections::BTreeSet::new();
+                self.core_pending.values().flatten().any(|fingerprint| {
+                    !pending_fingerprints.insert(fingerprint)
+                        || self
+                            .core_memory
+                            .as_ref()
+                            .is_some_and(|memory| memory.contains_fingerprint(fingerprint))
+                })
+            }
             || self.pending.len() > 16
             || self.typed_routes_sha256.as_ref().is_some_and(|digest| {
                 digest.len() != 64
@@ -1119,6 +1187,7 @@ impl Lease {
             typed_evidence_sha256: None,
             typed_evidence: None,
             core_memory: None,
+            core_pending: BTreeMap::new(),
             typed_routes_sha256: typed_routes_metadata.as_ref().map(|raw| sha256(raw)),
             history_len: 0,
             history_sha256: sha256(b"[]"),
@@ -1408,16 +1477,133 @@ impl Lease {
         request: &Turn,
         proposals: &[super::core_tools::Proposal],
     ) -> Result<PreparedTypedWork> {
+        self.prepare_core_work_at(runtime, request, proposals, self.state.calls, false)
+    }
+
+    /// Expert calls may dispatch the same deterministic core tools at cycle
+    /// zero, but only when the durable event ledger proves the exact call.
+    pub(super) fn prepare_expert_core_work(
+        &mut self,
+        runtime: &AgentRuntime,
+        request: &Turn,
+        proposals: &[super::core_tools::Proposal],
+        caller: &ExpertCoreCall,
+    ) -> Result<PreparedTypedWork> {
+        self.validate_expert_core_call(request, caller)?;
+        self.prepare_core_work_at(runtime, request, proposals, caller.call, true)
+    }
+
+    fn validate_expert_core_call(&self, request: &Turn, caller: &ExpertCoreCall) -> Result<()> {
+        if self.generation != 0
+            || caller.call == 0
+            || caller.call > self.state.calls
+            || !valid_core_digest(&caller.request_sha256)
+            || !valid_core_digest(&caller.content_sha256)
+            || caller.model.is_empty()
+            || caller.model.len() > 256
+            || caller.model.chars().any(char::is_control)
+            || self.state.cycles != 0
+            || request
+                .messages
+                .get(self.state.objective_index)
+                .is_none_or(|message| message.role != "user" || message.content.is_none())
+        {
+            bail!("Expert core dispatch is outside its original validated model call")
+        }
+        // The expert's paid dispatch may use a derived prompt. The caller hash
+        // binds that exact prompt to the ledger; the session root binds this
+        // request independently to the original objective.
+        self.original_objective(request)?;
+        remaining(&self.state.clock)?;
+        let db = self.store.lock()?;
+        let started = Instant::now();
+        db.progress_handler(
+            1000,
+            Some(move || started.elapsed() > Duration::from_secs(1)),
+        );
+        let _progress = SessionSqlProgressReset(&db);
+        let mut statement = db.prepare(
+            "SELECT kind,CASE WHEN length(CAST(source AS BLOB))<=64 THEN source END,
+             CASE WHEN length(CAST(payload AS BLOB))<=8192 THEN payload END
+             FROM events WHERE task_id=?1 AND kind IN ('agent_model_dispatch','agent_reasoning') ORDER BY id LIMIT 513",
+        )?;
+        let rows = statement.query_map([&self.task], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })?;
+        let mut dispatch = None;
+        let mut reasoning = None;
+        for (position, row) in rows.enumerate() {
+            if position >= 512 {
+                bail!("Expert core receipt history exceeds its row bound")
+            }
+            let (kind, source, payload) = row?;
+            if source != "jev-r" {
+                continue;
+            }
+            let value = crate::strict_json::value(payload.as_bytes(), 8192)?;
+            if value["call"].as_u64() != Some(caller.call as u64) {
+                continue;
+            }
+            if kind == "agent_model_dispatch" {
+                if dispatch.is_some()
+                    || value["role"] != "expert-advisory"
+                    || value["cycle"] != 0
+                    || value["request_sha256"] != caller.request_sha256
+                    || value["authorized_capability"] != "llm.generate"
+                    || value["client_tools_executed"] != false
+                {
+                    bail!("Expert core call has an ambiguous or mismatched dispatch receipt")
+                }
+                dispatch = Some(position);
+            } else if kind == "agent_reasoning" {
+                if reasoning.is_some()
+                    || value["role"] != "solver"
+                    || value["model"] != caller.model
+                    || value["content_sha256"] != caller.content_sha256
+                {
+                    bail!("Expert core call has an ambiguous or mismatched outcome receipt")
+                }
+                reasoning = Some(position);
+            }
+        }
+        if !dispatch
+            .zip(reasoning)
+            .is_some_and(|(sent, completed)| sent < completed)
+        {
+            bail!("Expert core call lacks a unique ordered dispatch and outcome receipt")
+        }
+        Ok(())
+    }
+
+    fn prepare_core_work_at(
+        &mut self,
+        runtime: &AgentRuntime,
+        request: &Turn,
+        proposals: &[super::core_tools::Proposal],
+        model_call_index: usize,
+        expert_origin: bool,
+    ) -> Result<PreparedTypedWork> {
         let root = self.original_objective(request)?;
         let available_slots = self.state.tool_limit.saturating_sub(
             self.state
                 .proposals
                 .saturating_add(self.state.internal_tools),
         );
-        if self.state.cycles == 0
-            || self.state.calls == 0
-            || self.state.calls >= self.state.call_limit
+        if (!expert_origin && self.state.cycles == 0)
+            || model_call_index == 0
+            || model_call_index > self.state.calls
+            || model_call_index > self.state.call_limit
             || !self.state.pending.is_empty()
+            || self.state.core_pending.contains_key(&model_call_index)
+            || self
+                .state
+                .core_memory
+                .as_ref()
+                .is_some_and(|memory| memory.contains_call(model_call_index))
             || proposals.is_empty()
             || proposals.len() > 4
             || available_slots < (proposals.len() as u32).saturating_mul(2)
@@ -1439,19 +1625,37 @@ impl Lease {
             }
             None => super::core_tools::Memory::new(root)?,
         };
-        if memory.len().saturating_add(proposals.len()) > 16 {
+        let pending_count = self
+            .state
+            .core_pending
+            .values()
+            .map(Vec::len)
+            .sum::<usize>();
+        if memory
+            .len()
+            .saturating_add(pending_count)
+            .saturating_add(proposals.len())
+            > 16
+            || memory.len().saturating_add(proposals.len()) > 16
+        {
             bail!("Task core memory record limit exceeded")
         }
         let mut fingerprints = std::collections::BTreeSet::new();
         for proposal in proposals {
             if memory.contains_fingerprint(&proposal.fingerprint)
+                || self
+                    .state
+                    .core_pending
+                    .values()
+                    .flatten()
+                    .any(|fp| fp == &proposal.fingerprint)
                 || !fingerprints.insert(proposal.fingerprint.as_str())
             {
                 bail!("Repeated model-requested core operation")
             }
         }
         let outputs = memory.outputs()?;
-        let batch = super::core_batch::Batch::prepare(proposals, self.state.calls, &outputs)?;
+        let batch = super::core_batch::Batch::prepare(proposals, model_call_index, &outputs)?;
         let mut plan = super::typed_experts::Plan::from_reasoning_graph(root, batch.document())?;
         if !snapshot.bind_plan(&mut plan)? {
             bail!("No pinned typed route is available for a proposed core operation")
@@ -1482,11 +1686,11 @@ impl Lease {
                     provider_identity.insert(key.to_owned(), value.clone());
                 }
             }
-            let operation_id = format!("core_{}_{}", self.state.calls, index);
+            let operation_id = format!("core_{}_{}", model_call_index, index);
             projected_memory.append(core_record(
                 proposal,
                 operation_id,
-                self.state.calls,
+                model_call_index,
                 entry.work.criterion_digest().to_owned(),
                 core_provider_identity(
                     &serde_json::Value::Object(provider_identity),
@@ -1498,6 +1702,17 @@ impl Lease {
         let mut projected_state = self.state.clone();
         projected_state.core_memory = Some(projected_memory);
         raw_state(&projected_state)?;
+        let mut reserved_state = self.state.clone();
+        reserved_state.core_pending.insert(
+            model_call_index,
+            fingerprints.iter().map(|fp| (*fp).to_owned()).collect(),
+        );
+        raw_state(&reserved_state)?;
+        self.write_active(
+            reserved_state,
+            "agent_core_batch_reserved",
+            json!({"model_call_index":model_call_index,"operation_count":proposals.len(),"fingerprints_sha256":sha256(&serde_json::to_vec(&fingerprints)?),"expert_origin":expert_origin,"permissions_granted":false}),
+        )?;
         let policy = TaskPolicy::client_collective(&self.task)?;
         let total = runtime.cfg.subtask_parallelism.unwrap_or(1).clamp(1, 4);
         let concurrency = total.min(runtime.cfg.expert_parallelism.unwrap_or(1).clamp(1, 4));
@@ -1539,6 +1754,7 @@ impl Lease {
             concurrency,
             shared_slots: None,
             reasoning_arguments: true,
+            core_call: Some(model_call_index),
         })
     }
 
@@ -1549,10 +1765,12 @@ impl Lease {
         request: &Turn,
         proposals: &[super::core_tools::Proposal],
         result: &TypedResult,
+        model_call_index: usize,
     ) -> Result<super::core_tools::Memory> {
         let root = self.original_objective(request)?;
         let root_digest = sha256(root.as_bytes());
         if !result.reasoning_arguments()
+            || result.core_call != Some(model_call_index)
             || result.identity.query_digest() != root_digest
             || result.parts.is_empty()
             || result.parts.len() != proposals.len()
@@ -1568,7 +1786,24 @@ impl Lease {
         if result_ids.len() != result.parts.len() {
             bail!("Core result contains duplicate operation identities")
         }
-        let model_call_index = self.state.calls;
+        let reserved = self
+            .state
+            .core_pending
+            .get(&model_call_index)
+            .ok_or_else(|| anyhow::anyhow!("Core result has no durable pending intent"))?;
+        let proposed_fingerprints = proposals
+            .iter()
+            .map(|proposal| proposal.fingerprint.clone())
+            .collect::<std::collections::BTreeSet<_>>();
+        if proposed_fingerprints.len() != proposals.len()
+            || reserved
+                .iter()
+                .cloned()
+                .collect::<std::collections::BTreeSet<_>>()
+                != proposed_fingerprints
+        {
+            bail!("Core result does not match its reserved pending intent")
+        }
         let expected_ids = (0..proposals.len())
             .map(|index| format!("core_{}_{}", model_call_index, index))
             .collect::<std::collections::BTreeSet<_>>();
@@ -1582,6 +1817,9 @@ impl Lease {
             }
             None => super::core_tools::Memory::new(root)?,
         };
+        if memory.contains_call(model_call_index) {
+            bail!("Core model-call namespace is already committed")
+        }
         // Reconstruct the original batch against its pre-batch memory. Sibling
         // data is available only through the already validated dependency graph.
         let outputs = memory.outputs()?;
@@ -1632,7 +1870,25 @@ impl Lease {
         proposals: &[super::core_tools::Proposal],
         result: &TypedResult,
     ) -> Result<String> {
-        self.core_memory_from_result(request, proposals, result)?
+        let call = result
+            .core_call
+            .ok_or_else(|| anyhow::anyhow!("Typed result is not a core batch"))?;
+        self.core_memory_from_result(request, proposals, result, call)?
+            .context()
+    }
+
+    pub(super) fn preview_expert_core_context(
+        &self,
+        request: &Turn,
+        proposals: &[super::core_tools::Proposal],
+        result: &TypedResult,
+        caller: &ExpertCoreCall,
+    ) -> Result<String> {
+        self.validate_expert_core_call(request, caller)?;
+        if result.core_call != Some(caller.call) {
+            bail!("Expert core result call index does not match its receipt")
+        }
+        self.core_memory_from_result(request, proposals, result, caller.call)?
             .context()
     }
 
@@ -1645,13 +1901,41 @@ impl Lease {
         proposals: &[super::core_tools::Proposal],
         result: &TypedResult,
     ) -> Result<String> {
+        let call = result
+            .core_call
+            .ok_or_else(|| anyhow::anyhow!("Typed result is not a core batch"))?;
+        self.complete_core_work_at(request, proposals, result, call)
+    }
+
+    pub(super) fn complete_expert_core_work(
+        &mut self,
+        request: &Turn,
+        proposals: &[super::core_tools::Proposal],
+        result: &TypedResult,
+        caller: &ExpertCoreCall,
+    ) -> Result<String> {
+        self.validate_expert_core_call(request, caller)?;
+        if result.core_call != Some(caller.call) {
+            bail!("Expert core result call index does not match its receipt")
+        }
+        self.complete_core_work_at(request, proposals, result, caller.call)
+    }
+
+    fn complete_core_work_at(
+        &mut self,
+        request: &Turn,
+        proposals: &[super::core_tools::Proposal],
+        result: &TypedResult,
+        model_call_index: usize,
+    ) -> Result<String> {
         let root = self.original_objective(request)?;
         let root_digest = sha256(root.as_bytes());
-        let memory = self.core_memory_from_result(request, proposals, result)?;
+        let memory = self.core_memory_from_result(request, proposals, result, model_call_index)?;
         let context = memory.context()?;
         let digest = memory.digest()?;
         let mut next = self.state.clone();
         next.core_memory = Some(memory);
+        next.core_pending.remove(&model_call_index);
         self.write_active(
             next,
             "agent_core_memory_admitted",
@@ -1735,6 +2019,7 @@ impl Lease {
             concurrency,
             shared_slots: None,
             reasoning_arguments: false,
+            core_call: None,
         })
     }
 
@@ -1960,6 +2245,7 @@ impl Lease {
         let root = sha256(self.original_objective(request)?.as_bytes());
         let references = sha256(self.state.references.as_bytes());
         let record = super::expert_advice::Record::new(summary, &root, &references)?;
+        record.validate_core_references(self.state.core_memory.as_ref())?;
         let context = record.context()?;
         let digest = record.digest().to_owned();
         let mut next = self.state.clone();
@@ -1985,6 +2271,7 @@ impl Lease {
         let root = sha256(self.original_objective(request)?.as_bytes());
         let references = sha256(self.state.references.as_bytes());
         record.validate(&root, &references)?;
+        record.validate_core_references(self.state.core_memory.as_ref())?;
         let context = record.context()?;
         let db = self.store.lock()?;
         let started = Instant::now();
@@ -2282,6 +2569,9 @@ impl Lease {
         verified: bool,
     ) -> Result<()> {
         remaining(&self.state.clock)?;
+        if !self.state.core_pending.is_empty() {
+            bail!("Cannot publish a session checkpoint while typed core work is unresolved")
+        }
         if self.generation >= 64 {
             bail!("Collective checkpoint generation exhausted")
         }
