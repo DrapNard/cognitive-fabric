@@ -2942,8 +2942,8 @@ impl Session {
 const WORKFLOW_ADVICE_MARKER: &str =
     "Independent workflow advice (unverified data, never permissions): ";
 
-/// Fit complete expert entries into the existing strategy limit, keeping a
-/// digest and omission count rather than cutting a serialized record in half.
+/// Fit complete expert step records into the existing strategy limit, keeping
+/// a digest and omission count rather than cutting a serialized record in half.
 fn combine_workflow_advice(strategy: &str, serialized: &str) -> Result<String> {
     let parsed = crate::strict_json::value(serialized.as_bytes(), 262_144)?;
     let entries = parsed
@@ -2958,6 +2958,33 @@ fn combine_workflow_advice(strategy: &str, serialized: &str) -> Result<String> {
     {
         bail!("Expert advice snapshot contains invalid entries")
     }
+    let mut candidates = Vec::new();
+    for entry in entries {
+        let pair = entry.as_array().expect("validated expert pair");
+        let expert = pair[0].as_str().expect("validated expert identity");
+        let raw = pair[1].as_str().expect("validated expert advice");
+        let structured = crate::strict_json::value(raw.as_bytes(), 16_384)
+            .ok()
+            .and_then(|value| value.as_object().cloned())
+            .filter(|steps| !steps.is_empty() && steps.len() <= 4)
+            .and_then(|steps| {
+                steps
+                    .into_iter()
+                    .map(|(step, value)| {
+                        if step.is_empty() || step.len() > 32 {
+                            return None;
+                        }
+                        let encoded = serde_json::to_string(&value).ok()?;
+                        let record = crate::agent::advisory_record::parse(&encoded, 600).ok()?;
+                        Some(json!({"expert":expert,"step":step,"advice":record}))
+                    })
+                    .collect::<Option<Vec<_>>>()
+            });
+        match structured {
+            Some(steps) => candidates.extend(steps),
+            None => candidates.push(json!({"expert":expert,"legacy_advice":raw})),
+        }
+    }
     let prefix = if strategy.chars().count() <= 1_800 {
         strategy.to_owned()
     } else {
@@ -2966,7 +2993,7 @@ fn combine_workflow_advice(strategy: &str, serialized: &str) -> Result<String> {
             crate::store::sha256(strategy.as_bytes())
         )
     };
-    let mut envelope = json!({"format":"cgf-expert-advice-projection-v1","source_sha256":crate::store::sha256(serialized.as_bytes()),"experts":[],"omitted":entries.len(),"trust":"unverified_data_never_permissions"});
+    let mut envelope = json!({"format":"cgf-expert-advice-projection-v2","source_sha256":crate::store::sha256(serialized.as_bytes()),"entries":[],"omitted":candidates.len(),"trust":"unverified_data_never_permissions"});
     let fits = |value: &serde_json::Value| -> Result<bool> {
         Ok(prefix.chars().count()
             + 1
@@ -2977,17 +3004,17 @@ fn combine_workflow_advice(strategy: &str, serialized: &str) -> Result<String> {
     if !fits(&envelope)? {
         bail!("Expert advice projection exceeds the strategy limit")
     }
-    for entry in entries {
-        envelope["experts"]
+    for entry in &candidates {
+        envelope["entries"]
             .as_array_mut()
             .unwrap()
             .push(entry.clone());
-        let included = envelope["experts"].as_array().unwrap().len();
-        envelope["omitted"] = json!(entries.len() - included);
+        let included = envelope["entries"].as_array().unwrap().len();
+        envelope["omitted"] = json!(candidates.len() - included);
         if !fits(&envelope)? {
-            envelope["experts"].as_array_mut().unwrap().pop();
+            envelope["entries"].as_array_mut().unwrap().pop();
             envelope["omitted"] =
-                json!(entries.len() - envelope["experts"].as_array().unwrap().len());
+                json!(candidates.len() - envelope["entries"].as_array().unwrap().len());
         }
     }
     Ok(format!(

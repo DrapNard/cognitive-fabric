@@ -1,5 +1,14 @@
 # Current Rust implementation
 
+## Project individual expert step records — 2026-10-28
+
+**Implemented; runtime unverified.** Overlap strategies now select whole
+validated step records individually, retaining expert and step identities and
+recording omissions against the source digest. Unrecognized or legacy advice
+remains an opaque entry. Limits, trust and permissions are unchanged. See
+[cognitive network](COGNITIVE_NETWORK.md). No tests, benchmarks, live inference
+or recovery execution ran.
+
 ## Preserve whole overlap advice entries — 2026-10-28
 
 **Implemented; runtime unverified.** Planner/expert overlap and continuation

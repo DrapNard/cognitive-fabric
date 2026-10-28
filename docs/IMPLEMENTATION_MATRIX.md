@@ -1,5 +1,14 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Project individual expert step records — 2026-10-28
+
+**Implemented; runtime unverified.** `reasoning.rs` v2 overlap projection
+selects whole validated step records with expert and step IDs instead of
+requiring an entire workflow summary to fit. Legacy and unrecognized data remain
+opaque entries; omissions and original snapshot hashes are retained. See
+[cognitive network](COGNITIVE_NETWORK.md). No tests, benchmarks, live inference
+or recovery execution ran; broader structured memory remains Partial.
+
 ## Preserve whole overlap advice entries — 2026-10-28
 
 **Implemented; runtime unverified.** `reasoning.rs` assembles bounded whole

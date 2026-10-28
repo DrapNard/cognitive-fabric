@@ -1,5 +1,21 @@
 # Cognitive network implementation
 
+## Project individual expert step records — 2026-10-28
+
+**Implemented for overlap strategy projection; runtime unverified.** The
+projection now recognizes a complete map of strictly validated advisory records
+and selects whole steps individually, retaining their expert and step identities.
+A long workflow can therefore contribute records that fit even when its entire
+summary would not. The v2 projection includes the source snapshot digest and
+counts omitted candidate records; it remains within the original strategy cap.
+
+Maps that are not entirely valid bounded advisory records remain one opaque
+legacy entry. No partial step, invented dependency, new permission or verified
+claim is introduced. The projection still may omit records or an earlier long
+strategy, and does not replace raw inference audit text. Fresh and continued
+overlap paths use the same projection code. No tests, benchmarks, live inference
+or recovery execution ran; static checks do not prove behavior or speed.
+
 ## Preserve whole expert records in solver strategy — 2026-10-28
 
 **Implemented for planner/expert overlap and its continuation; runtime
