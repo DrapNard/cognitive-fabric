@@ -388,11 +388,19 @@ impl Graph<'_> {
             system.content = Some(contract);
         }
         if let Some(user) = turn.messages.last_mut() {
+            let free_slots = self.session.state.tool_limit.saturating_sub(
+                self.session
+                    .state
+                    .proposals
+                    .saturating_add(self.session.state.internal_tools)
+                    .saturating_add(self.held_typed_checks),
+            );
             let computations = core_catalog.map(|catalog| json!({
                 "allowed_computations":catalog.tools(),
                 "permissions_granted":false,
                 "request_format":"JSON computations entries with id, name, arguments; these are proposals, not executed tools",
                 "advice_and_result_reference_byte_budget":record_bytes,
+                "reuse_only":free_slots < 2 || self.session.core_memory_len() >= 16,
                 "result_reference_allowance":"Leave at least 128 bytes per requested computation for host result references; the host performs the exact size check"
             }));
             user.content = Some(format!(

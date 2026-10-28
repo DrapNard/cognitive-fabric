@@ -1,5 +1,14 @@
 # Reusable task memory
 
+
+Exact eligible expert computation batches can reuse checked records within the
+same root task, or wait for an in-flight source. Each caller and policy remains
+validated; reused call namespaces are durably consumed without adding records.
+Expert summary v4 permits the same operation ID and digest in different steps;
+older summary versions retain their original validation rules. Reuse does not
+prove that model-selected arguments capture the original goal. See
+[cognitive network](COGNITIVE_NETWORK.md) for scope and verification limits.
+
 Concurrent core batches hold projected metadata bytes within the same
 12,000-byte task memory cap. Completion checks actual output size while
 preserving other batches' holds, then releases the matching byte and fingerprint

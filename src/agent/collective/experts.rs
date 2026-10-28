@@ -43,6 +43,12 @@ struct PendingCore {
     advice: serde_json::Value,
 }
 
+type CoreBatchKey = Vec<String>;
+
+fn independent_core_key(pending: &PendingCore) -> Option<CoreBatchKey> {
+    super::super::core_reuse::key(&pending.proposals)
+}
+
 enum RunningWork {
     Expert(
         (usize, usize),
@@ -337,7 +343,7 @@ fn expert_wave_routes(
 
 impl Graph<'_> {
     /// Reuse only the opening, policy-filtered catalog while this workflow
-    /// retains budget for a checked operation and its independent verifier.
+    /// can dispatch checked work or reuse checked work.
     pub(super) fn expert_core_catalog(&self) -> Option<super::super::core_tools::Catalog> {
         let catalog = self.core_catalog.as_ref()?;
         let available_slots = self.session.state.tool_limit.saturating_sub(
@@ -350,8 +356,8 @@ impl Graph<'_> {
         (self.call_limit.saturating_sub(self.calls) >= 3
             && self.output_limit.saturating_sub(self.reserved)
                 >= MIN_SOLVER_TOKENS * 2 + self.runtime.cfg.interface_tokens
-            && self.session.core_memory_len() < 16
-            && available_slots >= 2)
+            && self.session.core_memory_len() <= 16
+            && (available_slots >= 2 || self.session.core_memory_len() > 0))
             .then(|| catalog.clone())
     }
 
@@ -534,7 +540,7 @@ impl Graph<'_> {
                 let dummy_references = (0..parsed.proposals.len())
                     .map(|index| {
                         json!({
-                            "operation_id":format!("core_{}_{}", call.call, index),
+                            "operation_id":format!("core_65535_{index}"),
                             "result_sha256":"0".repeat(64)
                         })
                     })
@@ -547,17 +553,9 @@ impl Graph<'_> {
                 if advice_size.saturating_add(references_overhead) > report.advice_budget {
                     bail!("Expert advice and checked-operation references exceed their preflighted output budget")
                 }
-                let required_slots = (parsed.proposals.len() as u32).saturating_mul(2);
-                let available_slots = self.session.state.tool_limit.saturating_sub(
-                    self.session
-                        .state
-                        .proposals
-                        .saturating_add(self.session.state.internal_tools)
-                        .saturating_add(self.held_typed_checks),
-                );
-                if required_slots > available_slots {
-                    bail!("Expert core requests would consume reserved typed verification slots")
-                }
+                // Only fresh source batches consume invocation slots. Cache
+                // hits and in-flight aliases are classified before the shared
+                // admission check below; they must not be rejected here.
                 let caller = super::super::sessions::ExpertCoreCall {
                     call: call.call,
                     request_sha256: sha256(&serde_json::to_vec(&call.turn)?),
@@ -708,9 +706,53 @@ impl Graph<'_> {
                 "step_id":report.step_id,
                 "call":report.call,
                 "result_state":"completed_with_checked_core_operations",
-                "advice_format_version":3,
+                "advice_format_version":4,
                 "structured_advice_validated":true,
                 "core_operation_count":report.proposals.len(),
+                "permissions_granted":false
+            }),
+        )?;
+        Ok(())
+    }
+
+    fn record_reused_expert_core(
+        &mut self,
+        plans: &[expert_workflow::BoundPlan],
+        pending: PendingCore,
+        reused: super::super::sessions::CoreReuse,
+        source_call: Option<usize>,
+        results: &mut [serde_json::Map<String, serde_json::Value>],
+        done: &mut [std::collections::BTreeSet<String>],
+    ) -> Result<()> {
+        let previous_context = self.core_context.replace(reused.context.clone());
+        let admitted = self.available(&[("solver", &"\0".repeat(2_000), MIN_SOLVER_TOKENS)]);
+        self.core_context = previous_context;
+        if !admitted? {
+            bail!("Reused checked expert core feedback exceeds the original solver and presentation input budget")
+        }
+        self.core_context = Some(reused.context);
+        results[pending.plan_index].insert(
+            pending.step_id.clone(),
+            json!({
+                "advice":pending.advice,
+                "partial":false,
+                "trust":"untrusted_model_advisory_never_permissions",
+                "core_operations":reused.references
+            }),
+        );
+        done[pending.plan_index].insert(pending.step_id.clone());
+        self.runtime.store.event(
+            self.task,
+            "expert_workflow_step_complete",
+            "jev-plus",
+            json!({
+                "expert_id":plans[pending.plan_index].plan.id,
+                "step_id":pending.step_id,
+                "call":pending.call,
+                "result_state":"completed_with_reused_checked_core_operations",
+                "advice_format_version":4,
+                "core_operation_count":pending.proposals.len(),
+                "coalesced_source_call":source_call,
                 "permissions_granted":false
             }),
         )?;
@@ -1206,6 +1248,11 @@ impl Graph<'_> {
             .collect::<Vec<_>>();
         let mut wave_counts = vec![0usize; plans.len()];
         let mut running = Vec::<RunningWork>::new();
+        // These maps live only for the lifetime of this exact workflow. Each
+        // source remains an owned RunningWork future; aliases have no future
+        // and therefore consume no physical model slot.
+        let mut active_core_batches = std::collections::BTreeMap::<CoreBatchKey, usize>::new();
+        let mut core_waiters = std::collections::BTreeMap::<usize, Vec<PendingCore>>::new();
         let mut failure: Option<anyhow::Error> = None;
         let mut pair_active = false;
         if let Some(pair) = pair.take() {
@@ -1319,6 +1366,12 @@ impl Graph<'_> {
                         }
                         RunningWork::Advisory(_) => None,
                     })
+                    .chain(
+                        core_waiters
+                            .values()
+                            .flatten()
+                            .map(|waiter| waiter.coordinate),
+                    )
                     .collect::<std::collections::BTreeSet<_>>();
                 let capacity = global_capacity.saturating_sub(if pair_active { 2 } else { 0 });
                 let typed_ready = self.typed_progress.as_ref().map(|progress| {
@@ -1531,15 +1584,63 @@ impl Graph<'_> {
                     }
                     CompletedWork::Core(report) => {
                         let call_id = report.call;
-                        if let Err(error) = self.record_expert_core_completion(
+                        let source_key = active_core_batches
+                            .iter()
+                            .find_map(|(key, source)| (*source == call_id).then(|| key.clone()));
+                        let source_completed = self.record_expert_core_completion(
                             &plans,
                             *report,
                             &mut results,
                             &mut done,
-                        ) {
+                        );
+                        if let Some(key) = source_key {
+                            active_core_batches.remove(&key);
+                        }
+                        if let Err(error) = source_completed {
                             let _ = self.runtime.store.event(self.task, "expert_workflow_step_failed", "jev-plus", json!({"call":call_id,"result_state":"failed_or_unknown","retry_attempted":false,"permissions_granted":false}));
+                            if let Some(waiters) = core_waiters.remove(&call_id) {
+                                for waiter in waiters {
+                                    let _ = self.runtime.store.event(self.task, "expert_workflow_step_failed", "jev-plus", json!({"call":waiter.call,"coalesced_source_call":call_id,"result_state":"source_failed_or_unknown","retry_attempted":false,"permissions_granted":false}));
+                                }
+                            }
                             if failure.is_none() {
                                 failure = Some(error);
+                            }
+                        } else if failure.is_none() {
+                            if let Some(waiters) = core_waiters.remove(&call_id) {
+                                for waiter in waiters {
+                                    match self.session.reuse_expert_core_work(
+                                        self.original,
+                                        &waiter.proposals,
+                                        &waiter.caller,
+                                    ) {
+                                        Ok(Some(reused)) => {
+                                            if let Err(error) = self.record_reused_expert_core(
+                                                &plans,
+                                                waiter,
+                                                reused,
+                                                Some(call_id),
+                                                &mut results,
+                                                &mut done,
+                                            ) {
+                                                failure = Some(error);
+                                                break;
+                                            }
+                                        }
+                                        Ok(None) => {
+                                            failure = Some(anyhow::anyhow!("Committed source core batch was not reusable for its validated waiter"));
+                                            break;
+                                        }
+                                        Err(error) => {
+                                            failure = Some(error);
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        } else if let Some(waiters) = core_waiters.remove(&call_id) {
+                            for waiter in waiters {
+                                let _ = self.runtime.store.event(self.task, "expert_workflow_step_failed", "jev-plus", json!({"call":waiter.call,"coalesced_source_call":call_id,"result_state":"workflow_stopped_before_reuse","retry_attempted":false,"permissions_granted":false}));
                             }
                         }
                     }
@@ -1556,9 +1657,153 @@ impl Graph<'_> {
                 ));
             }
             if failure.is_none() {
-                let requested = pending_core
+                // Validate every eligible alias before any cache hit consumes
+                // its call namespace or any new core work is admitted.
+                for pending in &pending_core {
+                    if independent_core_key(pending).is_some() {
+                        if let Err(error) = self.session.validate_expert_core_reuse(
+                            self.original,
+                            &pending.proposals,
+                            &pending.caller,
+                        ) {
+                            failure = Some(error);
+                            break;
+                        }
+                    }
+                }
+            }
+            if failure.is_none() {
+                let mut unique_ready =
+                    Vec::<(PendingCore, Option<CoreBatchKey>, Vec<PendingCore>)>::new();
+                let mut same_ready = std::collections::BTreeMap::<CoreBatchKey, usize>::new();
+                let mut all_fingerprints = std::collections::BTreeSet::new();
+                let mut overlaps_different_batches = false;
+                for pending in pending_core {
+                    let key = independent_core_key(&pending);
+                    if key.as_ref().is_some_and(|key| same_ready.contains_key(key)) {
+                        let owner = same_ready[key.as_ref().expect("checked key")];
+                        unique_ready[owner].2.push(pending);
+                        continue;
+                    }
+                    if pending
+                        .proposals
+                        .iter()
+                        .any(|proposal| !all_fingerprints.insert(proposal.fingerprint.clone()))
+                    {
+                        overlaps_different_batches = true;
+                    }
+                    let owner_index = unique_ready.len();
+                    if let Some(key) = &key {
+                        same_ready.insert(key.clone(), owner_index);
+                    }
+                    unique_ready.push((pending, key, Vec::new()));
+                }
+                if overlaps_different_batches {
+                    failure = Some(anyhow::anyhow!("Ready expert core batches overlap computations outside an identical eligible batch"));
+                }
+                let mut scheduled =
+                    Vec::<(PendingCore, Option<CoreBatchKey>, Vec<PendingCore>)>::new();
+                if failure.is_none() {
+                    for (pending, key, aliases) in unique_ready {
+                        if let Some(key) = key {
+                            match self.session.reuse_expert_core_work(
+                                self.original,
+                                &pending.proposals,
+                                &pending.caller,
+                            ) {
+                                Ok(Some(reused)) => {
+                                    if let Err(error) = self.record_reused_expert_core(
+                                        &plans,
+                                        pending,
+                                        reused,
+                                        None,
+                                        &mut results,
+                                        &mut done,
+                                    ) {
+                                        failure = Some(error);
+                                        break;
+                                    }
+                                    for alias in aliases {
+                                        match self.session.reuse_expert_core_work(
+                                            self.original,
+                                            &alias.proposals,
+                                            &alias.caller,
+                                        ) {
+                                            Ok(Some(reused)) => {
+                                                if let Err(error) = self.record_reused_expert_core(
+                                                    &plans,
+                                                    alias,
+                                                    reused,
+                                                    None,
+                                                    &mut results,
+                                                    &mut done,
+                                                ) {
+                                                    failure = Some(error);
+                                                    break;
+                                                }
+                                            }
+                                            Ok(None) => {
+                                                failure = Some(anyhow::anyhow!("Checked core batch disappeared during same-ready reuse"));
+                                                break;
+                                            }
+                                            Err(error) => {
+                                                failure = Some(error);
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    if failure.is_some() {
+                                        break;
+                                    }
+                                }
+                                Ok(None) => {
+                                    if let Some(source_call) =
+                                        active_core_batches.get(&key).copied()
+                                    {
+                                        let waiters = core_waiters.entry(source_call).or_default();
+                                        if waiters.len().saturating_add(1 + aliases.len())
+                                            > self.session.state.call_limit
+                                        {
+                                            failure = Some(anyhow::anyhow!("Identical in-flight expert core aliases exceed the workflow call bound"));
+                                            break;
+                                        }
+                                        let _ = self.runtime.store.event(
+                                            self.task,
+                                            "expert_core_batch_coalesced",
+                                            "jev-plus",
+                                            json!({"source_call":source_call,"coalesced_call":pending.call,"operation_count":pending.proposals.len(),"permissions_granted":false}),
+                                        );
+                                        waiters.push(pending);
+                                        for alias in aliases {
+                                            let _ = self.runtime.store.event(
+                                                self.task,
+                                                "expert_core_batch_coalesced",
+                                                "jev-plus",
+                                                json!({"source_call":source_call,"coalesced_call":alias.call,"operation_count":alias.proposals.len(),"permissions_granted":false}),
+                                            );
+                                            waiters.push(alias);
+                                        }
+                                    } else {
+                                        if aliases.len() > self.session.state.call_limit {
+                                            failure = Some(anyhow::anyhow!("Identical ready expert core aliases exceed the workflow call bound"));
+                                            break;
+                                        }
+                                        scheduled.push((pending, Some(key), aliases));
+                                    }
+                                }
+                                Err(error) => {
+                                    failure = Some(error);
+                                    break;
+                                }
+                            }
+                        } else {
+                            scheduled.push((pending, None, aliases));
+                        }
+                    }
+                }
+                let requested = scheduled
                     .iter()
-                    .map(|pending| pending.proposals.len() as u32 * 2)
+                    .map(|(pending, _, _)| pending.proposals.len() as u32 * 2)
                     .sum::<u32>();
                 let available = self.session.state.tool_limit.saturating_sub(
                     self.session
@@ -1567,22 +1812,36 @@ impl Graph<'_> {
                         .saturating_add(self.session.state.internal_tools)
                         .saturating_add(self.held_typed_checks),
                 );
-                let mut fingerprints = std::collections::BTreeSet::new();
-                let duplicates = pending_core
-                    .iter()
-                    .flat_map(|pending| &pending.proposals)
-                    .any(|proposal| !fingerprints.insert(&proposal.fingerprint));
-                if requested > available || duplicates {
-                    failure = Some(anyhow::anyhow!("Ready expert core batches exceed shared tool capacity or repeat a computation"));
+                if failure.is_none() && requested > available {
+                    failure = Some(anyhow::anyhow!(
+                        "Ready expert core batches exceed shared tool capacity"
+                    ));
                 }
-            }
-            if failure.is_none() {
-                for pending in pending_core {
-                    match self.schedule_expert_core(pending) {
-                        Ok(core) => running.push(core),
-                        Err(error) => {
-                            failure = Some(error);
-                            break;
+                if failure.is_none() {
+                    for (pending, key, aliases) in scheduled {
+                        let owner_call = pending.call;
+                        match self.schedule_expert_core(pending) {
+                            Ok(core) => {
+                                if let Some(key) = key {
+                                    active_core_batches.insert(key, owner_call);
+                                }
+                                if !aliases.is_empty() {
+                                    for alias in &aliases {
+                                        let _ = self.runtime.store.event(
+                                            self.task,
+                                            "expert_core_batch_coalesced",
+                                            "jev-plus",
+                                            json!({"source_call":owner_call,"coalesced_call":alias.call,"operation_count":alias.proposals.len(),"permissions_granted":false}),
+                                        );
+                                    }
+                                    core_waiters.entry(owner_call).or_default().extend(aliases);
+                                }
+                                running.push(core)
+                            }
+                            Err(error) => {
+                                failure = Some(error);
+                                break;
+                            }
                         }
                     }
                 }

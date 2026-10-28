@@ -1,5 +1,21 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+
+## Share exact expert core computations — 2026-10-28
+
+**Implemented task-local exact batch reuse and coalescing; runtime unverified.**
+`core_reuse.rs`, `collective/experts.rs` and `sessions.rs` share checked results
+or a single in-flight source for eligible independent batches while preserving
+paid caller receipts, per-operation policy, root binding and existing budgets.
+Waiting expert steps cannot release their dependents before checked publication.
+`expert_advice.rs` writes v4 references and preserves v1–v3 read rules. Typed
+operation graphs and partial overlaps are not coalesced; compiled checks do not
+establish the intended meaning of model-selected arguments. See
+[cognitive network](COGNITIVE_NETWORK.md) for details and limitations.
+No tests, benchmarks or live inference ran. General heterogeneous workflows,
+broader structured memory and evaluated project LoRA remain incomplete or
+unverified.
+
 ## Reserve concurrent core-memory bytes — 2026-10-28
 
 **Implemented known-byte reservation; runtime unverified.** `sessions.rs` reserves

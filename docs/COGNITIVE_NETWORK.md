@@ -1,5 +1,46 @@
 # Cognitive network implementation
 
+
+## Share exact expert core computations — 2026-10-28
+
+**Implemented task-local reuse and in-flight coalescing; runtime unverified.**
+`core_reuse.rs` identifies whole, ordered batches of one to four independent
+operations by canonical arguments and verified fingerprints. Dependencies on
+other calls in the batch and nonempty `_cgf_after` graphs are excluded. Bindings
+to previously checked task memory can be reused after validation. Partial
+batch overlaps and differently ordered or otherwise nonidentical requests do
+not coalesce and may be refused by the existing duplicate-work guard.
+
+`collective/experts.rs` attaches matching ready or later-arriving expert steps to
+one in-flight source, or reuses an already committed checked result. Waiting
+steps remain in flight, do not unlock dependents until publication, and fail
+with the source if it fails or its outcome is unknown. They do not retry it.
+Later steps can propose reuse only when their captured catalog is available;
+an in-flight reservation alone does not make that catalog available.
+Logical slot accounting remains conservative, so capacity is not necessarily
+fully utilized. Matching is task-local and requires the original root and pinned
+configuration; there is no cross-task cache or provider selection.
+
+`sessions.rs` validates each paid expert receipt and the operation and verifier
+policies, resolves prior-memory bindings, and checks the stored operation and
+criterion before returning actual operation IDs and digests. Reuse adds no core
+operation, verifier, memory record or tool charge; each expert model call remains
+charged and is not refunded. Reused call namespaces are durably consumed and
+kept disjoint from pending and committed namespaces. Version-4 expert summaries
+allow identical references across different steps, but reject duplicates within
+one step and conflicting digests. Versions 1–3 remain readable under their
+original rules. Checked results validate the compiled operation contract, not
+whether model-selected arguments faithfully represent the original goal.
+
+The same task budgets, byte ceilings, policies and checkpoint rules apply. An
+unknown result size can still lead to refusal; a reuse-only request that misses
+cannot gain dispatch authority. Model advice does not grant permissions or
+promote weights. Static checks and source review do not establish runtime
+correctness, throughput or reasoning quality. No tests, benchmarks, live
+inference, model activation, installation or recovery were performed. General
+heterogeneous workflows, broader structured memory and evaluated project LoRA
+remain incomplete or unverified.
+
 ## Reserve core-memory bytes across concurrent batches — 2026-10-28
 
 **Implemented shared known-byte admission; runtime behavior unverified.**

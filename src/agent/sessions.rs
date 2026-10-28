@@ -3,7 +3,7 @@ use super::*;
 use crate::execution_clock::{ExecutionStart, Snapshot};
 use rusqlite::{params, OptionalExtension, TransactionBehavior};
 use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -50,6 +50,10 @@ pub(super) struct State {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[serde(deserialize_with = "deserialize_pending_map")]
     core_pending_bytes: BTreeMap<usize, usize>,
+    /// Expert model-call namespaces consumed by exact reuse of checked work.
+    /// Reuse is task-local and never creates a new operation record.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    core_reused_calls: BTreeSet<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     typed_routes_sha256: Option<String>,
     history_len: usize,
@@ -118,6 +122,13 @@ pub(super) struct ExpertCoreCall {
     pub(super) request_sha256: String,
     pub(super) content_sha256: String,
     pub(super) model: String,
+}
+
+/// Checked task-local records returned for an expert batch without dispatching
+/// another provider call or manufacturing new memory records.
+pub(super) struct CoreReuse {
+    pub(super) references: Vec<serde_json::Value>,
+    pub(super) context: String,
 }
 
 struct TypedPart {
@@ -892,6 +903,18 @@ impl State {
                     })
             })
             || self.core_pending.values().map(Vec::len).sum::<usize>() > 16
+            || self.core_reused_calls.len() > self.calls
+            || self.core_reused_calls.iter().any(|call| {
+                *call == 0
+                    || *call > self.calls
+                    || *call > self.call_limit
+                    || *call > 65_535
+                    || self.core_pending.contains_key(call)
+                    || self
+                        .core_memory
+                        .as_ref()
+                        .is_some_and(|memory| memory.contains_call(*call))
+            })
             || self.core_memory.as_ref().map_or(0, |memory| memory.len())
                 + self.core_pending.values().map(Vec::len).sum::<usize>()
                 > 16
@@ -926,6 +949,7 @@ impl State {
     }
 
     fn validate_core_pending_bytes(&self) -> Result<()> {
+        self.validate_core_reused_calls()?;
         if self.core_pending.len() != self.core_pending_bytes.len()
             || self.core_pending.keys().ne(self.core_pending_bytes.keys())
             || self.core_pending_bytes.len() > 4
@@ -955,6 +979,25 @@ impl State {
             .is_none_or(|total| total > super::core_tools::MEMORY_BYTE_LIMIT)
         {
             bail!("Core memory checkpoint byte budget exceeded")
+        }
+        Ok(())
+    }
+
+    fn validate_core_reused_calls(&self) -> Result<()> {
+        if self.core_reused_calls.len() > self.calls
+            || self.core_reused_calls.iter().any(|call| {
+                *call == 0
+                    || *call > self.calls
+                    || *call > self.call_limit
+                    || *call > 65_535
+                    || self.core_pending.contains_key(call)
+                    || self
+                        .core_memory
+                        .as_ref()
+                        .is_some_and(|memory| memory.contains_call(*call))
+            })
+        {
+            bail!("Consumed core reuse namespaces are inconsistent")
         }
         Ok(())
     }
@@ -1254,6 +1297,7 @@ impl Lease {
             core_memory: None,
             core_pending: BTreeMap::new(),
             core_pending_bytes: BTreeMap::new(),
+            core_reused_calls: BTreeSet::new(),
             typed_routes_sha256: typed_routes_metadata.as_ref().map(|raw| sha256(raw)),
             history_len: 0,
             history_sha256: sha256(b"[]"),
@@ -1645,6 +1689,129 @@ impl Lease {
         Ok(())
     }
 
+    /// Validate an expert's paid call receipt and authorization for a possible
+    /// exact reuse of a task-local, previously admitted core batch.
+    pub(super) fn validate_expert_core_reuse(
+        &self,
+        request: &Turn,
+        proposals: &[super::core_tools::Proposal],
+        caller: &ExpertCoreCall,
+    ) -> Result<()> {
+        self.validate_expert_core_call(request, caller)?;
+        self.state.validate_core_pending_bytes()?;
+        if proposals.is_empty()
+            || proposals.len() > 4
+            || super::core_reuse::key(proposals).is_none()
+            || caller.call > self.state.call_limit
+            || self.state.core_pending.contains_key(&caller.call)
+            || self.state.core_reused_calls.contains(&caller.call)
+            || self
+                .state
+                .core_memory
+                .as_ref()
+                .is_some_and(|memory| memory.contains_call(caller.call))
+        {
+            bail!("Expert core reuse is outside its eligible call namespace")
+        }
+        let mut fingerprints = BTreeSet::new();
+        for proposal in proposals {
+            if !fingerprints.insert(proposal.fingerprint.as_str()) {
+                bail!("Expert core reuse contains duplicate proposals")
+            }
+        }
+        let policy = TaskPolicy::client_collective(&self.task)?;
+        for proposal in proposals {
+            policy.authorize(&self.task, "jev-plus", proposal.capability.as_str())?;
+            policy.authorize(
+                &self.task,
+                "jev-plus",
+                core_verifier_capability(proposal.capability),
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Return checked results already present in this task's memory when every
+    /// proposal matches. A miss leaves the alias namespace available for the
+    /// caller to schedule and does not dispatch or charge any work.
+    pub(super) fn reuse_expert_core_work(
+        &mut self,
+        request: &Turn,
+        proposals: &[super::core_tools::Proposal],
+        caller: &ExpertCoreCall,
+    ) -> Result<Option<CoreReuse>> {
+        self.validate_expert_core_reuse(request, proposals, caller)?;
+        let Some(memory) = self.state.core_memory.as_ref() else {
+            return Ok(None);
+        };
+        let root = self.original_objective(request)?;
+        memory.validate(root)?;
+        let records = proposals
+            .iter()
+            .map(|proposal| memory.matching_record(&proposal.fingerprint))
+            .collect::<Vec<_>>();
+        if records.iter().any(Option::is_none) {
+            return Ok(None);
+        }
+
+        // Re-resolve against the immutable checked outputs captured in this
+        // memory. This confirms prior-record bindings still mean the same
+        // thing before returning any references.
+        let outputs = memory.outputs()?;
+        let batch = super::core_batch::Batch::prepare(proposals, caller.call, &outputs)?;
+        let root_digest = sha256(root.as_bytes());
+        let mut references = Vec::with_capacity(proposals.len());
+        for (index, (proposal, maybe_record)) in proposals.iter().zip(records).enumerate() {
+            let record = maybe_record
+                .ok_or_else(|| anyhow::anyhow!("Checked core reuse record disappeared"))?;
+            let (arguments, _) = batch.resolve_completed(index, &outputs, &BTreeMap::new())?;
+            let mut expected =
+                super::typed_experts::Work::from_arguments(proposal.capability, &arguments)?;
+            expected.mark_translated_digest(&root_digest)?;
+            if record.name != proposal.name
+                || record.capability != proposal.capability.as_str()
+                || record.arguments_json != proposal.arguments_json
+                || record.fingerprint != proposal.fingerprint
+                || record.criterion_sha256 != expected.criterion_digest()
+            {
+                bail!("Checked core reuse record does not match its proposal proof")
+            }
+            references.push(json!({
+                "operation_id":record.operation_id.clone(),
+                "result_sha256":record.result_sha256.clone()
+            }));
+        }
+        let context = memory.context()?;
+        let memory_digest = memory.digest()?;
+        let reference_digest = sha256(&serde_json::to_vec(&references)?);
+        let mut next = self.state.clone();
+        if !next.core_reused_calls.insert(caller.call) {
+            bail!("Expert core alias namespace was already consumed")
+        }
+        self.write_active(
+            next,
+            "agent_core_memory_reused",
+            json!({
+                "format_version":1,
+                "root_query_sha256":root_digest,
+                "memory_sha256":memory_digest,
+                "model_call_index":caller.call,
+                "references_sha256":reference_digest,
+                "references":references,
+                "operation_count":proposals.len(),
+                "checked_results_reused":true,
+                "compiled_operation_contracts_match":true,
+                "original_goal_semantics_verified":false,
+                "new_operation_records":0,
+                "permissions_granted":false
+            }),
+        )?;
+        Ok(Some(CoreReuse {
+            references,
+            context,
+        }))
+    }
+
     fn prepare_core_work_at(
         &mut self,
         runtime: &AgentRuntime,
@@ -1666,6 +1833,7 @@ impl Lease {
             || model_call_index > self.state.call_limit
             || !self.state.pending.is_empty()
             || self.state.core_pending.contains_key(&model_call_index)
+            || self.state.core_reused_calls.contains(&model_call_index)
             || self
                 .state
                 .core_memory
@@ -1868,6 +2036,7 @@ impl Lease {
         if !result.reasoning_arguments()
             || result.core_call != Some(model_call_index)
             || result.identity.query_digest() != root_digest
+            || self.state.core_reused_calls.contains(&model_call_index)
             || result.parts.is_empty()
             || result.parts.len() != proposals.len()
             || result.parts.len() > 4

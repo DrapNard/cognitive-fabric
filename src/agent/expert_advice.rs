@@ -6,7 +6,7 @@
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 const MAX_SUMMARY_BYTES: usize = 1_200;
 const MAX_ENVELOPE_BYTES: usize = 2_048;
@@ -29,9 +29,9 @@ impl Record {
             bail!("Expert advice summary exceeds its byte bound")
         }
         let summary = crate::strict_json::value(raw_summary.as_bytes(), MAX_SUMMARY_BYTES)?;
-        validate_summary(&summary, 3)?;
+        validate_summary(&summary, 4)?;
         let record = Self {
-            version: 3,
+            version: 4,
             root_sha256: root_sha.to_owned(),
             references_sha256: references_sha.to_owned(),
             summary_sha256: crate::store::sha256(summary.to_string().as_bytes()),
@@ -52,7 +52,7 @@ impl Record {
 
     /// Validate the durable record where the original request is no longer present.
     pub(super) fn validate_checkpoint(&self, expected_refs: &str) -> Result<()> {
-        if !matches!(self.version, 1..=3)
+        if !matches!(self.version, 1..=4)
             || self.trust != TRUST
             || !is_sha256(&self.root_sha256)
             || !is_sha256(&self.references_sha256)
@@ -143,7 +143,7 @@ fn validate_summary(summary: &Value, version: u8) -> Result<()> {
                 bail!("Expert summary count is outside its bound")
             }
             let mut ids = BTreeSet::new();
-            let mut core_ids = BTreeSet::new();
+            let mut core_ids = BTreeMap::new();
             for expert in experts {
                 let expert = expert
                     .as_object()
@@ -201,7 +201,7 @@ fn validate_summary(summary: &Value, version: u8) -> Result<()> {
             validate_results(
                 object.get("results").expect("required key checked"),
                 version,
-                &mut BTreeSet::new(),
+                &mut BTreeMap::new(),
             )?;
         }
     }
@@ -236,7 +236,11 @@ fn validate_identity(object: &Map<String, Value>, ids: &mut BTreeSet<String>) ->
     Ok(())
 }
 
-fn validate_results(results: &Value, version: u8, core_ids: &mut BTreeSet<String>) -> Result<()> {
+fn validate_results(
+    results: &Value,
+    version: u8,
+    core_ids: &mut BTreeMap<String, String>,
+) -> Result<()> {
     let results = results
         .as_object()
         .ok_or_else(|| anyhow::anyhow!("Expert results must be an object"))?;
@@ -250,7 +254,7 @@ fn validate_results(results: &Value, version: u8, core_ids: &mut BTreeSet<String
         let result = result
             .as_object()
             .ok_or_else(|| anyhow::anyhow!("Expert result must be an object"))?;
-        if version == 3 {
+        if version >= 3 {
             if result.keys().any(|key| {
                 !["advice", "partial", "trust", "core_operations"].contains(&key.as_str())
             }) || !["advice", "partial", "trust"]
@@ -281,12 +285,12 @@ fn validate_results(results: &Value, version: u8, core_ids: &mut BTreeSet<String
                     bail!("Invalid legacy expert advice text")
                 }
             }
-            2 | 3 => {
+            2..=4 => {
                 if partial {
                     bail!("Structured expert memory cannot contain a partial result")
                 }
                 crate::agent::advisory_record::validate(advice, MAX_SUMMARY_BYTES)?;
-                if version == 3 {
+                if version >= 3 {
                     if let Some(operations) = result.get("core_operations") {
                         let operations = operations.as_array().ok_or_else(|| {
                             anyhow::anyhow!("Core operation references must be an array")
@@ -294,6 +298,7 @@ fn validate_results(results: &Value, version: u8, core_ids: &mut BTreeSet<String
                         if operations.is_empty() || operations.len() > 4 {
                             bail!("Core operation reference count is outside its bound")
                         }
+                        let mut step_ids = BTreeSet::new();
                         for operation in operations {
                             let operation = operation.as_object().ok_or_else(|| {
                                 anyhow::anyhow!("Core operation reference must be an object")
@@ -301,10 +306,20 @@ fn validate_results(results: &Value, version: u8, core_ids: &mut BTreeSet<String
                             exact_keys(operation, &["operation_id", "result_sha256"])?;
                             let id = string_field(operation, "operation_id")?;
                             let digest = string_field(operation, "result_sha256")?;
-                            if !is_core_operation_id(id)
-                                || !is_sha256(digest)
-                                || !core_ids.insert(id.to_owned())
-                            {
+                            let duplicate = if version == 3 {
+                                core_ids.insert(id.to_owned(), digest.to_owned()).is_some()
+                            } else {
+                                let unique_in_step = step_ids.insert(id.to_owned());
+                                match core_ids.get(id) {
+                                    Some(previous_digest) if previous_digest != digest => true,
+                                    Some(_) => !unique_in_step,
+                                    None => {
+                                        core_ids.insert(id.to_owned(), digest.to_owned());
+                                        !unique_in_step
+                                    }
+                                }
+                            };
+                            if !is_core_operation_id(id) || !is_sha256(digest) || duplicate {
                                 bail!("Invalid or duplicate core operation reference")
                             }
                         }
@@ -337,10 +352,10 @@ fn is_core_operation_id(value: &str) -> bool {
 }
 
 fn core_references(summary: &Value, version: u8) -> Result<Vec<(String, String)>> {
-    if version != 3 {
+    if version < 3 {
         return Ok(Vec::new());
     }
-    let mut references = Vec::new();
+    let mut references = BTreeMap::new();
     let mut add_results = |results: &Value| -> Result<()> {
         let results = results
             .as_object()
@@ -356,10 +371,10 @@ fn core_references(summary: &Value, version: u8) -> Result<Vec<(String, String)>
                 let operation = operation
                     .as_object()
                     .ok_or_else(|| anyhow::anyhow!("Core operation reference must be an object"))?;
-                references.push((
+                references.insert(
                     string_field(operation, "operation_id")?.to_owned(),
                     string_field(operation, "result_sha256")?.to_owned(),
-                ));
+                );
             }
         }
         Ok(())
@@ -385,7 +400,7 @@ fn core_references(summary: &Value, version: u8) -> Result<Vec<(String, String)>
         add_results(results)?;
     }
     drop(add_results);
-    Ok(references)
+    Ok(references.into_iter().collect())
 }
 
 fn string_field<'a>(object: &'a Map<String, Value>, key: &str) -> Result<&'a str> {

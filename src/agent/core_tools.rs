@@ -241,6 +241,14 @@ impl Memory {
         })
     }
 
+    /// Return a prior record for an exact proposal fingerprint. Callers must
+    /// validate the task checkpoint and root before using this cached result.
+    pub(super) fn matching_record(&self, fingerprint: &str) -> Option<&Record> {
+        self.records
+            .iter()
+            .find(|record| record.fingerprint == fingerprint)
+    }
+
     pub(super) fn len(&self) -> usize {
         self.records.len()
     }

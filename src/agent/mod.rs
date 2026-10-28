@@ -4,6 +4,7 @@ mod advisory_record;
 mod collective;
 mod core_batch;
 mod core_memory_bindings;
+mod core_reuse;
 mod core_tools;
 mod expert_advice;
 mod expert_compute;
