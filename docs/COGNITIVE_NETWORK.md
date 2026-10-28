@@ -1,5 +1,43 @@
 # Cognitive network implementation
 
+## Share execution capacity across typed and model experts — 2026-10-28
+
+**Implemented shared mixed-phase task slots; runtime/provider behavior unverified.**
+Mixed typed/model phases now use one `network_slots::Budget` instead of reserving
+a fixed half of the width for each side. Ready work can use available task slots
+while the other side has fewer running operations. The original configured task
+ceiling (one to four), lower typed/model group limits, evidence dependencies,
+model-call reservations, token quotas and deadlines remain authoritative.
+Single-kind phases keep their existing scheduling behavior.
+
+`src/agent/network_slots.rs` owns a task-local Tokio semaphore. Single operations
+acquire one slot; planner/explorer pairs acquire two atomically to avoid holding
+one slot while waiting for another. Waiting is deadline-bound and cancellation
+drops permits through owned futures. The FIFO semaphore may leave capacity idle
+while a paired reservation waits; this is not a throughput or fairness benchmark.
+
+`sessions.rs` acquires slots inside owned typed futures before module evaluation
+and retains them through compiled response verification. `collective/experts.rs`
+does the same before model route preparation and inference; advisory pairs hold
+their shared reservation through both results. `collective.rs` also moves
+preparation of the explicit overlapping reasoning pair behind slot acquisition.
+No outer scheduler waits for a permit while neglecting already-admitted futures.
+Both joined branches still finish/account for admitted owned work after sibling
+failure; no automatic retry, charge refund or detached task is introduced.
+
+Version-2 overlap audit events describe shared execution capacity and retained
+group limits rather than a fixed partition. These slots bound local owned
+operations. An ambiguous provider timeout/disconnect can leave physical remote
+work running after its local future ends; existing residency/resource policies
+remain necessary, and this does not prove a physical GPU/provider concurrency
+bound. No model weights, permissions or routing identities are changed.
+
+Validation: formatting, locked workspace/all-target compilation, strict Clippy,
+whitespace checks and source review only. No tests, benchmarks, live inference,
+model activation, installation or recovery execution ran. Actual speed/quality,
+general mixed neural/typed dataflow and evaluated project LoRA remain incomplete
+or unverified.
+
 ## Schedule dependent core computations in one solver response — 2026-10-28
 
 **Implemented bounded core DAG proposals; runtime/provider behavior unverified.**

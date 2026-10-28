@@ -65,6 +65,7 @@ struct Graph<'a> {
     core_context: Option<String>,
     expert_capability_scope: Option<Vec<String>>,
     expert_wave_capacity: Option<usize>,
+    network_slots: Option<super::network_slots::Budget>,
     typed_progress: Option<tokio::sync::watch::Receiver<super::typed_progress::Snapshot>>,
     expert_typed_inputs: Option<std::collections::BTreeMap<String, Vec<super::typed_input::Input>>>,
     held_typed_checks: u32,
@@ -657,6 +658,7 @@ pub(super) async fn run(
         core_context: restored_core_context,
         expert_capability_scope: None,
         expert_wave_capacity: None,
+        network_slots: None,
         typed_progress: None,
         expert_typed_inputs: None,
         held_typed_checks: 0,
@@ -793,18 +795,19 @@ pub(super) async fn run(
         let phase_opening_calls = graph.calls;
         let mut prepared = graph.session.reserve_typed_work(runtime, request, plan)?;
         let value = if expert_overlap {
-            let typed_width = total_capacity / 2;
-            prepared.limit_concurrency(typed_width)?;
-            graph.expert_wave_capacity = Some(total_capacity - typed_width);
+            let slots = super::network_slots::Budget::new(total_capacity)?;
+            prepared.share_slots(slots.clone())?;
+            graph.network_slots = Some(slots);
+            graph.expert_wave_capacity = Some(total_capacity);
             graph.held_typed_checks = typed_checks;
             runtime.store.event(
                 task,
                 "agent_typed_model_expert_overlap",
                 "jev-plus",
                 json!({
-                    "format_version":1,"concurrency_limit":total_capacity,
-                    "typed_concurrency_limit":typed_width,
-                    "model_concurrency_limit":total_capacity - typed_width,
+                    "format_version":2,"concurrency_limit":total_capacity,
+                    "capacity_policy":"shared_owned_execution_slots",
+                    "configured_group_limits_preserved":true,
                     "expert_inputs_independent_of_typed_results":independent_experts,
                     "per_capability_typed_dependencies":graph.expert_typed_inputs,
                     "dependency_semantics_verified":false,
@@ -835,37 +838,41 @@ pub(super) async fn run(
             // Both paths retain owned cleanup and their original ledger. A
             // sibling failure never causes another provider call or a refund.
             graph.expert_wave_capacity = None;
+            graph.network_slots = None;
             graph.held_typed_checks = 0;
             independent_expert_result = expert_result?;
             typed_result?
         } else if overlap {
-            prepared.limit_concurrency(total_capacity - 2)?;
+            let slots = super::network_slots::Budget::new(total_capacity)?;
+            prepared.share_slots(slots.clone())?;
             let pair = graph.reserve_advisory_pair(&advice)?;
-            let routes = runtime
-                .prepare_role_wave(
-                    graph.backend.clone(),
-                    task,
-                    &["planner", "explorer"],
-                    deadline,
-                )
-                .await?;
             runtime.store.event(
                 task,
                 "agent_typed_reasoning_overlap",
                 "jev-plus",
                 json!({
-                    "format_version":1,"planner_call":pair.first_call,
+                    "format_version":2,"planner_call":pair.first_call,
                     "explorer_call":pair.first_call + 1,"concurrency_limit":total_capacity,
-                    "typed_concurrency_limit":total_capacity - 2,
+                    "capacity_policy":"shared_owned_execution_slots",
+                    "configured_group_limits_preserved":true,
                     "all_invocations_reserved_before_poll":true,
                     "reasoning_inputs_independent_of_typed_results":true,
-                    "provider_preparation_completed":true,"permissions_granted":false
+                    "provider_preparation_completed":false,
+                    "provider_preparation_waits_for_shared_slots":true,"permissions_granted":false
                 }),
             )?;
-            let (typed_result, advisory_result) = tokio::join!(
-                prepared.execute(),
-                dispatch_advisory_pair(runtime, task, &routes, &pair, deadline)
-            );
+            let (typed_result, advisory_result) = tokio::join!(prepared.execute(), async {
+                let _slots = slots.acquire_many(2, deadline).await?;
+                let routes = runtime
+                    .prepare_role_wave(
+                        graph.backend.clone(),
+                        task,
+                        &["planner", "explorer"],
+                        deadline,
+                    )
+                    .await?;
+                dispatch_advisory_pair(runtime, task, &routes, &pair, deadline).await
+            });
             // Account for every started model result before propagating a typed
             // failure. Neither side is cancelled or replayed for a sibling error.
             let pair_result = advisory_result.and_then(|(planner, explorer)| {

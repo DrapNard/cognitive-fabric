@@ -32,13 +32,31 @@ enum RunningWork {
     ),
 }
 
-fn expert_future(call: PreparedExpertCall, deadline: Instant, advice_budget: usize) -> RunningWork {
+fn expert_future(
+    call: PreparedExpertCall,
+    deadline: Instant,
+    advice_budget: usize,
+    network_slots: Option<super::super::network_slots::Budget>,
+) -> RunningWork {
     let coordinate = (call.plan_index, call.step_index);
     RunningWork::Expert(
         coordinate,
         Box::pin(async move {
             let runtime = call.runtime.clone();
             let task = call.task.clone();
+            let slot = match network_slots {
+                Some(slots) => match slots.acquire(deadline).await {
+                    Ok(permit) => Some(permit),
+                    Err(error) => {
+                        return ExpertReport {
+                            call,
+                            advice_budget,
+                            result: Err(error),
+                        };
+                    }
+                },
+                None => None,
+            };
             let result = async {
                 runtime
                     .prepare_selected_route(&task, "solver", &call.backend, deadline)
@@ -67,6 +85,9 @@ fn expert_future(call: PreparedExpertCall, deadline: Instant, advice_budget: usi
                 })?
             }
             .await;
+            // Keep the shared slot through response-body decoding and error
+            // construction; it is released only when this owned future returns.
+            drop(slot);
             ExpertReport {
                 call,
                 advice_budget,
@@ -82,8 +103,16 @@ fn advisory_future(
     task: String,
     deadline: Instant,
     pair: PreparedAdvisoryPair,
+    network_slots: Option<super::super::network_slots::Budget>,
 ) -> RunningWork {
     RunningWork::Advisory(Box::pin(async move {
+        let slots = match network_slots {
+            Some(slots) => match slots.acquire_many(2, deadline).await {
+                Ok(permit) => Some(permit),
+                Err(error) => return (pair, Err(error)),
+            },
+            None => None,
+        };
         let result = async {
             let routes = runtime
                 .prepare_role_wave(backend, &task, &["planner", "explorer"], deadline)
@@ -91,6 +120,7 @@ fn advisory_future(
             dispatch_advisory_pair(&runtime, &task, &routes, &pair, deadline).await
         }
         .await;
+        drop(slots);
         (pair, result)
     }))
 }
@@ -985,17 +1015,21 @@ impl Graph<'_> {
                     "results_verified":false
                 }),
             )?;
-            running.extend(
-                prepared
-                    .into_iter()
-                    .map(|call| expert_future(call, self.deadline, step_advice_budget)),
-            );
+            running.extend(prepared.into_iter().map(|call| {
+                expert_future(
+                    call,
+                    self.deadline,
+                    step_advice_budget,
+                    self.network_slots.clone(),
+                )
+            }));
             running.push(advisory_future(
                 self.runtime.clone(),
                 self.backend.clone(),
                 self.task.to_owned(),
                 self.deadline,
                 pair,
+                self.network_slots.clone(),
             ));
             pair_active = true;
         }
@@ -1106,7 +1140,12 @@ impl Graph<'_> {
                                     wave_counts[plan_index] += 1;
                                 }
                                 running.extend(prepared.into_iter().map(|call| {
-                                    expert_future(call, self.deadline, step_advice_budget)
+                                    expert_future(
+                                        call,
+                                        self.deadline,
+                                        step_advice_budget,
+                                        self.network_slots.clone(),
+                                    )
                                 }));
                             }
                             Err(error) => failure = Some(error),

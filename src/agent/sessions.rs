@@ -71,6 +71,7 @@ pub(super) struct PreparedTypedWork {
     entries: Vec<super::typed_experts::Entry>,
     deadline: Instant,
     concurrency: usize,
+    shared_slots: Option<super::network_slots::Budget>,
     reasoning_arguments: bool,
 }
 
@@ -161,12 +162,15 @@ impl PreparedTypedWork {
         Ok(tokio::sync::watch::channel(initial))
     }
 
-    /// Hold model-wave capacity without increasing the admitted typed width.
-    pub(super) fn limit_concurrency(&mut self, limit: usize) -> Result<()> {
-        if !(1..=4).contains(&limit) {
-            bail!("Typed overlap concurrency must be between one and four")
+    /// Share the task-wide execution slots with concurrently running model roles.
+    /// The semaphore is acquired inside owned operation futures so this scheduler
+    /// keeps polling all already-admitted work while some nodes wait for capacity.
+    pub(super) fn share_slots(&mut self, budget: super::network_slots::Budget) -> Result<()> {
+        let limit = budget.limit();
+        if !(1..=4).contains(&limit) || self.concurrency > limit {
+            bail!("Shared task concurrency is outside its bound")
         }
-        self.concurrency = self.concurrency.min(limit);
+        self.shared_slots = Some(budget);
         Ok(())
     }
 
@@ -359,19 +363,31 @@ impl PreparedTypedWork {
                                 let deadline = self.deadline;
                                 let store = self.store.clone();
                                 let root_query_sha256 = self.identity.query_digest().to_owned();
+                                let shared_slots = self.shared_slots.clone();
                                 let operation = Box::pin(async move {
                                     let result = match TaskPolicy::client_collective(&task) {
                                         Ok(policy) => {
-                                            snapshot
-                                                .evaluate(
-                                                    &task,
-                                                    &entry,
-                                                    &store,
-                                                    &root_query_sha256,
-                                                    deadline,
-                                                    &policy,
-                                                )
-                                                .await
+                                            let permit = match shared_slots {
+                                                Some(slots) => {
+                                                    slots.acquire(deadline).await.map(Some)
+                                                }
+                                                None => Ok(None),
+                                            };
+                                            match permit {
+                                                Ok(_permit) => {
+                                                    snapshot
+                                                        .evaluate(
+                                                            &task,
+                                                            &entry,
+                                                            &store,
+                                                            &root_query_sha256,
+                                                            deadline,
+                                                            &policy,
+                                                        )
+                                                        .await
+                                                }
+                                                Err(error) => Err(error),
+                                            }
                                         }
                                         Err(error) => Err(error),
                                     };
@@ -1520,6 +1536,7 @@ impl Lease {
             entries,
             deadline,
             concurrency,
+            shared_slots: None,
             reasoning_arguments: true,
         })
     }
@@ -1715,6 +1732,7 @@ impl Lease {
             entries,
             deadline,
             concurrency,
+            shared_slots: None,
             reasoning_arguments: false,
         })
     }

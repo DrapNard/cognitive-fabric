@@ -1,5 +1,22 @@
 # Current Rust implementation
 
+## Share execution capacity across typed and model experts — 2026-10-28
+
+**Implemented for mixed phases; runtime unverified.** `src/agent/network_slots.rs`
+replaces the fixed typed/model capacity split with shared, deadline-bound owned
+execution slots. `sessions.rs`, `collective.rs` and `collective/experts.rs`
+retain lower configured group limits and acquire permits inside owned futures.
+Planner/explorer pairs reserve two slots atomically; preparation, inference and
+typed checking remain within the shared local ceiling. Budgets, permissions,
+evidence gates and failure accounting are preserved. Unknown provider activity
+after a timeout is outside this local semaphore guarantee.
+
+See [cognitive network](COGNITIVE_NETWORK.md) for boundaries and remaining gaps.
+Formatting, locked workspace/all-target compilation, strict Clippy and whitespace
+checks passed; source review found no concrete budget/permission bypass. No tests,
+benchmarks or live calls ran. Throughput and reasoning quality remain unverified;
+general heterogeneous dataflow and evaluated project LoRA remain Partial.
+
 ## Schedule dependent core computations in one solver response — 2026-10-28
 
 **Implemented bounded core DAG proposals; runtime/provider behavior unverified.**

@@ -10,6 +10,7 @@ mod graph_schedule;
 mod local;
 mod native_chat;
 pub mod native_scope;
+mod network_slots;
 pub mod process;
 pub mod protocol;
 mod session_cleanup;
