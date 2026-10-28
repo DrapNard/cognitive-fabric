@@ -1,5 +1,26 @@
 # Cognitive network implementation
 
+## Structured handoffs for a single engine expert workflow — 2026-10-28
+
+**Implemented for the engine's single structured-workflow path; runtime
+unverified.** Both sequential and parallel steps now request the existing
+`cgf-advisory-v1` schema and strictly parse a complete record of at most 600
+bytes. Dependent steps receive JSON objects containing claims, uncertainty and
+suggested actions instead of a character-truncated prose result. Step events
+record the schema and canonical result hash. Claims remain unverified, and
+actions do not grant permissions or execute work.
+
+Malformed, oversized or prose-only responses fail the admitted workflow rather
+than being truncated or treated as valid; this can reduce compatibility with
+models that do not follow the JSON contract. Parallel waves account for all
+completed provider responses before propagating a malformed-result error.
+The separate multi-expert batch and overlap-recovery formats, legacy expert
+workflows, raw inference audit events and other memory paths are unchanged and
+remain incomplete relative to the broader structured-memory goal. Existing
+prose-based workflow fixtures need updating for this changed contract; no tests
+or benchmarks were run. Formatting, compilation and linting do not establish
+runtime behavior, provider compatibility, speed or reasoning quality.
+
 ## Prepare admitted engine routes concurrently — 2026-10-28
 
 **Implemented bounded concurrent preparation; runtime unverified.** Engine

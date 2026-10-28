@@ -1,5 +1,15 @@
 # Current Rust implementation
 
+## Structure single-engine-expert workflow handoffs — 2026-10-28
+
+**Implemented; runtime unverified.** Sequential and parallel steps in the
+single-expert engine workflow now exchange strictly parsed advisory records of
+up to 600 bytes. Malformed or prose-only model output fails that workflow.
+Multi-expert batch and recovery formats and raw inference audit events retain
+their existing representations. Existing prose-based fixtures need updating.
+See [cognitive network](COGNITIVE_NETWORK.md). No tests, benchmarks or live
+inference ran.
+
 ## Prepare admitted engine routes concurrently — 2026-10-28
 
 **Implemented; runtime unverified.** Engine reasoning and expert waves prepare

@@ -1,5 +1,14 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Structure single-engine-expert workflow handoffs — 2026-10-28
+
+**Implemented; runtime unverified.** `reasoning.rs` and `reasoning/parallel.rs`
+use the shared advisory schema for sequential and parallel steps of a single
+engine expert workflow, with bounded complete records and failure on malformed
+output. Multi-expert batch, recovery and audit paths remain Partial. Existing
+prose-based fixtures need updating. See [cognitive network](COGNITIVE_NETWORK.md).
+No tests, benchmarks or live inference ran.
+
 ## Prepare admitted engine routes concurrently — 2026-10-28
 
 **Implemented; runtime unverified.** `reasoning/expert_parallel.rs` concurrently

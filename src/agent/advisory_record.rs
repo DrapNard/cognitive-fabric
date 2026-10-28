@@ -58,7 +58,7 @@ enum ActionKind {
 
 /// Parse an advisory object strictly, reject duplicate keys, and return its
 /// canonical JSON value. No prose fallback or truncation is permitted.
-pub(super) fn parse(raw: &str, max_bytes: usize) -> Result<Value> {
+pub(crate) fn parse(raw: &str, max_bytes: usize) -> Result<Value> {
     let limit = max_bytes.min(MAX_RECORD_BYTES);
     if raw.len() > limit {
         bail!("Structured advisory exceeds its byte limit")
@@ -121,7 +121,7 @@ pub(super) fn validate(value: &Value, max_bytes: usize) -> Result<()> {
 }
 
 /// Compact output contract for planner, explorer, reflector, and expert steps.
-pub(super) const fn contract() -> &'static str {
+pub(crate) const fn contract() -> &'static str {
     "Return only compact JSON: {\"v\":1,\"claims\":[{\"statement\":string<=256,\"basis\":\"supplied\"|\"hypothesis\",\"references\":[lowercase SHA-256 strings, up to 4]}],\"actions\":[{\"kind\":\"compute\"|\"retrieve\"|\"inspect\"|\"revise\"|\"clarify\",\"target\":string<=128}],\"unknowns\":[string<=256]}. Omit empty arrays; use up to 4 items per array and at least one nonempty item. Total record limit 1200 bytes. Claims and actions are unverified advice. Do not include reasoning traces, tools, permissions, or verification claims."
 }
 
