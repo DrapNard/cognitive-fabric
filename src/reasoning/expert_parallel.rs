@@ -35,15 +35,27 @@ impl Session {
             return Err(anyhow!("Invalid inference preparation wave"));
         }
         let deadline = deadline.min(self.deadline);
-        for (backend, role, prompt) in routes {
-            let timeout = Duration::from_secs(self.cfg.timeout_seconds)
-                .min(deadline.saturating_duration_since(Instant::now()));
-            if timeout.is_zero() {
-                return Err(anyhow::Error::new(InferenceTimeout));
-            }
-            tokio::time::timeout(timeout, backend.prepare_for(&self.task, role, prompt))
-                .await
-                .map_err(|_| anyhow::Error::new(InferenceTimeout))??;
+        let timeout_seconds = self.cfg.timeout_seconds;
+        let task = &self.task;
+        let preparations = routes
+            .iter()
+            .map(|(backend, role, prompt)| {
+                Box::pin(async move {
+                    let timeout = Duration::from_secs(timeout_seconds)
+                        .min(deadline.saturating_duration_since(Instant::now()));
+                    if timeout.is_zero() {
+                        return Err(anyhow::Error::new(InferenceTimeout));
+                    }
+                    tokio::time::timeout(timeout, backend.prepare_for(task, role, prompt))
+                        .await
+                        .map_err(|_| anyhow::Error::new(InferenceTimeout))?
+                }) as Pin<Box<dyn Future<Output = Result<()>> + Send + '_>>
+            })
+            .collect();
+        // Settle all started preparations before propagating a sibling failure.
+        let outcomes = crate::reasoning::parallel::join_all(preparations).await;
+        for outcome in outcomes {
+            outcome?;
         }
         Ok(())
     }

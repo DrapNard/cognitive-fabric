@@ -1,5 +1,15 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Prepare admitted engine routes concurrently — 2026-10-28
+
+**Implemented; runtime unverified.** `reasoning/expert_parallel.rs` concurrently
+prepares the routes in an already-admitted engine wave and waits for all started
+preparations before generation or error propagation. Original deadlines,
+per-route admission and native lifecycle serialization still apply. Provider
+contention and cancellation remain limitations. See
+[cognitive network](COGNITIVE_NETWORK.md). No tests, benchmarks, model loads or
+live inference ran; speed is unmeasured.
+
 ## Describe live reusable computations — 2026-10-28
 
 **Implemented for client expert workflows; runtime unverified.**

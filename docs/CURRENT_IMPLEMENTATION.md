@@ -1,5 +1,14 @@
 # Current Rust implementation
 
+## Prepare admitted engine routes concurrently — 2026-10-28
+
+**Implemented; runtime unverified.** Engine reasoning and expert waves prepare
+their admitted routes concurrently and settle started preparations before
+propagating an error. Per-route resource admission and native activation locks
+remain in force; contention can still reject a wave and provider effects can
+remain unknown after cancellation. See [cognitive network](COGNITIVE_NETWORK.md).
+No tests, benchmarks, model loads or live inference ran.
+
 ## Describe live reusable computations — 2026-10-28
 
 **Implemented for client expert workflows; runtime unverified.** Later expert

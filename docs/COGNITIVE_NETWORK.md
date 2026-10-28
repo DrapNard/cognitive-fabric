@@ -1,5 +1,23 @@
 # Cognitive network implementation
 
+## Prepare admitted engine routes concurrently — 2026-10-28
+
+**Implemented bounded concurrent preparation; runtime unverified.** Engine
+expert and reasoning waves now poll preparation of all already-admitted routes
+concurrently in `reasoning/expert_parallel.rs`, rather than awaiting each route
+in sequence. Each preparation retains the original task, role, prompt, deadline
+and provider timeout. All started preparation futures settle before an error is
+returned; generation starts only if the full wave is prepared. No failed or
+unknown preparation is replayed.
+
+Resource-pool admission remains per route, and native model activation retains
+its existing mutation lock; providers may still serialize work or reject a wave
+under contention. An outer cancellation or timeout can leave provider effects
+unknown and remains subject to existing reconciliation rules. This changes
+neither permissions nor call, token, queue, memory or wall-time limits. Static
+checks cannot establish provider behavior, throughput or reasoning quality. No
+tests, benchmarks, model loads or live inference were performed.
+
 ## Describe live reusable computations to experts — 2026-10-28
 
 **Implemented bounded in-flight candidate descriptions; runtime unverified.**
