@@ -1,5 +1,23 @@
 # Cognitive network implementation
 
+## Bound multi-expert prompts from structured inputs — 2026-10-28
+
+**Implemented tighter admission bounds; runtime unverified.** Multi-expert
+preflight in `reasoning.rs` now projects each pinned structured step using its
+actual serialized step and dependency identifiers, with a 600-byte JSON value
+for each dependency. Valid advisory records are themselves bounded to 600 bytes,
+so complete embedded dependency objects fit the projection. A shared prompt
+builder keeps sequential, parallel and multi-expert engine step framing aligned.
+
+The calculation replaces a fixed 24 KiB allowance per step. The planner and
+whole-goal solver retain separate conservative prompt reserves based on their
+actual base context, and the existing advice, call, token, resource and deadline
+limits remain. Actual ready prompts are checked again before dispatch. This can
+admit workflows previously refused by the loose projection, but does not prove
+any particular configuration fits, that the provider can execute concurrently,
+or that latency improves. No tests, benchmarks, live inference or recovery
+execution ran; static checks do not prove runtime correctness.
+
 ## Account for sibling results after audit failures — 2026-10-28
 
 **Implemented for engine expert waves; runtime unverified.** Multi-expert waves

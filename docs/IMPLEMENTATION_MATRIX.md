@@ -1,5 +1,14 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Bound multi-expert prompts from structured inputs — 2026-10-28
+
+**Implemented; runtime unverified.** `reasoning.rs` derives step-specific prompt
+bounds from pinned steps and 600-byte structured dependencies; `parallel.rs`
+shares the step prompt builder. Planner and final solver retain conservative
+context reserves and actual prompts remain checked. Multi-expert rolling
+scheduling is still Partial. See [cognitive network](COGNITIVE_NETWORK.md).
+No tests, benchmarks, live inference or recovery execution ran.
+
 ## Account for sibling results after audit failures — 2026-10-28
 
 **Implemented; runtime unverified.** `reasoning/expert_parallel.rs` continues

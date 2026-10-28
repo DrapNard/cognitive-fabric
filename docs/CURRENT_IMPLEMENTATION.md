@@ -1,5 +1,14 @@
 # Current Rust implementation
 
+## Bound multi-expert prompts from structured inputs — 2026-10-28
+
+**Implemented; runtime unverified.** Multi-expert preflight sizes pinned steps
+and bounded dependency records individually instead of reserving a fixed 24 KiB
+per step. Actual prompts are rechecked, and planner/solver reserves use their
+context bound. Existing task limits remain. See
+[cognitive network](COGNITIVE_NETWORK.md). No tests, benchmarks, live inference
+or recovery execution ran.
+
 ## Account for sibling results after audit failures — 2026-10-28
 
 **Implemented; runtime unverified.** Engine multi-expert waves process settled
