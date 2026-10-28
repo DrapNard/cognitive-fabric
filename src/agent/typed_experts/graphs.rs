@@ -76,6 +76,7 @@ pub(in crate::agent) struct Template {
     bindings: Vec<Binding>,
     template_sha256: String,
     translation_source_sha256: Option<String>,
+    reasoning_arguments: bool,
 }
 
 impl Template {
@@ -94,6 +95,23 @@ impl Template {
             bail!("Language translation cannot replace an explicit typed goal")
         }
         self.translation_source_sha256 = Some(crate::store::sha256(original.as_bytes()));
+        self.reasoning_arguments = false;
+        Ok(())
+    }
+
+    /// Bind candidate typed arguments to a root request selected by a reasoning
+    /// model. This records provenance without claiming semantic fidelity.
+    pub(in crate::agent) fn mark_reasoning_arguments_digest(&mut self, digest: &str) -> Result<()> {
+        if digest.len() != 64
+            || !digest
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+            || self.translation_source_sha256.is_some()
+        {
+            bail!("Reasoning graph provenance is invalid or already assigned")
+        }
+        self.translation_source_sha256 = Some(digest.to_owned());
+        self.reasoning_arguments = true;
         Ok(())
     }
 
@@ -163,7 +181,8 @@ impl Template {
             "template_sha256": self.template_sha256,
             "source_results": source_hashes,
             "resolved_criterion_sha256": work.criterion_digest(),
-            "language_translated": work.translated(),
+            "language_translated": work.translated() && !self.reasoning_arguments,
+            "reasoning_model_arguments": self.reasoning_arguments,
             "original_source_sha256": self.translation_source_sha256,
             "permissions_granted": false,
         });
@@ -256,6 +275,7 @@ pub(in crate::agent) fn parse(query: &str) -> Result<Option<Vec<Entry>>> {
                 .collect::<Result<Vec<_>>>()?,
             template_sha256: template_sha256.clone(),
             translation_source_sha256: None,
+            reasoning_arguments: false,
         };
         entries.push(Entry {
             id: operation.id,

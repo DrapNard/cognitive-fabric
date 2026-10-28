@@ -398,18 +398,30 @@ fn definition(capability: Capability) -> Option<(&'static str, &'static str, Val
         "type":"array",
         "minItems":1,
         "maxItems":8,
-        "description":"Optional checked-result references. Each source must name an earlier finalized core_* operation in this task's structured memory; same-batch, future, and unknown operations are unavailable.",
+        "description":"Optional checked-result data bindings. Each source selects exactly one earlier finalized core_* memory operation ID or a sibling function call ID in this same response. Same-batch dependencies wait for checked results; future and unknown sources fail.",
         "items":{
             "type":"object",
             "properties":{
                 "target":{"type":"string","minLength":1,"maxLength":256,"description":"RFC 6901 pointer to an existing non-root field in this function's arguments."},
                 "operation_id":{"type":"string","pattern":"^core_[1-9][0-9]*_[0-3]$"},
+                "call_id":{"type":"string","minLength":1,"maxLength":64,"pattern":"^[A-Za-z0-9_-]{1,64}$","description":"Sibling function call ID in the same model response; its operation must finish with checked evidence first."},
                 "pointer":{"type":"string","maxLength":256,"description":"RFC 6901 pointer into the finalized result; empty string selects the whole result."},
                 "mode":{"type":"string","enum":["value","numeric_expression"],"default":"value"}
             },
-            "required":["target","operation_id"],
+            "required":["target"],
+            "oneOf":[
+                {"required":["operation_id"],"not":{"required":["call_id"]}},
+                {"required":["call_id"],"not":{"required":["operation_id"]}}
+            ],
             "additionalProperties":false
         }
+    });
+    parameters["properties"]["_cgf_after"] = json!({
+        "type":"array",
+        "maxItems":3,
+        "uniqueItems":true,
+        "description":"Optional ordering-only dependencies on sibling function call IDs in this response. CGF waits for each dependency to produce checked evidence before running this operation.",
+        "items":{"type":"string","minLength":1,"maxLength":64,"pattern":"^[A-Za-z0-9_-]{1,64}$"}
     });
     Some((name, description, parameters))
 }

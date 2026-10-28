@@ -301,21 +301,6 @@ impl Catalog {
         self.records.len()
     }
 
-    /// Discovery for standalone core calls: dependencies require an explicit
-    /// graph and cannot be silently fulfilled by an unrelated host fallback.
-    pub(in crate::agent) fn independent_available(&self, capability: Capability) -> bool {
-        let mut declared = false;
-        for record in &self.records {
-            if record_covers(record, capability, None) {
-                declared = true;
-                if eligible(record) && record.metadata.dependencies.is_empty() {
-                    return true;
-                }
-            }
-        }
-        !declared
-    }
-
     /// Resolve solely against the immutable catalog captured at task opening.
     /// This discovery API has no graph execution authority.
     pub(in crate::agent) fn resolve(

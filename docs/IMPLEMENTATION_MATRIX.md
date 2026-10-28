@@ -1,5 +1,53 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Schedule dependent core computations in one solver response — 2026-10-28
+
+**Implemented bounded core DAG proposals; runtime/provider behavior unverified.**
+Solver-only host functions now accept `_cgf_after` (up to three sibling call IDs)
+and `_cgf_inputs` whose source is exactly one prior checked `operation_id` or a
+sibling `call_id`. A sibling result binding automatically creates a dependency.
+Cycles, self references, unknown calls, duplicate ordering edges, invalid source
+fields and overlapping decoded target paths refuse the batch before tool charges.
+The existing four-operation and eight-bindings-per-operation limits remain.
+
+`src/agent/core_batch.rs` maps proposal IDs to host-generated operation IDs,
+resolves prior-memory inputs, and constructs a strict typed graph. It validates
+the combined target set before splitting memory and sibling sources. Required
+argument placeholders must be valid for their typed operation; SQL query-text
+binding and arithmetic expression interpolation remain forbidden. Numeric mode
+replaces only a whole expression with one checked number token.
+
+`typed_experts/plans.rs::from_reasoning_graph` reuses the existing bounded graph
+parser, rejects model-selected experts/provider selectors and binds every node to
+the original root digest. Independent batches retain their simpler existing path.
+Graph templates distinguish reasoning-selected candidates from language
+translation; neither proves fidelity to the original goal.
+
+`sessions.rs` jointly binds the entire frozen provider graph before individual
+policy/operation/verifier reservations. The solver catalog can now advertise
+dependency-backed provider capabilities; advertisement alone never makes a
+standalone invocation valid. Missing prerequisites refuse whole-plan admission.
+The existing rolling checked-evidence scheduler runs independent ready nodes
+within the original width and releases dependents as prerequisites complete.
+No intermediate model turn is needed for sibling value transfer. Failures stop
+new admissions and drain already-admitted owned work under existing cleanup rules.
+
+Provenance sizing uses disposable fixed-length hash markers only. Admission
+records distinguish actual prior checked evidence from declared sibling bindings;
+they never publish sizing markers as checked results. After the entire batch
+succeeds, completion re-resolves each operation from original memory plus checked
+sibling outputs, compares the final criterion, and atomically stores actual
+source/selection hashes. Existing memory/checkpoint/provenance caps may still
+refuse oversized results after charged work; no truncation, retry or refund is
+introduced. Current task deadlines and cumulative model/token/tool budgets remain.
+
+This closes same-response typed-core dependencies, not arbitrary neural/typed
+workflow graphs, interrupted-provider recovery or evaluated project LoRA.
+Formatting, locked workspace/all-target compilation, strict Clippy and whitespace
+checks are the validation scope. No tests, benchmarks, live inference, model
+activation, installation or recovery execution were run. Speed and reasoning
+quality remain unmeasured.
+
 ## Reuse checked core results through structured references — 2026-10-28
 
 **Implemented bounded checked-memory inputs; runtime/provider behavior unverified.**

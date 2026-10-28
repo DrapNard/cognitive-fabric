@@ -103,6 +103,66 @@ impl Plan {
         })
     }
 
+    /// Build a bounded same-batch candidate graph from reasoning-selected
+    /// typed operations. The model may describe dataflow, but cannot select
+    /// experts, provider versions or task permissions.
+    pub(in crate::agent) fn from_reasoning_graph(
+        original: &str,
+        document: &serde_json::Value,
+    ) -> Result<Self> {
+        let encoded = serde_json::to_string(document)?;
+        if encoded.len() > MAX_PLAN_BYTES {
+            bail!("Reasoning graph exceeds its byte bound")
+        }
+        let operations = document["operations"]
+            .as_array()
+            .ok_or_else(|| anyhow::anyhow!("Reasoning graph operations must be an array"))?;
+        if operations.iter().any(|operation| {
+            operation.get("expert").is_some() || operation.get("capability_requirement").is_some()
+        }) {
+            bail!("Reasoning graph cannot contain expert or provider selectors")
+        }
+        let query = format!("typed-graph:{encoded}");
+        let mut entries = super::graphs::parse(&query)?
+            .ok_or_else(|| anyhow::anyhow!("Reasoning graph is not a typed graph"))?;
+        let independent = entries.iter().all(|entry| {
+            entry.template.as_ref().is_some_and(|template| {
+                template.dependencies().is_empty() && template.binding_sources().next().is_none()
+            })
+        });
+        if independent {
+            let operations = entries
+                .iter()
+                .zip(operations)
+                .map(|(entry, operation)| {
+                    let arguments = operation
+                        .get("arguments")
+                        .cloned()
+                        .ok_or_else(|| anyhow::anyhow!("Reasoning graph arguments are missing"))?;
+                    Ok((entry.id.clone(), entry.work.capability(), arguments))
+                })
+                .collect::<Result<Vec<_>>>()?;
+            return Self::from_reasoning_arguments(original, operations);
+        }
+        let digest = crate::store::sha256(original.as_bytes());
+        for entry in &mut entries {
+            if entry.expert.is_some() || entry.capability_requirement.is_some() {
+                bail!("Reasoning graph cannot select experts or provider versions")
+            }
+            let template = entry.template.as_mut().ok_or_else(|| {
+                anyhow::anyhow!("Reasoning graph operation has no dataflow template")
+            })?;
+            entry.work.mark_translated_digest(&digest)?;
+            template.mark_reasoning_arguments_digest(&digest)?;
+        }
+        Ok(Self {
+            query_digest: digest,
+            entries,
+            batch: true,
+            translated: true,
+        })
+    }
+
     /// Parse either one legacy typed query or the strict independent-batch form.
     /// Unrecognized ordinary language remains available to the normal path.
     pub(in crate::agent) fn from_query(query: &str) -> Result<Option<Self>> {

@@ -35,6 +35,44 @@ enum Mode {
     NumericExpression,
 }
 
+/// Validate the full target set before splitting prior and sibling sources.
+/// No evidence is read and no declaration becomes authority here.
+pub(super) fn validate_targets(
+    capability: Capability,
+    arguments: &Value,
+    inputs: &Value,
+) -> Result<()> {
+    let inputs: Vec<Input> = serde_json::from_value(inputs.clone())?;
+    if inputs.is_empty() || inputs.len() > MAX_INPUTS {
+        bail!("Core input selector count is outside its bound")
+    }
+    let mut targets = Vec::<Vec<String>>::with_capacity(inputs.len());
+    for input in inputs {
+        let target = pointer(&input.target)?;
+        if target.is_empty() {
+            bail!("Core input target cannot replace the argument root")
+        }
+        if capability == Capability::SqlQuery && target.first().is_some_and(|key| key == "query") {
+            bail!("Checked result data cannot be bound into a SQL query")
+        }
+        let math_expression =
+            capability == Capability::MathEvaluate && target.as_slice() == ["expression"];
+        if math_expression != matches!(input.mode, Mode::NumericExpression) {
+            bail!("Only whole arithmetic expression bindings require numeric_expression mode")
+        }
+        validate_target(arguments, &target)?;
+        if targets.iter().any(|prior| overlaps(prior, &target)) {
+            bail!("Core input targets cannot overlap")
+        }
+        targets.push(target);
+        pointer(&input.pointer)?;
+        if input.operation_id.len() > 64 || !valid_operation_id(&input.operation_id) {
+            bail!("Core input references an invalid operation identity")
+        }
+    }
+    Ok(())
+}
+
 /// Resolve the reserved `_cgf_inputs` selectors against prior checked outputs.
 /// Returns the validated arguments and bounded provenance hashes for auditing.
 pub(super) fn resolve(
@@ -57,44 +95,15 @@ pub(super) fn resolve(
     let Some(raw_inputs) = raw_inputs else {
         return Ok((resolved, Value::Null));
     };
+    validate_targets(capability, &resolved, raw_inputs)?;
     let inputs: Vec<Input> = serde_json::from_value(raw_inputs.clone())?;
-    if inputs.is_empty() || inputs.len() > MAX_INPUTS {
-        bail!("Core input selector count is outside its bound")
-    }
 
-    let mut targets: Vec<Vec<String>> = Vec::with_capacity(inputs.len());
     let mut provenance = Vec::with_capacity(inputs.len());
     let mut copied_bytes = 0usize;
     let mut sources = BTreeSet::new();
     let mut source_bytes = 0usize;
     for input in inputs {
         let target = pointer(&input.target)?;
-        if target.is_empty() {
-            bail!("Core input target cannot replace the argument root")
-        }
-        if capability == Capability::SqlQuery && target.first().is_some_and(|key| key == "query") {
-            bail!("Checked result data cannot be bound into a SQL query")
-        }
-        if capability == Capability::MathEvaluate
-            && target.as_slice() == ["expression"]
-            && !matches!(input.mode, Mode::NumericExpression)
-        {
-            bail!("Arithmetic expression bindings require numeric_expression mode")
-        }
-        if matches!(input.mode, Mode::NumericExpression)
-            && (capability != Capability::MathEvaluate || target.as_slice() != ["expression"])
-        {
-            bail!("numeric_expression is only valid for arithmetic expressions")
-        }
-        validate_target(&resolved, &target)?;
-        if targets.iter().any(|prior| overlaps(prior, &target)) {
-            bail!("Core input targets cannot overlap")
-        }
-        targets.push(target.clone());
-
-        if input.operation_id.len() > 64 || !valid_operation_id(&input.operation_id) {
-            bail!("Core input references an invalid operation identity")
-        }
         let raw_output = outputs
             .get(&input.operation_id)
             .ok_or_else(|| anyhow!("Core input references unavailable checked evidence"))?;

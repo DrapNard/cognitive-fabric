@@ -1370,7 +1370,7 @@ impl Lease {
             crate::fabric::modules::Capability::ConstraintsSolve,
         ]
         .into_iter()
-        .filter(|capability| snapshot.independent_available(*capability))
+        .filter(|capability| snapshot.available(*capability))
         .filter(|capability| {
             let verifier = core_verifier_capability(*capability);
             policy
@@ -1434,29 +1434,8 @@ impl Lease {
             }
         }
         let outputs = memory.outputs()?;
-        let resolved = proposals
-            .iter()
-            .map(|proposal| {
-                super::core_memory_bindings::resolve(
-                    proposal.capability,
-                    &proposal.arguments,
-                    &outputs,
-                )
-            })
-            .collect::<Result<Vec<_>>>()?;
-        let operations = proposals
-            .iter()
-            .zip(&resolved)
-            .enumerate()
-            .map(|(index, (proposal, (arguments, _)))| {
-                (
-                    format!("core_{}_{}", self.state.calls, index),
-                    proposal.capability,
-                    arguments.clone(),
-                )
-            })
-            .collect::<Vec<_>>();
-        let mut plan = super::typed_experts::Plan::from_reasoning_arguments(root, operations)?;
+        let batch = super::core_batch::Batch::prepare(proposals, self.state.calls, &outputs)?;
+        let mut plan = super::typed_experts::Plan::from_reasoning_graph(root, batch.document())?;
         if !snapshot.bind_plan(&mut plan)? {
             bail!("No pinned typed route is available for a proposed core operation")
         }
@@ -1494,7 +1473,7 @@ impl Lease {
                 entry.work.criterion_digest().to_owned(),
                 core_provider_identity(
                     &serde_json::Value::Object(provider_identity),
-                    &resolved[index].1,
+                    batch.sizing_provenance(index)?,
                 )?,
                 "null".to_owned(),
             ))?;
@@ -1509,9 +1488,7 @@ impl Lease {
             .deadline
             .min(remaining(&self.state.clock)?)
             .min(Instant::now() + Duration::from_secs(runtime.cfg.timeout_seconds.min(300)));
-        for ((proposal, entry), (_, input_provenance)) in
-            proposals.iter().zip(plan.entries()).zip(&resolved)
-        {
+        for (index, (proposal, entry)) in proposals.iter().zip(plan.entries()).enumerate() {
             let capability = proposal.capability.as_str();
             let verifier = core_verifier_capability(proposal.capability);
             policy.authorize(&self.task, "jev-plus", capability)?;
@@ -1521,10 +1498,11 @@ impl Lease {
                 "proposal_id":proposal.call_id,
                 "name":proposal.name,
                 "arguments_sha256":sha256(proposal.arguments_json.as_bytes()),
-                "checked_memory_inputs":input_provenance,
+                "input_bindings":batch.admission_provenance(index)?,
                 "root_query_sha256":sha256(root.as_bytes()),
                 "snapshot_sha256":snapshot.digest(),
                 "criterion_sha256":entry.work.criterion_digest(),
+                "criterion_pending_bindings":entry.template.as_ref().is_some_and(|template| template.binding_sources().next().is_some()),
                 "criterion_origin":"reasoning_model_arguments",
                 "original_goal_semantics_verified":false,
                 "permissions_granted":false
@@ -1586,9 +1564,15 @@ impl Lease {
             }
             None => super::core_tools::Memory::new(root)?,
         };
-        // Freeze the pre-batch memory: siblings cannot consume each other's
-        // outputs merely because their completion happened to arrive first.
+        // Reconstruct the original batch against its pre-batch memory. Sibling
+        // data is available only through the already validated dependency graph.
         let outputs = memory.outputs()?;
+        let batch = super::core_batch::Batch::prepare(proposals, model_call_index, &outputs)?;
+        let checked_outputs = result
+            .parts
+            .iter()
+            .map(|part| (part.id.clone(), part.value.clone()))
+            .collect::<std::collections::BTreeMap<_, _>>();
         for (index, proposal) in proposals.iter().enumerate() {
             let operation_id = format!("core_{}_{}", model_call_index, index);
             let part = result
@@ -1596,11 +1580,8 @@ impl Lease {
                 .iter()
                 .find(|part| part.id == operation_id)
                 .ok_or_else(|| anyhow::anyhow!("A proposed core result is missing"))?;
-            let (arguments, input_provenance) = super::core_memory_bindings::resolve(
-                proposal.capability,
-                &proposal.arguments,
-                &outputs,
-            )?;
+            let (arguments, input_provenance) =
+                batch.resolve_completed(index, &outputs, &checked_outputs)?;
             let mut expected_work =
                 super::typed_experts::Work::from_arguments(proposal.capability, &arguments)?;
             expected_work.mark_translated_digest(&root_digest)?;
