@@ -31,6 +31,8 @@ pub(super) struct State {
     pub proposals: u32,
     pub advice: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    expert_advice: Option<super::expert_advice::Record>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) typed_evidence_sha256: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     typed_evidence: Option<String>,
@@ -554,6 +556,10 @@ fn audit(
 impl State {
     fn validate(&self, cfg: &Config) -> Result<()> {
         self.clock.validate(cfg.max_wall_seconds)?;
+        if let Some(advice) = &self.expert_advice {
+            advice.validate_checkpoint(&sha256(self.references.as_bytes()))?;
+            advice.context()?;
+        }
         super::session_context::validate_checkpoint(&self.references, &self.reference_pins)?;
         let (calls, cycles) = crate::reasoning::mode_limits(&self.mode)?;
         let references_valid = if self.references.is_empty() && cfg.agent_project_profile.is_none()
@@ -872,6 +878,7 @@ impl Lease {
             prompt_bytes: 0,
             proposals: 0,
             advice: String::new(),
+            expert_advice: None,
             typed_evidence_sha256: None,
             typed_evidence: None,
             history_len: 0,
@@ -1351,6 +1358,88 @@ impl Lease {
         Ok(Some(raw.to_owned()))
     }
 
+    /// Save completed model advice as task-bound structured data, never facts.
+    pub fn save_expert_advice(&mut self, request: &Turn, summary: &str) -> Result<String> {
+        if self.generation != 0
+            || self.state.calls == 0
+            || self.state.cycles != 0
+            || self.state.expert_advice.is_some()
+        {
+            bail!("Expert advice publication is outside its opening task phase")
+        }
+        remaining(&self.state.clock)?;
+        let root = sha256(self.original_objective(request)?.as_bytes());
+        let references = sha256(self.state.references.as_bytes());
+        let record = super::expert_advice::Record::new(summary, &root, &references)?;
+        let context = record.context()?;
+        let digest = record.digest().to_owned();
+        let mut next = self.state.clone();
+        next.expert_advice = Some(record);
+        self.write_active(
+            next,
+            "agent_expert_advice_saved",
+            json!({
+                "format_version":1,"root_query_sha256":root,"references_sha256":references,
+                "summary_sha256":digest,"admission_generation":self.generation,
+                "original_goal_semantics_verified":false,"permissions_granted":false
+            }),
+        )?;
+        Ok(context)
+    }
+
+    /// Restore advisory context without expert discovery, model calls or charges.
+    pub fn restore_expert_advice(&self, request: &Turn) -> Result<Option<String>> {
+        let Some(record) = &self.state.expert_advice else {
+            return Ok(None);
+        };
+        remaining(&self.state.clock)?;
+        let root = sha256(self.original_objective(request)?.as_bytes());
+        let references = sha256(self.state.references.as_bytes());
+        record.validate(&root, &references)?;
+        let context = record.context()?;
+        let db = self.store.lock()?;
+        let started = Instant::now();
+        db.progress_handler(
+            1000,
+            Some(move || started.elapsed() > Duration::from_secs(1)),
+        );
+        let scan_deadline = SessionSqlProgressReset(&db);
+        let mut statement = db.prepare(
+            "SELECT CASE WHEN length(CAST(payload AS BLOB))<=8192 THEN payload END FROM events WHERE task_id=?1 AND kind='agent_expert_advice_saved' AND source='jev-r' ORDER BY id LIMIT 2"
+        )?;
+        let records = statement
+            .query_map([&self.task], |row| row.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        if records.len() != 1 {
+            bail!("Expert advice has no unique task publication record")
+        }
+        let saved = crate::strict_json::value(records[0].as_bytes(), 8192)?;
+        if saved["format_version"] != 1
+            || saved["admission_generation"] != 0
+            || saved["root_query_sha256"].as_str() != Some(root.as_str())
+            || saved["references_sha256"].as_str() != Some(references.as_str())
+            || saved["summary_sha256"].as_str() != Some(record.digest())
+            || saved["original_goal_semantics_verified"] != false
+            || saved["permissions_granted"] != false
+        {
+            bail!("Expert advice publication does not match its task checkpoint")
+        }
+        drop(statement);
+        drop(scan_deadline);
+        drop(db);
+        remaining(&self.state.clock)?;
+        self.store.event(
+            &self.task,
+            "agent_expert_advice_restored",
+            "jev-plus",
+            json!({
+                "format_version":1,"summary_sha256":record.digest(),"generation":self.generation,
+                "model_calls_replayed":false,"permissions_granted":false,"verified":false
+            }),
+        )?;
+        Ok(Some(context))
+    }
+
     pub fn verify_typed_presentation(
         &mut self,
         request: &Turn,
@@ -1648,6 +1737,7 @@ impl Lease {
         let waiting = !next.pending.is_empty();
         next.advice = if waiting { advice } else { String::new() };
         if !waiting {
+            next.expert_advice = None;
             next.references.clear();
         }
         if next.advice.len() > 2000 {

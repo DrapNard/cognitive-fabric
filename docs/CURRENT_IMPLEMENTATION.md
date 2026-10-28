@@ -1,5 +1,41 @@
 # Current Rust implementation
 
+## Structured expert-advice working memory — 2026-10-28
+
+**Implemented bounded advisory checkpointing; runtime/recovery unverified.**
+`src/agent/expert_advice.rs` stores completed workflow summaries in a strict
+versioned record with expert and step IDs, versions, dependencies where present,
+partial-output markers and fixed untrusted-advice labels. The record binds its
+canonical summary digest to the original query and frozen reference snapshot.
+Single/multi-expert shapes reject unknown fields; summaries stay within the
+existing 1,200-byte bound and downstream envelopes within 2,048 bytes.
+
+`src/agent/sessions.rs` publishes the record and digest-only admission audit in
+one task-claim/checksum transaction. Waiting client-tool checkpoints retain it;
+terminal checkpoints clear it with their reference snapshot. Restore validates
+root/reference/content identities and one bounded task publication record under
+a one-second SQLite scan limit. It does not discover experts, call models, repeat
+charges, grant capabilities or convert advice into verified facts. Legacy snapshots
+without the optional field retain their original behavior.
+
+`src/agent/collective.rs` supplies this separate structured record to reasoning
+roles after workflow completion and on continuation. Planner/reflector changes
+to short working advice no longer silently discard the expert results. Language
+roles retain their existing reference-body boundary and original client messages.
+`src/agent/collective/experts.rs` includes projected envelope metadata and bounded
+working advice in solver input preflight before expert costs are incurred.
+The unchanged 32-KiB combined checkpoint cap can still refuse large combinations
+of typed evidence, references and advisory records; it is never raised or silently
+truncated. Existing task input/call/token budgets continue to govern actual turns.
+
+This is temporary task working memory, separate from curated immutable structured
+project memory. Model advice is not automatically published as project truth,
+used to train an adapter or promoted to neural weights. Optional project LoRA
+remains unfinished and independently gated. General heterogeneous dataflow and
+interrupted-provider recovery remain Partial. Static formatting, locked workspace/
+all-target compilation, strict Clippy and whitespace checks are the validation
+scope. No tests, benchmarks, live inference, activation or recovery execution.
+
 ## Rolling model-expert dependency execution — 2026-10-28
 
 **Implemented completion-driven expert scheduling; runtime/performance unverified.**

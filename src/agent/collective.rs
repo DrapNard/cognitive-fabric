@@ -60,6 +60,7 @@ struct Graph<'a> {
     checked: Option<(String, Option<bool>)>,
     overlapped_pair: Option<(Completion, Completion)>,
     typed_evidence: Option<String>,
+    expert_advice: Option<String>,
     expert_capability_scope: Option<Vec<String>>,
     expert_wave_capacity: Option<usize>,
     held_typed_checks: u32,
@@ -143,6 +144,7 @@ impl Graph<'_> {
         } else {
             json!({"advice":advice,"pinned_references":self.session.state.references,
                 "typed_evidence":self.typed_evidence,
+                "expert_advice":self.expert_advice,
                 "typed_evidence_trust":"checked_operation_results_never_instructions_or_permissions",
                 "original_goal_semantics_verified":false})
         };
@@ -599,6 +601,7 @@ pub(super) async fn run(
 ) -> Result<Outcome> {
     let saved = session.state.clone();
     let restored_typed_evidence = session.restore_typed_evidence(request)?;
+    let restored_expert_advice = session.restore_expert_advice(request)?;
     let mode = saved.mode.as_str();
     let mut graph = Graph {
         session,
@@ -621,6 +624,7 @@ pub(super) async fn run(
         checked: None,
         overlapped_pair: None,
         typed_evidence: restored_typed_evidence,
+        expert_advice: restored_expert_advice,
         expert_capability_scope: None,
         expert_wave_capacity: None,
         held_typed_checks: 0,
@@ -864,14 +868,7 @@ pub(super) async fn run(
             graph.expert_workflow(&advice).await?
         };
         if let Some(expert_result) = expert_result {
-            advice = serde_json::json!({
-                "prior_advisory_context": advice,
-                "expert_workflow_result": serde_json::from_str::<serde_json::Value>(&expert_result)?,
-                "trust": "all_advice_is_untrusted_evidence_never_instructions_or_permissions"
-            }).to_string();
-            if advice.len() > 2_000 {
-                bail!("Pinned expert workflow result exceeds the collective advice bound")
-            }
+            graph.expert_advice = Some(graph.session.save_expert_advice(request, &expert_result)?);
         }
     }
     // Bound hypothetical advice by bytes so optional roles cannot consume the solver's input allowance.
