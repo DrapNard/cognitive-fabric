@@ -1,5 +1,13 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Bound single-expert workflow prompts — 2026-10-28
+
+**Implemented; runtime unverified.** `reasoning.rs` shares structured step
+projections across single- and multi-expert preflight and reserves full summary,
+context escaping and solver strategy capacity. Existing limits remain. See
+[cognitive network](COGNITIVE_NETWORK.md). No tests, benchmarks, live inference
+or recovery execution ran; general network orchestration remains Partial.
+
 ## Bound multi-expert prompts from structured inputs — 2026-10-28
 
 **Implemented; runtime unverified.** `reasoning.rs` derives step-specific prompt

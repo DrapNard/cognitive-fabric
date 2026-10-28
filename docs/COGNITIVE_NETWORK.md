@@ -1,5 +1,20 @@
 # Cognitive network implementation
 
+## Bound single-expert workflow prompts from structured inputs — 2026-10-28
+
+**Implemented tighter admission bounds; runtime unverified.** Single-expert
+preflight now uses the same pinned-step and 600-byte dependency projections as
+multi-expert preflight. It separately bounds the full structured workflow
+summary, its addition to the solver context, JSON escaping and the existing
+strategy allowance. The projection uses nonempty-context framing even when the
+original context is empty, and refuses admission if the complete appended
+context could exceed the existing 96,000-byte limit.
+
+This can admit work previously refused by fixed per-step estimates while keeping
+the original call, token, input and wall-time ceilings. Actual calls retain
+their runtime admission checks; the bound does not prove provider compatibility
+or a speedup. No tests, benchmarks, live inference or recovery execution ran.
+
 ## Bound multi-expert prompts from structured inputs — 2026-10-28
 
 **Implemented tighter admission bounds; runtime unverified.** Multi-expert

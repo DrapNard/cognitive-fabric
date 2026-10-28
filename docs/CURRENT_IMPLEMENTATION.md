@@ -1,5 +1,13 @@
 # Current Rust implementation
 
+## Bound single-expert workflow prompts — 2026-10-28
+
+**Implemented; runtime unverified.** The single-expert path projects actual
+steps, bounded structured dependencies and the complete escaped summary in
+planner/solver context, including empty-context framing. Existing task ceilings
+remain. See [cognitive network](COGNITIVE_NETWORK.md). No tests, benchmarks,
+live inference or recovery execution ran.
+
 ## Bound multi-expert prompts from structured inputs — 2026-10-28
 
 **Implemented; runtime unverified.** Multi-expert preflight sizes pinned steps
