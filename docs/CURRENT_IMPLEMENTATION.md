@@ -1,5 +1,51 @@
 # Current Rust implementation
 
+## Live checked-input dependencies for model experts — 2026-10-28
+
+**Implemented typed-to-model capability dependencies; general bidirectional mixed
+dataflow and interrupted-provider recovery remain Partial; runtime unverified.**
+Evidence-mode `typed_graph` translation accepts optional `expert_typed_inputs`,
+a map from an additional reasoning capability to the typed operation IDs that
+its model workflow needs. Keys must belong to the validated reasoning scope;
+IDs must exist in the same graph and lists must be unique/bounded. An empty list
+permits independent advice; unspecified capabilities and dependency-only expert
+plans conservatively wait for all typed operations. The map is incompatible with
+`expert_dependency: "independent"`, selects no implementation or permission, and
+remains semantically unverified translation guidance.
+
+`src/agent/typed_progress.rs` and `src/agent/sessions.rs` publish cumulative
+host-owned checked results through a bounded latest-value Tokio watch channel.
+Only successful operation checks and result audits release IDs. Failure is
+published while admitted typed siblings drain; completion follows final assembly.
+The channel cannot be populated by deserializing model output. Raw JSON numeric
+spelling is retained, with surrounding value whitespace removed. Each operation
+stays within its existing 16-KiB result bound; provider projections are bounded
+at 2 KiB and per-expert progress context at 32 KiB. The watch stores one latest
+snapshot, not an unbounded queue. Partial snapshots are never durable final proofs.
+
+`src/agent/collective/experts.rs` wakes on both model completions and typed progress.
+A workflow can begin once its declared checked inputs exist while unrelated typed
+and model work continues. Each expert receives only its declared input values;
+original messages and constraints remain. `src/agent/graph_schedule.rs` represents
+external prerequisite blocking separately from in-flight work, so waiting nodes
+consume no model slots. Actual running work still counts against group/per-group/
+total limits, including the model partition beside typed execution.
+
+Every newly ready call is rebuilt with actual input and policy/resource/request/
+budget checked before reservation or backend preparation. Opening hypothetical
+preflight is only an estimate for future dynamic data; a later oversized input
+can be refused after earlier calls have been charged. Such failures stop refills
+and drain admitted work without replay or refunds. Closed/failed progress fails
+explicitly rather than spinning. The root joins both phases, discards temporary
+progress context, admits the complete original typed evidence, and only then
+continues the final solver/presentation path. Low-width execution remains ordered.
+Model advice cannot feed checked-only typed edges or become a permission grant.
+
+Files also include `src/agent/collective.rs`, `translation.rs`, and
+`graph_translation.rs`. Static formatting, locked workspace/all-target compilation,
+strict Clippy and whitespace checks are the validation scope. No tests, benchmarks,
+live model calls, activation or recovery execution; no speedup or quality claim.
+
 ## Structured expert-advice working memory — 2026-10-28
 
 **Implemented bounded advisory checkpointing; runtime/recovery unverified.**

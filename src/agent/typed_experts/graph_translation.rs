@@ -54,6 +54,7 @@ enum BindingMode {
 pub(in crate::agent) struct Translation {
     canonical_graph: String,
     caps: BTreeSet<String>,
+    operation_ids: BTreeSet<String>,
 }
 
 impl Translation {
@@ -63,6 +64,10 @@ impl Translation {
 
     pub(in crate::agent) fn capabilities(&self) -> impl Iterator<Item = &str> {
         self.caps.iter().map(String::as_str)
+    }
+
+    pub(in crate::agent) fn operation_ids(&self) -> impl Iterator<Item = &str> {
+        self.operation_ids.iter().map(String::as_str)
     }
 }
 
@@ -88,6 +93,11 @@ pub(in crate::agent) fn parse(
         .operations
         .iter()
         .map(|operation| operation.capability.as_str().to_owned())
+        .collect();
+    let operation_ids: BTreeSet<String> = document
+        .operations
+        .iter()
+        .map(|operation| operation.id.clone())
         .collect();
     let required: BTreeSet<String> = interpretation
         .required_capabilities
@@ -122,5 +132,6 @@ pub(in crate::agent) fn parse(
     Ok(Translation {
         canonical_graph,
         caps,
+        operation_ids,
     })
 }

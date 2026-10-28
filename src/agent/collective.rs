@@ -63,6 +63,8 @@ struct Graph<'a> {
     expert_advice: Option<String>,
     expert_capability_scope: Option<Vec<String>>,
     expert_wave_capacity: Option<usize>,
+    typed_progress: Option<tokio::sync::watch::Receiver<super::typed_progress::Snapshot>>,
+    expert_typed_inputs: Option<std::collections::BTreeMap<String, Vec<String>>>,
     held_typed_checks: u32,
 }
 
@@ -627,6 +629,8 @@ pub(super) async fn run(
         expert_advice: restored_expert_advice,
         expert_capability_scope: None,
         expert_wave_capacity: None,
+        typed_progress: None,
+        expert_typed_inputs: None,
         held_typed_checks: 0,
     };
     let mut advice = saved.advice.clone();
@@ -672,6 +676,7 @@ pub(super) async fn run(
         let interpretation = parsed.interpretation;
         use_typed_evidence = parsed.typed_evidence;
         independent_experts = parsed.independent_experts;
+        graph.expert_typed_inputs = parsed.expert_typed_inputs;
         graph.expert_capability_scope = parsed.reasoning_capabilities;
         if !using_typed {
             if let Some(translation) = parsed.typed_goal {
@@ -733,7 +738,7 @@ pub(super) async fn run(
         }
         let total_capacity = runtime.cfg.subtask_parallelism.unwrap_or(1).clamp(1, 4);
         let expert_overlap = use_typed_evidence
-            && independent_experts
+            && (independent_experts || graph.expert_typed_inputs.is_some())
             && total_capacity >= 2
             && graph
                 .expert_capability_scope
@@ -769,16 +774,33 @@ pub(super) async fn run(
                     "format_version":1,"concurrency_limit":total_capacity,
                     "typed_concurrency_limit":typed_width,
                     "model_concurrency_limit":total_capacity - typed_width,
-                    "expert_inputs_independent_of_typed_results":true,
-                    "independence_semantics_verified":false,
+                    "expert_inputs_independent_of_typed_results":independent_experts,
+                    "per_capability_typed_dependencies":graph.expert_typed_inputs,
+                    "dependency_semantics_verified":false,
                     "typed_invocations_reserved_before_poll":true,
                     "model_waves_reserve_before_their_dispatch":true,
                     "typed_verification_slots_held":typed_checks,"permissions_granted":false
                 }),
             )?;
+            let progress_sender = if graph.expert_typed_inputs.is_some() {
+                let (sender, receiver) = prepared.progress_channel()?;
+                graph.typed_progress = Some(receiver);
+                Some(sender)
+            } else {
+                None
+            };
             independent_expert_attempted = true;
+            let typed_execution = async move {
+                match progress_sender {
+                    Some(sender) => prepared.execute_with_progress(sender).await,
+                    None => prepared.execute().await,
+                }
+            };
             let (typed_result, expert_result) =
-                tokio::join!(prepared.execute(), graph.expert_workflow(&advice));
+                tokio::join!(typed_execution, graph.expert_workflow(&advice));
+            graph.typed_progress = None;
+            // Partial channel data is never a durable final evidence envelope.
+            graph.typed_evidence = None;
             // Both paths retain owned cleanup and their original ledger. A
             // sibling failure never causes another provider call or a refund.
             graph.expert_wave_capacity = None;

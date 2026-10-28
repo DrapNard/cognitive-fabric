@@ -132,6 +132,24 @@ async fn ready_typed_operations(
 }
 
 impl PreparedTypedWork {
+    /// Create a latest-value progress channel for this immutable operation set.
+    /// The initial snapshot contains only trusted host plan metadata.
+    pub(super) fn progress_channel(
+        &self,
+    ) -> Result<(
+        tokio::sync::watch::Sender<super::typed_progress::Snapshot>,
+        tokio::sync::watch::Receiver<super::typed_progress::Snapshot>,
+    )> {
+        let expected_ids = self
+            .identity
+            .entry_ids()
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        let initial =
+            super::typed_progress::Snapshot::pending(self.identity.query_digest(), &expected_ids)?;
+        Ok(tokio::sync::watch::channel(initial))
+    }
+
     /// Hold model-wave capacity without increasing the admitted typed width.
     pub(super) fn limit_concurrency(&mut self, limit: usize) -> Result<()> {
         if !(1..=4).contains(&limit) {
@@ -142,8 +160,40 @@ impl PreparedTypedWork {
     }
 
     pub async fn execute(self) -> Result<TypedResult> {
+        self.execute_inner(None).await
+    }
+
+    /// Execute the same admitted work while publishing cumulative checked
+    /// operation progress to a trusted host watch receiver.
+    pub(super) async fn execute_with_progress(
+        self,
+        sender: tokio::sync::watch::Sender<super::typed_progress::Snapshot>,
+    ) -> Result<TypedResult> {
+        self.execute_inner(Some(sender)).await
+    }
+
+    async fn execute_inner(
+        self,
+        progress: Option<tokio::sync::watch::Sender<super::typed_progress::Snapshot>>,
+    ) -> Result<TypedResult> {
         use super::graph_schedule::{self, Dependency, Evidence, Node};
-        remaining(&self.clock)?;
+        let expected_ids = self
+            .identity
+            .entry_ids()
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        let mut progress_snapshot = if progress.is_some() {
+            Some(super::typed_progress::Snapshot::pending(
+                self.identity.query_digest(),
+                &expected_ids,
+            )?)
+        } else {
+            None
+        };
+        if let Err(error) = remaining(&self.clock) {
+            publish_typed_failure(&progress, &mut progress_snapshot);
+            return Err(error);
+        }
         let mut pending = self.entries;
         let mut parts = Vec::<TypedPart>::new();
         let mut checked_outputs = std::collections::BTreeMap::<String, String>::new();
@@ -189,6 +239,7 @@ impl PreparedTypedWork {
                                     dependencies,
                                     completed: None,
                                     in_flight: false,
+                                    blocked: false,
                                 })
                             })
                             .collect::<Result<Vec<_>>>()?;
@@ -197,12 +248,14 @@ impl PreparedTypedWork {
                             dependencies: Vec::new(),
                             completed: None,
                             in_flight: true,
+                            blocked: false,
                         }));
                         nodes.extend(parts.iter().map(|_| Node {
                             group: 0,
                             dependencies: Vec::new(),
                             completed: Some(Evidence::Checked),
                             in_flight: false,
+                            blocked: false,
                         }));
                         Ok(nodes)
                     })();
@@ -324,6 +377,9 @@ impl PreparedTypedWork {
             if in_flight.is_empty() {
                 break;
             }
+            if failure.is_some() {
+                publish_typed_failure(&progress, &mut progress_snapshot);
+            }
             // Poll every owned sibling on each wake and account for every
             // completion before considering newly unblocked dependent work.
             let completed = ready_typed_operations(&mut in_flight).await;
@@ -378,6 +434,34 @@ impl PreparedTypedWork {
                                 work: entry.work,
                                 provider_identity: serde_json::Value::Object(provider_identity),
                             });
+                            if failure.is_none() {
+                                if let (true, Some(sender), Some(snapshot)) = (
+                                    failure.is_none(),
+                                    progress.as_ref(),
+                                    progress_snapshot.as_mut(),
+                                ) {
+                                    if let Some(part) = parts.last() {
+                                        match super::typed_progress::Part::checked(
+                                            part.id.clone(),
+                                            part.value.clone(),
+                                            part.work.criterion_digest().to_owned(),
+                                            part.work.checker().to_owned(),
+                                            part.provider_identity.clone(),
+                                            part.work.query_digest().to_owned(),
+                                            part.work.translated(),
+                                        )
+                                        .and_then(|progress_part| snapshot.record(progress_part))
+                                        {
+                                            Ok(()) => {
+                                                sender.send_replace(snapshot.clone());
+                                            }
+                                            Err(error) => {
+                                                failure.get_or_insert(error);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                         None => {
                             failure.get_or_insert_with(|| {
@@ -399,17 +483,22 @@ impl PreparedTypedWork {
                     failure.get_or_insert(error);
                 }
             }
+            if failure.is_some() {
+                publish_typed_failure(&progress, &mut progress_snapshot);
+            }
         }
         if let Some(error) = failure {
+            publish_typed_failure(&progress, &mut progress_snapshot);
             return Err(error);
         }
         // Final checking uses the original declared operation order, even when
         // dependencies caused execution to complete in a different order.
         let mut ordered = Vec::with_capacity(parts.len());
         for id in self.identity.entry_ids() {
-            let index = parts.iter().position(|part| part.id == id).ok_or_else(|| {
-                anyhow::anyhow!("Typed graph result is missing a declared operation")
-            })?;
+            let Some(index) = parts.iter().position(|part| part.id == id) else {
+                publish_typed_failure(&progress, &mut progress_snapshot);
+                bail!("Typed graph result is missing a declared operation")
+            };
             ordered.push(parts.remove(index));
         }
         let parts = ordered;
@@ -417,12 +506,36 @@ impl PreparedTypedWork {
             .iter()
             .map(|part| (part.id.clone(), part.value.clone()))
             .collect::<Vec<_>>();
-        let value = self.identity.assemble(&values)?;
+        let value = match self.identity.assemble(&values) {
+            Ok(value) => value,
+            Err(error) => {
+                publish_typed_failure(&progress, &mut progress_snapshot);
+                return Err(error);
+            }
+        };
+        if let (Some(sender), Some(snapshot)) = (&progress, &mut progress_snapshot) {
+            if let Err(error) = snapshot.mark_complete() {
+                snapshot.mark_failed();
+                sender.send_replace(snapshot.clone());
+                return Err(error);
+            }
+            sender.send_replace(snapshot.clone());
+        }
         Ok(TypedResult {
             value,
             identity: self.identity,
             parts,
         })
+    }
+}
+
+fn publish_typed_failure(
+    sender: &Option<tokio::sync::watch::Sender<super::typed_progress::Snapshot>>,
+    snapshot: &mut Option<super::typed_progress::Snapshot>,
+) {
+    if let (Some(sender), Some(snapshot)) = (sender, snapshot) {
+        snapshot.mark_failed();
+        sender.send_replace(snapshot.clone());
     }
 }
 

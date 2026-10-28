@@ -71,6 +71,16 @@ so that advisory work may overlap typed computation; the final Jev-R solver alwa
 waits for both. This declaration is unverified translation guidance. It selects no
 model, provider, permission or tool.
 
+Optional expert_typed_inputs: {"math.evaluate":["sum"],"sorting.verify":[]}
+is allowed only with typed_usage="evidence", a typed_graph, and the default
+expert_dependency="typed_results". Keys must be selected reasoning_capabilities;
+each value names up to four unique operation IDs in typed_graph. Listed operations
+gate that capability's optional Jev+ expert advice until their typed results exist.
+An empty list means independent expert advice for that capability; an omitted
+capability defaults to depending on all typed inputs. This is unverified
+translation guidance. The primary Jev-R/final solver always waits for every typed
+result and reasons over the full original interpretation and version constraints.
+
 
 math.evaluate: {"capability":"math.evaluate","arguments":{"expression":"..."}}
 sql.query: {"capability":"sql.query","arguments":{"tables":[{"name":"...","columns":["..."],"rows":[[...]]}],"query":"SELECT ..."}}
@@ -89,6 +99,8 @@ pub(in crate::agent) struct Parsed {
     pub(in crate::agent) typed_evidence: bool,
     pub(in crate::agent) reasoning_capabilities: Option<Vec<String>>,
     pub(in crate::agent) independent_experts: bool,
+    pub(in crate::agent) expert_typed_inputs:
+        Option<std::collections::BTreeMap<String, Vec<String>>>,
 }
 
 #[derive(Deserialize)]
@@ -205,6 +217,33 @@ impl Parsed {
                 "Expert dependency must be typed_results or independent within evidence usage"
             ),
         };
+        let expert_typed_inputs_value = object
+            .remove("expert_typed_inputs")
+            .filter(|value| !value.is_null());
+        if expert_typed_inputs_value.is_some() && independent_experts {
+            bail!("Expert typed inputs cannot override independent expert dependency")
+        }
+        if expert_typed_inputs_value.is_some() && !typed_evidence {
+            bail!("Expert typed inputs are allowed only for evidence usage")
+        }
+        let expert_typed_inputs = expert_typed_inputs_value
+            .map(serde_json::from_value::<std::collections::BTreeMap<String, Vec<String>>>)
+            .transpose()?;
+        if let Some(inputs) = &expert_typed_inputs {
+            if inputs.is_empty() || inputs.len() > 16 {
+                bail!("Expert typed inputs must contain between one and sixteen capabilities")
+            }
+            for operation_ids in inputs.values() {
+                let unique = operation_ids
+                    .iter()
+                    .collect::<std::collections::HashSet<_>>();
+                if operation_ids.len() > 4 || unique.len() != operation_ids.len() {
+                    bail!(
+                        "Each expert typed input list must contain up to four unique operation IDs"
+                    )
+                }
+            }
+        }
         let reasoning_capabilities = match object.remove("reasoning_capabilities") {
             None | Some(Value::Null) => None,
             Some(value) if typed_evidence => Some(serde_json::from_value::<Vec<String>>(value)?),
@@ -324,6 +363,9 @@ impl Parsed {
         let typed_graph = graph_value
             .map(|value| super::graph_translation::parse(value, &interpretation, typed_evidence))
             .transpose()?;
+        if expert_typed_inputs.is_some() && typed_graph.is_none() {
+            bail!("Expert typed inputs require a typed graph")
+        }
         let typed_capabilities = typed_goal
             .iter()
             .map(|translation| translation.capability.as_str().to_owned())
@@ -362,6 +404,32 @@ impl Parsed {
         } else {
             None
         };
+        if let Some(inputs) = &expert_typed_inputs {
+            let reasoning = reasoning_capabilities
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("Expert typed inputs require evidence scope"))?
+                .iter()
+                .map(String::as_str)
+                .collect::<std::collections::HashSet<_>>();
+            if inputs
+                .keys()
+                .any(|capability| !reasoning.contains(capability.as_str()))
+            {
+                bail!("Expert typed input keys must be selected reasoning capabilities")
+            }
+            let operation_ids = typed_graph
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("Expert typed inputs require a typed graph"))?
+                .operation_ids()
+                .collect::<std::collections::HashSet<_>>();
+            if inputs
+                .values()
+                .flatten()
+                .any(|operation_id| !operation_ids.contains(operation_id.as_str()))
+            {
+                bail!("Expert typed inputs reference an unknown typed graph operation")
+            }
+        }
         Ok(Self {
             interpretation,
             typed_goal,
@@ -370,6 +438,7 @@ impl Parsed {
             typed_evidence,
             reasoning_capabilities,
             independent_experts,
+            expert_typed_inputs,
         })
     }
 }

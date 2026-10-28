@@ -19,6 +19,8 @@ pub(super) struct Node {
     pub dependencies: Vec<Dependency>,
     /// Already-started work occupies capacity and cannot be selected again.
     pub in_flight: bool,
+    /// Waiting on host-owned external prerequisites without occupying capacity.
+    pub blocked: bool,
     /// Host assertion after successful result admission, never model-provided.
     /// Checked means the operation contract passed, not natural-goal verification.
     pub completed: Option<Evidence>,
@@ -104,6 +106,7 @@ pub(super) fn ready_wave(
                 node.group == group
                     && node.completed.is_none()
                     && !node.in_flight
+                    && !node.blocked
                     && !selected.contains(index)
                     && node
                         .dependencies
