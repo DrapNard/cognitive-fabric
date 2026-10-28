@@ -1,5 +1,20 @@
 # Cognitive network implementation
 
+## Bind the opening language interpretation to task memory — 2026-10-28
+
+**Implemented for new client collective tasks; runtime unverified.** After the
+language interface produces an interpretation, `collective.rs` places the
+complete structured interpretation in the existing versioned reasoning-memory
+envelope before it is passed to expert and reasoning steps. The envelope binds
+the original objective and reference snapshot, marks its contents as advisory,
+and shares the existing 2,000-byte limit. Oversized content is refused rather
+than truncated. Later role records and checker feedback extend the same envelope.
+Already saved legacy continuations retain their existing compatibility path;
+this does not migrate other memory systems or make model interpretations true.
+No permission, model call, resource limit or provider route is added. Formatting,
+compilation and lint checks cannot establish runtime correctness or speed. No
+tests, benchmarks or live inference were performed.
+
 ## Advertise live coalescible work to later expert steps — 2026-10-28
 
 **Implemented bounded catalog availability; runtime unverified.** When the

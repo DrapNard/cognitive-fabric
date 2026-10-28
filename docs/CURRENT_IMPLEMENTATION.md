@@ -1,5 +1,14 @@
 # Current Rust implementation
 
+## Bind opening interpretation to task memory — 2026-10-28
+
+**Implemented for new client collective tasks; runtime unverified.** The opening
+language interpretation now enters the root- and reference-bound structured
+reasoning-memory envelope before expert or reasoning handoffs. Existing limits
+and advisory trust apply; legacy continuations and other memory paths are not
+migrated. See [cognitive network](COGNITIVE_NETWORK.md). No tests, benchmarks or
+live inference ran.
+
 ## Reuse live work with exhausted tool slots — 2026-10-28
 
 **Implemented; runtime unverified.** Later expert steps can receive the

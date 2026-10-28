@@ -826,10 +826,12 @@ pub(super) async fn run(
                 }))?;
             }
         }
-        advice = json!({"interpretation":interpretation,"trust":"advisory_original_goal_remains_authoritative"}).to_string();
-        if advice.len() > 2000 {
-            bail!("Structured language interpretation exceeds client context bound")
-        }
+        let interpretation_context = json!({"interpretation":interpretation,"trust":"advisory_original_goal_remains_authoritative"}).to_string();
+        advice = graph
+            .merge_roles(&interpretation_context, &[])?
+            .ok_or_else(|| {
+                anyhow::anyhow!("Structured language interpretation exceeds client context bound")
+            })?;
     }
     // Metadata is exposed only after the opening language interpretation. The
     // kernel retains exact task pins independently of one-use typed plans.

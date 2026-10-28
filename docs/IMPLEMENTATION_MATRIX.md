@@ -1,5 +1,14 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Bind opening interpretation to task memory — 2026-10-28
+
+**Implemented for new client collective tasks; runtime unverified.**
+`collective.rs` wraps the language interpretation in task-bound structured
+`reasoning_memory.rs` before reasoning and expert handoffs. The existing size,
+trust and policy limits remain; legacy continuations and other memory paths are
+not migrated. See [cognitive network](COGNITIVE_NETWORK.md). No tests, benchmarks
+or live inference ran.
+
 ## Reuse live work with exhausted tool slots — 2026-10-28
 
 **Implemented; runtime unverified.** The expert catalog can be offered to
