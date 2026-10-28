@@ -1,5 +1,22 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Reserve concurrent core-memory bytes — 2026-10-28
+
+**Implemented known-byte reservation; runtime unverified.** `sessions.rs` reserves
+projected serialized metadata across pending core batches, using validated sizes
+from `core_tools.rs`. Actual results must leave other batches' holds intact.
+Fingerprint/byte ledgers share canonical call keys and are released atomically;
+orphaned or unresolved holds refuse checkpoint publication. Existing core/session
+byte ceilings remain unchanged.
+
+Unknown result growth can still cause a charged refusal; there is no automatic
+retry, refund, truncation or weight promotion. Legacy empty ledgers remain valid;
+older unresolved holds without byte costs fail closed. See
+[cognitive network](COGNITIVE_NETWORK.md) for accounting and remaining gaps.
+Static compilation, formatting, strict Clippy and whitespace checks plus source
+review are the validation scope. No tests, benchmarks or live inference ran.
+General orchestration, request coalescing and evaluated project LoRA remain Partial.
+
 ## Bridge expert-model steps into the typed core — 2026-10-28
 
 **Implemented bounded expert → typed → dependent-step dataflow; general workflows

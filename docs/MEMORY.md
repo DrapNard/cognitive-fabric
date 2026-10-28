@@ -1,5 +1,11 @@
 # Reusable task memory
 
+Concurrent core batches hold projected metadata bytes within the same
+12,000-byte task memory cap. Completion checks actual output size while
+preserving other batches' holds, then releases the matching byte and fingerprint
+reservations atomically. Unknown result growth can still refuse publication;
+pending work is never represented as completed evidence or automatically replayed.
+
 Expert summary schema v3 can reference checked core results by operation ID and
 result SHA-256. Publication and restoration require those references to match
 the same root task's validated core memory. Pending computations are separate

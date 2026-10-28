@@ -18,7 +18,8 @@ use std::collections::BTreeSet;
 const MAX_ARGUMENT_BYTES: usize = 32_000;
 const MAX_HOST_CALLS: usize = 4;
 const MAX_MEMORY_RECORDS: usize = 16;
-const MAX_MEMORY_BYTES: usize = 12_000;
+pub(super) const MEMORY_BYTE_LIMIT: usize = 12_000;
+const MAX_MEMORY_BYTES: usize = MEMORY_BYTE_LIMIT;
 const MEMORY_SCHEMA: u8 = 1;
 const REASONING_ORIGIN: &str = "reasoning_model_arguments";
 
@@ -172,6 +173,23 @@ pub(super) struct Memory {
 }
 
 impl Memory {
+    /// Return the exact serialized size of a checkpoint after validating it.
+    pub(super) fn encoded_bytes(&self) -> Result<usize> {
+        self.validate_checkpoint()?;
+        self.encoded_len()
+    }
+
+    /// Return the serialized size of an empty envelope with the fixed-width
+    /// root digest shape. The placeholder digest is used only for sizing.
+    pub(super) fn empty_encoded_bytes() -> Result<usize> {
+        let empty = Self {
+            schema_version: MEMORY_SCHEMA,
+            root_sha256: "0".repeat(64),
+            records: Vec::new(),
+        };
+        empty.encoded_len()
+    }
+
     pub(super) fn new(root: &str) -> Result<Self> {
         if root.is_empty() {
             bail!("Task root is empty")

@@ -1,5 +1,43 @@
 # Cognitive network implementation
 
+## Reserve core-memory bytes across concurrent batches — 2026-10-28
+
+**Implemented shared known-byte admission; runtime behavior unverified.**
+Concurrent core batches now reserve projected serialized metadata bytes as well
+as record counts and fingerprints. Previously each batch sized its own append
+against committed memory alone, so several pending batches could all admit known
+metadata that would not fit together. `sessions.rs` keeps a bounded per-call
+`core_pending_bytes` ledger and checks committed memory plus all existing holds
+before writing a new pending intent or dispatching operations.
+
+`core_tools.rs` exposes validated canonical sizes and the actual empty-envelope
+size under the unchanged 12,000-byte core-memory ceiling. A batch prepared from
+an empty record list includes a future separator byte, making independent holds
+additive whichever batch commits first. Fingerprint and byte ledgers require
+identical call keys, positive bounded amounts and checked arithmetic. Both maps
+reject noncanonical decimal aliases such as `01` during deserialization.
+
+Preview and completion compare actual result memory with every other pending
+batch's hold. Successful publication clears only that call's fingerprint and byte
+reservation in the same checkpoint transaction. Active writes and checkpoints
+validate ledger consistency; orphaned or unresolved holds cannot be published.
+Audit metadata records reservation amounts, released bytes and actual committed
+memory bytes without storing extra argument/result bodies.
+
+The reservation uses already-known metadata and a disposable small result sizing
+payload; it does not predict arbitrary result size. Larger actual outputs may
+still refuse admission after charged work, with no retry, truncation or refund.
+No existing 12 KiB/32 KiB core/session caps, provider limits or permissions increase.
+Legacy snapshots with no pending work remain readable. An unresolved older
+fingerprint ledger without byte holds fails closed instead of assuming zero cost
+or replaying its provider operation.
+
+Validation is formatting, locked workspace/all-target compilation, strict Clippy,
+whitespace checks and source review only. No tests, benchmarks, live inference,
+model activation, installation or recovery execution ran. This does not establish
+throughput or reasoning quality; arbitrary mixed graphs, coalescing and evaluated
+project LoRA remain incomplete or unverified.
+
 ## Let expert steps request bounded typed computations — 2026-10-28
 
 **Implemented a bounded expert-model → typed-core → dependent-step bridge;

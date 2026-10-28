@@ -2,7 +2,7 @@
 use super::*;
 use crate::execution_clock::{ExecutionStart, Snapshot};
 use rusqlite::{params, OptionalExtension, TransactionBehavior};
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize};
 use std::collections::BTreeMap;
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -42,12 +42,42 @@ pub(super) struct State {
     /// Model-call namespaces reserved for in-flight typed core batches. These
     /// are intentionally not replayed after a crash or failed provider call.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(deserialize_with = "deserialize_pending_map")]
     core_pending: BTreeMap<usize, Vec<String>>,
+    /// Projected core-memory bytes held by each durable pending batch.
+    /// The key set must match `core_pending`; legacy snapshots with pending
+    /// fingerprints but no byte ledger are rejected by validation.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(deserialize_with = "deserialize_pending_map")]
+    core_pending_bytes: BTreeMap<usize, usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     typed_routes_sha256: Option<String>,
     history_len: usize,
     history_sha256: String,
     pending: Vec<String>,
+}
+
+fn deserialize_pending_map<'de, D, V>(
+    deserializer: D,
+) -> std::result::Result<BTreeMap<usize, V>, D::Error>
+where
+    D: Deserializer<'de>,
+    V: DeserializeOwned,
+{
+    let entries = BTreeMap::<String, V>::deserialize(deserializer)?;
+    let mut parsed = BTreeMap::new();
+    for (key, value) in entries {
+        let call = key.parse::<usize>().map_err(serde::de::Error::custom)?;
+        if !(1..=65_535).contains(&call) || call.to_string() != key {
+            return Err(serde::de::Error::custom(
+                "pending call keys must be canonical decimal indices",
+            ));
+        }
+        if parsed.insert(call, value).is_some() {
+            return Err(serde::de::Error::custom("duplicate pending call index"));
+        }
+    }
+    Ok(parsed)
 }
 
 pub(super) struct Lease {
@@ -784,6 +814,7 @@ fn audit(
 
 impl State {
     fn validate(&self, cfg: &Config) -> Result<()> {
+        self.validate_core_pending_bytes()?;
         self.clock.validate(cfg.max_wall_seconds)?;
         super::reasoning_memory::validate_checkpoint(&self.advice, &self.references)?;
         if let Some(advice) = &self.expert_advice {
@@ -890,6 +921,40 @@ impl State {
             || self.pending.iter().any(|id| !valid_id(id))
         {
             bail!("Invalid collective session checkpoint")
+        }
+        Ok(())
+    }
+
+    fn validate_core_pending_bytes(&self) -> Result<()> {
+        if self.core_pending.len() != self.core_pending_bytes.len()
+            || self.core_pending.keys().ne(self.core_pending_bytes.keys())
+            || self.core_pending_bytes.len() > 4
+            || self.core_pending_bytes.iter().any(|(call, bytes)| {
+                *call == 0
+                    || *call > 65_535
+                    || *call > self.calls
+                    || *bytes == 0
+                    || *bytes > super::core_tools::MEMORY_BYTE_LIMIT
+            })
+        {
+            bail!("Core pending fingerprints and byte reservations are inconsistent")
+        }
+        let committed_bytes = match &self.core_memory {
+            Some(memory) => memory.encoded_bytes()?,
+            None => super::core_tools::Memory::empty_encoded_bytes()?,
+        };
+        let reserved_bytes = self
+            .core_pending_bytes
+            .values()
+            .try_fold(0usize, |sum, bytes| {
+                sum.checked_add(*bytes)
+                    .ok_or_else(|| anyhow::anyhow!("Core pending byte reservation overflow"))
+            })?;
+        if committed_bytes
+            .checked_add(reserved_bytes)
+            .is_none_or(|total| total > super::core_tools::MEMORY_BYTE_LIMIT)
+        {
+            bail!("Core memory checkpoint byte budget exceeded")
         }
         Ok(())
     }
@@ -1188,6 +1253,7 @@ impl Lease {
             typed_evidence: None,
             core_memory: None,
             core_pending: BTreeMap::new(),
+            core_pending_bytes: BTreeMap::new(),
             typed_routes_sha256: typed_routes_metadata.as_ref().map(|raw| sha256(raw)),
             history_len: 0,
             history_sha256: sha256(b"[]"),
@@ -1587,6 +1653,7 @@ impl Lease {
         model_call_index: usize,
         expert_origin: bool,
     ) -> Result<PreparedTypedWork> {
+        self.state.validate_core_pending_bytes()?;
         let root = self.original_objective(request)?;
         let available_slots = self.state.tool_limit.saturating_sub(
             self.state
@@ -1625,6 +1692,7 @@ impl Lease {
             }
             None => super::core_tools::Memory::new(root)?,
         };
+        let baseline_bytes = memory.encoded_bytes()?;
         let pending_count = self
             .state
             .core_pending
@@ -1699,6 +1767,30 @@ impl Lease {
                 "null".to_owned(),
             ))?;
         }
+        let projected_bytes = projected_memory.encoded_bytes()?;
+        let growth = projected_bytes
+            .checked_sub(baseline_bytes)
+            .ok_or_else(|| anyhow::anyhow!("Projected core memory shrank unexpectedly"))?;
+        // Reservations are independent of completion order. Every batch
+        // prepared against an empty record list pays for one future comma.
+        let reserved_bytes = growth
+            .checked_add(usize::from(memory.len() == 0))
+            .ok_or_else(|| anyhow::anyhow!("Core byte reservation overflow"))?;
+        let existing_reserved_bytes = self
+            .state
+            .core_pending_bytes
+            .values()
+            .try_fold(0usize, |sum, bytes| sum.checked_add(*bytes))
+            .ok_or_else(|| anyhow::anyhow!("Core pending byte reservation overflow"))?;
+        if reserved_bytes == 0
+            || reserved_bytes > super::core_tools::MEMORY_BYTE_LIMIT
+            || baseline_bytes
+                .checked_add(existing_reserved_bytes)
+                .and_then(|total| total.checked_add(reserved_bytes))
+                .is_none_or(|total| total > super::core_tools::MEMORY_BYTE_LIMIT)
+        {
+            bail!("Core memory byte budget cannot reserve this batch")
+        }
         let mut projected_state = self.state.clone();
         projected_state.core_memory = Some(projected_memory);
         raw_state(&projected_state)?;
@@ -1707,11 +1799,14 @@ impl Lease {
             model_call_index,
             fingerprints.iter().map(|fp| (*fp).to_owned()).collect(),
         );
+        reserved_state
+            .core_pending_bytes
+            .insert(model_call_index, reserved_bytes);
         raw_state(&reserved_state)?;
         self.write_active(
             reserved_state,
             "agent_core_batch_reserved",
-            json!({"model_call_index":model_call_index,"operation_count":proposals.len(),"fingerprints_sha256":sha256(&serde_json::to_vec(&fingerprints)?),"expert_origin":expert_origin,"permissions_granted":false}),
+            json!({"model_call_index":model_call_index,"operation_count":proposals.len(),"fingerprints_sha256":sha256(&serde_json::to_vec(&fingerprints)?),"reserved_memory_bytes":reserved_bytes,"expert_origin":expert_origin,"permissions_granted":false}),
         )?;
         let policy = TaskPolicy::client_collective(&self.task)?;
         let total = runtime.cfg.subtask_parallelism.unwrap_or(1).clamp(1, 4);
@@ -1767,6 +1862,7 @@ impl Lease {
         result: &TypedResult,
         model_call_index: usize,
     ) -> Result<super::core_tools::Memory> {
+        self.state.validate_core_pending_bytes()?;
         let root = self.original_objective(request)?;
         let root_digest = sha256(root.as_bytes());
         if !result.reasoning_arguments()
@@ -1860,6 +1956,20 @@ impl Lease {
             ))?;
         }
         memory.validate(root)?;
+        let other_pending_bytes = self
+            .state
+            .core_pending_bytes
+            .iter()
+            .filter(|(call, _)| **call != model_call_index)
+            .try_fold(0usize, |sum, (_, bytes)| sum.checked_add(*bytes))
+            .ok_or_else(|| anyhow::anyhow!("Core pending byte reservation overflow"))?;
+        if memory
+            .encoded_bytes()?
+            .checked_add(other_pending_bytes)
+            .is_none_or(|total| total > super::core_tools::MEMORY_BYTE_LIMIT)
+        {
+            bail!("Core result would exceed byte reservations held by other batches")
+        }
         Ok(memory)
     }
 
@@ -1933,9 +2043,16 @@ impl Lease {
         let memory = self.core_memory_from_result(request, proposals, result, model_call_index)?;
         let context = memory.context()?;
         let digest = memory.digest()?;
+        let released_bytes = self
+            .state
+            .core_pending_bytes
+            .get(&model_call_index)
+            .copied()
+            .ok_or_else(|| anyhow::anyhow!("Core memory byte reservation is missing"))?;
         let mut next = self.state.clone();
         next.core_memory = Some(memory);
         next.core_pending.remove(&model_call_index);
+        next.core_pending_bytes.remove(&model_call_index);
         self.write_active(
             next,
             "agent_core_memory_admitted",
@@ -1943,6 +2060,10 @@ impl Lease {
                 "format_version":1,
                 "root_query_sha256":root_digest,
                 "memory_sha256":digest,
+                "model_call_index":model_call_index,
+                "released_memory_reservation_bytes":released_bytes,
+                "committed_memory_bytes":context.len(),
+                "memory_byte_limit":super::core_tools::MEMORY_BYTE_LIMIT,
                 "operation_count":proposals.len(),
                 "compiled_operation_contracts_match":true,
                 "original_goal_semantics_verified":false,
@@ -2507,6 +2628,7 @@ impl Lease {
         )
     }
     fn write_active(&mut self, next: State, kind: &str, payload: serde_json::Value) -> Result<()> {
+        next.validate_core_pending_bytes()?;
         let (raw, checksum) = raw_state(&next)?;
         let mut db = self.store.lock()?;
         let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -2569,7 +2691,8 @@ impl Lease {
         verified: bool,
     ) -> Result<()> {
         remaining(&self.state.clock)?;
-        if !self.state.core_pending.is_empty() {
+        self.state.validate_core_pending_bytes()?;
+        if !self.state.core_pending.is_empty() || !self.state.core_pending_bytes.is_empty() {
             bail!("Cannot publish a session checkpoint while typed core work is unresolved")
         }
         if self.generation >= 64 {
