@@ -1,5 +1,14 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Preserve whole overlap advice entries — 2026-10-28
+
+**Implemented; runtime unverified.** `reasoning.rs` assembles bounded whole
+expert entries for fresh and restored overlap strategies; `reasoning/exploration.rs`
+avoids splitting those projections. Some entries or an earlier long strategy
+may be omitted with hashes and counts. Other text and truncation paths remain
+Partial. See [cognitive network](COGNITIVE_NETWORK.md). No tests, benchmarks,
+live inference or recovery execution ran.
+
 ## Structure multi-expert workflow handoffs — 2026-10-28
 
 **Implemented; runtime unverified.** `reasoning.rs` emits structured advisory

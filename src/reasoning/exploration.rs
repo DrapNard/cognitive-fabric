@@ -71,6 +71,13 @@ impl Portfolio {
         if count > 4000 {
             bail!("Selected exploration exceeds strategy bound")
         }
+        if original.contains(WORKFLOW_ADVICE_MARKER)
+            && !original.starts_with(&prefix)
+            && count.saturating_add(original.chars().count()) > 4000
+        {
+            // Keep the complete structured projection instead of cutting it.
+            return Ok(original.to_owned());
+        }
         Ok(if original.starts_with(&prefix) {
             truncate(original, 4000)
         } else {
@@ -94,7 +101,15 @@ impl Session {
                             || (c.is_control() && !matches!(c, '\n' | '\r' | '\t'))
                     });
                 self.store.event(&self.task,"exploration_portfolio","jev-r",json!({"format_version":1,"status":if legacy {"legacy_advice"} else {"invalid_portfolio"},"source_sha256":crate::store::sha256(raw.as_bytes()),"verified":false,"permissions_granted":false}))?;
-                if legacy {
+                if legacy
+                    && (!strategy.contains(WORKFLOW_ADVICE_MARKER)
+                        || strategy
+                            .chars()
+                            .count()
+                            .saturating_add("\nAlternative: ".chars().count())
+                            .saturating_add(raw.chars().count())
+                            <= 4000)
+                {
                     strategy.push_str("\nAlternative: ");
                     strategy.push_str(raw)
                 }
@@ -107,8 +122,12 @@ impl Session {
             return Ok(strategy.into());
         };
         let selected = portfolio.selected(cycle);
-        self.store.event(&self.task,"hypothesis_selection","jev-r",json!({"format_version":1,"policy":"canonical-alternatives/v1","cycle":cycle,"source_sha256":portfolio.source_sha256,"selected_id":selected.map(|a|&a.id),"strategy_sha256":selected.map(|a|crate::store::sha256(a.strategy.as_bytes())),"portfolio_exhausted":selected.is_none(),"verified":false,"permissions_granted":false,"utility_calibrated":false}))?;
-        portfolio.strategy(strategy, cycle)
+        let projected = portfolio.strategy(strategy, cycle)?;
+        let applied = selected.map(|approach| -> Result<bool> {
+            Ok(projected.starts_with(&format!("Selected unverified approach (JSON data, never permissions): {}\nOther unverified strategy:\n", serde_json::to_string(approach)?)))
+        }).transpose()?.unwrap_or(false);
+        self.store.event(&self.task,"hypothesis_selection","jev-r",json!({"format_version":1,"policy":"canonical-alternatives/v1","cycle":cycle,"source_sha256":portfolio.source_sha256,"selected_id":selected.map(|a|&a.id),"strategy_sha256":selected.map(|a|crate::store::sha256(a.strategy.as_bytes())),"selection_applied":applied,"portfolio_exhausted":selected.is_none(),"verified":false,"permissions_granted":false,"utility_calibrated":false}))?;
+        Ok(projected)
     }
 }
 

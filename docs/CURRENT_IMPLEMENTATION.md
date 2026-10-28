@@ -1,5 +1,15 @@
 # Current Rust implementation
 
+## Preserve whole overlap advice entries — 2026-10-28
+
+**Implemented; runtime unverified.** Planner/expert overlap and continuation
+now project complete expert entries into the existing strategy limit, recording
+omissions and a full-source digest rather than cutting an entry. Earlier long
+strategy can be omitted with a digest. Exploration preserves the projection
+when its addition would exceed the limit. See
+[cognitive network](COGNITIVE_NETWORK.md). No tests, benchmarks, live inference
+or recovery execution ran.
+
 ## Structure multi-expert workflow handoffs — 2026-10-28
 
 **Implemented; runtime unverified.** Structured engine multi-expert steps now

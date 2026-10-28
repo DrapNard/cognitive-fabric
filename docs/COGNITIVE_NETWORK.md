@@ -1,5 +1,25 @@
 # Cognitive network implementation
 
+## Preserve whole expert records in solver strategy — 2026-10-28
+
+**Implemented for planner/expert overlap and its continuation; runtime
+unverified.** Both paths now build the same bounded expert-advice projection
+instead of cutting a serialized snapshot at 4,000 characters. The projection
+contains only whole expert entries, an omission count and a SHA-256 digest of
+the complete source snapshot. Oversized entries are omitted; an earlier strategy
+over 1,800 characters is omitted with its own digest to leave space for advice.
+The solver can therefore receive less prior information, but does not receive a
+partial expert entry from this projection. The original stored snapshot remains
+available to the existing recovery validation.
+
+Exploration does not append or prefix material when that would split a strategy
+containing this projection. The hypothesis-selection event records whether the
+selected approach was actually applied. These projections remain untrusted and
+grant no permissions; call, token and input limits are unchanged. Other reasoning
+and audit paths can still use text or truncation. No tests, benchmarks, live
+inference or recovery execution ran; static checks do not prove runtime behavior,
+model quality or speed.
+
 ## Structured multi-expert workflow handoffs and overlap recovery — 2026-10-28
 
 **Implemented for engine multi-expert structured workflows; runtime unverified.**
