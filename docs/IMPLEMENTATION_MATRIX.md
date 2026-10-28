@@ -1,5 +1,15 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Refill ready single-expert engine steps — 2026-10-28
+
+**Implemented; runtime unverified.** `reasoning/parallel.rs` maintains bounded
+owned futures and releases each dependent step after its own advisory inputs
+complete. Policy, quotas and deadlines remain in force; errors drain started
+work and preparation-dependent refills wait for active inference. Multi-expert
+engine and mixed-graph scheduling remain Partial. See
+[cognitive network](COGNITIVE_NETWORK.md). No tests, benchmarks, live inference
+or recovery execution ran.
+
 ## Project individual expert step records — 2026-10-28
 
 **Implemented; runtime unverified.** `reasoning.rs` v2 overlap projection

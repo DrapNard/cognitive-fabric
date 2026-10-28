@@ -1,5 +1,24 @@
 # Cognitive network implementation
 
+## Refill ready steps in a single engine expert workflow — 2026-10-28
+
+**Implemented rolling ready-step scheduling; runtime unverified.**
+`reasoning/parallel.rs` keeps owned inference futures up to the configured
+parallelism cap and admits a dependent step as soon as its own structured
+prerequisites complete, without waiting for unrelated slower steps. Ready
+completions are processed together before any refill. Each refill retains the
+original task policy, call and token reservations, input limits and deadline.
+Completion order no longer creates an artificial causal parent.
+
+Failures or budget exhaustion stop further admissions while already-started
+futures are drained. If a new route needs preparation, refill waits for current
+inference to settle, avoiding a resource-preparation deadlock; already prepared
+routes may refill immediately. Outer task cancellation or timeout can still drop
+local futures without proving provider cancellation. Multi-expert engine waves,
+heterogeneous graphs and recovery remain separate work. No tests, benchmarks,
+live inference or recovery execution ran; static checks do not establish runtime
+correctness or speed.
+
 ## Project individual expert step records — 2026-10-28
 
 **Implemented for overlap strategy projection; runtime unverified.** The

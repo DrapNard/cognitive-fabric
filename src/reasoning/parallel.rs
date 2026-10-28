@@ -262,23 +262,46 @@ impl Session {
         let mut completed = BTreeSet::<String>::new();
         let mut results = std::collections::BTreeMap::<String, serde_json::Value>::new();
         let mut wave_number = 0usize;
-        while !pending.is_empty() {
-            let wave = order
-                .iter()
-                .copied()
-                .filter(|index| {
-                    pending.contains(index)
-                        && steps.get(*index).is_some_and(|step| {
-                            step.depends_on
-                                .iter()
-                                .all(|dependency| completed.contains(dependency))
-                        })
-                })
-                .take(cap)
-                .collect::<Vec<_>>();
-            if wave.is_empty() {
-                bail!("Pinned expert workflow cannot make dependency progress")
-            }
+        let mut running = Vec::<ExpertInferenceFuture>::new();
+        let mut failure: Option<anyhow::Error> = None;
+        let mut exhausted = false;
+        while !pending.is_empty() || !running.is_empty() {
+            if failure.is_none() && !exhausted {
+                // A preparation may wait for resources currently held by running
+                // inference. Do not await such preparation while those futures
+                // need polling to release the same resources.
+                let refill_capacity = if running.is_empty() {
+                    cap
+                } else {
+                    match backend.requires_preparation("solver") {
+                        Ok(true) => 0,
+                        Ok(false) => cap.saturating_sub(running.len()),
+                        Err(error) => {
+                            failure = Some(error);
+                            0
+                        }
+                    }
+                };
+                let wave = order
+                    .iter()
+                    .copied()
+                    .filter(|index| {
+                        pending.contains(index)
+                            && steps.get(*index).is_some_and(|step| {
+                                step.depends_on
+                                    .iter()
+                                    .all(|dependency| completed.contains(dependency))
+                            })
+                    })
+                    .take(refill_capacity)
+                    .collect::<Vec<_>>();
+                if wave.is_empty() && running.is_empty() && !pending.is_empty() {
+                    failure = Some(anyhow::anyhow!(
+                        "Pinned expert workflow cannot make dependency progress"
+                    ));
+                }
+                if !wave.is_empty() {
+                    let launched = async {
             wave_number += 1;
             let mut wave_prompts = Vec::with_capacity(wave.len());
             for index in &wave {
@@ -407,92 +430,124 @@ impl Session {
                     }) as ExpertInferenceFuture
                 })
                 .collect();
-            let reports = crate::reasoning::parallel::join_all(futures).await;
-            let mut wave_error = None;
+            Ok::<_, anyhow::Error>(Some(futures))
+            }.await;
+                    match launched {
+                        Ok(Some(futures)) => running.extend(futures),
+                        Ok(None) => exhausted = true,
+                        Err(error) => failure = Some(error),
+                    }
+                }
+            }
+            if running.is_empty() {
+                break;
+            }
+            let reports = poll_fn(|context| {
+                let mut ready = Vec::new();
+                let mut index = 0;
+                while index < running.len() {
+                    if let Poll::Ready(result) = running[index].as_mut().poll(context) {
+                        drop(running.swap_remove(index));
+                        ready.push(result);
+                    } else {
+                        index += 1;
+                    }
+                }
+                if ready.is_empty() {
+                    Poll::Pending
+                } else {
+                    Poll::Ready(ready)
+                }
+            })
+            .await;
             for (index, call, allocation, report, elapsed_ms) in reports {
-                self.resources.inference_ms += elapsed_ms;
-                let step = steps.get(index).ok_or_else(|| {
-                    anyhow::anyhow!("Inference result references an invalid workflow step")
-                })?;
-                match report {
-                    Ok(report) => {
-                        let valid = report.text.len() <= 96_000
-                            && !report.text.trim().is_empty()
-                            && !report.model.is_empty()
-                            && report.model.len() <= 256
-                            && report.elapsed_ms.is_finite()
-                            && report.elapsed_ms >= 0.0
-                            && report
-                                .queue_wait_ms
-                                .is_none_or(|ms| ms.is_finite() && (0.0..=300_000.0).contains(&ms))
-                            && report
-                                .provider_metrics
-                                .as_ref()
-                                .is_none_or(|metrics| metrics.validate().is_ok());
-                        if !valid
-                            || report
-                                .output_tokens
-                                .is_some_and(|count| count > allocation as u64)
-                        {
+                let processed = (|| -> Result<()> {
+                    self.resources.inference_ms += elapsed_ms;
+                    let step = steps.get(index).ok_or_else(|| {
+                        anyhow::anyhow!("Inference result references an invalid workflow step")
+                    })?;
+                    match report {
+                        Ok(report) => {
+                            let valid = report.text.len() <= 96_000
+                                && !report.text.trim().is_empty()
+                                && !report.model.is_empty()
+                                && report.model.len() <= 256
+                                && report.elapsed_ms.is_finite()
+                                && report.elapsed_ms >= 0.0
+                                && report.queue_wait_ms.is_none_or(|ms| {
+                                    ms.is_finite() && (0.0..=300_000.0).contains(&ms)
+                                })
+                                && report
+                                    .provider_metrics
+                                    .as_ref()
+                                    .is_none_or(|metrics| metrics.validate().is_ok());
+                            if !valid
+                                || report
+                                    .output_tokens
+                                    .is_some_and(|count| count > allocation as u64)
+                            {
+                                self.complete_usage = false;
+                                self.resources.input_tokens = None;
+                                self.resources.output_tokens = None;
+                                self.complete_queue_metrics = false;
+                                self.resources.queue_wait_ms = None;
+                                self.store.event(&self.task,"expert_step","jev-plus",json!({"id":manifest.id,"version":manifest.version,"step":step.id,"state":"failed","call":call,"result_verified":false}))?;
+                                bail!("Invalid bounded expert inference result");
+                            }
+                            self.accumulate_parallel_usage(&report);
+                            let node = Node {
+                                id: self.nodes.len(),
+                                // Concurrent completion order is not a causal edge.
+                                parent: None,
+                                role: "solver".into(),
+                                cycle: self.resources.cycles,
+                                model: report.model,
+                                content_hash: crate::store::sha256(report.text.as_bytes()),
+                            };
+                            self.store.event(&self.task,"reasoning","jev-r",json!({"call":call,"node":node,"text":report.text,"input_tokens":report.input_tokens,"output_tokens":report.output_tokens,"inference_ms":report.elapsed_ms,"queue_wait_ms":report.queue_wait_ms}))?;
+                            self.record_provider_metrics(
+                                call,
+                                "solver",
+                                &node,
+                                report.provider_metrics.as_ref(),
+                            )?;
+                            self.nodes.push(node);
+                            let result = match crate::agent::advisory_record::parse(
+                                &report.text,
+                                600,
+                            ) {
+                                Ok(result) => result,
+                                Err(error) => {
+                                    self.store.event(&self.task,"expert_step","jev-plus",json!({"id":manifest.id,"version":manifest.version,"step":step.id,"state":"failed","call":call,"result_verified":false,"reason":"invalid_structured_advice"}))?;
+                                    return Err(error);
+                                }
+                            };
+                            self.store.event(&self.task,"expert_step","jev-plus",json!({"id":manifest.id,"version":manifest.version,"step":step.id,"state":"unverified","result_schema":"cgf-advisory-v1","result_sha256":crate::store::sha256(&serde_json::to_vec(&result)?),"result_verified":false}))?;
+                            results.insert(step.id.clone(), result);
+                            completed.insert(step.id.clone());
+                        }
+                        Err(error) => {
                             self.complete_usage = false;
                             self.resources.input_tokens = None;
                             self.resources.output_tokens = None;
                             self.complete_queue_metrics = false;
                             self.resources.queue_wait_ms = None;
-                            self.store.event(&self.task,"expert_step","jev-plus",json!({"id":manifest.id,"version":manifest.version,"step":step.id,"state":"failed","call":call,"result_verified":false}))?;
-                            wave_error.get_or_insert_with(|| {
-                                anyhow::anyhow!("Invalid bounded expert inference result")
-                            });
-                            continue;
+                            self.store.event(&self.task,"expert_step","jev-plus",json!({"id":manifest.id,"version":manifest.version,"step":step.id,"state":"failed","call":call,"elapsed_ms":elapsed_ms,"result_verified":false}))?;
+                            return Err(error);
                         }
-                        self.accumulate_parallel_usage(&report);
-                        let node = Node {
-                            id: self.nodes.len(),
-                            parent: self.nodes.last().map(|node| node.id),
-                            role: "solver".into(),
-                            cycle: self.resources.cycles,
-                            model: report.model,
-                            content_hash: crate::store::sha256(report.text.as_bytes()),
-                        };
-                        self.store.event(&self.task,"reasoning","jev-r",json!({"call":call,"node":node,"text":report.text,"input_tokens":report.input_tokens,"output_tokens":report.output_tokens,"inference_ms":report.elapsed_ms,"queue_wait_ms":report.queue_wait_ms}))?;
-                        self.record_provider_metrics(
-                            call,
-                            "solver",
-                            &node,
-                            report.provider_metrics.as_ref(),
-                        )?;
-                        self.nodes.push(node);
-                        let result = match crate::agent::advisory_record::parse(&report.text, 600) {
-                            Ok(result) => result,
-                            Err(error) => {
-                                self.store.event(&self.task,"expert_step","jev-plus",json!({"id":manifest.id,"version":manifest.version,"step":step.id,"state":"failed","call":call,"result_verified":false,"reason":"invalid_structured_advice"}))?;
-                                wave_error.get_or_insert(error);
-                                continue;
-                            }
-                        };
-                        self.store.event(&self.task,"expert_step","jev-plus",json!({"id":manifest.id,"version":manifest.version,"step":step.id,"state":"unverified","result_schema":"cgf-advisory-v1","result_sha256":crate::store::sha256(&serde_json::to_vec(&result)?),"result_verified":false}))?;
-                        results.insert(step.id.clone(), result);
                     }
-                    Err(error) => {
-                        self.complete_usage = false;
-                        self.resources.input_tokens = None;
-                        self.resources.output_tokens = None;
-                        self.complete_queue_metrics = false;
-                        self.resources.queue_wait_ms = None;
-                        self.store.event(&self.task,"expert_step","jev-plus",json!({"id":manifest.id,"version":manifest.version,"step":step.id,"state":"failed","call":call,"elapsed_ms":elapsed_ms,"result_verified":false}))?;
-                        wave_error.get_or_insert(error);
-                    }
+                    Ok(())
+                })();
+                if let Err(error) = processed {
+                    failure.get_or_insert(error);
                 }
             }
-            if let Some(error) = wave_error {
-                return Err(error);
-            }
-            for index in wave {
-                let step = steps.get(index).ok_or_else(|| {
-                    anyhow::anyhow!("Completed workflow wave contains an invalid step index")
-                })?;
-                completed.insert(step.id.clone());
-            }
+        }
+        if let Some(error) = failure {
+            return Err(error);
+        }
+        if exhausted {
+            return Ok(None);
         }
         Ok(Some(serde_json::to_string(&results)?))
     }

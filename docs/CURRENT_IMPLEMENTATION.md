@@ -1,5 +1,14 @@
 # Current Rust implementation
 
+## Refill ready single-expert engine steps — 2026-10-28
+
+**Implemented; runtime unverified.** Dependency-ready steps in a single
+structured expert workflow can refill free inference capacity before unrelated
+steps finish. Existing policy and budget checks apply; failures stop admissions
+and drain already-started futures. A route requiring preparation waits until
+active inference settles. See [cognitive network](COGNITIVE_NETWORK.md). No
+tests, benchmarks, live inference or recovery execution ran.
+
 ## Project individual expert step records — 2026-10-28
 
 **Implemented; runtime unverified.** Overlap strategies now select whole
