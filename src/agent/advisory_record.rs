@@ -162,7 +162,24 @@ pub(super) fn sizing_value(max_bytes: usize) -> Result<Value> {
             }
         }
     }
-    let value = best.2;
+    let mut value = best.2;
+    // Fill the remaining canonical bytes with plain ASCII. A projection that
+    // is one byte short could admit a role whose valid full-size record then
+    // exceeds the surrounding memory cap after its inference was charged.
+    let mut remaining = limit.saturating_sub(serde_json::to_vec(&value)?.len());
+    if let Some(unknowns) = value.get_mut("unknowns").and_then(Value::as_array_mut) {
+        for unknown in unknowns {
+            if let Some(text) = unknown.as_str() {
+                let count = remaining.min(256usize.saturating_sub(text.len()));
+                let extended = format!("{text}{}", "x".repeat(count));
+                *unknown = Value::String(extended);
+                remaining -= count;
+            }
+        }
+    }
+    if remaining != 0 {
+        bail!("Structured advisory projection cannot fill its byte allocation")
+    }
     validate(&value, limit)?;
     Ok(value)
 }

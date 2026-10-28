@@ -887,6 +887,7 @@ impl Graph<'_> {
         let overlap = if mode(&self.runtime.cfg, self.original) == "research"
             && self.overlapped_pair.is_none()
             && !overlap_wave.is_empty()
+            && self.can_store_roles(prior_advice, &["planner", "explorer"])?
         {
             let mut combined_routes = expert_wave_routes(&overlap_wave, &routed_runtimes);
             combined_routes.extend([

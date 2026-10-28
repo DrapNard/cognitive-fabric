@@ -14,6 +14,7 @@ pub mod native_scope;
 mod network_slots;
 pub mod process;
 pub mod protocol;
+mod reasoning_memory;
 mod session_cleanup;
 mod session_context;
 mod sessions;

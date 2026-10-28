@@ -750,6 +750,7 @@ fn audit(
 impl State {
     fn validate(&self, cfg: &Config) -> Result<()> {
         self.clock.validate(cfg.max_wall_seconds)?;
+        super::reasoning_memory::validate_checkpoint(&self.advice, &self.references)?;
         if let Some(advice) = &self.expert_advice {
             advice.validate_checkpoint(&sha256(self.references.as_bytes()))?;
             advice.context()?;
@@ -2330,6 +2331,13 @@ impl Lease {
         }
         if next.advice.len() > 2000 {
             bail!("Collective advice checkpoint exceeds bounds")
+        }
+        if waiting {
+            super::reasoning_memory::validate_root(
+                &next.advice,
+                self.original_objective(request)?,
+                &next.references,
+            )?;
         }
         let (raw, checksum) = raw_state(&next)?;
         let mut db = self.store.lock()?;

@@ -112,6 +112,38 @@ async fn dispatch_advisory_pair(
 }
 
 impl Graph<'_> {
+    fn can_store_roles(&self, advice: &str, roles: &[&str]) -> Result<bool> {
+        super::reasoning_memory::projects(
+            self.session.original_objective(self.original)?,
+            &self.session.state.references,
+            advice,
+            roles,
+        )
+    }
+
+    fn merge_roles(
+        &self,
+        advice: &str,
+        updates: &[(&str, serde_json::Value)],
+    ) -> Result<Option<String>> {
+        super::reasoning_memory::combine(
+            self.session.original_objective(self.original)?,
+            &self.session.state.references,
+            advice,
+            updates,
+        )
+    }
+
+    fn store_feedback(&self, advice: &str, code: &str, message: &str) -> Result<Option<String>> {
+        super::reasoning_memory::feedback(
+            self.session.original_objective(self.original)?,
+            &self.session.state.references,
+            advice,
+            code,
+            message,
+        )
+    }
+
     fn expert_routing_interpretation(
         &self,
         original: &crate::language::Interpretation,
@@ -179,6 +211,11 @@ impl Graph<'_> {
         } else {
             "Give concise advisory guidance for your assigned role, preserving the original goal and constraints. Do not give the final answer, execute tools, grant permissions or claim verification."
         }).to_owned();
+        if matches!(role, "planner" | "explorer" | "reflector") {
+            contract.push(' ');
+            contract.push_str(super::advisory_record::contract());
+            contract.push_str(" The canonical record must fit the assigned 400-byte memory slot.");
+        }
         if role == "solver" && self.core_tools_available() {
             if let Some(catalog) = &self.core_catalog {
                 turn.tools.extend_from_slice(catalog.tools());
@@ -436,6 +473,9 @@ impl Graph<'_> {
         Ok(completion)
     }
     fn reserve_advisory_pair(&mut self, advice: &str) -> Result<PreparedAdvisoryPair> {
+        if !self.can_store_roles(advice, &["planner", "explorer"])? {
+            bail!("Structured advisory memory cannot fit the reserved planner/explorer wave")
+        }
         if !self.available(&[
             ("planner", advice, ADVICE_TOKENS),
             ("explorer", advice, ADVICE_TOKENS),
@@ -483,7 +523,22 @@ impl Graph<'_> {
                 completion,
             )
         });
-        Ok((planner?, explorer?))
+        let mut planner = planner?;
+        let mut explorer = explorer?;
+        if planner.finish_reason != "stop" || explorer.finish_reason != "stop" {
+            bail!("Planner/explorer memory requires complete provider responses")
+        }
+        let planner_record = super::advisory_record::parse(
+            planner.content.as_deref().unwrap_or(""),
+            super::reasoning_memory::ROLE_BYTES,
+        )?;
+        let explorer_record = super::advisory_record::parse(
+            explorer.content.as_deref().unwrap_or(""),
+            super::reasoning_memory::ROLE_BYTES,
+        )?;
+        planner.content = Some(serde_json::to_string(&planner_record)?);
+        explorer.content = Some(serde_json::to_string(&explorer_record)?);
+        Ok((planner, explorer))
     }
 
     async fn advisory_pair(&mut self, advice: &str) -> Result<(Completion, Completion)> {
@@ -540,6 +595,14 @@ impl Graph<'_> {
         advice: &str,
         typed: Option<&sessions::TypedResult>,
     ) -> Result<Outcome> {
+        super::reasoning_memory::validate_root(
+            advice,
+            self.session.original_objective(self.original)?,
+            &self.session.state.references,
+        )?;
+        if advice.len() > 2_000 {
+            bail!("Structured reasoning memory exceeds the continuation checkpoint bound")
+        }
         if self.runtime.cfg.language_model().is_some() && completion.tool_calls.is_empty() {
             let result = json!({
                 "candidate": completion.content,
@@ -592,7 +655,7 @@ impl Graph<'_> {
         completion.output_tokens = self.output_tokens;
         Ok(Outcome {
             completion,
-            advice: bounded(advice, 2000).to_string(),
+            advice: advice.to_owned(),
             verification,
         })
     }
@@ -616,6 +679,11 @@ pub(super) async fn run(
     session: &mut sessions::Lease,
 ) -> Result<Outcome> {
     let saved = session.state.clone();
+    super::reasoning_memory::validate_root(
+        &saved.advice,
+        session.original_objective(request)?,
+        &saved.references,
+    )?;
     let restored_typed_evidence = session.restore_typed_evidence(request)?;
     let restored_expert_advice = session.restore_expert_advice(request)?;
     let restored_core_context = session.restore_core_memory(request)?;
@@ -769,6 +837,7 @@ pub(super) async fn run(
             && !expert_overlap
             && mode == "research"
             && total_capacity >= 3
+            && graph.can_store_roles(&advice, &["planner", "explorer"])?
             && graph.available(&[
                 ("planner", &advice, ADVICE_TOKENS),
                 ("explorer", &advice, ADVICE_TOKENS),
@@ -926,6 +995,7 @@ pub(super) async fn run(
         || (saved.calls == 0
             && mode == "research"
             && runtime.cfg.subtask_parallelism.unwrap_or(1) >= 2
+            && graph.can_store_roles(&advice, &["planner", "explorer"])?
             && graph.available(&[
                 ("planner", &advice, ADVICE_TOKENS),
                 ("explorer", &advice, ADVICE_TOKENS),
@@ -948,12 +1018,22 @@ pub(super) async fn run(
             Some(pair) => pair,
             None => graph.advisory_pair(&advice).await?,
         };
-        advice = format!(
-            "Previous advisory context: {}\nplanner: {}\nexplorer: {}",
-            bounded(&advice, 600),
-            bounded(planner.content.as_deref().unwrap_or(""), 650),
-            bounded(explorer.content.as_deref().unwrap_or(""), 650)
-        );
+        let planner_record = super::advisory_record::parse(
+            planner.content.as_deref().unwrap_or(""),
+            super::reasoning_memory::ROLE_BYTES,
+        )?;
+        let explorer_record = super::advisory_record::parse(
+            explorer.content.as_deref().unwrap_or(""),
+            super::reasoning_memory::ROLE_BYTES,
+        )?;
+        advice = graph
+            .merge_roles(
+                &advice,
+                &[("planner", planner_record), ("explorer", explorer_record)],
+            )?
+            .ok_or_else(|| {
+                anyhow::anyhow!("Planner/explorer conclusions exceed structured task memory")
+            })?;
     }
     for role in ["planner", "explorer"] {
         if pair_admitted
@@ -963,18 +1043,27 @@ pub(super) async fn run(
         {
             continue;
         }
-        let admitted = graph.available(&[
-            (role, &advice, ADVICE_TOKENS),
-            ("solver", &advice_bound, MIN_SOLVER_TOKENS),
-        ])?;
+        let memory_fits = graph.can_store_roles(&advice, &[role])?;
+        let admitted = memory_fits
+            && graph.available(&[
+                (role, &advice, ADVICE_TOKENS),
+                ("solver", &advice_bound, MIN_SOLVER_TOKENS),
+            ])?;
         graph.schedule(role, admitted)?;
         if admitted {
             let result = graph.call(role, &advice, ADVICE_TOKENS).await?;
-            let previous = bounded(&advice, 900);
-            advice = format!(
-                "Previous advisory context: {previous}\n{role}: {}",
-                bounded(result.content.as_deref().unwrap_or(""), 1000)
-            );
+            if result.finish_reason != "stop" {
+                bail!("Structured advisory role requires a complete provider response")
+            }
+            let record = super::advisory_record::parse(
+                result.content.as_deref().unwrap_or(""),
+                super::reasoning_memory::ROLE_BYTES,
+            )?;
+            advice = graph
+                .merge_roles(&advice, &[(role, record)])?
+                .ok_or_else(|| {
+                    anyhow::anyhow!("Advisory conclusion exceeds structured task memory")
+                })?;
         }
     }
     let mut history = std::collections::BTreeSet::new();
@@ -1071,19 +1160,29 @@ pub(super) async fn run(
                 return graph.finish(answer, "criterion_passed", &advice).await;
             }
             let rejection="The original independent compiled checker rejected the previous candidate. Preserve the original constraints and produce a corrected answer.";
+            let Some(feedback) =
+                graph.store_feedback(&advice, "compiled_checker_rejection", rejection)?
+            else {
+                return graph.finish(answer, "criterion_failed", &advice).await;
+            };
             let admitted = graph.cycles < graph.cycle_limit
-                && graph.available(&[("solver", rejection, MIN_SOLVER_TOKENS)])?;
+                && graph.available(&[("solver", &feedback, MIN_SOLVER_TOKENS)])?;
             graph.schedule("independent_rejection_revision", admitted)?;
             if !admitted {
                 return graph.finish(answer, "criterion_failed", &advice).await;
             }
-            advice = rejection.to_string();
+            advice = feedback;
             continue;
         }
         if !revision_possible {
             return graph.finish(answer, "bounded_answer", &advice).await;
         }
         let critique = format!("Candidate (unverified): {}", bounded(candidate, 2000));
+        if !graph.can_store_roles(&advice, &["reflector"])? {
+            return graph
+                .finish(answer, "insufficient_structured_reflection_memory", &advice)
+                .await;
+        }
         let admitted = graph.available(&[
             ("critic", &critique, ADVICE_TOKENS),
             ("reflector", &advice_bound, ADVICE_TOKENS),
@@ -1095,15 +1194,20 @@ pub(super) async fn run(
                 .finish(answer, "insufficient_revision_budget", &advice)
                 .await;
         }
-        let review = graph.call("critic", &critique, ADVICE_TOKENS).await?;
+        let review_completion = graph.call("critic", &critique, ADVICE_TOKENS).await?;
         #[derive(Deserialize)]
         #[serde(deny_unknown_fields)]
         struct Review {
             revise: bool,
             reason: String,
         }
-        let review = review.content.as_deref().unwrap_or("");
-        let parsed = crate::strict_json::value(review.as_bytes(), 4096)
+        if review_completion.finish_reason != "stop" {
+            return graph
+                .finish(answer, "incomplete_critic_response", &advice)
+                .await;
+        }
+        let review_raw = review_completion.content.as_deref().unwrap_or("");
+        let parsed = crate::strict_json::value(review_raw.as_bytes(), 4096)
             .ok()
             .and_then(|v| serde_json::from_value::<Review>(v).ok());
         let Some(review) =
@@ -1127,6 +1231,18 @@ pub(super) async fn run(
                 ADVICE_TOKENS,
             )
             .await?;
-        advice = bounded(reflection.content.as_deref().unwrap_or(""), 2000).to_string();
+        if reflection.finish_reason != "stop" {
+            bail!("Structured reflector requires a complete provider response")
+        }
+        let record = super::advisory_record::parse(
+            reflection.content.as_deref().unwrap_or(""),
+            super::reasoning_memory::ROLE_BYTES,
+        )?;
+        let Some(updated) = graph.merge_roles(&advice, &[("reflector", record)])? else {
+            return graph
+                .finish(answer, "insufficient_structured_reflection_memory", &advice)
+                .await;
+        };
+        advice = updated;
     }
 }

@@ -1,5 +1,22 @@
 # Current Rust implementation
 
+## Keep structured reasoning-role memory — 2026-10-28
+
+**Implemented for client collective handoffs; broader memory remains Partial.**
+`reasoning_memory.rs` binds planner/explorer/reflector records to the original
+request and references within the existing 2 KiB advice cap. `collective.rs`
+replaces prose merges, checks joint capacity before optional role calls, requires
+complete structured responses and preserves typed checker feedback. `sessions.rs`
+validates marked memory on continuation/checkpoint publication. No truncation,
+role-record eviction, quota increase or weight promotion occurs.
+
+Legacy prose is explicitly hashed/omitted when merged into new memory. See
+[cognitive network](COGNITIVE_NETWORK.md) for limits and compatibility boundaries.
+Validation is static formatting, locked workspace/all-target compilation, strict
+Clippy and whitespace checks plus source review. No tests, benchmarks or live
+inference ran. General mixed workflows, other legacy memory paths and evaluated
+project LoRA remain incomplete or unverified.
+
 ## Store structured expert conclusions — 2026-10-28
 
 **Implemented for new expert step summaries; network-wide memory remains Partial.**

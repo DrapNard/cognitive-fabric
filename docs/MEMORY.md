@@ -1,5 +1,14 @@
 # Reusable task memory
 
+Client planner, explorer and reflector handoffs also use structured advisory
+records, with 400 bytes per role and a 2,000-byte task envelope. New envelopes
+bind the original request and reference snapshot, retain structured context and
+store typed checker feedback. Joint size checks precede optional role calls;
+records are never truncated into invalid JSON. Legacy prose is explicitly
+represented by a digest/omission marker when merged into this format. Claims
+remain unverified data and actions do not grant execution authority. This does
+not migrate all legacy episodes or other framework memory paths.
+
 New client Expert Network step summaries use bounded structured conclusions,
 separate from published episodes below. A minimal model record is
 `{"v":1,"unknowns":["Need evidence"]}`. Optional `claims` distinguish supplied

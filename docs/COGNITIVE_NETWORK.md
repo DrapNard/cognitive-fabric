@@ -1,5 +1,46 @@
 # Cognitive network implementation
 
+## Keep structured planner, explorer and reflector memory — 2026-10-28
+
+**Implemented for client collective role handoffs; runtime/provider compatibility
+unverified and the wider framework memory objective remains Partial.**
+Planner, explorer and reflector responses now use the existing bounded advisory
+record schema instead of concatenated or truncated prose. Each role receives a
+400-byte output-record limit and must return a confirmed provider `stop`
+response. Pair accounting still processes both completed calls before any
+schema/finish error propagates. Critic output keeps its explicit `revise/reason`
+object and incomplete critic output cannot trigger a revision.
+
+`src/agent/reasoning_memory.rs` keeps the original structured context plus at most
+three named role records in a strict 2,000-byte envelope. It binds the original
+request and frozen references by SHA-256, preserves context across replacements,
+and records deterministic checker rejection as a bounded typed feedback entry.
+Claims and suggested actions remain untrusted: this memory does not verify the
+original meaning, authorize tools or train/promote weights. Empty/prose legacy
+advice can remain readable; when combined into new memory, prose is represented
+by an explicit digest/omission marker rather than copied as new conclusions.
+
+All normal and overlapped planner/explorer admissions project joint memory
+space before their model reservations. Single roles and reflection also check
+space first; insufficient capacity skips optional work or ends bounded revision.
+Projections fill the complete record-byte allocation. Actual output is parsed
+again and merged without truncation or eviction. `collective.rs` checks final
+memory before language presentation, while `sessions.rs` checks references on
+continuation validation and the original root before publishing a waiting
+checkpoint. New marked malformed/duplicate-key envelopes, replaced format
+markers, mismatched roots/references and oversize canonical encodings fail closed.
+The original 2 KiB advice and 32 KiB session-checkpoint ceilings remain unchanged.
+
+This replaces these client-collective role prose handoffs, not every legacy
+memory/episode or inference path in the framework. Published project memory,
+arbitrary mixed neural/typed graphs and evaluated project LoRA remain separate
+or incomplete. No new model, training job or automatic promotion is introduced.
+
+Validation: formatting, locked workspace/all-target compilation, strict Clippy,
+whitespace checks and source review only. No tests, benchmarks, live inference,
+model activation, installation or recovery execution ran. Reasoning quality
+and performance are unmeasured.
+
 ## Store structured expert conclusions — 2026-10-28
 
 **Implemented for new Expert Network step summaries; broader reasoning memory
