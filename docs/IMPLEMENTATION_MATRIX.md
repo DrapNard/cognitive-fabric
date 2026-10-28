@@ -1,5 +1,15 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Structure multi-expert workflow handoffs — 2026-10-28
+
+**Implemented; runtime unverified.** `reasoning.rs` emits structured advisory
+step handoffs and version-2 planner/expert overlap records;
+`recovery/continuation_overlap.rs` reconstructs and validates v2 while keeping
+v1 prose recovery rules. Legacy workflows and raw audit text remain Partial.
+Existing prose-based fixtures require updates. See
+[cognitive network](COGNITIVE_NETWORK.md). No tests, benchmarks, live inference
+or recovery execution ran.
+
 ## Structure single-engine-expert workflow handoffs — 2026-10-28
 
 **Implemented; runtime unverified.** `reasoning.rs` and `reasoning/parallel.rs`

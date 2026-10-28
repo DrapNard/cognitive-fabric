@@ -1,5 +1,25 @@
 # Cognitive network implementation
 
+## Structured multi-expert workflow handoffs and overlap recovery — 2026-10-28
+
+**Implemented for engine multi-expert structured workflows; runtime unverified.**
+`reasoning.rs` requests and validates complete 600-byte advisory records for
+each structured workflow step, passing objects to dependent steps and preserving
+existing independent-wave scheduling and limits. The separate legacy
+whole-workflow advice path continues to use its prior prose contract. Invalid
+structured responses fail the admitted workflow rather than being truncated.
+Claims and actions remain unverified data without authority.
+
+Planner/expert overlap intent and completion records now use version 2.
+`recovery/continuation_overlap.rs` reconstructs version-2 prompts and canonical
+structured records from recorded provider responses, verifies hashes and the
+original task bindings, and continues to recognize version-1 prose records with
+their original rules. Mismatched or unknown versions fail closed. Raw inference
+audit events still contain provider text, and other memory paths remain Partial.
+Existing prose-based fixtures require updates; no tests, benchmarks, live
+inference or recovery execution ran. Static checks do not prove runtime behavior,
+model compatibility, throughput or reasoning quality.
+
 ## Structured handoffs for a single engine expert workflow — 2026-10-28
 
 **Implemented for the engine's single structured-workflow path; runtime

@@ -1,5 +1,15 @@
 # Current Rust implementation
 
+## Structure multi-expert workflow handoffs — 2026-10-28
+
+**Implemented; runtime unverified.** Structured engine multi-expert steps now
+exchange bounded advisory objects. Version-2 planner/expert overlap records
+support reconstruction of those objects; the recovery reader retains the
+version-1 prose rules. Legacy workflows and raw audit text remain unchanged.
+Existing prose-based fixtures require updates. See
+[cognitive network](COGNITIVE_NETWORK.md). No tests, benchmarks, live inference
+or recovery execution ran.
+
 ## Structure single-engine-expert workflow handoffs — 2026-10-28
 
 **Implemented; runtime unverified.** Sequential and parallel steps in the
