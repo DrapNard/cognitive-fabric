@@ -20,6 +20,7 @@ pub(crate) enum SearchResult {
 struct SearchContext<'a> {
     criterion: &'a FiniteDomain,
     domain_bounds: BTreeMap<&'a str, (i64, i64)>,
+    domains: BTreeMap<&'a str, &'a [i64]>,
 }
 
 impl SearchContext<'_> {
@@ -40,7 +41,12 @@ impl SearchContext<'_> {
         *explored_nodes += 1;
 
         for constraint in &self.criterion.constraints {
-            if !FiniteDomain::partial_constraint_possible(constraint, values, &self.domain_bounds) {
+            if !FiniteDomain::partial_constraint_possible(
+                constraint,
+                values,
+                &self.domain_bounds,
+                &self.domains,
+            ) {
                 return Ok(SearchResult::Unsatisfiable);
             }
         }
@@ -219,6 +225,7 @@ impl FiniteDomain {
         constraint: &Constraint,
         values: &BTreeMap<String, i64>,
         domain_bounds: &BTreeMap<&str, (i64, i64)>,
+        domains: &BTreeMap<&str, &[i64]>,
     ) -> bool {
         match constraint {
             Constraint::Linear {
@@ -255,10 +262,37 @@ impl FiniteDomain {
             }
             Constraint::AllDifferent { variables } => {
                 let mut assigned = BTreeSet::new();
-                variables
+                if !variables
                     .iter()
                     .filter_map(|variable| values.get(variable))
                     .all(|value| assigned.insert(*value))
+                {
+                    return false;
+                }
+                // A remaining variable needs an unused value. Also, the union
+                // of all remaining domains must contain at least as many unused
+                // values as there are remaining variables. This necessary
+                // condition never treats an incomplete match as a witness.
+                let remaining = variables.len() - assigned.len();
+                let mut union = BTreeSet::new();
+                for variable in variables.iter().filter(|id| !values.contains_key(*id)) {
+                    let mut available = false;
+                    for value in domains[variable.as_str()] {
+                        if !assigned.contains(value) {
+                            available = true;
+                            if union.len() < remaining {
+                                union.insert(*value);
+                            }
+                            if union.len() == remaining {
+                                break;
+                            }
+                        }
+                    }
+                    if !available {
+                        return false;
+                    }
+                }
+                union.len() >= remaining
             }
         }
     }
@@ -292,6 +326,11 @@ impl FiniteDomain {
 
         let context = SearchContext {
             criterion: self,
+            domains: self
+                .variables
+                .iter()
+                .map(|variable| (variable.id.as_str(), variable.domain.as_slice()))
+                .collect(),
             domain_bounds: self
                 .variables
                 .iter()

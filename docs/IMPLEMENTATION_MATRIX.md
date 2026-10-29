@@ -7750,3 +7750,10 @@ right-associative precedence as `^` before parsing its operands. Existing
 limits and validation still apply. This fixes an incorrect native arithmetic
 parse, but does not establish general reasoning correctness; historical stored
 outputs are not modified. No tests or benchmarks were run for this change.
+# Finite-domain all-different pruning (2026-10-29)
+
+**Implemented; runtime unverified.** `src/verification/finite.rs` uses bounded
+domain availability and union checks to reject impossible all-different partial
+assignments before descending further. It preserves the node cap, cancellation
+checks and final assignment validation. This does not implement full matching or
+prove improved speed. No tests or benchmarks were run for this change.

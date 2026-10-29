@@ -2587,3 +2587,13 @@ ordinary multiplication for precedence. For example, the intended parse of
 `2*3**2` is `2*(3**2)`. Existing recursion, expression length, numeric range,
 and exponent limits remain unchanged. This change does not rewrite prior stored
 results. Runtime correctness is unverified; no tests or benchmarks were run.
+# Native finite-domain pruning (2026-10-29)
+
+The bounded finite-domain solver now checks unassigned domains for each
+all-different constraint. It rejects a partial assignment if a remaining
+variable has no unused value or if the union of remaining unused values is
+smaller than the number of remaining variables. These are necessary conditions,
+not a complete matching algorithm; a possible branch still needs search and the
+independent final witness check. The original node, domain, constraint and
+cancellation bounds remain in place. This adds work per search node and may
+prune more branches; neither runtime correctness nor performance was measured.
