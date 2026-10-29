@@ -34,6 +34,9 @@ impl Session {
         if routes.is_empty() || routes.len() > 4 {
             return Err(anyhow!("Invalid inference preparation wave"));
         }
+        for (backend, role, _) in routes {
+            self.validate_declared_role_boundary(role, backend.as_ref())?;
+        }
         let deadline = deadline.min(self.deadline);
         let timeout_seconds = self.cfg.timeout_seconds;
         let task = &self.task;
@@ -124,6 +127,9 @@ impl Session {
                             && !report.text.trim().is_empty()
                             && !report.model.is_empty()
                             && report.model.len() <= 256
+                            && self
+                                .validate_returned_role_boundary(&call.role, &report.model)
+                                .is_ok()
                             && report.elapsed_ms.is_finite()
                             && report.elapsed_ms >= 0.0
                             && report

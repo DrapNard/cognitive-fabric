@@ -472,6 +472,9 @@ impl Session {
                                 && !report.text.trim().is_empty()
                                 && !report.model.is_empty()
                                 && report.model.len() <= 256
+                                && self
+                                    .validate_returned_role_boundary("solver", &report.model)
+                                    .is_ok()
                                 && report.elapsed_ms.is_finite()
                                 && report.elapsed_ms >= 0.0
                                 && report.queue_wait_ms.is_none_or(|ms| {
@@ -745,6 +748,9 @@ impl Session {
                             && !report.text.trim().is_empty()
                             && !report.model.is_empty()
                             && report.model.len() <= 256
+                            && self
+                                .validate_returned_role_boundary("solver", &report.model)
+                                .is_ok()
                             && report.elapsed_ms.is_finite()
                             && report.elapsed_ms >= 0.0
                             && report

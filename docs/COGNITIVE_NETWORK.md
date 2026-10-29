@@ -1,5 +1,22 @@
 # Cognitive network implementation
 
+## Enforce the engine language-role boundary on generic adapters — 2026-10-29
+
+**Implemented; runtime unverified.** With an explicit language-only model, the
+engine now checks a declared inference target against the language/reasoning
+role boundary before sequential dispatch or parallel-wave preparation. It also
+checks each returned model key before accepting sequential, subtask, single-expert
+or multi-expert results. Registered experts may use their own pinned reasoning
+model, but cannot report or declare the configured language-only key for a
+reasoning role. Invalid results fail the existing bounded path.
+
+Adapters without a declared target remain supported, so their target is not
+known before dispatch; their returned key is still checked. Model keys and
+adapter declarations do not attest weights or prevent aliases of identical
+weights. Existing registered-model, native policy, permission and budget checks
+remain independent. No tests, benchmarks, model activation, live inference or
+recovery execution ran; static checks do not establish runtime correctness.
+
 ## Check declared client role targets before dispatch — 2026-10-29
 
 **Implemented; runtime unverified.** With the explicit language-only boundary,

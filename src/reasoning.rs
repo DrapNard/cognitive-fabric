@@ -926,6 +926,7 @@ impl Session {
         allocation: usize,
         backend: Arc<dyn InferenceBackend>,
     ) -> Result<Option<String>> {
+        self.validate_declared_role_boundary(role, backend.as_ref())?;
         let backend = match (&self.cfg.resource_admission, &self.resource_pool) {
             (Some(configuration), Some(pool)) if pool.matches(&self.store, configuration) => {
                 pool.wrap_configured_backend("human-cli", backend, configuration)?
@@ -990,6 +991,14 @@ impl Session {
         )
         .await
         .map_err(|_| InferenceTimeout)??;
+        if self
+            .validate_returned_role_boundary(role, &report.model)
+            .is_err()
+        {
+            self.complete_usage = false;
+            self.complete_queue_metrics = false;
+            bail!("Inference response violates the configured language-only role boundary")
+        }
         if report.text.len() > 96_000
             || report.text.trim().is_empty()
             || report.model.is_empty()
@@ -1049,6 +1058,39 @@ impl Session {
         )?;
         self.nodes.push(node);
         Ok(Some(report.text))
+    }
+
+    fn validate_declared_role_boundary(
+        &self,
+        role: &str,
+        backend: &dyn InferenceBackend,
+    ) -> Result<()> {
+        if self.cfg.language_model().is_none() {
+            return Ok(());
+        }
+        let model = match backend.inference_target(role)? {
+            Some(crate::backend::InferenceTarget::LocalHttp(target)) => {
+                Some(target.canonical()?.model)
+            }
+            Some(crate::backend::InferenceTarget::Native(target)) => {
+                Some(target.canonical()?.model)
+            }
+            Some(crate::backend::InferenceTarget::ManagedNative(target)) => {
+                Some(target.canonical()?.model)
+            }
+            Some(crate::backend::InferenceTarget::Deterministic) | None => None,
+        };
+        if let Some(model) = model {
+            self.cfg.require_role_model(role, &model)?;
+        }
+        Ok(())
+    }
+
+    fn validate_returned_role_boundary(&self, role: &str, model: &str) -> Result<()> {
+        if self.cfg.language_model().is_some() {
+            self.cfg.require_role_model(role, model)?;
+        }
+        Ok(())
     }
 
     /// Persist provider-reported timings separately from the strict reasoning

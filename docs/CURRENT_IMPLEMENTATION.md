@@ -1,5 +1,13 @@
 # Current Rust implementation
 
+## Enforce the engine language-role boundary — 2026-10-29
+
+**Implemented; runtime unverified.** Engine sequential and parallel inference
+checks declared target keys before use and returned keys before accepting
+results when explicit language-only routing is configured. Unknown targets and
+model weights remain unverified. See [cognitive network](COGNITIVE_NETWORK.md).
+No tests, benchmarks or live inference ran.
+
 ## Check declared client role targets before dispatch — 2026-10-29
 
 **Implemented; runtime unverified.** Explicit language-only client routes with

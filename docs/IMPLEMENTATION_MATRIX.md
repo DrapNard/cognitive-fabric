@@ -1,5 +1,13 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Enforce the engine language-role boundary — 2026-10-29
+
+**Implemented; runtime unverified.** `reasoning.rs`, `reasoning/parallel.rs` and
+`reasoning/expert_parallel.rs` check declared and returned model keys against
+the configured language/reasoning role separation. Unknown targets and actual
+weights remain unverified. See [cognitive network](COGNITIVE_NETWORK.md). No
+tests, benchmarks or live inference ran; broader orchestration remains Partial.
+
 ## Check declared client role targets before dispatch — 2026-10-29
 
 **Implemented; runtime unverified.** `agent/mod.rs` checks declared client role
