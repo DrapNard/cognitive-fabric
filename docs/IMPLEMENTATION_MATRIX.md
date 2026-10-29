@@ -7856,3 +7856,11 @@ literal phrases, even when a client advertises multiple tools. Ambiguous names
 do not select a tool. This lexical cue is not intent or negation verification;
 the client remains responsible for schema validation and execution approval.
 No tests or benchmarks were run.
+# Explicit multi-round native tool plans (2026-10-29)
+
+**Implemented; runtime unverified.** `src/agent/collective.rs` extends explicit
+client tool requests with up to four unconditional checkpointed rounds, checks
+the remaining task proposal budget and declared tools, and presents correlated
+current-task results after the final round. It does not execute tools, verify
+schema or tool success, bind output into later arguments, or plan automatically.
+No tests or benchmarks were run.

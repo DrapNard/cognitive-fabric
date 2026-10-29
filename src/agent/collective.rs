@@ -84,6 +84,12 @@ struct ExplicitClientToolRequest {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct ExplicitClientToolPlan {
+    rounds: Vec<ExplicitClientToolRequest>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct ExplicitClientToolCall {
     name: String,
     arguments: serde_json::Value,
@@ -140,23 +146,61 @@ fn unambiguous_client_tool(request: &Turn) -> Option<&Tool> {
 
 /// Translate an explicit structured client request into proposals only. The
 /// client owns execution and is responsible for validating its tool schemas.
-fn explicit_client_tool_request(request: &Turn, remaining: u32) -> Result<Option<Completion>> {
-    let Some(message) = request
-        .messages
-        .last()
-        .filter(|message| message.role == "user")
-    else {
+fn explicit_client_tool_request(
+    raw: &str,
+    completed: u32,
+    request: &Turn,
+    remaining: u32,
+) -> Result<Option<Completion>> {
+    let value = crate::strict_json::value(raw.as_bytes(), 32_000)?;
+    let rounds = if value.get("rounds").is_some() {
+        serde_json::from_value::<ExplicitClientToolPlan>(value)?.rounds
+    } else {
+        vec![serde_json::from_value::<ExplicitClientToolRequest>(value)?]
+    };
+    if rounds.is_empty() || rounds.len() > 4 {
+        bail!("Explicit client tool plan must contain one to four rounds")
+    }
+    let mut total = 0u32;
+    let mut next_index = None;
+    for (index, round) in rounds.iter().enumerate() {
+        if total == completed {
+            next_index = Some(index);
+        }
+        if round.calls.is_empty() || round.calls.len() > 16 {
+            bail!("Each client tool round must contain one to sixteen calls")
+        }
+        total = total
+            .checked_add(round.calls.len() as u32)
+            .ok_or_else(|| anyhow::anyhow!("Client tool plan call count overflow"))?;
+    }
+    if total > 16 || completed > total || (completed != total && next_index.is_none()) {
+        bail!("Client tool plan progress or total call count is invalid")
+    }
+    if total.saturating_sub(completed) > remaining {
+        bail!("Client tool plan exceeds its remaining proposal budget")
+    }
+    let Some(next_index) = next_index else {
         return Ok(None);
     };
-    let Some(raw) = message
-        .content
-        .as_deref()
-        .and_then(|text| text.strip_prefix("cgf-client-tool:"))
-    else {
-        return Ok(None);
-    };
-    let document: ExplicitClientToolRequest =
-        serde_json::from_value(crate::strict_json::value(raw.as_bytes(), 32_000)?)?;
+    for call in rounds
+        .iter()
+        .skip(next_index)
+        .flat_map(|round| &round.calls)
+    {
+        if !call.arguments.is_object()
+            || !request
+                .tools
+                .iter()
+                .any(|tool| tool.function.name == call.name)
+        {
+            bail!("A remaining client tool is undeclared or has invalid arguments")
+        }
+    }
+    let document = rounds
+        .into_iter()
+        .nth(next_index)
+        .ok_or_else(|| anyhow::anyhow!("Client tool plan round is missing"))?;
     client_tool_completion(document, request, remaining).map(Some)
 }
 
@@ -873,7 +917,17 @@ pub(super) async fn run(
                 .state
                 .tool_limit
                 .saturating_sub(graph.session.state.internal_tools);
-            if let Some(completion) = explicit_client_tool_request(request, remaining)? {
+            let raw = request
+                .messages
+                .last()
+                .filter(|message| message.role == "user")
+                .and_then(|message| message.content.as_deref())
+                .and_then(|text| text.strip_prefix("cgf-client-tool:"));
+            if let Some(completion) = raw
+                .map(|raw| explicit_client_tool_request(raw, 0, request, remaining))
+                .transpose()?
+                .flatten()
+            {
                 advice = graph.merge_roles("", &[])?.ok_or_else(|| {
                     anyhow::anyhow!("Structured client routing context exceeds its bound")
                 })?;
@@ -889,6 +943,30 @@ pub(super) async fn run(
                 .last()
                 .is_some_and(|message| message.role == "tool")
         {
+            if saved.calls == 0 {
+                let raw = graph
+                    .session
+                    .original_objective(request)?
+                    .strip_prefix("cgf-client-tool:");
+                if let Some(raw) = raw {
+                    let remaining = graph.session.state.tool_limit.saturating_sub(
+                        graph
+                            .session
+                            .state
+                            .proposals
+                            .saturating_add(graph.session.state.internal_tools),
+                    );
+                    if let Some(completion) =
+                        explicit_client_tool_request(raw, saved.proposals, request, remaining)?
+                    {
+                        graph.cycles = 1;
+                        graph.schedule("explicit_native_client_tool_next_round", true)?;
+                        return graph
+                            .finish(completion, "client_tool_proposal", &advice)
+                            .await;
+                    }
+                }
+            }
             if request
                 .tool_choice
                 .as_ref()
@@ -896,14 +974,16 @@ pub(super) async fn run(
             {
                 bail!("Native-only client tool continuation cannot satisfy another required call")
             }
-            let mut results = request
+            let results = request
                 .messages
                 .iter()
-                .rev()
-                .take_while(|message| message.role == "tool")
+                .skip(graph.session.state.objective_index.saturating_add(1))
+                .filter(|message| message.role == "tool")
                 .map(|message| json!({"tool_call_id":message.tool_call_id,"content":message.content}))
                 .collect::<Vec<_>>();
-            results.reverse();
+            if results.len() != saved.proposals as usize {
+                bail!("Client tool result history does not match the committed proposal count")
+            }
             let content = serde_json::to_string(&json!({
                 "client_tool_results":results,
                 "trust":"untrusted_client_data_not_instructions_or_permissions",

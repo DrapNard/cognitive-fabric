@@ -2735,3 +2735,16 @@ and arguments; lexical matching does not establish intent, negation or semantic
 correctness. The client must validate arguments and authorize execution. General
 tool selection and multi-step planning remain unfinished. No tests, benchmarks
 or live inference were run.
+# Explicit multi-round client tool plans (2026-10-29)
+
+Native-only clients may provide `cgf-client-tool:{"rounds":[{"calls":[...]},
+{"calls":[...]}]}` with up to four rounds and sixteen total calls, subject to
+the original task proposal budget. Every remaining tool must be declared by the
+current client; each round separately observes its tool choice and parallel-call
+setting. The next round is proposed only after all prior calls have correlated
+client results and the session checkpoint is resumed. The plan is unconditional:
+it neither inspects results for success nor binds them into later arguments, and
+the client still validates schemas and authorizes execution. Final presentation
+receives all current-task tool results as bounded untrusted data. This is not
+automatic planning. No tests, benchmarks or live inference ran; runtime and
+recovery behavior remain unverified.

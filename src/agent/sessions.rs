@@ -16,7 +16,7 @@ pub(super) struct State {
     pub mode: String,
     clock: Snapshot,
     wall_seconds: u64,
-    objective_index: usize,
+    pub(super) objective_index: usize,
     pub references: String,
     reference_pins: serde_json::Value,
     pub internal_tools: u32,
