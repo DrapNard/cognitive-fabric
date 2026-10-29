@@ -1,5 +1,13 @@
 # Current Rust implementation
 
+## Restore expert routing from structured interpretation — 2026-10-29
+
+**Implemented regression fix; runtime unverified.** Expert routing reads the
+interpretation from validated task-bound reasoning memory as well as legacy
+unwrapped structured advice. Existing capability scope and policy checks remain.
+See [cognitive network](COGNITIVE_NETWORK.md). No tests, benchmarks or live
+inference ran.
+
 ## Per-model on-demand context and cache settings — 2026-10-28
 
 **Implemented; runtime unverified.** Native policy drafting accepts explicit

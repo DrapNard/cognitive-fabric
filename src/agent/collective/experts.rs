@@ -817,9 +817,12 @@ impl Graph<'_> {
         {
             bail!("Expert role wave capacity is outside its shared task bound")
         }
-        let parsed_advice: serde_json::Value =
-            serde_json::from_str(prior_advice).unwrap_or_else(|_| serde_json::json!({}));
-        let interpretation = if let Some(value) = parsed_advice.get("interpretation") {
+        let interpretation_value = super::super::reasoning_memory::interpretation(
+            prior_advice,
+            self.session.original_objective(self.original)?,
+            &self.session.state.references,
+        )?;
+        let interpretation = if let Some(value) = interpretation_value {
             crate::language::Interpretation::parse(&value.to_string())?
         } else {
             crate::language::Interpretation {

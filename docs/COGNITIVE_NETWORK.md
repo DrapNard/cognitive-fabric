@@ -1,5 +1,20 @@
 # Cognitive network implementation
 
+## Restore expert routing from structured interpretation — 2026-10-29
+
+**Implemented regression fix; runtime unverified.** The language interpretation
+is now inside the task-bound reasoning-memory envelope. Expert routing previously
+looked only at the old top-level field, so it could miss requested capabilities
+after that migration. `reasoning_memory.rs` now extracts the interpretation
+from a validated envelope bound to the same original objective and references;
+legacy unwrapped structured interpretation remains readable. `collective/experts.rs`
+uses that result for the existing pinned capability routing and scope checks.
+
+The interpretation remains untrusted model guidance and grants no permissions.
+Malformed marked envelopes fail validation rather than silently becoming empty
+routing input. No tests, benchmarks, live inference or recovery execution ran;
+static checks do not prove the complete expert workflow works at runtime.
+
 ## Per-model on-demand context and cache settings — 2026-10-28
 
 **Implemented policy-draft overrides; runtime unverified.** Operators can use

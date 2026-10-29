@@ -1,5 +1,14 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Restore expert routing from structured interpretation — 2026-10-29
+
+**Implemented regression fix; runtime unverified.** `reasoning_memory.rs` and
+`collective/experts.rs` restore capability-routing interpretation from the
+validated task-bound envelope. Legacy unwrapped structured input remains readable;
+untrusted guidance cannot grant permissions. See
+[cognitive network](COGNITIVE_NETWORK.md). No tests, benchmarks or live
+inference ran.
+
 ## Per-model on-demand context and cache settings — 2026-10-28
 
 **Implemented; runtime unverified.** `main.rs` and `residency/lifecycle.rs`

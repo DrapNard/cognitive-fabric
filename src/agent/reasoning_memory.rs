@@ -121,6 +121,25 @@ pub(super) fn validate_root(raw: &str, root: &str, references: &str) -> Result<(
     Ok(())
 }
 
+/// Recover only the original interpretation data for expert routing. A marked
+/// envelope must match the same task and references before its context is read.
+pub(super) fn interpretation(raw: &str, root: &str, references: &str) -> Result<Option<Value>> {
+    if raw.len() > MAX_MEMORY_BYTES || root.is_empty() {
+        bail!("Reasoning memory input exceeds its bound")
+    }
+    let context = match decode(raw)? {
+        Some(memory) => {
+            validate_memory(&memory, Some(root), references)?;
+            memory.context
+        }
+        None => match crate::strict_json::value(raw.as_bytes(), MAX_MEMORY_BYTES) {
+            Ok(value) => value,
+            Err(_) => return Ok(None),
+        },
+    };
+    Ok(context.get("interpretation").cloned())
+}
+
 fn load(root: &str, references: &str, previous: &str) -> Result<Memory> {
     if root.is_empty() || root.len() > 1_000_000 || previous.len() > MAX_MEMORY_BYTES {
         bail!("Reasoning memory input exceeds its bound")
