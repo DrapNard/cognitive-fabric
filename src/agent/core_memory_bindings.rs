@@ -124,8 +124,8 @@ pub(super) fn resolve(
         let replacement = match input.mode {
             Mode::Value => strict_json::value(selected.as_bytes(), MAX_SOURCE_BYTES)?,
             Mode::NumericExpression => {
-                if !is_numeric_token(&selected) {
-                    bail!("numeric_expression requires a plain JSON number")
+                if !crate::math::is_json_numeric_token(&selected) {
+                    bail!("numeric_expression requires a bounded JSON number")
                 }
                 Value::String(format!("({selected})"))
             }
@@ -265,15 +265,4 @@ fn valid_operation_id(value: &str) -> bool {
         && index
             .parse::<usize>()
             .is_ok_and(|number| number < 4 && number.to_string() == index)
-}
-
-fn is_numeric_token(raw: &str) -> bool {
-    let token = raw.trim();
-    if token.is_empty() || token.bytes().any(|byte| matches!(byte, b'e' | b'E')) {
-        return false;
-    }
-    token
-        .bytes()
-        .all(|byte| byte.is_ascii_digit() || matches!(byte, b'-' | b'.'))
-        && token.bytes().any(|byte| byte.is_ascii_digit())
 }

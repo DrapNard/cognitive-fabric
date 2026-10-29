@@ -7788,3 +7788,10 @@ its maximum direct dependencies from the eight-operation graph limit, allowing
 up to seven prerequisite operations per node. Checked dependency gating,
 binding, route, resource and size limits remain in force. No tests or
 benchmarks were run for this change.
+# Numeric scientific notation in native dataflow (2026-10-29)
+
+**Implemented; runtime unverified.** `src/math.rs` parses bounded scientific
+notation and validates complete JSON numeric tokens for both native graph and
+checked-memory bindings. The original expression parser, numeric bounds and
+whole-expression binding restriction remain authoritative. Floating-point
+rounding and underflow remain possible; no tests or benchmarks were run.

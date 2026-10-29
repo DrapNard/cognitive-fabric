@@ -155,8 +155,8 @@ impl Template {
                     crate::strict_json::value(selected.as_bytes(), MAX_RESULT_BYTES)?
                 }
                 BindingMode::NumericExpression => {
-                    if !is_supported_numeric_token(&selected) {
-                        bail!("numeric_expression binding requires a plain JSON number")
+                    if !crate::math::is_json_numeric_token(&selected) {
+                        bail!("numeric_expression binding requires a bounded JSON number")
                     }
                     Value::String(format!("({selected})"))
                 }
@@ -493,17 +493,6 @@ fn canonical_index(value: &str) -> Result<usize> {
 
 fn is_prefix(left: &[String], right: &[String]) -> bool {
     left.len() <= right.len() && left.iter().zip(right).all(|(a, b)| a == b)
-}
-
-fn is_supported_numeric_token(raw: &str) -> bool {
-    let token = raw.trim();
-    if token.is_empty() || token.bytes().any(|byte| matches!(byte, b'e' | b'E')) {
-        return false;
-    }
-    token
-        .bytes()
-        .all(|byte| byte.is_ascii_digit() || matches!(byte, b'-' | b'.'))
-        && token.bytes().any(|byte| byte.is_ascii_digit())
 }
 
 fn validate_id(id: &str) -> Result<()> {

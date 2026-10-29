@@ -44,6 +44,19 @@ impl Parser<'_> {
         if start == self.pos {
             bail!("Expected number")
         }
+        if matches!(self.input.get(self.pos), Some(b'e' | b'E')) {
+            self.pos += 1;
+            if matches!(self.input.get(self.pos), Some(b'+' | b'-')) {
+                self.pos += 1;
+            }
+            let exponent_start = self.pos;
+            while self.pos < self.input.len() && self.input[self.pos].is_ascii_digit() {
+                self.pos += 1;
+            }
+            if exponent_start == self.pos {
+                bail!("Expected exponent digits")
+            }
+        }
         let n: f64 = std::str::from_utf8(&self.input[start..self.pos])?.parse()?;
         if !n.is_finite() || n.abs() > 1e12 {
             bail!("Number exceeds limit")
@@ -147,6 +160,14 @@ pub fn calculate(input: &str) -> Result<String> {
     } else {
         Ok(format!("{n}"))
     }
+}
+
+/// Accept one complete JSON number only when the arithmetic parser also accepts
+/// it under its normal size and finite-value limits. This never accepts an
+/// expression or executable text as a numeric data binding.
+pub(crate) fn is_json_numeric_token(raw: &str) -> bool {
+    let token = raw.trim();
+    serde_json::from_str::<serde_json::Number>(token).is_ok() && calculate(token).is_ok()
 }
 
 #[cfg(test)]

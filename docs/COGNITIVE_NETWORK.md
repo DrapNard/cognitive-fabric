@@ -2641,3 +2641,12 @@ provider-route proof, task budgets, event-size limits, output limits and
 four-slot concurrency remain unchanged, so larger graphs can still be rejected
 when another existing limit is reached. This does not verify natural-language
 translation fidelity. No tests, benchmarks or live inference were run.
+# Scientific-notation numeric dataflow (2026-10-29)
+
+The bounded native arithmetic parser accepts decimal scientific notation, such
+as `1e-3`, and graph and checked-memory bindings accept it only as a complete
+JSON numeric token that also passes the arithmetic parser's limits. Binding
+still replaces a whole expression with one parenthesized numeric value; it does
+not allow source text to introduce operators, SQL or executable code. Existing
+floating-point semantics, expression length and finite-value bounds remain.
+Runtime and numerical behavior are unverified; no tests or benchmarks ran.
