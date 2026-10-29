@@ -10,7 +10,7 @@ use serde_json::Value;
 use std::collections::BTreeSet;
 
 const MAX_TRANSLATION_BYTES: usize = 16_000;
-const MAX_OPERATIONS: usize = 4;
+const MAX_OPERATIONS: usize = super::MAX_TYPED_OPERATIONS;
 
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -86,7 +86,7 @@ pub(in crate::agent) fn parse(
 
     let document: GraphDocument = serde_json::from_value(value)?;
     if document.operations.is_empty() || document.operations.len() > MAX_OPERATIONS {
-        bail!("Typed graph must contain between one and four operations")
+        bail!("Typed graph must contain between one and eight operations")
     }
 
     let caps: BTreeSet<String> = document

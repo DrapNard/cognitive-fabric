@@ -24,7 +24,7 @@ edges, nodes, or other task data. This field is an advisory translation only; it
 does not select tools, models, providers, modules, or permissions.
 
 Optional typed_batch: {"operations":[{"id":"sum","capability":"math.evaluate","arguments":{"expression":"..."}}]}
-Use it only for 1 to 4 independent operations, and only when every operation's
+Use it only for 1 to 8 independent operations, and only when every operation's
 required data is present. Operations cannot depend on each other, refer to prior
 outputs, or be partially selected. Never guess or omit an operation needed to
 fulfill the chosen computation; omit typed_batch when its complete independent
@@ -34,7 +34,8 @@ capabilities separately. This is an advisory translation only; it does not
 select tools, models, providers, modules, or permissions.
 
 Optional typed_graph: {"operations":[{"id":"first","capability":"sorting.verify","arguments":{"values":[3,1]}},{"id":"next","capability":"sorting.verify","arguments":{"values":[0],"descending":true},"depends_on":["first"],"bindings":[{"target":"/values","source":"first","pointer":""}]}]}
-Use typed_graph only for a complete, unambiguous 1-to-4-operation DAG. Every binding
+Use typed_graph only for a complete, unambiguous 1-to-8-operation DAG; each operation
+may have at most three direct dependencies. Every binding
 source must be in depends_on; targets replace existing argument values. Concrete
 schema-valid placeholders are structural only and must be overwritten by their
 bindings before use; never invent missing real input data. Result data cannot
@@ -273,8 +274,8 @@ impl Parsed {
             None | Some(Value::Null) => None,
             Some(value) => {
                 let batch: TypedBatch = serde_json::from_value(value)?;
-                if !(1..=4).contains(&batch.operations.len()) {
-                    bail!("Typed batch must contain between one and four operations")
+                if !(1..=super::MAX_TYPED_OPERATIONS).contains(&batch.operations.len()) {
+                    bail!("Typed batch must contain between one and eight operations")
                 }
                 let mut ids = std::collections::HashSet::with_capacity(batch.operations.len());
                 let mut translated = Vec::with_capacity(batch.operations.len());

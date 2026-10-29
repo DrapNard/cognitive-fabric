@@ -28,6 +28,7 @@ use std::{
 
 const MAX_SNAPSHOT_BYTES: usize = 64 * 1024;
 const MAX_MODULE_DEADLINE: Duration = Duration::from_secs(300);
+pub(super) const MAX_TYPED_OPERATIONS: usize = 8;
 
 pub(super) fn validate_source_pointer(pointer: &str) -> Result<()> {
     graphs::validate_source_pointer(pointer)

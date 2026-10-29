@@ -15,7 +15,7 @@ pub(in crate::agent) const BATCH_PREFIX: &str = "typed-batch:";
 
 const MAX_PLAN_BYTES: usize = 32_000;
 const MAX_OUTPUT_BYTES: usize = 16_384;
-const MAX_ENTRIES: usize = 4;
+const MAX_ENTRIES: usize = super::MAX_TYPED_OPERATIONS;
 
 /// One validated operation in a plan. Entries can only be built by Plan.
 pub(in crate::agent) struct Entry {
@@ -71,7 +71,7 @@ impl Plan {
         operations: Vec<(String, Capability, serde_json::Value)>,
     ) -> Result<Self> {
         if operations.is_empty() || operations.len() > MAX_ENTRIES {
-            bail!("Reasoning plan must contain between one and four operations")
+            bail!("Reasoning plan must contain between one and eight operations")
         }
 
         let query_digest = crate::store::sha256(original.as_bytes());
@@ -179,7 +179,7 @@ impl Plan {
             let value = crate::strict_json::value(encoded.as_bytes(), MAX_PLAN_BYTES)?;
             let document: BatchDocument = serde_json::from_value(value)?;
             if document.operations.is_empty() || document.operations.len() > MAX_ENTRIES {
-                bail!("Typed batch must contain between one and four operations")
+                bail!("Typed batch must contain between one and eight operations")
             }
 
             let mut ids = HashSet::with_capacity(document.operations.len());
@@ -310,7 +310,7 @@ impl Plan {
     ) -> Result<Self> {
         reject_explicit_translation_source(original)?;
         if entries.is_empty() || entries.len() > MAX_ENTRIES {
-            bail!("Translated typed batch must contain between one and four operations")
+            bail!("Translated typed batch must contain between one and eight operations")
         }
 
         let mut ids = HashSet::with_capacity(entries.len());

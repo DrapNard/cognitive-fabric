@@ -8,7 +8,7 @@ use serde::Serialize;
 use serde_json::Value;
 use std::collections::BTreeSet;
 
-const MAX_OPERATIONS: usize = 4;
+const MAX_OPERATIONS: usize = super::typed_experts::MAX_TYPED_OPERATIONS;
 const MAX_OPERATION_ID_BYTES: usize = 64;
 const MAX_RESULT_BYTES: usize = 16_384;
 const MAX_CONTEXT_BYTES: usize = 32_768;

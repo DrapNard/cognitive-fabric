@@ -7772,3 +7772,12 @@ deterministic variable order by domain size and constraint degree before its
 bounded finite-domain search. This may change the witness and search-cap outcome;
 it neither increases permissions nor replaces independent checking. The same
 assignment limit remains. No tests or benchmarks were run for this change.
+# Eight-operation native client graphs (2026-10-29)
+
+**Implemented; runtime unverified.** `src/agent/typed_experts.rs` defines one
+eight-operation maximum shared by typed translation, graph/batch parsing, pinned
+provider selection, progress and durable evidence validation. The task's existing
+tool budget, result size limits and four-slot concurrency ceiling still apply;
+the default configuration may admit fewer operations. Model-origin core proposal
+batches remain capped at four. No tests or benchmarks were run, and translated
+task semantics and recovery of larger evidence have not been verified.

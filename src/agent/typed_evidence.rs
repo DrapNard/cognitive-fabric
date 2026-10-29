@@ -52,7 +52,7 @@ pub(super) fn validate(raw: &str, expected_root: &str, expected_digest: &str) ->
             envelope.translation_semantics,
             "unverified_original_meaning" | "exact_operation_contract_only"
         )
-        || !(1..=4).contains(&envelope.typed_results.len())
+        || !(1..=super::typed_experts::MAX_TYPED_OPERATIONS).contains(&envelope.typed_results.len())
     {
         bail!("Persisted typed evidence envelope has invalid task semantics")
     }

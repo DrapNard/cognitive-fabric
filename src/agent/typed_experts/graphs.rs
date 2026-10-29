@@ -13,7 +13,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 const PREFIX: &str = "typed-graph:";
 const MAX_GRAPH_BYTES: usize = 32_000;
 const MAX_RESULT_BYTES: usize = 16_384;
-const MAX_OPERATIONS: usize = 4;
+const MAX_OPERATIONS: usize = super::MAX_TYPED_OPERATIONS;
 const MAX_DEPENDENCIES: usize = 3;
 const MAX_BINDINGS: usize = 8;
 const MAX_POINTER_BYTES: usize = 256;
@@ -202,7 +202,7 @@ pub(in crate::agent) fn parse(query: &str) -> Result<Option<Vec<Entry>>> {
     let value = crate::strict_json::value(encoded.as_bytes(), MAX_GRAPH_BYTES)?;
     let document: GraphDocument = serde_json::from_value(value)?;
     if document.operations.is_empty() || document.operations.len() > MAX_OPERATIONS {
-        bail!("Typed graph must contain between one and four operations")
+        bail!("Typed graph must contain between one and eight operations")
     }
 
     let mut ids = HashSet::with_capacity(document.operations.len());

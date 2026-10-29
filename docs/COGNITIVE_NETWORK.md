@@ -2618,3 +2618,16 @@ inputs; the host's independent witness check and task resource limits are
 unchanged. Search stops admitting candidate assignments at the existing 100,000
 limit. Neither runtime behavior nor performance has been measured, and no tests
 or benchmarks were run.
+# Larger native typed graphs (2026-10-29)
+
+The client language translation and host typed-plan path accept up to eight
+operations per batch or graph, including checked progress and persisted evidence.
+The shared scheduler still admits at most four concurrent operations, each
+operation and its verifier must fit the original task tool budget, and the
+existing byte, deadline, provider-route search and per-node dependency limits
+remain unchanged. The default tool budget can admit fewer than eight operations;
+operators must configure sufficient existing budget for larger plans. The
+reasoning-model core proposal interface remains limited to four operations.
+This extends existing native capabilities without granting new capabilities or
+establishing that a translation preserves the original request's meaning.
+Runtime and recovery behavior remain unverified; no tests or benchmarks ran.

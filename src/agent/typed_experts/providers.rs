@@ -18,7 +18,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 const MAX_MANIFESTS: usize = 256;
 const MAX_CATALOG_BYTES: usize = 1024 * 1024;
 const MAX_CATALOG_RECORD_BYTES: usize = MAX_CATALOG_BYTES;
-const MAX_PLAN_OPERATIONS: usize = 4;
+const MAX_PLAN_OPERATIONS: usize = super::MAX_TYPED_OPERATIONS;
 const MAX_PLAN_STATES: usize = 4096;
 const MAX_ROUTE_AUDIT_BYTES: usize = 4096;
 
@@ -365,7 +365,7 @@ impl Catalog {
             .map_err(|_| anyhow::anyhow!("Prepared provider routes require a task UUID"))?;
         let task = task_uuid.to_string();
         if entries.is_empty() || entries.len() > MAX_PLAN_OPERATIONS {
-            bail!("Provider route plan must contain between one and four operations")
+            bail!("Provider route plan must contain between one and eight operations")
         }
 
         let mut ids = HashMap::with_capacity(entries.len());
