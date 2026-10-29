@@ -7800,7 +7800,7 @@ rounding and underflow remain possible; no tests or benchmarks were run.
 **Implemented; runtime unverified.** `--native-only-client` on
 `configure-network` records an opt-in configuration whose client collective
 allows only language-interface and presentation model dispatch. Complete typed
-client tasks use the existing native path; unsupported reasoning, tool proposals,
+client tasks use the existing native path; unsupported reasoning, tool planning,
 and mixed typed/model workflows fail closed. `src/agent/mod.rs` enforces the
 client dispatch boundary, and `src/agent/collective.rs` rejects incomplete typed
 interpretations. A placeholder model key remains in the existing configuration;
@@ -7831,3 +7831,12 @@ It can present correlated client results without a reasoning model. Argument
 schema validation and tool execution remain the client's responsibility.
 Automatic agentic planning and multiple tool rounds are not implemented by this
 path. No tests or benchmarks were run.
+# Named client tool translation (2026-10-29)
+
+**Implemented; runtime unverified.** In native-only client mode,
+`src/agent/collective.rs` and `src/agent/typed_experts/translation.rs` translate
+arguments for one explicitly client-selected function and return a bounded
+proposal through the existing checkpoint. The client must validate its schema
+and authorize execution. The language output and tool results remain untrusted;
+automatic tool choice and multi-step planning remain absent. No tests or
+benchmarks were run.

@@ -2656,8 +2656,9 @@ Runtime and numerical behavior are unverified; no tests or benchmarks ran.
 configures the client collective to allow model inference only for request
 interpretation and result presentation. Supported complete typed operations,
 batches and graphs run through the existing pinned native experts and verifier;
-requests requiring additional reasoning or client tool proposals fail instead of
-dispatching a reasoning model; a valid missing-information clarification can be
+requests requiring unsupported reasoning or tool planning fail instead of
+dispatching a reasoning model; the later client-tool updates describe limited
+proposal routes. A valid missing-information clarification can be
 presented to the user. This is an opt-in client restriction, not a
 complete agentic implementation. Enable the typed module worker when running the
 server. The configuration retains a distinct placeholder reasoning model key
@@ -2700,3 +2701,15 @@ may present bounded tool results as untrusted, unverified data; it does not plan
 another tool call. Required additional calls fail closed. This explicit protocol
 does not make ordinary agentic clients generate such requests or implement
 automatic tool planning. No tests, benchmarks or live inference were run.
+# Client-selected tool argument translation (2026-10-29)
+
+In native-only mode, a client can use the standard named function tool choice.
+The host supplies only that selected tool's schema as untrusted data to the
+language interface and asks it to translate explicit arguments, without choosing
+a tool or inventing missing data. A structured argument object is converted into
+one client-owned proposal after checking the selected name, choice and remaining
+budget. The model's interpretation is not proof of the user's intent; the client
+still validates its schema and authorizes execution. Correlated results can be
+presented as untrusted data. Automatic tool selection, arbitrary multi-step
+planning and client schema enforcement are not implemented. No tests,
+benchmarks or live inference were run; runtime behavior is unverified.

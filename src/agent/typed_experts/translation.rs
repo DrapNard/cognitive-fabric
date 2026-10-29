@@ -98,6 +98,7 @@ constraints.solve: {"capability":"constraints.solve","arguments":{"variables":[{
 /// A strict envelope around the stable public language interpretation.
 pub(in crate::agent) struct Parsed {
     pub(in crate::agent) interpretation: language::Interpretation,
+    pub(in crate::agent) client_tool_arguments: Option<Value>,
     pub(in crate::agent) typed_goal: Option<Translation>,
     pub(in crate::agent) typed_batch: Option<Vec<(String, Translation)>>,
     pub(in crate::agent) typed_graph: Option<super::graph_translation::Translation>,
@@ -197,6 +198,11 @@ impl Parsed {
         let object = envelope
             .as_object_mut()
             .ok_or_else(|| anyhow::anyhow!("Language response must be a JSON object"))?;
+        let client_tool_arguments = match object.remove("client_tool_arguments") {
+            None | Some(Value::Null) => None,
+            Some(value) if value.is_object() => Some(value),
+            Some(_) => bail!("Client tool arguments must be an object"),
+        };
         let typed_value = object.remove("typed_goal");
         let batch_value = object.remove("typed_batch");
         let graph_value = object
@@ -374,6 +380,15 @@ impl Parsed {
         let typed_graph = graph_value
             .map(|value| super::graph_translation::parse(value, &interpretation, typed_evidence))
             .transpose()?;
+        if client_tool_arguments.is_some()
+            && (interpretation.clarification.is_some()
+                || typed_goal.is_some()
+                || typed_batch.is_some()
+                || typed_graph.is_some()
+                || typed_evidence)
+        {
+            bail!("Client tool arguments cannot be combined with typed work or clarification")
+        }
         if expert_typed_inputs.is_some() && typed_graph.is_none() {
             bail!("Expert typed inputs require a typed graph")
         }
@@ -443,6 +458,7 @@ impl Parsed {
         }
         Ok(Self {
             interpretation,
+            client_tool_arguments,
             typed_goal,
             typed_batch,
             typed_graph,
