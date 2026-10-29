@@ -7815,3 +7815,10 @@ client scope and policy draft for the actual language route without requiring th
 disabled reasoning placeholder. Existing approval and managed receipt checks
 remain mandatory. Engine residency remains separate. No model operations,
 tests or benchmarks were run.
+# Native-only client clarification (2026-10-29)
+
+**Implemented; runtime unverified.** `src/agent/collective.rs` can present a
+validated missing-information question from the language interface when no
+complete native task exists. Explicitly required client tool calls are not
+replaced by a clarification. This does not implement agentic tool planning.
+No tests or benchmarks were run.

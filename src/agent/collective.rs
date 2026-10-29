@@ -807,6 +807,33 @@ pub(super) async fn run(
                 using_typed = typed_work.is_some();
             }
         }
+        if runtime.cfg.native_only_client && !using_typed {
+            if let Some(question) = &interpretation.clarification {
+                if request
+                    .tool_choice
+                    .as_ref()
+                    .is_none_or(|choice| choice != "required" && !choice.is_object())
+                {
+                    let context = json!({"interpretation":interpretation,"trust":"advisory_original_goal_remains_authoritative"}).to_string();
+                    advice = graph.merge_roles(&context, &[])?.ok_or_else(|| {
+                        anyhow::anyhow!("Structured clarification exceeds client context bound")
+                    })?;
+                    graph.cycles = 1;
+                    graph.schedule("language_clarification_without_reasoning_model", true)?;
+                    let completion = Completion {
+                        content: Some(question.clone()),
+                        tool_calls: Vec::new(),
+                        model: "native-clarification".into(),
+                        finish_reason: "stop".into(),
+                        input_tokens: None,
+                        output_tokens: None,
+                    };
+                    return graph
+                        .finish(completion, "needs_clarification", &advice)
+                        .await;
+                }
+            }
+        }
         if runtime.cfg.native_only_client && (!using_typed || use_typed_evidence) {
             bail!("Native-only client mode requires a complete supported typed task; additional reasoning and client tool proposals are not available")
         }

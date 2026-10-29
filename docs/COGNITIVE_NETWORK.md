@@ -2657,7 +2657,8 @@ configures the client collective to allow model inference only for request
 interpretation and result presentation. Supported complete typed operations,
 batches and graphs run through the existing pinned native experts and verifier;
 requests requiring additional reasoning or client tool proposals fail instead of
-dispatching a reasoning model. This is an opt-in client restriction, not a
+dispatching a reasoning model; a valid missing-information clarification can be
+presented to the user. This is an opt-in client restriction, not a
 complete agentic implementation. Enable the typed module worker when running the
 server. The configuration retains a distinct placeholder reasoning model key
 for existing configuration compatibility; client inference cannot dispatch it.
@@ -2677,3 +2678,12 @@ deadline checks remain required. The restriction applies to the client path;
 the separate Engine has different model requirements. Policy drafts grant no
 authority and still need operator review. No tests, benchmarks, model loads,
 recovery or live inference ran; this integration remains runtime unverified.
+# Native-only clarification (2026-10-29)
+
+When the language interface returns a validated clarification and no complete
+typed task, the native-only client path can present that question without a
+reasoning-model call. The question is unverified language output, grants no
+permissions and is not treated as a solved task. It cannot replace a client
+request that explicitly requires a tool call. Call, output and task deadlines
+remain enforced. No tests, benchmarks or live inference were run; runtime
+behavior is unverified.
