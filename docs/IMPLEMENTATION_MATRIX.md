@@ -7848,3 +7848,11 @@ required choice, in addition to explicitly named tools. The existing completion
 validator and client execution boundary remain in force. Client schema validation
 and authorization remain necessary; translation fidelity is unverified. No
 tests or benchmarks were run.
+# Explicit user-named client tool routing (2026-10-29)
+
+**Implemented; runtime unverified.** `src/agent/collective.rs` can select a
+unique tool explicitly named in the latest user message using the documented
+literal phrases, even when a client advertises multiple tools. Ambiguous names
+do not select a tool. This lexical cue is not intent or negation verification;
+the client remains responsible for schema validation and execution approval.
+No tests or benchmarks were run.

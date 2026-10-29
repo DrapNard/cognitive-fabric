@@ -2723,3 +2723,15 @@ and asks the language interface to translate an explicit user request. The
 translation can still misread intent or arguments; the client must validate the
 schema and authorize execution. No tests, benchmarks or live inference were run,
 and this does not implement multi-tool planning.
+# Explicit tool names in user requests (2026-10-29)
+
+With multiple client tools and automatic or required tool choice, the native
+router can select a unique tool whose exact case-sensitive name follows `use
+tool`, `call tool`, or `invoke tool` in the latest user message, up to 16,000
+bytes. It refuses to
+select if multiple names match and never uses tool results or descriptions for
+this routing. The language interface is asked to translate an explicit request
+and arguments; lexical matching does not establish intent, negation or semantic
+correctness. The client must validate arguments and authorize execution. General
+tool selection and multi-step planning remain unfinished. No tests, benchmarks
+or live inference were run.
