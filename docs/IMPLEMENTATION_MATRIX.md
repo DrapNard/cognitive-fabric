@@ -7804,5 +7804,14 @@ client tasks use the existing native path; unsupported reasoning, tool proposals
 and mixed typed/model workflows fail closed. `src/agent/mod.rs` enforces the
 client dispatch boundary, and `src/agent/collective.rs` rejects incomplete typed
 interpretations. A placeholder model key remains in the existing configuration;
-the separate Engine path and managed client residency are not covered. No tests
+the separate Engine path is not covered. Managed client residency is described in
+the later residency update. No tests
 or benchmarks were run, and end-to-end operation is not verified.
+# Native-only client residency (2026-10-29)
+
+**Implemented; runtime unverified.** `src/agent/native_scope.rs`,
+`src/agent/native_chat.rs` and `src/residency/lifecycle.rs` support an approved
+client scope and policy draft for the actual language route without requiring the
+disabled reasoning placeholder. Existing approval and managed receipt checks
+remain mandatory. Engine residency remains separate. No model operations,
+tests or benchmarks were run.

@@ -204,9 +204,6 @@ impl AgentRuntime {
                 "Client native routing requires explicit approval of model-key/inventory evidence"
             )
         }
-        if self.cfg.native_only_client {
-            bail!("Native-only client mode does not yet support managed model residency")
-        }
         if !self.collective_enabled() || self.managed {
             bail!("Client native routing requires direct collective conversation inference")
         }
@@ -391,6 +388,9 @@ impl AgentRuntime {
                 "reflector",
                 "synthesizer",
             ] {
+                if self.cfg.native_only_client && !matches!(role, "interface" | "synthesizer") {
+                    continue;
+                }
                 if self.backend.for_role(role)?.is_none() {
                     bail!("Language-boundary conversations require explicit backend role routing")
                 }

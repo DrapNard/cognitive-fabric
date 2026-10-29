@@ -65,13 +65,24 @@ impl NativeLifecyclePolicy {
         if url::Url::parse(&api_base)?.origin() != url::Url::parse(&cfg.api_base)?.origin() {
             bail!("Native policy endpoint must match the configured provider origin")
         }
-        let models = std::iter::once(&cfg.model)
-            .chain(cfg.role_profiles.values().map(|profile| &profile.model))
-            .chain(extra_models.iter())
+        let configured_models = if cfg.native_only_client {
+            vec![cfg.language_model().expect("validated language route")]
+        } else {
+            std::iter::once(cfg.model.as_str())
+                .chain(
+                    cfg.role_profiles
+                        .values()
+                        .map(|profile| profile.model.as_str()),
+                )
+                .collect::<Vec<_>>()
+        };
+        let models = configured_models
+            .into_iter()
+            .chain(extra_models.iter().map(String::as_str))
             .collect::<std::collections::BTreeSet<_>>()
             .into_iter()
             .map(|model| planning::EnsureLoaded {
-                model: model.clone(),
+                model: model.to_owned(),
                 context_length: model_contexts.get(model).copied().unwrap_or(context_length),
                 offload_kv_cache_to_gpu: model_kv_placement
                     .get(model)

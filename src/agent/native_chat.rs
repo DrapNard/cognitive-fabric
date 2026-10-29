@@ -36,7 +36,19 @@ impl ScopedChat {
         if !scope.model_key_evidence_approved() {
             bail!("Scoped client inference requires an explicitly pinned model-key and inventory evidence policy")
         }
-        let target = local_target(inner.as_ref())?;
+        let target = if cfg.native_only_client {
+            let route = inner.for_role("interface")?.ok_or_else(|| {
+                anyhow::anyhow!("Native-only client needs an explicit language route")
+            })?;
+            let target = local_target(route.as_ref())?;
+            let (expected, _) = cfg.model_settings("interface")?;
+            if target.model != expected {
+                bail!("Native-only client language target differs from its configured model")
+            }
+            target
+        } else {
+            local_target(inner.as_ref())?
+        };
         validate_target(&target, &scope)?;
         Ok(Self {
             inner,

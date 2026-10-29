@@ -2662,7 +2662,18 @@ complete agentic implementation. Enable the typed module worker when running the
 server. The configuration retains a distinct placeholder reasoning model key
 for existing configuration compatibility; client inference cannot dispatch it.
 The separate Engine endpoint is not covered by this client-only restriction.
-Managed client model residency is currently rejected in this mode; configure the
-language model separately before starting the server. Diagnostics distinguish
+Managed client residency is described in the later native-only residency update.
+Diagnostics distinguish
 disabled client reasoning routes. No tests, benchmarks, activation or live
 inference were run; runtime behavior remains unverified.
+# Native-only client managed residency (2026-10-29)
+
+The approved client residency scope now pins the interface route in native-only
+mode instead of requiring the placeholder reasoning-model key. Policy drafts
+for this configuration include the language model and explicitly requested
+extras, not disabled client reasoning routes. Existing model-key evidence
+approval, policy scope, receipts, durable activation, uncertainty blocking and
+deadline checks remain required. The restriction applies to the client path;
+the separate Engine has different model requirements. Policy drafts grant no
+authority and still need operator review. No tests, benchmarks, model loads,
+recovery or live inference ran; this integration remains runtime unverified.

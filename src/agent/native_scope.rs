@@ -218,12 +218,17 @@ pub(crate) fn validate_configuration(cfg: &Config, policy: &NativeLifecyclePolic
         .iter()
         .map(|model| model.model.as_str())
         .collect::<std::collections::BTreeSet<_>>();
-    if !allowed.contains(cfg.model.as_str())
-        || cfg
-            .role_profiles
-            .values()
-            .any(|profile| !allowed.contains(profile.model.as_str()))
-    {
+    let missing_route = if cfg.native_only_client {
+        cfg.language_model()
+            .is_none_or(|model| !allowed.contains(model))
+    } else {
+        !allowed.contains(cfg.model.as_str())
+            || cfg
+                .role_profiles
+                .values()
+                .any(|profile| !allowed.contains(profile.model.as_str()))
+    };
+    if missing_route {
         bail!("Native client policy does not cover every configured model route")
     }
     Ok(())
