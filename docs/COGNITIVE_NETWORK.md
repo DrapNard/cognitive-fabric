@@ -1,5 +1,21 @@
 # Cognitive network implementation
 
+## Check declared client role targets before dispatch — 2026-10-29
+
+**Implemented; runtime unverified.** With the explicit language-only boundary,
+the client runtime checks a declared local or native adapter target against the
+configured role model and endpoint before preparing or dispatching that route.
+Managed native targets must also match the pinned approved policy and model set.
+Expert wave reservations and paired preparation inspect their selected targets
+before starting the wave. Existing response-model checks remain in force.
+
+This checks trusted adapter declarations, not actual weights or the identity of
+an OpenAI-compatible response instance. Offline or embedded adapters without a
+declared target remain supported but their destination is unverified before
+dispatch; the existing returned model-key check still applies. This does not
+grant permissions, load a model or change budgets. No tests, benchmarks, model
+activation or live inference ran; static checks do not prove runtime behavior.
+
 ## Release planner and explorer slots independently — 2026-10-29
 
 **Implemented for overlapping client expert workflows; runtime unverified.**

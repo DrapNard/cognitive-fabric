@@ -1,5 +1,13 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Check declared client role targets before dispatch — 2026-10-29
+
+**Implemented; runtime unverified.** `agent/mod.rs` checks declared client role
+targets before preparation or dispatch, including approved managed-native policy
+identity. `collective/experts.rs` checks expert routes before reservation.
+Undeclared targets and provider weights remain unverified. See
+[cognitive network](COGNITIVE_NETWORK.md). No tests, benchmarks or live inference ran.
+
 ## Release planner and explorer slots independently — 2026-10-29
 
 **Implemented; runtime unverified.** `collective/experts.rs` tracks separately

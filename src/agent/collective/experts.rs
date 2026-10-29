@@ -558,6 +558,7 @@ impl Graph<'_> {
                     bail!("Pinned expert backend cannot honor the configured reasoning route")
                 }
                 let backend = route.unwrap_or_else(|| runtime.backend.clone());
+                runtime.validate_selected_target(ROLE, backend.as_ref())?;
                 Ok((runtime, backend, serde_json::to_vec(turn)?))
             })
             .collect::<Result<Vec<_>>>()?;

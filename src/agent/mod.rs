@@ -477,12 +477,9 @@ impl AgentRuntime {
                 if selected.is_none() && self.cfg.language_model().is_some() {
                     bail!("Selected backend cannot honor the pinned language/reasoning role map")
                 }
-                Ok((
-                    *role,
-                    selected
-                        .unwrap_or_else(|| backend.clone())
-                        .inference_target()?,
-                ))
+                let selected = selected.unwrap_or_else(|| backend.clone());
+                self.validate_selected_target(role, selected.as_ref())?;
+                Ok((*role, selected.inference_target()?))
             })
             .collect::<Result<Vec<_>>>()?;
         match (&self.cfg.resource_admission, &self.resource_pool) {
@@ -518,6 +515,9 @@ impl AgentRuntime {
                 Ok(route.unwrap_or_else(|| backend.clone()))
             })
             .collect::<Result<Vec<_>>>()?;
+        for (role, route) in roles.iter().zip(&selected) {
+            self.validate_selected_target(role, route.as_ref())?;
+        }
         let preparations = roles
             .iter()
             .zip(&selected)
@@ -535,6 +535,52 @@ impl AgentRuntime {
         Ok(selected)
     }
 
+    /// Check a trusted adapter's declared destination before preparation or
+    /// dispatch. Missing metadata remains explicitly unverified.
+    fn validate_selected_target(&self, role: &str, route: &dyn ChatBackend) -> Result<()> {
+        if self.cfg.language_model().is_some() {
+            let (expected_model, _) = self.cfg.model_settings(role)?;
+            let configured = crate::backend::ModelTarget {
+                api_base: self.cfg.api_base.clone(),
+                model: expected_model.to_owned(),
+            }
+            .canonical()?;
+            let declared = route.inference_target()?;
+            let matches = match declared {
+                Some(crate::backend::InferenceTarget::LocalHttp(target)) => {
+                    target.canonical()? == configured
+                }
+                Some(crate::backend::InferenceTarget::Native(target)) => {
+                    let target = target.canonical()?;
+                    target.model == configured.model
+                        && url::Url::parse(&target.api_base)?.origin()
+                            == url::Url::parse(&configured.api_base)?.origin()
+                }
+                Some(crate::backend::InferenceTarget::ManagedNative(target)) => {
+                    let target = target.canonical()?;
+                    let Some(policy) = &self.native_policy else {
+                        bail!("Managed client route lacks its approved native policy")
+                    };
+                    target.model == configured.model
+                        && url::Url::parse(&target.api_base)?.origin()
+                            == url::Url::parse(&configured.api_base)?.origin()
+                        && target.policy_sha256 == sha256(&serde_json::to_vec(policy.as_ref())?)
+                        && policy
+                            .models
+                            .iter()
+                            .any(|model| model.model == target.model)
+                }
+                // Some offline or embedded adapters cannot declare a target.
+                // Their response still passes the existing role-model check.
+                Some(crate::backend::InferenceTarget::Deterministic) | None => true,
+            };
+            if !matches {
+                bail!("Declared client inference target differs from its pinned role route")
+            }
+        }
+        Ok(())
+    }
+
     async fn prepare_selected_route(
         &self,
         task: &str,
@@ -542,6 +588,7 @@ impl AgentRuntime {
         route: &Arc<dyn ChatBackend>,
         deadline: Instant,
     ) -> Result<()> {
+        self.validate_selected_target(role, route.as_ref())?;
         if !route.requires_preparation() {
             return Ok(());
         }
@@ -592,6 +639,7 @@ impl AgentRuntime {
         if Instant::now() >= deadline {
             bail!("Agent deadline exhausted before backend dispatch")
         }
+        self.validate_selected_target(role, backend.as_ref())?;
         let process = if self.managed && self.collective_enabled() {
             Some(Arc::new(process::ProcessTask::new(
                 self.worker_role_config(role)?,

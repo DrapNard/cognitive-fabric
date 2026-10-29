@@ -1,5 +1,14 @@
 # Current Rust implementation
 
+## Check declared client role targets before dispatch — 2026-10-29
+
+**Implemented; runtime unverified.** Explicit language-only client routes with
+declared targets are checked against their role configuration before preparation
+and dispatch; managed native routes also require the pinned policy. Undeclared
+targets remain supported but unverified before dispatch. See
+[cognitive network](COGNITIVE_NETWORK.md). No tests, benchmarks, model activation
+or live inference ran.
+
 ## Release planner and explorer slots independently — 2026-10-29
 
 **Implemented; runtime unverified.** In overlapping client expert workflows,
