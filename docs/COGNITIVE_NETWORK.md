@@ -2631,3 +2631,13 @@ reasoning-model core proposal interface remains limited to four operations.
 This extends existing native capabilities without granting new capabilities or
 establishing that a translation preserves the original request's meaning.
 Runtime and recovery behavior remain unverified; no tests or benchmarks ran.
+# Eight-operation native graph fan-in (2026-10-29)
+
+An operation in an eight-operation native graph may now declare up to seven
+direct prerequisites. Each dependency must still exist, be unique and finish
+with checked evidence before its dependent starts; cycles remain forbidden.
+Bindings remain limited to eight and retain their aggregate size bounds. Pinned
+provider-route proof, task budgets, event-size limits, output limits and
+four-slot concurrency remain unchanged, so larger graphs can still be rejected
+when another existing limit is reached. This does not verify natural-language
+translation fidelity. No tests, benchmarks or live inference were run.

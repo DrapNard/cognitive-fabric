@@ -35,7 +35,7 @@ select tools, models, providers, modules, or permissions.
 
 Optional typed_graph: {"operations":[{"id":"first","capability":"sorting.verify","arguments":{"values":[3,1]}},{"id":"next","capability":"sorting.verify","arguments":{"values":[0],"descending":true},"depends_on":["first"],"bindings":[{"target":"/values","source":"first","pointer":""}]}]}
 Use typed_graph only for a complete, unambiguous 1-to-8-operation DAG; each operation
-may have at most three direct dependencies. Every binding
+may have at most seven direct dependencies. Every binding
 source must be in depends_on; targets replace existing argument values. Concrete
 schema-valid placeholders are structural only and must be overwritten by their
 bindings before use; never invent missing real input data. Result data cannot

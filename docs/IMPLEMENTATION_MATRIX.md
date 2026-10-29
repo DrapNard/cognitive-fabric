@@ -7781,3 +7781,10 @@ tool budget, result size limits and four-slot concurrency ceiling still apply;
 the default configuration may admit fewer operations. Model-origin core proposal
 batches remain capped at four. No tests or benchmarks were run, and translated
 task semantics and recovery of larger evidence have not been verified.
+# Native graph fan-in (2026-10-29)
+
+**Implemented; runtime unverified.** `src/agent/typed_experts/graphs.rs` derives
+its maximum direct dependencies from the eight-operation graph limit, allowing
+up to seven prerequisite operations per node. Checked dependency gating,
+binding, route, resource and size limits remain in force. No tests or
+benchmarks were run for this change.
