@@ -2608,3 +2608,13 @@ claiming a proof of unsatisfiability. The checker-side search is separate.
 An existing node-count assertion was updated for the previous domain-union
 pruning. No tests or benchmarks were run; performance and runtime behavior are
 unverified.
+# Constraint-worker search ordering (2026-10-29)
+
+The native process expert searches variables in ascending domain size, breaking
+ties by descending number of participating constraints and then by declaration
+order. Domain value order stays unchanged. This deterministic heuristic can
+reach a different valid witness or reach the existing search cap on different
+inputs; the host's independent witness check and task resource limits are
+unchanged. Search stops admitting candidate assignments at the existing 100,000
+limit. Neither runtime behavior nor performance has been measured, and no tests
+or benchmarks were run.

@@ -725,9 +725,28 @@ fn solve_finite(criterion: FiniteCriterion) -> Result<Response> {
             Ok((variable.id.as_str(), (minimum, maximum)))
         })
         .collect::<Result<BTreeMap<_, _>>>()?;
+    // Prefer small domains and, for ties, variables participating in more
+    // constraints. Original declaration order remains the final tie-breaker.
+    // This changes search order only; all witnesses still pass the host checker.
+    let mut order = (0..criterion.variables.len()).collect::<Vec<_>>();
+    order.sort_by_key(|index| {
+        let variable = &criterion.variables[*index];
+        let degree = criterion
+            .constraints
+            .iter()
+            .filter(|constraint| match constraint {
+                FiniteConstraint::Linear { terms, .. } => {
+                    terms.iter().any(|term| term.variable == variable.id)
+                }
+                FiniteConstraint::AllDifferent { variables } => variables.contains(&variable.id),
+            })
+            .count();
+        (variable.domain.len(), std::cmp::Reverse(degree), *index)
+    });
     fn search(
         index: usize,
         criterion: &FiniteCriterion,
+        order: &[usize],
         domain_bounds: &BTreeMap<&str, (i64, i64)>,
         values: &mut BTreeMap<String, i64>,
         explored: &mut usize,
@@ -738,15 +757,15 @@ fn solve_finite(criterion: FiniteCriterion) -> Result<Response> {
                 .iter()
                 .all(|constraint| satisfies(constraint, values));
         }
-        let variable = &criterion.variables[index];
+        let variable = &criterion.variables[order[index]];
         for value in &variable.domain {
-            *explored += 1;
-            if *explored > 100_000 {
+            if *explored >= 100_000 {
                 return false;
             }
+            *explored += 1;
             values.insert(variable.id.clone(), *value);
             if partial_constraints_hold(criterion, values, domain_bounds)
-                && search(index + 1, criterion, domain_bounds, values, explored)
+                && search(index + 1, criterion, order, domain_bounds, values, explored)
             {
                 return true;
             }
@@ -755,7 +774,14 @@ fn solve_finite(criterion: FiniteCriterion) -> Result<Response> {
         false
     }
     let found = partial_constraints_hold(&criterion, &values, &domain_bounds)
-        && search(0, &criterion, &domain_bounds, &mut values, &mut explored);
+        && search(
+            0,
+            &criterion,
+            &order,
+            &domain_bounds,
+            &mut values,
+            &mut explored,
+        );
     if found {
         Ok(Response::FiniteAssignment { values })
     } else {

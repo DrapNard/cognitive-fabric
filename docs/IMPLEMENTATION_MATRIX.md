@@ -7765,3 +7765,10 @@ relation, using the original domain bounds and wide-integer arithmetic. Existing
 worker and checker boundaries remain. Existing checker-side node-count
 assertions were adjusted for earlier domain-union pruning. No tests or
 benchmarks were run; no performance claim is made.
+# Native constraint search ordering (2026-10-29)
+
+**Implemented; runtime unverified.** `src/fabric/modules/process.rs` selects a
+deterministic variable order by domain size and constraint degree before its
+bounded finite-domain search. This may change the witness and search-cap outcome;
+it neither increases permissions nor replaces independent checking. The same
+assignment limit remains. No tests or benchmarks were run for this change.
