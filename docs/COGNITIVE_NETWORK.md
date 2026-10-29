@@ -2713,3 +2713,13 @@ still validates its schema and authorizes execution. Correlated results can be
 presented as untrusted data. Automatic tool selection, arbitrary multi-step
 planning and client schema enforcement are not implemented. No tests,
 benchmarks or live inference were run; runtime behavior is unverified.
+# Sole-tool client translation (2026-10-29)
+
+In native-only mode the same argument-translation path can now use a client's
+sole advertised tool when the client permits automatic or required tool choice.
+For multiple tools, only an explicitly named choice can use this path; `none`
+never permits a proposal. The host chooses the candidate by client configuration
+and asks the language interface to translate an explicit user request. The
+translation can still misread intent or arguments; the client must validate the
+schema and authorize execution. No tests, benchmarks or live inference were run,
+and this does not implement multi-tool planning.

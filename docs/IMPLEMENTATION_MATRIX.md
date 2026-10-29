@@ -7838,5 +7838,13 @@ path. No tests or benchmarks were run.
 arguments for one explicitly client-selected function and return a bounded
 proposal through the existing checkpoint. The client must validate its schema
 and authorize execution. The language output and tool results remain untrusted;
-automatic tool choice and multi-step planning remain absent. No tests or
+automatic choice among multiple tools and multi-step planning remain absent. No tests or
 benchmarks were run.
+# Sole-tool client translation (2026-10-29)
+
+**Implemented; runtime unverified.** `src/agent/collective.rs` allows the
+native-only argument translator to use a sole advertised tool for automatic or
+required choice, in addition to explicitly named tools. The existing completion
+validator and client execution boundary remain in force. Client schema validation
+and authorization remain necessary; translation fidelity is unverified. No
+tests or benchmarks were run.
