@@ -1,5 +1,13 @@
 # Current Rust implementation
 
+## Free execution slots for shared-work waiters — 2026-10-29
+
+**Implemented; runtime unverified.** Coalesced expert steps wait as blocked
+nodes without consuming physical execution slots. They remain unavailable to
+dependents until the checked source completes; running work and all original
+policies and budgets remain limited. See [cognitive network](COGNITIVE_NETWORK.md).
+No tests, benchmarks or live inference ran.
+
 ## Enforce the engine language-role boundary — 2026-10-29
 
 **Implemented; runtime unverified.** Engine sequential and parallel inference

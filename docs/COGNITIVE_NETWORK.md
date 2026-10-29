@@ -1,5 +1,20 @@
 # Cognitive network implementation
 
+## Free execution slots while waiting for shared core work — 2026-10-29
+
+**Implemented task-local scheduling change; runtime unverified.** An expert
+step coalesced onto an identical in-flight core batch is now represented as a
+blocked reuse waiter, separately from physical in-flight work. It cannot be
+selected again or satisfy dependencies until the source's checked result is
+published, but it no longer consumes an execution slot or an active model
+group solely while waiting. The source computation and all actually running
+expert calls still count against the existing limits.
+
+Caller receipts, exact matching, policies, durable memory, failure propagation
+and the source's original budgets remain unchanged. This may admit other ready
+work earlier; it does not prove provider concurrency or a speedup. No tests,
+benchmarks, model activation, live inference or recovery execution ran.
+
 ## Enforce the engine language-role boundary on generic adapters — 2026-10-29
 
 **Implemented; runtime unverified.** With an explicit language-only model, the

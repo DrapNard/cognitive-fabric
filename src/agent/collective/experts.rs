@@ -289,6 +289,7 @@ fn ready_expert_wave(
     results: &[serde_json::Map<String, serde_json::Value>],
     limits: ExpertWaveLimits,
     in_flight: &std::collections::BTreeSet<(usize, usize)>,
+    waiting_reuse: &std::collections::BTreeSet<(usize, usize)>,
     typed_ready: Option<&[bool]>,
 ) -> Result<Vec<(usize, usize, serde_json::Value)>> {
     use super::super::graph_schedule::{self, Dependency, Evidence, Node};
@@ -304,6 +305,9 @@ fn ready_expert_wave(
     }
     if done.len() != plans.len() || results.len() != plans.len() {
         bail!("Expert graph completion state does not match its plans")
+    }
+    if !in_flight.is_disjoint(waiting_reuse) {
+        bail!("A waiting reuse alias cannot also own an execution slot")
     }
     let coordinates = plans
         .iter()
@@ -344,7 +348,8 @@ fn ready_expert_wave(
                 group: plan_index,
                 // A waiting typed gate consumes no model capacity.
                 in_flight: in_flight.contains(&(plan_index, step_index)),
-                blocked: typed_ready.is_some_and(|ready| !ready[plan_index]),
+                blocked: waiting_reuse.contains(&(plan_index, step_index))
+                    || typed_ready.is_some_and(|ready| !ready[plan_index]),
                 dependencies: sources
                     .into_iter()
                     .map(|node| Dependency {
@@ -1012,6 +1017,7 @@ impl Graph<'_> {
                 total: first_wave_capacity,
             },
             &std::collections::BTreeSet::new(),
+            &std::collections::BTreeSet::new(),
             None,
         )?;
         while !first_wave.is_empty()
@@ -1030,6 +1036,7 @@ impl Graph<'_> {
                     per_expert: per_expert_capacity,
                     total: first_wave_capacity,
                 },
+                &std::collections::BTreeSet::new(),
                 &std::collections::BTreeSet::new(),
                 None,
             )?;
@@ -1061,6 +1068,7 @@ impl Graph<'_> {
                     per_expert: per_expert_capacity,
                     total: first_wave_capacity,
                 },
+                &std::collections::BTreeSet::new(),
                 &std::collections::BTreeSet::new(),
                 None,
             )?;
@@ -1204,6 +1212,7 @@ impl Graph<'_> {
                         total: first_wave_capacity,
                     },
                     &std::collections::BTreeSet::new(),
+                    &std::collections::BTreeSet::new(),
                     None,
                 )?;
                 continue;
@@ -1242,6 +1251,7 @@ impl Graph<'_> {
                 per_expert: per_expert_capacity,
                 total: overlap_capacity,
             },
+            &std::collections::BTreeSet::new(),
             &std::collections::BTreeSet::new(),
             None,
         )?;
@@ -1375,6 +1385,7 @@ impl Graph<'_> {
                         total: global_capacity.saturating_sub(2),
                     },
                     &std::collections::BTreeSet::new(),
+                    &std::collections::BTreeSet::new(),
                     typed_ready.as_deref(),
                 )?
             } else {
@@ -1456,12 +1467,11 @@ impl Graph<'_> {
                         }
                         RunningWork::AdvisoryPrepare(_) | RunningWork::AdvisoryRole(_, _) => None,
                     })
-                    .chain(
-                        core_waiters
-                            .values()
-                            .flatten()
-                            .map(|waiter| waiter.coordinate),
-                    )
+                    .collect::<std::collections::BTreeSet<_>>();
+                let waiting_reuse = core_waiters
+                    .values()
+                    .flatten()
+                    .map(|waiter| waiter.coordinate)
                     .collect::<std::collections::BTreeSet<_>>();
                 let advisory_slots = running
                     .iter()
@@ -1498,6 +1508,7 @@ impl Graph<'_> {
                         total: capacity,
                     },
                     &in_flight,
+                    &waiting_reuse,
                     typed_ready.as_deref(),
                 );
                 let mut ready = match selected {

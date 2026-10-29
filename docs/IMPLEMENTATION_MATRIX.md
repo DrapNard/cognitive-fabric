@@ -1,5 +1,12 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Free execution slots for shared-work waiters — 2026-10-29
+
+**Implemented; runtime unverified.** `collective/experts.rs` separates blocked
+reuse waiters from physical in-flight operations, preserving dependency gating
+and the source's limits. See [cognitive network](COGNITIVE_NETWORK.md). No tests,
+benchmarks or live inference ran; broader orchestration remains Partial.
+
 ## Enforce the engine language-role boundary — 2026-10-29
 
 **Implemented; runtime unverified.** `reasoning.rs`, `reasoning/parallel.rs` and
