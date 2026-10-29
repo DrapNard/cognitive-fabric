@@ -1,5 +1,13 @@
 # Current Rust implementation
 
+## Per-model on-demand context and cache settings — 2026-10-28
+
+**Implemented; runtime unverified.** Native policy drafting accepts explicit
+per-model context and cache-placement overrides, with bounds, duplicate and
+unknown-key rejection. No model is loaded or approved by drafting. See
+[cognitive network](COGNITIVE_NETWORK.md). No tests, benchmarks, model loads or
+live inference ran.
+
 ## Draft a native activation policy — 2026-10-28
 
 **Implemented; runtime unverified.** `native-policy-draft` prints an unapproved

@@ -1,5 +1,19 @@
 # Cognitive network implementation
 
+## Per-model on-demand context and cache settings — 2026-10-28
+
+**Implemented policy-draft overrides; runtime unverified.** Operators can use
+`--model-context MODEL_KEY=NUMBER` and `--model-kv-gpu MODEL_KEY=true|false`
+to override the default context and optional cache placement for specific
+configured or explicitly added models. Unknown keys, repeated overrides and
+out-of-range contexts are refused. The resulting immutable v3 policy retains
+the existing exact receipt and provider validation for each model.
+
+Drafting still does not inspect, load or approve models. Different context
+lengths can reduce reserved memory, but the operator must choose limits that fit
+each model and actual client requests; no speed or memory saving is measured.
+No tests, benchmarks, model loads or live inference ran.
+
 ## Draft a native activation policy from configured routes — 2026-10-28
 
 **Implemented client-independent policy drafting; runtime unverified.**

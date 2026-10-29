@@ -496,6 +496,12 @@ enum Command {
         /// Optional explicit KV-cache placement for every model.
         #[arg(long, action = clap::ArgAction::Set)]
         offload_kv_cache_to_gpu: Option<bool>,
+        /// Override one model's context length with MODEL_KEY=NUMBER.
+        #[arg(long = "model-context", value_name = "MODEL_KEY=NUMBER")]
+        model_contexts: Vec<String>,
+        /// Override one model's KV-cache placement with MODEL_KEY=true or MODEL_KEY=false.
+        #[arg(long = "model-kv-gpu", value_name = "MODEL_KEY=BOOL")]
+        model_kv_placement: Vec<String>,
         /// Use the separately configured native provider credential.
         #[arg(long)]
         authenticate: bool,
@@ -2113,19 +2119,52 @@ async fn run_cli() -> Result<()> {
             extra_models,
             context_length,
             offload_kv_cache_to_gpu,
+            model_contexts,
+            model_kv_placement,
             authenticate,
             max_lifecycle_seconds,
-        } => serde_json::to_value(
-            cogfabric::residency::lifecycle::NativeLifecyclePolicy::draft_for_config(
-                &cfg,
+        } => {
+            let mut contexts = std::collections::BTreeMap::new();
+            let mut placements = std::collections::BTreeMap::new();
+            if model_contexts.len() > 8 || model_kv_placement.len() > 8 {
+                bail!("At most eight model context and placement overrides are supported")
+            }
+            for assignment in model_contexts {
+                let (model, value) = assignment.rsplit_once('=').ok_or_else(|| {
+                    anyhow::anyhow!("Model context override must have MODEL_KEY=NUMBER form")
+                })?;
+                let value = value.parse::<u32>()?;
+                if !(1..=32768).contains(&value)
+                    || contexts.insert(model.to_owned(), value).is_some()
+                {
+                    bail!("Invalid or duplicate model context override")
+                }
+            }
+            for assignment in model_kv_placement {
+                let (model, value) = assignment.rsplit_once('=').ok_or_else(|| {
+                    anyhow::anyhow!("Model cache override must have MODEL_KEY=BOOL form")
+                })?;
+                let value = value.parse::<bool>()?;
+                if placements.insert(model.to_owned(), value).is_some() {
+                    bail!("Duplicate model cache override")
+                }
+            }
+            let options = cogfabric::residency::lifecycle::NativePolicyDraftOptions {
                 api_base,
                 extra_models,
                 context_length,
                 offload_kv_cache_to_gpu,
+                model_contexts: contexts,
+                model_kv_placement: placements,
                 authenticate,
                 max_lifecycle_seconds,
-            )?,
-        )?,
+            };
+            serde_json::to_value(
+                cogfabric::residency::lifecycle::NativeLifecyclePolicy::draft_for_config(
+                    &cfg, options,
+                )?,
+            )?
+        }
         Command::ConfigureAuth { enabled } => {
             security::authorize("human-cli", "inference.auth.configure")?;
             let mut settings = cfg.clone();

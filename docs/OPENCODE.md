@@ -23,6 +23,10 @@ cogfabric --home "$HOME/.local/share/cogfabric-http" --json native-policy-draft 
 
 Review the output, save it as a private policy file, and use that file below.
 Drafting does not check installed models, approve the policy or load anything.
+Optional repeated `--model-context MODEL_KEY=NUMBER` and
+`--model-kv-gpu MODEL_KEY=true|false` arguments override individual models.
+Use exact configured or `--extra-model` keys; ensure each context is large
+enough for the requests sent to that route.
 
 ```sh
 export COGFABRIC_NATIVE_POLICY=/absolute/path/to/reviewed-policy.json

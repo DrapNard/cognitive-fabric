@@ -27,24 +27,40 @@ pub struct NativeLifecyclePolicy {
     pub max_lifecycle_seconds: u64,
 }
 
+pub struct NativePolicyDraftOptions {
+    pub api_base: String,
+    pub extra_models: Vec<String>,
+    pub context_length: u32,
+    pub offload_kv_cache_to_gpu: Option<bool>,
+    pub model_contexts: BTreeMap<String, u32>,
+    pub model_kv_placement: BTreeMap<String, bool>,
+    pub authenticate: bool,
+    pub max_lifecycle_seconds: u64,
+}
+
 impl NativeLifecyclePolicy {
     /// Construct a reviewable policy from configured model keys only. This
     /// performs no provider operation and does not confer operator approval.
-    pub fn draft_for_config(
-        cfg: &Config,
-        api_base: String,
-        extra_models: Vec<String>,
-        context_length: u32,
-        offload_kv_cache_to_gpu: Option<bool>,
-        authenticate: bool,
-        max_lifecycle_seconds: u64,
-    ) -> Result<Self> {
+    pub fn draft_for_config(cfg: &Config, options: NativePolicyDraftOptions) -> Result<Self> {
+        let NativePolicyDraftOptions {
+            api_base,
+            extra_models,
+            context_length,
+            offload_kv_cache_to_gpu,
+            model_contexts,
+            model_kv_placement,
+            authenticate,
+            max_lifecycle_seconds,
+        } = options;
         cfg.validate()?;
         if cfg.backend != "openai-local" || cfg.language_model().is_none() {
             bail!("A network policy draft requires local inference and an explicit language-only model route")
         }
         if extra_models.len() > 8 {
             bail!("Native policy draft allows at most eight additional model keys")
+        }
+        if !(1..=32768).contains(&context_length) {
+            bail!("Native policy draft context length is outside the supported range")
         }
         if url::Url::parse(&api_base)?.origin() != url::Url::parse(&cfg.api_base)?.origin() {
             bail!("Native policy endpoint must match the configured provider origin")
@@ -56,10 +72,22 @@ impl NativeLifecyclePolicy {
             .into_iter()
             .map(|model| planning::EnsureLoaded {
                 model: model.clone(),
-                context_length,
-                offload_kv_cache_to_gpu,
+                context_length: model_contexts.get(model).copied().unwrap_or(context_length),
+                offload_kv_cache_to_gpu: model_kv_placement
+                    .get(model)
+                    .copied()
+                    .or(offload_kv_cache_to_gpu),
             })
-            .collect();
+            .collect::<Vec<_>>();
+        if model_contexts.len() > 8
+            || model_kv_placement.len() > 8
+            || model_contexts
+                .keys()
+                .chain(model_kv_placement.keys())
+                .any(|key| !models.iter().any(|model| &model.model == key))
+        {
+            bail!("Native policy override refers to an unknown model or exceeds its bound")
+        }
         let policy = Self {
             format_version: 3,
             api_base,

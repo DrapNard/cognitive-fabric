@@ -1,5 +1,13 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Per-model on-demand context and cache settings — 2026-10-28
+
+**Implemented; runtime unverified.** `main.rs` and `residency/lifecycle.rs`
+accept bounded per-model context and KV-cache placement in native policy drafts.
+Existing policy validation and operator approval gates remain. See
+[cognitive network](COGNITIVE_NETWORK.md). No tests, benchmarks, model loads or
+live inference ran.
+
 ## Draft a native activation policy — 2026-10-28
 
 **Implemented; runtime unverified.** `main.rs` and `residency/lifecycle.rs`
