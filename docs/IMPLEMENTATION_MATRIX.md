@@ -7822,3 +7822,12 @@ validated missing-information question from the language interface when no
 complete native task exists. Explicitly required client tool calls are not
 replaced by a clarification. This does not implement agentic tool planning.
 No tests or benchmarks were run.
+# Explicit native client tool proposals (2026-10-29)
+
+**Implemented; runtime unverified.** `src/agent/collective.rs` accepts a bounded
+explicit `cgf-client-tool:` request in native-only mode and returns declared,
+client-owned calls subject to the existing choice, call and budget validation.
+It can present correlated client results without a reasoning model. Argument
+schema validation and tool execution remain the client's responsibility.
+Automatic agentic planning and multiple tool rounds are not implemented by this
+path. No tests or benchmarks were run.

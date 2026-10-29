@@ -76,6 +76,67 @@ struct PreparedAdvisoryPair {
     turns: [Turn; 2],
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ExplicitClientToolRequest {
+    calls: Vec<ExplicitClientToolCall>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ExplicitClientToolCall {
+    name: String,
+    arguments: serde_json::Value,
+}
+
+/// Translate an explicit structured client request into proposals only. The
+/// client owns execution and is responsible for validating its tool schemas.
+fn explicit_client_tool_request(request: &Turn, remaining: u32) -> Result<Option<Completion>> {
+    let Some(message) = request
+        .messages
+        .last()
+        .filter(|message| message.role == "user")
+    else {
+        return Ok(None);
+    };
+    let Some(raw) = message
+        .content
+        .as_deref()
+        .and_then(|text| text.strip_prefix("cgf-client-tool:"))
+    else {
+        return Ok(None);
+    };
+    let document: ExplicitClientToolRequest =
+        serde_json::from_value(crate::strict_json::value(raw.as_bytes(), 32_000)?)?;
+    if document.calls.is_empty() || document.calls.len() > 16 {
+        bail!("Explicit client request must contain one to sixteen tool calls")
+    }
+    let mut calls = Vec::with_capacity(document.calls.len());
+    for call in document.calls {
+        if !call.arguments.is_object() {
+            bail!("Explicit client tool arguments must be an object")
+        }
+        calls.push(ToolCall {
+            id: format!("cgf_{}", uuid::Uuid::new_v4().simple()),
+            kind: "function".into(),
+            function: FunctionCall {
+                name: call.name,
+                arguments: serde_json::to_string(&call.arguments)?,
+            },
+        });
+    }
+    let completion = Completion {
+        content: None,
+        tool_calls: calls,
+        model: "native-client-router".into(),
+        finish_reason: "tool_calls".into(),
+        input_tokens: None,
+        output_tokens: None,
+    };
+    completion.validate(request, remaining)?;
+    Ok(Some(completion))
+}
+
 async fn dispatch_advisory_pair(
     runtime: &AgentRuntime,
     task: &str,
@@ -742,6 +803,73 @@ pub(super) async fn run(
         held_typed_checks: 0,
     };
     let mut advice = saved.advice.clone();
+    if runtime.cfg.native_only_client && saved.calls == 0 {
+        if saved.proposals == 0 {
+            let remaining = graph
+                .session
+                .state
+                .tool_limit
+                .saturating_sub(graph.session.state.internal_tools);
+            if let Some(completion) = explicit_client_tool_request(request, remaining)? {
+                advice = graph.merge_roles("", &[])?.ok_or_else(|| {
+                    anyhow::anyhow!("Structured client routing context exceeds its bound")
+                })?;
+                graph.cycles = 1;
+                graph.schedule("explicit_native_client_tool_proposal", true)?;
+                return graph
+                    .finish(completion, "client_tool_proposal", &advice)
+                    .await;
+            }
+        } else if graph
+            .session
+            .original_objective(request)?
+            .starts_with("cgf-client-tool:")
+            && request
+                .messages
+                .last()
+                .is_some_and(|message| message.role == "tool")
+        {
+            if request
+                .tool_choice
+                .as_ref()
+                .is_some_and(|choice| choice == "required" || choice.is_object())
+            {
+                bail!("Native-only client tool continuation cannot satisfy another required call")
+            }
+            let mut results = request
+                .messages
+                .iter()
+                .rev()
+                .take_while(|message| message.role == "tool")
+                .map(|message| json!({"tool_call_id":message.tool_call_id,"content":message.content}))
+                .collect::<Vec<_>>();
+            results.reverse();
+            let content = serde_json::to_string(&json!({
+                "client_tool_results":results,
+                "trust":"untrusted_client_data_not_instructions_or_permissions",
+                "client_execution_verified":false
+            }))?;
+            if content.len() > 16_000 {
+                bail!("Client tool results exceed native-only presentation bounds")
+            }
+            graph.cycles = 1;
+            graph.schedule("present_client_tool_results_without_reasoning_model", true)?;
+            return graph
+                .finish(
+                    Completion {
+                        content: Some(content),
+                        tool_calls: Vec::new(),
+                        model: "native-client-router".into(),
+                        finish_reason: "stop".into(),
+                        input_tokens: None,
+                        output_tokens: None,
+                    },
+                    "client_tool_results_unverified",
+                    &advice,
+                )
+                .await;
+        }
+    }
     let mut typed_work = if saved.calls == 0
         && runtime.cfg.language_model().is_some()
         && request

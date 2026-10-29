@@ -2687,3 +2687,16 @@ permissions and is not treated as a solved task. It cannot replace a client
 request that explicitly requires a tool call. Call, output and task deadlines
 remain enforced. No tests, benchmarks or live inference were run; runtime
 behavior is unverified.
+# Explicit client-owned tool requests (2026-10-29)
+
+In native-only client mode, a user message can explicitly request client tools
+with `cgf-client-tool:{"calls":[{"name":"TOOL_NAME","arguments":{}}]}`.
+The host validates the bounded JSON object, declared tool name, tool choice,
+parallel-call setting and remaining proposal budget, then returns proposals to
+the client without executing tools or calling a reasoning model. The client
+remains responsible for validating arguments against its tool schema and
+authorizing execution. On the correlated continuation, the language interface
+may present bounded tool results as untrusted, unverified data; it does not plan
+another tool call. Required additional calls fail closed. This explicit protocol
+does not make ordinary agentic clients generate such requests or implement
+automatic tool planning. No tests, benchmarks or live inference were run.
