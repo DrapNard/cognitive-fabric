@@ -77,8 +77,12 @@ impl Parser<'_> {
             let Some(&op) = self.input.get(self.pos) else {
                 break;
             };
+            // Determine the complete operator before applying precedence: `**`
+            // binds like `^`, not like the leading multiplication character.
+            let exponent = op == b'*' && self.input.get(self.pos + 1) == Some(&b'*');
             let (left, right) = match op {
                 b'+' | b'-' => (1, 2),
+                b'*' if exponent => (7, 7),
                 b'*' | b'/' | b'%' => (3, 4),
                 b'^' => (7, 7),
                 _ => break,
@@ -88,11 +92,10 @@ impl Parser<'_> {
             }
             self.pos += 1;
             let floor_division = op == b'/' && self.input.get(self.pos) == Some(&b'/');
-            let exponent = op == b'*' && self.input.get(self.pos) == Some(&b'*');
             if floor_division || exponent {
                 self.pos += 1;
             }
-            let rhs = self.expression(if exponent { 7 } else { right }, depth + 1)?;
+            let rhs = self.expression(right, depth + 1)?;
             if (op == b'/' || op == b'%') && rhs == 0.0 {
                 bail!("Division by zero")
             }

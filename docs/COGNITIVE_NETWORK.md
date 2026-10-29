@@ -2578,3 +2578,12 @@ answer checker still checks each declared dependency. Input, answer, identity,
 and graph-size bounds are unchanged. This avoids a separate repeated edge-scan
 cycle check and a second traversal to produce the witness. No runtime or speed
 measurement has been performed, and this does not add general reasoning.
+# Native arithmetic operator precedence (2026-10-29)
+
+The bounded arithmetic parser now determines the complete `**` operator before
+applying binding powers. It treats `**` like `^`, above multiplication and
+division and right-associatively, instead of treating its first character as
+ordinary multiplication for precedence. For example, the intended parse of
+`2*3**2` is `2*(3**2)`. Existing recursion, expression length, numeric range,
+and exponent limits remain unchanged. This change does not rewrite prior stored
+results. Runtime correctness is unverified; no tests or benchmarks were run.

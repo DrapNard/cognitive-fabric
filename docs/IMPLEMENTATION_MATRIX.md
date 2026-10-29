@@ -7743,3 +7743,10 @@ deterministic ordering witness while validating the original graph and reuses
 that witness for native execution. Cycles remain rejected and candidate answers
 remain independently checked against every edge. No tests or benchmarks were
 run for this change; no latency improvement is claimed.
+# Arithmetic exponent precedence (2026-10-29)
+
+**Implemented; runtime unverified.** `src/math.rs` assigns `**` the same
+right-associative precedence as `^` before parsing its operands. Existing
+limits and validation still apply. This fixes an incorrect native arithmetic
+parse, but does not establish general reasoning correctness; historical stored
+outputs are not modified. No tests or benchmarks were run for this change.
