@@ -2742,9 +2742,22 @@ Native-only clients may provide `cgf-client-tool:{"rounds":[{"calls":[...]},
 the original task proposal budget. Every remaining tool must be declared by the
 current client; each round separately observes its tool choice and parallel-call
 setting. The next round is proposed only after all prior calls have correlated
-client results and the session checkpoint is resumed. The plan is unconditional:
-it neither inspects results for success nor binds them into later arguments, and
+client results and the session checkpoint is resumed. Rounds are unconditional
+unless they use the conditions described in the later update. The plan does not
+bind results into later arguments, and
 the client still validates schemas and authorizes execution. Final presentation
 receives all current-task tool results as bounded untrusted data. This is not
 automatic planning. No tests, benchmarks or live inference ran; runtime and
 recovery behavior remain unverified.
+
+# Conditional client tool rounds (2026-10-29)
+
+An explicit native-only tool round may contain up to four `when` entries such as
+`{"call_index":0,"pointer":"/ok","equals":true}`. Indices refer to prior
+client calls in plan order; each selected client result must be valid bounded
+JSON. The host checks exact JSON values and stops before the next round when a
+condition is false. Conditions cannot refer to the current or future round.
+These checks use untrusted client-reported results; they do not prove that a tool
+succeeded, grant permissions, validate client schemas or substitute values into
+later arguments. The client retains execution authority. No tests, benchmarks
+or live inference were run; continuation and recovery remain unverified.

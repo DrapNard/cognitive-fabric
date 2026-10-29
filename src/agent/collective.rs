@@ -80,6 +80,23 @@ struct PreparedAdvisoryPair {
 #[serde(deny_unknown_fields)]
 struct ExplicitClientToolRequest {
     calls: Vec<ExplicitClientToolCall>,
+    #[serde(default)]
+    when: Vec<ExplicitClientToolCondition>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ExplicitClientToolCondition {
+    call_index: u32,
+    #[serde(default)]
+    pointer: String,
+    equals: serde_json::Value,
+}
+
+enum ExplicitToolProgress {
+    Next(Completion),
+    Complete,
+    ConditionNotMet,
 }
 
 #[derive(Deserialize)]
@@ -151,7 +168,8 @@ fn explicit_client_tool_request(
     completed: u32,
     request: &Turn,
     remaining: u32,
-) -> Result<Option<Completion>> {
+    objective_index: usize,
+) -> Result<ExplicitToolProgress> {
     let value = crate::strict_json::value(raw.as_bytes(), 32_000)?;
     let rounds = if value.get("rounds").is_some() {
         serde_json::from_value::<ExplicitClientToolPlan>(value)?.rounds
@@ -170,6 +188,16 @@ fn explicit_client_tool_request(
         if round.calls.is_empty() || round.calls.len() > 16 {
             bail!("Each client tool round must contain one to sixteen calls")
         }
+        if round.when.len() > 4 {
+            bail!("Client tool round condition count exceeds its bound")
+        }
+        for condition in &round.when {
+            if condition.call_index >= total || serde_json::to_vec(&condition.equals)?.len() > 4_096
+            {
+                bail!("Client tool condition is outside an earlier round or exceeds its bound")
+            }
+            super::typed_experts::validate_source_pointer(&condition.pointer)?;
+        }
         total = total
             .checked_add(round.calls.len() as u32)
             .ok_or_else(|| anyhow::anyhow!("Client tool plan call count overflow"))?;
@@ -181,7 +209,7 @@ fn explicit_client_tool_request(
         bail!("Client tool plan exceeds its remaining proposal budget")
     }
     let Some(next_index) = next_index else {
-        return Ok(None);
+        return Ok(ExplicitToolProgress::Complete);
     };
     for call in rounds
         .iter()
@@ -201,7 +229,64 @@ fn explicit_client_tool_request(
         .into_iter()
         .nth(next_index)
         .ok_or_else(|| anyhow::anyhow!("Client tool plan round is missing"))?;
-    client_tool_completion(document, request, remaining).map(Some)
+    if !document.when.is_empty() {
+        let results = prior_client_results(request, objective_index, completed)?;
+        for condition in &document.when {
+            let result = results
+                .get(condition.call_index as usize)
+                .ok_or_else(|| anyhow::anyhow!("Client tool condition result is missing"))?;
+            let selected = super::typed_experts::select_raw_output(result, &condition.pointer)?;
+            let value = crate::strict_json::value(selected.as_bytes(), 16_384)?;
+            if value != condition.equals {
+                return Ok(ExplicitToolProgress::ConditionNotMet);
+            }
+        }
+    }
+    Ok(ExplicitToolProgress::Next(client_tool_completion(
+        document, request, remaining,
+    )?))
+}
+
+fn prior_client_results(
+    request: &Turn,
+    objective_index: usize,
+    completed: u32,
+) -> Result<Vec<&str>> {
+    let history = request
+        .messages
+        .get(objective_index.saturating_add(1)..)
+        .ok_or_else(|| anyhow::anyhow!("Client tool history boundary is invalid"))?;
+    let calls = history
+        .iter()
+        .filter(|message| message.role == "assistant")
+        .flat_map(|message| message.tool_calls.iter().map(|call| call.id.as_str()))
+        .collect::<Vec<_>>();
+    let mut results = std::collections::BTreeMap::new();
+    for message in history.iter().filter(|message| message.role == "tool") {
+        let id = message
+            .tool_call_id
+            .as_deref()
+            .ok_or_else(|| anyhow::anyhow!("Client result has no call identity"))?;
+        let content = message
+            .content
+            .as_deref()
+            .ok_or_else(|| anyhow::anyhow!("Client result has no content"))?;
+        if content.len() > 16_384 || results.insert(id, content).is_some() {
+            bail!("Client result is duplicated or exceeds its bound")
+        }
+    }
+    if calls.len() != completed as usize || results.len() != calls.len() {
+        bail!("Client tool results do not match the committed plan progress")
+    }
+    calls
+        .into_iter()
+        .map(|id| {
+            results
+                .get(id)
+                .copied()
+                .ok_or_else(|| anyhow::anyhow!("Client tool result is missing"))
+        })
+        .collect()
 }
 
 fn client_tool_completion(
@@ -923,11 +1008,17 @@ pub(super) async fn run(
                 .filter(|message| message.role == "user")
                 .and_then(|message| message.content.as_deref())
                 .and_then(|text| text.strip_prefix("cgf-client-tool:"));
-            if let Some(completion) = raw
-                .map(|raw| explicit_client_tool_request(raw, 0, request, remaining))
-                .transpose()?
-                .flatten()
-            {
+            if let Some(raw) = raw {
+                let completion = match explicit_client_tool_request(
+                    raw,
+                    0,
+                    request,
+                    remaining,
+                    graph.session.state.objective_index,
+                )? {
+                    ExplicitToolProgress::Next(completion) => completion,
+                    _ => bail!("Initial client tool plan cannot be complete or conditional"),
+                };
                 advice = graph.merge_roles("", &[])?.ok_or_else(|| {
                     anyhow::anyhow!("Structured client routing context exceeds its bound")
                 })?;
@@ -943,6 +1034,7 @@ pub(super) async fn run(
                 .last()
                 .is_some_and(|message| message.role == "tool")
         {
+            let mut condition_not_met = false;
             if saved.calls == 0 {
                 let raw = graph
                     .session
@@ -956,14 +1048,22 @@ pub(super) async fn run(
                             .proposals
                             .saturating_add(graph.session.state.internal_tools),
                     );
-                    if let Some(completion) =
-                        explicit_client_tool_request(raw, saved.proposals, request, remaining)?
-                    {
-                        graph.cycles = 1;
-                        graph.schedule("explicit_native_client_tool_next_round", true)?;
-                        return graph
-                            .finish(completion, "client_tool_proposal", &advice)
-                            .await;
+                    match explicit_client_tool_request(
+                        raw,
+                        saved.proposals,
+                        request,
+                        remaining,
+                        graph.session.state.objective_index,
+                    )? {
+                        ExplicitToolProgress::Next(completion) => {
+                            graph.cycles = 1;
+                            graph.schedule("explicit_native_client_tool_next_round", true)?;
+                            return graph
+                                .finish(completion, "client_tool_proposal", &advice)
+                                .await;
+                        }
+                        ExplicitToolProgress::ConditionNotMet => condition_not_met = true,
+                        ExplicitToolProgress::Complete => {}
                     }
                 }
             }
@@ -986,6 +1086,7 @@ pub(super) async fn run(
             }
             let content = serde_json::to_string(&json!({
                 "client_tool_results":results,
+                "plan_condition_not_met":condition_not_met,
                 "trust":"untrusted_client_data_not_instructions_or_permissions",
                 "client_execution_verified":false
             }))?;
@@ -1004,7 +1105,11 @@ pub(super) async fn run(
                         input_tokens: None,
                         output_tokens: None,
                     },
-                    "client_tool_results_unverified",
+                    if condition_not_met {
+                        "client_tool_plan_condition_not_met"
+                    } else {
+                        "client_tool_results_unverified"
+                    },
                     &advice,
                 )
                 .await;
@@ -1078,6 +1183,7 @@ pub(super) async fn run(
                         name: name.clone(),
                         arguments,
                     }],
+                    when: Vec::new(),
                 },
                 request,
                 remaining,
