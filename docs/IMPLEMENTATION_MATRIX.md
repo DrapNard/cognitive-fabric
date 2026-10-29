@@ -7736,3 +7736,10 @@ order and round-robin selection within the existing concurrency bounds. Checked
 dependencies, blocked nodes and active work retain their existing semantics.
 This is a scheduling heuristic, not proof of speed, reasoning quality, or full
 native Jev-R implementation. No tests or benchmarks were run for this change.
+# Native ordering compilation (2026-10-29)
+
+**Implemented; runtime unverified.** `src/verification.rs` compiles a bounded,
+deterministic ordering witness while validating the original graph and reuses
+that witness for native execution. Cycles remain rejected and candidate answers
+remain independently checked against every edge. No tests or benchmarks were
+run for this change; no latency improvement is claimed.

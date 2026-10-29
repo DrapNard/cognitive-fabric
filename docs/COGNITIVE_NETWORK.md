@@ -2569,3 +2569,12 @@ running group retains its occupied capacity. This ordering is a fairness
 heuristic, not a critical-path optimizer or a guarantee of lower latency.
 The single-group typed route retains its existing order. Runtime behavior and
 performance have not been measured for this change.
+# Compile native ordering once (2026-10-29)
+
+The deterministic ordering criterion now builds its bounded topological
+ordering once when the input is validated. The traversal rejects cycles and
+stores the canonical node sequence as structured data for later native execution; the independent
+answer checker still checks each declared dependency. Input, answer, identity,
+and graph-size bounds are unchanged. This avoids a separate repeated edge-scan
+cycle check and a second traversal to produce the witness. No runtime or speed
+measurement has been performed, and this does not add general reasoning.

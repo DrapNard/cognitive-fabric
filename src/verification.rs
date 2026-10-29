@@ -18,6 +18,8 @@ use std::collections::{BTreeMap, BTreeSet};
 pub(crate) struct Ordering {
     nodes: Vec<String>,
     before: Vec<[String; 2]>,
+    #[serde(skip)]
+    canonical_order: Vec<String>,
 }
 
 impl Ordering {
@@ -28,7 +30,7 @@ impl Ordering {
         if raw.len() > 10_000 {
             bail!("Ordering criterion exceeds byte limit")
         }
-        let criterion: Self = serde_json::from_str(raw)?;
+        let mut criterion: Self = serde_json::from_str(raw)?;
         let names = criterion.nodes.iter().collect::<BTreeSet<_>>();
         if !(1..=64).contains(&criterion.nodes.len())
             || names.len() != criterion.nodes.len()
@@ -47,20 +49,9 @@ impl Ordering {
                 bail!("Invalid or duplicate ordering dependency")
             }
         }
-        let mut done = BTreeSet::new();
-        while done.len() < names.len() {
-            let next = names.iter().find(|name| {
-                !done.contains(*name)
-                    && criterion
-                        .before
-                        .iter()
-                        .all(|[a, b]| b != **name || done.contains(a))
-            });
-            let Some(next) = next else {
-                bail!("Ordering criterion contains a dependency cycle")
-            };
-            done.insert(*next);
-        }
+        // Compile once after validation. The same topological traversal both
+        // rejects cycles and supplies the native expert's stable witness.
+        criterion.canonical_order = criterion.compile_order()?;
         Ok(Some(criterion))
     }
 
@@ -89,6 +80,17 @@ impl Ordering {
     }
 
     fn deterministic_answer(&self) -> Result<String> {
+        if self.canonical_order.is_empty() {
+            bail!("Ordering criterion has not been compiled")
+        }
+        let answer = serde_json::to_string(&self.canonical_order)?;
+        if answer.len() > 4096 {
+            bail!("Ordering answer exceeds byte limit")
+        }
+        Ok(answer)
+    }
+
+    fn compile_order(&self) -> Result<Vec<String>> {
         let mut indegree = self
             .nodes
             .iter()
@@ -142,11 +144,7 @@ impl Ordering {
         if order.len() != self.nodes.len() {
             bail!("Ordering criterion contains a dependency cycle")
         }
-        let answer = serde_json::to_string(&order)?;
-        if answer.len() > 4096 {
-            bail!("Ordering answer exceeds byte limit")
-        }
-        Ok(answer)
+        Ok(order.into_iter().map(str::to_owned).collect())
     }
 }
 
