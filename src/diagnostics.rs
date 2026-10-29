@@ -81,7 +81,8 @@ pub async fn diagnose(cfg: &Config, store: &Store, probe_inference: bool) -> Res
         .into_iter()
         .map(|role| {
             let (model, _) = cfg.model_settings(role)?;
-            Ok(json!({"role":role,"model":model,"purpose":if matches!(role,"interface" | "synthesizer") {"language"} else {"reasoning"}}))
+            Ok(json!({"role":role,"model":model,"purpose":if matches!(role,"interface" | "synthesizer") {"language"} else {"reasoning"},
+                "client_route":if cfg.native_only_client && !matches!(role,"interface" | "synthesizer") {"disabled"} else {"enabled"}}))
         })
         .collect::<Result<Vec<_>>>()?;
     let network = json!({
@@ -89,6 +90,7 @@ pub async fn diagnose(cfg: &Config, store: &Store, probe_inference: bool) -> Res
         "language_boundary":if cfg.language_model().is_some() {"configured"} else {"not_configured"},
         "routes":role_routes,
         "client_collective_enabled":cfg.agent_collective || cfg.language_model().is_some(),
+        "native_only_client":cfg.native_only_client,
         "subtask_parallelism":cfg.subtask_parallelism.unwrap_or(1),
         "expert_parallelism":cfg.expert_parallelism.unwrap_or(1),
         "route_identity_evidence":"configuration_only",

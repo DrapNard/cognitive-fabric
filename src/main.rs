@@ -473,7 +473,10 @@ enum Command {
         #[arg(long)]
         language_model: String,
         #[arg(long)]
-        reasoning_model: String,
+        reasoning_model: Option<String>,
+        /// Restrict client inference to language roles and complete native typed tasks.
+        #[arg(long)]
+        native_only_client: bool,
         /// Optional repeated ROLE=MODEL overrides: planner, solver, explorer, critic, reflector.
         #[arg(long = "role", value_name = "ROLE=MODEL")]
         roles: Vec<String>,
@@ -2068,6 +2071,7 @@ async fn run_cli() -> Result<()> {
         Command::ConfigureNetwork {
             language_model,
             reasoning_model,
+            native_only_client,
             roles,
             parallelism,
             expert_parallelism,
@@ -2084,13 +2088,26 @@ async fn run_cli() -> Result<()> {
                     bail!("Duplicate reasoning role binding")
                 }
             }
-            let settings = cfg.language_network(
+            let reasoning_model = match reasoning_model {
+                Some(model) => model,
+                None if native_only_client => {
+                    let placeholder = "cogfabric-native-reasoning-disabled";
+                    if language_model == placeholder {
+                        format!("{placeholder}-placeholder")
+                    } else {
+                        placeholder.to_owned()
+                    }
+                }
+                None => bail!("A reasoning model is required unless --native-only-client is set"),
+            };
+            let mut settings = cfg.language_network(
                 language_model,
                 reasoning_model,
                 bindings,
                 parallelism as usize,
                 expert_parallelism as usize,
             )?;
+            settings.native_only_client = native_only_client;
             settings.save()?;
             let routes = [
                 "interface",
@@ -2103,12 +2120,16 @@ async fn run_cli() -> Result<()> {
             ]
             .into_iter()
             .map(|role| {
+                if native_only_client && !matches!(role, "interface" | "synthesizer") {
+                    return Ok(json!({"role":role,"client_route":"disabled"}));
+                }
                 settings
                     .model_settings(role)
-                    .map(|(model, _)| json!({"role":role,"model":model}))
+                    .map(|(model, _)| json!({"role":role,"model":model,"client_route":"enabled"}))
             })
             .collect::<Result<Vec<_>>>()?;
             json!({"saved":true,"routes":routes,"parallelism":parallelism,
+                "native_only_client":native_only_client,
                 "expert_parallelism":expert_parallelism,"client_collective":true,
                 "models_loaded":false,"trained_weights_created":false,
                 "verification":"Independent compiled kernel; no verifier-model override",

@@ -63,6 +63,9 @@ pub struct Config {
     /// compatibility and conservative resource use.
     #[serde(skip_serializing_if = "is_false")]
     pub agent_collective: bool,
+    /// Restrict client collective inference to interpretation and presentation.
+    #[serde(skip_serializing_if = "is_false")]
+    pub native_only_client: bool,
     /// Optional immutable operator-published project context applied to new
     /// client collective sessions (`project-id@version`).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -109,6 +112,7 @@ impl Default for Config {
             role_profiles: BTreeMap::new(),
             interpret_goals: true,
             agent_collective: false,
+            native_only_client: false,
             agent_project_profile: None,
             interface_tokens: 128,
             reasoning_effort: None,
@@ -166,6 +170,7 @@ impl Config {
         }
         configured.interpret_goals = true;
         configured.agent_collective = true;
+        configured.native_only_client = false;
         configured.subtask_parallelism = Some(parallelism);
         configured.expert_parallelism = (expert_parallelism > 1).then_some(expert_parallelism);
         configured.validate()?;
@@ -341,6 +346,9 @@ impl Config {
             bail!("Invalid inference configuration or resource ceiling")
         }
         crate::backend::local_endpoint(&self.api_base)?;
+        if self.native_only_client && self.language_model().is_none() {
+            bail!("Native-only client mode requires a configured language interface")
+        }
         for (role, profile) in &self.role_profiles {
             if !matches!(
                 role.as_str(),

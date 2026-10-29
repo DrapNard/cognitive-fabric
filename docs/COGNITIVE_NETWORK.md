@@ -2650,3 +2650,19 @@ still replaces a whole expression with one parenthesized numeric value; it does
 not allow source text to introduce operators, SQL or executable code. Existing
 floating-point semantics, expression length and finite-value bounds remain.
 Runtime and numerical behavior are unverified; no tests or benchmarks ran.
+# Native-only client configuration (2026-10-29)
+
+`cogfabric configure-network --language-model MODEL --native-only-client`
+configures the client collective to allow model inference only for request
+interpretation and result presentation. Supported complete typed operations,
+batches and graphs run through the existing pinned native experts and verifier;
+requests requiring additional reasoning or client tool proposals fail instead of
+dispatching a reasoning model. This is an opt-in client restriction, not a
+complete agentic implementation. Enable the typed module worker when running the
+server. The configuration retains a distinct placeholder reasoning model key
+for existing configuration compatibility; client inference cannot dispatch it.
+The separate Engine endpoint is not covered by this client-only restriction.
+Managed client model residency is currently rejected in this mode; configure the
+language model separately before starting the server. Diagnostics distinguish
+disabled client reasoning routes. No tests, benchmarks, activation or live
+inference were run; runtime behavior remains unverified.

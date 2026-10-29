@@ -770,7 +770,10 @@ pub(super) async fn run(
     if runtime.cfg.language_model().is_some() && saved.calls == 0 && !using_typed {
         let allocation = runtime.cfg.interface_tokens;
         let mut opening_calls = vec![("interface", "", allocation)];
-        if !using_typed && graph.session.typed_translation_contract(request).is_none() {
+        if !using_typed
+            && !runtime.cfg.native_only_client
+            && graph.session.typed_translation_contract(request).is_none()
+        {
             opening_calls.push(("solver", "", MIN_SOLVER_TOKENS));
         }
         opening_calls.push(("synthesizer", "", allocation));
@@ -803,6 +806,9 @@ pub(super) async fn run(
                     .prepare_translated_graph(request, &translation)?;
                 using_typed = typed_work.is_some();
             }
+        }
+        if runtime.cfg.native_only_client && (!using_typed || use_typed_evidence) {
+            bail!("Native-only client mode requires a complete supported typed task; additional reasoning and client tool proposals are not available")
         }
         if use_typed_evidence && !using_typed {
             bail!("Requested typed evidence is outside the admitted provider route")

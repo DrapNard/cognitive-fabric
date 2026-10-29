@@ -7795,3 +7795,14 @@ notation and validates complete JSON numeric tokens for both native graph and
 checked-memory bindings. The original expression parser, numeric bounds and
 whole-expression binding restriction remain authoritative. Floating-point
 rounding and underflow remain possible; no tests or benchmarks were run.
+# Native-only client inference (2026-10-29)
+
+**Implemented; runtime unverified.** `--native-only-client` on
+`configure-network` records an opt-in configuration whose client collective
+allows only language-interface and presentation model dispatch. Complete typed
+client tasks use the existing native path; unsupported reasoning, tool proposals,
+and mixed typed/model workflows fail closed. `src/agent/mod.rs` enforces the
+client dispatch boundary, and `src/agent/collective.rs` rejects incomplete typed
+interpretations. A placeholder model key remains in the existing configuration;
+the separate Engine path and managed client residency are not covered. No tests
+or benchmarks were run, and end-to-end operation is not verified.

@@ -204,6 +204,9 @@ impl AgentRuntime {
                 "Client native routing requires explicit approval of model-key/inventory evidence"
             )
         }
+        if self.cfg.native_only_client {
+            bail!("Native-only client mode does not yet support managed model residency")
+        }
         if !self.collective_enabled() || self.managed {
             bail!("Client native routing requires direct collective conversation inference")
         }
@@ -538,6 +541,9 @@ impl AgentRuntime {
     /// Check a trusted adapter's declared destination before preparation or
     /// dispatch. Missing metadata remains explicitly unverified.
     fn validate_selected_target(&self, role: &str, route: &dyn ChatBackend) -> Result<()> {
+        if self.cfg.native_only_client && !matches!(role, "interface" | "synthesizer") {
+            bail!("Native-only client mode forbids reasoning-model inference")
+        }
         if self.cfg.language_model().is_some() {
             let (expected_model, _) = self.cfg.model_settings(role)?;
             let configured = crate::backend::ModelTarget {
