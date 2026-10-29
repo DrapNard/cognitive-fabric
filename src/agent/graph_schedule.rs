@@ -26,7 +26,7 @@ pub(super) struct Node {
     pub completed: Option<Evidence>,
 }
 
-/// Select a stable round-robin ready wave. Pending nodes never satisfy edges in
+/// Select a stable, least-completed-first round-robin ready wave. Pending nodes never satisfy edges in
 /// the same wave. Checked evidence can feed advisory work; advice cannot satisfy
 /// a checked edge. In-flight work consumes the supplied total/group limits.
 /// Callers retain route, budget, deadline and output validation.
@@ -78,7 +78,21 @@ pub(super) fn ready_wave(
             bail!("Shared graph contains a dependency cycle")
         }
     }
-    let groups = nodes.iter().map(|node| node.group).collect::<BTreeSet<_>>();
+    // Start each refill with the least-completed groups. A permanently fixed
+    // group order can repeatedly give the only free slot to a long early plan
+    // while another independent expert never starts. Completion counts derive
+    // solely from admitted host state; they do not affect dependency checks.
+    let mut groups = nodes
+        .iter()
+        .map(|node| node.group)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let mut completed_counts = [0usize; 16];
+    for node in nodes.iter().filter(|node| node.completed.is_some()) {
+        completed_counts[node.group] += 1;
+    }
+    groups.sort_by_key(|group| (completed_counts[*group], *group));
     let mut selected = Vec::new();
     let mut counts = [0usize; 16];
     let mut running = 0;

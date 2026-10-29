@@ -7728,3 +7728,11 @@ explicitly approved resume transaction. Completion and advice publication are
 atomic. Unknown histories fail closed. Registry digests bind trusted task records,
 not independent membership proofs. Provider execution overlap, recovery at runtime
 and performance have not been tested or benchmarked, as requested by the owner.
+# Scheduler refill fairness (2026-10-29)
+
+**Implemented; runtime unverified.** `src/agent/graph_schedule.rs` prioritizes
+groups with fewer admitted completed nodes on each refill, then uses stable group
+order and round-robin selection within the existing concurrency bounds. Checked
+dependencies, blocked nodes and active work retain their existing semantics.
+This is a scheduling heuristic, not proof of speed, reasoning quality, or full
+native Jev-R implementation. No tests or benchmarks were run for this change.

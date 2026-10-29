@@ -2558,3 +2558,14 @@ These proofs are internal routing guards, not independent security attestations.
 Mixed neural/provider execution and interrupted graph restoration remain Partial.
 Natural-language translation remains semantically unverified. Static compilation
 and lint checks passed; no tests, benchmarks or live provider calls were run.
+# Independent expert refill ordering (2026-10-29)
+
+The shared dependency scheduler orders ready groups by the number of their
+already admitted completed nodes, with the group ID as a stable tie-breaker,
+before selecting a round-robin wave. This gives less-served independent expert
+plans a chance when only a few slots are free. It adds no calls, permissions,
+workers, or capacity, and it does not weaken evidence or dependency gates. A
+running group retains its occupied capacity. This ordering is a fairness
+heuristic, not a critical-path optimizer or a guarantee of lower latency.
+The single-group typed route retains its existing order. Runtime behavior and
+performance have not been measured for this change.
