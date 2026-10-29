@@ -2597,3 +2597,14 @@ not a complete matching algorithm; a possible branch still needs search and the
 independent final witness check. The original node, domain, constraint and
 cancellation bounds remain in place. This adds work per search node and may
 prune more branches; neither runtime correctness nor performance was measured.
+# Partial linear bounds in the native worker (2026-10-29)
+
+The process-backed finite-domain expert precomputes each domain's minimum and
+maximum, and uses signed wide-integer bounds to reject linear constraints that
+cannot be satisfied by any completion of the current assignment. The worker
+retains its search cap, existing cancellation/process lifetime and independent
+host-side final verification. It still reports an unsuccessful search without
+claiming a proof of unsatisfiability. The checker-side search is separate.
+An existing node-count assertion was updated for the previous domain-union
+pruning. No tests or benchmarks were run; performance and runtime behavior are
+unverified.

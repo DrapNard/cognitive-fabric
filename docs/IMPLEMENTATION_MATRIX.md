@@ -7757,3 +7757,11 @@ domain availability and union checks to reject impossible all-different partial
 assignments before descending further. It preserves the node cap, cancellation
 checks and final assignment validation. This does not implement full matching or
 prove improved speed. No tests or benchmarks were run for this change.
+# Native worker linear pruning (2026-10-29)
+
+**Implemented; runtime unverified.** `src/fabric/modules/process.rs` rejects
+finite-domain branches whose conservative linear interval cannot satisfy a declared
+relation, using the original domain bounds and wide-integer arithmetic. Existing
+worker and checker boundaries remain. Existing checker-side node-count
+assertions were adjusted for earlier domain-union pruning. No tests or
+benchmarks were run; no performance claim is made.

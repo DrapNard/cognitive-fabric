@@ -708,9 +708,27 @@ fn path_is_shortest(
 fn solve_finite(criterion: FiniteCriterion) -> Result<Response> {
     let mut values = BTreeMap::new();
     let mut explored = 0usize;
+    let domain_bounds = criterion
+        .variables
+        .iter()
+        .map(|variable| {
+            let minimum = *variable
+                .domain
+                .iter()
+                .min()
+                .context("Empty finite domain")?;
+            let maximum = *variable
+                .domain
+                .iter()
+                .max()
+                .context("Empty finite domain")?;
+            Ok((variable.id.as_str(), (minimum, maximum)))
+        })
+        .collect::<Result<BTreeMap<_, _>>>()?;
     fn search(
         index: usize,
         criterion: &FiniteCriterion,
+        domain_bounds: &BTreeMap<&str, (i64, i64)>,
         values: &mut BTreeMap<String, i64>,
         explored: &mut usize,
     ) -> bool {
@@ -727,8 +745,8 @@ fn solve_finite(criterion: FiniteCriterion) -> Result<Response> {
                 return false;
             }
             values.insert(variable.id.clone(), *value);
-            if partial_constraints_hold(criterion, values)
-                && search(index + 1, criterion, values, explored)
+            if partial_constraints_hold(criterion, values, domain_bounds)
+                && search(index + 1, criterion, domain_bounds, values, explored)
             {
                 return true;
             }
@@ -736,7 +754,8 @@ fn solve_finite(criterion: FiniteCriterion) -> Result<Response> {
         values.remove(&variable.id);
         false
     }
-    let found = search(0, &criterion, &mut values, &mut explored);
+    let found = partial_constraints_hold(&criterion, &values, &domain_bounds)
+        && search(0, &criterion, &domain_bounds, &mut values, &mut explored);
     if found {
         Ok(Response::FiniteAssignment { values })
     } else {
@@ -744,7 +763,11 @@ fn solve_finite(criterion: FiniteCriterion) -> Result<Response> {
     }
 }
 
-fn partial_constraints_hold(criterion: &FiniteCriterion, values: &BTreeMap<String, i64>) -> bool {
+fn partial_constraints_hold(
+    criterion: &FiniteCriterion,
+    values: &BTreeMap<String, i64>,
+    domain_bounds: &BTreeMap<&str, (i64, i64)>,
+) -> bool {
     criterion
         .constraints
         .iter()
@@ -761,13 +784,29 @@ fn partial_constraints_hold(criterion: &FiniteCriterion, values: &BTreeMap<Strin
                 relation,
                 rhs,
             } => {
-                if terms
-                    .iter()
-                    .any(|term| !values.contains_key(&term.variable))
-                {
-                    return true;
+                let mut minimum = 0_i128;
+                let mut maximum = 0_i128;
+                for term in terms {
+                    let Some(&(domain_min, domain_max)) = domain_bounds.get(term.variable.as_str())
+                    else {
+                        return false;
+                    };
+                    let (low, high) = match values.get(&term.variable) {
+                        Some(value) => (*value, *value),
+                        None if term.coefficient >= 0 => (domain_min, domain_max),
+                        None => (domain_max, domain_min),
+                    };
+                    let coefficient = i128::from(term.coefficient);
+                    minimum += i128::from(low) * coefficient;
+                    maximum += i128::from(high) * coefficient;
                 }
-                checked_linear_sum(terms, values).is_some_and(|sum| compare(sum, *relation, *rhs))
+                let rhs = i128::from(*rhs);
+                match relation {
+                    Relation::Equal => minimum <= rhs && rhs <= maximum,
+                    Relation::NotEqual => minimum != rhs || maximum != rhs,
+                    Relation::LessOrEqual => minimum <= rhs,
+                    Relation::GreaterOrEqual => maximum >= rhs,
+                }
             }
         })
 }

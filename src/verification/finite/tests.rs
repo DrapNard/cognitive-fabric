@@ -306,7 +306,8 @@ fn search_reports_limits_cancellation_and_only_exhaustive_unsatisfiability() {
         exact_limit_unsatisfiable.result,
         SearchResult::Unsatisfiable
     ));
-    assert_eq!(exact_limit_unsatisfiable.explored_nodes, 3);
+    // Domain-union pruning now rejects this impossible case at the root.
+    assert_eq!(exact_limit_unsatisfiable.explored_nodes, 1);
 }
 
 #[test]
@@ -429,9 +430,8 @@ fn all_different_prunes_a_duplicate_before_the_constraint_is_fully_assigned() {
     .unwrap();
     let outcome = criterion.search(4096, || false).unwrap();
     assert!(matches!(outcome.result, SearchResult::Unsatisfiable));
-    // Root, two first-variable choices, four second-variable choices, and four third-variable
-    // choices are visited. Duplicate pairs are rejected before completing their constraints.
-    assert_eq!(outcome.explored_nodes, 11);
+    // The union of the three domains contains only two values, so the root is impossible.
+    assert_eq!(outcome.explored_nodes, 1);
 }
 
 #[test]
