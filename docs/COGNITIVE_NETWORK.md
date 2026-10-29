@@ -1,5 +1,22 @@
 # Cognitive network implementation
 
+## Release planner and explorer slots independently — 2026-10-29
+
+**Implemented for overlapping client expert workflows; runtime unverified.**
+Both advisory calls remain reserved before preparation, and the two routes are
+prepared together before either role dispatches. After preparation, planner and
+explorer run as separate owned futures, each holding one shared network slot.
+A completed role releases its slot and is validated and accounted individually;
+ready expert work can use that capacity while the other role continues. The
+combined advisory result is published only when both complete successfully.
+
+Ready reports are processed before newly prepared calls are launched. Errors
+stop new admissions and started work is drained under existing deadlines; an
+outer cancellation can still leave provider outcomes unknown. The shared slot
+cap, original call/token budgets, route selection, task policy and native
+lifecycle gates remain unchanged. This does not prove physical concurrency or
+improved latency. No tests, benchmarks, model activation or live inference ran.
+
 ## Restore expert routing from structured interpretation — 2026-10-29
 
 **Implemented regression fix; runtime unverified.** The language interpretation

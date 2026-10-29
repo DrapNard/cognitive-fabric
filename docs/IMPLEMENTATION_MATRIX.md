@@ -1,5 +1,13 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Release planner and explorer slots independently — 2026-10-29
+
+**Implemented; runtime unverified.** `collective/experts.rs` tracks separately
+owned planner/explorer calls after paired preparation, while `collective.rs`
+validates and accounts for each result. Existing shared slots and budgets
+remain. See [cognitive network](COGNITIVE_NETWORK.md). No tests, benchmarks,
+model activation or live inference ran; general orchestration remains Partial.
+
 ## Restore expert routing from structured interpretation — 2026-10-29
 
 **Implemented regression fix; runtime unverified.** `reasoning_memory.rs` and

@@ -13,8 +13,6 @@ struct PreparedExpertCall {
     core_catalog: Option<super::super::core_tools::Catalog>,
 }
 
-type AdvisoryOutcome = Result<(Result<Completion>, Result<Completion>)>;
-
 struct ExpertReport {
     call: PreparedExpertCall,
     advice_budget: usize,
@@ -44,6 +42,9 @@ struct PendingCore {
 }
 
 type CoreBatchKey = Vec<String>;
+type AdvisoryPreparation = (PreparedAdvisoryPair, Result<Vec<Arc<dyn ChatBackend>>>);
+type AdvisoryPreparationFuture =
+    std::pin::Pin<Box<dyn std::future::Future<Output = AdvisoryPreparation> + Send>>;
 
 struct ActiveCoreBatch {
     call: usize,
@@ -74,10 +75,10 @@ enum RunningWork {
         (usize, usize),
         std::pin::Pin<Box<dyn std::future::Future<Output = ExpertReport> + Send>>,
     ),
-    Advisory(
-        std::pin::Pin<
-            Box<dyn std::future::Future<Output = (PreparedAdvisoryPair, AdvisoryOutcome)> + Send>,
-        >,
+    AdvisoryPrepare(AdvisoryPreparationFuture),
+    AdvisoryRole(
+        usize,
+        std::pin::Pin<Box<dyn std::future::Future<Output = Result<Completion>> + Send>>,
     ),
     Core(
         (usize, usize),
@@ -150,7 +151,7 @@ fn expert_future(
     )
 }
 
-fn advisory_future(
+fn advisory_preparation_future(
     runtime: AgentRuntime,
     backend: Arc<dyn ChatBackend>,
     task: String,
@@ -158,7 +159,7 @@ fn advisory_future(
     pair: PreparedAdvisoryPair,
     network_slots: Option<super::super::network_slots::Budget>,
 ) -> RunningWork {
-    RunningWork::Advisory(Box::pin(async move {
+    RunningWork::AdvisoryPrepare(Box::pin(async move {
         let slots = match network_slots {
             Some(slots) => match slots.acquire_many(2, deadline).await {
                 Ok(permit) => Some(permit),
@@ -166,21 +167,65 @@ fn advisory_future(
             },
             None => None,
         };
-        let result = async {
-            let routes = runtime
-                .prepare_role_wave(backend, &task, &["planner", "explorer"], deadline)
-                .await?;
-            dispatch_advisory_pair(&runtime, &task, &routes, &pair, deadline).await
-        }
-        .await;
+        let result = runtime
+            .prepare_role_wave(backend, &task, &["planner", "explorer"], deadline)
+            .await;
         drop(slots);
         (pair, result)
     }))
 }
 
+fn advisory_role_future(
+    runtime: AgentRuntime,
+    backend: Arc<dyn ChatBackend>,
+    task: String,
+    deadline: Instant,
+    index: usize,
+    turn: Turn,
+    network_slots: Option<super::super::network_slots::Budget>,
+) -> RunningWork {
+    RunningWork::AdvisoryRole(
+        index,
+        Box::pin(async move {
+            let _slot = match network_slots {
+                Some(slots) => Some(slots.acquire(deadline).await?),
+                None => None,
+            };
+            let role = match index {
+                0 => "planner",
+                1 => "explorer",
+                _ => bail!("Invalid advisory role index"),
+            };
+            let timeout = Duration::from_secs(runtime.cfg.timeout_seconds)
+                .min(deadline.saturating_duration_since(Instant::now()));
+            if timeout.is_zero() {
+                bail!("Advisory role deadline exhausted before inference")
+            }
+            tokio::time::timeout(
+                timeout,
+                runtime.dispatch_selected_role(
+                    backend,
+                    &task,
+                    role,
+                    &turn,
+                    ADVICE_TOKENS,
+                    deadline,
+                ),
+            )
+            .await
+            .map_err(|_| {
+                anyhow::anyhow!(
+                    "Client advisory role deadline exhausted; provider outcome may be unknown"
+                )
+            })?
+        }),
+    )
+}
+
 enum CompletedWork {
     Expert(Box<ExpertReport>),
-    Advisory(Box<(PreparedAdvisoryPair, AdvisoryOutcome)>),
+    AdvisoryPrepare(Box<AdvisoryPreparation>),
+    AdvisoryRole(usize, Result<Completion>),
     Core(Box<CoreReport>),
 }
 
@@ -196,9 +241,17 @@ async fn ready_expert_work(operations: &mut Vec<RunningWork>) -> Vec<CompletedWo
                         ready.push((index, CompletedWork::Expert(Box::new(report))));
                     }
                 }
-                RunningWork::Advisory(future) => {
+                RunningWork::AdvisoryPrepare(future) => {
                     if let Poll::Ready((pair, result)) = future.as_mut().poll(context) {
-                        ready.push((index, CompletedWork::Advisory(Box::new((pair, result)))));
+                        ready.push((
+                            index,
+                            CompletedWork::AdvisoryPrepare(Box::new((pair, result))),
+                        ));
+                    }
+                }
+                RunningWork::AdvisoryRole(role, future) => {
+                    if let Poll::Ready(result) = future.as_mut().poll(context) {
+                        ready.push((index, CompletedWork::AdvisoryRole(*role, result)));
                     }
                 }
                 RunningWork::Core(_, future) => {
@@ -799,17 +852,6 @@ impl Graph<'_> {
         Ok(())
     }
 
-    fn record_advisory_completion(
-        &mut self,
-        pair: PreparedAdvisoryPair,
-        result: AdvisoryOutcome,
-    ) -> Result<()> {
-        let (planner, explorer) = result?;
-        let recorded = self.record_advisory_pair(&pair, planner, explorer)?;
-        self.overlapped_pair = Some(recorded);
-        Ok(())
-    }
-
     pub(super) async fn expert_workflow(&mut self, prior_advice: &str) -> Result<Option<String>> {
         if self
             .expert_wave_capacity
@@ -1298,7 +1340,9 @@ impl Graph<'_> {
             std::collections::BTreeMap::<CoreBatchKey, ActiveCoreBatch>::new();
         let mut core_waiters = std::collections::BTreeMap::<usize, Vec<PendingCore>>::new();
         let mut failure: Option<anyhow::Error> = None;
-        let mut pair_active = false;
+        let mut pending_pair: Option<PreparedAdvisoryPair> = None;
+        let mut advisory_results: [Option<Completion>; 2] = [None, None];
+        let mut advisory_finished = 0usize;
         if let Some(pair) = pair.take() {
             // With a live typed producer, compute a fresh gated wave. The
             // preflight wave above only proves budgets; it is never authority
@@ -1379,7 +1423,7 @@ impl Graph<'_> {
                     self.network_slots.clone(),
                 )
             }));
-            running.push(advisory_future(
+            running.push(advisory_preparation_future(
                 self.runtime.clone(),
                 self.backend.clone(),
                 self.task.to_owned(),
@@ -1387,7 +1431,6 @@ impl Graph<'_> {
                 pair,
                 self.network_slots.clone(),
             ));
-            pair_active = true;
         }
         while done
             .iter()
@@ -1410,7 +1453,7 @@ impl Graph<'_> {
                         RunningWork::Expert(coordinate, _) | RunningWork::Core(coordinate, _) => {
                             Some(*coordinate)
                         }
-                        RunningWork::Advisory(_) => None,
+                        RunningWork::AdvisoryPrepare(_) | RunningWork::AdvisoryRole(_, _) => None,
                     })
                     .chain(
                         core_waiters
@@ -1419,7 +1462,15 @@ impl Graph<'_> {
                             .map(|waiter| waiter.coordinate),
                     )
                     .collect::<std::collections::BTreeSet<_>>();
-                let capacity = global_capacity.saturating_sub(if pair_active { 2 } else { 0 });
+                let advisory_slots = running
+                    .iter()
+                    .map(|work| match work {
+                        RunningWork::AdvisoryPrepare(_) => 2,
+                        RunningWork::AdvisoryRole(_, _) => 1,
+                        _ => 0,
+                    })
+                    .sum::<usize>();
+                let capacity = global_capacity.saturating_sub(advisory_slots);
                 let typed_ready = self.typed_progress.as_ref().map(|progress| {
                     let completed = progress
                         .borrow()
@@ -1600,6 +1651,7 @@ impl Graph<'_> {
                 continue;
             };
             let mut pending_core = Vec::new();
+            let mut pending_advisory = Vec::new();
             for work in completed {
                 match work {
                     CompletedWork::Expert(report) => {
@@ -1620,14 +1672,71 @@ impl Graph<'_> {
                             }
                         }
                     }
-                    CompletedWork::Advisory(report) => {
+                    CompletedWork::AdvisoryPrepare(report) => {
                         let (pair, result) = *report;
-                        pair_active = false;
-                        if let Err(error) = self.record_advisory_completion(pair, result) {
-                            let _ = self.runtime.store.event(self.task, "agent_overlap_wave_failed", "jev-plus", json!({"result_state":"failed_or_unknown","retry_attempted":false,"permissions_granted":false}));
-                            if failure.is_none() {
-                                failure = Some(error);
+                        match result {
+                            Ok(_) if failure.is_some() => {
+                                let _ = self.runtime.store.event(self.task, "agent_overlap_wave_failed", "jev-plus", json!({"result_state":"workflow_stopped_before_advisory_dispatch","retry_attempted":false,"permissions_granted":false}));
                             }
+                            Ok(routes) if routes.len() == 2 => {
+                                for (index, route) in routes.into_iter().enumerate() {
+                                    pending_advisory.push(advisory_role_future(
+                                        self.runtime.clone(),
+                                        route,
+                                        self.task.to_owned(),
+                                        self.deadline,
+                                        index,
+                                        pair.turns[index].clone(),
+                                        self.network_slots.clone(),
+                                    ));
+                                }
+                                pending_pair = Some(pair);
+                            }
+                            Ok(_) => {
+                                failure.get_or_insert_with(|| {
+                                    anyhow::anyhow!(
+                                        "Advisory preparation returned an invalid route count"
+                                    )
+                                });
+                            }
+                            Err(error) => {
+                                let _ = self.runtime.store.event(self.task, "agent_overlap_wave_failed", "jev-plus", json!({"result_state":"failed_or_unknown","retry_attempted":false,"permissions_granted":false}));
+                                failure.get_or_insert(error);
+                            }
+                        }
+                    }
+                    CompletedWork::AdvisoryRole(index, result) => {
+                        advisory_finished += 1;
+                        let recorded = match pending_pair.as_ref() {
+                            Some(pair) => self.record_advisory_role(pair, index, result),
+                            None => Err(anyhow::anyhow!(
+                                "Advisory role completed without its reserved pair"
+                            )),
+                        };
+                        match recorded {
+                            Ok(completion)
+                                if index < advisory_results.len()
+                                    && advisory_results[index].is_none() =>
+                            {
+                                advisory_results[index] = Some(completion)
+                            }
+                            Ok(_) => {
+                                failure.get_or_insert_with(|| {
+                                    anyhow::anyhow!("Duplicate advisory role completion")
+                                });
+                            }
+                            Err(error) => {
+                                let _ = self.runtime.store.event(self.task, "agent_overlap_wave_failed", "jev-plus", json!({"result_state":"failed_or_unknown","retry_attempted":false,"permissions_granted":false}));
+                                failure.get_or_insert(error);
+                            }
+                        }
+                        if advisory_finished == 2 {
+                            if let (Some(planner), Some(explorer)) =
+                                (advisory_results[0].take(), advisory_results[1].take())
+                            {
+                                self.overlapped_pair = Some((planner, explorer));
+                            }
+                            pending_pair = None;
                         }
                     }
                     CompletedWork::Core(report) => {
@@ -1692,6 +1801,14 @@ impl Graph<'_> {
                             }
                         }
                     }
+                }
+            }
+            if !pending_advisory.is_empty() {
+                if failure.is_none() {
+                    running.extend(pending_advisory);
+                } else {
+                    pending_pair = None;
+                    let _ = self.runtime.store.event(self.task, "agent_overlap_wave_failed", "jev-plus", json!({"result_state":"workflow_stopped_before_advisory_dispatch","retry_attempted":false,"permissions_granted":false}));
                 }
             }
             if failure.is_none()

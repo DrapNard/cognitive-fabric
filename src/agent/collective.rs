@@ -529,40 +529,38 @@ impl Graph<'_> {
         planner: Result<Completion>,
         explorer: Result<Completion>,
     ) -> Result<(Completion, Completion)> {
-        let planner = planner.and_then(|completion| {
-            self.record_completion(
-                "planner",
-                pair.first_call,
-                ADVICE_TOKENS,
-                &pair.turns[0],
-                completion,
-            )
-        });
-        let explorer = explorer.and_then(|completion| {
-            self.record_completion(
-                "explorer",
-                pair.first_call + 1,
-                ADVICE_TOKENS,
-                &pair.turns[1],
-                completion,
-            )
-        });
-        let mut planner = planner?;
-        let mut explorer = explorer?;
-        if planner.finish_reason != "stop" || explorer.finish_reason != "stop" {
+        let planner = self.record_advisory_role(pair, 0, planner);
+        let explorer = self.record_advisory_role(pair, 1, explorer);
+        Ok((planner?, explorer?))
+    }
+
+    fn record_advisory_role(
+        &mut self,
+        pair: &PreparedAdvisoryPair,
+        index: usize,
+        result: Result<Completion>,
+    ) -> Result<Completion> {
+        let role = match index {
+            0 => "planner",
+            1 => "explorer",
+            _ => bail!("Invalid advisory role index"),
+        };
+        let mut completion = self.record_completion(
+            role,
+            pair.first_call + index,
+            ADVICE_TOKENS,
+            &pair.turns[index],
+            result?,
+        )?;
+        if completion.finish_reason != "stop" {
             bail!("Planner/explorer memory requires complete provider responses")
         }
-        let planner_record = super::advisory_record::parse(
-            planner.content.as_deref().unwrap_or(""),
+        let record = super::advisory_record::parse(
+            completion.content.as_deref().unwrap_or(""),
             super::reasoning_memory::ROLE_BYTES,
         )?;
-        let explorer_record = super::advisory_record::parse(
-            explorer.content.as_deref().unwrap_or(""),
-            super::reasoning_memory::ROLE_BYTES,
-        )?;
-        planner.content = Some(serde_json::to_string(&planner_record)?);
-        explorer.content = Some(serde_json::to_string(&explorer_record)?);
-        Ok((planner, explorer))
+        completion.content = Some(serde_json::to_string(&record)?);
+        Ok(completion)
     }
 
     async fn advisory_pair(&mut self, advice: &str) -> Result<(Completion, Completion)> {

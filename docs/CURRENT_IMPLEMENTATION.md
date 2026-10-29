@@ -1,5 +1,13 @@
 # Current Rust implementation
 
+## Release planner and explorer slots independently — 2026-10-29
+
+**Implemented; runtime unverified.** In overlapping client expert workflows,
+planner and explorer retain paired admission and preparation but each holds and
+releases its own inference slot. Both validated results are still required for
+the combined advisory record. See [cognitive network](COGNITIVE_NETWORK.md).
+No tests, benchmarks, model activation or live inference ran.
+
 ## Restore expert routing from structured interpretation — 2026-10-29
 
 **Implemented regression fix; runtime unverified.** Expert routing reads the
