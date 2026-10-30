@@ -514,6 +514,9 @@ enum Command {
         /// JSON object with source_tool, source_pointer and target_pointer; repeat as needed.
         #[arg(long = "binding")]
         bindings: Vec<String>,
+        /// JSON object with source_tool, source_pointer and equals; repeat as needed.
+        #[arg(long = "condition")]
+        conditions: Vec<String>,
     },
     /// Remove an operator-declared client tool route.
     RemoveClientTool {
@@ -2178,6 +2181,7 @@ async fn run_cli() -> Result<()> {
             independent,
             after,
             bindings,
+            conditions,
         } => {
             let schema_sha256 = match (schema_sha256, schema_file) {
                 (Some(digest), None) => digest,
@@ -2211,6 +2215,15 @@ async fn run_cli() -> Result<()> {
                     >(value)?)
                 })
                 .collect::<Result<Vec<_>>>()?;
+            let conditions = conditions
+                .into_iter()
+                .map(|raw| {
+                    let value = cogfabric::strict_json::value(raw.as_bytes(), 2_048)?;
+                    Ok(serde_json::from_value::<
+                        cogfabric::config::ClientToolResultCondition,
+                    >(value)?)
+                })
+                .collect::<Result<Vec<_>>>()?;
             settings.client_tool_routes.insert(
                 tool.clone(),
                 cogfabric::config::ClientToolRoute {
@@ -2219,6 +2232,7 @@ async fn run_cli() -> Result<()> {
                     independent,
                     after,
                     bindings,
+                    conditions,
                 },
             );
             settings.save()?;

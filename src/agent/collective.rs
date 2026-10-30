@@ -98,6 +98,8 @@ struct NativeClientSequenceTool {
     strict: Option<bool>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     bindings: Vec<crate::config::ClientToolInputBinding>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    conditions: Vec<crate::config::ClientToolResultCondition>,
 }
 
 impl NativeClientSequence {
@@ -129,8 +131,8 @@ impl NativeClientSequence {
             {
                 bail!("Native client sequence contains an invalid tool identity")
             }
-            if tool.bindings.len() > 4 {
-                bail!("Native client sequence binding count exceeds its bound")
+            if tool.bindings.len() > 4 || tool.conditions.len() > 4 {
+                bail!("Native client sequence binding or condition count exceeds its bound")
             }
             for binding in &tool.bindings {
                 if binding.source_tool == tool.name
@@ -141,6 +143,15 @@ impl NativeClientSequence {
                 }
                 super::typed_experts::validate_source_pointer(&binding.source_pointer)?;
                 super::typed_experts::validate_source_pointer(&binding.target_pointer)?;
+            }
+            for condition in &tool.conditions {
+                if condition.source_tool == tool.name
+                    || !names.contains(&condition.source_tool)
+                    || serde_json::to_vec(&condition.equals)?.len() > 4_096
+                {
+                    bail!("Native client sequence condition does not name a bounded earlier tool")
+                }
+                super::typed_experts::validate_source_pointer(&condition.source_pointer)?;
             }
         }
         Ok(())
@@ -766,6 +777,59 @@ impl Graph<'_> {
             || tool.function.strict != planned.strict
         {
             bail!("Native client sequence tool metadata changed")
+        }
+        if !planned.conditions.is_empty() {
+            let results = prior_client_results(
+                self.original,
+                self.session.state.objective_index,
+                index as u32,
+            )?;
+            for condition in &planned.conditions {
+                let source_index = sequence
+                    .tools
+                    .iter()
+                    .position(|tool| tool.name == condition.source_tool)
+                    .filter(|source| *source < index)
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("Native client condition predecessor is missing")
+                    })?;
+                let source = results
+                    .get(source_index)
+                    .ok_or_else(|| anyhow::anyhow!("Native client condition result is missing"))?;
+                let selected =
+                    super::typed_experts::select_raw_output(source, &condition.source_pointer)?;
+                let value = crate::strict_json::value(selected.as_bytes(), 16_384)?;
+                let matches = value == condition.equals;
+                self.runtime.store.event(self.task, "agent_client_tool_condition", "jev-plus", json!({
+                    "format_version":1,"source_tool_sha256":sha256(condition.source_tool.as_bytes()),
+                    "source_result_sha256":sha256(source.as_bytes()),"source_pointer_sha256":sha256(condition.source_pointer.as_bytes()),
+                    "expected_sha256":sha256(&serde_json::to_vec(&condition.equals)?),"matched":matches,
+                    "client_results_verified":false,"permissions_granted":false,"client_tool_execution":false
+                }))?;
+                if !matches {
+                    if self
+                        .original
+                        .tool_choice
+                        .as_ref()
+                        .is_some_and(|choice| choice == "required" || choice.is_object())
+                    {
+                        bail!(
+                            "A client tool condition was not met and another tool call is required"
+                        )
+                    }
+                    self.cycles = 1;
+                    self.schedule("native_client_sequence_condition_not_met", true)?;
+                    return self.finish(
+                        Completion {
+                            content:Some(json!({"status":"condition_not_met","later_tool_proposed":false,
+                                "client_result_verified":false,"trust":"untrusted_client_data"}).to_string()),
+                            tool_calls:Vec::new(), model:"native-client-router".into(),
+                            finish_reason:"stop".into(), input_tokens:None, output_tokens:None,
+                        },
+                        "client_tool_plan_condition_not_met", advice,
+                    ).await;
+                }
+            }
         }
         let context = json!({"interpretation":sequence.interpretation,"trust":"advisory_original_goal_remains_authoritative"}).to_string();
         self.selected_client_tool = Some(tool_index);
@@ -1938,6 +2002,7 @@ pub(super) async fn run(
                             description_sha256: sha256(tool.function.description.as_bytes()),
                             strict: tool.function.strict,
                             bindings: route.bindings.clone(),
+                            conditions: route.conditions.clone(),
                         })
                     })
                     .collect::<Result<Vec<_>>>()?;
@@ -2020,6 +2085,7 @@ pub(super) async fn run(
                                     ),
                                     strict: tool.function.strict,
                                     bindings: Vec::new(),
+                                    conditions: Vec::new(),
                                 })
                             })
                             .collect::<Result<Vec<_>>>()?;

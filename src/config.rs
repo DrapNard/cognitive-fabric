@@ -28,6 +28,9 @@ pub struct ClientToolRoute {
     /// Explicit untrusted result projections into existing argument fields.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub bindings: Vec<ClientToolInputBinding>,
+    /// Operator-declared checks over untrusted predecessor results.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub conditions: Vec<ClientToolResultCondition>,
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -37,6 +40,15 @@ pub struct ClientToolInputBinding {
     #[serde(default)]
     pub source_pointer: String,
     pub target_pointer: String,
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClientToolResultCondition {
+    pub source_tool: String,
+    #[serde(default)]
+    pub source_pointer: String,
+    pub equals: serde_json::Value,
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -396,6 +408,7 @@ impl Config {
                 || route.capabilities.len() > 8
                 || route.after.len() > 4
                 || route.bindings.len() > 4
+                || route.conditions.len() > 4
             {
                 bail!("Invalid client tool route identity, schema digest or capability count")
             }
@@ -429,6 +442,14 @@ impl Config {
                 }
                 crate::agent::validate_client_binding_pointer(&binding.source_pointer)?;
                 crate::agent::validate_client_binding_pointer(&binding.target_pointer)?;
+            }
+            for condition in &route.conditions {
+                if !dependencies.contains(&condition.source_tool)
+                    || serde_json::to_vec(&condition.equals)?.len() > 4_096
+                {
+                    bail!("Client tool condition requires a declared predecessor and bounded value")
+                }
+                crate::agent::validate_client_binding_pointer(&condition.source_pointer)?;
             }
         }
         if client_capabilities.len() > 32 {

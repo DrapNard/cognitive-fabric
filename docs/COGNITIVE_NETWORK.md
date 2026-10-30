@@ -2897,3 +2897,17 @@ does not establish success or verify the user's intent. This is not general
 automatic planning, and independent roots of a dependent graph are not yet run in
 parallel. No tests, benchmarks or live inference ran; runtime and continuation
 behavior are unverified.
+# Conditions for operator-declared client dependencies (2026-10-30)
+
+`configure-client-tool` accepts up to four repeated `--condition` JSON objects,
+such as `{"source_tool":"read","source_pointer":"/ok","equals":true}`.
+The source must also be declared with `--after`. Before translating or proposing
+that tool, the native sequence compares each bounded JSON selection from the
+correlated earlier client result with the declared value. A mismatch stops the
+sequence; malformed or missing data fails closed. The condition and its result are
+task-bound, and audit events contain hashes rather than the selected data.
+
+These checks use untrusted client-reported data and do not prove tool success or
+authorize execution. A route without conditions still checks order only. Client
+schema validation and execution approval remain necessary. No tests, benchmarks
+or live inference ran; runtime and continuation behavior are unverified.

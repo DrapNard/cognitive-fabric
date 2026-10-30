@@ -7955,3 +7955,11 @@ untrusted prior client data into explicit argument placeholders. No new tool is
 silently added and the client retains schema validation and execution authority.
 Dependency success, translation fidelity, general planning and parallel roots
 remain unverified or unfinished. No tests or benchmarks were run.
+# Operator-declared dependency conditions (2026-10-30)
+
+**Implemented; runtime unverified.** `src/config.rs`, `src/main.rs` and
+`src/agent/collective.rs` let an operator pin bounded equality conditions on
+predecessor client results. The sequence checks them before another language call
+or tool proposal and stops when a condition does not match. The comparison does
+not verify the client's reported result or grant permissions. No tests or
+benchmarks were run.
