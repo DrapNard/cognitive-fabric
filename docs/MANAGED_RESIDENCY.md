@@ -98,6 +98,23 @@ Approved Engine task-driven load/reuse/release is available through
 physical ownership and independent utility/physical measurements remain incomplete. Explicit unknown-outcome
 resolution and terminal receipt archiving are described below.
 
+## Per-model prediction slots
+
+On first-use activation, CGF reads the instance's reported `config.parallel`
+value. Native generations for that model share a bounded gate: CGF allows at most
+the reported number of predictions, capped at four; if the provider omits the
+value, CGF assumes one. Different configured model keys have separate gates and
+can overlap within the task's shared inference capacity. Time waiting for this
+gate is included in queue-wait metrics.
+
+The LM Studio v1 load endpoint does not expose a max-concurrent-predictions
+request field. Configure that per-model setting in the LM Studio model loader;
+LM Studio documents continuous batching for llama.cpp models. The provider's
+reported slot count is only a scheduling hint, not proof that it will execute
+requests concurrently or that hardware has free capacity. See the [LM Studio
+load API](https://lmstudio.ai/docs/developer/rest/load) and [parallel
+requests](https://lmstudio.ai/docs/app/advanced/parallel-requests).
+
 ## Prior schema-7 verification
 
 Verification on final frozen sources: `cargo fmt --all -- --check`,

@@ -92,6 +92,7 @@ impl LifecycleCutoff {
 pub(crate) struct BoundReceipt {
     pub receipt: managed::Receipt,
     pub origin: &'static str,
+    pub provider_prediction_slots: Option<u32>,
 }
 
 #[derive(Clone, Debug)]
@@ -122,6 +123,7 @@ pub(crate) struct Coordinator {
     cancel: tokio::sync::watch::Receiver<bool>,
     models: BTreeMap<String, planning::EnsureLoaded>,
     cells: Mutex<BTreeMap<String, Arc<ModelCell>>>,
+    prediction_gates: Mutex<BTreeMap<String, Arc<tokio::sync::Semaphore>>>,
     initial: BTreeMap<String, BoundReceipt>,
     committed: Mutex<BTreeMap<String, BoundReceipt>>,
     mutation_gate: tokio::sync::RwLock<()>,
@@ -160,6 +162,13 @@ impl Coordinator {
             .cloned()
             .map(|model| (model.model.clone(), model))
             .collect::<BTreeMap<_, _>>();
+        let prediction_gates = initial
+            .iter()
+            .map(|(model, binding)| {
+                let slots = binding.provider_prediction_slots.unwrap_or(1).clamp(1, 4) as usize;
+                (model.clone(), Arc::new(tokio::sync::Semaphore::new(slots)))
+            })
+            .collect();
         for (model, binding) in &initial {
             let approved = models.get(model).ok_or_else(|| {
                 anyhow::anyhow!("Restored receipt is outside the approved model scope")
@@ -180,6 +189,7 @@ impl Coordinator {
             cancel,
             models,
             cells: Mutex::new(BTreeMap::new()),
+            prediction_gates: Mutex::new(prediction_gates),
             committed: Mutex::new(initial.clone()),
             initial,
             mutation_gate: tokio::sync::RwLock::new(()),
@@ -223,6 +233,42 @@ impl Coordinator {
             bail!("An earlier native inference has an unknown outcome; further task inference is refused")
         }
         Ok(())
+    }
+
+    fn prediction_gate(
+        &self,
+        model: &str,
+        provider_slots: Option<u32>,
+    ) -> Result<Arc<tokio::sync::Semaphore>> {
+        let mut gates = self
+            .prediction_gates
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Native prediction gate registry poisoned"))?;
+        Ok(gates
+            .entry(model.to_owned())
+            .or_insert_with(|| {
+                Arc::new(tokio::sync::Semaphore::new(
+                    provider_slots.unwrap_or(1).clamp(1, 4) as usize,
+                ))
+            })
+            .clone())
+    }
+
+    async fn acquire_prediction_slot(
+        &self,
+        model: &str,
+        provider_slots: Option<u32>,
+        timeout_seconds: u64,
+    ) -> Result<tokio::sync::OwnedSemaphorePermit> {
+        self.ensure_generation_allowed()?;
+        let gate = self.prediction_gate(model, provider_slots)?;
+        let deadline = (Instant::now() + Duration::from_secs(timeout_seconds)).min(self.deadline);
+        tokio::select! {
+            biased;
+            _ = super::wait_for_cancel(self.cancel.clone()) => bail!("Native inference cancelled while waiting for a provider slot"),
+            _ = tokio::time::sleep_until(tokio::time::Instant::from_std(deadline)) => bail!("Native provider-slot wait exceeded the inference deadline"),
+            permit = gate.acquire_owned() => permit.map_err(|_| anyhow::anyhow!("Native prediction gate closed")),
+        }
     }
 
     fn mark_uncertain_dispatch(&self) {
@@ -346,7 +392,7 @@ impl Coordinator {
             *state = Activation::Unloaded;
             bail!("Ambiguous exact native model receipts")
         }
-        let binding = if let Some(row) = matching.first() {
+        let mut binding = if let Some(row) = matching.first() {
             let receipt: managed::Receipt = serde_json::from_value(row["receipt"].clone())?;
             Self::validate_receipt(ensure, &receipt, &self.endpoint)?;
             let observed = managed::validate_task_binding(
@@ -362,6 +408,7 @@ impl Coordinator {
             BoundReceipt {
                 receipt,
                 origin: "reused",
+                provider_prediction_slots: None,
             }
         } else {
             if !selected.loaded_instances.is_empty() {
@@ -408,6 +455,7 @@ impl Coordinator {
             BoundReceipt {
                 receipt,
                 origin: "newly_loaded",
+                provider_prediction_slots: None,
             }
         };
 
@@ -451,6 +499,8 @@ impl Coordinator {
                     .find(|instance| instance.id == binding.receipt.instance_id)
             })
             .and_then(|instance| instance.config.parallel);
+        binding.provider_prediction_slots = prediction_slots;
+        self.prediction_gate(model, prediction_slots)?;
         let mut raw = json!({
             "provider_prediction_slots":prediction_slots,
             "provider_concurrency_verified":false,
@@ -845,6 +895,16 @@ impl InferenceBackend for LazyBackend {
                 .coordinator
                 .activate(task, role, &model, prompt, self.fixed_model.is_some())
                 .await?;
+            let slot_wait_started = Instant::now();
+            let _prediction_slot = self
+                .coordinator
+                .acquire_prediction_slot(
+                    &model,
+                    binding.provider_prediction_slots,
+                    self.config.timeout_seconds,
+                )
+                .await?;
+            let prediction_slot_wait_ms = slot_wait_started.elapsed().as_secs_f64() * 1000.0;
             let _generation_guard = self.coordinator.generation_guard().await?;
             self.coordinator.ensure_generation_allowed()?;
             let call_id = uuid::Uuid::new_v4().to_string();
@@ -890,7 +950,7 @@ impl InferenceBackend for LazyBackend {
                     .collect(),
             };
             match bound.generate_for(task, role, prompt, max_tokens).await {
-                Ok(report) => {
+                Ok(mut report) => {
                     if let Err(audit_error) = self.coordinator.lifecycle_event_with_digest(
                         &self.coordinator.lifecycle_task,
                         "generation_confirmed",
@@ -903,6 +963,9 @@ impl InferenceBackend for LazyBackend {
                         return Err(audit_error);
                     }
                     call_guard.resolve();
+                    let queue_wait_ms =
+                        report.queue_wait_ms.unwrap_or(0.0) + prediction_slot_wait_ms;
+                    report.queue_wait_ms = (queue_wait_ms <= 300_000.0).then_some(queue_wait_ms);
                     Ok(report)
                 }
                 Err(error) => {

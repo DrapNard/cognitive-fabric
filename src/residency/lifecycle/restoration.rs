@@ -775,11 +775,21 @@ pub(crate) async fn prepare(
                         Some("reused") => "reused",
                         _ => bail!("Restored lazy receipt has no original ownership source"),
                     };
+                    let provider_prediction_slots = inventory
+                        .iter()
+                        .find(|item| item.key == model.as_str())
+                        .and_then(|item| {
+                            item.loaded_instances
+                                .iter()
+                                .find(|instance| instance.id == receipt.instance_id)
+                        })
+                        .and_then(|instance| instance.config.parallel);
                     Ok((
                         model.clone(),
                         crate::residency::lifecycle::lazy::BoundReceipt {
                             receipt: receipt.clone(),
                             origin,
+                            provider_prediction_slots,
                         },
                     ))
                 })

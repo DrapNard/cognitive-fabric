@@ -19,6 +19,18 @@ provider may still serialize inference, so it does not prove simultaneous GPU
 execution or a latency improvement. No tests, benchmarks or live inference were
 run.
 
+## Respect provider-reported per-model prediction slots — 2026-10-31
+
+**Implemented; runtime unverified.** `src/residency/lifecycle/lazy.rs` now gates
+each active native model by its inventory-reported prediction slots, defaulting
+to one when omitted and capping the gate at CGF's four-call ceiling. Separate
+model keys retain independent gates. `src/resource_scheduler/adapter.rs` includes
+the provider-slot wait with other queue-wait accounting when the combined metric
+fits its bound. LM Studio's v1 load API cannot set this value, so its per-model
+setting remains operator-configured; see [managed residency](MANAGED_RESIDENCY.md).
+Slot metadata is advisory and does not establish physical provider concurrency.
+No tests, benchmarks or live inference were run.
+
 ## Default Engine Jev+ / Jev-R overlap — 2026-10-30
 
 **Implemented; runtime unverified.** `src/engine.rs` defaults the bounded

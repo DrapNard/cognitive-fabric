@@ -121,7 +121,8 @@ impl InferenceBackend for ScheduledBackend {
                     )
                     .await?
             };
-            report.queue_wait_ms = Some(wait_ms);
+            let queue_wait_ms = report.queue_wait_ms.unwrap_or(0.0) + wait_ms;
+            report.queue_wait_ms = (queue_wait_ms <= 300_000.0).then_some(queue_wait_ms);
             Ok(report)
         })
     }
