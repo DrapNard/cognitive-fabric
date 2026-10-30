@@ -94,6 +94,7 @@ pub async fn diagnose(cfg: &Config, store: &Store, probe_inference: bool) -> Res
         "configured_client_tool_routes":cfg.client_tool_routes.len(),
         "subtask_parallelism":cfg.subtask_parallelism.unwrap_or(1),
         "expert_parallelism":cfg.expert_parallelism.unwrap_or(2),
+        "engine_inference_concurrency":cfg.inference_concurrency(),
         "route_identity_evidence":"configuration_only",
         "runtime_model_activation":"not_observed",
         "physical_parallelism_verified":false,

@@ -1265,18 +1265,23 @@ impl Session {
         candidates: &[WorkflowCandidate<'_>],
         query: &str,
         context: &str,
-        cap: usize,
+        expert_cap: usize,
+        call_capacity: usize,
         planner_overlap: Option<PlannerOverlap>,
     ) -> Result<Option<WorkflowBatchOutcome>> {
         let overlap_deadline = planner_overlap
             .as_ref()
             .map(|overlap| (Instant::now() + overlap.phase_budget).min(self.deadline));
-        if !(2..=4).contains(&cap) || candidates.is_empty() || candidates.len() > cap {
+        if !(2..=4).contains(&expert_cap)
+            || !(2..=4).contains(&call_capacity)
+            || candidates.is_empty()
+            || candidates.len() > expert_cap
+        {
             bail!("Invalid independent expert batch selection")
         }
         let step_cap =
             crate::reasoning::parallel::validate_parallelism(self.cfg.subtask_parallelism)?
-                .min(cap);
+                .min(call_capacity);
         if planner_overlap
             .as_ref()
             .is_some_and(|overlap| overlap.capacity < 2 || overlap.capacity > 4)
@@ -1434,7 +1439,8 @@ impl Session {
                 "format_version":1,
                 "admitted":admitted,
                 "policy":"distinct_selected_requested_capability/v1",
-                "max_parallelism":cap,
+                "max_parallelism":call_capacity,
+                "expert_parallelism":expert_cap,
                 "experts":prompt_specs.iter().map(|(manifest,_,capabilities,_)| json!({"id":manifest.id,"version":manifest.version,"requested_capabilities":capabilities})).collect::<Vec<_>>(),
                 "required_calls_including_planner_and_solver_reserve":required_calls,
                 "required_output_tokens_including_planner_and_solver_reserve":required_tokens,
@@ -1558,7 +1564,7 @@ impl Session {
                     .capacity
                     .saturating_sub(1 + usize::from(overlap_explorer))
             } else {
-                cap
+                call_capacity
             };
             // First give every active expert one slot, then fill spare slots
             // with additional independent steps. Never use a sibling's pending
@@ -1605,7 +1611,8 @@ impl Session {
                 break;
             }
             let ready_wave_event = json!({
-                "format_version":1,"expert_parallelism":cap,"per_expert_step_parallelism":step_cap,
+                "format_version":2,"expert_parallelism":expert_cap,"total_call_capacity":call_capacity,
+                "per_expert_step_parallelism":step_cap,
                 "overlap_id":planner_overlap.as_ref().map(|overlap| overlap.id.as_str()),
                 "wave_index":expert_wave_index,
                 "calls":wave.iter().map(|(index, step, _, _)| json!({
@@ -2395,6 +2402,7 @@ impl Session {
                 request.query,
                 request.context,
                 request.expert_cap,
+                request.global_capacity,
                 Some(overlap),
             )
             .await;

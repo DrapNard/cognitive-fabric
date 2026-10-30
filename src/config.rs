@@ -270,6 +270,21 @@ impl Config {
         }
     }
 
+    /// Total inference width shared by Jev-R and Jev+ work. Each subsystem
+    /// retains its own cap; the host broker uses the larger configured group
+    /// limit as the shared ceiling.
+    pub fn inference_concurrency(&self) -> usize {
+        let reasoning = self
+            .subtask_parallelism
+            .filter(|cap| (2..=4).contains(cap))
+            .unwrap_or(1);
+        let experts = self
+            .expert_parallelism
+            .filter(|cap| (1..=4).contains(cap))
+            .unwrap_or(2);
+        reasoning.max(experts)
+    }
+
     pub fn provider_effort<'a>(&self, effort: &'a str) -> Result<&'a str> {
         if !matches!(effort, "none" | "low" | "medium" | "high") {
             bail!("Unsupported provider reasoning effort")

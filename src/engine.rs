@@ -123,15 +123,7 @@ impl Engine {
         // Parallel Jev-R waves share the pinned broker backend. Default Engine
         // expert work to two bounded calls so independent Jev+ experts and Jev-R
         // planning can overlap. Operators can explicitly set one for serial work.
-        let module_concurrency = cfg
-            .subtask_parallelism
-            .filter(|cap| (2..=4).contains(cap))
-            .unwrap_or(1)
-            .max(
-                cfg.expert_parallelism
-                    .filter(|cap| (1..=4).contains(cap))
-                    .unwrap_or(2),
-            );
+        let module_concurrency = cfg.inference_concurrency();
         let broker = Arc::new(crate::fabric::Broker::with_inference_concurrency(
             backend,
             module_concurrency,
@@ -239,17 +231,7 @@ impl Engine {
         modules: Arc<crate::fabric::modules::Broker>,
     ) -> Result<Self> {
         ownership.validate(&self.store)?;
-        let concurrency = self
-            .cfg
-            .subtask_parallelism
-            .filter(|cap| (2..=4).contains(cap))
-            .unwrap_or(1)
-            .max(
-                self.cfg
-                    .expert_parallelism
-                    .filter(|cap| (1..=4).contains(cap))
-                    .unwrap_or(2),
-            );
+        let concurrency = self.cfg.inference_concurrency();
         let broker = Arc::new(crate::fabric::Broker::with_inference_concurrency(
             backend,
             concurrency,
@@ -1434,17 +1416,7 @@ impl Engine {
             };
             let mut workflow_overlap = None;
             let mut overlap_expert_cap = 0usize;
-            let global_inference_capacity = self
-                .cfg
-                .subtask_parallelism
-                .filter(|cap| (2..=4).contains(cap))
-                .unwrap_or(1)
-                .max(
-                    self.cfg
-                        .expert_parallelism
-                        .filter(|cap| (1..=4).contains(cap))
-                        .unwrap_or(2),
-                );
+            let global_inference_capacity = self.cfg.inference_concurrency();
             if experts && mode != "fast" {
                 let mut candidates = Vec::new();
                 for skill in &skills {

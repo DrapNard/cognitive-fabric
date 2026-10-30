@@ -2119,13 +2119,14 @@ Formatting/static checks only; no tests, benchmarks or provider calls run.
 
 ## Filling available expert slots
 
-`expert_parallelism` bounds total active calls in an independent expert batch;
-`subtask_parallelism` bounds ready steps from any one expert. Each wave considers
-one ready step from each active expert first, then additional ready steps in
-stable expert/topological order until the total cap is reached. A dependency
-requires a result from a previous completed wave; merely scheduling its producer
-in the same wave is insufficient. Registered expert brokers use the validated
-step cap so the host does not serialize these admitted calls unnecessarily.
+`expert_parallelism` bounds active independent experts, and
+`subtask_parallelism` bounds ready steps from any one expert. The shared total
+inference width is the larger of those configured limits, capped at four. Each
+wave gives every active expert one ready step first, then fills spare shared
+slots with additional ready steps in stable expert/topological order. A
+dependency requires a result from a previous completed wave; merely scheduling
+its producer in the same wave is insufficient. The broker and per-model provider
+gates enforce the shared and provider-specific limits independently.
 
 `expert_ready_wave` records the exact expert versions/steps and both limits before
 per-call authorization and durable reservations. Existing root budgets, deadline,

@@ -1803,7 +1803,7 @@ async fn resume_with_runtime_handles(
             None => Arc::new(LocalBackend(checkpoint.cfg.clone())),
         },
     };
-    let inference_concurrency = checkpoint.cfg.subtask_parallelism.unwrap_or(1);
+    let inference_concurrency = checkpoint.cfg.inference_concurrency();
     let backend: Arc<dyn InferenceBackend> = Arc::new(
         crate::fabric::Broker::with_inference_concurrency(inference, inference_concurrency),
     );

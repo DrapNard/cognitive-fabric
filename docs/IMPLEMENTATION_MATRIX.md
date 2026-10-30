@@ -1,5 +1,19 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Preserve configured network width after recovery — 2026-10-31
+
+**Implemented; runtime unverified.** `Config::inference_concurrency` now owns
+the shared broker-width calculation used by fresh Engine tasks, managed Engine
+forks, resumed Engine tasks, and client collective overlap admission. Previously
+Engine continuation restored the broker using only `subtask_parallelism`, which
+could serialize Jev+ work when `expert_parallelism` was the larger configured
+limit. The shared ceiling remains bounded to four; provider slot gates still
+apply independently per model. Engine expert workflows now carry independent
+expert-count and total-call caps, so additional ready steps can fill spare shared
+slots. Recovery validates the versioned ready-wave capacity before rebuilding
+overlap. `src/diagnostics.rs` reports the computed Engine width from the same
+configuration helper. No tests, benchmarks or live inference were run.
+
 ## Omit legacy advice from language-network continuations — 2026-10-31
 
 **Implemented; runtime unverified.** `src/agent/reasoning_memory.rs` now

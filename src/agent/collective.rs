@@ -35,6 +35,14 @@ pub(super) fn call_limit(cfg: &Config, reasoning_calls: usize) -> usize {
     }
 }
 
+fn shared_inference_capacity(cfg: &Config) -> usize {
+    if cfg.language_model().is_some() {
+        cfg.inference_concurrency()
+    } else {
+        cfg.subtask_parallelism.unwrap_or(1).clamp(1, 4)
+    }
+}
+
 pub(super) struct Outcome {
     pub completion: Completion,
     pub advice: String,
@@ -2355,7 +2363,7 @@ pub(super) async fn run(
         {
             bail!("Typed evidence task cannot cover reasoning and final presentation")
         }
-        let total_capacity = runtime.cfg.subtask_parallelism.unwrap_or(1).clamp(1, 4);
+        let total_capacity = shared_inference_capacity(&runtime.cfg);
         let expert_overlap = use_typed_evidence
             && (independent_experts || graph.expert_typed_inputs.is_some())
             && total_capacity >= 2
@@ -2524,7 +2532,7 @@ pub(super) async fn run(
     let pair_admitted = overlapped_pair.is_some()
         || (saved.calls == 0
             && mode == "research"
-            && runtime.cfg.subtask_parallelism.unwrap_or(1) >= 2
+            && shared_inference_capacity(&runtime.cfg) >= 2
             && graph.can_store_roles(&advice, &["planner", "explorer"])?
             && graph.available(&[
                 ("planner", &advice, ADVICE_TOKENS),

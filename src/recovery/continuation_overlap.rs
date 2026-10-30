@@ -644,23 +644,39 @@ pub(super) fn validate(
         let source: String = row.get(1)?;
         let raw: String = row.get(2)?;
         let wave = crate::strict_json::value(raw.as_bytes(), 16384)?;
+        let wave_version = wave["format_version"].as_u64().unwrap_or(0);
+        let wave_keys_v1 = [
+            "format_version",
+            "expert_parallelism",
+            "per_expert_step_parallelism",
+            "overlap_id",
+            "wave_index",
+            "calls",
+            "policy",
+            "dependencies_from_prior_waves_only",
+            "permissions_granted",
+            "results_verified",
+        ];
+        let wave_keys_v2 = [
+            "format_version",
+            "expert_parallelism",
+            "total_call_capacity",
+            "per_expert_step_parallelism",
+            "overlap_id",
+            "wave_index",
+            "calls",
+            "policy",
+            "dependencies_from_prior_waves_only",
+            "permissions_granted",
+            "results_verified",
+        ];
+        let wave_shape_valid = match wave_version {
+            1 => has_exact_keys(&wave, &wave_keys_v1),
+            2 => has_exact_keys(&wave, &wave_keys_v2),
+            _ => false,
+        };
         if source != "jev-plus"
-            || !has_exact_keys(
-                &wave,
-                &[
-                    "format_version",
-                    "expert_parallelism",
-                    "per_expert_step_parallelism",
-                    "overlap_id",
-                    "wave_index",
-                    "calls",
-                    "policy",
-                    "dependencies_from_prior_waves_only",
-                    "permissions_granted",
-                    "results_verified",
-                ],
-            )
-            || wave["format_version"] != 1
+            || !wave_shape_valid
             || wave["overlap_id"] != overlap_id
             || wave["policy"] != "stable_round_robin_ready_steps/v1"
             || wave["dependencies_from_prior_waves_only"] != true
@@ -699,6 +715,38 @@ pub(super) fn validate(
                 ))
             })
             .collect::<Result<Vec<_>>>()?;
+        let active_expert_capacity = expected_expert_capacity.min(expected_global_capacity);
+        let configured_subtask_capacity = configured_capacity(saved_config.subtask_parallelism, 1);
+        let (wave_expert_capacity, wave_call_capacity, wave_step_capacity) = if wave_version == 1 {
+            let old_capacity = active_expert_capacity;
+            (
+                old_capacity,
+                old_capacity,
+                configured_subtask_capacity.min(old_capacity),
+            )
+        } else {
+            (
+                active_expert_capacity,
+                wave["total_call_capacity"].as_u64().unwrap_or(0) as usize,
+                configured_subtask_capacity.min(expected_global_capacity),
+            )
+        };
+        let counts = calls.iter().fold(
+            BTreeMap::<&str, usize>::new(),
+            |mut counts, (expert, _, _)| {
+                *counts.entry(expert.as_str()).or_default() += 1;
+                counts
+            },
+        );
+        if wave["expert_parallelism"].as_u64() != Some(wave_expert_capacity as u64)
+            || wave["per_expert_step_parallelism"].as_u64() != Some(wave_step_capacity as u64)
+            || (wave_version == 2 && wave_call_capacity != expected_global_capacity)
+            || calls.len() > wave_call_capacity
+            || counts.len() > wave_expert_capacity
+            || counts.values().any(|count| *count > wave_step_capacity)
+        {
+            bail!("Overlap ready-wave capacity differs from its pinned concurrency policy")
+        }
         if ready_waves
             .iter()
             .any(|(_, existing, _)| *existing == wave_index)
