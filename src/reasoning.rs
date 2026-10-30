@@ -128,6 +128,7 @@ pub(crate) struct ExpertOverlap<'a> {
     pub context: &'a str,
     pub expert_cap: usize,
     pub global_capacity: usize,
+    pub exploration_enabled: bool,
 }
 
 enum PreparedWorkflow {
@@ -1702,7 +1703,7 @@ impl Session {
                     "expert_planner_wave_intent",
                     "jev-plus",
                     json!({
-                        "format_version":3,
+                        "format_version":4,
                         "overlap_id":overlap.id,
                         "objective_sha256":crate::store::sha256(query.as_bytes()),
                         "context_sha256":crate::store::sha256(context.as_bytes()),
@@ -1949,7 +1950,7 @@ impl Session {
                 return Ok(Some(WorkflowBatchOutcome::default()));
             }
             let completion = json!({
-                "format_version":3,
+                "format_version":4,
                 "overlap_id":overlap.id,
                 "planner_call":planner_call,
                 "planner_result_sha256":crate::store::sha256(planner_text.as_bytes()),
@@ -2344,7 +2345,8 @@ impl Session {
         let overlap = PlannerOverlap {
             id: uuid::Uuid::new_v4().to_string(),
             prompt: base.to_owned(),
-            explorer_prompt: (request.global_capacity >= 3).then(|| base.to_owned()),
+            explorer_prompt: (request.global_capacity >= 3 && request.exploration_enabled)
+                .then(|| base.to_owned()),
             capacity: request.global_capacity,
             phase_budget,
         };

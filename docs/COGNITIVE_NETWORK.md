@@ -2928,9 +2928,10 @@ ran.
 
 ## Jev-R Explorer in the Engine planner/expert wave
 
-When an Engine planner/expert overlap has global concurrency of at least three,
-the first admitted wave can also include Jev-R Explorer: planner, explorer and
-at least one Jev+ workflow step are prepared and dispatched together. The
+When an Engine planner/expert overlap runs in Research mode with global
+concurrency of at least three, the first admitted wave can also include Jev-R
+Explorer: planner, explorer and at least one Jev+ workflow step are prepared and dispatched together. In other modes the slot stays available for another
+independent Jev+ workflow step. The
 bounded explorer portfolio is accepted before plan execution and later informs
 the whole-goal solver. Its call, result hash, route role and prompt are pinned
 in format-version-3 overlap records; older overlap records retain their

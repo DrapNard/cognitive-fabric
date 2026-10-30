@@ -1594,6 +1594,7 @@ impl Engine {
                             context: &context,
                             expert_cap: overlap_expert_cap,
                             global_capacity: global_inference_capacity,
+                            exploration_enabled: mode == "research",
                         },
                     )
                     .await?

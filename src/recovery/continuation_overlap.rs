@@ -138,7 +138,7 @@ pub(super) fn validate(
     let format_version = intent["format_version"].as_u64().unwrap_or(0);
     if intent_source != "jev-plus"
         || completion_source != "jev-plus"
-        || !matches!(format_version, 1..=3)
+        || !matches!(format_version, 1..=4)
         || completion["format_version"] != format_version
         || completion["overlap_id"] != overlap_id
         || intent["objective_sha256"] != objective_hash
@@ -212,14 +212,14 @@ pub(super) fn validate(
     ];
     if !has_exact_keys(
         intent,
-        if format_version == 3 {
+        if format_version >= 3 {
             &intent_keys_v3
         } else {
             &intent_keys_v1_v2
         },
     ) || !has_exact_keys(
         completion,
-        if format_version == 3 {
+        if format_version >= 3 {
             &completion_keys_v3
         } else {
             &completion_keys_v1_v2
@@ -227,6 +227,11 @@ pub(super) fn validate(
     ) {
         bail!("Planner/expert overlap event contains unknown or missing fields")
     }
+    let has_explorer = match format_version {
+        3 => true,
+        4 => intent["explorer_prompt_sha256"].as_str().is_some(),
+        _ => false,
+    };
     let mut reasoning_context_statement = db.prepare(
         "SELECT id,CASE WHEN length(CAST(source AS BLOB))<=64 THEN source END,CASE WHEN length(CAST(payload AS BLOB))<=262144 THEN payload END FROM events WHERE task_id=?1 AND kind='reasoning_context' ORDER BY id LIMIT 1",
     )?;
@@ -280,7 +285,7 @@ pub(super) fn validate(
         .max(configured_capacity(saved_config.expert_parallelism));
     let expected_expert_capacity = saved_config.expert_parallelism.unwrap_or(1);
     let expected_first_wave_capacity =
-        expected_global_capacity.saturating_sub(if format_version == 3 { 2 } else { 1 });
+        expected_global_capacity.saturating_sub(1 + usize::from(has_explorer));
     let selected_count = intent["experts"].as_array().map_or(0, Vec::len);
     if intent["global_capacity"] != expected_global_capacity
         || intent["expert_first_wave_capacity"] != expected_first_wave_capacity
@@ -532,14 +537,14 @@ pub(super) fn validate(
     let call_list = completion["call_ids"]
         .as_array()
         .filter(|items| {
-            if format_version == 3 {
+            if format_version >= 3 {
                 (3..=65).contains(&items.len())
             } else {
                 (2..=65).contains(&items.len())
             }
         })
         .ok_or_else(|| anyhow::anyhow!("Overlap call list is absent or unbounded"))?;
-    let explorer_call = if format_version == 3 {
+    let explorer_call = if has_explorer {
         let call = completion["explorer_call"]
             .as_u64()
             .ok_or_else(|| anyhow::anyhow!("Overlap explorer call is missing"))?;
@@ -554,6 +559,12 @@ pub(super) fn validate(
         }
         Some((call, hash.to_owned()))
     } else {
+        if !intent["explorer_prompt_sha256"].is_null()
+            || !completion["explorer_call"].is_null()
+            || !completion["explorer_result_sha256"].is_null()
+        {
+            bail!("Overlap explorer fields are inconsistent with its admission")
+        }
         None
     };
     let mut all_ids = BTreeSet::new();
