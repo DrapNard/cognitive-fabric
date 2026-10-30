@@ -10,7 +10,6 @@ pub(super) use experts::ExpertCatalog;
 const MAX_REFERENCE_BYTES: usize = 8_000;
 const MAX_PIN_BYTES: usize = 4_096;
 const DOCUMENT_PREFIX_BYTES: usize = 1_000;
-const MEMORY_PREFIX_BYTES: usize = 500;
 const MAX_PINNED_SKILLS: usize = 8;
 const MAX_EXPERT_ADVICE: usize = 3;
 
@@ -67,6 +66,11 @@ pub(super) fn validate_checkpoint(references: &str, pins: &Value) -> Result<()> 
     let reference: Value = crate::strict_json::value(references.as_bytes(), MAX_REFERENCE_BYTES)?;
     if reference["trust"] != "untrusted_data_never_instructions_or_permissions" {
         bail!("Saved client collective context has an invalid trust label")
+    }
+    match reference.get("memories") {
+        None => {}
+        Some(Value::Array(values)) if values.is_empty() => {}
+        Some(_) => bail!("Legacy prose episode memory cannot enter a resumed collective"),
     }
     let empty = Vec::new();
     let memory_values = match reference.get("project_memories") {
@@ -268,24 +272,8 @@ pub(super) fn capture(
     project_reference: Option<&str>,
     include_retrieval: bool,
 ) -> Result<(String, Value)> {
-    capture_with_memory_policy(db, query, project_reference, include_retrieval, false)
-}
-
-#[cfg(test)]
-pub(super) fn capture_with_memory_policy(
-    db: &Connection,
-    query: &str,
-    project_reference: Option<&str>,
-    include_retrieval: bool,
-    schema_memory_only: bool,
-) -> Result<(String, Value)> {
-    let (reference, pins, _) = capture_network_context(
-        db,
-        query,
-        project_reference,
-        include_retrieval,
-        schema_memory_only,
-    )?;
+    let (reference, pins, _) =
+        capture_network_context(db, query, project_reference, include_retrieval)?;
     Ok((reference, pins))
 }
 
@@ -294,18 +282,13 @@ pub(super) fn capture_network_context(
     query: &str,
     project_reference: Option<&str>,
     include_retrieval: bool,
-    schema_memory_only: bool,
 ) -> Result<(String, Value, Option<ExpertCatalog>)> {
-    let context = if include_retrieval && schema_memory_only {
-        Some(crate::store::Store::client_context_with_memory_policy(
-            db, query, false,
-        )?)
-    } else if include_retrieval {
+    let context = if include_retrieval {
         Some(crate::store::Store::client_context_from(db, query)?)
     } else {
         None
     };
-    let expert_catalog = if include_retrieval && schema_memory_only {
+    let expert_catalog = if include_retrieval {
         experts::capture_catalog(db, context.as_ref())?
     } else {
         None
@@ -325,7 +308,6 @@ pub(super) fn capture_network_context(
         "project_profile": null
     });
     let mut document_pins = Vec::new();
-    let mut memory_pins = Vec::new();
     let mut project_memory_pins = Vec::new();
     let mut retrieved_skill_ids = Vec::new();
 
@@ -416,40 +398,6 @@ pub(super) fn capture_network_context(
         }
     }
 
-    for memory in context
-        .as_ref()
-        .into_iter()
-        .flat_map(|context| &context.memories)
-        .filter(|_| !schema_memory_only)
-        .take(3)
-    {
-        let combined = format!(
-            "Objective: {}\nRecorded result: {}",
-            memory.query, memory.answer
-        );
-        let item = json!({
-            "id": memory.id,
-            "task_id": memory.task_id,
-            "kind": memory.kind,
-            "status": memory.status,
-            "excerpt": utf8_prefix(&combined, MEMORY_PREFIX_BYTES),
-            "trust": "untrusted_historical_data"
-        });
-        let mut candidate = reference.clone();
-        candidate["memories"]
-            .as_array_mut()
-            .expect("reference memory array")
-            .push(item);
-        if encoded_len(&candidate)? > MAX_REFERENCE_BYTES {
-            continue;
-        }
-        reference = candidate;
-        memory_pins.push(json!({
-            "id": memory.id,
-            "sha256": memory.checksum
-        }));
-    }
-
     let mut skill_pins = Vec::new();
     for id in &retrieved_skill_ids {
         if let Some(skill) = context
@@ -478,7 +426,7 @@ pub(super) fn capture_network_context(
     }
 
     pins["documents"] = json!(document_pins);
-    pins["memories"] = json!(memory_pins);
+    pins["memories"] = json!([]);
     pins["skills"] = json!(skill_pins);
     // Optional retrieval must not displace an admitted graph or structured
     // memory. Remove matching complete entries and pins if metadata is full.

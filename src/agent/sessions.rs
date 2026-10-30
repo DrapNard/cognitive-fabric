@@ -1253,7 +1253,6 @@ impl Lease {
                 &objective[..query_end],
                 runtime.cfg.agent_project_profile.as_deref(),
                 include_retrieval,
-                runtime.cfg.language_model().is_some(),
             )?;
         let internal_tools = u32::from(include_retrieval);
         let typed_snapshot = runtime

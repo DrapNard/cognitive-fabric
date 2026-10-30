@@ -1,5 +1,17 @@
 # Current Rust implementation
 
+## Keep prose episode memory out of new reasoning tasks — 2026-10-31
+
+**Implemented; runtime unverified.** `src/store.rs` no longer retrieves legacy
+query/answer episodes into Engine or agent context. `src/engine.rs` no longer
+injects those episodes into prompts or returns a stored answer as a task result.
+`src/agent/session_context.rs` keeps the historical reference field empty, and
+`src/agent/sessions.rs` rejects a resumed checkpoint containing legacy prose
+episodes instead of silently sending them back to a model. Structured project
+memory remains available as bounded facts, relations, constraints and evidence.
+Existing episode records remain in SQLite for operator history; they are not
+converted or deleted. No tests, benchmarks or live inference ran.
+
 ## Restore ranked experts after a pre-admission batch refusal — 2026-10-30
 
 **Implemented; runtime unverified.** `src/reasoning.rs` now falls back to the

@@ -37,7 +37,7 @@ fn client_reference_is_bounded_utf8_safe_and_pins_only_provenance() {
     store
         .finish_task(&task, "unverified", "nebulaquartz historical result")
         .unwrap();
-    let memory = store
+    store
         .publish_memory(&task, "episode", "Reviewed historical fixture")
         .unwrap();
 
@@ -76,14 +76,12 @@ fn client_reference_is_bounded_utf8_safe_and_pins_only_provenance() {
     assert!(!reference.contains("TAIL_SECRET_REFERENCE_BODY"));
 
     let memories = decoded["memories"].as_array().unwrap();
-    assert_eq!(memories.len(), 1);
-    assert_eq!(memories[0]["id"], memory.id);
-    assert_eq!(memories[0]["trust"], "untrusted_historical_data");
+    assert!(memories.is_empty());
     assert!(pins.to_string().len() <= 4_096);
     assert_eq!(pins["raw_reference_bodies_persisted"], false);
     assert_eq!(pins["documents"][0]["id"], document.id);
     assert_eq!(pins["documents"][0]["sha256"], sha256(body.as_bytes()));
-    assert_eq!(pins["memories"][0]["id"], memory.id);
+    assert_eq!(pins["memories"], serde_json::json!([]));
     assert!(!pins.to_string().contains("TAIL_SECRET_REFERENCE_BODY"));
     assert!(!pins.to_string().contains("Reviewed historical fixture"));
 }

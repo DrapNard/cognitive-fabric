@@ -1,5 +1,17 @@
 # Cognitive network implementation
 
+## Keep legacy prose episodes out of new task prompts — 2026-10-31
+
+Engine and agent retrieval now leave the legacy `TaskContext.memories` field
+empty for every configuration. The Engine no longer adds historical query/answer
+episodes to model context or returns a remembered answer directly. The client
+checkpoint validator rejects nonempty legacy episode context, preventing old
+saved prose from re-entering a resumed model call. Structured project memory
+continues through its bounded facts, relations, constraints and evidence schema.
+SQLite episode rows and the explicit operator `memory-search` command are
+preserved as history; this change does not migrate or erase old records. No tests,
+benchmarks or live inference ran.
+
 ## Free execution slots while waiting for shared core work — 2026-10-29
 
 **Implemented task-local scheduling change; runtime unverified.** An expert
@@ -1811,7 +1823,8 @@ cannot be updated/deleted by ordinary writes. Existing database limits still
 apply; records have count/byte caps and persist through ordinary task retention.
 Database backup/restore includes the table. Canonical JSON is the schema encoding:
 it is structured text, not encryption, neural memory or protection from a hostile
-workspace owner. Existing legacy prose memory paths have not yet been replaced.
+workspace owner. Legacy prose episode records remain stored for operator history,
+but new Engine and client reasoning tasks do not retrieve them as prompt context.
 For a configured language-only client network, resumed `advice` checkpoints are
 normalized before another role prompt: validated CGF schema envelopes remain,
 while unmarked legacy prose or unknown JSON is replaced by a digest marker. This
@@ -1842,13 +1855,15 @@ and retrieval. Whole
 claims and their evidence are retained, and oversized claims are omitted rather
 than cut into invalid fragments. The existing total context and pin limits apply.
 
-With the explicit language-only network, Engine and client retrieval skip the
-legacy query/answer memory search itself, rather than fetching those episodes and
-discarding them afterward. Legacy configurations keep their prior retrieval.
-Historical storage, audit transcripts and corpus backups are not converted or
-deleted by this policy. Projection selection validates/hashes its immutable record
-once and computes candidate array size without cloning the surrounding context.
-These changes reduce repeated source-level work; no measured latency claim is made.
+Engine and client retrieval skip the legacy query/answer memory search itself,
+rather than fetching those episodes and discarding them afterward, regardless of
+whether an explicit language-only model is configured. The Engine does not reuse
+an episode answer as a task result. A resumed client checkpoint with nonempty
+legacy episode context is refused, so that old prose cannot re-enter a model.
+Historical SQLite rows, audit transcripts and corpus backups are preserved and
+are not converted or deleted. Projection selection validates/hashes its immutable
+record once and computes candidate array size without cloning the surrounding
+context. No measured latency claim is made.
 
 ### Explicit memory contradictions
 
@@ -1925,8 +1940,8 @@ Heuristic-only routes retain sequential expert selection; dependency-ready steps
 inside a selected structured workflow retain their separate bounded wave support.
 
 These changes do not implement a full client-to-Engine bridge. Native client
-activation uses the explicit experimental mode described below. They do not create trained expert weights, prove inference
-speedups or replace existing legacy prose memory. No live inference, tests,
+activation uses the explicit experimental mode described below. They do not create trained expert weights or prove inference
+speedups. No live inference, tests,
 benchmarks, migration execution or installation was performed for this slice.
 
 Client batch scheduling lives in `agent/collective/experts.rs`. A fair ready-wave
@@ -1996,7 +2011,7 @@ union fits the three-entry, 8,000-byte reference and 4,096-byte pin bounds.
 Incomplete, unsupported or oversized runnable groups are omitted in full.
 Snapshot order preserves ranked roots for capability-free fallback; execution
 order is independently derived from the pinned dependency graph. Graph capture
-precedes optional document/legacy-memory/skill retrieval, while retaining the
+precedes optional document/skill retrieval, while retaining the
 structured project-memory reservation. Optional retrieval entries and their pins
 are removed in pairs if metadata fills up; they cannot displace a captured graph
 or structured memory. This changes advisory selection priority, not tool grants,
@@ -2022,13 +2037,13 @@ partial-projection indication and record/profile/projection digests are retained
 The Engine records its selected projection and pin in the audit log and never
 refreshes that revision during the task. Constraints remain untrusted data.
 
-When the explicit language-only profile is configured, both Engine and new client
-sessions omit legacy query/answer memory episodes from inference context. Existing
-legacy data and audit traces are preserved; this is not encryption or removal of
-all text from storage. Documents and current conversation remain language inputs.
-Previously captured continuation contexts remain pinned rather than silently
-rewritten. Optional independently evaluated project LoRA remains unfinished;
-native client activation uses the explicit experimental mode described below.
+Engine and new client sessions omit legacy query/answer memory episodes from
+inference context for all configurations. Resumed client checkpoints containing
+such episodes are rejected rather than replayed. Existing rows and audit traces
+are preserved; this is not encryption or removal of all text from storage.
+Documents and the current conversation remain language inputs. Optional
+independently evaluated project LoRA remains unfinished; native client activation
+uses the explicit experimental mode described below.
 
 ## Independent structured expert graphs
 

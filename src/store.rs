@@ -1163,17 +1163,6 @@ impl Store {
         experts: bool,
         snapshot: bool,
     ) -> Result<(TaskContext, Option<crate::corpus::FrozenCorpus>)> {
-        self.task_context_with_memory_policy(query, retrieve, experts, snapshot, true)
-    }
-
-    pub(crate) fn task_context_with_memory_policy(
-        &self,
-        query: &str,
-        retrieve: bool,
-        experts: bool,
-        snapshot: bool,
-        legacy_memories: bool,
-    ) -> Result<(TaskContext, Option<crate::corpus::FrozenCorpus>)> {
         let mut db = self.lock()?;
         let tx = db.transaction()?;
         let manifests = crate::registry::snapshot_from(&tx)?;
@@ -1190,11 +1179,7 @@ impl Store {
             }
         }
         let context = TaskContext {
-            memories: if retrieve && legacy_memories {
-                crate::memory::search_from(&tx, query)?
-            } else {
-                Vec::new()
-            },
+            memories: Vec::new(),
             skills: Self::skills_from(&tx)?,
             documents: if retrieve {
                 Self::search_scoped(&tx, query, None, 3, experts)?
@@ -1218,20 +1203,8 @@ impl Store {
     /// consistent SQLite snapshot. Expert model registrations are deliberately
     /// excluded: this endpoint continues to use only its configured backend.
     pub(crate) fn client_context_from(db: &Connection, query: &str) -> Result<TaskContext> {
-        Self::client_context_with_memory_policy(db, query, true)
-    }
-
-    pub(crate) fn client_context_with_memory_policy(
-        db: &Connection,
-        query: &str,
-        legacy_memories: bool,
-    ) -> Result<TaskContext> {
         Ok(TaskContext {
-            memories: if legacy_memories {
-                crate::memory::search_from(db, query)?
-            } else {
-                Vec::new()
-            },
+            memories: Vec::new(),
             skills: Self::skills_from(db)?,
             documents: Self::search_scoped(db, query, None, 3, true)?,
             manifests: crate::registry::snapshot_from(db)?,

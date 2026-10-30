@@ -1,5 +1,16 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Keep prose episode memory out of new reasoning tasks — 2026-10-31
+
+**Implemented; runtime unverified.** `src/store.rs` now gives Engine and agent
+retrieval an empty legacy episode list; `src/engine.rs` no longer places stored
+query/answer pairs in prompts or reuses their answers. New client context keeps
+the old serialized field empty, and `src/agent/session_context.rs` refuses
+continuations that would reintroduce a legacy prose episode. Bounded structured
+project memory remains available. Historical SQLite records are preserved, and
+the operator's explicit memory-search command remains an archival inspection
+interface. No tests, benchmarks or live inference were run.
+
 ## Preserve configured network width after recovery — 2026-10-31
 
 **Implemented; runtime unverified.** `Config::inference_concurrency` now owns

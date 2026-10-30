@@ -83,7 +83,7 @@ mod tests {
         assert!(store.create_task("source remains writable", "fast").is_ok());
     }
     #[test]
-    fn frozen_retrieval_preserves_versions_and_episodes_without_accepting_writes() {
+    fn frozen_retrieval_preserves_versions_without_prompting_episode_memory() {
         let store = Store::in_memory().unwrap();
         store::bootstrap(&store).unwrap();
         store
@@ -162,7 +162,7 @@ mod tests {
         );
         assert_eq!(context.documents.len(), 1);
         assert_eq!(context.documents[0].id, "first");
-        assert_eq!(context.memories.len(), 1);
+        assert!(context.memories.is_empty());
         assert_eq!(store.search("Rust", None, 3).unwrap().len(), 2);
         assert!(frozen.store.create_task("cannot write", "fast").is_err());
         let next = store.freeze_corpus().unwrap();
