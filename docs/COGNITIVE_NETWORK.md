@@ -1812,6 +1812,10 @@ apply; records have count/byte caps and persist through ordinary task retention.
 Database backup/restore includes the table. Canonical JSON is the schema encoding:
 it is structured text, not encryption, neural memory or protection from a hostile
 workspace owner. Existing legacy prose memory paths have not yet been replaced.
+For a configured language-only client network, resumed `advice` checkpoints are
+normalized before another role prompt: validated CGF schema envelopes remain,
+while unmarked legacy prose or unknown JSON is replaced by a digest marker. This
+does not convert or delete historical records, workflow metadata, or audit text.
 
 Operator commands:
 

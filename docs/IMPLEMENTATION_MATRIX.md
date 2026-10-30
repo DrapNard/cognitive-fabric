@@ -1,5 +1,16 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Omit legacy advice from language-network continuations — 2026-10-31
+
+**Implemented; runtime unverified.** `src/agent/reasoning_memory.rs` now
+normalizes resumed advice before it enters a configured language-boundary
+collective. Valid task-bound schema memory is retained; unmarked legacy prose or
+unknown JSON is replaced with a bounded digest marker. `src/agent/collective.rs`
+applies this normalization before subsequent role prompts. This preserves
+legacy checkpoint readability while preventing unrecognized legacy content from
+re-entering new network reasoning memory. No tests, benchmarks or live inference
+were run.
+
 ## Attribute managed inference waiting time — 2026-10-31
 
 **Implemented; runtime unverified.** `src/residency/lifecycle/lazy.rs` records a

@@ -121,6 +121,35 @@ pub(super) fn validate_root(raw: &str, root: &str, references: &str) -> Result<(
     Ok(())
 }
 
+/// Normalize resumed advice before it enters a configured language-boundary
+/// network. Keep task-bound schema memory; replace unmarked legacy content with
+/// a digest so old prose or unknown JSON cannot become reasoning memory again.
+pub(super) fn normalize_language_boundary(
+    raw: &str,
+    root: &str,
+    references: &str,
+) -> Result<String> {
+    let memory = match decode(raw)? {
+        Some(memory) => {
+            validate_memory(&memory, Some(root), references)?;
+            memory
+        }
+        None => {
+            let mut memory = load(root, references, "")?;
+            if !raw.is_empty() {
+                memory.context = serde_json::json!({
+                    "legacy_advice_sha256":crate::store::sha256(raw.as_bytes()),
+                    "legacy_text_omitted":true
+                });
+            }
+            memory
+        }
+    };
+    encode(memory, references)?.ok_or_else(|| {
+        anyhow::anyhow!("Normalized language-boundary memory exceeds its byte limit")
+    })
+}
+
 /// Recover only the original interpretation data for expert routing. A marked
 /// envelope must match the same task and references before its context is read.
 pub(super) fn interpretation(raw: &str, root: &str, references: &str) -> Result<Option<Value>> {

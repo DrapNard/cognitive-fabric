@@ -1718,7 +1718,15 @@ pub(super) async fn run(
         hide_client_results: false,
         client_binding_targets: Vec::new(),
     };
-    let mut advice = saved.advice.clone();
+    let mut advice = if runtime.cfg.language_model().is_some() {
+        super::reasoning_memory::normalize_language_boundary(
+            &saved.advice,
+            graph.session.original_objective(request)?,
+            &graph.session.state.references,
+        )?
+    } else {
+        saved.advice.clone()
+    };
     if runtime.cfg.native_only_client {
         if saved.calls == 0 && saved.proposals == 0 {
             let remaining = graph
