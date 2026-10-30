@@ -4520,14 +4520,13 @@ mod tests {
         assert_eq!(rejected.answer, r#"["b","a"]"#);
         assert_eq!(rejected.calls, 1);
         assert!(rejected.evidence.is_empty());
-        let episode = store
+        assert!(store
             .publish_memory(
                 &rejected.task_id,
                 "episode",
                 "Rejected attempt retained as history",
             )
-            .unwrap();
-        assert_eq!(episode.status, "rejected");
+            .is_err());
         assert_eq!(
             store.task(&rejected.task_id).unwrap()["task"]["status"],
             "rejected"

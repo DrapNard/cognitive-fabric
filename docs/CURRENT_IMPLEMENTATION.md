@@ -9,8 +9,10 @@ injects those episodes into prompts or returns a stored answer as a task result.
 `src/agent/sessions.rs` rejects a resumed checkpoint containing legacy prose
 episodes instead of silently sending them back to a model. Structured project
 memory remains available as bounded facts, relations, constraints and evidence.
-Existing episode records remain in SQLite for operator history; they are not
-converted or deleted. No tests, benchmarks or live inference ran.
+`src/memory.rs` rejects new free-text episode publications while retaining
+operator search/revocation of historical rows; verified arithmetic remains a
+separately checked record. Existing episode rows are not converted or deleted.
+No tests, benchmarks or live inference ran.
 
 ## Restore ranked experts after a pre-admission batch refusal — 2026-10-30
 

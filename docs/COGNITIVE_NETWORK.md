@@ -8,9 +8,9 @@ episodes to model context or returns a remembered answer directly. The client
 checkpoint validator rejects nonempty legacy episode context, preventing old
 saved prose from re-entering a resumed model call. Structured project memory
 continues through its bounded facts, relations, constraints and evidence schema.
-SQLite episode rows and the explicit operator `memory-search` command are
-preserved as history; this change does not migrate or erase old records. No tests,
-benchmarks or live inference ran.
+New free-text episode publication is also rejected. SQLite episode rows and the
+explicit operator `memory-search` command are preserved as history; this change
+does not migrate or erase old records. No tests, benchmarks or live inference ran.
 
 ## Free execution slots while waiting for shared core work — 2026-10-29
 

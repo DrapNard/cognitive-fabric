@@ -163,7 +163,7 @@ async fn policy_and_verification_audit_failures_cannot_create_verified_evidence(
 }
 
 #[tokio::test]
-async fn published_assignments_are_rechecked_against_the_original_exact_goal() {
+async fn prose_episode_assignments_are_not_reusable_memory() {
     let store = Arc::new(Store::in_memory().unwrap());
     let first = Engine::with_backend(
         config(),
@@ -174,28 +174,26 @@ async fn published_assignments_are_rechecked_against_the_original_exact_goal() {
     .await
     .unwrap();
     assert_eq!(first.status, "completed");
-    store
+    assert!(store
         .publish_memory(
             &first.task_id,
             "episode",
             "Synthetic operator-reviewed assignment; requires rechecking",
         )
-        .unwrap();
+        .is_err());
     let engine = Engine::with_backend(
         config(),
         store.clone(),
-        Arc::new(Script(Mutex::new(VecDeque::new()))),
+        Arc::new(Script(Mutex::new(vec![("solver", GOOD)].into()))),
     );
-    let reused = engine.run(QUERY, "fast").await.unwrap();
-    assert_eq!(reused.status, "completed");
-    assert_eq!(reused.calls, 0);
-    assert_eq!(reused.answer, GOOD);
-    let trace = store.task(&reused.task_id).unwrap();
-    assert!(trace["events"]
+    let fresh = engine.run(QUERY, "fast").await.unwrap();
+    assert_eq!(fresh.status, "completed");
+    assert_eq!(fresh.calls, 1);
+    assert_eq!(fresh.answer, GOOD);
+    let trace = store.task(&fresh.task_id).unwrap();
+    assert!(!trace["events"]
         .as_array()
         .unwrap()
         .iter()
-        .any(|e| e["kind"] == "verification"
-            && e["payload"]["criterion"] == "finite_domain/v1"
-            && e["payload"]["origin"] == "published_memory"));
+        .any(|e| e["kind"] == "verification" && e["payload"]["origin"] == "published_memory"));
 }

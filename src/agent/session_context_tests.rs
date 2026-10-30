@@ -37,10 +37,6 @@ fn client_reference_is_bounded_utf8_safe_and_pins_only_provenance() {
     store
         .finish_task(&task, "unverified", "nebulaquartz historical result")
         .unwrap();
-    store
-        .publish_memory(&task, "episode", "Reviewed historical fixture")
-        .unwrap();
-
     let query = "nebulaquartz";
     let mut db = store.lock().unwrap();
     let tx = db

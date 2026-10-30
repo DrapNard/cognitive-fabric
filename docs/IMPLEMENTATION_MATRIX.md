@@ -8,8 +8,10 @@ query/answer pairs in prompts or reuses their answers. New client context keeps
 the old serialized field empty, and `src/agent/session_context.rs` refuses
 continuations that would reintroduce a legacy prose episode. Bounded structured
 project memory remains available. Historical SQLite records are preserved, and
-the operator's explicit memory-search command remains an archival inspection
-interface. No tests, benchmarks or live inference were run.
+`src/memory.rs` rejects new free-text episode publications; the operator's
+memory-search command remains an archival inspection interface. Verified
+arithmetic remains a typed, independently checked record. No tests, benchmarks or
+live inference were run.
 
 ## Preserve configured network width after recovery — 2026-10-31
 

@@ -96,11 +96,11 @@ mod tests {
                 license: "CC0".into(),
             })
             .unwrap();
-        let task = store.create_task("Rust episode", "fast").unwrap();
-        store
-            .finish_task(&task, "unverified", "original episode")
+        let task = store.create_task("calc: 1 + 2", "fast").unwrap();
+        store.finish_task(&task, "completed", "3").unwrap();
+        let memory = store
+            .publish_memory(&task, "verified_arithmetic", "reviewed")
             .unwrap();
-        let memory = store.publish_memory(&task, "episode", "reviewed").unwrap();
         let mut manifest = crate::registry::Manifest {
             workflow: None,
             workflow_steps: None,

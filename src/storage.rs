@@ -257,9 +257,15 @@ mod tests {
                 [&disposable],
             )
             .unwrap();
-        let memory_source = old_task(&store, "published source");
+        let memory_source = store.create_task("calc: 1 + 2", "fast").unwrap();
+        store.finish_task(&memory_source, "completed", "3").unwrap();
         store
-            .publish_memory(&memory_source, "episode", "reviewed")
+            .lock()
+            .unwrap()
+            .execute("UPDATE tasks SET updated=0 WHERE id=?1", [&memory_source])
+            .unwrap();
+        store
+            .publish_memory(&memory_source, "verified_arithmetic", "reviewed")
             .unwrap();
         let referenced = old_task(&store, "referenced source");
         let running = store.create_task("running", "standard").unwrap();

@@ -677,7 +677,8 @@ enum Command {
     },
     MemoryPublish {
         task: String,
-        #[arg(long, default_value = "episode")]
+        /// New publications accept only independently checked arithmetic.
+        #[arg(long, default_value = "verified_arithmetic")]
         kind: String,
         #[arg(long)]
         note: String,
