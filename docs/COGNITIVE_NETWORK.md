@@ -2911,3 +2911,19 @@ These checks use untrusted client-reported data and do not prove tool success or
 authorize execution. A route without conditions still checks order only. Client
 schema validation and execution approval remain necessary. No tests, benchmarks
 or live inference ran; runtime and continuation behavior are unverified.
+
+# Parallel independent roots in dependent client plans (2026-10-30)
+
+When a capability-selected dependent plan has multiple operator-pinned root
+tools, the language interface may translate their arguments concurrently if the
+operator marked every root independent, the user explicitly stated that the
+roots can run concurrently, the client permits parallel calls, and configured
+task and inference capacity admits the complete wave. Root proposals are
+returned together. Tools that depend on their results remain behind the
+correlated client response checkpoint. If the wave does not fit, CGF falls back
+to the existing serial sequence before dispatch.
+
+Only root operations without bindings or result conditions are eligible. The
+declaration and translated arguments remain unverified; the client owns schema
+validation, authorization and execution. Provider-level concurrency and latency
+remain unverified. No tests, benchmarks or live inference ran.

@@ -7963,3 +7963,13 @@ predecessor client results. The sequence checks them before another language cal
 or tool proposal and stops when a condition does not match. The comparison does
 not verify the client's reported result or grant permissions. No tests or
 benchmarks were run.
+
+# Parallel independent roots in dependent client plans (2026-10-30)
+
+**Implemented; runtime unverified.** `src/agent/collective.rs` preserves
+dependency-ready waves and can translate multiple eligible root tool arguments
+concurrently when the user, operator and client all permit it. Dependents remain
+behind correlated client results; insufficient capacity selects serial execution
+before dispatch. `src/agent/typed_experts/translation.rs` parses the bounded
+user-independence signal. No tests, benchmarks or live inference were run;
+provider concurrency and translation quality are unverified.

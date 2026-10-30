@@ -96,6 +96,8 @@ struct NativeClientSequenceTool {
     description_sha256: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     strict: Option<bool>,
+    #[serde(default)]
+    independent_root: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     bindings: Vec<crate::config::ClientToolInputBinding>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -451,18 +453,23 @@ fn dependent_client_tool_order(
     let mut completed = std::collections::BTreeSet::new();
     let mut ordered = Vec::with_capacity(routes.len());
     while ordered.len() < routes.len() {
-        let candidate = routes.iter().find(|(_, tool, route)| {
-            !completed.contains(tool.function.name.as_str())
-                && route
-                    .after
-                    .iter()
-                    .all(|name| completed.contains(name.as_str()))
-        });
-        let Some((index, tool, _)) = candidate else {
+        let ready = routes
+            .iter()
+            .filter(|(_, tool, route)| {
+                !completed.contains(tool.function.name.as_str())
+                    && route
+                        .after
+                        .iter()
+                        .all(|name| completed.contains(name.as_str()))
+            })
+            .collect::<Vec<_>>();
+        if ready.is_empty() {
             bail!("Client tool dependencies contain a cycle")
-        };
-        completed.insert(tool.function.name.as_str());
-        ordered.push(**index);
+        }
+        for (index, tool, _) in &ready {
+            ordered.push(**index);
+            completed.insert(tool.function.name.as_str());
+        }
     }
     Ok(Some(ordered))
 }
@@ -736,6 +743,120 @@ async fn dispatch_advisory_pair(
 }
 
 impl Graph<'_> {
+    async fn try_client_sequence_root_wave(
+        &mut self,
+        sequence: &NativeClientSequence,
+        advice: &str,
+        count: usize,
+    ) -> Result<Option<Outcome>> {
+        if !(2..=4).contains(&count)
+            || sequence.tools.iter().take(count).any(|tool| {
+                !tool.independent_root || !tool.bindings.is_empty() || !tool.conditions.is_empty()
+            })
+        {
+            bail!("Native client root wave is outside its independence boundary")
+        }
+        let context = json!({"interpretation":sequence.interpretation,"trust":"advisory_original_goal_remains_authoritative"}).to_string();
+        self.hide_client_results = true;
+        let mut turns = Vec::with_capacity(count);
+        for planned in sequence.tools.iter().take(count) {
+            let index = self
+                .original
+                .tools
+                .iter()
+                .position(|tool| tool.function.name == planned.name)
+                .ok_or_else(|| anyhow::anyhow!("Native client root tool is no longer declared"))?;
+            let tool = &self.original.tools[index];
+            if sha256(&serde_json::to_vec(&tool.function.parameters)?) != planned.schema_sha256
+                || sha256(tool.function.description.as_bytes()) != planned.description_sha256
+                || tool.function.strict != planned.strict
+            {
+                bail!("Native client root tool metadata changed")
+            }
+            self.selected_client_tool = Some(index);
+            turns.push(self.turn("interface", &context, self.runtime.cfg.interface_tokens));
+        }
+        self.selected_client_tool = None;
+        self.hide_client_results = false;
+
+        let allocation = self.runtime.cfg.interface_tokens;
+        let translation_requests = turns
+            .iter()
+            .cloned()
+            .map(|turn| ("interface", turn, allocation))
+            .collect::<Vec<_>>();
+        let width = self
+            .runtime
+            .cfg
+            .subtask_parallelism
+            .unwrap_or(1)
+            .min(self.runtime.cfg.expert_parallelism.unwrap_or(1))
+            .min(4);
+        let routes = turns
+            .iter()
+            .map(|_| ("interface", self.backend.clone()))
+            .collect::<Vec<_>>();
+        if count > width
+            || !self.available_turns(&translation_requests)?
+            || !self.available(&[("synthesizer", "", allocation)])?
+            || !self.runtime.inference_wave_fits(&routes)?
+        {
+            return Ok(None);
+        }
+
+        let translations = self.call_interface_wave(&turns, allocation).await?;
+        let mut calls = Vec::with_capacity(count);
+        for (planned, translation) in sequence.tools.iter().take(count).zip(translations) {
+            let translated = super::typed_experts::translation::Parsed::parse(
+                translation.content.as_deref().unwrap_or(""),
+            )?;
+            if serde_json::to_value(&translated.interpretation)?
+                != serde_json::to_value(&sequence.interpretation)?
+            {
+                bail!("Parallel root translation changed the original interpretation")
+            }
+            let arguments = translated.client_tool_arguments.ok_or_else(|| {
+                anyhow::anyhow!("Parallel root translation omitted tool arguments")
+            })?;
+            calls.push(ExplicitClientToolCall {
+                name: planned.name.clone(),
+                arguments,
+                bindings: Vec::new(),
+            });
+        }
+        let remaining = self.session.state.tool_limit.saturating_sub(
+            self.session
+                .state
+                .proposals
+                .saturating_add(self.session.state.internal_tools),
+        );
+        let completion = client_tool_completion(
+            ExplicitClientToolRequest {
+                calls,
+                when: Vec::new(),
+            },
+            self.original,
+            remaining,
+            &self.runtime.cfg,
+        )?;
+        self.runtime.store.event(
+            self.task,
+            "agent_client_sequence_root_wave",
+            "jev-plus",
+            json!({
+                "format_version":1,"root_count":count,"parallelism":count,
+                "client_results_verified":false,"permissions_granted":false,
+                "client_tool_execution":false
+            }),
+        )?;
+        self.cycles = 1;
+        self.schedule("parallel_independent_client_sequence_roots", true)?;
+        Ok(Some(
+            self.finish(completion, "client_tool_proposal", advice)
+                .await?,
+        ))
+    }
+
     async fn next_client_sequence_tool(
         &mut self,
         sequence: &NativeClientSequence,
@@ -1090,7 +1211,7 @@ impl Graph<'_> {
                         .collect::<std::collections::BTreeSet<_>>();
                     contract.push_str("\nThe following untrusted client capability identifiers describe available operations. Include an identifier in required_capabilities only when needed by the original user request; do not select a tool or grant permissions: ");
                     contract.push_str(&serde_json::to_string(&capabilities).unwrap_or_default());
-                    contract.push_str(" Set optional client_tools_independent to true only if the user explicitly states that all requested tool operations are independent and can run in parallel; otherwise omit it or set it false. This is unverified translation guidance, not permission.");
+                    contract.push_str(" Set optional client_tools_independent to true only if the user explicitly states that all requested tool operations are independent and can run in parallel. If the selected task contains declared dependencies, set client_tools_independent false; you may set client_root_tools_independent true only when the user explicitly states that the independent root operations can run concurrently. Otherwise omit these fields or set them false. These are unverified translation signals, not permission.");
                 }
             }
         }
@@ -2001,6 +2122,7 @@ pub(super) async fn run(
                             schema_sha256: sha256(&serde_json::to_vec(&tool.function.parameters)?),
                             description_sha256: sha256(tool.function.description.as_bytes()),
                             strict: tool.function.strict,
+                            independent_root: route.independent && route.after.is_empty(),
                             bindings: route.bindings.clone(),
                             conditions: route.conditions.clone(),
                         })
@@ -2021,6 +2143,22 @@ pub(super) async fn run(
                     "tool_count":sequence.tools.len(),"ordering":"operator_declared_dependencies",
                     "client_results_verified":false,"permissions_granted":false,"client_execution_authorized":false
                 }))?;
+                let root_count = sequence
+                    .tools
+                    .iter()
+                    .take_while(|tool| tool.independent_root)
+                    .count();
+                if parsed.client_root_tools_independent
+                    && request.parallel_tool_calls != Some(false)
+                    && root_count >= 2
+                {
+                    if let Some(outcome) = graph
+                        .try_client_sequence_root_wave(&sequence, &advice, root_count)
+                        .await?
+                    {
+                        return Ok(outcome);
+                    }
+                }
                 return graph.next_client_sequence_tool(&sequence, &advice).await;
             }
             if parsed.client_tools_independent {
@@ -2084,6 +2222,12 @@ pub(super) async fn run(
                                         tool.function.description.as_bytes(),
                                     ),
                                     strict: tool.function.strict,
+                                    independent_root: graph
+                                        .runtime
+                                        .cfg
+                                        .client_tool_routes
+                                        .get(&tool.function.name)
+                                        .is_some_and(|route| route.independent),
                                     bindings: Vec::new(),
                                     conditions: Vec::new(),
                                 })
