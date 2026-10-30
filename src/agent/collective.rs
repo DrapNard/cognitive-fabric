@@ -337,6 +337,7 @@ fn explicit_client_tool_request(
     request: &Turn,
     remaining: u32,
     objective_index: usize,
+    cfg: &crate::config::Config,
 ) -> Result<ExplicitToolProgress> {
     let value = crate::strict_json::value(raw.as_bytes(), 32_000)?;
     let rounds = if value.get("rounds").is_some() {
@@ -469,7 +470,7 @@ fn explicit_client_tool_request(
         }
     }
     Ok(ExplicitToolProgress::Next(
-        client_tool_completion(document, request, remaining)?,
+        client_tool_completion(document, request, remaining, cfg)?,
         binding_audit,
     ))
 }
@@ -520,6 +521,7 @@ fn client_tool_completion(
     document: ExplicitClientToolRequest,
     request: &Turn,
     remaining: u32,
+    cfg: &crate::config::Config,
 ) -> Result<Completion> {
     if document.calls.is_empty() || document.calls.len() > 16 {
         bail!("Explicit client request must contain one to sixteen tool calls")
@@ -528,6 +530,16 @@ fn client_tool_completion(
     for call in document.calls {
         if !call.arguments.is_object() {
             bail!("Explicit client tool arguments must be an object")
+        }
+        if let Some(route) = cfg.client_tool_routes.get(&call.name) {
+            let tool = request
+                .tools
+                .iter()
+                .find(|tool| tool.function.name == call.name)
+                .ok_or_else(|| anyhow::anyhow!("Pinned client tool is not declared"))?;
+            if sha256(&serde_json::to_vec(&tool.function.parameters)?) != route.schema_sha256 {
+                bail!("Client tool schema differs from its operator-pinned route")
+            }
         }
         calls.push(ToolCall {
             id: format!("cgf_{}", uuid::Uuid::new_v4().simple()),
@@ -1372,6 +1384,7 @@ pub(super) async fn run(
                     request,
                     remaining,
                     graph.session.state.objective_index,
+                    &runtime.cfg,
                 )? {
                     ExplicitToolProgress::Next(completion, audit) if audit.is_empty() => completion,
                     _ => bail!("Initial client tool plan cannot be complete or conditional"),
@@ -1411,6 +1424,7 @@ pub(super) async fn run(
                         request,
                         remaining,
                         graph.session.state.objective_index,
+                        &runtime.cfg,
                     )? {
                         ExplicitToolProgress::Next(completion, audit) => {
                             if !audit.is_empty() {
@@ -1557,6 +1571,7 @@ pub(super) async fn run(
                 },
                 request,
                 remaining,
+                &runtime.cfg,
             )?;
             let context = json!({"interpretation":interpretation,"trust":"advisory_original_goal_remains_authoritative"}).to_string();
             advice = graph.merge_roles(&context, &[])?.ok_or_else(|| {
@@ -1643,6 +1658,7 @@ pub(super) async fn run(
                             },
                             request,
                             remaining,
+                            &runtime.cfg,
                         )?;
                         graph.runtime.store.event(task, "agent_client_capability_route", "jev-plus", json!({
                             "format_version":1,"tool_count":indices.len(),
@@ -1705,6 +1721,7 @@ pub(super) async fn run(
                     },
                     request,
                     remaining,
+                    &runtime.cfg,
                 )?;
                 advice = graph.merge_roles(&context, &[])?.ok_or_else(|| {
                     anyhow::anyhow!("Structured client capability context exceeds its bound")

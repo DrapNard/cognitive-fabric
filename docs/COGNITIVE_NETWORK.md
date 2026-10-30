@@ -2824,6 +2824,9 @@ Standard clients need not modify their tool schemas to use native-only capabilit
 routing. An operator can configure a tool name, exact canonical parameter-schema
 SHA-256 and up to eight capability identifiers using
 `cogfabric configure-client-tool --tool NAME --schema-sha256 HASH --capability ID`.
+Alternatively, `--schema-file PATH` reads a bounded JSON parameter-schema object,
+rejects duplicate keys and hashes its canonical encoding. This is the parameter
+schema object itself, not the surrounding tool definition.
 The client capability audit event records schema hashes for observed requests.
 Optional `--independent` declares eligibility for a parallel proposal, not proof
 that a particular task's operations are independent. `remove-client-tool --tool
@@ -2836,3 +2839,12 @@ identity are not attested by the schema hash. Mappings select no permissions and
 do not replace client-side schema validation, authorization or execution. This
 does not provide automatic multi-step planning. No tests, benchmarks or live
 inference ran; runtime behavior is unverified.
+
+# Enforce pinned schemas on native client proposals (2026-10-30)
+
+An operator-pinned schema digest is checked before every native-only client tool
+proposal bearing that name, including explicitly requested calls, rather than
+only during capability discovery. A missing or changed schema fails closed.
+This check does not validate argument values against the schema, attest the
+client's implementation, authorize execution, or affect model-backed client
+paths. No tests, benchmarks or live inference ran; runtime behavior is unverified.

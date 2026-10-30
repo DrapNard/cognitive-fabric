@@ -489,8 +489,20 @@ enum Command {
     ConfigureClientTool {
         #[arg(long)]
         tool: String,
-        #[arg(long)]
-        schema_sha256: String,
+        /// Exact schema hash from a client capability audit.
+        #[arg(
+            long,
+            required_unless_present = "schema_file",
+            conflicts_with = "schema_file"
+        )]
+        schema_sha256: Option<String>,
+        /// JSON file containing the client's parameter schema; hashed canonically.
+        #[arg(
+            long,
+            required_unless_present = "schema_sha256",
+            conflicts_with = "schema_sha256"
+        )]
+        schema_file: Option<PathBuf>,
         #[arg(long = "capability", required = true)]
         capabilities: Vec<String>,
         /// Declare this client tool eligible for independent parallel proposals.
@@ -2155,9 +2167,32 @@ async fn run_cli() -> Result<()> {
         Command::ConfigureClientTool {
             tool,
             schema_sha256,
+            schema_file,
             capabilities,
             independent,
         } => {
+            let schema_sha256 = match (schema_sha256, schema_file) {
+                (Some(digest), None) => digest,
+                (None, Some(path)) => {
+                    use std::io::Read;
+                    use std::os::unix::fs::OpenOptionsExt;
+                    let file = std::fs::OpenOptions::new()
+                        .read(true)
+                        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+                        .open(path)?;
+                    if !file.metadata()?.is_file() {
+                        bail!("Client schema must be a regular file")
+                    }
+                    let mut bytes = Vec::new();
+                    file.take(32_001).read_to_end(&mut bytes)?;
+                    let value = cogfabric::strict_json::value(&bytes, 32_000)?;
+                    if !value.is_object() {
+                        bail!("Client parameter schema must be a JSON object")
+                    }
+                    store::sha256(&serde_json::to_vec(&value)?)
+                }
+                _ => bail!("Provide exactly one client schema file or schema hash"),
+            };
             let mut settings = cfg.clone();
             settings.client_tool_routes.insert(
                 tool.clone(),

@@ -7924,3 +7924,10 @@ capabilities and exact observed schema hashes without modifying client schemas.
 Mappings take precedence over annotations and fail closed on schema changes.
 They grant no permissions, do not attest tool implementations and do not replace
 client validation. No tests or benchmarks were run.
+# Client tool schema registration and enforcement (2026-10-30)
+
+**Implemented; runtime unverified.** `src/main.rs` can derive a client route's
+digest from a bounded, strict JSON schema file; `src/agent/collective.rs` checks
+an operator-pinned digest on every native-only proposal for that tool. This is
+an identity check, not argument-schema validation or execution authorization.
+No tests or benchmarks were run.
