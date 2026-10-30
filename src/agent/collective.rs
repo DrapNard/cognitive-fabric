@@ -1753,7 +1753,7 @@ pub(super) async fn run(
             && parsed.typed_graph.is_none()
             && !parsed.typed_evidence
         {
-            if parsed.client_tools_independent && request.parallel_tool_calls == Some(false) {
+            if parsed.client_tools_independent {
                 if let Some(indices) =
                     unique_client_capability_partition(&graph.client_capabilities, &interpretation)
                 {
@@ -1770,8 +1770,28 @@ pub(super) async fn run(
                             .proposals
                             .saturating_add(graph.session.state.internal_tools),
                     );
+                    let width = runtime
+                        .cfg
+                        .subtask_parallelism
+                        .unwrap_or(1)
+                        .min(runtime.cfg.expert_parallelism.unwrap_or(1))
+                        .min(4);
+                    let parallel_admitted = if request.parallel_tool_calls == Some(false)
+                        || indices.len() > width
+                        || !declared_independent
+                        || indices.len() > remaining as usize
+                    {
+                        false
+                    } else {
+                        let routes = indices
+                            .iter()
+                            .map(|_| ("interface", graph.backend.clone()))
+                            .collect::<Vec<_>>();
+                        runtime.inference_wave_fits(&routes)?
+                    };
                     let future_calls = indices.len().saturating_add(1);
                     if declared_independent
+                        && !parallel_admitted
                         && indices.len() <= remaining as usize
                         && graph.calls.saturating_add(future_calls) <= graph.call_limit
                         && graph
@@ -1812,6 +1832,7 @@ pub(super) async fn run(
                         graph.runtime.store.event(task, "agent_client_sequence_planned", "jev-plus", json!({
                             "format_version":1,"sequence_sha256":sha256(&serde_json::to_vec(&sequence)?),
                             "tool_count":sequence.tools.len(),"independence_semantics_verified":false,
+                            "reason":if request.parallel_tool_calls == Some(false) {"client_disallows_parallel"} else {"parallel_capacity_unavailable"},
                             "permissions_granted":false,"client_execution_authorized":false
                         }))?;
                         return graph.next_client_sequence_tool(&sequence, &advice).await;

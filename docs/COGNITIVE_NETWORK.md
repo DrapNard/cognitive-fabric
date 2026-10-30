@@ -2865,3 +2865,14 @@ declarations and model translation remain unverified; metadata hashes do not att
 tool implementations. This path does not plan dependencies or bind tool outputs.
 No tests, benchmarks or live inference ran; runtime and continuation behavior are
 unverified.
+
+# Capacity-aware client proposal fallback (2026-10-30)
+
+For uniquely routed independent client tools, native-only mode can use the same
+bounded sequence when configured concurrency or the resource admission snapshot
+cannot admit the full parallel translation wave, even if the client permits
+parallel calls. Selection happens before the wave is reserved or dispatched;
+started provider calls are never retried as a fallback. Sequence limits, pinned
+tool metadata, untrusted independence declarations and client execution
+authority remain unchanged. Resource admission does not prove physical provider
+parallelism. No tests, benchmarks or live inference ran; behavior is unverified.

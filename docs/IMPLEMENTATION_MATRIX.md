@@ -7940,3 +7940,9 @@ calls. Each tool schema, description and strict flag is pinned and its arguments
 turn arrives, without exposing prior tool results to that translation. Client
 validation and execution authorization remain required. No tests or benchmarks
 were run.
+# Capacity-aware client proposal fallback (2026-10-30)
+
+**Implemented; runtime unverified.** `src/agent/collective.rs` can choose the
+pinned sequential client tool path before dispatch when configured concurrency
+or resource admission cannot fit the independent parallel wave. It does not
+retry started calls or prove provider concurrency. No tests or benchmarks ran.
