@@ -10,8 +10,9 @@ executing, settled sibling reports are buffered locally and recorded afterward.
 All inference remains bounded by the original shared deadline and siblings are
 drained after an individual failure. A valid planner graph can now execute
 dependency-ready subtask waves while the first independent expert wave remains
-active, with separate original
-budget reserved for pending expert calls and final synthesis. The final solver
+active, using only shared inference slots left by active expert calls. Original
+call, token and prompt budgets remain reserved for pending expert calls and
+final synthesis. The final solver
 still waits for expert advice. Recovery remains fail-closed for an interrupted
 overlap with unknown dispatched outcomes. This overlaps runtime futures; a
 provider may still serialize inference, so it does not prove simultaneous GPU

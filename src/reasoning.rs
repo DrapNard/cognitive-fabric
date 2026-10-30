@@ -112,6 +112,7 @@ pub(crate) struct PlannerOverlap {
 pub(crate) struct EarlyPlannerExecution {
     pub base: String,
     pub deadline: Instant,
+    pub capacity: usize,
     pub reserved_calls: usize,
     pub reserved_output_tokens: usize,
     pub reserved_prompt_bytes: usize,
@@ -1887,6 +1888,7 @@ impl Session {
                     .map(|overlap| EarlyPlannerExecution {
                         base: overlap.prompt.clone(),
                         deadline: phase_deadline,
+                        capacity: overlap.capacity,
                         reserved_calls: total_steps.saturating_sub(wave.len()).saturating_add(1),
                         reserved_output_tokens: total_steps
                             .saturating_sub(wave.len())

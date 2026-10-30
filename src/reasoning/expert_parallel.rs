@@ -318,9 +318,28 @@ impl Session {
         futures: &mut [Option<CandidateFuture>],
         buffered: &mut std::collections::VecDeque<(CandidateCall, Result<Generation>, f64)>,
     ) -> Result<String> {
+        if !(2..=4).contains(&reserve.capacity) {
+            return Err(anyhow!("Invalid shared planner/expert capacity"));
+        }
+        // Keep at least one slot for the planner graph. If the first expert
+        // wave occupies the whole capacity, wait for one sibling to settle
+        // before starting subtasks; its result remains locally owned here.
+        while futures.iter().filter(|future| future.is_some()).count() >= reserve.capacity {
+            let Some(report) = crate::reasoning::parallel::join_next(futures).await else {
+                break;
+            };
+            buffered.push_back(report);
+        }
+        let active_siblings = futures.iter().filter(|future| future.is_some()).count();
+        let available_subtask_slots = reserve.capacity.saturating_sub(active_siblings).max(1);
+        let previous_subtask_parallelism = self.cfg.subtask_parallelism;
+        let configured_subtask_parallelism =
+            crate::reasoning::parallel::validate_parallelism(previous_subtask_parallelism)?;
         let previous_call_limit = self.call_limit;
         let previous_output_limit = self.cfg.max_tokens;
         let previous_prompt_limit = self.cfg.max_input_bytes;
+        self.cfg.subtask_parallelism =
+            Some(configured_subtask_parallelism.min(available_subtask_slots));
         self.call_limit = previous_call_limit.saturating_sub(reserve.reserved_calls);
         self.cfg.max_tokens = previous_output_limit.saturating_sub(reserve.reserved_output_tokens);
         self.cfg.max_input_bytes =
@@ -356,6 +375,7 @@ impl Session {
         self.call_limit = previous_call_limit;
         self.cfg.max_tokens = previous_output_limit;
         self.cfg.max_input_bytes = previous_prompt_limit;
+        self.cfg.subtask_parallelism = previous_subtask_parallelism;
         result
     }
 
