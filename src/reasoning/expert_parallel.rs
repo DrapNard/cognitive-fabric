@@ -153,7 +153,7 @@ impl Session {
                             return Err(anyhow!("Invalid bounded expert result"));
                         }
                         self.accumulate_parallel_usage(&report);
-                        let advice = if call.role == "planner" {
+                        let advice = if matches!(call.role.as_str(), "planner" | "explorer") {
                             report.text.clone()
                         } else {
                             report.text.chars().take(2_000).collect::<String>()
@@ -193,6 +193,13 @@ impl Session {
                             &self.task,
                             "planner_overlap_result",
                             "jev-plus",
+                            json!({"overlap_id":call.overlap_id,"call":call.call,"result_sha256":crate::store::sha256(advice.as_bytes()),"permissions_granted":false}),
+                        )?;
+                        } else if call.role == "explorer" {
+                            self.store.event(
+                            &self.task,
+                            "explorer_overlap_result",
+                            "jev-r",
                             json!({"overlap_id":call.overlap_id,"call":call.call,"result_sha256":crate::store::sha256(advice.as_bytes()),"permissions_granted":false}),
                         )?;
                         } else {

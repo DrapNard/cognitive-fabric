@@ -2925,3 +2925,18 @@ validation, authorization and execution. Arguments remain bounded structured
 task memory until proposed. This reduces language calls; actual client execution
 concurrency and latency remain unverified. No tests, benchmarks or live inference
 ran.
+
+## Jev-R Explorer in the Engine planner/expert wave
+
+When an Engine planner/expert overlap has global concurrency of at least three,
+the first admitted wave can also include Jev-R Explorer: planner, explorer and
+at least one Jev+ workflow step are prepared and dispatched together. The
+bounded explorer portfolio is accepted before plan execution and later informs
+the whole-goal solver. Its call, result hash, route role and prompt are pinned
+in format-version-3 overlap records; older overlap records retain their
+existing recovery contract. Research mode skips the later standalone explorer
+call when this wave already produced a portfolio. The scheduler still waits
+for every member of the admitted wave before running dependent expert steps or
+the plan. Provider queues and single prediction slots can serialize generation,
+so this is a dispatch guarantee only; latency and actual provider concurrency
+are unverified. No tests, benchmarks or live inference were run.

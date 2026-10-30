@@ -7728,6 +7728,16 @@ explicitly approved resume transaction. Completion and advice publication are
 atomic. Unknown histories fail closed. Registry digests bind trusted task records,
 not independent membership proofs. Provider execution overlap, recovery at runtime
 and performance have not been tested or benchmarked, as requested by the owner.
+
+**Implemented increment; runtime unverified.** `src/reasoning.rs`,
+`src/reasoning/expert_parallel.rs` and `src/recovery/continuation_overlap.rs`
+now admit Jev-R Explorer in the same first wave as the planner and Jev+ workflow
+steps when global concurrency is at least three. The bounded portfolio is
+consumed before plan execution, its result is bound into format-version-3
+recovery records, and Research mode skips a redundant later Explorer call.
+Recovery for prior format versions remains supported. The scheduler awaits the
+whole admitted wave; provider execution can still queue or serialize. No tests,
+benchmarks or live inference were run.
 # Scheduler refill fairness (2026-10-29)
 
 **Implemented; runtime unverified.** `src/agent/graph_schedule.rs` prioritizes

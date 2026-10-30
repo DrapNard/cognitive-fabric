@@ -104,8 +104,16 @@ pub(crate) enum WorkflowAdvice {
 pub(crate) struct PlannerOverlap {
     pub id: String,
     pub prompt: String,
+    pub explorer_prompt: Option<String>,
     pub capacity: usize,
     pub phase_budget: Duration,
+}
+
+#[derive(Default)]
+pub(crate) struct WorkflowBatchOutcome {
+    pub planner: Option<(u32, String)>,
+    pub explorer: Option<(u32, String)>,
+    pub experts: Vec<(String, String)>,
 }
 
 pub(crate) type WorkflowCandidate<'a> = (
@@ -1246,7 +1254,7 @@ impl Session {
         context: &str,
         cap: usize,
         planner_overlap: Option<PlannerOverlap>,
-    ) -> Result<Option<(Option<(u32, String)>, Vec<(String, String)>)>> {
+    ) -> Result<Option<WorkflowBatchOutcome>> {
         let overlap_deadline = planner_overlap
             .as_ref()
             .map(|overlap| (Instant::now() + overlap.phase_budget).min(self.deadline));
@@ -1353,16 +1361,34 @@ impl Session {
         let final_prompt_bound = Self::prompt_base(query, context, self.verification_enabled)?
             .len()
             .saturating_add(16_064);
-        let future_prompt_bound = max_prompt_bytes.max(final_prompt_bound).max(
-            planner_overlap
-                .as_ref()
-                .map_or(0, |overlap| overlap.prompt.len()),
-        );
-        let required_calls = total_steps.saturating_add(2);
-        let required_tokens = total_steps.saturating_mul(192).saturating_add(640);
+        let future_prompt_bound =
+            max_prompt_bytes
+                .max(final_prompt_bound)
+                .max(planner_overlap.as_ref().map_or(0, |overlap| {
+                    overlap
+                        .prompt
+                        .len()
+                        .max(overlap.explorer_prompt.as_ref().map_or(0, String::len))
+                }));
+        let overlap_explorer = planner_overlap
+            .as_ref()
+            .is_some_and(|overlap| overlap.explorer_prompt.is_some());
+        let required_calls = total_steps
+            .saturating_add(2)
+            .saturating_add(usize::from(overlap_explorer));
+        let required_tokens = total_steps
+            .saturating_mul(192)
+            .saturating_add(640)
+            .saturating_add(if overlap_explorer { 128 } else { 0 });
         let advice_context_bytes = prompt_specs.len().saturating_mul(16_384);
         let required_prompt_bytes = total_prompt_bytes
             .saturating_add(future_prompt_bound.saturating_mul(2))
+            .saturating_add(
+                planner_overlap
+                    .as_ref()
+                    .and_then(|overlap| overlap.explorer_prompt.as_ref())
+                    .map_or(0, String::len),
+            )
             .saturating_add(advice_context_bytes);
         let phase_budget = (self.deadline.saturating_duration_since(Instant::now()) / 3)
             .min(Duration::from_secs(self.cfg.timeout_seconds))
@@ -1488,6 +1514,8 @@ impl Session {
         let mut overlap_call_ids = Vec::<u32>::new();
         let mut planner_call = None::<u32>;
         let mut planner_text = None::<String>;
+        let mut explorer_call = None::<u32>;
+        let mut explorer_text = None::<String>;
         let mut expert_wave_index = 0usize;
         let overlap_experts = prepared
             .iter()
@@ -1510,7 +1538,11 @@ impl Session {
             let mut wave = Vec::new();
             let first_wave = overlap_call_ids.is_empty() && planner_overlap.is_some();
             let expert_wave_capacity = if first_wave {
-                planner_overlap.as_ref().unwrap().capacity.saturating_sub(1)
+                planner_overlap
+                    .as_ref()
+                    .unwrap()
+                    .capacity
+                    .saturating_sub(1 + usize::from(overlap_explorer))
             } else {
                 cap
             };
@@ -1582,24 +1614,41 @@ impl Session {
                 return if overlap_call_ids.is_empty() {
                     Ok(None)
                 } else {
-                    Ok(Some((None, Vec::new())))
+                    Ok(Some(WorkflowBatchOutcome::default()))
                 };
             }
             let wave_bytes = wave
                 .iter()
                 .map(|(_, _, prompt, _)| prompt.len())
                 .sum::<usize>();
-            if self.resources.calls as usize + wave.len() + 2 > self.call_limit
+            let reserve_planner = planner_overlap.is_none() || first_wave;
+            let reserve_explorer = first_wave && overlap_explorer;
+            let reserved_future_calls =
+                1 + usize::from(reserve_planner) + usize::from(reserve_explorer);
+            let reserved_future_tokens = 384
+                + if reserve_planner { 256 } else { 0 }
+                + if reserve_explorer { 128 } else { 0 };
+            let reserved_future_prompt_bytes = future_prompt_bound
+                .saturating_mul(1 + usize::from(reserve_planner))
+                .saturating_add(if reserve_explorer {
+                    planner_overlap
+                        .as_ref()
+                        .and_then(|overlap| overlap.explorer_prompt.as_ref())
+                        .map_or(0, String::len)
+                } else {
+                    0
+                });
+            if self.resources.calls as usize + wave.len() + reserved_future_calls > self.call_limit
                 || self
                     .resources
                     .reserved_output_tokens
-                    .saturating_add(wave.len() * 192 + 640)
+                    .saturating_add(wave.len() * 192 + reserved_future_tokens)
                     > self.cfg.max_tokens
                 || self
                     .resources
                     .prompt_bytes
                     .saturating_add(wave_bytes)
-                    .saturating_add(future_prompt_bound.saturating_mul(2))
+                    .saturating_add(reserved_future_prompt_bytes)
                     .saturating_add(advice_context_bytes)
                     > self.cfg.max_input_bytes
             {
@@ -1622,8 +1671,15 @@ impl Session {
                     let Some(pool) = &self.resource_pool else {
                         bail!("Configured resource pool is missing during overlap admission")
                     };
-                    let mut routes = Vec::with_capacity(wave.len() + 1);
+                    let mut routes =
+                        Vec::with_capacity(wave.len() + 1 + usize::from(overlap_explorer));
                     routes.push(("planner", self.backend.inference_target("planner")?));
+                    if planner_overlap
+                        .as_ref()
+                        .is_some_and(|overlap| overlap.explorer_prompt.is_some())
+                    {
+                        routes.push(("explorer", self.backend.inference_target("explorer")?));
+                    }
                     for (_, _, _, backend) in &wave {
                         routes.push(("solver", backend.inference_target("solver")?));
                     }
@@ -1632,7 +1688,7 @@ impl Session {
                             &self.task,
                             "expert_batch_admission",
                             "jev-plus",
-                            json!({"format_version":1,"admitted":false,"reason":"Configured resource pool has no simultaneous planner and expert capacity","permissions_granted":false}),
+                            json!({"format_version":1,"admitted":false,"reason":"Configured resource pool has no simultaneous planner, explorer, and expert capacity","permissions_granted":false}),
                         )?;
                         return Ok(None);
                     }
@@ -1646,11 +1702,12 @@ impl Session {
                     "expert_planner_wave_intent",
                     "jev-plus",
                     json!({
-                        "format_version":2,
+                        "format_version":3,
                         "overlap_id":overlap.id,
                         "objective_sha256":crate::store::sha256(query.as_bytes()),
                         "context_sha256":crate::store::sha256(context.as_bytes()),
                         "planner_prompt_sha256":crate::store::sha256(overlap.prompt.as_bytes()),
+                        "explorer_prompt_sha256":overlap.explorer_prompt.as_deref().map(|prompt| crate::store::sha256(prompt.as_bytes())),
                         "configuration_sha256":self.original_configuration_digest()?,
                         "experts":overlap_experts,
                         "expert_first_wave_capacity":expert_wave_capacity,
@@ -1701,6 +1758,51 @@ impl Session {
                     backend: self.backend.clone(),
                     overlap_id: Some(overlap.id.clone()),
                 });
+                if let Some(prompt) = &overlap.explorer_prompt {
+                    let decision = self.policy.authorize(&self.task, "jev-r", "llm.generate");
+                    self.store.event(&self.task,"policy","security-kernel",json!({
+                        "task_id":self.task,"actor":"jev-r","role":"explorer","capability":"llm.generate",
+                        "allowed":decision.is_ok(),"overlap_id":overlap.id
+                    }))?;
+                    decision?;
+                    let call = self.resources.calls + 1;
+                    let publication_error = match self.store.event(
+                        &self.task,
+                        "model_dispatch",
+                        "jev-r",
+                        json!({
+                            "role":"explorer","call":call,"allocation":128,
+                            "prompt_bytes":prompt.len(),
+                            "prompt_sha256":crate::store::sha256(prompt.as_bytes()),
+                            "overlap_id":overlap.id,"dispatch_kind":"planner_expert_overlap"
+                        }),
+                    ) {
+                        Ok(()) => None,
+                        Err(error) if error.is::<crate::store::PersistedEventError>() => {
+                            Some(error)
+                        }
+                        Err(error) => return Err(error),
+                    };
+                    self.resources.calls = call;
+                    self.resources.reserved_output_tokens += 128;
+                    self.resources.prompt_bytes += prompt.len();
+                    if let Some(error) = publication_error {
+                        return Err(error);
+                    }
+                    explorer_call = Some(call);
+                    overlap_call_ids.push(call);
+                    calls.push(expert_parallel::CandidateCall {
+                        role: "explorer".into(),
+                        expert_id: "__explorer__".into(),
+                        expert_version: "1".into(),
+                        capabilities: Vec::new(),
+                        call,
+                        allocation: 128,
+                        prompt: prompt.clone(),
+                        backend: self.backend.clone(),
+                        overlap_id: Some(overlap.id.clone()),
+                    });
+                }
             } else {
                 self.store.event(
                     &self.task,
@@ -1770,12 +1872,14 @@ impl Session {
                 .execute_independent_expert_batch(calls, remaining)
                 .await?;
             if reports.len() != call_count {
-                return Ok(Some((None, Vec::new())));
+                return Ok(Some(WorkflowBatchOutcome::default()));
             }
             let mut expert_reports = Vec::new();
             for (expert_id, role, advice) in reports {
                 if role == "planner" {
                     planner_text = Some(advice);
+                } else if role == "explorer" {
+                    explorer_text = Some(advice);
                 } else {
                     expert_reports.push((expert_id, advice));
                 }
@@ -1828,11 +1932,29 @@ impl Session {
             planner_call,
             planner_text.as_ref(),
         ) {
+            if overlap_explorer && (explorer_call.is_none() || explorer_text.is_none()) {
+                self.store.event(
+                    &self.task,
+                    "expert_planner_wave_incomplete",
+                    "jev-plus",
+                    json!({
+                        "format_version":1,
+                        "overlap_id":overlap.id,
+                        "call_ids":overlap_call_ids,
+                        "reason":"Explorer result is unresolved",
+                        "automatic_replay":false,
+                        "permissions_granted":false
+                    }),
+                )?;
+                return Ok(Some(WorkflowBatchOutcome::default()));
+            }
             let completion = json!({
-                "format_version":2,
+                "format_version":3,
                 "overlap_id":overlap.id,
                 "planner_call":planner_call,
                 "planner_result_sha256":crate::store::sha256(planner_text.as_bytes()),
+                "explorer_call":explorer_call,
+                "explorer_result_sha256":explorer_text.as_deref().map(|text| crate::store::sha256(text.as_bytes())),
                 "call_ids":overlap_call_ids,
                 "expert_advice":outcomes,
                 "expert_advice_sha256":crate::store::sha256(&serde_json::to_vec(&outcomes)?),
@@ -1866,7 +1988,11 @@ impl Session {
                 rusqlite::params![self.task, snapshot_raw],
             )?;
             tx.commit()?;
-            Ok(Some((Some((planner_call, planner_text.clone())), outcomes)))
+            Ok(Some(WorkflowBatchOutcome {
+                planner: Some((planner_call, planner_text.clone())),
+                explorer: explorer_call.zip(explorer_text.clone()),
+                experts: outcomes,
+            }))
         } else if let Some(overlap) = planner_overlap.as_ref() {
             self.store.event(
                 &self.task,
@@ -1881,9 +2007,17 @@ impl Session {
                     "permissions_granted":false
                 }),
             )?;
-            Ok(Some((None, outcomes)))
+            Ok(Some(WorkflowBatchOutcome {
+                planner: None,
+                explorer: None,
+                experts: outcomes,
+            }))
         } else {
-            Ok(Some((None, outcomes)))
+            Ok(Some(WorkflowBatchOutcome {
+                planner: None,
+                explorer: None,
+                experts: outcomes,
+            }))
         }
     }
 
@@ -2210,6 +2344,7 @@ impl Session {
         let overlap = PlannerOverlap {
             id: uuid::Uuid::new_v4().to_string(),
             prompt: base.to_owned(),
+            explorer_prompt: (request.global_capacity >= 3).then(|| base.to_owned()),
             capacity: request.global_capacity,
             phase_budget,
         };
@@ -2236,7 +2371,7 @@ impl Session {
                 return Err(error);
             }
         };
-        let Some((planner_result, expert_advice)) = batch else {
+        let Some(batch) = batch else {
             // No call was reserved or dispatched. Continue through the existing
             // planner path with the same ticket and deadline.
             return self.planning_advice(base, ticket).await;
@@ -2244,14 +2379,17 @@ impl Session {
         let result: Result<String> = async {
             // Publish the completed advisory result before any plan work can be
             // interrupted. Recovery can then use these exact bytes without replay.
-            let serialized_advice = if expert_advice.is_empty() {
+            let serialized_advice = if batch.experts.is_empty() {
                 None
             } else {
-                Some(serde_json::to_string(&expert_advice)?)
+                Some(serde_json::to_string(&batch.experts)?)
             };
 
             let mut strategy = String::new();
-            if let Some((planner_call, planner_text)) = planner_result {
+            if let Some((_, explorer_text)) = batch.explorer.as_ref() {
+                self.accept_exploration(explorer_text, &mut strategy)?;
+            }
+            if let Some((planner_call, planner_text)) = batch.planner {
                 match Plan::parse(&planner_text) {
                     Ok(graph) => {
                         self.store.event(
@@ -2659,7 +2797,12 @@ impl Session {
                 };
             }
         }
-        if collective && !resuming && mode == "research" && self.call_limit >= 4 {
+        if collective
+            && !resuming
+            && mode == "research"
+            && self.call_limit >= 4
+            && self.exploration.is_none()
+        {
             let prompt_reserve = base.len().saturating_mul(2).saturating_add(16064);
             let admitted = self
                 .call_limit

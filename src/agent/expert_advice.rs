@@ -356,50 +356,51 @@ fn core_references(summary: &Value, version: u8) -> Result<Vec<(String, String)>
         return Ok(Vec::new());
     }
     let mut references = BTreeMap::new();
-    let mut add_results = |results: &Value| -> Result<()> {
-        let results = results
-            .as_object()
-            .ok_or_else(|| anyhow::anyhow!("Expert results must be an object"))?;
-        for result in results.values() {
-            let Some(operations) = result.get("core_operations") else {
-                continue;
-            };
-            for operation in operations
-                .as_array()
-                .ok_or_else(|| anyhow::anyhow!("Core operation references must be an array"))?
-            {
-                let operation = operation
-                    .as_object()
-                    .ok_or_else(|| anyhow::anyhow!("Core operation reference must be an object"))?;
-                references.insert(
-                    string_field(operation, "operation_id")?.to_owned(),
-                    string_field(operation, "result_sha256")?.to_owned(),
-                );
-            }
-        }
-        Ok(())
-    };
-    let object = summary
-        .as_object()
-        .ok_or_else(|| anyhow::anyhow!("Expert advice summary must be an object"))?;
-    if let Some(experts) = object.get("experts") {
-        for expert in experts
-            .as_array()
-            .ok_or_else(|| anyhow::anyhow!("Expert summaries must be an array"))?
-        {
-            let expert = expert
+    {
+        let mut add_results = |results: &Value| -> Result<()> {
+            let results = results
                 .as_object()
-                .ok_or_else(|| anyhow::anyhow!("Expert summary entry must be an object"))?;
-            add_results(
-                expert
-                    .get("results")
-                    .ok_or_else(|| anyhow::anyhow!("Expert summary results are missing"))?,
-            )?;
+                .ok_or_else(|| anyhow::anyhow!("Expert results must be an object"))?;
+            for result in results.values() {
+                let Some(operations) = result.get("core_operations") else {
+                    continue;
+                };
+                for operation in operations
+                    .as_array()
+                    .ok_or_else(|| anyhow::anyhow!("Core operation references must be an array"))?
+                {
+                    let operation = operation.as_object().ok_or_else(|| {
+                        anyhow::anyhow!("Core operation reference must be an object")
+                    })?;
+                    references.insert(
+                        string_field(operation, "operation_id")?.to_owned(),
+                        string_field(operation, "result_sha256")?.to_owned(),
+                    );
+                }
+            }
+            Ok(())
+        };
+        let object = summary
+            .as_object()
+            .ok_or_else(|| anyhow::anyhow!("Expert advice summary must be an object"))?;
+        if let Some(experts) = object.get("experts") {
+            for expert in experts
+                .as_array()
+                .ok_or_else(|| anyhow::anyhow!("Expert summaries must be an array"))?
+            {
+                let expert = expert
+                    .as_object()
+                    .ok_or_else(|| anyhow::anyhow!("Expert summary entry must be an object"))?;
+                add_results(
+                    expert
+                        .get("results")
+                        .ok_or_else(|| anyhow::anyhow!("Expert summary results are missing"))?,
+                )?;
+            }
+        } else if let Some(results) = object.get("results") {
+            add_results(results)?;
         }
-    } else if let Some(results) = object.get("results") {
-        add_results(results)?;
     }
-    drop(add_results);
     Ok(references.into_iter().collect())
 }
 

@@ -138,7 +138,7 @@ pub(super) fn validate(
     let format_version = intent["format_version"].as_u64().unwrap_or(0);
     if intent_source != "jev-plus"
         || completion_source != "jev-plus"
-        || !matches!(format_version, 1 | 2)
+        || !matches!(format_version, 1..=3)
         || completion["format_version"] != format_version
         || completion["overlap_id"] != overlap_id
         || intent["objective_sha256"] != objective_hash
@@ -153,37 +153,77 @@ pub(super) fn validate(
     {
         bail!("Planner/expert overlap identity or provenance differs from the saved task")
     }
+    let intent_keys_v1_v2 = [
+        "format_version",
+        "overlap_id",
+        "objective_sha256",
+        "context_sha256",
+        "planner_prompt_sha256",
+        "configuration_sha256",
+        "experts",
+        "expert_first_wave_capacity",
+        "global_capacity",
+        "dependencies_from_prior_waves_only",
+        "permissions_granted",
+        "results_verified",
+    ];
+    let intent_keys_v3 = [
+        "format_version",
+        "overlap_id",
+        "objective_sha256",
+        "context_sha256",
+        "planner_prompt_sha256",
+        "explorer_prompt_sha256",
+        "configuration_sha256",
+        "experts",
+        "expert_first_wave_capacity",
+        "global_capacity",
+        "dependencies_from_prior_waves_only",
+        "permissions_granted",
+        "results_verified",
+    ];
+    let completion_keys_v1_v2 = [
+        "format_version",
+        "overlap_id",
+        "planner_call",
+        "planner_result_sha256",
+        "call_ids",
+        "expert_advice",
+        "expert_advice_sha256",
+        "objective_sha256",
+        "context_sha256",
+        "permissions_granted",
+        "verified",
+    ];
+    let completion_keys_v3 = [
+        "format_version",
+        "overlap_id",
+        "planner_call",
+        "planner_result_sha256",
+        "explorer_call",
+        "explorer_result_sha256",
+        "call_ids",
+        "expert_advice",
+        "expert_advice_sha256",
+        "objective_sha256",
+        "context_sha256",
+        "permissions_granted",
+        "verified",
+    ];
     if !has_exact_keys(
         intent,
-        &[
-            "format_version",
-            "overlap_id",
-            "objective_sha256",
-            "context_sha256",
-            "planner_prompt_sha256",
-            "configuration_sha256",
-            "experts",
-            "expert_first_wave_capacity",
-            "global_capacity",
-            "dependencies_from_prior_waves_only",
-            "permissions_granted",
-            "results_verified",
-        ],
+        if format_version == 3 {
+            &intent_keys_v3
+        } else {
+            &intent_keys_v1_v2
+        },
     ) || !has_exact_keys(
         completion,
-        &[
-            "format_version",
-            "overlap_id",
-            "planner_call",
-            "planner_result_sha256",
-            "call_ids",
-            "expert_advice",
-            "expert_advice_sha256",
-            "objective_sha256",
-            "context_sha256",
-            "permissions_granted",
-            "verified",
-        ],
+        if format_version == 3 {
+            &completion_keys_v3
+        } else {
+            &completion_keys_v1_v2
+        },
     ) {
         bail!("Planner/expert overlap event contains unknown or missing fields")
     }
@@ -239,9 +279,11 @@ pub(super) fn validate(
     let expected_global_capacity = configured_capacity(saved_config.subtask_parallelism)
         .max(configured_capacity(saved_config.expert_parallelism));
     let expected_expert_capacity = saved_config.expert_parallelism.unwrap_or(1);
+    let expected_first_wave_capacity =
+        expected_global_capacity.saturating_sub(if format_version == 3 { 2 } else { 1 });
     let selected_count = intent["experts"].as_array().map_or(0, Vec::len);
     if intent["global_capacity"] != expected_global_capacity
-        || intent["expert_first_wave_capacity"] != expected_global_capacity.saturating_sub(1)
+        || intent["expert_first_wave_capacity"] != expected_first_wave_capacity
         || selected_count > expected_expert_capacity
         || !(2..=4).contains(&expected_expert_capacity)
     {
@@ -489,8 +531,31 @@ pub(super) fn validate(
     }
     let call_list = completion["call_ids"]
         .as_array()
-        .filter(|items| (2..=65).contains(&items.len()))
+        .filter(|items| {
+            if format_version == 3 {
+                (3..=65).contains(&items.len())
+            } else {
+                (2..=65).contains(&items.len())
+            }
+        })
         .ok_or_else(|| anyhow::anyhow!("Overlap call list is absent or unbounded"))?;
+    let explorer_call = if format_version == 3 {
+        let call = completion["explorer_call"]
+            .as_u64()
+            .ok_or_else(|| anyhow::anyhow!("Overlap explorer call is missing"))?;
+        let hash = completion["explorer_result_sha256"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("Overlap explorer result hash is missing"))?;
+        if !valid_sha256(hash)
+            || intent["explorer_prompt_sha256"] != intent["planner_prompt_sha256"]
+            || call_list.get(1).and_then(Value::as_u64) != Some(call)
+        {
+            bail!("Overlap explorer binding is invalid")
+        }
+        Some((call, hash.to_owned()))
+    } else {
+        None
+    };
     let mut all_ids = BTreeSet::new();
     let mut expert_ids = BTreeSet::new();
     for item in call_list {
@@ -500,7 +565,11 @@ pub(super) fn validate(
         if call <= calls_before || !all_ids.insert(call) {
             bail!("Overlap call identity is repeated or precedes its reasoning context")
         }
-        if call != completion["planner_call"].as_u64().unwrap_or(0) {
+        if call != completion["planner_call"].as_u64().unwrap_or(0)
+            && explorer_call
+                .as_ref()
+                .is_none_or(|(explorer, _)| call != *explorer)
+        {
             expert_ids.insert(call);
         }
     }
@@ -689,6 +758,9 @@ pub(super) fn validate(
             .iter()
             .filter(|(call, (_, dispatch))| {
                 **call != planner_call
+                    && explorer_call
+                        .as_ref()
+                        .is_none_or(|(explorer, _)| **call != *explorer)
                     && dispatch["expert_wave"].as_u64() == Some(*wave_index as u64)
             })
             .collect::<Vec<_>>();
@@ -760,6 +832,31 @@ pub(super) fn validate(
             {
                 bail!("Overlap planner result differs from the original planner binding")
             }
+        } else if explorer_call
+            .as_ref()
+            .is_some_and(|(explorer, _)| *call == *explorer)
+        {
+            if !has_exact_keys(
+                dispatch,
+                &[
+                    "role",
+                    "call",
+                    "allocation",
+                    "prompt_bytes",
+                    "prompt_sha256",
+                    "overlap_id",
+                    "dispatch_kind",
+                ],
+            ) || dispatch["role"] != "explorer"
+                || dispatch["allocation"] != 128
+                || dispatch["prompt_sha256"] != intent["explorer_prompt_sha256"]
+                || dispatch["prompt_bytes"] != original_planner_prompt.len()
+                || reasoning_results[call].1 != explorer_call.as_ref().unwrap().1
+                || reasoning_results[call].0 <= *dispatch_id
+                || reasoning_results[call].0 >= completion_id
+            {
+                bail!("Overlap explorer result differs from its original role and prompt binding")
+            }
         } else {
             if !has_exact_keys(
                 dispatch,
@@ -814,6 +911,9 @@ pub(super) fn validate(
             .iter()
             .filter(|(call, (_, dispatch))| {
                 **call != planner_call
+                    && explorer_call
+                        .as_ref()
+                        .is_none_or(|(explorer, _)| **call != *explorer)
                     && dispatch["expert_wave"].as_u64() == Some(*wave_index as u64)
             })
             .collect::<Vec<_>>();
@@ -947,6 +1047,35 @@ pub(super) fn validate(
         || planner_result_event_id >= completion_id
     {
         bail!("Overlap planner result differs from its recorded inference response")
+    }
+    if let Some((explorer_call, explorer_hash)) = &explorer_call {
+        let mut explorer_statement = db.prepare(
+            "SELECT id,CASE WHEN length(CAST(source AS BLOB))<=64 THEN source END,CASE WHEN length(CAST(payload AS BLOB))<=4096 THEN payload END FROM events WHERE task_id=?1 AND kind='explorer_overlap_result' ORDER BY id LIMIT 3",
+        )?;
+        let mut explorer_rows = explorer_statement.query([task])?;
+        let row = explorer_rows
+            .next()?
+            .ok_or_else(|| anyhow::anyhow!("Overlap explorer result event is missing"))?;
+        let event_id: i64 = row.get(0)?;
+        let source: String = row.get(1)?;
+        let raw: String = row.get(2)?;
+        let event = crate::strict_json::value(raw.as_bytes(), 4096)?;
+        if explorer_rows.next()?.is_some()
+            || source != "jev-r"
+            || !has_exact_keys(
+                &event,
+                &["overlap_id", "call", "result_sha256", "permissions_granted"],
+            )
+            || event["overlap_id"] != overlap_id
+            || event["call"] != *explorer_call
+            || event["result_sha256"] != *explorer_hash
+            || event["permissions_granted"] != false
+            || reasoning_results[explorer_call].1 != *explorer_hash
+            || event_id <= reasoning_results[explorer_call].0
+            || event_id >= completion_id
+        {
+            bail!("Overlap explorer result differs from its recorded inference response")
+        }
     }
     let mut advice_by_expert = BTreeMap::<String, BTreeMap<String, Value>>::new();
     for call in &expert_ids {
