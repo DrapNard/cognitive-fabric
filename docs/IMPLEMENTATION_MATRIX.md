@@ -3,13 +3,20 @@
 ## Persist completed overlap calls as they settle — 2026-10-31
 
 **Implemented; runtime unverified.** `src/reasoning/parallel.rs` adds a
-locally-owned completion poll, and `src/reasoning/expert_parallel.rs` now records
-validated usage/results as each expert-wave call settles instead of withholding
-all result events until its slowest sibling completes. All siblings remain
-bounded by the original shared deadline and are drained after an individual
-failure. Planner-derived subtask execution still waits for the wave; safely
-removing that barrier requires a durable partial-overlap recovery format. No
-tests, benchmarks or live inference were run.
+locally-owned completion poll, and `src/reasoning/expert_parallel.rs` records
+validated usage/results as expert-wave calls settle instead of withholding all
+result events until the slowest sibling completes. While the planner graph is
+executing, settled sibling reports are buffered locally and recorded afterward.
+All inference remains bounded by the original shared deadline and siblings are
+drained after an individual failure. A valid planner graph can now execute
+dependency-ready subtask waves while the first independent expert wave remains
+active, with separate original
+budget reserved for pending expert calls and final synthesis. The final solver
+still waits for expert advice. Recovery remains fail-closed for an interrupted
+overlap with unknown dispatched outcomes. This overlaps runtime futures; a
+provider may still serialize inference, so it does not prove simultaneous GPU
+execution or a latency improvement. No tests, benchmarks or live inference were
+run.
 
 ## Default Engine Jev+ / Jev-R overlap — 2026-10-30
 

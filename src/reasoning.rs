@@ -109,9 +109,20 @@ pub(crate) struct PlannerOverlap {
     pub phase_budget: Duration,
 }
 
+pub(crate) struct EarlyPlannerExecution {
+    pub base: String,
+    pub deadline: Instant,
+    pub reserved_calls: usize,
+    pub reserved_output_tokens: usize,
+    pub reserved_prompt_bytes: usize,
+}
+
 #[derive(Default)]
 pub(crate) struct WorkflowBatchOutcome {
     pub planner: Option<(u32, String)>,
+    /// `Some`, including an empty strategy, means a valid planner graph was
+    /// already executed while the independent expert wave was still running.
+    pub planner_strategy: Option<String>,
     pub explorer: Option<(u32, String)>,
     pub experts: Vec<(String, String)>,
 }
@@ -1517,6 +1528,7 @@ impl Session {
         let mut planner_text = None::<String>;
         let mut explorer_call = None::<u32>;
         let mut explorer_text = None::<String>;
+        let mut planner_strategy = None::<String>;
         let mut expert_wave_index = 0usize;
         let overlap_experts = prepared
             .iter()
@@ -1869,9 +1881,31 @@ impl Session {
                 });
             }
             let call_count = calls.len();
-            let reports = self
-                .execute_independent_expert_batch(calls, remaining)
+            let early_planner = if first_wave {
+                planner_overlap
+                    .as_ref()
+                    .map(|overlap| EarlyPlannerExecution {
+                        base: overlap.prompt.clone(),
+                        deadline: phase_deadline,
+                        reserved_calls: total_steps.saturating_sub(wave.len()).saturating_add(1),
+                        reserved_output_tokens: total_steps
+                            .saturating_sub(wave.len())
+                            .saturating_mul(192)
+                            .saturating_add(384),
+                        reserved_prompt_bytes: total_prompt_bytes
+                            .saturating_sub(wave_bytes)
+                            .saturating_add(final_prompt_bound)
+                            .saturating_add(advice_context_bytes),
+                    })
+            } else {
+                None
+            };
+            let (reports, early_strategy) = self
+                .execute_independent_expert_batch(calls, remaining, early_planner)
                 .await?;
+            if early_strategy.is_some() {
+                planner_strategy = early_strategy;
+            }
             if reports.len() != call_count {
                 return Ok(Some(WorkflowBatchOutcome::default()));
             }
@@ -1991,6 +2025,7 @@ impl Session {
             tx.commit()?;
             Ok(Some(WorkflowBatchOutcome {
                 planner: Some((planner_call, planner_text.clone())),
+                planner_strategy,
                 explorer: explorer_call.zip(explorer_text.clone()),
                 experts: outcomes,
             }))
@@ -2010,12 +2045,14 @@ impl Session {
             )?;
             Ok(Some(WorkflowBatchOutcome {
                 planner: None,
+                planner_strategy,
                 explorer: None,
                 experts: outcomes,
             }))
         } else {
             Ok(Some(WorkflowBatchOutcome {
                 planner: None,
+                planner_strategy,
                 explorer: None,
                 experts: outcomes,
             }))
@@ -2432,41 +2469,43 @@ impl Session {
                 Some(serde_json::to_string(&batch.experts)?)
             };
 
-            let mut strategy = String::new();
+            let mut strategy = batch.planner_strategy.clone().unwrap_or_default();
             if let Some((_, explorer_text)) = batch.explorer.as_ref() {
                 self.accept_exploration(explorer_text, &mut strategy)?;
             }
             if let Some((planner_call, planner_text)) = batch.planner {
-                match Plan::parse(&planner_text) {
-                    Ok(graph) => {
-                        self.store.event(
-                            &self.task,
-                            "plan",
-                            "planner-r",
-                            json!({
-                                "graph":graph,
-                                "planner_call":planner_call,
-                                "trusted_permissions":false,
-                                "scheduler_required":true,
-                                "overlap_outcome_bound":true
-                            }),
-                        )?;
-                        let remaining = ticket.remaining();
-                        if remaining.is_zero() {
-                            bail!("Original planning phase deadline exhausted before plan execution")
+                if batch.planner_strategy.is_none() {
+                    match Plan::parse(&planner_text) {
+                        Ok(graph) => {
+                            self.store.event(
+                                &self.task,
+                                "plan",
+                                "planner-r",
+                                json!({
+                                    "graph":graph,
+                                    "planner_call":planner_call,
+                                    "trusted_permissions":false,
+                                    "scheduler_required":true,
+                                    "overlap_outcome_bound":true
+                                }),
+                            )?;
+                            let remaining = ticket.remaining();
+                            if remaining.is_zero() {
+                                bail!("Original planning phase deadline exhausted before plan execution")
+                            }
+                            strategy = match tokio::time::timeout(remaining, self.execute_plan(graph, base)).await {
+                                Ok(result) => result?,
+                                Err(_) => return Err(InferenceTimeout.into()),
+                            };
                         }
-                        strategy = match tokio::time::timeout(remaining, self.execute_plan(graph, base)).await {
-                            Ok(result) => result?,
-                            Err(_) => return Err(InferenceTimeout.into()),
-                        };
-                    }
-                    Err(error) => {
-                        self.store.event(
-                            &self.task,
-                            "plan_fallback",
-                            "jev-plus",
-                            json!({"reason":error.to_string(),"action":"Solve original objective","overlap_outcome_bound":true}),
-                        )?;
+                        Err(error) => {
+                            self.store.event(
+                                &self.task,
+                                "plan_fallback",
+                                "jev-plus",
+                                json!({"reason":error.to_string(),"action":"Solve original objective","overlap_outcome_bound":true}),
+                            )?;
+                        }
                     }
                 }
             } else {
