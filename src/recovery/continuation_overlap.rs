@@ -276,14 +276,14 @@ pub(super) fn validate(
     if intent["configuration_sha256"] != crate::store::sha256(&serde_json::to_vec(&saved_config)?) {
         bail!("Planner/expert overlap configuration differs from the original task pin")
     }
-    let configured_capacity = |value: Option<usize>| {
+    let configured_capacity = |value: Option<usize>, default: usize| {
         value
-            .filter(|capacity| (2..=4).contains(capacity))
-            .unwrap_or(1)
+            .filter(|capacity| (1..=4).contains(capacity))
+            .unwrap_or(default)
     };
-    let expected_global_capacity = configured_capacity(saved_config.subtask_parallelism)
-        .max(configured_capacity(saved_config.expert_parallelism));
-    let expected_expert_capacity = saved_config.expert_parallelism.unwrap_or(1);
+    let expected_global_capacity = configured_capacity(saved_config.subtask_parallelism, 1)
+        .max(configured_capacity(saved_config.expert_parallelism, 2));
+    let expected_expert_capacity = configured_capacity(saved_config.expert_parallelism, 2);
     let expected_first_wave_capacity =
         expected_global_capacity.saturating_sub(1 + usize::from(has_explorer));
     let selected_count = intent["experts"].as_array().map_or(0, Vec::len);

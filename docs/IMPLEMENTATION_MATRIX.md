@@ -1,5 +1,17 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Default Engine Jev+ / Jev-R overlap — 2026-10-30
+
+**Implemented; runtime unverified.** `src/engine.rs` defaults the bounded
+independent expert/planner overlap capacity to two when no expert cap is set,
+including one routed expert running beside Jev-R planning;
+`--expert-parallelism 1` remains an explicit serial override, and caps remain
+limited to four. `src/config.rs`, `src/main.rs`, `src/diagnostics.rs` and overlap
+recovery use the same explicit/default semantics. This enables CGF-side overlap
+only where the selected expert batch is independent and budget/resource
+admission allows it. Providers may still queue calls, so physical concurrency
+and latency are unverified. No tests, benchmarks or live inference were run.
+
 ## Free execution slots for shared-work waiters — 2026-10-29
 
 **Implemented; runtime unverified.** `collective/experts.rs` separates blocked

@@ -212,7 +212,7 @@ impl Config {
         configured.agent_collective = true;
         configured.native_only_client = false;
         configured.subtask_parallelism = Some(parallelism);
-        configured.expert_parallelism = (expert_parallelism > 1).then_some(expert_parallelism);
+        configured.expert_parallelism = Some(expert_parallelism);
         configured.validate()?;
         Ok(configured)
     }
@@ -345,9 +345,9 @@ impl Config {
         }
         if self
             .expert_parallelism
-            .is_some_and(|parallelism| !(2..=4).contains(&parallelism))
+            .is_some_and(|parallelism| !(1..=4).contains(&parallelism))
         {
-            bail!("Expert parallelism must be between 2 and 4")
+            bail!("Expert parallelism must be between 1 and 4")
         }
         if self
             .reasoning_effort

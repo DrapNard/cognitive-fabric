@@ -2090,7 +2090,7 @@ async fn run_cli() -> Result<()> {
                 settings.subtask_parallelism = Some(cap as usize);
             }
             if let Some(cap) = expert_parallelism {
-                settings.expert_parallelism = (cap > 1).then_some(cap as usize);
+                settings.expert_parallelism = Some(cap as usize);
             }
             if let Some(endpoint) = api_base {
                 settings.api_base = endpoint;

@@ -120,17 +120,17 @@ impl Engine {
         store: Arc<Store>,
         backend: Arc<dyn InferenceBackend>,
     ) -> Self {
-        // Parallel Jev-R waves share the pinned broker backend. Keep the legacy
-        // one-call worker by default; only validated opt-in caps enable worker
-        // concurrency (invalid configuration is rejected when the task starts).
+        // Parallel Jev-R waves share the pinned broker backend. Default Engine
+        // expert work to two bounded calls so independent Jev+ experts and Jev-R
+        // planning can overlap. Operators can explicitly set one for serial work.
         let module_concurrency = cfg
             .subtask_parallelism
             .filter(|cap| (2..=4).contains(cap))
             .unwrap_or(1)
             .max(
                 cfg.expert_parallelism
-                    .filter(|cap| (2..=4).contains(cap))
-                    .unwrap_or(1),
+                    .filter(|cap| (1..=4).contains(cap))
+                    .unwrap_or(2),
             );
         let broker = Arc::new(crate::fabric::Broker::with_inference_concurrency(
             backend,
@@ -247,8 +247,8 @@ impl Engine {
             .max(
                 self.cfg
                     .expert_parallelism
-                    .filter(|cap| (2..=4).contains(cap))
-                    .unwrap_or(1),
+                    .filter(|cap| (1..=4).contains(cap))
+                    .unwrap_or(2),
             );
         let broker = Arc::new(crate::fabric::Broker::with_inference_concurrency(
             backend,
@@ -1442,8 +1442,8 @@ impl Engine {
                 .max(
                     self.cfg
                         .expert_parallelism
-                        .filter(|cap| (2..=4).contains(cap))
-                        .unwrap_or(1),
+                        .filter(|cap| (1..=4).contains(cap))
+                        .unwrap_or(2),
                 );
             if experts && mode != "fast" {
                 let mut candidates = Vec::new();
@@ -1476,7 +1476,7 @@ impl Engine {
                     self.store.event(&id,"workflow_routing","jev-plus",json!({"router":self.router.descriptor(),"order":order,"permissions_granted":false,"verified":false}))?;
                     order
                 };
-                let expert_cap = self.cfg.expert_parallelism.unwrap_or(1);
+                let expert_cap = self.cfg.expert_parallelism.unwrap_or(2);
                 let batch_candidates = if (2..=4).contains(&expert_cap) {
                     workflow_order
                         .iter()
@@ -1505,13 +1505,13 @@ impl Engine {
                 let dependency_conflict = batch_candidates.iter().any(|(manifest, _, _)| {
                     depends_on_candidate(manifest, &batch_candidate_ids, &pinned.manifests)
                 });
-                let batch_shape_is_independent = batch_candidates.len() >= 2
+                let batch_shape_is_independent = !batch_candidates.is_empty()
                     && !dependency_conflict
                     && batch_candidates.iter().all(|(manifest, _, capabilities)| {
                         (manifest.workflow.is_some() || manifest.workflow_steps.is_some())
                             && !capabilities.is_empty()
                     });
-                if expert_cap >= 2 && batch_candidates.len() >= 2 && !batch_shape_is_independent {
+                if expert_cap >= 2 && !batch_candidates.is_empty() && !batch_shape_is_independent {
                     self.store.event(
                         &id,
                         "expert_batch_admission",

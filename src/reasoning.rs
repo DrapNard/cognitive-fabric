@@ -1259,7 +1259,7 @@ impl Session {
         let overlap_deadline = planner_overlap
             .as_ref()
             .map(|overlap| (Instant::now() + overlap.phase_budget).min(self.deadline));
-        if !(2..=4).contains(&cap) || candidates.len() < 2 || candidates.len() > cap {
+        if !(2..=4).contains(&cap) || candidates.is_empty() || candidates.len() > cap {
             bail!("Invalid independent expert batch selection")
         }
         let step_cap =
@@ -2830,7 +2830,7 @@ impl Session {
             self.store.event(&self.task,"schedule","jev-plus",json!({"decision":if admitted {"admit_planning"} else {"skip_planning"},"reason":"Preserve first whole-goal solver call, output and prompt budget","reserved_prompt_bytes":prompt_reserve}))?;
             if let Some(ticket) = ticket {
                 strategy = if let Some(request) = expert_overlap {
-                    if request.candidates.len() >= 2
+                    if !request.candidates.is_empty()
                         && (2..=4).contains(&request.expert_cap)
                         && (2..=4).contains(&request.global_capacity)
                     {
