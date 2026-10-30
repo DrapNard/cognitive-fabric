@@ -7897,3 +7897,13 @@ language route for native-only model checks, starts a typed worker or requires
 one in the reviewed native policy, and refuses to reuse a server whose worker
 state it cannot verify. Client routes remain limited; no tests, benchmarks,
 live inference or model operations were run.
+# Capability-annotated client selection (2026-10-30)
+
+**Implemented; runtime unverified.** `src/agent/collective.rs` builds a bounded
+catalog from client-provided `x-cgf-capabilities` schema annotations and selects
+a single tool only on a unique full capability match. A second bounded language
+call translates arguments for that fixed tool and must retain the original
+interpretation. Client metadata grants no permissions; schema validation and
+execution approval remain client-owned. Ordinary clients without annotations,
+ambiguous routes, capability versions and general multi-step planning remain
+unsupported by this path. No tests or benchmarks were run.

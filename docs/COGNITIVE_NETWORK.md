@@ -2785,3 +2785,20 @@ and reject floating-point values instead of rounding them. A false condition
 stops the plan; malformed or unsupported input fails closed. Results are still
 untrusted client data, not proof of execution or permission. No tests,
 benchmarks or live inference ran; runtime behavior remains unverified.
+# Capability-annotated client tool selection (2026-10-30)
+
+An OpenAI-compatible client can annotate a tool's parameter schema with
+`"x-cgf-capabilities":["file.read"]` (up to eight identifiers per tool).
+In native-only mode, when no tool is explicitly selected and multiple tools are
+available, the language interface can translate the goal into advertised
+capability identifiers. Jev+ selects a tool only when exactly one annotated tool
+covers every required capability; ambiguity or version requirements do not select
+a tool. A second language call translates arguments for that fixed tool and must
+repeat the structured interpretation. Both calls use the original task budgets.
+
+Client annotations and model interpretations are untrusted routing data, not
+permissions or evidence of semantic correctness. The client still validates its
+schema and authorizes execution. This is opt-in metadata; existing clients that
+do not supply it gain no automatic selection from this path. It does not implement
+multi-step planning. No tests, benchmarks or live inference ran; behavior and
+translation fidelity remain unverified.
