@@ -187,6 +187,7 @@ pub struct Session {
     cfg: Config,
     store: Arc<Store>,
     backend: Arc<dyn InferenceBackend>,
+    pub(crate) shared_inference_limit: Option<Arc<tokio::sync::Semaphore>>,
     task: String,
     deadline: Instant,
     call_limit: usize,
@@ -486,6 +487,7 @@ impl Session {
             cfg,
             store,
             backend,
+            shared_inference_limit: None,
             task,
             resources: Resources {
                 queue_wait_ms: Some(0.0),
@@ -1211,10 +1213,15 @@ impl Session {
                 };
             let concurrency =
                 crate::reasoning::parallel::validate_parallelism(self.cfg.subtask_parallelism)?;
-            Arc::new(crate::fabric::Broker::with_inference_concurrency(
-                inference,
-                concurrency,
-            )) as Arc<dyn InferenceBackend>
+            let broker = match &self.shared_inference_limit {
+                Some(shared) => crate::fabric::Broker::with_shared_inference_concurrency(
+                    inference,
+                    concurrency,
+                    shared.clone(),
+                ),
+                None => crate::fabric::Broker::with_inference_concurrency(inference, concurrency),
+            };
+            Arc::new(broker) as Arc<dyn InferenceBackend>
         } else {
             self.backend.clone()
         };
@@ -1494,9 +1501,15 @@ impl Session {
                     } else {
                         Arc::new(crate::backend::LocalBackend(cfg))
                     };
-                Arc::new(crate::fabric::Broker::with_inference_concurrency(
-                    inference, step_cap,
-                )) as Arc<dyn InferenceBackend>
+                let broker = match &self.shared_inference_limit {
+                    Some(shared) => crate::fabric::Broker::with_shared_inference_concurrency(
+                        inference,
+                        step_cap,
+                        shared.clone(),
+                    ),
+                    None => crate::fabric::Broker::with_inference_concurrency(inference, step_cap),
+                };
+                Arc::new(broker) as Arc<dyn InferenceBackend>
             } else {
                 self.backend.clone()
             };

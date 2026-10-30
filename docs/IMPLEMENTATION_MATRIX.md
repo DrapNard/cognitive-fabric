@@ -1,5 +1,16 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Shared Engine inference admission across Jev-R and Jev+ experts — 2026-10-31
+
+**Implemented; runtime unverified.** `src/engine.rs` creates one bounded
+inference semaphore and shares it with the pinned route in `src/fabric.rs` and
+task-local bound expert brokers in `src/reasoning.rs`. Combined active Engine
+calls are admitted under `Config::inference_concurrency`; the additional wait is
+recorded as queue wait. This bounds Engine-owned inference futures, not detached
+provider work after cancellation, and does not establish GPU overlap. Root Ask
+requests remain serialized by the local service. No tests, benchmarks, or live
+inference ran.
+
 ## Language-only routing and Jev+/Jev-R execution concurrency — 2026-10-31
 
 **Partial; runtime unverified.** `Config::language_network` and

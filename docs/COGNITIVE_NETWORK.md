@@ -1,5 +1,16 @@
 # Cognitive network implementation
 
+## Enforce one Engine-wide inference width across reasoning and expert brokers — 2026-10-31
+
+**Implemented; runtime unverified.** `Engine` now owns a shared semaphore sized
+from `Config::inference_concurrency`. The pinned inference route and separately
+constructed task-local Jev+ expert brokers acquire from that same gate, so their
+combined active Rust inference requests stay within the configured one-to-four
+call limit. Shared-gate waiting is added to the queue-wait metric. This is an
+admission bound, not proof that a provider stops work when a future is cancelled
+or that GPU calls physically overlap. The local service still accepts one root
+Ask task at a time. No tests, benchmarks, or live inference ran.
+
 ## Current language routing and parallel execution boundaries — 2026-10-31
 
 **Partial; runtime unverified.** An explicit `language` model profile routes

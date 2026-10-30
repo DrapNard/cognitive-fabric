@@ -1,5 +1,14 @@
 # Current Rust implementation
 
+## Share inference admission across Engine reasoning and experts — 2026-10-31
+
+**Implemented; runtime unverified.** `src/engine.rs`, `src/reasoning.rs`, and
+`src/fabric.rs` now share one Engine-owned semaphore across pinned Jev-R routes
+and task-local bound expert brokers. Active Engine inference calls therefore
+share the configured one-to-four-call ceiling; shared-gate waiting contributes to
+queue-wait accounting. This does not verify provider cancellation or GPU-level
+parallelism. No tests, benchmarks, or live inference ran.
+
 ## Language routing and collective concurrency status — 2026-10-31
 
 **Partial; runtime unverified.** Explicit language-only routing exists through

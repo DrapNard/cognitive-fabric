@@ -13,10 +13,10 @@ use std::{
         atomic::{AtomicUsize, Ordering},
         Arc, RwLock,
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 use tokio::{
-    sync::{mpsc, oneshot, watch, OnceCell},
+    sync::{mpsc, oneshot, watch, OnceCell, Semaphore},
     task::JoinSet,
 };
 pub mod modules;
@@ -303,6 +303,7 @@ pub struct Broker {
     registry: RwLock<Registry>,
     shutdown: Arc<watch::Sender<bool>>,
     max_concurrency: usize,
+    shared_inference_limit: Option<Arc<Semaphore>>,
 }
 
 /// Stable task-policy scope for recent-advice and empirical decisions. It binds
@@ -354,6 +355,21 @@ impl Broker {
             .expect("Trusted inference module concurrency must be bounded")
     }
 
+    /// Construct a broker whose requests also consume the Engine-wide inference
+    /// budget. This keeps task-local expert brokers inside the same total width.
+    pub(crate) fn with_shared_inference_concurrency(
+        backend: Arc<dyn InferenceBackend>,
+        max_concurrency: usize,
+        shared_inference_limit: Arc<Semaphore>,
+    ) -> Self {
+        Self::try_with_optional_shared_inference_concurrency(
+            backend,
+            max_concurrency,
+            Some(shared_inference_limit),
+        )
+        .expect("Trusted shared inference concurrency must be bounded")
+    }
+
     /// Fallible host construction for transport-bound adapters. Fixed identities
     /// are preserved instead of being relabelled with the default local module.
     pub fn try_with_inference(backend: Arc<dyn InferenceBackend>) -> Result<Self> {
@@ -363,6 +379,14 @@ impl Broker {
     pub(crate) fn try_with_inference_concurrency(
         backend: Arc<dyn InferenceBackend>,
         max_concurrency: usize,
+    ) -> Result<Self> {
+        Self::try_with_optional_shared_inference_concurrency(backend, max_concurrency, None)
+    }
+
+    fn try_with_optional_shared_inference_concurrency(
+        backend: Arc<dyn InferenceBackend>,
+        max_concurrency: usize,
+        shared_inference_limit: Option<Arc<Semaphore>>,
     ) -> Result<Self> {
         if !(1..=4).contains(&max_concurrency) {
             bail!("Inference module concurrency must be between 1 and 4")
@@ -398,6 +422,7 @@ impl Broker {
             registry: RwLock::new(registry),
             shutdown,
             max_concurrency,
+            shared_inference_limit,
         })
     }
 
@@ -706,6 +731,7 @@ impl Broker {
             routes,
             resource_targets: None,
             route_backends: None,
+            shared_inference_limit: self.shared_inference_limit.clone(),
         })
     }
 
@@ -935,6 +961,7 @@ impl Broker {
                 routes,
                 resource_targets: Some(targets),
                 route_backends: Some(route_backends),
+                shared_inference_limit: self.shared_inference_limit.clone(),
             }),
             selection,
         ))
@@ -945,6 +972,7 @@ struct Pinned {
     routes: BTreeMap<String, Arc<Module>>,
     resource_targets: Option<BTreeMap<String, crate::backend::InferenceTarget>>,
     route_backends: Option<BTreeMap<String, Arc<dyn InferenceBackend>>>,
+    shared_inference_limit: Option<Arc<Semaphore>>,
 }
 
 /// Restrict a restored backend to the exact roles admitted by an original
@@ -1253,6 +1281,18 @@ impl InferenceBackend for Pinned {
             }
             let sender = actor(role)?;
             TaskPolicy::reasoning(task)?.authorize(task, sender, "llm.generate")?;
+            let shared_wait_started = Instant::now();
+            let _shared_permit = match &self.shared_inference_limit {
+                Some(limit) => Some(
+                    limit
+                        .clone()
+                        .acquire_owned()
+                        .await
+                        .map_err(|_| anyhow!("Shared inference admission is closed"))?,
+                ),
+                None => None,
+            };
+            let shared_wait_ms = shared_wait_started.elapsed().as_secs_f64() * 1000.0;
             let header = Header {
                 correlation: uuid::Uuid::new_v4().to_string(),
                 task: task.into(),
@@ -1292,7 +1332,13 @@ impl InferenceBackend for Pinned {
                 bail!("Module response correlation mismatch")
             }
             match response.payload {
-                Payload::Response(report) => Ok(report),
+                Payload::Response(mut report) => {
+                    if shared_wait_ms > 0.0 {
+                        report.queue_wait_ms =
+                            Some(report.queue_wait_ms.unwrap_or_default() + shared_wait_ms);
+                    }
+                    Ok(report)
+                }
                 Payload::Error(error) => bail!("Module failed: {error}"),
                 _ => bail!("Unexpected module response"),
             }

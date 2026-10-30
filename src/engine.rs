@@ -88,6 +88,7 @@ pub struct Engine {
     pub cfg: Config,
     pub store: Arc<Store>,
     pub broker: Arc<crate::fabric::Broker>,
+    inference_slots: Arc<tokio::sync::Semaphore>,
     pub tools: Arc<crate::fabric::tools::Broker>,
     pub modules: Arc<crate::fabric::modules::Broker>,
     backend: Arc<dyn InferenceBackend>,
@@ -120,13 +121,14 @@ impl Engine {
         store: Arc<Store>,
         backend: Arc<dyn InferenceBackend>,
     ) -> Self {
-        // Parallel Jev-R waves share the pinned broker backend. Default Engine
-        // expert work to two bounded calls so independent Jev+ experts and Jev-R
-        // planning can overlap. Operators can explicitly set one for serial work.
+        // Jev-R waves and task-local Jev+ expert brokers share this admission
+        // gate, so independent work cannot exceed the configured total width.
         let module_concurrency = cfg.inference_concurrency();
-        let broker = Arc::new(crate::fabric::Broker::with_inference_concurrency(
+        let inference_slots = Arc::new(tokio::sync::Semaphore::new(module_concurrency));
+        let broker = Arc::new(crate::fabric::Broker::with_shared_inference_concurrency(
             backend,
             module_concurrency,
+            inference_slots.clone(),
         ));
         let scheduler = crate::scheduling::Handle::configured(cfg.subtask_scheduling);
         let modules = Arc::new(crate::fabric::modules::Broker::new(store.clone()));
@@ -135,6 +137,7 @@ impl Engine {
             store,
             backend: broker.clone(),
             broker,
+            inference_slots,
             tools: Arc::new(crate::fabric::tools::Broker::default()),
             modules,
             corpus: None,
@@ -232,9 +235,10 @@ impl Engine {
     ) -> Result<Self> {
         ownership.validate(&self.store)?;
         let concurrency = self.cfg.inference_concurrency();
-        let broker = Arc::new(crate::fabric::Broker::with_inference_concurrency(
+        let broker = Arc::new(crate::fabric::Broker::with_shared_inference_concurrency(
             backend,
             concurrency,
+            self.inference_slots.clone(),
         ));
         let mut fork = self.clone();
         modules.require_store(&self.store)?;
@@ -729,7 +733,11 @@ impl Engine {
         };
         let backend_result: Result<(Arc<dyn InferenceBackend>, Option<serde_json::Value>)> =
             if let Some(process) = &process {
-                let process_broker = crate::fabric::Broker::with_inference(process.clone());
+                let process_broker = crate::fabric::Broker::with_shared_inference_concurrency(
+                    process.clone(),
+                    self.cfg.inference_concurrency(),
+                    self.inference_slots.clone(),
+                );
                 if resource_route_active {
                     match resource_pool.as_deref() {
                         Some(pool) => process_broker
@@ -789,6 +797,7 @@ impl Engine {
                     path_progress,
                 },
             )?;
+            session.shared_inference_limit = Some(self.inference_slots.clone());
             session.scheduler = self.scheduler.clone();
             session.typed_modules = Some((self.modules.clone(), typed_modules.clone()));
             session.advice_profile = Some(profile);
