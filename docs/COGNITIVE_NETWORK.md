@@ -2806,7 +2806,7 @@ translation fidelity remain unverified.
 
 In native-only mode, an explicitly independent request may translate into multiple
 client tool proposals when every requested capability maps to exactly one tool,
-each selected schema declares `x-cgf-independent: true`, the interpretation
+each selected client schema or operator-pinned route declares independence, the interpretation
 declares `client_tools_independent: true`, and the client allows parallel calls.
 The complete translation wave is reserved before dispatch, respects configured
 task and concurrency limits, and settles started calls before returning. Each
@@ -2818,3 +2818,21 @@ authorization and execution remain client-owned. This is limited to two to four
 uniquely routed tools with opt-in annotations, not general automatic planning.
 Actual provider concurrency, runtime behavior and latency are unverified; no
 tests, benchmarks or live inference ran.
+# Operator-pinned client tool capabilities (2026-10-30)
+
+Standard clients need not modify their tool schemas to use native-only capability
+routing. An operator can configure a tool name, exact canonical parameter-schema
+SHA-256 and up to eight capability identifiers using
+`cogfabric configure-client-tool --tool NAME --schema-sha256 HASH --capability ID`.
+The client capability audit event records schema hashes for observed requests.
+Optional `--independent` declares eligibility for a parallel proposal, not proof
+that a particular task's operations are independent. `remove-client-tool --tool
+NAME` removes a mapping for future tasks.
+
+The operator mapping takes precedence over client annotations for capability
+routing. A matching tool name with a different schema hash fails closed; active
+sessions retain their pinned configuration. Tool descriptions and implementation
+identity are not attested by the schema hash. Mappings select no permissions and
+do not replace client-side schema validation, authorization or execution. This
+does not provide automatic multi-step planning. No tests, benchmarks or live
+inference ran; runtime behavior is unverified.

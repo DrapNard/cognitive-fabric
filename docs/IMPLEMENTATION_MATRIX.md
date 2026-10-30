@@ -7916,3 +7916,11 @@ client tools. Client parallel-call settings, configured group limits, task and
 provider resource budgets still apply. Independence and semantic fidelity are
 not verified; tool schema validation and execution remain client-owned. No
 tests or benchmarks were run.
+# Operator-pinned client capability routes (2026-10-30)
+
+**Implemented; runtime unverified.** `src/config.rs`, `src/main.rs`, and
+`src/agent/collective.rs` let an operator associate client tool names with
+capabilities and exact observed schema hashes without modifying client schemas.
+Mappings take precedence over annotations and fail closed on schema changes.
+They grant no permissions, do not attest tool implementations and do not replace
+client validation. No tests or benchmarks were run.

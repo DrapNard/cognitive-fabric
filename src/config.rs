@@ -14,6 +14,16 @@ pub struct RoleProfile {
     pub temperature: f64,
 }
 
+/// Operator-declared client tool route, pinned to its exact canonical schema.
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClientToolRoute {
+    pub schema_sha256: String,
+    pub capabilities: Vec<String>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub independent: bool,
+}
+
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Config {
@@ -66,6 +76,8 @@ pub struct Config {
     /// Restrict client collective inference to interpretation and presentation.
     #[serde(skip_serializing_if = "is_false")]
     pub native_only_client: bool,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub client_tool_routes: BTreeMap<String, ClientToolRoute>,
     /// Optional immutable operator-published project context applied to new
     /// client collective sessions (`project-id@version`).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -113,6 +125,7 @@ impl Default for Config {
             interpret_goals: true,
             agent_collective: false,
             native_only_client: false,
+            client_tool_routes: BTreeMap::new(),
             agent_project_profile: None,
             interface_tokens: 128,
             reasoning_effort: None,
@@ -348,6 +361,37 @@ impl Config {
         crate::backend::local_endpoint(&self.api_base)?;
         if self.native_only_client && self.language_model().is_none() {
             bail!("Native-only client mode requires a configured language interface")
+        }
+        if self.client_tool_routes.len() > crate::agent::MAX_CLIENT_TOOLS {
+            bail!("Client tool route count exceeds its bound")
+        }
+        let mut client_capabilities = std::collections::BTreeSet::new();
+        for (name, route) in &self.client_tool_routes {
+            if name.is_empty()
+                || name.len() > 64
+                || !name
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || b"_-".contains(&byte))
+                || route.schema_sha256.len() != 64
+                || !route
+                    .schema_sha256
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+                || route.capabilities.is_empty()
+                || route.capabilities.len() > 8
+            {
+                bail!("Invalid client tool route identity, schema digest or capability count")
+            }
+            let mut unique = std::collections::BTreeSet::new();
+            for capability in &route.capabilities {
+                if !crate::registry::identifier(capability) || !unique.insert(capability) {
+                    bail!("Invalid or duplicate client tool route capability")
+                }
+                client_capabilities.insert(capability);
+            }
+        }
+        if client_capabilities.len() > 32 {
+            bail!("Client tool route capability catalog exceeds its bound")
         }
         for (role, profile) in &self.role_profiles {
             if !matches!(

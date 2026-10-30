@@ -91,6 +91,7 @@ pub async fn diagnose(cfg: &Config, store: &Store, probe_inference: bool) -> Res
         "routes":role_routes,
         "client_collective_enabled":cfg.agent_collective || cfg.language_model().is_some(),
         "native_only_client":cfg.native_only_client,
+        "configured_client_tool_routes":cfg.client_tool_routes.len(),
         "subtask_parallelism":cfg.subtask_parallelism.unwrap_or(1),
         "expert_parallelism":cfg.expert_parallelism.unwrap_or(1),
         "route_identity_evidence":"configuration_only",

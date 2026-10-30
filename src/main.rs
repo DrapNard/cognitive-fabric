@@ -485,6 +485,23 @@ enum Command {
         #[arg(long, default_value_t = 2, value_parser = clap::value_parser!(u64).range(1..=4))]
         expert_parallelism: u64,
     },
+    /// Pin a client tool's capabilities to an observed schema digest.
+    ConfigureClientTool {
+        #[arg(long)]
+        tool: String,
+        #[arg(long)]
+        schema_sha256: String,
+        #[arg(long = "capability", required = true)]
+        capabilities: Vec<String>,
+        /// Declare this client tool eligible for independent parallel proposals.
+        #[arg(long)]
+        independent: bool,
+    },
+    /// Remove an operator-declared client tool route.
+    RemoveClientTool {
+        #[arg(long)]
+        tool: String,
+    },
     /// Print an unapproved on-demand native policy draft for configured network routes.
     NativePolicyDraft {
         /// Native provider API endpoint, for example http://127.0.0.1:1234/api/v1.
@@ -2134,6 +2151,34 @@ async fn run_cli() -> Result<()> {
                 "models_loaded":false,"trained_weights_created":false,
                 "verification":"Independent compiled kernel; no verifier-model override",
                 "active_sessions_reconfigured":false})
+        }
+        Command::ConfigureClientTool {
+            tool,
+            schema_sha256,
+            capabilities,
+            independent,
+        } => {
+            let mut settings = cfg.clone();
+            settings.client_tool_routes.insert(
+                tool.clone(),
+                cogfabric::config::ClientToolRoute {
+                    schema_sha256,
+                    capabilities,
+                    independent,
+                },
+            );
+            settings.save()?;
+            json!({"saved":true,"tool":tool,"route":settings.client_tool_routes.get(&tool),
+                "permissions_granted":false,"client_execution_authorized":false,
+                "active_sessions_reconfigured":false})
+        }
+        Command::RemoveClientTool { tool } => {
+            let mut settings = cfg.clone();
+            if settings.client_tool_routes.remove(&tool).is_none() {
+                bail!("Client tool route does not exist")
+            }
+            settings.save()?;
+            json!({"removed":true,"tool":tool,"active_sessions_reconfigured":false})
         }
         Command::NativePolicyDraft {
             api_base,
