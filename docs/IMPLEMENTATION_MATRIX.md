@@ -7890,3 +7890,10 @@ from prior correlated client results into existing later tool argument fields.
 Hashes are audited without storing result values in the event. Bindings are
 untrusted and may affect sensitive tool arguments; client schema validation and
 execution authorization remain necessary. No tests or benchmarks were run.
+# Native-only client launcher wiring (2026-10-30)
+
+**Implemented; runtime unverified.** `scripts/opencode-local.sh` selects the
+language route for native-only model checks, starts a typed worker or requires
+one in the reviewed native policy, and refuses to reuse a server whose worker
+state it cannot verify. Client routes remain limited; no tests, benchmarks,
+live inference or model operations were run.

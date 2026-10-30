@@ -193,6 +193,16 @@ jq -e '.backend == "openai-local" and (.max_tokens | type == "number" and . >= 1
 # OpenAI-compatible providers do not have a common context-inventory API.
 configured_api_base="$(jq -r '.api_base // empty' "$TMP_DIR/config.json")"
 configured_model="$(jq -r '.model // empty' "$TMP_DIR/config.json")"
+native_only_client="$(jq -r '.native_only_client // false' "$TMP_DIR/config.json")"
+if [[ "$native_only_client" == true ]]; then
+    configured_model="$(jq -r '.role_profiles.language.model // empty' "$TMP_DIR/config.json")"
+    [[ -n "$configured_model" ]] || die 'Native-only client mode requires a configured language model.'
+    if [[ -n "$NATIVE_POLICY" ]]; then
+        jq -e '.typed_module_worker == true' "$NATIVE_POLICY" >/dev/null 2>&1 \
+            || die 'Native-only client mode requires typed_module_worker in the approved native lifecycle policy.'
+    fi
+    printf 'Native-only client mode: reasoning-model calls are disabled; supported structured tasks use the typed worker.\n'
+fi
 if [[ -z "$NATIVE_POLICY" ]]; then
 native_authority="$(jq -r '.api_base | try capture("^http://(?<authority>[^/]+)/(?:api/)?v1/?$").authority catch empty' "$TMP_DIR/config.json" 2>/dev/null || true)"
 if [[ -n "$native_authority" ]]; then
@@ -259,9 +269,15 @@ if ! timeout 20 "$CF_BIN" "${diagnostics_args[@]}" >"$TMP_DIR/diagnostics.json" 
     die "The configured upstream inference service did not pass diagnostics. Start the inference server, then retry. Automatic loading requires the native LM Studio API. See docs/OPENCODE.md and the private diagnostic log: $CHECK_LOG"
 fi
 if [[ -z "$NATIVE_POLICY" ]]; then
-    jq -e '.inference_discovery.status == "responded" and .inference_discovery.all_configured_models_advertised == true' \
-        "$TMP_DIR/diagnostics.json" >/dev/null 2>&1 \
-        || die "The configured upstream server is not advertising every configured model. Start the model server and check its configured model; automatic loading requires the native LM Studio API. See the private diagnostic log: $CHECK_LOG"
+    if [[ "$native_only_client" == true ]]; then
+        jq -e --arg model "$configured_model" '.inference_discovery.status == "responded" and (.inference_discovery.advertised_models | index($model) != null)' \
+            "$TMP_DIR/diagnostics.json" >/dev/null 2>&1 \
+            || die "The configured upstream server is not advertising the language model. See the private diagnostic log: $CHECK_LOG"
+    else
+        jq -e '.inference_discovery.status == "responded" and .inference_discovery.all_configured_models_advertised == true' \
+            "$TMP_DIR/diagnostics.json" >/dev/null 2>&1 \
+            || die "The configured upstream server is not advertising every configured model. Start the model server and check its configured model; automatic loading requires the native LM Studio API. See the private diagnostic log: $CHECK_LOG"
+    fi
 fi
 
 # Configure a private curl file so the bearer key does not appear in process
@@ -287,6 +303,7 @@ probe_server() {
 http_status="$(probe_server)"
 if [[ "$http_status" =~ ^2[0-9][0-9]$ ]]; then
     [[ -z "$NATIVE_POLICY" ]] || die 'On-demand activation requires a server started with the supplied policy; an existing server cannot be verified and was left running.'
+    [[ "$native_only_client" != true ]] || die 'Native-only client mode requires a server started with the typed worker; the existing server cannot be verified and was left running.'
     jq -e --arg id "$MODEL_ID" '.data | any(.id == $id)' "$TMP_DIR/models.json" >/dev/null 2>&1 \
         || die "An authenticated service is already listening at 127.0.0.1:8234 but does not offer $MODEL_ID. Its process was left running."
     SERVER_PID=""
@@ -300,6 +317,8 @@ elif [[ "$http_status" == 000 || -z "$http_status" ]]; then
     server_args=(--home "$CF_HOME" --bind 127.0.0.1:8234)
     if [[ -n "$NATIVE_POLICY" ]]; then
         server_args+=(--native-lifecycle-policy "$NATIVE_POLICY" --approve-native-lifecycle --activate-client-native-models --allow-client-model-key-evidence)
+    elif [[ "$native_only_client" == true ]]; then
+        server_args+=(--typed-module-worker)
     fi
     "$SERVER_BIN" "${server_args[@]}" >"$SERVER_LOG" 2>&1 &
     SERVER_PID=$!

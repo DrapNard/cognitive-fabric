@@ -356,3 +356,24 @@ To retain a default effort in project configuration, set `model` to
 `"cogfabric/cogfabric-agent#medium"` (or another defined effort variant). The
 startup helper accepts these variant selections. This still sends the model ID
 `cogfabric-agent` to the API; the suffix selects the request setting, not weights.
+# Native-only client launcher
+
+When the workspace is configured with `configure-network --language-model MODEL
+--native-only-client`, `cogfabric-opencode` uses the configured language model
+for its existing inventory and optional load checks, rather than the disabled
+reasoning-model placeholder. When it starts a server without a native lifecycle
+policy, it enables the same-image typed module worker. With a reviewed native
+policy, that policy must set `typed_module_worker` to `true`; existing operator
+approval and model-key evidence requirements still apply. The launcher refuses
+to reuse an existing server in this mode because it cannot verify that server's
+worker configuration. It leaves that server running.
+
+Other OpenAI-compatible clients can use the same server: when starting it
+directly without a native lifecycle policy, pass `--typed-module-worker` along
+with the normal home, bind address and authentication configuration. With a
+native lifecycle policy, enable the worker in that reviewed policy instead.
+
+Native-only mode currently supports bounded structured tasks and limited client
+tool routes. It does not yet provide general OpenCode tool planning or prove
+compatibility with an arbitrary agentic workflow. No tests, live inference, or
+model-loading operations were run for this launcher change.
