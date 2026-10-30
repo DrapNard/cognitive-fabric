@@ -508,6 +508,12 @@ enum Command {
         /// Declare this client tool eligible for independent parallel proposals.
         #[arg(long)]
         independent: bool,
+        /// Declare a predecessor client tool by exact name; repeat as needed.
+        #[arg(long = "after")]
+        after: Vec<String>,
+        /// JSON object with source_tool, source_pointer and target_pointer; repeat as needed.
+        #[arg(long = "binding")]
+        bindings: Vec<String>,
     },
     /// Remove an operator-declared client tool route.
     RemoveClientTool {
@@ -2170,6 +2176,8 @@ async fn run_cli() -> Result<()> {
             schema_file,
             capabilities,
             independent,
+            after,
+            bindings,
         } => {
             let schema_sha256 = match (schema_sha256, schema_file) {
                 (Some(digest), None) => digest,
@@ -2194,12 +2202,23 @@ async fn run_cli() -> Result<()> {
                 _ => bail!("Provide exactly one client schema file or schema hash"),
             };
             let mut settings = cfg.clone();
+            let bindings = bindings
+                .into_iter()
+                .map(|raw| {
+                    let value = cogfabric::strict_json::value(raw.as_bytes(), 2_048)?;
+                    Ok(serde_json::from_value::<
+                        cogfabric::config::ClientToolInputBinding,
+                    >(value)?)
+                })
+                .collect::<Result<Vec<_>>>()?;
             settings.client_tool_routes.insert(
                 tool.clone(),
                 cogfabric::config::ClientToolRoute {
                     schema_sha256,
                     capabilities,
                     independent,
+                    after,
+                    bindings,
                 },
             );
             settings.save()?;

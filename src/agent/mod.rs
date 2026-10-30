@@ -44,6 +44,10 @@ use std::{
 };
 pub use types::*;
 
+pub(crate) fn validate_client_binding_pointer(pointer: &str) -> Result<()> {
+    typed_experts::validate_source_pointer(pointer)
+}
+
 pub trait ChatBackend: Send + Sync {
     /// Trusted adapter capability; false avoids admission work for no-op hooks.
     fn requires_preparation(&self) -> bool {

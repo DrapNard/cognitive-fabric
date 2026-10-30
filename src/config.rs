@@ -22,6 +22,21 @@ pub struct ClientToolRoute {
     pub capabilities: Vec<String>,
     #[serde(default, skip_serializing_if = "is_false")]
     pub independent: bool,
+    /// Operator-declared predecessor tool names, not a permission grant.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub after: Vec<String>,
+    /// Explicit untrusted result projections into existing argument fields.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bindings: Vec<ClientToolInputBinding>,
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClientToolInputBinding {
+    pub source_tool: String,
+    #[serde(default)]
+    pub source_pointer: String,
+    pub target_pointer: String,
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -379,6 +394,8 @@ impl Config {
                     .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
                 || route.capabilities.is_empty()
                 || route.capabilities.len() > 8
+                || route.after.len() > 4
+                || route.bindings.len() > 4
             {
                 bail!("Invalid client tool route identity, schema digest or capability count")
             }
@@ -388,6 +405,30 @@ impl Config {
                     bail!("Invalid or duplicate client tool route capability")
                 }
                 client_capabilities.insert(capability);
+            }
+            let mut dependencies = std::collections::BTreeSet::new();
+            if route.independent && !route.after.is_empty() {
+                bail!("A dependent client tool cannot be declared independent")
+            }
+            for dependency in &route.after {
+                if dependency == name
+                    || dependency.is_empty()
+                    || dependency.len() > 64
+                    || !dependency
+                        .bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || b"_-".contains(&byte))
+                    || !dependencies.insert(dependency)
+                {
+                    bail!("Invalid or duplicate client tool predecessor")
+                }
+            }
+            for binding in &route.bindings {
+                if !dependencies.contains(&binding.source_tool) || binding.target_pointer.is_empty()
+                {
+                    bail!("Client tool binding requires a declared predecessor and non-root target")
+                }
+                crate::agent::validate_client_binding_pointer(&binding.source_pointer)?;
+                crate::agent::validate_client_binding_pointer(&binding.target_pointer)?;
             }
         }
         if client_capabilities.len() > 32 {

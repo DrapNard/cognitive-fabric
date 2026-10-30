@@ -7946,3 +7946,12 @@ were run.
 pinned sequential client tool path before dispatch when configured concurrency
 or resource admission cannot fit the independent parallel wave. It does not
 retry started calls or prove provider concurrency. No tests or benchmarks ran.
+# Operator-declared dependent client tools (2026-10-30)
+
+**Implemented; runtime unverified.** `src/config.rs`, `src/main.rs` and
+`src/agent/collective.rs` accept bounded operator-pinned predecessor and JSON
+binding declarations, order uniquely selected client tools, and pass selected
+untrusted prior client data into explicit argument placeholders. No new tool is
+silently added and the client retains schema validation and execution authority.
+Dependency success, translation fidelity, general planning and parallel roots
+remain unverified or unfinished. No tests or benchmarks were run.

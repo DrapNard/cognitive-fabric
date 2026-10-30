@@ -2876,3 +2876,24 @@ started provider calls are never retried as a fallback. Sequence limits, pinned
 tool metadata, untrusted independence declarations and client execution
 authority remain unchanged. Resource admission does not prove physical provider
 parallelism. No tests, benchmarks or live inference ran; behavior is unverified.
+# Operator-declared dependent client tools (2026-10-30)
+
+An operator-pinned client tool route may declare predecessor tool names with
+repeated `--after NAME` and result projections with repeated `--binding` JSON,
+for example `{"source_tool":"read","source_pointer":"/value","target_pointer":"/input"}`.
+Each binding source must be a declared predecessor. In native-only mode, Jev+
+can select two to four uniquely capability-routed, operator-pinned tools and
+order them by these dependencies. Every predecessor must already be included in
+the interpreted task; missing predecessors and cycles fail closed. The resulting
+task-bound sequence pins tool metadata and bindings, and executes serially as
+client-owned proposals under the original budgets.
+
+The language interface translates each fixed tool's non-bound arguments while
+prior client results are withheld. The host then copies only explicit bounded
+JSON selections into existing argument placeholders, with hash-only audit data.
+Client-reported results remain untrusted and can affect sensitive arguments;
+the client must validate schemas, review and authorize execution. Ordering alone
+does not establish success or verify the user's intent. This is not general
+automatic planning, and independent roots of a dependent graph are not yet run in
+parallel. No tests, benchmarks or live inference ran; runtime and continuation
+behavior are unverified.

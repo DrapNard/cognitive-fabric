@@ -72,6 +72,7 @@ struct Graph<'a> {
     client_capabilities: Vec<(usize, std::collections::BTreeSet<String>, bool)>,
     selected_client_tool: Option<usize>,
     hide_client_results: bool,
+    client_binding_targets: Vec<String>,
 }
 
 struct PreparedAdvisoryPair {
@@ -95,6 +96,8 @@ struct NativeClientSequenceTool {
     description_sha256: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     strict: Option<bool>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    bindings: Vec<crate::config::ClientToolInputBinding>,
 }
 
 impl NativeClientSequence {
@@ -125,6 +128,19 @@ impl NativeClientSequence {
                     .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
             {
                 bail!("Native client sequence contains an invalid tool identity")
+            }
+            if tool.bindings.len() > 4 {
+                bail!("Native client sequence binding count exceeds its bound")
+            }
+            for binding in &tool.bindings {
+                if binding.source_tool == tool.name
+                    || !names.contains(&binding.source_tool)
+                    || binding.target_pointer.is_empty()
+                {
+                    bail!("Native client sequence binding does not name an earlier tool")
+                }
+                super::typed_experts::validate_source_pointer(&binding.source_pointer)?;
+                super::typed_experts::validate_source_pointer(&binding.target_pointer)?;
             }
         }
         Ok(())
@@ -380,6 +396,64 @@ fn unique_client_capability_partition(
         selected.insert(index);
     }
     (selected.len() >= 2 && selected.len() <= 4).then(|| selected.into_iter().collect())
+}
+
+/// Topologically order only operator-pinned tools already selected by the
+/// interpretation. A predecessor never silently adds another client tool.
+fn dependent_client_tool_order(
+    request: &Turn,
+    cfg: &crate::config::Config,
+    catalog: &[(usize, std::collections::BTreeSet<String>, bool)],
+    interpretation: &crate::language::Interpretation,
+) -> Result<Option<Vec<usize>>> {
+    let Some(indices) = unique_client_capability_partition(catalog, interpretation) else {
+        return Ok(None);
+    };
+    let mut routes = Vec::with_capacity(indices.len());
+    let mut has_dependency = false;
+    for index in &indices {
+        let tool = request
+            .tools
+            .get(*index)
+            .ok_or_else(|| anyhow::anyhow!("Selected client tool disappeared"))?;
+        let Some(route) = cfg.client_tool_routes.get(&tool.function.name) else {
+            return Ok(None);
+        };
+        has_dependency |= !route.after.is_empty();
+        routes.push((index, tool, route));
+    }
+    if !has_dependency {
+        return Ok(None);
+    }
+    let names = routes
+        .iter()
+        .map(|(_, tool, _)| tool.function.name.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+    if routes.iter().any(|(_, _, route)| {
+        route
+            .after
+            .iter()
+            .any(|name| !names.contains(name.as_str()))
+    }) {
+        bail!("Client tool dependency is absent from the selected task capabilities")
+    }
+    let mut completed = std::collections::BTreeSet::new();
+    let mut ordered = Vec::with_capacity(routes.len());
+    while ordered.len() < routes.len() {
+        let candidate = routes.iter().find(|(_, tool, route)| {
+            !completed.contains(tool.function.name.as_str())
+                && route
+                    .after
+                    .iter()
+                    .all(|name| completed.contains(name.as_str()))
+        });
+        let Some((index, tool, _)) = candidate else {
+            bail!("Client tool dependencies contain a cycle")
+        };
+        completed.insert(tool.function.name.as_str());
+        ordered.push(**index);
+    }
+    Ok(Some(ordered))
 }
 
 /// Translate an explicit structured client request into proposals only. The
@@ -696,6 +770,11 @@ impl Graph<'_> {
         let context = json!({"interpretation":sequence.interpretation,"trust":"advisory_original_goal_remains_authoritative"}).to_string();
         self.selected_client_tool = Some(tool_index);
         self.hide_client_results = true;
+        self.client_binding_targets = planned
+            .bindings
+            .iter()
+            .map(|binding| binding.target_pointer.clone())
+            .collect();
         let allocation = self.runtime.cfg.interface_tokens;
         if !self.available(&[
             ("interface", &context, allocation),
@@ -706,6 +785,7 @@ impl Graph<'_> {
         let translation = self.call("interface", &context, allocation).await;
         self.hide_client_results = false;
         self.selected_client_tool = None;
+        self.client_binding_targets.clear();
         let translation = translation?;
         let translated = super::typed_experts::translation::Parsed::parse(
             translation.content.as_deref().unwrap_or(""),
@@ -715,9 +795,61 @@ impl Graph<'_> {
         {
             bail!("Native client sequence translation changed the original interpretation")
         }
-        let arguments = translated.client_tool_arguments.ok_or_else(|| {
+        let mut arguments = translated.client_tool_arguments.ok_or_else(|| {
             anyhow::anyhow!("Native client sequence translation omitted tool arguments")
         })?;
+        if !planned.bindings.is_empty() {
+            let targets = planned
+                .bindings
+                .iter()
+                .map(|binding| binding.target_pointer.as_str())
+                .collect::<Vec<_>>();
+            super::typed_experts::validate_client_targets(&arguments, &targets)?;
+            let results = prior_client_results(
+                self.original,
+                self.session.state.objective_index,
+                index as u32,
+            )?;
+            let mut copied = 0usize;
+            let mut audit = Vec::with_capacity(planned.bindings.len());
+            for binding in &planned.bindings {
+                let source_index = sequence
+                    .tools
+                    .iter()
+                    .position(|tool| tool.name == binding.source_tool)
+                    .filter(|source| *source < index)
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("Native client binding predecessor is missing")
+                    })?;
+                let source = results
+                    .get(source_index)
+                    .ok_or_else(|| anyhow::anyhow!("Native client binding result is missing"))?;
+                let selected =
+                    super::typed_experts::select_raw_output(source, &binding.source_pointer)?;
+                copied = copied.saturating_add(selected.len());
+                if copied > 16_000 {
+                    bail!("Native client bound data exceeds its aggregate limit")
+                }
+                let value = crate::strict_json::value(selected.as_bytes(), 16_384)?;
+                super::typed_experts::replace_client_target(
+                    &mut arguments,
+                    &binding.target_pointer,
+                    value,
+                )?;
+                audit.push(json!({"source_tool_sha256":sha256(binding.source_tool.as_bytes()),
+                    "source_result_sha256":sha256(source.as_bytes()),"source_pointer_sha256":sha256(binding.source_pointer.as_bytes()),
+                    "target_pointer_sha256":sha256(binding.target_pointer.as_bytes()),"selected_value_sha256":sha256(selected.as_bytes())}));
+            }
+            self.runtime.store.event(
+                self.task,
+                "agent_client_tool_dataflow",
+                "jev-plus",
+                json!({
+                    "format_version":1,"bindings":audit,"client_results_verified":false,
+                    "permissions_granted":false,"client_tool_execution":false
+                }),
+            )?;
+        }
         let remaining = self.session.state.tool_limit.saturating_sub(
             self.session
                 .state
@@ -878,6 +1010,13 @@ impl Graph<'_> {
                     contract.push_str(&serde_json::to_string(tool).unwrap_or_default());
                     if self.selected_client_tool.is_some() {
                         contract.push_str(" Repeat the previously supplied structured interpretation exactly, including constraints, capability versions and clarification.");
+                        if !self.client_binding_targets.is_empty() {
+                            contract.push_str(" The host will overwrite these existing JSON pointer fields with untrusted client data. Include schema-shaped placeholders at these paths; do not invent their final values: ");
+                            contract.push_str(
+                                &serde_json::to_string(&self.client_binding_targets)
+                                    .unwrap_or_default(),
+                            );
+                        }
                     }
                 } else if !self.client_capabilities.is_empty() {
                     let capabilities = self
@@ -1512,6 +1651,7 @@ pub(super) async fn run(
         client_capabilities,
         selected_client_tool: None,
         hide_client_results: false,
+        client_binding_targets: Vec::new(),
     };
     let mut advice = saved.advice.clone();
     if runtime.cfg.native_only_client {
@@ -1753,6 +1893,71 @@ pub(super) async fn run(
             && parsed.typed_graph.is_none()
             && !parsed.typed_evidence
         {
+            if let Some(indices) = dependent_client_tool_order(
+                request,
+                &runtime.cfg,
+                &graph.client_capabilities,
+                &interpretation,
+            )? {
+                let remaining = graph.session.state.tool_limit.saturating_sub(
+                    graph
+                        .session
+                        .state
+                        .proposals
+                        .saturating_add(graph.session.state.internal_tools),
+                );
+                let future_calls = indices.len().saturating_add(1);
+                if indices.len() > remaining as usize
+                    || graph.calls.saturating_add(future_calls) > graph.call_limit
+                    || graph
+                        .reserved
+                        .saturating_add(allocation.saturating_mul(future_calls))
+                        > graph.output_limit
+                {
+                    bail!("Dependent client tool sequence exceeds the original task budget")
+                }
+                let tools = indices
+                    .iter()
+                    .map(|index| {
+                        let tool = request
+                            .tools
+                            .get(*index)
+                            .ok_or_else(|| anyhow::anyhow!("Selected client tool disappeared"))?;
+                        let route = runtime
+                            .cfg
+                            .client_tool_routes
+                            .get(&tool.function.name)
+                            .ok_or_else(|| {
+                                anyhow::anyhow!(
+                                    "Dependent client tool route is not operator-pinned"
+                                )
+                            })?;
+                        Ok(NativeClientSequenceTool {
+                            name: tool.function.name.clone(),
+                            schema_sha256: sha256(&serde_json::to_vec(&tool.function.parameters)?),
+                            description_sha256: sha256(tool.function.description.as_bytes()),
+                            strict: tool.function.strict,
+                            bindings: route.bindings.clone(),
+                        })
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+                let sequence = NativeClientSequence {
+                    format_version: 1,
+                    interpretation: interpretation.clone(),
+                    tools,
+                };
+                sequence.validate()?;
+                let context = json!({"native_client_sequence":sequence,"trust":"advisory_original_goal_remains_authoritative"}).to_string();
+                advice = graph.merge_roles(&context, &[])?.ok_or_else(|| {
+                    anyhow::anyhow!("Dependent client sequence exceeds structured memory bound")
+                })?;
+                graph.runtime.store.event(task, "agent_client_sequence_planned", "jev-plus", json!({
+                    "format_version":1,"sequence_sha256":sha256(&serde_json::to_vec(&sequence)?),
+                    "tool_count":sequence.tools.len(),"ordering":"operator_declared_dependencies",
+                    "client_results_verified":false,"permissions_granted":false,"client_execution_authorized":false
+                }))?;
+                return graph.next_client_sequence_tool(&sequence, &advice).await;
+            }
             if parsed.client_tools_independent {
                 if let Some(indices) =
                     unique_client_capability_partition(&graph.client_capabilities, &interpretation)
@@ -1814,6 +2019,7 @@ pub(super) async fn run(
                                         tool.function.description.as_bytes(),
                                     ),
                                     strict: tool.function.strict,
+                                    bindings: Vec::new(),
                                 })
                             })
                             .collect::<Result<Vec<_>>>()?;
