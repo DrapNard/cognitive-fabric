@@ -140,6 +140,16 @@ pub(super) fn interpretation(raw: &str, root: &str, references: &str) -> Result<
     Ok(context.get("interpretation").cloned())
 }
 
+/// Return only a marked, task-bound structured client sequence. Legacy text
+/// and unmarked JSON cannot create a resumable routing plan.
+pub(super) fn client_sequence(raw: &str, root: &str, references: &str) -> Result<Option<Value>> {
+    let Some(memory) = decode(raw)? else {
+        return Ok(None);
+    };
+    validate_memory(&memory, Some(root), references)?;
+    Ok(memory.context.get("native_client_sequence").cloned())
+}
+
 fn load(root: &str, references: &str, previous: &str) -> Result<Memory> {
     if root.is_empty() || root.len() > 1_000_000 || previous.len() > MAX_MEMORY_BYTES {
         bail!("Reasoning memory input exceeds its bound")

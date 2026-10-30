@@ -7931,3 +7931,12 @@ digest from a bounded, strict JSON schema file; `src/agent/collective.rs` checks
 an operator-pinned digest on every native-only proposal for that tool. This is
 an identity check, not argument-schema validation or execution authorization.
 No tests or benchmarks were run.
+# Sequential independent client proposals (2026-10-30)
+
+**Implemented; runtime unverified.** `src/agent/collective.rs` and
+`src/agent/reasoning_memory.rs` retain a task-bound structured sequence for
+uniquely capability-routed independent tools when the client forbids parallel
+calls. Each tool schema, description and strict flag is pinned and its arguments are translated only when its
+turn arrives, without exposing prior tool results to that translation. Client
+validation and execution authorization remain required. No tests or benchmarks
+were run.

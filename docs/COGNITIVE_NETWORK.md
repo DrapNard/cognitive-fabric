@@ -2848,3 +2848,20 @@ only during capability discovery. A missing or changed schema fails closed.
 This check does not validate argument values against the schema, attest the
 client's implementation, authorize execution, or affect model-backed client
 paths. No tests, benchmarks or live inference ran; runtime behavior is unverified.
+# Sequential independent client proposals (2026-10-30)
+
+When the client sets `parallel_tool_calls: false`, native-only mode can retain a
+bounded structured sequence of two to four independently declared tools whose
+capabilities each have a unique match. The sequence pins the interpretation,
+tool names, schema and description hashes, and strict flags in task-bound
+structured memory. Each next tool is
+proposed only after correlated prior results arrive; its arguments are translated
+for the already selected tool. Prior client tool results are withheld from that
+translation because the operations were declared independent. Final presentation
+can use the bounded untrusted results after the sequence completes.
+
+The client still validates schemas, authorizes and executes tools. The independent
+declarations and model translation remain unverified; metadata hashes do not attest
+tool implementations. This path does not plan dependencies or bind tool outputs.
+No tests, benchmarks or live inference ran; runtime and continuation behavior are
+unverified.
