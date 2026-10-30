@@ -1,5 +1,15 @@
 # Current Rust implementation
 
+## Language routing and collective concurrency status — 2026-10-31
+
+**Partial; runtime unverified.** Explicit language-only routing exists through
+`configure-network`; without that profile, the default model can still serve
+reasoning roles. Engine reasoning and independent experts can overlap within a
+single task under bounded shared admission. Separate service Ask requests remain
+serialized by `src/service.rs`, while providers may impose tighter model slots.
+The running local provider was unavailable during inspection, so its model IDs
+and active configuration remain unverified. No tests or benchmarks ran.
+
 ## Defer language-interface inference until interpretation is needed — 2026-10-31
 
 **Implemented; runtime unverified.** `src/engine.rs` now performs deterministic

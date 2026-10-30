@@ -1,5 +1,20 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Language-only routing and Jev+/Jev-R execution concurrency — 2026-10-31
+
+**Partial; runtime unverified.** `Config::language_network` and
+`configure-network` support explicit language/reasoning separation; absent a
+`language` profile, the default model is still available to reasoning roles.
+`src/reasoning.rs` admits bounded overlap between Jev-R and independent Jev+
+expert workflows inside one task, subject to the shared configured width and
+provider limits. `src/service.rs` still serializes separate root Ask requests,
+and no measured provider/GPU concurrency is established. The installed model
+profile has not been verified against a running provider. No tests, benchmarks,
+or live inference ran. Remaining work: configure/verify the language-only model
+route on the target install and determine whether cross-request concurrency is
+needed, then implement it with one aggregate inference gate across all expert
+brokers.
+
 ## Defer language-interface inference until interpretation is needed — 2026-10-31
 
 **Implemented; runtime unverified.** `src/engine.rs` delays the language-only

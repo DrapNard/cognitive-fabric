@@ -1,5 +1,20 @@
 # Cognitive network implementation
 
+## Current language routing and parallel execution boundaries — 2026-10-31
+
+**Partial; runtime unverified.** An explicit `language` model profile routes
+`interface` and `synthesizer` calls to that model and requires a distinct
+reasoning default. Without that profile, the configured default model remains
+eligible for reasoning roles; the binary does not infer language-only routing
+from a provider or model name. Within one Engine task, Jev-R reasoning and
+independent Jev+ expert work may overlap under the shared configured inference
+width (one to four calls) and each expert/provider's own limits. Dependency-ready
+steps still wait for their inputs, and providers may serialize requests. The
+local service separately admits one root Ask task at a time; this gate does not
+disable overlap within that task. Cross-request concurrent admission and a
+machine-verified language/reasoning model profile remain unfinished. No tests,
+benchmarks, or live inference ran.
+
 ## Defer language-interface inference until interpretation is needed — 2026-10-31
 
 **Implemented; runtime unverified.** `src/engine.rs` now delays the configured
