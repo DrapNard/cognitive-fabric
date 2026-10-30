@@ -1,5 +1,15 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Defer language-interface inference until interpretation is needed — 2026-10-31
+
+**Implemented; runtime unverified.** `src/engine.rs` delays the language-only
+model call until deterministic routing/context preparation is complete and exact
+inline arithmetic/SQL shortcuts have had a chance to finish. Natural-language
+interpretation still gates capability refinement and Jev-R work; final language
+presentation remains a separate reserved boundary call. This avoids an unneeded
+Qwen wait for exact tool inputs; it does not establish runtime speed or provider
+concurrency. No tests, benchmarks, or live inference ran.
+
 ## Keep prose episode memory out of new reasoning tasks — 2026-10-31
 
 **Implemented; runtime unverified.** `src/store.rs` now gives Engine and agent

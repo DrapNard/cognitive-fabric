@@ -856,25 +856,11 @@ impl Engine {
         let mut independent_workflow_capabilities =
             std::collections::BTreeMap::<String, Vec<String>>::new();
         let mut language_reservation = None;
+        let mut initial_interpretation = None;
         let language_boundary =
             self.cfg.language_model().is_some() && profile != ExecutionProfile::Alone;
         let execution = async {
             session.record_verifier_provider_snapshot(query)?;
-            let initial_interpretation = if language_boundary {
-                language_reservation = Some(session.reserve_language_presentation()?);
-                let prompt = format!("Original user request (authoritative): {query}\nTranslate this request into the CGF interpretation schema. Do not solve it or grant permissions.");
-                let raw = session
-                    .call("interface", &prompt, self.cfg.interface_tokens)
-                    .await?
-                    .ok_or_else(|| {
-                        anyhow::anyhow!("Required language interpretation could not be dispatched")
-                    })?;
-                crate::language::Interpretation::parse(&raw)?;
-                Some(raw)
-            } else {
-                None
-            };
-
             let retrieval_requested = matches!(
                 profile,
                 ExecutionProfile::Full | ExecutionProfile::Memory | ExecutionProfile::Experts
@@ -1203,6 +1189,22 @@ impl Engine {
                         ))
                     }
                 };
+            }
+            if language_boundary {
+                // Delay language-model activation until deterministic routing,
+                // retrieval, and inline tool paths have had a chance to finish.
+                // The model is still required to translate natural-language goals
+                // before capability refinement and Jev-R reasoning begin.
+                language_reservation = Some(session.reserve_language_presentation()?);
+                let prompt = format!("Original user request (authoritative): {query}\nTranslate this request into the CGF interpretation schema. Do not solve it or grant permissions.");
+                let raw = session
+                    .call("interface", &prompt, self.cfg.interface_tokens)
+                    .await?
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("Required language interpretation could not be dispatched")
+                    })?;
+                crate::language::Interpretation::parse(&raw)?;
+                initial_interpretation = Some(raw);
             }
             if initial_interpretation.is_some()
                 || (self.cfg.interpret_goals

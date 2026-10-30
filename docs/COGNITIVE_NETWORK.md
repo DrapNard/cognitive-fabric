@@ -1,5 +1,17 @@
 # Cognitive network implementation
 
+## Defer language-interface inference until interpretation is needed — 2026-10-31
+
+**Implemented; runtime unverified.** `src/engine.rs` now delays the configured
+language model's request-translation call until deterministic routing, bounded
+context preparation, and exact inline arithmetic/SQL paths have run. Exact
+arithmetic and SQL tasks can therefore complete without waiting for Qwen. Natural
+language tasks still require translation before capability refinement and Jev-R
+execution, and reserve final language presentation within the original task
+budget. This removes unnecessary language-model calls; it does not make dependent
+reasoning independent of translation or prove provider-level parallelism. No
+tests, benchmarks, or live inference ran.
+
 ## Keep legacy prose episodes out of new task prompts — 2026-10-31
 
 Engine and agent retrieval now leave the legacy `TaskContext.memories` field

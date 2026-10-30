@@ -1,5 +1,14 @@
 # Current Rust implementation
 
+## Defer language-interface inference until interpretation is needed — 2026-10-31
+
+**Implemented; runtime unverified.** `src/engine.rs` now performs deterministic
+routing, bounded context preparation, and exact inline arithmetic/SQL handling
+before activating the configured language model. Those exact tool requests avoid
+the translation call; natural-language requests still translate before
+capability refinement and Jev-R execution, then use the reserved final language
+presentation. No tests, benchmarks, or live inference ran.
+
 ## Keep prose episode memory out of new reasoning tasks — 2026-10-31
 
 **Implemented; runtime unverified.** `src/store.rs` no longer retrieves legacy
