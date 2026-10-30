@@ -98,6 +98,13 @@ Approved Engine task-driven load/reuse/release is available through
 physical ownership and independent utility/physical measurements remain incomplete. Explicit unknown-outcome
 resolution and terminal receipt archiving are described below.
 
+Each managed inference also writes a `native_prediction_admission` event to the
+task history before provider dispatch. It reports bounded activation, provider
+slot and lifecycle-mutation wait durations separately, along with the observed
+slot count. The task's existing `queue_wait_ms` remains the aggregate scheduler
+and provider queue measurement. These timings help identify where CGF waited;
+they do not establish provider execution concurrency or GPU utilization.
+
 ## Per-model prediction slots
 
 On first-use activation, CGF reads the instance's reported `config.parallel`

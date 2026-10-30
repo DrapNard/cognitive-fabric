@@ -1,5 +1,16 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Attribute managed inference waiting time — 2026-10-31
+
+**Implemented; runtime unverified.** `src/residency/lifecycle/lazy.rs` records a
+bounded `native_prediction_admission` event before dispatch, separating time
+spent in on-demand activation, provider prediction-slot admission and the native
+lifecycle mutation gate. Existing `queue_wait_ms` remains the aggregate queue
+metric from the broker, resource scheduler and provider slot. The event includes
+the observed per-model slot count, but does not claim that the provider executed
+calls concurrently. The event omits prompt content and credentials. No tests,
+benchmarks or live inference were run.
+
 ## Persist completed overlap calls as they settle — 2026-10-31
 
 **Implemented; runtime unverified.** `src/reasoning/parallel.rs` adds a

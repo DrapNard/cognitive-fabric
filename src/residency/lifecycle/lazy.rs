@@ -891,10 +891,12 @@ impl InferenceBackend for LazyBackend {
     > {
         Box::pin(async move {
             let model = self.model_for(role)?;
+            let activation_started = Instant::now();
             let binding = self
                 .coordinator
                 .activate(task, role, &model, prompt, self.fixed_model.is_some())
                 .await?;
+            let activation_wait_ms = activation_started.elapsed().as_secs_f64() * 1000.0;
             let slot_wait_started = Instant::now();
             let _prediction_slot = self
                 .coordinator
@@ -905,9 +907,29 @@ impl InferenceBackend for LazyBackend {
                 )
                 .await?;
             let prediction_slot_wait_ms = slot_wait_started.elapsed().as_secs_f64() * 1000.0;
+            let mutation_wait_started = Instant::now();
             let _generation_guard = self.coordinator.generation_guard().await?;
+            let mutation_wait_ms = mutation_wait_started.elapsed().as_secs_f64() * 1000.0;
             self.coordinator.ensure_generation_allowed()?;
             let call_id = uuid::Uuid::new_v4().to_string();
+            self.coordinator.store.event(
+                task,
+                "native_prediction_admission",
+                "resource-scheduler",
+                json!({
+                    "format_version":1,
+                    "call_id":call_id,
+                    "role":role,
+                    "model_key":model,
+                    "activation_wait_ms":(activation_wait_ms <= 300_000.0).then_some(activation_wait_ms),
+                    "provider_slot_wait_ms":(prediction_slot_wait_ms <= 300_000.0).then_some(prediction_slot_wait_ms),
+                    "lifecycle_mutation_wait_ms":(mutation_wait_ms <= 300_000.0).then_some(mutation_wait_ms),
+                    "observed_provider_slots":binding.provider_prediction_slots,
+                    "provider_concurrency_verified":false,
+                    "dispatch_ready":true,
+                    "permissions_granted":false
+                }),
+            )?;
             let model_bindings_sha256 = self.coordinator.bindings_sha256()?;
             self.coordinator.lifecycle_event_with_digest(
                 &self.coordinator.lifecycle_task,
