@@ -2743,8 +2743,8 @@ the original task proposal budget. Every remaining tool must be declared by the
 current client; each round separately observes its tool choice and parallel-call
 setting. The next round is proposed only after all prior calls have correlated
 client results and the session checkpoint is resumed. Rounds are unconditional
-unless they use the conditions described in the later update. The plan does not
-bind results into later arguments, and
+unless they use the conditions described in the later update. Explicit result
+bindings are described in the subsequent dataflow update, and
 the client still validates schemas and authorizes execution. Final presentation
 receives all current-task tool results as bounded untrusted data. This is not
 automatic planning. No tests, benchmarks or live inference ran; runtime and
@@ -2758,6 +2758,19 @@ client calls in plan order; each selected client result must be valid bounded
 JSON. The host checks exact JSON values and stops before the next round when a
 condition is false. Conditions cannot refer to the current or future round.
 These checks use untrusted client-reported results; they do not prove that a tool
-succeeded, grant permissions, validate client schemas or substitute values into
-later arguments. The client retains execution authority. No tests, benchmarks
+succeeded, grant permissions or validate client schemas. The client retains
+execution authority. No tests, benchmarks
 or live inference were run; continuation and recovery remain unverified.
+
+# Explicit client tool dataflow (2026-10-29)
+
+An explicit later-round call may declare `bindings` with `call_index`, source
+`pointer`, and an existing argument `target` JSON pointer. The host copies only
+bounded JSON values from correlated prior client results, requires targets not to
+overlap, and rejects type changes except where the original placeholder is null.
+The selected client tool is unchanged. Audit events retain hashes of sources,
+pointers and values rather than the data itself. These are **untrusted values**:
+they can affect the client's tool arguments, including sensitive arguments. The
+client must validate schemas and authorize execution; this feature does not make
+tool results trustworthy or grant permissions. Missing or invalid data fails
+closed. No tests, benchmarks or live inference ran; behavior is unverified.

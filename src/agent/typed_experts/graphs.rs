@@ -393,6 +393,48 @@ pub(super) fn validate_source_pointer(pointer: &str) -> Result<()> {
     parse_pointer(pointer).map(|_| ())
 }
 
+/// Validate explicitly designated argument fields without allowing root or
+/// overlapping replacements. This grants no authority over the eventual tool.
+pub(super) fn validate_client_targets(root: &Value, pointers: &[&str]) -> Result<()> {
+    let mut targets = Vec::<Vec<String>>::with_capacity(pointers.len());
+    for pointer in pointers {
+        let target = parse_pointer(pointer)?;
+        if target.is_empty() {
+            bail!("Client binding cannot replace the argument root")
+        }
+        validate_existing_pointer(root, &target)?;
+        if targets
+            .iter()
+            .any(|other| is_prefix(other, &target) || is_prefix(&target, other))
+        {
+            bail!("Client binding targets cannot overlap")
+        }
+        targets.push(target);
+    }
+    Ok(())
+}
+
+pub(super) fn replace_client_target(root: &mut Value, pointer: &str, value: Value) -> Result<()> {
+    let path = parse_pointer(pointer)?;
+    if path.is_empty() {
+        bail!("Client binding cannot replace the argument root")
+    }
+    validate_existing_pointer(root, &path)?;
+    let original = root
+        .pointer(pointer)
+        .ok_or_else(|| anyhow!("Client binding target is missing"))?;
+    let same_kind = original.is_null()
+        || (original.is_boolean() && value.is_boolean())
+        || (original.is_number() && value.is_number())
+        || (original.is_string() && value.is_string())
+        || (original.is_array() && value.is_array())
+        || (original.is_object() && value.is_object());
+    if !same_kind {
+        bail!("Client binding changes the declared argument value type")
+    }
+    replace_existing(root, &path, value)
+}
+
 pub(super) fn select_raw_output(raw: &str, pointer: &str) -> Result<String> {
     if raw.len() > MAX_RESULT_BYTES {
         bail!("Typed graph dependency output exceeds its byte limit")

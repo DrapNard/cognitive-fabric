@@ -34,6 +34,18 @@ pub(super) fn validate_source_pointer(pointer: &str) -> Result<()> {
     graphs::validate_source_pointer(pointer)
 }
 
+pub(super) fn validate_client_targets(root: &serde_json::Value, pointers: &[&str]) -> Result<()> {
+    graphs::validate_client_targets(root, pointers)
+}
+
+pub(super) fn replace_client_target(
+    root: &mut serde_json::Value,
+    pointer: &str,
+    value: serde_json::Value,
+) -> Result<()> {
+    graphs::replace_client_target(root, pointer, value)
+}
+
 pub(super) fn select_raw_output(raw: &str, pointer: &str) -> Result<String> {
     graphs::select_raw_output(raw, pointer)
 }

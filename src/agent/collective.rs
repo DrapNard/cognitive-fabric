@@ -94,7 +94,7 @@ struct ExplicitClientToolCondition {
 }
 
 enum ExplicitToolProgress {
-    Next(Completion),
+    Next(Completion, Vec<serde_json::Value>),
     Complete,
     ConditionNotMet,
 }
@@ -110,6 +110,17 @@ struct ExplicitClientToolPlan {
 struct ExplicitClientToolCall {
     name: String,
     arguments: serde_json::Value,
+    #[serde(default)]
+    bindings: Vec<ExplicitClientToolBinding>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ExplicitClientToolBinding {
+    target: String,
+    call_index: u32,
+    #[serde(default)]
+    pointer: String,
 }
 
 /// Select a client-named tool, the sole tool, or exactly one explicitly named
@@ -198,6 +209,25 @@ fn explicit_client_tool_request(
             }
             super::typed_experts::validate_source_pointer(&condition.pointer)?;
         }
+        let mut binding_count = 0usize;
+        for call in &round.calls {
+            binding_count = binding_count.saturating_add(call.bindings.len());
+            if call.bindings.len() > 8 || binding_count > 16 {
+                bail!("Client tool binding count exceeds its bound")
+            }
+            let targets = call
+                .bindings
+                .iter()
+                .map(|binding| binding.target.as_str())
+                .collect::<Vec<_>>();
+            super::typed_experts::validate_client_targets(&call.arguments, &targets)?;
+            for binding in &call.bindings {
+                if binding.call_index >= total {
+                    bail!("Client tool binding must refer to an earlier round")
+                }
+                super::typed_experts::validate_source_pointer(&binding.pointer)?;
+            }
+        }
         total = total
             .checked_add(round.calls.len() as u32)
             .ok_or_else(|| anyhow::anyhow!("Client tool plan call count overflow"))?;
@@ -225,11 +255,14 @@ fn explicit_client_tool_request(
             bail!("A remaining client tool is undeclared or has invalid arguments")
         }
     }
-    let document = rounds
+    let mut document = rounds
         .into_iter()
         .nth(next_index)
         .ok_or_else(|| anyhow::anyhow!("Client tool plan round is missing"))?;
-    if !document.when.is_empty() {
+    let needs_results =
+        !document.when.is_empty() || document.calls.iter().any(|call| !call.bindings.is_empty());
+    let mut binding_audit = Vec::new();
+    if needs_results {
         let results = prior_client_results(request, objective_index, completed)?;
         for condition in &document.when {
             let result = results
@@ -241,10 +274,37 @@ fn explicit_client_tool_request(
                 return Ok(ExplicitToolProgress::ConditionNotMet);
             }
         }
+        let mut copied_bytes = 0usize;
+        for call in &mut document.calls {
+            for binding in &call.bindings {
+                let source = results
+                    .get(binding.call_index as usize)
+                    .ok_or_else(|| anyhow::anyhow!("Client tool binding result is missing"))?;
+                let selected = super::typed_experts::select_raw_output(source, &binding.pointer)?;
+                copied_bytes = copied_bytes.saturating_add(selected.len());
+                if copied_bytes > 16_000 {
+                    bail!("Client tool bound data exceeds its aggregate limit")
+                }
+                let value = crate::strict_json::value(selected.as_bytes(), 16_384)?;
+                super::typed_experts::replace_client_target(
+                    &mut call.arguments,
+                    &binding.target,
+                    value,
+                )?;
+                binding_audit.push(json!({
+                    "source_call_index":binding.call_index,
+                    "source_result_sha256":sha256(source.as_bytes()),
+                    "source_pointer_sha256":sha256(binding.pointer.as_bytes()),
+                    "target_pointer_sha256":sha256(binding.target.as_bytes()),
+                    "selected_value_sha256":sha256(selected.as_bytes())
+                }));
+            }
+        }
     }
-    Ok(ExplicitToolProgress::Next(client_tool_completion(
-        document, request, remaining,
-    )?))
+    Ok(ExplicitToolProgress::Next(
+        client_tool_completion(document, request, remaining)?,
+        binding_audit,
+    ))
 }
 
 fn prior_client_results(
@@ -1016,7 +1076,7 @@ pub(super) async fn run(
                     remaining,
                     graph.session.state.objective_index,
                 )? {
-                    ExplicitToolProgress::Next(completion) => completion,
+                    ExplicitToolProgress::Next(completion, audit) if audit.is_empty() => completion,
                     _ => bail!("Initial client tool plan cannot be complete or conditional"),
                 };
                 advice = graph.merge_roles("", &[])?.ok_or_else(|| {
@@ -1055,7 +1115,19 @@ pub(super) async fn run(
                         remaining,
                         graph.session.state.objective_index,
                     )? {
-                        ExplicitToolProgress::Next(completion) => {
+                        ExplicitToolProgress::Next(completion, audit) => {
+                            if !audit.is_empty() {
+                                graph.runtime.store.event(
+                                    graph.task,
+                                    "agent_client_tool_dataflow",
+                                    "jev-plus",
+                                    json!({
+                                        "format_version":1,"bindings":audit,
+                                        "client_results_verified":false,"permissions_granted":false,
+                                        "client_tool_execution":false
+                                    }),
+                                )?;
+                            }
                             graph.cycles = 1;
                             graph.schedule("explicit_native_client_tool_next_round", true)?;
                             return graph
@@ -1182,6 +1254,7 @@ pub(super) async fn run(
                     calls: vec![ExplicitClientToolCall {
                         name: name.clone(),
                         arguments,
+                        bindings: Vec::new(),
                     }],
                     when: Vec::new(),
                 },

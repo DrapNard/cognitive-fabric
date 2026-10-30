@@ -7862,7 +7862,8 @@ No tests or benchmarks were run.
 client tool requests with up to four checkpointed rounds, checks
 the remaining task proposal budget and declared tools, and presents correlated
 current-task results after the final round. It does not execute tools, verify
-schema or tool success, bind output into later arguments, or plan automatically.
+schema or tool success, or plan automatically. Explicit result bindings are
+described in the subsequent dataflow update.
 No tests or benchmarks were run.
 
 # Conditional explicit tool rounds (2026-10-29)
@@ -7873,3 +7874,12 @@ explicit values before proposing a later round. A false condition stops further
 proposals; malformed or missing data fails closed. Results remain untrusted and
 do not independently prove tool success or authorize execution. No tests or
 benchmarks were run.
+
+# Explicit client tool dataflow (2026-10-29)
+
+**Implemented; runtime unverified.** `src/agent/collective.rs` and
+`src/agent/typed_experts/graphs.rs` support bounded, explicit JSON value bindings
+from prior correlated client results into existing later tool argument fields.
+Hashes are audited without storing result values in the event. Bindings are
+untrusted and may affect sensitive tool arguments; client schema validation and
+execution authorization remain necessary. No tests or benchmarks were run.
