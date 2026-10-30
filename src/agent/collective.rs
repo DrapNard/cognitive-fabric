@@ -274,6 +274,32 @@ fn unique_client_capability_match(
     matches.next().is_none().then_some(first)
 }
 
+/// Each required capability must map to exactly one client-declared tool.
+/// The resulting group still requires separate independence declarations.
+fn unique_client_capability_partition(
+    catalog: &[(usize, std::collections::BTreeSet<String>)],
+    interpretation: &crate::language::Interpretation,
+) -> Option<Vec<usize>> {
+    if interpretation.required_capabilities.is_empty()
+        || !interpretation.capability_versions.is_empty()
+        || interpretation.clarification.is_some()
+    {
+        return None;
+    }
+    let mut selected = std::collections::BTreeSet::new();
+    for capability in &interpretation.required_capabilities {
+        let mut matches = catalog
+            .iter()
+            .filter(|(_, capabilities)| capabilities.contains(capability));
+        let index = matches.next()?.0;
+        if matches.next().is_some() {
+            return None;
+        }
+        selected.insert(index);
+    }
+    (selected.len() >= 2 && selected.len() <= 4).then(|| selected.into_iter().collect())
+}
+
 /// Translate an explicit structured client request into proposals only. The
 /// client owns execution and is responsible for validating its tool schemas.
 fn explicit_client_tool_request(
@@ -671,6 +697,7 @@ impl Graph<'_> {
                         .collect::<std::collections::BTreeSet<_>>();
                     contract.push_str("\nThe following untrusted client capability identifiers describe available operations. Include an identifier in required_capabilities only when needed by the original user request; do not select a tool or grant permissions: ");
                     contract.push_str(&serde_json::to_string(&capabilities).unwrap_or_default());
+                    contract.push_str(" Set optional client_tools_independent to true only if the user explicitly states that all requested tool operations are independent and can run in parallel; otherwise omit it or set it false. This is unverified translation guidance, not permission.");
                 }
             }
         }
@@ -897,6 +924,101 @@ impl Graph<'_> {
         .await
         .map_err(|_| anyhow::anyhow!("Client collective inference deadline exhausted"))??;
         self.record_completion(role, self.calls, allocation, &turn, completion)
+    }
+
+    /// Reserve the complete independent translation wave before preparing or
+    /// dispatching any call, then settle every started result before returning.
+    async fn call_interface_wave(
+        &mut self,
+        turns: &[Turn],
+        allocation: usize,
+    ) -> Result<Vec<Completion>> {
+        if !(2..=4).contains(&turns.len()) {
+            bail!("Client translation wave exceeds its bounds")
+        }
+        let requests = turns
+            .iter()
+            .cloned()
+            .map(|turn| ("interface", turn, allocation))
+            .collect::<Vec<_>>();
+        let routes = turns
+            .iter()
+            .map(|_| ("interface", self.backend.clone()))
+            .collect::<Vec<_>>();
+        if !self.available_turns(&requests)? || !self.runtime.inference_wave_fits(&routes)? {
+            bail!("Client translation wave exceeds the original task or resource budget")
+        }
+        let first_call = self.calls + 1;
+        for turn in turns {
+            let bytes = serde_json::to_vec(turn)?;
+            TaskPolicy::agent(self.task)?.authorize(self.task, "jev-r", "llm.generate")?;
+            self.session
+                .reserve("interface", allocation, &bytes, self.cycles)?;
+            self.calls += 1;
+            self.reserved += allocation;
+            self.prompt_bytes += bytes.len();
+        }
+        let roles = vec!["interface"; turns.len()];
+        let selected = self
+            .runtime
+            .prepare_role_wave(self.backend.clone(), self.task, &roles, self.deadline)
+            .await?;
+        let timeout = Duration::from_secs(self.runtime.cfg.timeout_seconds)
+            .min(self.deadline.saturating_duration_since(Instant::now()));
+        if timeout.is_zero() {
+            bail!("Client translation wave deadline exhausted")
+        }
+        let runtime = self.runtime;
+        let task = self.task;
+        let deadline = self.deadline;
+        let futures = selected
+            .into_iter()
+            .zip(turns)
+            .map(|(route, turn)| {
+                Box::pin(async move {
+                    tokio::time::timeout(
+                        timeout,
+                        runtime.dispatch_selected_role(
+                            route,
+                            task,
+                            "interface",
+                            turn,
+                            allocation,
+                            deadline,
+                        ),
+                    )
+                    .await
+                    .map_err(|_| {
+                        anyhow::anyhow!(
+                            "Client translation wave timed out; provider outcome may be unknown"
+                        )
+                    })?
+                }) as Pin<Box<dyn Future<Output = Result<Completion>> + Send + '_>>
+            })
+            .collect();
+        let outcomes = crate::reasoning::parallel::join_all(futures).await;
+        let mut results = Vec::with_capacity(turns.len());
+        let mut failure = None;
+        for (index, (turn, outcome)) in turns.iter().zip(outcomes).enumerate() {
+            match outcome.and_then(|completion| {
+                self.record_completion(
+                    "interface",
+                    first_call + index,
+                    allocation,
+                    turn,
+                    completion,
+                )
+            }) {
+                Ok(completion) => results.push(completion),
+                Err(error) => {
+                    failure.get_or_insert(error);
+                }
+            }
+        }
+        if let Some(error) = failure {
+            return Err(error);
+        }
+        Ok(results)
     }
     fn record_completion(
         &mut self,
@@ -1423,6 +1545,90 @@ pub(super) async fn run(
             && parsed.typed_graph.is_none()
             && !parsed.typed_evidence
         {
+            if parsed.client_tools_independent && request.parallel_tool_calls != Some(false) {
+                if let Some(indices) =
+                    unique_client_capability_partition(&graph.client_capabilities, &interpretation)
+                {
+                    let width = runtime
+                        .cfg
+                        .subtask_parallelism
+                        .unwrap_or(1)
+                        .min(runtime.cfg.expert_parallelism.unwrap_or(1))
+                        .min(4);
+                    let declared_independent = indices.iter().all(|index| {
+                        request.tools.get(*index).is_some_and(|tool| {
+                            tool.function.parameters.get("x-cgf-independent")
+                                == Some(&serde_json::Value::Bool(true))
+                        })
+                    });
+                    let remaining = graph.session.state.tool_limit.saturating_sub(
+                        graph
+                            .session
+                            .state
+                            .proposals
+                            .saturating_add(graph.session.state.internal_tools),
+                    );
+                    if declared_independent
+                        && indices.len() <= width
+                        && indices.len() <= remaining as usize
+                    {
+                        let context = json!({"interpretation":interpretation,"trust":"advisory_original_goal_remains_authoritative"}).to_string();
+                        advice = graph.merge_roles(&context, &[])?.ok_or_else(|| {
+                            anyhow::anyhow!("Structured parallel client context exceeds its bound")
+                        })?;
+                        let mut turns = Vec::with_capacity(indices.len());
+                        for index in &indices {
+                            graph.selected_client_tool = Some(*index);
+                            turns.push(graph.turn("interface", &context, allocation));
+                        }
+                        graph.selected_client_tool = None;
+                        let translations = graph.call_interface_wave(&turns, allocation).await?;
+                        let mut calls = Vec::with_capacity(indices.len());
+                        for (index, translation) in indices.iter().zip(translations) {
+                            let parsed = super::typed_experts::translation::Parsed::parse(
+                                translation.content.as_deref().unwrap_or(""),
+                            )?;
+                            if serde_json::to_value(&parsed.interpretation)?
+                                != serde_json::to_value(&interpretation)?
+                            {
+                                bail!("Parallel client translation changed the original interpretation")
+                            }
+                            let arguments = parsed.client_tool_arguments.ok_or_else(|| {
+                                anyhow::anyhow!(
+                                    "Parallel client translation omitted tool arguments"
+                                )
+                            })?;
+                            let tool = request.tools.get(*index).ok_or_else(|| {
+                                anyhow::anyhow!("Selected client tool disappeared")
+                            })?;
+                            calls.push(ExplicitClientToolCall {
+                                name: tool.function.name.clone(),
+                                arguments,
+                                bindings: Vec::new(),
+                            });
+                        }
+                        let completion = client_tool_completion(
+                            ExplicitClientToolRequest {
+                                calls,
+                                when: Vec::new(),
+                            },
+                            request,
+                            remaining,
+                        )?;
+                        graph.runtime.store.event(task, "agent_client_capability_route", "jev-plus", json!({
+                            "format_version":1,"tool_count":indices.len(),
+                            "capabilities_sha256":sha256(&serde_json::to_vec(&interpretation.required_capabilities)?),
+                            "selection":"unique_capability_partition","client_declarations_untrusted":true,
+                            "independence_semantics_verified":false,"permissions_granted":false
+                        }))?;
+                        graph.cycles = 1;
+                        graph.schedule("parallel_client_capability_tool_proposals", true)?;
+                        return graph
+                            .finish(completion, "client_tool_proposal", &advice)
+                            .await;
+                    }
+                }
+            }
             if let Some(index) =
                 unique_client_capability_match(&graph.client_capabilities, &interpretation)
             {

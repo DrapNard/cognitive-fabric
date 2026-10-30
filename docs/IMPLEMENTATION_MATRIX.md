@@ -7907,3 +7907,12 @@ interpretation. Client metadata grants no permissions; schema validation and
 execution approval remain client-owned. Ordinary clients without annotations,
 ambiguous routes, capability versions and general multi-step planning remain
 unsupported by this path. No tests or benchmarks were run.
+# Parallel capability-routed client proposals (2026-10-30)
+
+**Implemented; runtime unverified.** `src/agent/collective.rs` and
+`src/agent/typed_experts/translation.rs` can reserve and concurrently translate
+arguments for two to four independently declared, uniquely capability-routed
+client tools. Client parallel-call settings, configured group limits, task and
+provider resource budgets still apply. Independence and semantic fidelity are
+not verified; tool schema validation and execution remain client-owned. No
+tests or benchmarks were run.

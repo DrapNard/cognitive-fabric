@@ -99,6 +99,7 @@ constraints.solve: {"capability":"constraints.solve","arguments":{"variables":[{
 pub(in crate::agent) struct Parsed {
     pub(in crate::agent) interpretation: language::Interpretation,
     pub(in crate::agent) client_tool_arguments: Option<Value>,
+    pub(in crate::agent) client_tools_independent: bool,
     pub(in crate::agent) typed_goal: Option<Translation>,
     pub(in crate::agent) typed_batch: Option<Vec<(String, Translation)>>,
     pub(in crate::agent) typed_graph: Option<super::graph_translation::Translation>,
@@ -202,6 +203,11 @@ impl Parsed {
             None | Some(Value::Null) => None,
             Some(value) if value.is_object() => Some(value),
             Some(_) => bail!("Client tool arguments must be an object"),
+        };
+        let client_tools_independent = match object.remove("client_tools_independent") {
+            None | Some(Value::Null) | Some(Value::Bool(false)) => false,
+            Some(Value::Bool(true)) => true,
+            Some(_) => bail!("Client tool independence must be a boolean"),
         };
         let typed_value = object.remove("typed_goal");
         let batch_value = object.remove("typed_batch");
@@ -459,6 +465,7 @@ impl Parsed {
         Ok(Self {
             interpretation,
             client_tool_arguments,
+            client_tools_independent,
             typed_goal,
             typed_batch,
             typed_graph,

@@ -2802,3 +2802,19 @@ schema and authorizes execution. This is opt-in metadata; existing clients that
 do not supply it gain no automatic selection from this path. It does not implement
 multi-step planning. No tests, benchmarks or live inference ran; behavior and
 translation fidelity remain unverified.
+# Parallel capability-routed client proposals (2026-10-30)
+
+In native-only mode, an explicitly independent request may translate into multiple
+client tool proposals when every requested capability maps to exactly one tool,
+each selected schema declares `x-cgf-independent: true`, the interpretation
+declares `client_tools_independent: true`, and the client allows parallel calls.
+The complete translation wave is reserved before dispatch, respects configured
+task and concurrency limits, and settles started calls before returning. Each
+language call translates arguments for a fixed tool; no reasoning model is used.
+
+Both independence declarations and translated arguments are untrusted and do
+not prove the operations are semantically independent. Client schema validation,
+authorization and execution remain client-owned. This is limited to two to four
+uniquely routed tools with opt-in annotations, not general automatic planning.
+Actual provider concurrency, runtime behavior and latency are unverified; no
+tests, benchmarks or live inference ran.
