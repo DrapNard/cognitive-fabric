@@ -1,5 +1,16 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Persist completed overlap calls as they settle — 2026-10-31
+
+**Implemented; runtime unverified.** `src/reasoning/parallel.rs` adds a
+locally-owned completion poll, and `src/reasoning/expert_parallel.rs` now records
+validated usage/results as each expert-wave call settles instead of withholding
+all result events until its slowest sibling completes. All siblings remain
+bounded by the original shared deadline and are drained after an individual
+failure. Planner-derived subtask execution still waits for the wave; safely
+removing that barrier requires a durable partial-overlap recovery format. No
+tests, benchmarks or live inference were run.
+
 ## Default Engine Jev+ / Jev-R overlap — 2026-10-30
 
 **Implemented; runtime unverified.** `src/engine.rs` defaults the bounded

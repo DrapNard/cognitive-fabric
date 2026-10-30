@@ -15,6 +15,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+type OwnedFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
 pub(crate) fn validate_parallelism(value: Option<usize>) -> Result<usize> {
     match value {
         None => Ok(1),
@@ -142,9 +144,7 @@ pub(crate) fn remaining_plan_admission(
 
 /// Poll a bounded set of locally owned futures without spawning detached tasks.
 /// Dropping this future drops every unfinished backend future.
-pub(crate) async fn join_all<'a, T>(
-    futures: Vec<Pin<Box<dyn Future<Output = T> + Send + 'a>>>,
-) -> Vec<T> {
+pub(crate) async fn join_all<'a, T>(futures: Vec<OwnedFuture<'a, T>>) -> Vec<T> {
     let count = futures.len();
     let mut futures = futures.into_iter().map(Some).collect::<Vec<_>>();
     let mut remaining = count;
@@ -171,6 +171,33 @@ pub(crate) async fn join_all<'a, T>(
             )
         } else {
             Poll::Pending
+        }
+    })
+    .await
+}
+
+/// Poll locally owned futures until one settles, retaining every sibling for
+/// the caller to poll again. This lets orchestration persist/account completed
+/// calls promptly without detaching provider work.
+pub(crate) async fn join_next<'a, T>(futures: &mut [Option<OwnedFuture<'a, T>>]) -> Option<T> {
+    poll_fn(|context| {
+        let mut pending = false;
+        for slot in futures.iter_mut() {
+            let Some(future) = slot.as_mut() else {
+                continue;
+            };
+            match future.as_mut().poll(context) {
+                Poll::Ready(value) => {
+                    *slot = None;
+                    return Poll::Ready(Some(value));
+                }
+                Poll::Pending => pending = true,
+            }
+        }
+        if pending {
+            Poll::Pending
+        } else {
+            Poll::Ready(None)
         }
     })
     .await

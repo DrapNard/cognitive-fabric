@@ -83,7 +83,7 @@ impl Session {
         let phase_budget = phase_deadline.saturating_duration_since(Instant::now());
         let task = self.task.clone();
         let timeout_seconds = self.cfg.timeout_seconds;
-        let futures: Vec<CandidateFuture> = calls
+        let futures: Vec<Option<CandidateFuture>> = calls
             .into_iter()
             .map(|call| {
                 let task = task.clone();
@@ -110,15 +110,17 @@ impl Session {
                     (call, result, elapsed)
                 }) as CandidateFuture
             })
+            .map(Some)
             .collect();
-        // Every member future owns its timeout. Await all of them so one slow
-        // provider cannot cause the parent to drop still-running siblings.
-        let reports = crate::reasoning::parallel::join_all(futures).await;
-
-        let mut results = Vec::with_capacity(reports.len());
+        // Account and persist each result as soon as it settles, while keeping
+        // slower siblings locally owned under the same phase deadline.
+        let mut futures = futures;
+        let mut results = Vec::with_capacity(futures.len());
         let mut failure = None;
         let mut timed_out = false;
-        for (call, report, elapsed_ms) in reports {
+        while let Some((call, report, elapsed_ms)) =
+            crate::reasoning::parallel::join_next(&mut futures).await
+        {
             let processed = (|| -> Result<()> {
                 self.resources.inference_ms += elapsed_ms;
                 match report {
@@ -210,7 +212,7 @@ impl Session {
                             json!({"id":call.expert_id,"version":call.expert_version,"call":call.call,"capabilities":call.capabilities,"result_sha256":crate::store::sha256(advice.as_bytes()),"result_verified":false,"permissions_granted":false,"overlap_id":call.overlap_id}),
                         )?;
                         }
-                        results.push((call.expert_id, call.role, advice));
+                        results.push((call.call, call.expert_id, call.role, advice));
                     }
                     Err(error) => {
                         self.mark_usage_incomplete();
@@ -243,7 +245,11 @@ impl Session {
         if timed_out {
             return Ok(Vec::new());
         }
-        Ok(results)
+        results.sort_by_key(|(call, _, _, _)| *call);
+        Ok(results
+            .into_iter()
+            .map(|(_, expert_id, role, advice)| (expert_id, role, advice))
+            .collect())
     }
 
     fn mark_usage_incomplete(&mut self) {
