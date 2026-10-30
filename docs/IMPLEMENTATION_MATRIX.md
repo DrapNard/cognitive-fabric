@@ -7901,21 +7901,21 @@ live inference or model operations were run.
 
 **Implemented; runtime unverified.** `src/agent/collective.rs` builds a bounded
 catalog from client-provided `x-cgf-capabilities` schema annotations and selects
-a single tool only on a unique full capability match. A second bounded language
-call translates arguments for that fixed tool and must retain the original
-interpretation. Client metadata grants no permissions; schema validation and
+a single tool only on a unique full capability match. The opening bounded
+language response can include its argument map, eliminating the follow-up
+translation call. Client metadata grants no permissions; schema validation and
 execution approval remain client-owned. Ordinary clients without annotations,
 ambiguous routes, capability versions and general multi-step planning remain
 unsupported by this path. No tests or benchmarks were run.
 # Parallel capability-routed client proposals (2026-10-30)
 
 **Implemented; runtime unverified.** `src/agent/collective.rs` and
-`src/agent/typed_experts/translation.rs` can reserve and concurrently translate
-arguments for two to four independently declared, uniquely capability-routed
-client tools. Client parallel-call settings, configured group limits, task and
-provider resource budgets still apply. Independence and semantic fidelity are
-not verified; tool schema validation and execution remain client-owned. No
-tests or benchmarks were run.
+`src/agent/typed_experts/translation.rs` can propose two to four independently
+declared, uniquely capability-routed client tools together. The opening
+language response carries all selected arguments;
+Jev+ returns the eligible proposals together without per-tool model calls.
+Independence and semantic fidelity are not verified; tool schema validation and
+execution remain client-owned. No tests or benchmarks were run.
 # Operator-pinned client capability routes (2026-10-30)
 
 **Implemented; runtime unverified.** `src/config.rs`, `src/main.rs`, and
@@ -7936,10 +7936,10 @@ No tests or benchmarks were run.
 **Implemented; runtime unverified.** `src/agent/collective.rs` and
 `src/agent/reasoning_memory.rs` retain a task-bound structured sequence for
 uniquely capability-routed independent tools when the client forbids parallel
-calls. Each tool schema, description and strict flag is pinned and its arguments are translated only when its
-turn arrives, without exposing prior tool results to that translation. Client
-validation and execution authorization remain required. No tests or benchmarks
-were run.
+calls. Each tool schema, description, strict flag and opening-response arguments
+are pinned. Subsequent proposals use stored structured arguments and explicit
+bindings without another Qwen call. Client validation and execution authorization
+remain required. No tests or benchmarks were run.
 # Capacity-aware client proposal fallback (2026-10-30)
 
 **Implemented; runtime unverified.** `src/agent/collective.rs` can choose the
@@ -7967,9 +7967,10 @@ benchmarks were run.
 # Parallel independent roots in dependent client plans (2026-10-30)
 
 **Implemented; runtime unverified.** `src/agent/collective.rs` preserves
-dependency-ready waves and can translate multiple eligible root tool arguments
-concurrently when the user, operator and client all permit it. Dependents remain
-behind correlated client results; insufficient capacity selects serial execution
-before dispatch. `src/agent/typed_experts/translation.rs` parses the bounded
-user-independence signal. No tests, benchmarks or live inference were run;
-provider concurrency and translation quality are unverified.
+dependency-ready waves and can propose eligible independent root tools together
+when the user, operator and client all permit it. Dependents remain behind
+correlated client results. The opening language translation now supplies the
+bounded argument plan used by the root wave and later dependent proposals;
+`src/agent/typed_experts/translation.rs` parses this structured map. Task-memory
+bounds were increased to 24 KB to retain it. Client execution and translation
+quality are unverified. No tests, benchmarks or live inference were run.

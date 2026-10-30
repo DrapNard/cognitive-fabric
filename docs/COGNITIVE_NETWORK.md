@@ -2793,8 +2793,8 @@ In native-only mode, when no tool is explicitly selected and multiple tools are
 available, the language interface can translate the goal into advertised
 capability identifiers. Jev+ selects a tool only when exactly one annotated tool
 covers every required capability; ambiguity or version requirements do not select
-a tool. A second language call translates arguments for that fixed tool and must
-repeat the structured interpretation. Both calls use the original task budgets.
+a tool. The opening language response can include a bounded arguments map keyed
+by tool name, so the host does not need another argument-translation call.
 
 Client annotations and model interpretations are untrusted routing data, not
 permissions or evidence of semantic correctness. The client still validates its
@@ -2806,11 +2806,11 @@ translation fidelity remain unverified.
 
 In native-only mode, an explicitly independent request may translate into multiple
 client tool proposals when every requested capability maps to exactly one tool,
-each selected client schema or operator-pinned route declares independence, the interpretation
-declares `client_tools_independent: true`, and the client allows parallel calls.
-The complete translation wave is reserved before dispatch, respects configured
-task and concurrency limits, and settles started calls before returning. Each
-language call translates arguments for a fixed tool; no reasoning model is used.
+each selected client schema or operator-pinned route declares independence, the
+interpretation declares `client_tools_independent: true`, and the client allows
+parallel calls. One bounded language-interface response translates all selected
+arguments. Jev+ checks the selected names and returns the proposals together; it
+does not call a reasoning model for this routing path.
 
 Both independence declarations and translated arguments are untrusted and do
 not prove the operations are semantically independent. Client schema validation,
@@ -2854,11 +2854,10 @@ When the client sets `parallel_tool_calls: false`, native-only mode can retain a
 bounded structured sequence of two to four independently declared tools whose
 capabilities each have a unique match. The sequence pins the interpretation,
 tool names, schema and description hashes, and strict flags in task-bound
-structured memory. Each next tool is
-proposed only after correlated prior results arrive; its arguments are translated
-for the already selected tool. Prior client tool results are withheld from that
-translation because the operations were declared independent. Final presentation
-can use the bounded untrusted results after the sequence completes.
+structured memory, including opening-response arguments. Each next tool is
+proposed only after correlated prior results arrive. No additional language call
+is needed for these pretranslated independent operations. Final presentation can
+use bounded untrusted results after the sequence completes.
 
 The client still validates schemas, authorizes and executes tools. The independent
 declarations and model translation remain unverified; metadata hashes do not attest
@@ -2868,14 +2867,13 @@ unverified.
 
 # Capacity-aware client proposal fallback (2026-10-30)
 
-For uniquely routed independent client tools, native-only mode can use the same
-bounded sequence when configured concurrency or the resource admission snapshot
-cannot admit the full parallel translation wave, even if the client permits
-parallel calls. Selection happens before the wave is reserved or dispatched;
-started provider calls are never retried as a fallback. Sequence limits, pinned
-tool metadata, untrusted independence declarations and client execution
-authority remain unchanged. Resource admission does not prove physical provider
-parallelism. No tests, benchmarks or live inference ran; behavior is unverified.
+The earlier capacity fallback used a serial sequence when a separate argument
+translation wave could not be admitted. That extra inference wave has been
+removed: selected tool arguments now come from the opening interface response.
+When the client forbids parallel calls, CGF retains the structured plan and
+proposes one tool per correlated result checkpoint. The client still validates,
+authorizes and executes every proposal. No tests, benchmarks or live inference
+ran; runtime behavior is unverified.
 # Operator-declared dependent client tools (2026-10-30)
 
 An operator-pinned client tool route may declare predecessor tool names with
@@ -2884,25 +2882,23 @@ for example `{"source_tool":"read","source_pointer":"/value","target_pointer":"/
 Each binding source must be a declared predecessor. In native-only mode, Jev+
 can select two to four uniquely capability-routed, operator-pinned tools and
 order them by these dependencies. Every predecessor must already be included in
-the interpreted task; missing predecessors and cycles fail closed. The resulting
-task-bound sequence pins tool metadata and bindings, and executes serially as
-client-owned proposals under the original budgets.
-
-The language interface translates each fixed tool's non-bound arguments while
-prior client results are withheld. The host then copies only explicit bounded
-JSON selections into existing argument placeholders, with hash-only audit data.
+the interpreted task; missing predecessors and cycles fail closed. The opening
+language response supplies a bounded structured argument plan for the complete
+selected sequence. The task-bound sequence pins that plan, tool metadata and
+bindings. The host later copies only explicit bounded JSON selections into
+existing argument placeholders, with hash-only audit data.
 Client-reported results remain untrusted and can affect sensitive arguments;
 the client must validate schemas, review and authorize execution. Ordering alone
 does not establish success or verify the user's intent. This is not general
-automatic planning, and independent roots of a dependent graph are not yet run in
-parallel. No tests, benchmarks or live inference ran; runtime and continuation
-behavior are unverified.
+automatic planning. Independent roots can be proposed together when their
+operator routes and the user's request permit it. No tests, benchmarks or live
+inference ran; runtime and continuation behavior are unverified.
 # Conditions for operator-declared client dependencies (2026-10-30)
 
 `configure-client-tool` accepts up to four repeated `--condition` JSON objects,
 such as `{"source_tool":"read","source_pointer":"/ok","equals":true}`.
-The source must also be declared with `--after`. Before translating or proposing
-that tool, the native sequence compares each bounded JSON selection from the
+The source must also be declared with `--after`. Before proposing that tool, the
+native sequence compares each bounded JSON selection from the
 correlated earlier client result with the declared value. A mismatch stops the
 sequence; malformed or missing data fails closed. The condition and its result are
 task-bound, and audit events contain hashes rather than the selected data.
@@ -2914,16 +2910,18 @@ or live inference ran; runtime and continuation behavior are unverified.
 
 # Parallel independent roots in dependent client plans (2026-10-30)
 
-When a capability-selected dependent plan has multiple operator-pinned root
-tools, the language interface may translate their arguments concurrently if the
-operator marked every root independent, the user explicitly stated that the
-roots can run concurrently, the client permits parallel calls, and configured
-task and inference capacity admits the complete wave. Root proposals are
-returned together. Tools that depend on their results remain behind the
-correlated client response checkpoint. If the wave does not fit, CGF falls back
-to the existing serial sequence before dispatch.
+When a capability-selected client plan uses the native-only route, the opening
+language-interface response can translate arguments for the entire bounded
+operator-declared dependency graph in one structured map. Jev+ still chooses
+the exact tools by a unique capability match and pins their schema digests,
+dependencies, bindings and conditions. Independent roots are proposed together
+only when the user, operator and client all permit it. Dependent tools remain
+behind correlated result checkpoints; Rust applies stored argument plans and
+explicit bindings without another Qwen call.
 
 Only root operations without bindings or result conditions are eligible. The
 declaration and translated arguments remain unverified; the client owns schema
-validation, authorization and execution. Provider-level concurrency and latency
-remain unverified. No tests, benchmarks or live inference ran.
+validation, authorization and execution. Arguments remain bounded structured
+task memory until proposed. This reduces language calls; actual client execution
+concurrency and latency remain unverified. No tests, benchmarks or live inference
+ran.

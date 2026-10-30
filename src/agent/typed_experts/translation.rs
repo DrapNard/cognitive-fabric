@@ -99,6 +99,8 @@ constraints.solve: {"capability":"constraints.solve","arguments":{"variables":[{
 pub(in crate::agent) struct Parsed {
     pub(in crate::agent) interpretation: language::Interpretation,
     pub(in crate::agent) client_tool_arguments: Option<Value>,
+    pub(in crate::agent) client_tool_arguments_by_name:
+        Option<std::collections::BTreeMap<String, Value>>,
     pub(in crate::agent) client_tools_independent: bool,
     pub(in crate::agent) client_root_tools_independent: bool,
     pub(in crate::agent) typed_goal: Option<Translation>,
@@ -204,6 +206,31 @@ impl Parsed {
             None | Some(Value::Null) => None,
             Some(value) if value.is_object() => Some(value),
             Some(_) => bail!("Client tool arguments must be an object"),
+        };
+        let client_tool_arguments_by_name = match object.remove("client_tool_arguments_by_name") {
+            None | Some(Value::Null) => None,
+            Some(Value::Object(values)) if values.len() <= 4 => {
+                let mut parsed = std::collections::BTreeMap::new();
+                let mut total_bytes = 0usize;
+                for (name, arguments) in values {
+                    if name.is_empty()
+                        || name.len() > 64
+                        || !name
+                            .bytes()
+                            .all(|byte| byte.is_ascii_alphanumeric() || b"_-".contains(&byte))
+                        || !arguments.is_object()
+                    {
+                        bail!("Client argument plan contains an invalid tool or argument object")
+                    }
+                    total_bytes = total_bytes.saturating_add(serde_json::to_vec(&arguments)?.len());
+                    if total_bytes > MAX_TRANSLATION_BYTES {
+                        bail!("Client argument plan exceeds its byte bound")
+                    }
+                    parsed.insert(name, arguments);
+                }
+                Some(parsed)
+            }
+            Some(_) => bail!("Client argument plan must be an object with at most four tools"),
         };
         let client_tools_independent = match object.remove("client_tools_independent") {
             None | Some(Value::Null) | Some(Value::Bool(false)) => false,
@@ -392,7 +419,10 @@ impl Parsed {
         let typed_graph = graph_value
             .map(|value| super::graph_translation::parse(value, &interpretation, typed_evidence))
             .transpose()?;
-        if client_tool_arguments.is_some()
+        if client_tool_arguments.is_some() && client_tool_arguments_by_name.is_some() {
+            bail!("Client tool arguments must use either a single-tool or named-plan field")
+        }
+        if (client_tool_arguments.is_some() || client_tool_arguments_by_name.is_some())
             && (interpretation.clarification.is_some()
                 || typed_goal.is_some()
                 || typed_batch.is_some()
@@ -471,6 +501,7 @@ impl Parsed {
         Ok(Self {
             interpretation,
             client_tool_arguments,
+            client_tool_arguments_by_name,
             client_tools_independent,
             client_root_tools_independent,
             typed_goal,

@@ -252,7 +252,7 @@ fn sanitize_agent_snapshot(raw: &str, expected_checksum: &str) -> Option<(String
             })
         })
         || object.get("references")?.as_str()?.len() > 8000
-        || object.get("advice")?.as_str()?.len() > 2000
+        || object.get("advice")?.as_str()?.len() > 24_000
         || pending.len() > 16
         || serde_json::to_vec(object.get("reference_pins")?)
             .ok()?

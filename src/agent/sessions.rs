@@ -873,7 +873,7 @@ impl State {
             || self.reserved > self.output_limit
             || self.prompt_bytes > self.input_limit
             || self.proposals > self.tool_limit
-            || self.advice.len() > 2000
+            || self.advice.len() > 24_000
             || self.typed_evidence.as_ref().is_some_and(|raw| {
                 raw.len() > 16_384
                     || self.typed_evidence_sha256.as_deref()
@@ -2911,7 +2911,7 @@ impl Lease {
             next.expert_advice = None;
             next.references.clear();
         }
-        if next.advice.len() > 2000 {
+        if next.advice.len() > 24_000 {
             bail!("Collective advice checkpoint exceeds bounds")
         }
         if waiting {

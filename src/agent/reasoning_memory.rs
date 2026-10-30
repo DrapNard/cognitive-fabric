@@ -1,4 +1,4 @@
-//! Small task-bound memory for planner, explorer, and reflector handoffs.
+//! Bounded task memory for client plans and planner, explorer, and reflector handoffs.
 //!
 //! Model conclusions stay structured and advisory. Raw legacy prose is replaced
 //! by a digest marker and never promoted into a claim or permission.
@@ -9,7 +9,7 @@ use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) const ROLE_BYTES: usize = 400;
-const MAX_MEMORY_BYTES: usize = 2_000;
+const MAX_MEMORY_BYTES: usize = 24_000;
 const FORMAT: &str = "cgf-reasoning-memory-v1";
 const FORMAT_PREFIX: &str = "cgf-reasoning-memory-";
 const TRUST: &str = "untrusted_model_advisory_never_permissions";
