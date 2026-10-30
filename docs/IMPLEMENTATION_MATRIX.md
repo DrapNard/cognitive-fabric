@@ -7734,11 +7734,19 @@ and performance have not been tested or benchmarked, as requested by the owner.
 now admit Jev-R Explorer in the same first wave as the planner and Jev+ workflow
 steps in Research mode when global concurrency is at least three. Other modes
 use that available slot for another independent expert step. The bounded portfolio is
-consumed before plan execution, its result is bound into format-version-3
+consumed before plan execution, its result is bound into format-version-4
 recovery records, and Research mode skips a redundant later Explorer call.
 Recovery for prior format versions remains supported. The scheduler awaits the
 whole admitted wave; provider execution can still queue or serialize. No tests,
 benchmarks or live inference were run.
+
+`src/reasoning.rs` also restores the ranked sequential Jev+ workflow fallback
+when the complete independent batch is refused before dispatch. It tries the
+next candidate only after a pre-admission refusal; a started or failed expert
+call is never retried through another route. The main whole-goal solver still
+waits for the advisory wave because it consumes that result. This path was
+compiled and linted but not exercised because tests and live inference were not
+run.
 # Scheduler refill fairness (2026-10-29)
 
 **Implemented; runtime unverified.** `src/agent/graph_schedule.rs` prioritizes

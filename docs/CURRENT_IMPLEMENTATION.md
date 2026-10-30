@@ -1,5 +1,15 @@
 # Current Rust implementation
 
+## Restore ranked experts after a pre-admission batch refusal — 2026-10-30
+
+**Implemented; runtime unverified.** `src/reasoning.rs` now falls back to the
+ranked single-workflow path when a complete independent Jev+ batch is refused
+before any call is dispatched. Only pre-admission refusals advance to another
+candidate; an admitted, failed or timed-out call is not retried. The existing
+Planner/advisory overlap and original task budgets remain. Static format,
+workspace/all-target compilation and strict Clippy checks pass; no tests,
+benchmarks or live inference ran.
+
 ## Free execution slots for shared-work waiters — 2026-10-29
 
 **Implemented; runtime unverified.** Coalesced expert steps wait as blocked

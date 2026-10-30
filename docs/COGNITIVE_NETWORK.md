@@ -1788,10 +1788,14 @@ remain active. Dropping the parent future drops locally owned pending futures;
 it does not prove a remote model stopped. Unknown effects retain existing gates.
 
 Parallel replies remain unverified advice, never permissions or independent
-proof. Ranked experts are still attempted sequentially. Coordinating independent
-experts with Jev-R roles, cross-task scheduling, model capacity-aware activation,
-continuous service recovery and client streaming remain broader network work.
-Concurrent calls on one backbone are not a measured speed improvement.
+proof. If the complete independent batch is refused before dispatch, Jev+ now
+tries the already-ranked experts sequentially while each remains unadmitted; a
+started, failed or timed-out call never triggers another attempt. The main
+whole-goal solver still starts after the planner/expert advisory work because
+it consumes their outputs. Cross-task scheduling, model capacity-aware
+activation, continuous service recovery and client streaming remain broader
+network work. Concurrent calls on one backbone are not a measured speed
+improvement.
 
 ## Schema-based project memory
 
@@ -2931,10 +2935,10 @@ ran.
 When an Engine planner/expert overlap runs in Research mode with global
 concurrency of at least three, the first admitted wave can also include Jev-R
 Explorer: planner, explorer and at least one Jev+ workflow step are prepared and dispatched together. In other modes the slot stays available for another
-independent Jev+ workflow step. The
-bounded explorer portfolio is accepted before plan execution and later informs
-the whole-goal solver. Its call, result hash, route role and prompt are pinned
-in format-version-3 overlap records; older overlap records retain their
+independent Jev+ workflow step. The bounded explorer portfolio is accepted
+before plan execution and later informs the whole-goal solver. Its call, result
+hash, route role and prompt are pinned in format-version-4 overlap records;
+format-version-3 and older overlap records retain their
 existing recovery contract. Research mode skips the later standalone explorer
 call when this wave already produced a portfolio. The scheduler still waits
 for every member of the admitted wave before running dependent expert steps or

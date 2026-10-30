@@ -2374,9 +2374,54 @@ impl Session {
             }
         };
         let Some(batch) = batch else {
-            // No call was reserved or dispatched. Continue through the existing
-            // planner path with the same ticket and deadline.
-            return self.planning_advice(base, ticket).await;
+            // Batch refusal happens before any expert dispatch. Preserve Jev+'s
+            // ranked fallback by trying only experts refused before admission;
+            // an admitted call, including a failed one, never triggers a retry.
+            self.store.event(
+                &self.task,
+                "expert_batch_fallback",
+                "jev-plus",
+                json!({
+                    "format_version":1,
+                    "policy":"ranked_pre_admission_fallback/v1",
+                    "candidate_count":request.candidates.len(),
+                    "reason":"Independent workflow batch was not admitted",
+                    "automatic_replay":false,
+                    "permissions_granted":false
+                }),
+            )?;
+            let mut sequential_advice = None;
+            for (manifest, model, _) in request.candidates {
+                let attempt = self
+                    .workflow_advice(manifest, request.query, request.context, *model)
+                    .await;
+                let attempt = match attempt {
+                    Ok(attempt) => attempt,
+                    Err(error) => {
+                        self.observe_advice(
+                            &ticket,
+                            if error.is::<InferenceTimeout>() {
+                                advice_guard::Outcome::TimedOut
+                            } else {
+                                advice_guard::Outcome::Failed
+                            },
+                        )?;
+                        return Err(error);
+                    }
+                };
+                match attempt {
+                    WorkflowAdvice::NotAdmitted => continue,
+                    WorkflowAdvice::Attempted(advice) => {
+                        sequential_advice = advice.map(|advice| (manifest.id.clone(), advice));
+                        break;
+                    }
+                }
+            }
+            let mut strategy = self.planning_advice(base, ticket).await?;
+            if let Some(advice) = sequential_advice {
+                strategy = combine_workflow_advice(&strategy, &serde_json::to_string(&[advice])?)?;
+            }
+            return Ok(strategy);
         };
         let result: Result<String> = async {
             // Publish the completed advisory result before any plan work can be
