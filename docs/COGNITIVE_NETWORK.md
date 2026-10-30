@@ -2774,3 +2774,14 @@ they can affect the client's tool arguments, including sensitive arguments. The
 client must validate schemas and authorize execution; this feature does not make
 tool results trustworthy or grant permissions. Missing or invalid data fails
 closed. No tests, benchmarks or live inference ran; behavior is unverified.
+
+# Integer comparisons in client tool conditions (2026-10-30)
+
+Explicit native-only tool conditions accept `op` values `eq`, `ne`, `lt`, `le`,
+`gt`, and `ge`; omitted `op` retains the previous exact JSON equality behavior.
+The comparison target remains the `equals` field. Ordered comparisons accept
+only JSON integers, compare signed and unsigned values exactly in a wide integer,
+and reject floating-point values instead of rounding them. A false condition
+stops the plan; malformed or unsupported input fails closed. Results are still
+untrusted client data, not proof of execution or permission. No tests,
+benchmarks or live inference ran; runtime behavior remains unverified.

@@ -90,7 +90,54 @@ struct ExplicitClientToolCondition {
     call_index: u32,
     #[serde(default)]
     pointer: String,
+    #[serde(default)]
+    op: ExplicitConditionOperator,
     equals: serde_json::Value,
+}
+
+#[derive(Clone, Copy, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum ExplicitConditionOperator {
+    #[default]
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+}
+
+fn condition_integer(value: &serde_json::Value) -> Option<i128> {
+    value
+        .as_i64()
+        .map(i128::from)
+        .or_else(|| value.as_u64().map(i128::from))
+}
+
+fn condition_matches(
+    condition: &ExplicitClientToolCondition,
+    value: &serde_json::Value,
+) -> Result<bool> {
+    use ExplicitConditionOperator::{Eq, Ge, Gt, Le, Lt, Ne};
+    match condition.op {
+        Eq => Ok(value == &condition.equals),
+        Ne => Ok(value != &condition.equals),
+        op => {
+            let actual = condition_integer(value).ok_or_else(|| {
+                anyhow::anyhow!("Ordered client condition requires an integer result")
+            })?;
+            let expected = condition_integer(&condition.equals).ok_or_else(|| {
+                anyhow::anyhow!("Ordered client condition requires an integer threshold")
+            })?;
+            Ok(match op {
+                Lt => actual < expected,
+                Le => actual <= expected,
+                Gt => actual > expected,
+                Ge => actual >= expected,
+                Eq | Ne => unreachable!("handled above"),
+            })
+        }
+    }
 }
 
 enum ExplicitToolProgress {
@@ -207,6 +254,16 @@ fn explicit_client_tool_request(
             {
                 bail!("Client tool condition is outside an earlier round or exceeds its bound")
             }
+            if matches!(
+                condition.op,
+                ExplicitConditionOperator::Lt
+                    | ExplicitConditionOperator::Le
+                    | ExplicitConditionOperator::Gt
+                    | ExplicitConditionOperator::Ge
+            ) && condition_integer(&condition.equals).is_none()
+            {
+                bail!("Ordered client condition threshold must be an integer")
+            }
             super::typed_experts::validate_source_pointer(&condition.pointer)?;
         }
         let mut binding_count = 0usize;
@@ -270,7 +327,7 @@ fn explicit_client_tool_request(
                 .ok_or_else(|| anyhow::anyhow!("Client tool condition result is missing"))?;
             let selected = super::typed_experts::select_raw_output(result, &condition.pointer)?;
             let value = crate::strict_json::value(selected.as_bytes(), 16_384)?;
-            if value != condition.equals {
+            if !condition_matches(condition, &value)? {
                 return Ok(ExplicitToolProgress::ConditionNotMet);
             }
         }

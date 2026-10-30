@@ -7840,6 +7840,13 @@ proposal through the existing checkpoint. The client must validate its schema
 and authorize execution. The language output and tool results remain untrusted;
 automatic choice among multiple tools and multi-step planning remain absent. No tests or
 benchmarks were run.
+
+# Integer client condition comparisons (2026-10-30)
+
+**Implemented; runtime unverified.** `src/agent/collective.rs` supports exact
+equality and inequality plus ordered integer comparisons in explicit tool-plan
+conditions. Ordered comparisons reject non-integers and do not grant authority
+to client results. No tests or benchmarks were run.
 # Sole-tool client translation (2026-10-29)
 
 **Implemented; runtime unverified.** `src/agent/collective.rs` allows the
