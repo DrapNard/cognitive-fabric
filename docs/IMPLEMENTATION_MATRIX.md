@@ -6,12 +6,16 @@
 `jev_r_only` state when `Config::language_network` replaces a compiled-only
 profile with model-assisted Jev-R role routes. This allows the CLI to switch a
 persisted local config without hand-editing it. The installed profile now keeps
-`qwen/qwen3-8b` on language duties and assigns existing local Qwen model IDs to
-Jev-R roles. A stale global `none` reasoning-effort override was cleared;
-language roles still force `none`, and Jev-R uses the provider default. LM
-Studio is stopped; IDs were matched to local model files but provider
-discovery/activation was not verified. No tests or benchmarks ran. Jev+
-workflow expert models remain a separate registry/manifest requirement.
+`qwen/qwen3-8b` on language duties and shares `qwen3.6-35b-a3b` across Jev-R
+roles and the Jev+ `rust.s1@1.0.0` workflow. A stale global `none`
+reasoning-effort override was cleared; language roles still force `none`, and
+Jev-R uses the provider default. LM Studio is stopped; IDs were matched to local
+model files but provider discovery/activation was not verified. The workflow is
+registered and active, bound to `local.qwen36.35b@1.0.0`; its output remains
+unverified advice. This establishes one on-demand Jev+ model route, not a
+complete domain expert network. `examples/qwen_network_native_policy.json`
+declares first-use loading for Qwen and the shared Jev-R/Jev+ model, but remains
+unapproved and unapplied. No tests or benchmarks ran.
 
 ## Qwen language boundary and no-reasoning-model Jev-R mode — 2026-10-31
 

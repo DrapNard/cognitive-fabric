@@ -5,14 +5,20 @@
 **Implemented; runtime unverified.** `Config::language_network` now clears the
 persisted `jev_r_only` flag when replacing a compiled-only setup with explicit
 model-assisted role routing. This allows operators to move from compiled Jev-R
-to Jev-R role models without manually editing `config.json`. The local install
-is configured with `qwen/qwen3-8b` for language duties, `qwen3.6-35b-a3b` for
-planning/solving/reflection, and `qwen3.8-27b-uncensored@q4_k_m` for
-exploration/critique. The inherited global `reasoning_effort: none` override was
+to Jev-R role models without manually editing `config.json`. Both the CLI and
+OpenCode state directories now
+route `qwen/qwen3-8b` to language roles and share `qwen3.6-35b-a3b` across all
+Jev-R reasoning roles. That same Qwen3.6 connection is bound to the `rust.s1`
+Jev+ workflow. The inherited global `reasoning_effort: none` override was
 cleared; language roles still force `none`, while Jev-R roles use the provider
-default. LM Studio is stopped, so provider IDs, activation and inference remain
-unverified. No tests or benchmarks ran. Jev+ model-backed workflow experts
-still require separately registered expert manifests/models.
+default. LM Studio is stopped, so provider activation and inference remain
+unverified. No tests or benchmarks ran. Additional Jev+ model-backed workflow
+experts require separately registered expert manifests/models. A first
+model-backed Jev+ Rust workflow is now registered and active on `rust.s1`,
+bound to `local.qwen36.35b@1.0.0`; it provides unverified advisory only. The
+registry metadata and skill activation are installed in both the CLI and
+OpenCode state directories. The checked-in policy example enables first-use
+loading for the two configured keys, but has not been applied or exercised.
 
 ## Configure Qwen as language interface with model-free Jev-R — 2026-10-31
 

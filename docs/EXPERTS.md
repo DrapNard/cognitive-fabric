@@ -135,6 +135,21 @@ Other bound-provider errors fail the task because their serialized error cannot
 safely distinguish availability problems from policy, audit or integrity failures. Advice never becomes verification evidence.
 Health reports registration availability, not endpoint readiness or model quality.
 
+The repository includes a concrete local Rust expert binding:
+`examples/qwen36_model_manifest.json` registers the local Qwen3.6 connection,
+and `examples/rust_qwen36_workflow_manifest.json` binds it to `rust.s1` as
+unverified review advice. A selected Rust workflow invokes the model only after
+admission; managed first-use weight loading additionally requires an approved
+native lifecycle policy. Manifest registration does not load weights or prove
+that the local provider serves the declared key. The same Qwen3.6 model is
+shared with Jev-R roles to reduce resident weight copies.
+
+```sh
+cogfabric model-register examples/qwen36_model_manifest.json
+cogfabric skill-register examples/rust_qwen36_workflow_manifest.json
+cogfabric skill-activate rust.s1 1.0.0
+```
+
 With managed inference enabled, a bound expert owns a separate authenticated
 worker using the same task identity and limits. The main and expert workers are
 closed and reaped at task termination; cleanup allows up to four seconds per

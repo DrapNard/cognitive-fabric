@@ -28,8 +28,15 @@ Optional repeated `--model-context MODEL_KEY=NUMBER` and
 Use exact configured or `--extra-model` keys; ensure each context is large
 enough for the requests sent to that route.
 
+This repository includes `examples/qwen_network_native_policy.json` for its
+current OpenCode workspace: Qwen3-8B is allowed a 32K language context and the
+shared Qwen3.6 Jev-R/Jev+ backbone a 16K context. It is an unapproved policy
+example, not a model inventory or memory-fit guarantee. It keeps admitted models
+resident after first use to avoid reload delays. The local machine currently has
+no working NVIDIA driver and limited available RAM for these model weights.
+
 ```sh
-export COGFABRIC_NATIVE_POLICY=/absolute/path/to/reviewed-policy.json
+export COGFABRIC_NATIVE_POLICY=/absolute/path/to/cognitive-fabric/examples/qwen_network_native_policy.json
 export COGFABRIC_NATIVE_ACTIVATION_APPROVED=1
 export COGFABRIC_NATIVE_MODEL_KEY_EVIDENCE_APPROVED=1
 cogfabric-opencode
