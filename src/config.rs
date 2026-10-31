@@ -75,6 +75,10 @@ pub struct Config {
     /// workflow experts. Omission preserves sequential fallback behavior.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub expert_parallelism: Option<usize>,
+    /// Shared Jev-R plus Jev+ inference ceiling pinned by language-network
+    /// setup. Omission retains the legacy maximum-of-group-widths behavior.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shared_inference_parallelism: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub advice_guard: Option<crate::reasoning::advice_guard::Settings>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -136,6 +140,7 @@ impl Default for Config {
             subtask_scheduling: None,
             subtask_parallelism: None,
             expert_parallelism: None,
+            shared_inference_parallelism: None,
             advice_guard: None,
             progress_stopping: None,
             finite_search: None,
@@ -221,6 +226,8 @@ impl Config {
         configured.jev_r_only = false;
         configured.subtask_parallelism = Some(parallelism);
         configured.expert_parallelism = Some(expert_parallelism);
+        configured.shared_inference_parallelism =
+            Some(parallelism.saturating_add(expert_parallelism).min(4));
         configured.validate()?;
         Ok(configured)
     }
@@ -322,10 +329,13 @@ impl Config {
         }
     }
 
-    /// Total inference width shared by Jev-R and Jev+ work. Each subsystem
-    /// retains its own cap; the host broker uses the larger configured group
-    /// limit as the shared ceiling.
+    /// Total inference width shared by Jev-R and Jev+ work. New language-network
+    /// configurations pin a capped sum of group widths; older configurations
+    /// without this field retain their historical maximum-width behavior.
     pub fn inference_concurrency(&self) -> usize {
+        if let Some(capacity) = self.shared_inference_parallelism {
+            return capacity;
+        }
         let reasoning = self
             .subtask_parallelism
             .filter(|cap| (2..=4).contains(cap))
@@ -415,6 +425,12 @@ impl Config {
             .is_some_and(|parallelism| !(1..=4).contains(&parallelism))
         {
             bail!("Expert parallelism must be between 1 and 4")
+        }
+        if self
+            .shared_inference_parallelism
+            .is_some_and(|capacity| !(1..=4).contains(&capacity))
+        {
+            bail!("Shared inference parallelism must be between 1 and 4")
         }
         if self
             .reasoning_effort

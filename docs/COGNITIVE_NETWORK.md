@@ -24,10 +24,14 @@ inference ran.
 ## Enforce one Engine-wide inference width across reasoning and expert brokers — 2026-10-31
 
 **Implemented; runtime unverified.** `Engine` now owns a shared semaphore sized
-from `Config::inference_concurrency`. The pinned inference route and separately
-constructed task-local Jev+ expert brokers acquire from that same gate, so their
-combined active Rust inference requests stay within the configured one-to-four
-call limit. Shared-gate waiting is added to the queue-wait metric. The service
+from `Config::inference_concurrency`. New language-network configurations pin a
+shared ceiling equal to the Jev-R subtask width plus the Jev+ expert width,
+capped at four. The pinned inference route and separately constructed task-local
+Jev+ expert brokers acquire from that same gate, so both groups can use their
+configured widths concurrently within the total limit. Existing configurations
+without the new field retain the historical maximum-of-widths behavior, and
+recorded overlap formats 1-4 retain their original capacity interpretation.
+Shared-gate waiting is added to the queue-wait metric. The service
 can also admit separate root Ask tasks up to that same shared width, with
 task-specific cancellation; excess connections receive a bounded busy response.
 This is an admission bound, not proof that a provider stops work when a future

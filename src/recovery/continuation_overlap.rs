@@ -138,7 +138,7 @@ pub(super) fn validate(
     let format_version = intent["format_version"].as_u64().unwrap_or(0);
     if intent_source != "jev-plus"
         || completion_source != "jev-plus"
-        || !matches!(format_version, 1..=4)
+        || !matches!(format_version, 1..=5)
         || completion["format_version"] != format_version
         || completion["overlap_id"] != overlap_id
         || intent["objective_sha256"] != objective_hash
@@ -229,7 +229,7 @@ pub(super) fn validate(
     }
     let has_explorer = match format_version {
         3 => true,
-        4 => intent["explorer_prompt_sha256"].as_str().is_some(),
+        4 | 5 => intent["explorer_prompt_sha256"].as_str().is_some(),
         _ => false,
     };
     let mut reasoning_context_statement = db.prepare(
@@ -281,8 +281,13 @@ pub(super) fn validate(
             .filter(|capacity| (1..=4).contains(capacity))
             .unwrap_or(default)
     };
-    let expected_global_capacity = configured_capacity(saved_config.subtask_parallelism, 1)
+    let legacy_global_capacity = configured_capacity(saved_config.subtask_parallelism, 1)
         .max(configured_capacity(saved_config.expert_parallelism, 2));
+    let expected_global_capacity = if format_version >= 5 {
+        saved_config.inference_concurrency()
+    } else {
+        legacy_global_capacity
+    };
     let expected_expert_capacity = configured_capacity(saved_config.expert_parallelism, 2);
     let expected_first_wave_capacity =
         expected_global_capacity.saturating_sub(1 + usize::from(has_explorer));

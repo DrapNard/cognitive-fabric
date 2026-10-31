@@ -1,5 +1,17 @@
 # Current Rust implementation
 
+## Let Jev-R and Jev+ use their bounded widths together — 2026-10-31
+
+**Implemented; compile-checked, runtime unverified.** New model-assisted
+language-network profiles pin shared inference capacity to
+`min(4, subtask_parallelism + expert_parallelism)`. With the current 2+2 setup,
+the Engine-wide gate can admit four calls across Jev-R and Jev+ instead of
+sharing a width of two. Configurations without the new field retain the old
+maximum-width behavior. New planner/expert overlap records use format 5;
+recovery continues to validate formats 1-4 using their original capacity rule.
+Provider slots, model memory fit, physical overlap and latency remain
+unverified. No tests or benchmarks ran.
+
 ## Decouple Jev+ expert model from Jev-R models — 2026-10-31
 
 **Implemented; syntax-checked, runtime unverified.** Setup no longer requires

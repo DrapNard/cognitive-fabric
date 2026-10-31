@@ -1,5 +1,18 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Share up to four inference slots across configured Jev-R and Jev+ widths — 2026-10-31
+
+**Implemented; compile-checked, runtime unverified.** New model-assisted
+language-network profiles pin a shared inference cap of
+`min(4, subtask_parallelism + expert_parallelism)`, allowing a configured 2+2
+group to overlap within four total Rust dispatches. Legacy configurations
+without the field keep their original `max(subtask_parallelism,
+expert_parallelism)` behavior. New planner/expert overlap events use format 5;
+recovery retains the old capacity calculation for event formats 1-4. This
+expands the software admission ceiling only; provider slot limits, simultaneous
+model residency, GPU behavior, and speed remain unverified. No tests or
+benchmarks were run.
+
 ## Decouple Jev+ expert model from Jev-R models — 2026-10-31
 
 **Implemented; syntax-checked, runtime unverified.** The installer allows the
