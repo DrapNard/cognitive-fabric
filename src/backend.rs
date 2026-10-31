@@ -85,6 +85,38 @@ pub trait InferenceBackend: Send + Sync {
     ) -> Pin<Box<dyn Future<Output = Result<Generation>> + Send + 'a>> {
         self.generate(role, prompt, max_tokens)
     }
+    /// Generate under the Engine-wide inference ceiling. Adapters that perform
+    /// their own resource or provider-slot admission should override this and
+    /// acquire `shared_limit` only after those narrower waits have completed.
+    /// The default keeps ordinary backends bounded immediately before dispatch.
+    fn generate_for_with_shared_admission<'a>(
+        &'a self,
+        task: &'a str,
+        role: &'a str,
+        prompt: &'a str,
+        max_tokens: usize,
+        shared_limit: Option<Arc<tokio::sync::Semaphore>>,
+    ) -> Pin<Box<dyn Future<Output = Result<Generation>> + Send + 'a>> {
+        Box::pin(async move {
+            let wait_started = Instant::now();
+            let _permit = match shared_limit {
+                Some(limit) => Some(
+                    limit
+                        .acquire_owned()
+                        .await
+                        .map_err(|_| anyhow::anyhow!("Shared inference admission is closed"))?,
+                ),
+                None => None,
+            };
+            let wait_ms = wait_started.elapsed().as_secs_f64() * 1000.0;
+            let mut report = self.generate_for(task, role, prompt, max_tokens).await?;
+            if wait_ms > 0.0 {
+                let queue_wait_ms = report.queue_wait_ms.unwrap_or_default() + wait_ms;
+                report.queue_wait_ms = (queue_wait_ms <= 300_000.0).then_some(queue_wait_ms);
+            }
+            Ok(report)
+        })
+    }
     fn generate<'a>(
         &'a self,
         role: &'a str,

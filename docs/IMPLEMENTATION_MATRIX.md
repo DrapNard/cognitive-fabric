@@ -1,5 +1,21 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Acquire shared inference capacity at dispatch — 2026-10-31
+
+**Implemented; compile-checked, runtime unverified.** The Engine-wide inference
+permit now travels with a queued request and is acquired at its selected backend.
+Resource-scheduled backends wait for their allocation first; managed-native
+backends complete model activation and acquire the model-specific provider slot
+first. Ordinary backends acquire the shared permit immediately before generation.
+This prevents queued work, model activation, resource waits and managed provider
+slot waits from reserving global inference width. Queue wait accounting now adds
+module, shared-admission, provider-slot and resource-pool waits instead of
+overwriting earlier components. The total shared width remains bounded by the
+existing configuration; this does not prove LM Studio slots, physical parallel
+inference, simultaneous model residency, speed or GPU behavior. `cargo fmt
+--all` and `cargo check --workspace --all-targets` passed; no tests, benchmarks,
+model operations or live provider calls ran.
+
 ## Make domain model registration safe to rerun — 2026-10-31
 
 **Implemented; runtime unverified.** `scripts/setup.sh --domain-experts` now

@@ -889,6 +889,19 @@ impl InferenceBackend for LazyBackend {
     ) -> std::pin::Pin<
         Box<dyn std::future::Future<Output = Result<crate::backend::Generation>> + Send + 'a>,
     > {
+        self.generate_for_with_shared_admission(task, role, prompt, max_tokens, None)
+    }
+
+    fn generate_for_with_shared_admission<'a>(
+        &'a self,
+        task: &'a str,
+        role: &'a str,
+        prompt: &'a str,
+        max_tokens: usize,
+        shared_limit: Option<Arc<tokio::sync::Semaphore>>,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<crate::backend::Generation>> + Send + 'a>,
+    > {
         Box::pin(async move {
             let model = self.model_for(role)?;
             let activation_started = Instant::now();
@@ -911,6 +924,20 @@ impl InferenceBackend for LazyBackend {
             let _generation_guard = self.coordinator.generation_guard().await?;
             let mutation_wait_ms = mutation_wait_started.elapsed().as_secs_f64() * 1000.0;
             self.coordinator.ensure_generation_allowed()?;
+            // Activation and the model-specific provider slot are acquired
+            // before the Engine-wide permit. A busy model therefore cannot
+            // reserve global capacity while waiting for its own slot.
+            let shared_wait_started = Instant::now();
+            let _shared_permit = match shared_limit {
+                Some(limit) => Some(
+                    limit
+                        .acquire_owned()
+                        .await
+                        .map_err(|_| anyhow::anyhow!("Shared inference admission is closed"))?,
+                ),
+                None => None,
+            };
+            let shared_wait_ms = shared_wait_started.elapsed().as_secs_f64() * 1000.0;
             let call_id = uuid::Uuid::new_v4().to_string();
             self.coordinator.store.event(
                 task,
@@ -924,6 +951,7 @@ impl InferenceBackend for LazyBackend {
                     "activation_wait_ms":(activation_wait_ms <= 300_000.0).then_some(activation_wait_ms),
                     "provider_slot_wait_ms":(prediction_slot_wait_ms <= 300_000.0).then_some(prediction_slot_wait_ms),
                     "lifecycle_mutation_wait_ms":(mutation_wait_ms <= 300_000.0).then_some(mutation_wait_ms),
+                    "shared_inference_wait_ms":(shared_wait_ms <= 300_000.0).then_some(shared_wait_ms),
                     "observed_provider_slots":binding.provider_prediction_slots,
                     "provider_concurrency_verified":false,
                     "dispatch_ready":true,
@@ -985,8 +1013,9 @@ impl InferenceBackend for LazyBackend {
                         return Err(audit_error);
                     }
                     call_guard.resolve();
-                    let queue_wait_ms =
-                        report.queue_wait_ms.unwrap_or(0.0) + prediction_slot_wait_ms;
+                    let queue_wait_ms = report.queue_wait_ms.unwrap_or(0.0)
+                        + prediction_slot_wait_ms
+                        + shared_wait_ms;
                     report.queue_wait_ms = (queue_wait_ms <= 300_000.0).then_some(queue_wait_ms);
                     Ok(report)
                 }

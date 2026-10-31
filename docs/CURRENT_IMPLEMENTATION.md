@@ -1,5 +1,20 @@
 # Current Rust implementation
 
+## Release shared inference capacity after route admission — 2026-10-31
+
+**Implemented; compile-checked, runtime unverified.** `src/backend.rs`,
+`src/fabric.rs`, `src/resource_scheduler/adapter.rs`, and
+`src/residency/lifecycle/lazy.rs` now pass the shared Engine admission limit to
+the selected backend. Queued module work no longer holds a global permit.
+Resource-scheduled calls acquire it after resource-pool admission, and managed
+native calls acquire it after activation and their per-model provider slot.
+Queue wait metrics retain and sum module, resource, provider-slot and shared
+admission waits. Existing total concurrency ceilings and cancellation/deadline
+handling remain in force. Provider capacity, live concurrent model execution,
+memory fit, GPU use and latency remain unverified. `cargo fmt --all` and
+`cargo check --workspace --all-targets` passed; no tests, benchmarks, model
+operations or live provider calls ran.
+
 ## Keep identical registered experts during setup reruns — 2026-10-31
 
 **Implemented; runtime unverified.** With `--domain-experts`,

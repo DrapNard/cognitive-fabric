@@ -13,7 +13,7 @@ use std::{
         atomic::{AtomicUsize, Ordering},
         Arc, RwLock,
     },
-    time::{Duration, Instant},
+    time::Duration,
 };
 use tokio::{
     sync::{mpsc, oneshot, watch, OnceCell, Semaphore},
@@ -97,6 +97,7 @@ struct Work {
     bytes: Vec<u8>,
     identity: Header,
     backend: Option<Arc<dyn InferenceBackend>>,
+    shared_inference_limit: Option<Arc<Semaphore>>,
     reply: oneshot::Sender<Result<Vec<u8>>>,
 }
 struct Module {
@@ -258,7 +259,12 @@ async fn process_work(
         {
             bail!("Module identity or deadline mismatch")
         }
-        let Payload::Request { role, prompt, tokens } = packet.payload else {
+        let Payload::Request {
+            role,
+            prompt,
+            tokens,
+        } = packet.payload
+        else {
             bail!("Module expects an inference request")
         };
         if !descriptor.roles.contains(&role) || packet.header.sender != actor(&role)? {
@@ -274,19 +280,33 @@ async fn process_work(
             biased;
             _ = wait_for_shutdown(&mut shutdown) => return Err(anyhow!("Module broker shut down")),
             _ = work.reply.closed() => return Err(anyhow!("Module caller cancelled")),
-            result = tokio::time::timeout(remaining, backend.generate_for(&packet.header.task, &role, &prompt, tokens)) => result.map_err(|_| anyhow!("Module deadline exhausted"))?,
+            result = tokio::time::timeout(remaining, backend.generate_for_with_shared_admission(
+                &packet.header.task,
+                &role,
+                &prompt,
+                tokens,
+                work.shared_inference_limit.clone(),
+            )) => result.map_err(|_| anyhow!("Module deadline exhausted"))?,
         };
         let payload = match result {
-            Ok(report) if report.output_tokens.is_some_and(|count| count > tokens as u64) => {
+            Ok(report)
+                if report
+                    .output_tokens
+                    .is_some_and(|count| count > tokens as u64) =>
+            {
                 Payload::Error("Module exceeded output token budget".into())
             }
             Ok(mut report) => {
-                report.queue_wait_ms = Some(queue_wait_ms);
+                let queue_wait_ms = queue_wait_ms + report.queue_wait_ms.unwrap_or_default();
+                report.queue_wait_ms = (queue_wait_ms <= 300_000.0).then_some(queue_wait_ms);
                 Payload::Response(report)
             }
             Err(error) => Payload::Error(error.to_string().chars().take(250).collect()),
         };
-        encode(&Packet { header: packet.header, payload })
+        encode(&Packet {
+            header: packet.header,
+            payload,
+        })
     }
     .await;
     let _ = work.reply.send(result);
@@ -1098,6 +1118,27 @@ impl InferenceBackend for RestrictedRoutes {
                 .await
         })
     }
+    fn generate_for_with_shared_admission<'a>(
+        &'a self,
+        task: &'a str,
+        role: &'a str,
+        prompt: &'a str,
+        max_tokens: usize,
+        shared_limit: Option<Arc<Semaphore>>,
+    ) -> Pin<Box<dyn Future<Output = Result<Generation>> + Send + 'a>> {
+        Box::pin(async move {
+            let expected = self
+                .routes
+                .get(role)
+                .ok_or_else(|| anyhow!("Role is absent from the saved inference route map"))?;
+            if self.backend.inference_target(role)?.as_ref() != Some(expected) {
+                bail!("Saved inference target changed")
+            }
+            self.backend
+                .generate_for_with_shared_admission(task, role, prompt, max_tokens, shared_limit)
+                .await
+        })
+    }
 }
 
 impl InferenceBackend for Broker {
@@ -1140,6 +1181,24 @@ impl InferenceBackend for Broker {
                 bail!("Inference route token-admission capability changed before dispatch")
             }
             snapshot.generate_for(task, role, prompt, max_tokens).await
+        })
+    }
+    fn generate_for_with_shared_admission<'a>(
+        &'a self,
+        task: &'a str,
+        role: &'a str,
+        prompt: &'a str,
+        max_tokens: usize,
+        shared_limit: Option<Arc<Semaphore>>,
+    ) -> Pin<Box<dyn Future<Output = Result<Generation>> + Send + 'a>> {
+        Box::pin(async move {
+            let snapshot = self.snapshot()?;
+            if snapshot.input_token_admission() != self.input_token_admission() {
+                bail!("Inference route token-admission capability changed before dispatch")
+            }
+            snapshot
+                .generate_for_with_shared_admission(task, role, prompt, max_tokens, shared_limit)
+                .await
         })
     }
     fn modules(&self) -> Result<Vec<ModuleDescriptor>> {
@@ -1281,18 +1340,6 @@ impl InferenceBackend for Pinned {
             }
             let sender = actor(role)?;
             TaskPolicy::reasoning(task)?.authorize(task, sender, "llm.generate")?;
-            let shared_wait_started = Instant::now();
-            let _shared_permit = match &self.shared_inference_limit {
-                Some(limit) => Some(
-                    limit
-                        .clone()
-                        .acquire_owned()
-                        .await
-                        .map_err(|_| anyhow!("Shared inference admission is closed"))?,
-                ),
-                None => None,
-            };
-            let shared_wait_ms = shared_wait_started.elapsed().as_secs_f64() * 1000.0;
             let header = Header {
                 correlation: uuid::Uuid::new_v4().to_string(),
                 task: task.into(),
@@ -1323,6 +1370,7 @@ impl InferenceBackend for Pinned {
                         .route_backends
                         .as_ref()
                         .and_then(|backends| backends.get(role).cloned()),
+                    shared_inference_limit: self.shared_inference_limit.clone(),
                     reply,
                 })
                 .map_err(|_| anyhow!("Module queue busy or unavailable"))?;
@@ -1332,16 +1380,47 @@ impl InferenceBackend for Pinned {
                 bail!("Module response correlation mismatch")
             }
             match response.payload {
-                Payload::Response(mut report) => {
-                    if shared_wait_ms > 0.0 {
-                        report.queue_wait_ms =
-                            Some(report.queue_wait_ms.unwrap_or_default() + shared_wait_ms);
-                    }
-                    Ok(report)
-                }
+                Payload::Response(report) => Ok(report),
                 Payload::Error(error) => bail!("Module failed: {error}"),
                 _ => bail!("Unexpected module response"),
             }
+        })
+    }
+    fn generate_for_with_shared_admission<'a>(
+        &'a self,
+        task: &'a str,
+        role: &'a str,
+        prompt: &'a str,
+        max_tokens: usize,
+        shared_limit: Option<Arc<Semaphore>>,
+    ) -> Pin<Box<dyn Future<Output = Result<Generation>> + Send + 'a>> {
+        Box::pin(async move {
+            let module = self
+                .routes
+                .get(role)
+                .context("No registered module for inference role")?;
+            let selected_backend = self
+                .route_backends
+                .as_ref()
+                .and_then(|backends| backends.get(role))
+                .unwrap_or(&module.backend);
+            if selected_backend.input_token_admission() != self.input_token_admission() {
+                bail!("Pinned inference route token-admission capability changed before dispatch")
+            }
+            if *module.shutdown.borrow() || module.availability().unavailable() {
+                bail!("Pinned inference module is unavailable")
+            }
+            let sender = actor(role)?;
+            TaskPolicy::reasoning(task)?.authorize(task, sender, "llm.generate")?;
+            selected_backend
+                .generate_for_with_shared_admission(
+                    task,
+                    role,
+                    prompt,
+                    max_tokens,
+                    shared_limit.or_else(|| self.shared_inference_limit.clone()),
+                )
+                .await
         })
     }
 }

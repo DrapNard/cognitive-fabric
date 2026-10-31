@@ -649,6 +649,7 @@ async fn forged_identity_and_expired_work_never_reach_the_backend() {
                 bytes: encode(&packet).unwrap(),
                 identity,
                 backend: None,
+                shared_inference_limit: None,
                 reply,
             })
             .unwrap();
@@ -700,6 +701,7 @@ async fn bounded_queue_rejects_overflow_and_drops_cancelled_inference() {
             bytes: encode(&request(identity.clone())).unwrap(),
             identity,
             backend: None,
+            shared_inference_limit: None,
             reply,
         })
         .unwrap();
@@ -714,6 +716,7 @@ async fn bounded_queue_rejects_overflow_and_drops_cancelled_inference() {
                 bytes: encode(&request(identity.clone())).unwrap(),
                 identity,
                 backend: None,
+                shared_inference_limit: None,
                 reply,
             })
             .unwrap();
@@ -727,6 +730,7 @@ async fn bounded_queue_rejects_overflow_and_drops_cancelled_inference() {
             bytes: encode(&request(identity.clone())).unwrap(),
             identity,
             backend: None,
+            shared_inference_limit: None,
             reply
         })
         .is_err());

@@ -126,4 +126,59 @@ impl InferenceBackend for ScheduledBackend {
             Ok(report)
         })
     }
+    fn generate_for_with_shared_admission<'a>(
+        &'a self,
+        task: &'a str,
+        role: &'a str,
+        prompt: &'a str,
+        tokens: usize,
+        shared_limit: Option<Arc<tokio::sync::Semaphore>>,
+    ) -> Pin<Box<dyn Future<Output = Result<Generation>> + Send + 'a>> {
+        Box::pin(async move {
+            let actor = crate::fabric::protocol::actor(role)?;
+            security::TaskPolicy::reasoning(task)?.authorize(task, actor, "llm.generate")?;
+            if prompt.len() > 32_000 || !(1..=16_384).contains(&tokens) {
+                bail!("Inference request exceeds limits")
+            }
+            let backend = if self.use_working_profiles || !self.pool.residents.is_empty() {
+                self.pool.require_running(task)?;
+                self.backend.pin()?.unwrap_or_else(|| self.backend.clone())
+            } else {
+                self.backend.clone()
+            };
+            let generate = || {
+                backend.generate_for_with_shared_admission(
+                    task,
+                    role,
+                    prompt,
+                    tokens,
+                    shared_limit.clone(),
+                )
+            };
+            let (mut report, wait_ms) = if self.use_working_profiles {
+                self.pool
+                    .execute_profiled(
+                        task,
+                        role,
+                        self.allocation,
+                        || backend.inference_target(role),
+                        generate,
+                    )
+                    .await?
+            } else {
+                self.pool
+                    .execute(
+                        task,
+                        role,
+                        self.allocation,
+                        || backend.inference_target(role),
+                        generate,
+                    )
+                    .await?
+            };
+            let queue_wait_ms = report.queue_wait_ms.unwrap_or_default() + wait_ms;
+            report.queue_wait_ms = (queue_wait_ms <= 300_000.0).then_some(queue_wait_ms);
+            Ok(report)
+        })
+    }
 }
