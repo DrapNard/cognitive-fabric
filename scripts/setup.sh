@@ -44,8 +44,9 @@ The default prefix is $HOME/.local and the default source ref is develop/v1.0.
 Supplying --language-model with --reasoning-model configures Qwen as a
 language-only route and shares the selected reasoning backbone across Jev-R
 roles in the CLI and OpenCode state directories. --domain-experts additionally
-registers the included workflow manifests; by default they share the
-qwen3.6-35b-a3b reasoning model and standard LM Studio API base. An optional
+registers the included workflow manifests; by default their separately pinned
+expert model is qwen3.6-35b-a3b at the standard LM Studio API base. Jev-R may
+use a different --reasoning-model. An optional
 --domain-expert-manifest registers an exact operator-provided model manifest
 and binds new workflow versions to that model. Its API base must match
 --api-base, it must differ from the language-only model, and its declared
@@ -205,8 +206,8 @@ if [ "$jev_r_only" -eq 1 ] || [ -n "$language_model" ] || [ -n "$reasoning_model
         echo '--native-on-demand requires model-assisted routing with the standard loopback LM Studio API base.' >&2
         exit 2
     fi
-    if [ "$domain_experts" -eq 1 ] && { [ "$jev_r_only" -eq 1 ] || [ "$reasoning_model" != 'qwen3.6-35b-a3b' ] || [ "$api_base" != 'http://127.0.0.1:1234/v1' ]; }; then
-        echo '--domain-experts requires model-assisted routing with qwen3.6-35b-a3b at http://127.0.0.1:1234/v1.' >&2
+    if [ "$domain_experts" -eq 1 ] && { [ "$jev_r_only" -eq 1 ] || [ "$api_base" != 'http://127.0.0.1:1234/v1' ]; }; then
+        echo '--domain-experts requires model-assisted routing with the standard LM Studio API base.' >&2
         exit 2
     fi
     if { [ -n "$domain_expert_manifest" ] || [ -n "$domain_expert_workflow_version" ]; } && [ "$domain_experts" -ne 1 ]; then

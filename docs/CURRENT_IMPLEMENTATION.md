@@ -1,5 +1,14 @@
 # Current Rust implementation
 
+## Decouple Jev+ expert model from Jev-R models — 2026-10-31
+
+**Implemented; syntax-checked, runtime unverified.** Setup no longer requires
+the selected Jev-R model to be `qwen3.6-35b-a3b` when registering the built-in
+Jev+ workflows. Their manifest still pins that expert model independently;
+the standard loopback LM Studio endpoint remains required. Setup documentation
+now states that Jev-R role models can differ. No tests, benchmarks, model loads,
+or inference ran.
+
 ## Match on-demand language context to the configured interface — 2026-10-31
 
 **Implemented; syntax-checked, runtime unverified.** `scripts/setup.sh` accepts

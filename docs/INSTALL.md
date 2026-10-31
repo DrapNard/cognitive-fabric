@@ -81,9 +81,12 @@ For model-assisted Jev-R with Qwen reserved for language roles, pass both
 `--language-model MODEL_ID` and `--reasoning-model MODEL_ID`. Jev-R roles share
 the selected reasoning backbone. `--domain-experts` additionally registers
 prompt-routed workflows for the eight built-in skills; it currently requires
-model key `qwen3.6-35b-a3b` and the standard loopback LM Studio endpoint. These
-workflows are advisory, not independently trained or verified. Configuration is
-written to both CLI and OpenCode homes; model weights remain unloaded. Example:
+the built-in expert model `qwen3.6-35b-a3b` and the standard loopback LM Studio
+endpoint. This expert model is pinned separately from Jev-R, so the
+`--reasoning-model` and individual `--role-model` choices can use other models.
+These workflows are advisory, not independently trained or verified.
+Configuration is written to both CLI and OpenCode homes; model weights remain
+unloaded. Example:
 
 ```sh
 sh setup.sh --ref develop/v1.0 --prefix "$HOME/.local" --replace \

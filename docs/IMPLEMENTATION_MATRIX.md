@@ -1,5 +1,13 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Decouple Jev+ expert model from Jev-R models — 2026-10-31
+
+**Implemented; syntax-checked, runtime unverified.** The installer allows the
+built-in Jev+ workflows to keep their manifest-pinned `qwen3.6-35b-a3b` expert
+model while Jev-R uses its separately selected shared or per-role models. The
+standard loopback LM Studio endpoint remains required for these built-in
+workflows. No tests, benchmarks, model operations, or inference ran.
+
 ## Match on-demand language context to the configured interface — 2026-10-31
 
 **Implemented; syntax-checked, runtime unverified.** `scripts/setup.sh` supports
