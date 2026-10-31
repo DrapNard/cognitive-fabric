@@ -1,5 +1,15 @@
 # Current Rust implementation
 
+## Pin every Jev-R role to an explicit configured model — 2026-10-31
+
+**Implemented; compile-checked, runtime unverified.** `Config::language_network`
+now writes explicit model routes for planner, solver, explorer, critic, and
+reflector. Each route uses its own `ROLE=MODEL` override when supplied and
+otherwise pins the configured Jev-R model. The language model remains limited
+to interface and synthesizer roles by route validation. Configuration does not
+load weights; native lifecycle still activates configured models on demand.
+No tests or benchmarks ran.
+
 ## Structure Jev-R solver handoffs — 2026-10-31
 
 **Implemented; compile-checked, runtime unverified.** New solver-cycle

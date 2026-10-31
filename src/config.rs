@@ -174,7 +174,7 @@ impl Config {
         &self,
         language: String,
         reasoning: String,
-        overrides: BTreeMap<String, String>,
+        mut overrides: BTreeMap<String, String>,
         parallelism: usize,
         expert_parallelism: usize,
     ) -> Result<Self> {
@@ -203,9 +203,12 @@ impl Config {
                 temperature: self.temperature,
             },
         );
-        for (role, model) in overrides {
+        for role in ["planner", "solver", "explorer", "critic", "reflector"] {
+            let model = overrides
+                .remove(role)
+                .unwrap_or_else(|| configured.model.clone());
             configured.role_profiles.insert(
-                role,
+                role.to_owned(),
                 RoleProfile {
                     model,
                     temperature: self.temperature,

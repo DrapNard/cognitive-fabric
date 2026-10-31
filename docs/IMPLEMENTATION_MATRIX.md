@@ -1,5 +1,15 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Pin every Jev-R role to an explicit configured model — 2026-10-31
+
+**Implemented; compile-checked, runtime unverified.** `config.rs` now writes
+model profiles for planner, solver, explorer, critic, and reflector when a
+language network is configured. Per-role overrides remain independent; roles
+without overrides explicitly pin the selected Jev-R model. Existing route
+validation reserves the language-only model for interface and synthesizer.
+Model selection does not activate weights; lifecycle activation remains on
+demand. No tests, benchmarks, live inference, or model operations ran.
+
 ## Structure Jev-R handoff records and bind them to the objective — 2026-10-31
 
 **Implemented; compile-checked, runtime unverified.** New `ready_solver`
