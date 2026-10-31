@@ -9,14 +9,18 @@ ref=$default_ref
 replace=0
 nvml_gpu=0
 language_model=''
+reasoning_model=''
+api_base='http://127.0.0.1:1234/v1'
 jev_r_only=0
+domain_experts=0
 parallelism=2
 expert_parallelism=2
 
 usage() {
     cat <<'USAGE'
 Usage: setup.sh [--prefix PATH] [--ref GIT_REF_OR_COMMIT] [--replace] [--nvml-gpu]
-                [--language-model MODEL --jev-r-only]
+                [--language-model MODEL --reasoning-model MODEL | --jev-r-only]
+                [--api-base URL] [--domain-experts]
                 [--parallelism 1..4] [--expert-parallelism 1..4]
 
 Build and install cogfabric, cogfabric-chat, and cogfabric-server from source.
@@ -24,8 +28,14 @@ Also install the cogfabric-opencode startup helper.
 The default prefix is $HOME/.local and the default source ref is develop/v1.0.
 --replace allows replacing existing binaries with the same package version.
 --nvml-gpu builds the CLI and HTTP server with optional NVML observation support.
-Supplying --language-model with --jev-r-only configures the language interface
-and disables reasoning-role model calls after install. Width defaults are 2 and 2.
+Supplying --language-model with --reasoning-model configures Qwen as a
+language-only route and shares the selected reasoning backbone across Jev-R
+roles in the CLI and OpenCode state directories. --domain-experts additionally
+registers the included Qwen3.6-backed workflow manifests; it requires the
+repository's qwen3.6-35b-a3b model key and the standard LM Studio API base.
+Supplying --language-model with --jev-r-only instead disables reasoning-role
+model calls. Configuration and registration do not load models or run inference.
+Width defaults are 2 and 2.
 USAGE
 }
 
@@ -54,8 +64,22 @@ while [ "$#" -gt 0 ]; do
             language_model=$2
             shift 2
             ;;
+        --reasoning-model)
+            [ "$#" -ge 2 ] && [ -n "$2" ] || { echo 'Missing value for --reasoning-model.' >&2; exit 2; }
+            reasoning_model=$2
+            shift 2
+            ;;
+        --api-base)
+            [ "$#" -ge 2 ] && [ -n "$2" ] || { echo 'Missing value for --api-base.' >&2; exit 2; }
+            api_base=$2
+            shift 2
+            ;;
         --jev-r-only)
             jev_r_only=1
+            shift
+            ;;
+        --domain-experts)
+            domain_experts=1
             shift
             ;;
         --parallelism)
@@ -80,9 +104,21 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 
-if [ "$jev_r_only" -eq 1 ] || [ -n "$language_model" ]; then
-    if [ "$jev_r_only" -ne 1 ] || [ -z "$language_model" ]; then
-        echo 'Use --language-model MODEL together with --jev-r-only to configure the network.' >&2
+if [ "$jev_r_only" -eq 1 ] || [ -n "$language_model" ] || [ -n "$reasoning_model" ] || [ "$domain_experts" -eq 1 ]; then
+    if [ -z "$language_model" ]; then
+        echo 'A configured network requires --language-model MODEL.' >&2
+        exit 2
+    fi
+    if [ "$jev_r_only" -eq 1 ] && [ -n "$reasoning_model" ]; then
+        echo '--jev-r-only conflicts with --reasoning-model.' >&2
+        exit 2
+    fi
+    if [ "$jev_r_only" -ne 1 ] && [ -z "$reasoning_model" ]; then
+        echo 'Model-assisted routing requires --reasoning-model MODEL; use --jev-r-only for compiled solvers.' >&2
+        exit 2
+    fi
+    if [ "$domain_experts" -eq 1 ] && { [ "$jev_r_only" -eq 1 ] || [ "$reasoning_model" != 'qwen3.6-35b-a3b' ] || [ "$api_base" != 'http://127.0.0.1:1234/v1' ]; }; then
+        echo '--domain-experts requires model-assisted routing with qwen3.6-35b-a3b at http://127.0.0.1:1234/v1.' >&2
         exit 2
     fi
     case $parallelism in 1|2|3|4) ;; *) echo '--parallelism must be 1, 2, 3, or 4.' >&2; exit 2 ;; esac
@@ -180,12 +216,49 @@ else
     cargo install --locked --path "$source_dir/crates/cogfabric-server" --root "$prefix"
 fi
 
-if [ "$jev_r_only" -eq 1 ]; then
-    "$prefix/bin/cogfabric" configure-network \
-        --language-model "$language_model" \
-        --jev-r-only \
-        --parallelism "$parallelism" \
-        --expert-parallelism "$expert_parallelism"
+if [ -n "$language_model" ]; then
+    if [ "$jev_r_only" -eq 1 ]; then
+        "$prefix/bin/cogfabric" configure-network \
+            --language-model "$language_model" \
+            --jev-r-only \
+            --parallelism "$parallelism" \
+            --expert-parallelism "$expert_parallelism"
+    else
+        data_home=${XDG_DATA_HOME:-${HOME:?HOME must be set}/.local/share}
+        cli_home=${COGFABRIC_CLI_HOME:-$data_home/cogfabric-rust}
+        opencode_home=${COGFABRIC_HOME:-$data_home/cogfabric-http}
+        for config_home in "$cli_home" "$opencode_home"; do
+            "$prefix/bin/cogfabric" --home "$config_home" configure-network \
+                --language-model "$language_model" \
+                --reasoning-model "$reasoning_model" \
+                --parallelism "$parallelism" \
+                --expert-parallelism "$expert_parallelism"
+            "$prefix/bin/cogfabric" --home "$config_home" configure-local \
+                --model "$reasoning_model" \
+                --api-base "$api_base" \
+                --reasoning-effort default
+            if [ "$domain_experts" -eq 1 ]; then
+                "$prefix/bin/cogfabric" --home "$config_home" model-register \
+                    "$source_dir/examples/qwen36_model_manifest.json"
+                for expert in \
+                    'data.sql.s1:data_sql' \
+                    'git.s1:git' \
+                    'linux.s1:linux' \
+                    'reverse.s1:reverse' \
+                    'rust.s1:rust' \
+                    'security.s1:security' \
+                    'trainer.s1:trainer' \
+                    'unity.s1:unity'; do
+                    skill_id=${expert%%:*}
+                    manifest_name=${expert#*:}
+                    manifest_path="$source_dir/examples/${manifest_name}_qwen36_workflow_manifest.json"
+                    "$prefix/bin/cogfabric" --home "$config_home" skill-register "$manifest_path"
+                    "$prefix/bin/cogfabric" --home "$config_home" skill-activate "$skill_id" 1.0.0
+                done
+            fi
+        done
+    fi
+    echo 'Network configuration saved. Models were not loaded and no inference was run.'
 fi
 
 helper_tmp=$(mktemp "$prefix/bin/.cogfabric-opencode.XXXXXX")

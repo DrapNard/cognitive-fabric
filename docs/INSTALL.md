@@ -70,9 +70,25 @@ or dispatched in this mode. The language model supplies routing metadata; it
 does not yet translate arbitrary requests into solver input formats. Optional
 `--parallelism 1..4` and `--expert-parallelism 1..4` set the bounded reasoning
 and expert widths (both default to 2). These are exact provider model IDs; setup
-records the language route but does not contact LM Studio or load model weights. The
-default prefix is `$HOME/.local`; add its `bin` directory
-to `PATH` if needed. Existing `cogfabric`, `cogfabric-chat`, or
+records the language route but does not contact LM Studio or load model weights.
+
+For model-assisted Jev-R with Qwen reserved for language roles, pass both
+`--language-model MODEL_ID` and `--reasoning-model MODEL_ID`. Jev-R roles share
+the selected reasoning backbone. `--domain-experts` additionally registers
+prompt-routed workflows for the eight built-in skills; it currently requires
+model key `qwen3.6-35b-a3b` and the standard loopback LM Studio endpoint. These
+workflows are advisory, not independently trained or verified. Configuration is
+written to both CLI and OpenCode homes; model weights remain unloaded. Example:
+
+```sh
+sh setup.sh --ref develop/v1.0 --prefix "$HOME/.local" --replace \
+  --language-model qwen/qwen3-8b \
+  --reasoning-model qwen3.6-35b-a3b \
+  --domain-experts --parallelism 2 --expert-parallelism 2
+```
+
+The default prefix is `$HOME/.local`; add its `bin` directory to `PATH` if
+needed. Existing `cogfabric`, `cogfabric-chat`, or
 `cogfabric-server` binaries in that prefix cause the script to stop. The installer also adds `cogfabric-opencode`,
 a startup helper for the local API and OpenCode (requires Bash, jq, curl, GNU
 timeout and OpenSSL at runtime; OpenCode is installed separately). See

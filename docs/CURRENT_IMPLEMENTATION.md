@@ -1491,7 +1491,10 @@ No general release-readiness or performance claim follows.
 **Implemented; live installation/chat verification deferred.** `scripts/setup.sh`
 builds the main CLI, `cogfabric-chat` and HTTP server from a selected source ref
 with locked dependencies, no sudo and an explicit replacement flag. It preserves
-runtime state and supports optional NVML observation. README and
+runtime state and supports optional NVML observation. It now configures either
+compiled-only or model-assisted Jev-R; model-assisted setup writes both CLI and
+OpenCode homes and can register the eight shared-Qwen3.6 workflow manifests.
+Registration and activation do not load model weights. README and
 [installation guide](INSTALL.md) document curl download, review and revision
 pinning. This is a source installer, not a published binary release.
 

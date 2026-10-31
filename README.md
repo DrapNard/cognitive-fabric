@@ -58,6 +58,21 @@ solvers, pass `--language-model MODEL_ID --jev-r-only` to `setup.sh`. The
 language route is written to the local config after the binaries install; the
 installer does not load models.
 
+To configure Qwen as the language interface, share a local reasoning backbone
+across Jev-R roles, and register the included Jev+ domain workflows, use the
+model-assisted installer options:
+
+```sh
+sh setup.sh --ref develop/v1.0 --prefix "$HOME/.local" --replace \
+  --language-model qwen/qwen3-8b \
+  --reasoning-model qwen3.6-35b-a3b \
+  --domain-experts --parallelism 2 --expert-parallelism 2
+```
+
+The `--domain-experts` examples are prompt-routed workflows on the shared model,
+not separately trained or verified experts. This configures both the CLI and
+OpenCode homes; it does not start LM Studio, load weights, or run inference.
+
 ### Chat alongside an agentic client
 
 Use `cogfabric-chat` for text-only conversation while OpenCode or another agentic
