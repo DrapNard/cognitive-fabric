@@ -121,10 +121,12 @@ reply rather than queueing. No tests, benchmarks, or live inference ran.
 `configure-network`; without that profile, the default model can still serve
 reasoning roles. Engine reasoning and independent experts can overlap within a
 single task under bounded shared admission. The service also admits separate
-Ask requests up to that shared width and routes cancellation by task ID. Provider
-slots may impose tighter limits. The running local provider was unavailable
-during inspection, so its model IDs and active configuration remain unverified.
-No tests or benchmarks ran.
+Ask requests up to that shared width and routes cancellation by task ID. A
+read-only LM Studio check advertises `qwen/qwen3-8b` and
+`qwen3.6-35b-a3b`, with no models loaded. The host has 17 GiB available memory,
+less than the shared model's 22.68 GB weight file, and no working NVIDIA driver.
+Provider prediction slots, simultaneous residency, physical GPU parallelism,
+and speed remain unverified. No tests or benchmarks ran.
 
 ## Defer language-interface inference until interpretation is needed — 2026-10-31
 

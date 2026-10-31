@@ -61,13 +61,19 @@ persisted local config without hand-editing it. The installed profile now keeps
 `qwen/qwen3-8b` on language duties and shares `qwen3.6-35b-a3b` across Jev-R
 roles and the Jev+ `rust.s1@1.0.0` workflow. A stale global `none`
 reasoning-effort override was cleared; language roles still force `none`, and
-Jev-R uses the provider default. LM Studio is stopped; IDs were matched to local
-model files but provider discovery/activation was not verified. The workflow is
-registered and active for all eight existing domain skills, each bound to
+Jev-R uses the provider default. A read-only LM Studio check advertised both
+configured model IDs, but reported no loaded models. The shared reasoning model
+weights are 22.68 GB while current available system memory is 17 GiB; NVIDIA
+driver access is unavailable. Model activation, simultaneous residency, and
+physical parallel inference remain unverified and are not expected to meet the
+fast concurrent target on this host without more available memory and working
+GPU support. The workflow is registered and active for all eight existing
+domain skills, each bound to
 `local.qwen36.35b@1.0.0`; outputs remain unverified advice from prompt-routed
 workflows, not independently trained experts. `examples/qwen_network_native_policy.json`
-declares first-use loading for Qwen and the shared Jev-R/Jev+ model, but remains
-unapproved and unapplied. No tests or benchmarks ran.
+declares first-use loading for Qwen and the shared Jev-R/Jev+ model. The local
+OpenCode policy is a private draft; activation still requires the explicit
+on-demand launcher. No model was loaded and no tests or benchmarks ran.
 
 ## Qwen language boundary and no-reasoning-model Jev-R mode — 2026-10-31
 
@@ -114,10 +120,14 @@ connections. No tests, benchmarks or live inference ran.
 `src/reasoning.rs` admits bounded overlap between Jev-R and independent Jev+
 expert workflows inside one task, subject to the shared configured width and
 provider limits. Separate root Ask tasks are also admitted up to that same
-Engine-wide width; no measured provider/GPU concurrency is established. The installed model
-profile has not been verified against a running provider. No tests, benchmarks,
-or live inference ran. Remaining work: configure/verify the language-only model
-route on the target install and confirm runtime behavior against a live provider.
+Engine-wide width. The local config and LM Studio catalog confirm the language
+route uses `qwen/qwen3-8b`, while Jev-R and registered Jev+ workflows share
+`qwen3.6-35b-a3b`. LM Studio currently has no loaded models; the host has 17 GiB
+available memory against 22.68 GB of Qwen3.6 weights and no working NVIDIA
+driver. Provider slots, simultaneous residency, actual GPU/provider concurrency
+and speed remain unverified. No tests, benchmarks, or live inference ran.
+Remaining work: make both configured routes runnable concurrently on available
+hardware, then verify runtime behavior when the user permits inference checks.
 
 ## Defer language-interface inference until interpretation is needed — 2026-10-31
 

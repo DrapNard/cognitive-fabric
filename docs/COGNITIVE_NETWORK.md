@@ -27,10 +27,12 @@ inference ran.
 from `Config::inference_concurrency`. The pinned inference route and separately
 constructed task-local Jev+ expert brokers acquire from that same gate, so their
 combined active Rust inference requests stay within the configured one-to-four
-call limit. Shared-gate waiting is added to the queue-wait metric. This is an
-admission bound, not proof that a provider stops work when a future is cancelled
-or that GPU calls physically overlap. The local service still accepts one root
-Ask task at a time. No tests, benchmarks, or live inference ran.
+call limit. Shared-gate waiting is added to the queue-wait metric. The service
+can also admit separate root Ask tasks up to that same shared width, with
+task-specific cancellation; excess connections receive a bounded busy response.
+This is an admission bound, not proof that a provider stops work when a future
+is cancelled or that GPU calls physically overlap. No tests, benchmarks, or live
+inference ran.
 
 ## Current language routing and parallel execution boundaries — 2026-10-31
 
@@ -38,14 +40,17 @@ Ask task at a time. No tests, benchmarks, or live inference ran.
 `interface` and `synthesizer` calls to that model and requires a distinct
 reasoning default. Without that profile, the configured default model remains
 eligible for reasoning roles; the binary does not infer language-only routing
-from a provider or model name. Within one Engine task, Jev-R reasoning and
-independent Jev+ expert work may overlap under the shared configured inference
-width (one to four calls) and each expert/provider's own limits. Dependency-ready
-steps still wait for their inputs, and providers may serialize requests. The
-local service separately admits one root Ask task at a time; this gate does not
-disable overlap within that task. Cross-request concurrent admission and a
-machine-verified language/reasoning model profile remain unfinished. No tests,
-benchmarks, or live inference ran.
+from a provider or model name. The current local profile routes Qwen3-8B only to
+language roles and shares Qwen3.6-35B-A3B across Jev-R reasoning roles and the
+registered Jev+ workflow experts. An approved on-demand policy can activate
+either configured model on first admitted use and keeps it resident afterward.
+Within one Engine task, Jev-R reasoning and independent Jev+ expert work may
+overlap under the shared configured inference width (one to four calls) and each
+expert/provider's own limits. The service admits concurrent root tasks up to the
+same width. Dependency-ready steps still wait for their inputs, and providers may
+serialize requests. Provider slots, simultaneous model residency, physical GPU
+execution, and a speedup are not established. No tests, benchmarks, or live
+inference ran.
 
 ## Defer language-interface inference until interpretation is needed — 2026-10-31
 
