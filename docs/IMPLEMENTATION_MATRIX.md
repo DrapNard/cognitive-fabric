@@ -9,9 +9,12 @@ solvers cover exact arithmetic, inline SQL, dependency ordering, integer
 sorting, shortest paths, and bounded finite-domain search. The Engine refuses
 reasoning-role model calls and skips model-backed expert workflows. Other
 domains are reported unsupported. This does not implement general model-free
-reasoning or translate arbitrary natural-language objectives into solver input,
-and does not verify real provider routing. No tests, benchmarks or live inference
-ran.
+reasoning. `src/language.rs` adds a typed compiled-solver request for natural
+language ordering, sorting, shortest-path and finite-domain tasks; `src/engine.rs`
+routes it only after strict compiled-criterion validation. The result proves the
+translated specification only, so translated tasks retain `unverified` status.
+The schema does not cover arbitrary objectives or establish real provider
+routing. No tests, benchmarks or live inference ran.
 
 ## Shared Engine inference admission across Jev-R and Jev+ experts — 2026-10-31
 

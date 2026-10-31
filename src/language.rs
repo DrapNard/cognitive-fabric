@@ -12,6 +12,47 @@ pub struct Interpretation {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub capability_versions: BTreeMap<String, String>,
     pub clarification: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compiled_solver_request: Option<CompiledSolverRequest>,
+}
+
+/// Optional typed input for an existing deterministic Jev-R solver. It is
+/// untrusted task data; parsing it grants no capability and proves no intent.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "input", deny_unknown_fields)]
+pub enum CompiledSolverRequest {
+    #[serde(rename = "dependency_order")]
+    DependencyOrder(serde_json::Value),
+    #[serde(rename = "integer_sort")]
+    IntegerSort(serde_json::Value),
+    #[serde(rename = "shortest_path")]
+    ShortestPath(serde_json::Value),
+    #[serde(rename = "finite_domain")]
+    FiniteDomain(serde_json::Value),
+}
+
+impl CompiledSolverRequest {
+    fn query(&self) -> Result<String> {
+        let (prefix, expected_criterion, input) = match self {
+            Self::DependencyOrder(input) => ("order", "dependency_order/v1", input),
+            Self::IntegerSort(input) => ("sort", "integer_sort/v1", input),
+            Self::ShortestPath(input) => ("path", "shortest_path/v1", input),
+            Self::FiniteDomain(input) => ("csp", "finite_domain/v1", input),
+        };
+        if !input.is_object() {
+            bail!("Compiled Jev-R solver input must be a JSON object")
+        }
+        let query = format!("{prefix}:{}", serde_json::to_string(input)?);
+        if query.len() > 12_000 {
+            bail!("Compiled Jev-R solver input exceeds its byte limit")
+        }
+        let criterion = crate::verification::Criterion::from_query(&query)?
+            .ok_or_else(|| anyhow::anyhow!("Compiled Jev-R solver input has no criterion"))?;
+        if criterion.name() != expected_criterion {
+            bail!("Compiled Jev-R solver input does not match its declared kind")
+        }
+        Ok(query)
+    }
 }
 
 impl Interpretation {
@@ -42,7 +83,17 @@ impl Interpretation {
             &value.required_capabilities,
             &value.capability_versions,
         )?;
+        if let Some(request) = &value.compiled_solver_request {
+            request.query()?;
+        }
         Ok(value)
+    }
+
+    pub(crate) fn compiled_solver_query(&self) -> Result<Option<String>> {
+        self.compiled_solver_request
+            .as_ref()
+            .map(CompiledSolverRequest::query)
+            .transpose()
     }
 }
 

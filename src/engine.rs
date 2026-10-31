@@ -818,7 +818,8 @@ impl Engine {
                 self.store
                     .event(&id, "native_task_scope", "security-kernel", scope)?;
             }
-            session.verification_enabled = profile != ExecutionProfile::Alone;
+            session.verification_enabled =
+                profile != ExecutionProfile::Alone || self.cfg.jev_r_only;
             if !matches!(
                 profile,
                 ExecutionProfile::Alone | ExecutionProfile::Tools | ExecutionProfile::Recursive
@@ -865,6 +866,7 @@ impl Engine {
             std::collections::BTreeMap::<String, Vec<String>>::new();
         let mut language_reservation = None;
         let mut initial_interpretation = None;
+        let mut translated_solver_request = None;
         let language_boundary =
             self.cfg.language_model().is_some() && profile != ExecutionProfile::Alone;
         let execution = async {
@@ -873,8 +875,12 @@ impl Engine {
                 profile,
                 ExecutionProfile::Full | ExecutionProfile::Memory | ExecutionProfile::Experts
             );
+            let direct_compiled_request =
+                self.cfg.jev_r_only && crate::verification::Criterion::from_query(query)?.is_some();
             let inline_tool = profile != ExecutionProfile::Alone
-                && (math::extract(query).is_some() || query.starts_with("sql:"));
+                && (math::extract(query).is_some()
+                    || query.starts_with("sql:")
+                    || direct_compiled_request);
             let retrieve = retrieval_requested && self.cfg.max_tool_calls > 0 && !inline_tool;
             if retrieval_requested && !retrieve {
                 self.store.event(
@@ -1204,18 +1210,33 @@ impl Engine {
                 // The model is still required to translate natural-language goals
                 // before capability refinement and Jev-R reasoning begin.
                 language_reservation = Some(session.reserve_language_presentation()?);
-                let prompt = format!("Original user request (authoritative): {query}\nTranslate this request into the CGF interpretation schema. Do not solve it or grant permissions.");
-                let raw = session
-                    .call("interface", &prompt, self.cfg.interface_tokens)
-                    .await?
-                    .ok_or_else(|| {
-                        anyhow::anyhow!("Required language interpretation could not be dispatched")
-                    })?;
-                crate::language::Interpretation::parse(&raw)?;
-                initial_interpretation = Some(raw);
+                if !direct_compiled_request {
+                    let translation_contract = if self.cfg.jev_r_only {
+                        "Translate the request into the CGF interpretation schema. For a supported deterministic task, include `compiled_solver_request` as {\"kind\":\"dependency_order|integer_sort|shortest_path|finite_domain\",\"input\":{...}} using only explicit user-provided facts. If key facts are missing, set `clarification`; if no supported deterministic task applies, set the field to null. Never solve the task, invent facts, or grant permissions."
+                    } else {
+                        "Translate this request into the CGF interpretation schema. Do not solve it or grant permissions."
+                    };
+                    let prompt = format!(
+                        "Original user request (authoritative): {query}\n{translation_contract}"
+                    );
+                    let raw = session
+                        .call("interface", &prompt, self.cfg.interface_tokens)
+                        .await?
+                        .ok_or_else(|| {
+                            anyhow::anyhow!(
+                                "Required language interpretation could not be dispatched"
+                            )
+                        })?;
+                    let parsed = crate::language::Interpretation::parse(&raw)?;
+                    if self.cfg.jev_r_only {
+                        translated_solver_request = parsed.compiled_solver_query()?;
+                    }
+                    initial_interpretation = Some(raw);
+                }
             }
             if initial_interpretation.is_some()
-                || (self.cfg.interpret_goals
+                || (!self.cfg.jev_r_only
+                    && self.cfg.interpret_goals
                     && self.cfg.backend != "demo"
                     && mode != "fast"
                     && matches!(
@@ -1337,6 +1358,34 @@ impl Engine {
                                 }),
                             )?;
                             self.store.event(&id,"structured_goal","interface",json!({"original":query,"interpretation":intent,"missing_capabilities":missing,"trusted_permissions":false}))?;
+                            if self.cfg.jev_r_only {
+                                session
+                                    .set_compiled_solver_request(translated_solver_request.clone());
+                                if let Some(solver_request) = &translated_solver_request {
+                                    let criterion =
+                                        crate::verification::Criterion::from_query(solver_request)?
+                                            .ok_or_else(|| {
+                                                anyhow::anyhow!(
+                                                    "Translated solver request lost its criterion"
+                                                )
+                                            })?;
+                                    evidence
+                                        .push("interface_translated_solver_spec_unverified".into());
+                                    self.store.event(
+                                        &id,
+                                        "compiled_solver_request",
+                                        "interface",
+                                        json!({
+                                            "format_version":1,
+                                            "criterion":criterion.name(),
+                                            "original_objective_sha256":store::sha256(query.as_bytes()),
+                                            "solver_input_sha256":store::sha256(solver_request.as_bytes()),
+                                            "translation_semantics_verified":false,
+                                            "permissions_granted":false
+                                        }),
+                                    )?;
+                                }
+                            }
                             if !missing.is_empty() {
                                 self.store.event(&id,"capability_gap","jev-plus",json!({"missing":missing,"action":"Use existing references; no permissions granted"}))?;
                             }
@@ -1575,7 +1624,12 @@ impl Engine {
                         "Verified result lacks criterion identity"
                     ))?
                 ));
-                "completed"
+                if session.has_translated_solver_request() {
+                    evidence.push("translation_semantics_not_independently_verified".into());
+                    "unverified"
+                } else {
+                    "completed"
+                }
             } else if session.verification_attempted {
                 "rejected"
             } else if self.cfg.backend == "demo" {

@@ -879,6 +879,7 @@ impl Graph<'_> {
                 required_capabilities: Vec::new(),
                 capability_versions: std::collections::BTreeMap::new(),
                 clarification: None,
+                compiled_solver_request: None,
             }
         };
         // An explicit empty scope means typed work covers the advertised

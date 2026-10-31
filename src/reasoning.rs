@@ -211,6 +211,9 @@ pub struct Session {
     /// Checksum of the exact profile snapshot selected by this task. It binds
     /// later reasoning-context events to the profile captured at task start.
     pub(crate) project_profile_sha256: Option<String>,
+    /// Validated language-interface translation into a compiled solver input.
+    /// It is task data only and never grants authority.
+    compiled_solver_request: Option<String>,
 }
 
 #[derive(Debug)]
@@ -327,6 +330,12 @@ impl Session {
     }
     pub(crate) fn restrict_deadline(&mut self, deadline: Instant) {
         self.deadline = self.deadline.min(deadline);
+    }
+    pub(crate) fn set_compiled_solver_request(&mut self, request: Option<String>) {
+        self.compiled_solver_request = request;
+    }
+    pub(crate) fn has_translated_solver_request(&self) -> bool {
+        self.compiled_solver_request.is_some()
     }
     pub fn finish_metrics(&mut self) {
         if let Some(start) = self.inference_started.take() {
@@ -528,6 +537,7 @@ impl Session {
             resource_route_scope: None,
             typed_modules: None,
             project_profile_sha256: None,
+            compiled_solver_request: None,
         })
     }
 
@@ -3265,6 +3275,8 @@ impl Session {
     }
 
     async fn solve_jev_r_only(&mut self, query: &str) -> Result<String> {
+        let translated_solver_request = self.compiled_solver_request.clone();
+        let solver_input = translated_solver_request.as_deref().unwrap_or(query);
         self.stop_reason = "unsupported_reasoning_domain".into();
         self.store.event(
             &self.task,
@@ -3274,6 +3286,9 @@ impl Session {
                 "format_version":1,
                 "reasoning_mode":"compiled_jev_r_only",
                 "objective_sha256":crate::store::sha256(query.as_bytes()),
+                "solver_input_sha256":crate::store::sha256(solver_input.as_bytes()),
+                "solver_input_translated":translated_solver_request.is_some(),
+                "translation_semantics_verified":false,
                 "language_model_used_for_reasoning":false,
                 "permissions_restorable":false
             }),
@@ -3283,7 +3298,7 @@ impl Session {
                 "Jev-R-only mode requires a verifiable deterministic solver for this task.".into(),
             );
         }
-        let Some(criterion) = crate::verification::Criterion::from_query(query)? else {
+        let Some(criterion) = crate::verification::Criterion::from_query(solver_input)? else {
             return Ok("Jev-R-only mode has no compiled solver for this task.".into());
         };
         if criterion.name() != "finite_domain/v1" {
@@ -3316,6 +3331,8 @@ impl Session {
                     "format_version":1,
                     "criterion":criterion.name(),
                     "objective_sha256":crate::store::sha256(query.as_bytes()),
+                    "solver_input_sha256":crate::store::sha256(solver_input.as_bytes()),
+                    "translation_semantics_verified":false,
                     "answer_sha256":crate::store::sha256(answer.as_bytes()),
                     "compiled_checker_accepted":check.is_ok(),
                     "language_model_used_for_reasoning":false,
@@ -3331,6 +3348,8 @@ impl Session {
                     "checker":"compiled_criterion/v1",
                     "verified":check.is_ok(),
                     "objective_sha256":crate::store::sha256(query.as_bytes()),
+                    "solver_input_sha256":crate::store::sha256(solver_input.as_bytes()),
+                    "translation_semantics_verified":false,
                     "answer_sha256":crate::store::sha256(answer.as_bytes()),
                     "language_model_used_for_reasoning":false
                 }),
@@ -3387,6 +3406,8 @@ impl Session {
                 "format_version":1,
                 "criterion":"finite_domain/v1",
                 "objective_sha256":crate::store::sha256(query.as_bytes()),
+                "solver_input_sha256":crate::store::sha256(solver_input.as_bytes()),
+                "translation_semantics_verified":false,
                 "max_nodes":max_nodes,
                 "explored_nodes":outcome.explored_nodes,
                 "outcome":label,
@@ -3408,6 +3429,8 @@ impl Session {
                         "checker":"compiled_criterion/v1",
                         "verified":check.is_ok(),
                         "objective_sha256":crate::store::sha256(query.as_bytes()),
+                        "solver_input_sha256":crate::store::sha256(solver_input.as_bytes()),
+                        "translation_semantics_verified":false,
                         "answer_sha256":crate::store::sha256(answer.as_bytes()),
                         "language_model_used_for_reasoning":false
                     }),
