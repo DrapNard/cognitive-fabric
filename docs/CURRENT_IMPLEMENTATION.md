@@ -9,6 +9,18 @@ exact matches are re-enabled, and a same-ID/version content conflict aborts
 instead of replacing user data. `jq` is required for this exact comparison. No
 tests or benchmarks were run.
 
+## Bind Jev+ workflows to an operator-selected expert model — 2026-10-31
+
+**Implemented; runtime unverified.** `scripts/setup.sh --domain-expert-manifest`
+registers one exact operator-provided model manifest in both local homes and
+binds new versions of the eight domain workflows to that immutable
+`id@version`. The model API base must match the selected local inference API;
+the optional workflow-version flag makes model rebinding explicit rather than
+overwriting an existing expert version. On-demand policy drafting includes the
+selected expert model key. The default Qwen3.6 shared-backbone setup is unchanged.
+This enables separate Jev+ model routing but does not prove simultaneous memory
+fit or provider concurrency. No tests, benchmarks, model loads, or inference ran.
+
 ## Install from an offline local checkout — 2026-10-31
 
 **Implemented; installation unverified.** `scripts/setup.sh --source PATH`
@@ -65,8 +77,10 @@ route `qwen/qwen3-8b` to language roles and share `qwen3.6-35b-a3b` across all
 Jev-R reasoning roles. That same Qwen3.6 connection is bound to the `rust.s1`
 Jev+ workflow. The inherited global `reasoning_effort: none` override was
 cleared; language roles still force `none`, while Jev-R roles use the provider
-default. LM Studio is stopped, so provider activation and inference remain
-unverified. No tests or benchmarks ran. Additional Jev+ model-backed workflow
+default. LM Studio's server is running and advertises both configured model IDs,
+but no models are loaded. Available memory was 11 GiB at the latest status read,
+below the shared Qwen3.6 weight size; no NVIDIA driver is available. No tests or
+benchmarks ran. Additional Jev+ model-backed workflow
 experts require separately registered expert manifests/models. A first
 model-backed Jev+ workflow is now registered and active for each existing
 domain skill (`rust.s1`, `linux.s1`, `security.s1`, `reverse.s1`, `data.sql.s1`,
@@ -76,6 +90,9 @@ prompt-routed workflows, not separately trained experts. Registry metadata and
 activation are installed in both CLI and OpenCode state directories. The
 checked-in policy example enables first-use loading for the two configured
 model keys, but remains unapplied and unexercised.
+The setup script now accepts an operator-provided registered-model manifest to
+bind newly versioned Jev+ workflows to a separate model; this option has not
+been applied to the local install.
 
 ## Configure Qwen as language interface with model-free Jev-R — 2026-10-31
 
@@ -123,7 +140,7 @@ reasoning roles. Engine reasoning and independent experts can overlap within a
 single task under bounded shared admission. The service also admits separate
 Ask requests up to that shared width and routes cancellation by task ID. A
 read-only LM Studio check advertises `qwen/qwen3-8b` and
-`qwen3.6-35b-a3b`, with no models loaded. The host has 17 GiB available memory,
+`qwen3.6-35b-a3b`, with no models loaded. The host currently has 11 GiB available memory,
 less than the shared model's 22.68 GB weight file, and no working NVIDIA driver.
 Provider prediction slots, simultaneous residency, physical GPU parallelism,
 and speed remain unverified. No tests or benchmarks ran.

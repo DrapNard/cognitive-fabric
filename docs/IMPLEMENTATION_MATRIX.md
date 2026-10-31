@@ -10,6 +10,19 @@ This avoids both duplicate-registration failures and silent manifest replacement
 `jq` is required for the comparison. Shell syntax and whitespace checks were
 run; no tests or benchmarks were performed.
 
+## Bind Jev+ workflows to a selected expert model — 2026-10-31
+
+**Implemented; runtime unverified.** `scripts/setup.sh` accepts an exact
+`--domain-expert-manifest` path, registers that immutable model manifest in both
+CLI and OpenCode homes, then creates and activates workflow versions pinned to
+its `id@version`. The manifest API base must exactly match the configured
+provider; the on-demand draft includes its model key. A version option allows
+deliberate rebinding without replacing an existing immutable workflow. Default
+Qwen3.6 workflow bindings remain unchanged. The feature selects a route but does
+not establish that the expert and Jev-R models fit or run concurrently. Shell
+syntax and patch-whitespace checks passed; no tests, benchmarks, provider
+operations or model loads ran.
+
 ## Offline installation from a local checkout — 2026-10-31
 
 **Implemented; installation unverified.** `scripts/setup.sh --source PATH`
@@ -63,7 +76,7 @@ roles and the Jev+ `rust.s1@1.0.0` workflow. A stale global `none`
 reasoning-effort override was cleared; language roles still force `none`, and
 Jev-R uses the provider default. A read-only LM Studio check advertised both
 configured model IDs, but reported no loaded models. The shared reasoning model
-weights are 22.68 GB while current available system memory is 17 GiB; NVIDIA
+weights are 22.68 GB while current available system memory is 11 GiB; NVIDIA
 driver access is unavailable. Model activation, simultaneous residency, and
 physical parallel inference remain unverified and are not expected to meet the
 fast concurrent target on this host without more available memory and working
@@ -122,7 +135,7 @@ expert workflows inside one task, subject to the shared configured width and
 provider limits. Separate root Ask tasks are also admitted up to that same
 Engine-wide width. The local config and LM Studio catalog confirm the language
 route uses `qwen/qwen3-8b`, while Jev-R and registered Jev+ workflows share
-`qwen3.6-35b-a3b`. LM Studio currently has no loaded models; the host has 17 GiB
+`qwen3.6-35b-a3b`. LM Studio currently has no loaded models; the host has 11 GiB
 available memory against 22.68 GB of Qwen3.6 weights and no working NVIDIA
 driver. Provider slots, simultaneous residency, actual GPU/provider concurrency
 and speed remain unverified. No tests, benchmarks, or live inference ran.

@@ -102,6 +102,19 @@ not verify that the provider has those models available.
 `jq` is required when using `--domain-experts` for exact immutable registry
 checks.
 
+To bind Jev+ domain workflows to a different model, pass an exact model
+manifest with `--domain-expert-manifest /absolute/path/to/model.json`. The
+manifest's API base must exactly match `--api-base`; its provenance and license
+are validated by the model registry, and it must declare at least 16384 context
+tokens for the OpenCode route and use a model key distinct from the language
+model. Setup registers that model in both local
+homes and creates new workflow versions bound to its immutable `id@version`.
+The default workflow version is `1.1.0`; use
+`--domain-expert-workflow-version MAJOR.MINOR.PATCH` when deliberately creating
+another binding. With `--native-on-demand`, the expert model key is added to the
+private activation policy. Routing does not load weights or prove that the
+expert and reasoning models fit or execute concurrently.
+
 `--native-on-demand` writes a private, **unapproved** policy draft to the
 OpenCode home for every configured language and Jev-R model route. It contacts
 no provider and loads no model. Review the exact model keys and context lengths

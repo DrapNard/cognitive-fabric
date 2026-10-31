@@ -16,6 +16,8 @@ role_model_count=0
 api_base='http://127.0.0.1:1234/v1'
 jev_r_only=0
 domain_experts=0
+domain_expert_manifest=''
+domain_expert_workflow_version=''
 native_on_demand=0
 parallelism=2
 expert_parallelism=2
@@ -25,7 +27,9 @@ usage() {
 Usage: setup.sh [--prefix PATH] [--ref GIT_REF_OR_COMMIT] [--source PATH] [--replace] [--nvml-gpu]
                 [--language-model MODEL --reasoning-model MODEL | --jev-r-only]
                 [--role-model ROLE=MODEL ...]
-                [--api-base URL] [--domain-experts] [--native-on-demand]
+                [--api-base URL] [--domain-experts]
+                [--domain-expert-manifest MODEL_MANIFEST]
+                [--domain-expert-workflow-version VERSION] [--native-on-demand]
                 [--parallelism 1..4] [--expert-parallelism 1..4]
 
 Build and install cogfabric, cogfabric-chat, and cogfabric-server from source.
@@ -37,8 +41,14 @@ The default prefix is $HOME/.local and the default source ref is develop/v1.0.
 Supplying --language-model with --reasoning-model configures Qwen as a
 language-only route and shares the selected reasoning backbone across Jev-R
 roles in the CLI and OpenCode state directories. --domain-experts additionally
-registers the included Qwen3.6-backed workflow manifests; it requires the
-repository's qwen3.6-35b-a3b model key and the standard LM Studio API base.
+registers the included workflow manifests; by default they share the
+qwen3.6-35b-a3b reasoning model and standard LM Studio API base. An optional
+--domain-expert-manifest registers an exact operator-provided model manifest
+and binds new workflow versions to that model. Its API base must match
+--api-base, it must differ from the language-only model, and its declared
+context must be at least 16384 tokens. Bump
+--domain-expert-workflow-version when intentionally changing the immutable
+expert-model binding.
 Repeat --role-model ROLE=MODEL to route planner, solver, explorer, critic or
 reflector to a specific model; unassigned roles use --reasoning-model.
 --native-on-demand writes an unapproved native lifecycle policy draft for the
@@ -111,6 +121,16 @@ $2"
             domain_experts=1
             shift
             ;;
+        --domain-expert-manifest)
+            [ "$#" -ge 2 ] && [ -n "$2" ] || { echo 'Missing value for --domain-expert-manifest.' >&2; exit 2; }
+            domain_expert_manifest=$2
+            shift 2
+            ;;
+        --domain-expert-workflow-version)
+            [ "$#" -ge 2 ] && [ -n "$2" ] || { echo 'Missing value for --domain-expert-workflow-version.' >&2; exit 2; }
+            domain_expert_workflow_version=$2
+            shift 2
+            ;;
         --native-on-demand)
             native_on_demand=1
             shift
@@ -137,7 +157,7 @@ $2"
     esac
 done
 
-if [ "$jev_r_only" -eq 1 ] || [ -n "$language_model" ] || [ -n "$reasoning_model" ] || [ "$domain_experts" -eq 1 ] || [ "$role_model_count" -gt 0 ] || [ "$native_on_demand" -eq 1 ]; then
+if [ "$jev_r_only" -eq 1 ] || [ -n "$language_model" ] || [ -n "$reasoning_model" ] || [ "$domain_experts" -eq 1 ] || [ -n "$domain_expert_manifest" ] || [ -n "$domain_expert_workflow_version" ] || [ "$role_model_count" -gt 0 ] || [ "$native_on_demand" -eq 1 ]; then
     if [ -z "$language_model" ]; then
         echo 'A configured network requires --language-model MODEL.' >&2
         exit 2
@@ -165,6 +185,52 @@ if [ "$jev_r_only" -eq 1 ] || [ -n "$language_model" ] || [ -n "$reasoning_model
     if [ "$domain_experts" -eq 1 ] && { [ "$jev_r_only" -eq 1 ] || [ "$reasoning_model" != 'qwen3.6-35b-a3b' ] || [ "$api_base" != 'http://127.0.0.1:1234/v1' ]; }; then
         echo '--domain-experts requires model-assisted routing with qwen3.6-35b-a3b at http://127.0.0.1:1234/v1.' >&2
         exit 2
+    fi
+    if { [ -n "$domain_expert_manifest" ] || [ -n "$domain_expert_workflow_version" ]; } && [ "$domain_experts" -ne 1 ]; then
+        echo '--domain-expert-manifest and --domain-expert-workflow-version require --domain-experts.' >&2
+        exit 2
+    fi
+    if [ -n "$domain_expert_manifest" ]; then
+        case $domain_expert_manifest in
+            /*) ;;
+            *) domain_expert_manifest=$PWD/$domain_expert_manifest ;;
+        esac
+        [ -f "$domain_expert_manifest" ] && [ ! -L "$domain_expert_manifest" ] || {
+            echo '--domain-expert-manifest must name an existing regular file, not a symlink.' >&2
+            exit 2
+        }
+        domain_expert_manifest_size=$(wc -c <"$domain_expert_manifest" | tr -d '[:space:]')
+        [ "$domain_expert_manifest_size" -le 16000 ] || {
+            echo '--domain-expert-manifest exceeds the 16000-byte model registry limit.' >&2
+            exit 2
+        }
+        command -v jq >/dev/null 2>&1 || {
+            echo 'jq is required to read and register --domain-expert-manifest.' >&2
+            exit 1
+        }
+        domain_expert_manifest_api_base=$(jq -er '.api_base' "$domain_expert_manifest") || {
+            echo '--domain-expert-manifest must contain a valid API base.' >&2
+            exit 2
+        }
+        domain_expert_manifest_context=$(jq -er '.context_tokens | select(. >= 16384)' "$domain_expert_manifest") || {
+            echo '--domain-expert-manifest must declare at least 16384 context tokens for the OpenCode route.' >&2
+            exit 2
+        }
+        if [ "$domain_expert_manifest_api_base" != "$api_base" ]; then
+            echo "The expert model manifest API base must exactly match $api_base." >&2
+            exit 2
+        fi
+    fi
+    if [ -n "$domain_expert_workflow_version" ]; then
+        command -v jq >/dev/null 2>&1 || {
+            echo 'jq is required to validate --domain-expert-workflow-version.' >&2
+            exit 1
+        }
+        jq -en --arg version "$domain_expert_workflow_version" \
+            '$version | test("^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$")' >/dev/null || {
+            echo '--domain-expert-workflow-version must be canonical MAJOR.MINOR.PATCH.' >&2
+            exit 2
+        }
     fi
     case $parallelism in 1|2|3|4) ;; *) echo '--parallelism must be 1, 2, 3, or 4.' >&2; exit 2 ;; esac
     case $expert_parallelism in 1|2|3|4) ;; *) echo '--expert-parallelism must be 1, 2, 3, or 4.' >&2; exit 2 ;; esac
@@ -339,6 +405,7 @@ register_model_if_exact() {
 }
 
 if [ -n "$language_model" ]; then
+    domain_expert_model_key=''
     for config_home in "$cli_home" "$opencode_home"; do
         configure_network_for_home "$config_home"
         if [ "$jev_r_only" -ne 1 ]; then
@@ -347,8 +414,40 @@ if [ -n "$language_model" ]; then
                 --api-base "$api_base" \
                 --reasoning-effort default
             if [ "$domain_experts" -eq 1 ]; then
-                register_model_if_exact "$config_home" \
-                    "$source_dir/examples/qwen36_model_manifest.json"
+                if [ -n "$domain_expert_manifest" ]; then
+                    expert_manifest_path=$domain_expert_manifest
+                    expert_skill_version=${domain_expert_workflow_version:-1.1.0}
+                else
+                    expert_manifest_path="$source_dir/examples/qwen36_model_manifest.json"
+                    expert_skill_version=${domain_expert_workflow_version:-1.0.0}
+                fi
+                register_model_if_exact "$config_home" "$expert_manifest_path"
+                expert_model_id=$(jq -er '.id' "$expert_manifest_path")
+                expert_model_version=$(jq -er '.version' "$expert_manifest_path")
+                registered_models=$("$prefix/bin/cogfabric" --home "$config_home" --json models)
+                expert_registration=$(printf '%s\n' "$registered_models" | jq -cer \
+                    --arg id "$expert_model_id" --arg version "$expert_model_version" \
+                    '[.[] | select(.manifest.id == $id and .manifest.version == $version)] |
+                     if length == 1 and .[0].enabled == true then .[0].manifest
+                     else error("selected expert model is absent, ambiguous, or disabled") end') || {
+                    echo "The selected expert model is not enabled in $config_home." >&2
+                    exit 1
+                }
+                expert_model_key=$(printf '%s\n' "$expert_registration" | jq -er '.model')
+                expert_model_api_base=$(printf '%s\n' "$expert_registration" | jq -er '.api_base')
+                if [ "$expert_model_key" = "$language_model" ]; then
+                    echo 'The Jev+ expert model must differ from the language-only model.' >&2
+                    exit 1
+                fi
+                if [ "$expert_model_api_base" != "$api_base" ]; then
+                    echo "The selected expert model API base must exactly match $api_base." >&2
+                    exit 1
+                fi
+                if [ -n "$domain_expert_model_key" ] && [ "$domain_expert_model_key" != "$expert_model_key" ]; then
+                    echo 'The CLI and OpenCode homes resolve the expert registration to different model keys.' >&2
+                    exit 1
+                fi
+                domain_expert_model_key=$expert_model_key
                 for expert in \
                     'data.sql.s1:data_sql' \
                     'git.s1:git' \
@@ -361,8 +460,19 @@ if [ -n "$language_model" ]; then
                     skill_id=${expert%%:*}
                     manifest_name=${expert#*:}
                     manifest_path="$source_dir/examples/${manifest_name}_qwen36_workflow_manifest.json"
-                    "$prefix/bin/cogfabric" --home "$config_home" skill-register "$manifest_path"
-                    "$prefix/bin/cogfabric" --home "$config_home" skill-activate "$skill_id" 1.0.0
+                    if [ -n "$domain_expert_manifest" ]; then
+                        expert_workflow_manifest="$workdir/${manifest_name}_workflow_manifest.json"
+                        jq --arg model_id "$expert_model_id" \
+                            --arg model_version "$expert_model_version" \
+                            --arg workflow_version "$expert_skill_version" \
+                            '.version = $workflow_version | .model = {"id":$model_id,"version":$model_version}' \
+                            "$manifest_path" >"$expert_workflow_manifest"
+                        manifest_to_register=$expert_workflow_manifest
+                    else
+                        manifest_to_register=$manifest_path
+                    fi
+                    "$prefix/bin/cogfabric" --home "$config_home" skill-register "$manifest_to_register"
+                    "$prefix/bin/cogfabric" --home "$config_home" skill-activate "$skill_id" "$expert_skill_version"
                 done
             fi
         fi
@@ -372,8 +482,11 @@ if [ -n "$language_model" ]; then
             echo 'Could not create a private native policy draft.' >&2
             exit 1
         }
-        if ! "$prefix/bin/cogfabric" --home "$opencode_home" --json native-policy-draft \
-            --api-base http://127.0.0.1:1234/api/v1 --context-length 16384 >"$policy_tmp"; then
+        set -- --api-base http://127.0.0.1:1234/api/v1 --context-length 16384
+        if [ -n "$domain_expert_model_key" ]; then
+            set -- "$@" --extra-model "$domain_expert_model_key"
+        fi
+        if ! "$prefix/bin/cogfabric" --home "$opencode_home" --json native-policy-draft "$@" >"$policy_tmp"; then
             rm -f "$policy_tmp"
             echo 'Could not draft the on-demand policy; no provider operation was attempted.' >&2
             exit 1

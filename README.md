@@ -78,6 +78,17 @@ the configured local API base.
 The `--domain-experts` examples are prompt-routed workflows on the shared model,
 not separately trained or verified experts. This configures both the CLI and
 OpenCode homes; it does not start LM Studio, load weights, or run inference.
+To bind Jev+ workflows to a separate registered model, pass
+`--domain-expert-manifest /absolute/path/to/model-manifest.json`. The exact
+model manifest is registered in both homes, and new workflow versions bind to
+that immutable model selection. Its API base must match `--api-base`; the
+manifest must declare at least 16384 context tokens and use a model key distinct
+from the language-only model. The
+default expert workflow version is `1.1.0`, adjustable with
+`--domain-expert-workflow-version VERSION` when rebinding. With
+`--native-on-demand`, the selected expert model is included in the private
+first-use activation policy. This configures routing only; it does not load the
+model or guarantee that separate model weights fit or run concurrently.
 `--native-on-demand` saves a private, unapproved lifecycle policy draft for the
 OpenCode routes. Review that file, start LM Studio, then run
 `cogfabric-opencode-on-demand` to explicitly authorize first-use loading for
