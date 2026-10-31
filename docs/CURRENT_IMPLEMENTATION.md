@@ -22,15 +22,27 @@ share the configured one-to-four-call ceiling; shared-gate waiting contributes t
 queue-wait accounting. This does not verify provider cancellation or GPU-level
 parallelism. No tests, benchmarks, or live inference ran.
 
+## Admit independent service tasks up to shared inference width — 2026-10-31
+
+**Implemented; runtime unverified.** `src/service.rs` now admits up to the
+Engine's shared inference width of simultaneous root tasks rather than forcing
+one active task. Each task has an independent cancellation signal; task-specific
+cancellation cannot cancel its siblings. `CancelActive` is accepted only when
+exactly one task is active, and the current status frame reports an ID only for
+that unambiguous case. The global Engine broker still caps combined model calls.
+The bounded connection handler limit remains eight; extra asks receive a busy
+reply rather than queueing. No tests, benchmarks, or live inference ran.
+
 ## Language routing and collective concurrency status — 2026-10-31
 
 **Partial; runtime unverified.** Explicit language-only routing exists through
 `configure-network`; without that profile, the default model can still serve
 reasoning roles. Engine reasoning and independent experts can overlap within a
-single task under bounded shared admission. Separate service Ask requests remain
-serialized by `src/service.rs`, while providers may impose tighter model slots.
-The running local provider was unavailable during inspection, so its model IDs
-and active configuration remain unverified. No tests or benchmarks ran.
+single task under bounded shared admission. The service also admits separate
+Ask requests up to that shared width and routes cancellation by task ID. Provider
+slots may impose tighter limits. The running local provider was unavailable
+during inspection, so its model IDs and active configuration remain unverified.
+No tests or benchmarks ran.
 
 ## Defer language-interface inference until interpretation is needed — 2026-10-31
 

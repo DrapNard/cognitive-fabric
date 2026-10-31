@@ -20,9 +20,18 @@ inference semaphore and shares it with the pinned route in `src/fabric.rs` and
 task-local bound expert brokers in `src/reasoning.rs`. Combined active Engine
 calls are admitted under `Config::inference_concurrency`; the additional wait is
 recorded as queue wait. This bounds Engine-owned inference futures, not detached
-provider work after cancellation, and does not establish GPU overlap. Root Ask
-requests remain serialized by the local service. No tests, benchmarks, or live
-inference ran.
+provider work after cancellation, and does not establish GPU overlap. No tests,
+benchmarks or live inference ran.
+
+## Concurrent root tasks with task-scoped cancellation — 2026-10-31
+
+**Implemented; runtime unverified.** `src/service.rs` admits root Ask tasks up
+to the Engine-wide inference width, tracks task-specific cancellation senders,
+and refuses ambiguous `CancelActive` requests. Existing `CancelTask` uses its
+task UUID; all inference calls still share the Engine semaphore. The status
+protocol only exposes one task ID, so it returns that ID only when exactly one
+task is active. The service does not queue requests beyond its eight accepted
+connections. No tests, benchmarks or live inference ran.
 
 ## Language-only routing and Jev+/Jev-R execution concurrency — 2026-10-31
 
@@ -31,13 +40,11 @@ inference ran.
 `language` profile, the default model is still available to reasoning roles.
 `src/reasoning.rs` admits bounded overlap between Jev-R and independent Jev+
 expert workflows inside one task, subject to the shared configured width and
-provider limits. `src/service.rs` still serializes separate root Ask requests,
-and no measured provider/GPU concurrency is established. The installed model
+provider limits. Separate root Ask tasks are also admitted up to that same
+Engine-wide width; no measured provider/GPU concurrency is established. The installed model
 profile has not been verified against a running provider. No tests, benchmarks,
 or live inference ran. Remaining work: configure/verify the language-only model
-route on the target install and determine whether cross-request concurrency is
-needed, then implement it with one aggregate inference gate across all expert
-brokers.
+route on the target install and confirm runtime behavior against a live provider.
 
 ## Defer language-interface inference until interpretation is needed — 2026-10-31
 

@@ -27,10 +27,22 @@ struct SocketGuard {
 
 struct Controls {
     stopping: watch::Sender<bool>,
-    cancellation: watch::Sender<u64>,
-    active: Mutex<Option<String>>,
+    active: Mutex<std::collections::BTreeMap<String, watch::Sender<bool>>>,
     execution: Semaphore,
     subscriptions: Semaphore,
+}
+
+struct ActiveTaskGuard {
+    controls: Arc<Controls>,
+    task: String,
+}
+
+impl Drop for ActiveTaskGuard {
+    fn drop(&mut self) {
+        if let Ok(mut active) = self.controls.active.lock() {
+            active.remove(&self.task);
+        }
+    }
 }
 impl Drop for SocketGuard {
     fn drop(&mut self) {
@@ -72,12 +84,12 @@ where
     std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o600))?;
     let owner = meta.uid();
     let engine = Arc::new(engine);
+    let execution_capacity = engine.cfg.inference_concurrency();
     let (cancel, _) = watch::channel(false);
     let controls = Arc::new(Controls {
         stopping: cancel.clone(),
-        cancellation: watch::channel(0).0,
-        active: Mutex::new(None),
-        execution: Semaphore::new(1),
+        active: Mutex::new(std::collections::BTreeMap::new()),
+        execution: Semaphore::new(execution_capacity),
         subscriptions: Semaphore::new(2),
     });
     let mut remote_stop = cancel.subscribe();
@@ -204,15 +216,22 @@ async fn handle(
                 .await;
                 return;
             };
-            let mut cancellation = controls.cancellation.subscribe();
             let runtime_task = uuid::Uuid::new_v4().to_string();
-            *controls.active.lock().expect("Active task mutex poisoned") =
-                Some(runtime_task.clone());
+            let (cancel_task, mut cancellation) = watch::channel(false);
+            controls
+                .active
+                .lock()
+                .expect("Active task mutex poisoned")
+                .insert(runtime_task.clone(), cancel_task);
+            let _active_task = ActiveTaskGuard {
+                controls: controls.clone(),
+                task: runtime_task.clone(),
+            };
             let cancel = async {
                 let mut extra = [0];
                 tokio::select! {
                     _ = stopped(&mut stopping) => {},
-                    _ = cancellation.changed() => {},
+                    _ = async { if !*cancellation.borrow() { let _ = cancellation.changed().await; } } => {},
                     // EOF cancels the request; extra input violates one-request-per-connection.
                     _ = reader.read(&mut extra) => {},
                 }
@@ -230,7 +249,6 @@ async fn handle(
                     cancel,
                 )
                 .await;
-            *controls.active.lock().expect("Active task mutex poisoned") = None;
             match result {
                 Ok(outcome) => Message::Reply { id, outcome },
                 Err(err) => Message::Error {
@@ -268,11 +286,14 @@ fn control_response(
     task: Option<&str>,
     after: u64,
 ) -> Result<Message> {
-    let active_task = controls
+    let active_tasks = controls
         .active
         .lock()
         .map_err(|_| anyhow::anyhow!("Active task mutex poisoned"))?;
-    let active = active_task.is_some();
+    let active = !active_tasks.is_empty();
+    let active_task_id = (active_tasks.len() == 1)
+        .then(|| active_tasks.keys().next().cloned())
+        .flatten();
     let mut modules = Vec::new();
     let mut tool_modules = Vec::new();
     let mut inference_modules = Vec::new();
@@ -300,14 +321,19 @@ fn control_response(
             bail!("Subscription requires a streaming connection")
         }
         wire::ControlAction::CancelActive | wire::ControlAction::CancelTask => {
-            let matched = active
-                && (action == wire::ControlAction::CancelActive || active_task.as_deref() == task);
-            if matched {
-                controls
-                    .cancellation
-                    .send_modify(|generation| *generation = generation.wrapping_add(1));
-            }
-            matched
+            let target = match action {
+                wire::ControlAction::CancelActive if active_tasks.len() == 1 => {
+                    active_task_id.as_deref()
+                }
+                wire::ControlAction::CancelTask => task,
+                _ => None,
+            };
+            target
+                .and_then(|task| active_tasks.get(task))
+                .is_some_and(|cancellation| {
+                    cancellation.send_replace(true);
+                    true
+                })
         }
         wire::ControlAction::Stop => {
             controls.stopping.send_replace(true);
@@ -321,7 +347,7 @@ fn control_response(
         modules,
         tool_modules,
         inference_modules,
-        active_task_id: active_task.clone(),
+        active_task_id,
         progress,
         stream_state: None,
     })
@@ -589,7 +615,13 @@ pub async fn cancel_task(cfg: &Config, task: &str) -> Result<bool> {
             accepted,
             active_task_id,
             ..
-        } if !accepted || active_task_id.as_deref() == Some(task) => Ok(accepted),
+        } if !accepted
+            || active_task_id
+                .as_deref()
+                .is_none_or(|active| active == task) =>
+        {
+            Ok(accepted)
+        }
         _ => bail!("Unexpected task cancellation response"),
     }
 }
