@@ -12,6 +12,10 @@
       "context_length": 16384
     }
   ],
+  "provider_parallel_slots": {
+    "qwen/qwen3-8b": 1,
+    "qwen3.6-35b-a3b": 4
+  },
   "release_after": false,
   "typed_module_worker": false,
   "max_lifecycle_seconds": 300

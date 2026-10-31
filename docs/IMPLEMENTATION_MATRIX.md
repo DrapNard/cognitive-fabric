@@ -8324,25 +8324,27 @@ quality are unverified. No tests, benchmarks or live inference were run.
 
 # On-demand provider prediction-slot configuration (2026-10-31)
 
-**Partial; runtime unavailable.** The installed network config separates the
-language role (`qwen/qwen3-8b`) from Jev-R roles and the Jev+ workflow model
-(`qwen3.6-35b-a3b`), with shared Engine admission set to four. The managed
-native loader in `src/residency/managed.rs` currently requests model identity,
-context length, and optional KV-cache placement; it does not request a
-prediction-slot count. `src/residency/lifecycle/lazy.rs` gates calls using the
-slot count observed in the provider inventory, falling back to one when the
-provider omits it. Therefore Rust-level width four does not guarantee that
-Jev+ and Jev-R can overlap at the provider.
+**Implemented; runtime unavailable.** `src/residency/lifecycle.rs` adds a
+bounded per-model provider slot map to the reviewed native policy and derives
+defaults from the configured network width (one slot for the language model,
+shared inference width for reasoning/expert models). `src/main.rs` exposes
+`--model-parallel MODEL_KEY=COUNT` for operator overrides. First-use model
+activation in `src/residency/lifecycle/lazy.rs` uses the managed path in
+`src/residency/managed.rs`, which invokes `lms load --parallel` with fixed
+arguments, records the target in the durable load intent, finds exactly one
+new instance, and requires the inventory to report the requested slot count
+before inference admission. `examples/qwen_network_native_policy.json` sets
+Qwen3-8B to one slot and Qwen3.6-35B to four. The OpenCode launcher locates the
+installed CLI or honors `COGFABRIC_LMS_CLI`.
 
-The installed `lms load --help` exposes `--parallel`, while LM Studio's
-documented REST load request does not list a parallel-slot field
-([CLI](https://lmstudio.ai/docs/cli),
-[REST model load](https://lmstudio.ai/docs/developer/rest/load)). The supported
-parallel-request feature uses continuous batching on compatible llama.cpp
-runtimes ([LM Studio parallel requests](https://lmstudio.ai/docs/app/advanced/parallel-requests)).
-Remaining implementation: provide an auditable, bounded on-demand load path
-that sets prediction slots and verifies the exact applied value from provider
-inventory before admitting concurrent generations. Do not infer GPU readiness
-or speed from the configured width. The current workspace session cannot reach
-LM Studio at `127.0.0.1:1234` and cannot access the NVIDIA driver. No tests,
-benchmarks, model loads, or inference were run.
+This path is limited to unauthenticated LM Studio on `127.0.0.1:1234`, LLMs,
+and automatic KV-cache placement; other configurations retain the REST loader
+and do not promise provider concurrency. LM Studio documents the REST load
+fields without a parallel-slot option ([REST load API](https://lmstudio.ai/docs/developer/rest/load));
+the installed CLI advertises `--parallel`, and parallel prediction uses
+continuous batching on compatible llama.cpp runtimes ([CLI](https://lmstudio.ai/docs/cli),
+[parallel requests](https://lmstudio.ai/docs/app/advanced/parallel-requests)).
+`cargo fmt --all` and `cargo check -p cogfabric --lib --bin cogfabric` passed;
+no tests, benchmarks, model loads, or inference were run. Current workspace
+provider access and NVIDIA driver access remain unavailable, so actual
+activation, overlap, GPU execution, and speed remain unverified.

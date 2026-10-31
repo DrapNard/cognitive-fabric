@@ -20,6 +20,10 @@ pub struct NativeLifecyclePolicy {
     #[serde(default)]
     pub authenticate: bool,
     pub models: Vec<planning::EnsureLoaded>,
+    /// Operator-requested maximum concurrent predictions per provider model.
+    /// LM Studio's REST load API cannot set this; on-demand policy uses `lms`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub provider_parallel_slots: BTreeMap<String, u32>,
     #[serde(default)]
     pub release_after: bool,
     #[serde(default)]
@@ -34,6 +38,7 @@ pub struct NativePolicyDraftOptions {
     pub offload_kv_cache_to_gpu: Option<bool>,
     pub model_contexts: BTreeMap<String, u32>,
     pub model_kv_placement: BTreeMap<String, bool>,
+    pub model_parallel_slots: BTreeMap<String, u32>,
     pub authenticate: bool,
     pub max_lifecycle_seconds: u64,
 }
@@ -49,6 +54,7 @@ impl NativeLifecyclePolicy {
             offload_kv_cache_to_gpu,
             model_contexts,
             model_kv_placement,
+            model_parallel_slots,
             authenticate,
             max_lifecycle_seconds,
         } = options;
@@ -90,12 +96,37 @@ impl NativeLifecyclePolicy {
                     .or(offload_kv_cache_to_gpu),
             })
             .collect::<Vec<_>>();
+        let reasoning_slots = cfg.inference_concurrency().clamp(1, 4) as u32;
+        let language_model = cfg.language_model();
+        let mut provider_parallel_slots = models
+            .iter()
+            .map(|model| {
+                (
+                    model.model.clone(),
+                    if Some(model.model.as_str()) == language_model {
+                        1
+                    } else {
+                        reasoning_slots
+                    },
+                )
+            })
+            .collect::<BTreeMap<_, _>>();
+        provider_parallel_slots.extend(
+            model_parallel_slots
+                .iter()
+                .map(|(model, slots)| (model.clone(), *slots)),
+        );
         if model_contexts.len() > 8
             || model_kv_placement.len() > 8
+            || model_parallel_slots.len() > 8
             || model_contexts
                 .keys()
                 .chain(model_kv_placement.keys())
+                .chain(model_parallel_slots.keys())
                 .any(|key| !models.iter().any(|model| &model.model == key))
+            || model_parallel_slots
+                .values()
+                .any(|slots| !(1..=4).contains(slots))
         {
             bail!("Native policy override refers to an unknown model or exceeds its bound")
         }
@@ -104,6 +135,7 @@ impl NativeLifecyclePolicy {
             api_base,
             authenticate,
             models,
+            provider_parallel_slots,
             release_after: false,
             typed_module_worker: false,
             max_lifecycle_seconds,
@@ -147,6 +179,24 @@ impl NativeLifecyclePolicy {
             {
                 bail!("Invalid or duplicate native lifecycle model")
             }
+        }
+        if self.provider_parallel_slots.len() > 8
+            || self
+                .provider_parallel_slots
+                .iter()
+                .any(|(model, slots)| !keys.contains(model) || !(1..=4).contains(slots))
+        {
+            bail!("Invalid provider prediction-slot policy")
+        }
+        if !self.provider_parallel_slots.is_empty()
+            && (self.authenticate
+                || self.format_version != 3
+                || self
+                    .models
+                    .iter()
+                    .any(|model| model.offload_kv_cache_to_gpu.is_some()))
+        {
+            bail!("Provider prediction-slot policy requires version 3, unauthenticated local CLI access and automatic KV-cache placement")
         }
         Ok(())
     }
@@ -911,6 +961,7 @@ async fn run_internal(
         api_base: request.api_base.clone(),
         authenticate: request.authenticate,
         models: request.models.clone(),
+        provider_parallel_slots: BTreeMap::new(),
         release_after: request.release_after,
         typed_module_worker: request.typed_module_worker,
         max_lifecycle_seconds: request.max_lifecycle_seconds,
@@ -922,6 +973,7 @@ async fn run_internal(
             api_base: request.api_base.clone(),
             authenticate: request.authenticate,
             models: request.models.clone(),
+            provider_parallel_slots: BTreeMap::new(),
             release_after: request.release_after,
             typed_module_worker: request.typed_module_worker,
             max_lifecycle_seconds: request.max_lifecycle_seconds,

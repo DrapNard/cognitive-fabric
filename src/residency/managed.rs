@@ -704,6 +704,55 @@ pub(crate) async fn load_owned_with_gpu(
     offload_kv_cache_to_gpu: Option<bool>,
     approval: (bool, Option<&super::lifecycle::Ownership>),
 ) -> Result<Value> {
+    load_owned_with_options(
+        store,
+        base,
+        authenticate,
+        model_key,
+        context_length,
+        offload_kv_cache_to_gpu,
+        None,
+        approval,
+    )
+    .await
+}
+
+pub(crate) async fn load_owned_with_parallel_slots(
+    store: &Store,
+    base: &str,
+    authenticate: bool,
+    model_key: &str,
+    context_length: u32,
+    offload_kv_cache_to_gpu: Option<bool>,
+    parallel_slots: u32,
+    approval: (bool, Option<&super::lifecycle::Ownership>),
+) -> Result<Value> {
+    if !(1..=4).contains(&parallel_slots) {
+        bail!("Managed provider parallel slots must be between one and four")
+    }
+    load_owned_with_options(
+        store,
+        base,
+        authenticate,
+        model_key,
+        context_length,
+        offload_kv_cache_to_gpu,
+        Some(parallel_slots),
+        approval,
+    )
+    .await
+}
+
+async fn load_owned_with_options(
+    store: &Store,
+    base: &str,
+    authenticate: bool,
+    model_key: &str,
+    context_length: u32,
+    offload_kv_cache_to_gpu: Option<bool>,
+    parallel_slots: Option<u32>,
+    approval: (bool, Option<&super::lifecycle::Ownership>),
+) -> Result<Value> {
     let (human_approve, ownership) = approval;
     security::authorize("human-cli", "model.residency.change")?;
     if !human_approve {
@@ -739,6 +788,15 @@ pub(crate) async fn load_owned_with_gpu(
     if offload_kv_cache_to_gpu.is_some() && !matches!(selected.kind.as_str(), "llm" | "decision") {
         bail!("Explicit KV-cache GPU placement is supported only for LLM and decision models")
     }
+    if parallel_slots.is_some()
+        && (authenticate
+            || selected.kind != "llm"
+            || offload_kv_cache_to_gpu.is_some()
+            || native_endpoint.host_str() != Some("127.0.0.1")
+            || native_endpoint.port_or_known_default() != Some(1234))
+    {
+        bail!("Parallel on-demand loading requires unauthenticated LM Studio on 127.0.0.1:1234, an LLM model and no explicit KV-cache placement")
+    }
     let operation = "load";
     let action = Mutation::Load {
         model: model_key.to_owned(),
@@ -753,14 +811,35 @@ pub(crate) async fn load_owned_with_gpu(
     let task = create_managed_task(
         store,
         "Operator-approved managed native model load",
-        &json!({"state":"requested","adapter":"lmstudio-native-v1","managed":true,"endpoint":native_endpoint.as_str(),"action":action,"external_outcome":"unknown","permissions_granted":false}),
+        &json!({"state":"requested","adapter":"lmstudio-native-v1","managed":true,"endpoint":native_endpoint.as_str(),"action":action,"provider_parallel_slots":parallel_slots,"loader":if parallel_slots.is_some() {"lms_cli"} else {"native_rest"},"external_outcome":"unknown","permissions_granted":false}),
     )?;
     let result = async {
-        let response = request(base,authenticate,Some(operation),Some(body),Duration::from_secs(60)).await?;
-        let instance_id = response["instance_id"].as_str().filter(|id| identity(id)).ok_or_else(|| anyhow::anyhow!("Invalid managed load response"))?;
-        if response["status"] != "loaded" || response["type"].as_str() != Some(selected.kind.as_str()) || !response["load_time_seconds"].as_f64().is_some_and(|n| n.is_finite() && n>=0.0) || before.iter().any(|item|item.loaded_instances.iter().any(|i|i.id==instance_id)) {
-            bail!("Managed load response did not identify a new exact instance")
-        }
+        let response = if let Some(slots) = parallel_slots {
+            run_lms_load(model_key, context_length, slots).await?;
+            Value::Null
+        } else {
+            request(base,authenticate,Some(operation),Some(body),Duration::from_secs(60)).await?
+        };
+        let response_instance_id = if parallel_slots.is_some() {
+            None
+        } else {
+            let instance_id = response["instance_id"]
+                .as_str()
+                .filter(|id| identity(id))
+                .ok_or_else(|| anyhow::anyhow!("Invalid managed load response"))?;
+            if response["status"] != "loaded"
+                || response["type"].as_str() != Some(selected.kind.as_str())
+                || !response["load_time_seconds"]
+                    .as_f64()
+                    .is_some_and(|n| n.is_finite() && n >= 0.0)
+                || before
+                    .iter()
+                    .any(|item| item.loaded_instances.iter().any(|i| i.id == instance_id))
+            {
+                bail!("Managed load response did not identify a new exact instance")
+            }
+            Some(instance_id.to_owned())
+        };
         if let Some(expected) = offload_kv_cache_to_gpu {
             if !matches!(selected.kind.as_str(), "llm" | "decision")
                 || response["load_config"]["offload_kv_cache_to_gpu"].as_bool() != Some(expected)
@@ -770,16 +849,37 @@ pub(crate) async fn load_owned_with_gpu(
         }
         let after_value = status(base,authenticate).await?;
         let after = parse(&serde_json::to_vec(&after_value)?)?;
-        super::planning::validate_transition(&before,&after,&action,instance_id)?;
+        let added_instances = after
+            .iter()
+            .find(|item| item.key == model_key)
+            .into_iter()
+            .flat_map(|item| item.loaded_instances.iter())
+            .filter(|instance| {
+                !before.iter().any(|item| {
+                    item.loaded_instances
+                        .iter()
+                        .any(|previous| previous.id == instance.id)
+                })
+            })
+            .collect::<Vec<_>>();
+        let instance_id = match response_instance_id {
+            Some(instance_id) => instance_id,
+            None if added_instances.len() == 1 => added_instances[0].id.clone(),
+            None => bail!("Managed CLI load did not create exactly one new model instance"),
+        };
+        super::planning::validate_transition(&before,&after,&action,&instance_id)?;
         let model = after.iter().find(|item|item.key==model_key).ok_or_else(|| anyhow::anyhow!("Managed loaded model disappeared from inventory"))?;
         let instance = model.loaded_instances.iter().find(|i|i.id==instance_id).ok_or_else(|| anyhow::anyhow!("Managed loaded instance is absent from fresh inventory"))?;
         if model.kind != selected.kind || instance.config.context_length != u64::from(context_length)
             || offload_kv_cache_to_gpu.is_some_and(|expected| instance.config.offload_kv_cache_to_gpu != Some(expected)) {
             bail!("Managed loaded instance identity differs from the approved request")
         }
+        if parallel_slots.is_some_and(|expected| instance.config.parallel != Some(expected)) {
+            bail!("LM Studio did not report the requested prediction-slot count")
+        }
         let after_digest = inventory_digest(&after)?;
         let receipt = Receipt { format_version:if offload_kv_cache_to_gpu.is_some() { 2 } else { 1 }, receipt_id:Uuid::new_v4().to_string(), adapter:"lmstudio-native-v1".into(), endpoint:native_endpoint.as_str().to_owned(), model_key:model_key.to_owned(), model_type:model.kind.clone(), context_length, offload_kv_cache_to_gpu, instance_id:instance_id.to_owned(), load_task_id:task.clone(), initial_inventory_sha256:after_digest.clone() };
-        let report = json!({"receipt":receipt,"action":action,"server_confirmed":true,"before_inventory_sha256":before_digest,"after_inventory_sha256":after_digest,"elapsed_ms":started.elapsed().as_secs_f64()*1000.0,"provider_load_seconds":response.get("load_time_seconds"),"weights_attested":false,"generation_tested":false,"ownership_established":false,"physical_residency_attested":false,"automatic_cleanup":false});
+        let report = json!({"receipt":receipt,"action":action,"provider_parallel_slots":parallel_slots,"loader":if parallel_slots.is_some() {"lms_cli"} else {"native_rest"},"server_confirmed":true,"before_inventory_sha256":before_digest,"after_inventory_sha256":after_digest,"elapsed_ms":started.elapsed().as_secs_f64()*1000.0,"provider_load_seconds":response.get("load_time_seconds"),"weights_attested":false,"generation_tested":false,"ownership_established":false,"physical_residency_attested":false,"automatic_cleanup":false});
         finish_load(store,&task,&receipt,&before_digest,report.clone())?;
         Ok::<_,anyhow::Error>(report)
     }.await;
@@ -790,6 +890,39 @@ pub(crate) async fn load_owned_with_gpu(
             bail!("Managed load outcome is unknown for task {task}; inspect inventory before any further operation")
         }
     }
+}
+
+async fn run_lms_load(model_key: &str, context_length: u32, parallel_slots: u32) -> Result<()> {
+    use std::process::Stdio;
+    let executable = std::env::var_os("COGFABRIC_LMS_CLI")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from("lms"));
+    let mut command = tokio::process::Command::new(executable);
+    command
+        .arg("load")
+        .arg(model_key)
+        .arg("--context-length")
+        .arg(context_length.to_string())
+        .arg("--parallel")
+        .arg(parallel_slots.to_string())
+        .arg("--yes")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .kill_on_drop(true);
+    let mut child = command.spawn()?;
+    let status = match tokio::time::timeout(Duration::from_secs(300), child.wait()).await {
+        Ok(status) => status?,
+        Err(_) => {
+            let _ = child.kill().await;
+            let _ = child.wait().await;
+            bail!("LM Studio CLI model load exceeded five minutes")
+        }
+    };
+    if !status.success() {
+        bail!("LM Studio CLI model load failed")
+    }
+    Ok(())
 }
 
 /// Explicit human-approved release by receipt UUID. Inventory observation and

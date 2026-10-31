@@ -36,6 +36,18 @@ NATIVE_POLICY="${COGFABRIC_NATIVE_POLICY:-}"
 NATIVE_APPROVED="${COGFABRIC_NATIVE_ACTIVATION_APPROVED:-0}"
 NATIVE_KEY_APPROVED="${COGFABRIC_NATIVE_MODEL_KEY_EVIDENCE_APPROVED:-0}"
 
+# LM Studio's REST load endpoint does not accept a prediction-slot count.
+# The approved on-demand policy can use the provider's `lms load --parallel`
+# command; pass its executable path to the Rust server without shell evaluation.
+if [[ -z "${COGFABRIC_LMS_CLI:-}" ]] && ! command -v lms >/dev/null 2>&1; then
+    for candidate in "${HOME:?HOME is not set}/.lmstudio/bin/lms" "${HOME:?HOME is not set}/.local/bin/lms"; do
+        if [[ -x "$candidate" && ! -d "$candidate" ]]; then
+            export COGFABRIC_LMS_CLI="$candidate"
+            break
+        fi
+    done
+fi
+
 die() {
     printf 'cognitive-fabric: %s\n' "$*" >&2
     exit 1

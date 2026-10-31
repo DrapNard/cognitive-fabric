@@ -546,6 +546,9 @@ enum Command {
         /// Override one model's KV-cache placement with MODEL_KEY=true or MODEL_KEY=false.
         #[arg(long = "model-kv-gpu", value_name = "MODEL_KEY=BOOL")]
         model_kv_placement: Vec<String>,
+        /// Override one model's maximum concurrent predictions with MODEL_KEY=COUNT.
+        #[arg(long = "model-parallel", value_name = "MODEL_KEY=COUNT")]
+        model_parallel_slots: Vec<String>,
         /// Use the separately configured native provider credential.
         #[arg(long)]
         authenticate: bool,
@@ -2278,13 +2281,18 @@ async fn run_cli() -> Result<()> {
             offload_kv_cache_to_gpu,
             model_contexts,
             model_kv_placement,
+            model_parallel_slots,
             authenticate,
             max_lifecycle_seconds,
         } => {
             let mut contexts = std::collections::BTreeMap::new();
             let mut placements = std::collections::BTreeMap::new();
-            if model_contexts.len() > 8 || model_kv_placement.len() > 8 {
-                bail!("At most eight model context and placement overrides are supported")
+            let mut parallel_slots = std::collections::BTreeMap::new();
+            if model_contexts.len() > 8
+                || model_kv_placement.len() > 8
+                || model_parallel_slots.len() > 8
+            {
+                bail!("At most eight model context, placement and parallel overrides are supported")
             }
             for assignment in model_contexts {
                 let (model, value) = assignment.rsplit_once('=').ok_or_else(|| {
@@ -2306,6 +2314,17 @@ async fn run_cli() -> Result<()> {
                     bail!("Duplicate model cache override")
                 }
             }
+            for assignment in model_parallel_slots {
+                let (model, value) = assignment.rsplit_once('=').ok_or_else(|| {
+                    anyhow::anyhow!("Model parallel override must have MODEL_KEY=COUNT form")
+                })?;
+                let value = value.parse::<u32>()?;
+                if !(1..=4).contains(&value)
+                    || parallel_slots.insert(model.to_owned(), value).is_some()
+                {
+                    bail!("Invalid or duplicate model parallel override")
+                }
+            }
             let options = cogfabric::residency::lifecycle::NativePolicyDraftOptions {
                 api_base,
                 extra_models,
@@ -2313,6 +2332,7 @@ async fn run_cli() -> Result<()> {
                 offload_kv_cache_to_gpu,
                 model_contexts: contexts,
                 model_kv_placement: placements,
+                model_parallel_slots: parallel_slots,
                 authenticate,
                 max_lifecycle_seconds,
             };

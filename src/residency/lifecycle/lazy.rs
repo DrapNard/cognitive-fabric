@@ -122,6 +122,7 @@ pub(crate) struct Coordinator {
     deadline: Instant,
     cancel: tokio::sync::watch::Receiver<bool>,
     models: BTreeMap<String, planning::EnsureLoaded>,
+    provider_parallel_slots: BTreeMap<String, u32>,
     cells: Mutex<BTreeMap<String, Arc<ModelCell>>>,
     prediction_gates: Mutex<BTreeMap<String, Arc<tokio::sync::Semaphore>>>,
     initial: BTreeMap<String, BoundReceipt>,
@@ -188,6 +189,7 @@ impl Coordinator {
             deadline,
             cancel,
             models,
+            provider_parallel_slots: policy.provider_parallel_slots.clone(),
             cells: Mutex::new(BTreeMap::new()),
             prediction_gates: Mutex::new(prediction_gates),
             committed: Mutex::new(initial.clone()),
@@ -309,6 +311,14 @@ impl Coordinator {
         match &*state {
             Activation::Loaded(binding) => {
                 self.ensure_active()?;
+                if let Some(required) = self.provider_parallel_slots.get(model) {
+                    if binding
+                        .provider_prediction_slots
+                        .is_none_or(|observed| observed < *required)
+                    {
+                        bail!("Native provider prediction capacity is below the approved parallel-slot requirement")
+                    }
+                }
                 return Ok((**binding).clone());
             }
             Activation::Loading | Activation::Unknown => {
@@ -421,16 +431,30 @@ impl Coordinator {
             // mutation. Keep Loading until the durable receipt and task binding
             // are both validated and stored.
             let loaded = match bounded(self.deadline, &self.cancel, async {
-                managed::load_owned_with_gpu(
-                    &self.store,
-                    &self.api_base,
-                    self.authenticate,
-                    model,
-                    ensure.context_length,
-                    ensure.offload_kv_cache_to_gpu,
-                    (true, Some(&self.owner)),
-                )
-                .await
+                if let Some(slots) = self.provider_parallel_slots.get(model) {
+                    managed::load_owned_with_parallel_slots(
+                        &self.store,
+                        &self.api_base,
+                        self.authenticate,
+                        model,
+                        ensure.context_length,
+                        ensure.offload_kv_cache_to_gpu,
+                        *slots,
+                        (true, Some(&self.owner)),
+                    )
+                    .await
+                } else {
+                    managed::load_owned_with_gpu(
+                        &self.store,
+                        &self.api_base,
+                        self.authenticate,
+                        model,
+                        ensure.context_length,
+                        ensure.offload_kv_cache_to_gpu,
+                        (true, Some(&self.owner)),
+                    )
+                    .await
+                }
             })
             .await
             {
@@ -499,6 +523,12 @@ impl Coordinator {
                     .find(|instance| instance.id == binding.receipt.instance_id)
             })
             .and_then(|instance| instance.config.parallel);
+        if let Some(required) = self.provider_parallel_slots.get(model) {
+            if prediction_slots.is_none_or(|observed| observed < *required) {
+                *state = Activation::Unloaded;
+                bail!("LM Studio did not apply the approved model prediction-slot count")
+            }
+        }
         binding.provider_prediction_slots = prediction_slots;
         self.prediction_gate(model, prediction_slots)?;
         let mut raw = json!({
