@@ -220,6 +220,14 @@ if [ "$jev_r_only" -eq 1 ] || [ -n "$language_model" ] || [ -n "$reasoning_model
             echo "The expert model manifest API base must exactly match $api_base." >&2
             exit 2
         fi
+        domain_expert_manifest_model=$(jq -er '.model' "$domain_expert_manifest") || {
+            echo '--domain-expert-manifest must declare a model key.' >&2
+            exit 2
+        }
+        if [ "$domain_expert_manifest_model" = "$language_model" ]; then
+            echo 'The Jev+ expert model must differ from the language-only model.' >&2
+            exit 2
+        fi
     fi
     if [ -n "$domain_expert_workflow_version" ]; then
         command -v jq >/dev/null 2>&1 || {
@@ -404,8 +412,51 @@ register_model_if_exact() {
     fi
 }
 
+prepare_domain_expert_model() {
+    config_home=$1
+    if [ -n "$domain_expert_manifest" ]; then
+        expert_manifest_path=$domain_expert_manifest
+        expert_skill_version=${domain_expert_workflow_version:-1.1.0}
+    else
+        expert_manifest_path="$source_dir/examples/qwen36_model_manifest.json"
+        expert_skill_version=${domain_expert_workflow_version:-1.0.0}
+    fi
+    register_model_if_exact "$config_home" "$expert_manifest_path"
+    expert_model_id=$(jq -er '.id' "$expert_manifest_path")
+    expert_model_version=$(jq -er '.version' "$expert_manifest_path")
+    registered_models=$("$prefix/bin/cogfabric" --home "$config_home" --json models)
+    expert_registration=$(printf '%s\n' "$registered_models" | jq -cer \
+        --arg id "$expert_model_id" --arg version "$expert_model_version" \
+        '[.[] | select(.manifest.id == $id and .manifest.version == $version)] |
+         if length == 1 and .[0].enabled == true then .[0].manifest
+         else error("selected expert model is absent, ambiguous, or disabled") end') || {
+        echo "The selected expert model is not enabled in $config_home." >&2
+        exit 1
+    }
+    expert_model_key=$(printf '%s\n' "$expert_registration" | jq -er '.model')
+    expert_model_api_base=$(printf '%s\n' "$expert_registration" | jq -er '.api_base')
+    if [ "$expert_model_key" = "$language_model" ]; then
+        echo 'The Jev+ expert model must differ from the language-only model.' >&2
+        exit 1
+    fi
+    if [ "$expert_model_api_base" != "$api_base" ]; then
+        echo "The selected expert model API base must exactly match $api_base." >&2
+        exit 1
+    fi
+    if [ -n "$domain_expert_model_key" ] && [ "$domain_expert_model_key" != "$expert_model_key" ]; then
+        echo 'The CLI and OpenCode homes resolve the expert registration to different model keys.' >&2
+        exit 1
+    fi
+    domain_expert_model_key=$expert_model_key
+}
+
 if [ -n "$language_model" ]; then
     domain_expert_model_key=''
+    if [ "$domain_experts" -eq 1 ]; then
+        for config_home in "$cli_home" "$opencode_home"; do
+            prepare_domain_expert_model "$config_home"
+        done
+    fi
     for config_home in "$cli_home" "$opencode_home"; do
         configure_network_for_home "$config_home"
         if [ "$jev_r_only" -ne 1 ]; then
@@ -414,40 +465,6 @@ if [ -n "$language_model" ]; then
                 --api-base "$api_base" \
                 --reasoning-effort default
             if [ "$domain_experts" -eq 1 ]; then
-                if [ -n "$domain_expert_manifest" ]; then
-                    expert_manifest_path=$domain_expert_manifest
-                    expert_skill_version=${domain_expert_workflow_version:-1.1.0}
-                else
-                    expert_manifest_path="$source_dir/examples/qwen36_model_manifest.json"
-                    expert_skill_version=${domain_expert_workflow_version:-1.0.0}
-                fi
-                register_model_if_exact "$config_home" "$expert_manifest_path"
-                expert_model_id=$(jq -er '.id' "$expert_manifest_path")
-                expert_model_version=$(jq -er '.version' "$expert_manifest_path")
-                registered_models=$("$prefix/bin/cogfabric" --home "$config_home" --json models)
-                expert_registration=$(printf '%s\n' "$registered_models" | jq -cer \
-                    --arg id "$expert_model_id" --arg version "$expert_model_version" \
-                    '[.[] | select(.manifest.id == $id and .manifest.version == $version)] |
-                     if length == 1 and .[0].enabled == true then .[0].manifest
-                     else error("selected expert model is absent, ambiguous, or disabled") end') || {
-                    echo "The selected expert model is not enabled in $config_home." >&2
-                    exit 1
-                }
-                expert_model_key=$(printf '%s\n' "$expert_registration" | jq -er '.model')
-                expert_model_api_base=$(printf '%s\n' "$expert_registration" | jq -er '.api_base')
-                if [ "$expert_model_key" = "$language_model" ]; then
-                    echo 'The Jev+ expert model must differ from the language-only model.' >&2
-                    exit 1
-                fi
-                if [ "$expert_model_api_base" != "$api_base" ]; then
-                    echo "The selected expert model API base must exactly match $api_base." >&2
-                    exit 1
-                fi
-                if [ -n "$domain_expert_model_key" ] && [ "$domain_expert_model_key" != "$expert_model_key" ]; then
-                    echo 'The CLI and OpenCode homes resolve the expert registration to different model keys.' >&2
-                    exit 1
-                fi
-                domain_expert_model_key=$expert_model_key
                 for expert in \
                     'data.sql.s1:data_sql' \
                     'git.s1:git' \

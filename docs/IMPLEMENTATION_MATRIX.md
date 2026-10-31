@@ -16,7 +16,8 @@ run; no tests or benchmarks were performed.
 `--domain-expert-manifest` path, registers that immutable model manifest in both
 CLI and OpenCode homes, then creates and activates workflow versions pinned to
 its `id@version`. The manifest API base must exactly match the configured
-provider; the on-demand draft includes its model key. A version option allows
+provider; both homes are checked before network configuration changes, and the
+on-demand draft includes its model key. A version option allows
 deliberate rebinding without replacing an existing immutable workflow. Default
 Qwen3.6 workflow bindings remain unchanged. The feature selects a route but does
 not establish that the expert and Jev-R models fit or run concurrently. Shell

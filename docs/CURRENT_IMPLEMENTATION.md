@@ -16,8 +16,9 @@ registers one exact operator-provided model manifest in both local homes and
 binds new versions of the eight domain workflows to that immutable
 `id@version`. The model API base must match the selected local inference API;
 the optional workflow-version flag makes model rebinding explicit rather than
-overwriting an existing expert version. On-demand policy drafting includes the
-selected expert model key. The default Qwen3.6 shared-backbone setup is unchanged.
+overwriting an existing expert version. Both model registrations are checked
+before either local network configuration is changed. On-demand policy drafting
+includes the selected expert model key. The default Qwen3.6 shared-backbone setup is unchanged.
 This enables separate Jev+ model routing but does not prove simultaneous memory
 fit or provider concurrency. No tests, benchmarks, model loads, or inference ran.
 
