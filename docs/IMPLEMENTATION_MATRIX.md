@@ -1,5 +1,16 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Switch from compiled Jev-R to role-model routing — 2026-10-31
+
+**Implemented; runtime unverified.** `src/config.rs` clears stale
+`jev_r_only` state when `Config::language_network` replaces a compiled-only
+profile with model-assisted Jev-R role routes. This allows the CLI to switch a
+persisted local config without hand-editing it. The installed profile now keeps
+`qwen/qwen3-8b` on language duties and assigns existing local Qwen model IDs to
+Jev-R roles. LM Studio is stopped; IDs were matched to local model files but
+provider discovery/activation was not verified. No tests or benchmarks ran.
+Jev+ workflow expert models remain a separate registry/manifest requirement.
+
 ## Qwen language boundary and no-reasoning-model Jev-R mode — 2026-10-31
 
 **Partial; runtime unverified.** `src/config.rs`, `src/main.rs`,

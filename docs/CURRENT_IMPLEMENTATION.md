@@ -1,5 +1,17 @@
 # Current Rust implementation
 
+## Switch from compiled Jev-R to Jev-R role models — 2026-10-31
+
+**Implemented; runtime unverified.** `Config::language_network` now clears the
+persisted `jev_r_only` flag when replacing a compiled-only setup with explicit
+model-assisted role routing. This allows operators to move from compiled Jev-R
+to Jev-R role models without manually editing `config.json`. The local install
+is configured with `qwen/qwen3-8b` for language duties, `qwen3.6-35b-a3b` for
+planning/solving/reflection, and `qwen3.8-27b-uncensored@q4_k_m` for
+exploration/critique. LM Studio is stopped, so provider IDs, activation and
+inference remain unverified. No tests or benchmarks ran. Jev+ model-backed
+workflow experts still require separately registered expert manifests/models.
+
 ## Configure Qwen as language interface with model-free Jev-R — 2026-10-31
 
 **Partial; runtime unverified.** `Config::language_network_jev_r_only` and

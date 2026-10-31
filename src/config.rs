@@ -215,6 +215,7 @@ impl Config {
         configured.interpret_goals = true;
         configured.agent_collective = true;
         configured.native_only_client = false;
+        configured.jev_r_only = false;
         configured.subtask_parallelism = Some(parallelism);
         configured.expert_parallelism = Some(expert_parallelism);
         configured.validate()?;
