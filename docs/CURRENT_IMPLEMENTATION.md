@@ -10,7 +10,16 @@ sharing a width of two. Configurations without the new field retain the old
 maximum-width behavior. New planner/expert overlap records use format 5;
 recovery continues to validate formats 1-4 using their original capacity rule.
 Provider slots, model memory fit, physical overlap and latency remain
-unverified. No tests or benchmarks ran.
+unverified. The committed binaries are installed in `~/.local/bin`; CLI and
+OpenCode configuration now both record the 2+2 group widths and total cap 4.
+Their language route is `qwen/qwen3-8b`; Jev-R roles use `qwen3.6-35b-a3b`.
+The on-demand policy still lists those two model identities at 32K and 16K
+contexts. No LM Studio or Cognitive Fabric server process was present during
+the post-install check, available host memory was 19.1 GB, and the NVIDIA driver
+is unavailable; the model's previously recorded 22.68 GB weight size exceeds
+that available memory. The four-slot cap therefore describes software
+admission only, not a currently runnable four-way provider workload. No tests,
+benchmarks, model loads, or inference ran.
 
 ## Decouple Jev+ expert model from Jev-R models — 2026-10-31
 

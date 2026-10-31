@@ -10,8 +10,14 @@ without the field keep their original `max(subtask_parallelism,
 expert_parallelism)` behavior. New planner/expert overlap events use format 5;
 recovery retains the old capacity calculation for event formats 1-4. This
 expands the software admission ceiling only; provider slot limits, simultaneous
-model residency, GPU behavior, and speed remain unverified. No tests or
-benchmarks were run.
+model residency, GPU behavior, and speed remain unverified. The updated release
+is installed; both local homes now persist a four-call shared ceiling, with
+Qwen3-8B routed to language roles and Qwen3.6-35B routed to Jev-R. The native
+policy still lists these two models at 32K and 16K context. No LM Studio or
+Cognitive Fabric server process was present after installation; available host
+memory was 19.1 GB, below the previously recorded 22.68 GB Qwen3.6 weights, and
+the NVIDIA driver is unavailable. This is not live parallel-inference evidence.
+No tests, benchmarks, model loads, or inference were run.
 
 ## Decouple Jev+ expert model from Jev-R models — 2026-10-31
 
