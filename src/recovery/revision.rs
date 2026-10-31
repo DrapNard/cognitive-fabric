@@ -182,7 +182,12 @@ impl Store {
             if boundary["format_version"] == 2 && boundary["phase"] == "ready_solver" {
                 // Validate the typed handoff before converting this mutable
                 // checkpoint into the historical revision-phase shape.
-                crate::reasoning::handoff::decode(&boundary["solver_handoff"], &query)?;
+                crate::reasoning::handoff::decode_from_db(
+                    &tx,
+                    task,
+                    &boundary["solver_handoff"],
+                    &query,
+                )?;
             }
             let prior_valid = if prior_critic_boundary {
                 boundary["cycles_before"] == cycles

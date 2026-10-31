@@ -55,6 +55,11 @@ enum Segment {
         content: String,
         content_sha256: String,
     },
+    UnverifiedSourceRef {
+        event_id: u64,
+        content_bytes: usize,
+        content_sha256: String,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -74,17 +79,23 @@ struct Alternative {
 
 /// Encode the rendered strategy into provenance-tagged, typed handoff records.
 /// Its projection is checked for byte-for-byte equivalence before persistence.
-pub(crate) fn encode(objective: &str, advice: &str) -> Result<Value> {
+pub(crate) fn encode(
+    store: &crate::store::Store,
+    task: &str,
+    objective: &str,
+    advice: &str,
+) -> Result<Value> {
     if objective.is_empty() || objective.len() > 12_000 || advice.len() > MAX_TEXT_BYTES {
         bail!("Jev-R solver handoff exceeds its byte bound")
     }
     if advice.chars().count() > MAX_TEXT_CHARS {
         bail!("Jev-R solver advice exceeds its character bound")
     }
-    let segments = parse_segments(advice, 0)?;
+    let mut segments = parse_segments(advice, 0)?;
     if segments.len() > MAX_SEGMENTS {
         bail!("Jev-R solver handoff contains too many records")
     }
+    externalize_text_sources(store, task, objective, &mut segments, 0)?;
     let handoff = SolverHandoff {
         format: FORMAT.into(),
         version: 1,
@@ -96,7 +107,7 @@ pub(crate) fn encode(objective: &str, advice: &str) -> Result<Value> {
     if serde_json::to_vec(&value)?.len() > MAX_TEXT_BYTES + 4096 {
         bail!("Encoded Jev-R solver handoff exceeds its bound")
     }
-    let rendered = decode(&value, objective)?;
+    let rendered = decode_with_store(store, task, &value, objective)?;
     if rendered != advice {
         bail!("Jev-R solver handoff projection changed the original strategy")
     }
@@ -104,7 +115,55 @@ pub(crate) fn encode(objective: &str, advice: &str) -> Result<Value> {
 }
 
 /// Decode and validate a new-format handoff, preserving its exact prompt text.
+#[cfg(test)]
 pub(crate) fn decode(value: &Value, objective: &str) -> Result<String> {
+    decode_with_resolver(value, objective, &mut |_, _, _| {
+        bail!("Jev-R handoff source reference requires its task store")
+    })
+}
+
+pub(crate) fn decode_with_store(
+    store: &crate::store::Store,
+    task: &str,
+    value: &Value,
+    objective: &str,
+) -> Result<String> {
+    decode_with_resolver(
+        value,
+        objective,
+        &mut |event_id, content_bytes, content_sha256| {
+            read_source_from_store(
+                store,
+                task,
+                event_id,
+                content_bytes,
+                content_sha256,
+                objective,
+            )
+        },
+    )
+}
+
+pub(crate) fn decode_from_db(
+    db: &rusqlite::Connection,
+    task: &str,
+    value: &Value,
+    objective: &str,
+) -> Result<String> {
+    decode_with_resolver(
+        value,
+        objective,
+        &mut |event_id, content_bytes, content_sha256| {
+            read_source_from_db(db, task, event_id, content_bytes, content_sha256, objective)
+        },
+    )
+}
+
+fn decode_with_resolver(
+    value: &Value,
+    objective: &str,
+    resolve: &mut dyn FnMut(u64, usize, &str) -> Result<String>,
+) -> Result<String> {
     let handoff: SolverHandoff = serde_json::from_value(value.clone())?;
     if objective.is_empty()
         || objective.len() > 12_000
@@ -116,7 +175,7 @@ pub(crate) fn decode(value: &Value, objective: &str) -> Result<String> {
     {
         bail!("Jev-R solver handoff identity or schema is invalid")
     }
-    let rendered = render_segments(&handoff.segments, 0)?;
+    let rendered = render_segments(&handoff.segments, 0, resolve)?;
     if rendered.len() > MAX_TEXT_BYTES || rendered.chars().count() > MAX_TEXT_CHARS {
         bail!("Jev-R solver handoff projection exceeds its bound")
     }
@@ -184,7 +243,62 @@ fn parse_segments(raw: &str, depth: usize) -> Result<Vec<Segment>> {
     }])
 }
 
-fn render_segments(segments: &[Segment], depth: usize) -> Result<String> {
+fn externalize_text_sources(
+    store: &crate::store::Store,
+    task: &str,
+    objective: &str,
+    segments: &mut [Segment],
+    depth: usize,
+) -> Result<()> {
+    if depth > MAX_DEPTH {
+        bail!("Jev-R handoff composition is too deeply nested")
+    }
+    for segment in segments {
+        match segment {
+            Segment::ExplorationSelection { remainder, .. } => {
+                externalize_text_sources(store, task, objective, remainder, depth + 1)?;
+            }
+            Segment::UnverifiedText {
+                source,
+                content,
+                content_sha256,
+            } => {
+                if source != "legacy_or_unclassified_jev_r_advice"
+                    || content.is_empty()
+                    || content.len() > MAX_TEXT_BYTES
+                    || content.chars().count() > MAX_TEXT_CHARS
+                    || *content_sha256 != crate::store::sha256(content.as_bytes())
+                {
+                    bail!("Unclassified Jev-R advice source is invalid")
+                }
+                let payload = serde_json::json!({
+                    "format_version":1,
+                    "kind":"jev_r_unclassified_advice_source",
+                    "objective_sha256":crate::store::sha256(objective.as_bytes()),
+                    "source":"jev-r_strategy_projection",
+                    "content":content,
+                    "content_sha256":content_sha256,
+                    "trust":"unverified_advice_never_evidence_or_permissions"
+                });
+                let event_id =
+                    store.event_with_id(task, "reasoning_handoff_source", "jev-r", payload)?;
+                *segment = Segment::UnverifiedSourceRef {
+                    event_id,
+                    content_bytes: content.len(),
+                    content_sha256: content_sha256.clone(),
+                };
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+fn render_segments(
+    segments: &[Segment],
+    depth: usize,
+    resolve: &mut dyn FnMut(u64, usize, &str) -> Result<String>,
+) -> Result<String> {
     if depth > MAX_DEPTH || segments.len() > MAX_SEGMENTS {
         bail!("Jev-R handoff composition exceeds its structural bound")
     }
@@ -223,7 +337,7 @@ fn render_segments(segments: &[Segment], depth: usize) -> Result<String> {
                 format!(
                     "{EXPLORATION_PREFIX}{}{EXPLORATION_SEPARATOR}{}",
                     serde_json::to_string(alternative)?,
-                    render_segments(remainder, depth + 1)?
+                    render_segments(remainder, depth + 1, resolve)?
                 )
             }
             Segment::CompiledCheckerFeedback {
@@ -255,10 +369,90 @@ fn render_segments(segments: &[Segment], depth: usize) -> Result<String> {
                 }
                 content.clone()
             }
+            Segment::UnverifiedSourceRef {
+                event_id,
+                content_bytes,
+                content_sha256,
+            } => resolve(*event_id, *content_bytes, content_sha256)?,
         };
         output.push_str(&rendered);
     }
     Ok(output)
+}
+
+fn read_source_from_store(
+    store: &crate::store::Store,
+    task: &str,
+    event_id: u64,
+    content_bytes: usize,
+    content_sha256: &str,
+    objective: &str,
+) -> Result<String> {
+    let db = store.lock()?;
+    read_source_from_db(
+        &db,
+        task,
+        event_id,
+        content_bytes,
+        content_sha256,
+        objective,
+    )
+}
+
+fn read_source_from_db(
+    db: &rusqlite::Connection,
+    task: &str,
+    event_id: u64,
+    content_bytes: usize,
+    content_sha256: &str,
+    objective: &str,
+) -> Result<String> {
+    use rusqlite::OptionalExtension;
+    let source: Option<(String, String)> = db
+        .query_row(
+            "SELECT CASE WHEN length(CAST(source AS BLOB))<=64 THEN source END,CASE WHEN length(CAST(payload AS BLOB))<=20000 THEN payload END FROM events WHERE task_id=?1 AND id=?2 AND kind='reasoning_handoff_source'",
+            rusqlite::params![task, event_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?;
+    let (source, raw) = source.ok_or_else(|| {
+        anyhow::anyhow!("Jev-R handoff source event is missing or exceeds its bound")
+    })?;
+    if source != "jev-r" {
+        bail!("Jev-R handoff source event has an invalid owner")
+    }
+    let value = crate::strict_json::value(raw.as_bytes(), 20_000)?;
+    let object = value
+        .as_object()
+        .ok_or_else(|| anyhow::anyhow!("Jev-R handoff source payload is not an object"))?;
+    let content = value["content"]
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("Jev-R handoff source content is missing"))?;
+    if object.len() != 7
+        || ![
+            "format_version",
+            "kind",
+            "objective_sha256",
+            "source",
+            "content",
+            "content_sha256",
+            "trust",
+        ]
+        .iter()
+        .all(|key| object.contains_key(*key))
+        || value["format_version"] != 1
+        || value["kind"] != "jev_r_unclassified_advice_source"
+        || value["objective_sha256"] != crate::store::sha256(objective.as_bytes())
+        || value["source"] != "jev-r_strategy_projection"
+        || value["trust"] != "unverified_advice_never_evidence_or_permissions"
+        || content.len() != content_bytes
+        || content.chars().count() > MAX_TEXT_CHARS
+        || content_sha256 != crate::store::sha256(content.as_bytes())
+        || value["content_sha256"] != content_sha256
+    {
+        bail!("Jev-R handoff source event differs from its pinned reference")
+    }
+    Ok(content.to_owned())
 }
 
 fn validate_plan_results(records: &[PlanResult]) -> Result<()> {
@@ -373,7 +567,33 @@ fn valid_hash(value: &str) -> bool {
 
 /// Read an immutable solver boundary. Historical v1 boundaries remain readable;
 /// new v2 boundaries must contain only the typed handoff field.
-pub(crate) fn from_boundary(boundary: &Value, objective: &str) -> Result<String> {
+pub(crate) fn from_boundary_with_store(
+    store: &crate::store::Store,
+    task: &str,
+    boundary: &Value,
+    objective: &str,
+) -> Result<String> {
+    from_boundary_with(boundary, objective, &mut |value, objective| {
+        decode_with_store(store, task, value, objective)
+    })
+}
+
+pub(crate) fn from_boundary_from_db(
+    db: &rusqlite::Connection,
+    task: &str,
+    boundary: &Value,
+    objective: &str,
+) -> Result<String> {
+    from_boundary_with(boundary, objective, &mut |value, objective| {
+        decode_from_db(db, task, value, objective)
+    })
+}
+
+fn from_boundary_with(
+    boundary: &Value,
+    objective: &str,
+    decode_handoff: &mut dyn FnMut(&Value, &str) -> Result<String>,
+) -> Result<String> {
     match boundary["format_version"].as_u64() {
         Some(1) => {
             if boundary.get("solver_handoff").is_some() {
@@ -394,7 +614,7 @@ pub(crate) fn from_boundary(boundary: &Value, objective: &str) -> Result<String>
             {
                 bail!("Versioned solver boundary has mixed or missing handoff fields")
             }
-            decode(&boundary["solver_handoff"], objective)
+            decode_handoff(&boundary["solver_handoff"], objective)
         }
         _ => bail!("Unsupported solver boundary format"),
     }

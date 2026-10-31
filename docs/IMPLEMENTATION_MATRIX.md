@@ -12,10 +12,11 @@ result remains text data. `Session::continue_solver`, checkpoint recovery, saved
 prompt accounting, and revision recovery understand the new shape. Historical
 format-1 checkpoints remain readable; revision recovery converts a validated
 format-2 solver checkpoint to the existing revision-phase format before adding
-its new handoff. Unclassified legacy advice remains explicitly tagged text; a
-source-event reference graph is still future work. `cargo fmt --all` and
-`cargo check --workspace --all-targets` passed; no tests, benchmarks, model
-operations, or live provider calls ran.
+its new handoff. Unclassified legacy advice is stored once in a bounded,
+task-scoped source event and referenced by event ID, byte count, and digest.
+Recovery validates ownership, objective binding, trust label, size, and digest
+before reconstructing the text. No tests, benchmarks, model operations, or live
+provider calls ran.
 
 ## Acquire shared inference capacity at dispatch — 2026-10-31
 

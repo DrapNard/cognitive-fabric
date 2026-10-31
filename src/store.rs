@@ -954,6 +954,15 @@ impl Store {
         Ok(())
     }
     pub fn event(&self, id: &str, kind: &str, source: &str, payload: Value) -> Result<()> {
+        self.event_with_id(id, kind, source, payload).map(|_| ())
+    }
+    pub(crate) fn event_with_id(
+        &self,
+        id: &str,
+        kind: &str,
+        source: &str,
+        payload: Value,
+    ) -> Result<u64> {
         let raw = payload.to_string();
         if raw.len() > 262144 || kind.len() > 64 || source.len() > 64 {
             bail!("Audit event exceeds bounds")
@@ -964,11 +973,12 @@ impl Store {
             "INSERT INTO events(task_id,kind,source,payload,created) VALUES (?1,?2,?3,?4,?5)",
             params![id, kind, source, raw, now()],
         )?;
+        let event_id = db.last_insert_rowid();
         if let Some(event) = &mut progress {
-            event.sequence = db.last_insert_rowid() as u64;
+            event.sequence = event_id as u64;
             self.events.publish(event).map_err(PersistedEventError)?;
         }
-        Ok(())
+        Ok(event_id as u64)
     }
     pub(crate) fn worker_audit(&self, anchor: &str, payload: Value) -> Result<()> {
         let raw = payload.to_string();

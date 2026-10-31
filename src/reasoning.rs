@@ -827,7 +827,7 @@ impl Session {
                 .await?
                 .ok_or_else(|| anyhow::anyhow!("Original reflection allowance exhausted"))?
         } else {
-            handoff::from_boundary(boundary, query)?
+            handoff::from_boundary_with_store(&self.store, &self.task, boundary, query)?
         };
         self.solve_with_strategy(query, context, mode, true, Some(strategy), None)
             .await
@@ -2982,7 +2982,7 @@ impl Session {
                 "objective_hash":crate::store::sha256(query.as_bytes()),
                 "context_hash":crate::store::sha256(context.as_bytes()),
                 "prompt_base_hash":crate::store::sha256(base.as_bytes()),
-                "solver_handoff":crate::reasoning::handoff::encode(query,&truncate(&strategy,4000))?,
+                "solver_handoff":crate::reasoning::handoff::encode(&self.store,&self.task,query,&truncate(&strategy,4000))?,
                 "previous_answer":answer,
                 "last_answer_hash":last_hash,"calls_before":self.resources.calls,
                 "cycles_before":self.resources.cycles,"tool_calls_before":self.resources.tool_calls,

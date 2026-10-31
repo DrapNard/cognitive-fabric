@@ -8,10 +8,11 @@ with an objective digest, trust label, per-record digests, and tagged planner
 results, Jev+ expert envelopes, exploration selections, and checker feedback.
 V1 saved checkpoints remain readable. Recovery and prompt-size accounting decode
 both versions; revision recovery converts validated V2 solver state to the
-existing revision-phase representation. Model result content remains bounded
-text inside its typed record, and unclassified legacy advice is explicitly
-tagged. Reconstructing all strategy from source-event references remains future
-work. No tests or benchmarks ran.
+existing revision-phase representation. Unclassified legacy advice is written
+once to a bounded, task-scoped source event and referenced by event ID, byte
+count, and digest from the checkpoint. Recovery verifies event ownership,
+objective binding, trust label, size, and digest before rendering it. No tests
+or benchmarks ran.
 
 ## Release shared inference capacity after route admission — 2026-10-31
 

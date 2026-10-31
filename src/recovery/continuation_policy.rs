@@ -64,7 +64,7 @@ pub(super) fn validate_saved_decision(
     let reason_code = decision["decision"]["reason_code"].as_str().unwrap_or("");
     let base = crate::reasoning::Session::prompt_base(&query, context, true)?;
     let answer = boundary["previous_answer"].as_str().unwrap();
-    let strategy = crate::reasoning::handoff::from_boundary(boundary, &query)?;
+    let strategy = crate::reasoning::handoff::from_boundary_from_db(db, task, boundary, &query)?;
     let bounded = |text: &str, count: usize| text.chars().take(count).collect::<String>();
     let prompt_bytes = if criterion.is_some() {
         format!(
