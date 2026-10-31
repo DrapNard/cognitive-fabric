@@ -7,9 +7,11 @@
 profile with model-assisted Jev-R role routes. This allows the CLI to switch a
 persisted local config without hand-editing it. The installed profile now keeps
 `qwen/qwen3-8b` on language duties and assigns existing local Qwen model IDs to
-Jev-R roles. LM Studio is stopped; IDs were matched to local model files but
-provider discovery/activation was not verified. No tests or benchmarks ran.
-Jev+ workflow expert models remain a separate registry/manifest requirement.
+Jev-R roles. A stale global `none` reasoning-effort override was cleared;
+language roles still force `none`, and Jev-R uses the provider default. LM
+Studio is stopped; IDs were matched to local model files but provider
+discovery/activation was not verified. No tests or benchmarks ran. Jev+
+workflow expert models remain a separate registry/manifest requirement.
 
 ## Qwen language boundary and no-reasoning-model Jev-R mode — 2026-10-31
 
