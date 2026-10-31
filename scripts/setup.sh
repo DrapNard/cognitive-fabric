@@ -15,6 +15,7 @@ role_model_count=0
 api_base='http://127.0.0.1:1234/v1'
 jev_r_only=0
 domain_experts=0
+native_on_demand=0
 parallelism=2
 expert_parallelism=2
 
@@ -23,11 +24,11 @@ usage() {
 Usage: setup.sh [--prefix PATH] [--ref GIT_REF_OR_COMMIT] [--replace] [--nvml-gpu]
                 [--language-model MODEL --reasoning-model MODEL | --jev-r-only]
                 [--role-model ROLE=MODEL ...]
-                [--api-base URL] [--domain-experts]
+                [--api-base URL] [--domain-experts] [--native-on-demand]
                 [--parallelism 1..4] [--expert-parallelism 1..4]
 
 Build and install cogfabric, cogfabric-chat, and cogfabric-server from source.
-Also install the cogfabric-opencode startup helper.
+Also install the cogfabric-opencode and cogfabric-opencode-on-demand helpers.
 The default prefix is $HOME/.local and the default source ref is develop/v1.0.
 --replace allows replacing existing binaries with the same package version.
 --nvml-gpu builds the CLI and HTTP server with optional NVML observation support.
@@ -38,6 +39,9 @@ registers the included Qwen3.6-backed workflow manifests; it requires the
 repository's qwen3.6-35b-a3b model key and the standard LM Studio API base.
 Repeat --role-model ROLE=MODEL to route planner, solver, explorer, critic or
 reflector to a specific model; unassigned roles use --reasoning-model.
+--native-on-demand writes an unapproved native lifecycle policy draft for the
+OpenCode home and installs cogfabric-opencode-on-demand. Running that explicit
+command approves model activation on first admitted use; it does not preload.
 Supplying --language-model with --jev-r-only instead disables reasoning-role
 model calls. Configuration and registration do not load models or run inference.
 Width defaults are 2 and 2.
@@ -100,6 +104,10 @@ $2"
             domain_experts=1
             shift
             ;;
+        --native-on-demand)
+            native_on_demand=1
+            shift
+            ;;
         --parallelism)
             [ "$#" -ge 2 ] || { echo 'Missing value for --parallelism.' >&2; exit 2; }
             parallelism=$2
@@ -122,7 +130,7 @@ $2"
     esac
 done
 
-if [ "$jev_r_only" -eq 1 ] || [ -n "$language_model" ] || [ -n "$reasoning_model" ] || [ "$domain_experts" -eq 1 ] || [ "$role_model_count" -gt 0 ]; then
+if [ "$jev_r_only" -eq 1 ] || [ -n "$language_model" ] || [ -n "$reasoning_model" ] || [ "$domain_experts" -eq 1 ] || [ "$role_model_count" -gt 0 ] || [ "$native_on_demand" -eq 1 ]; then
     if [ -z "$language_model" ]; then
         echo 'A configured network requires --language-model MODEL.' >&2
         exit 2
@@ -141,6 +149,10 @@ if [ "$jev_r_only" -eq 1 ] || [ -n "$language_model" ] || [ -n "$reasoning_model
     fi
     if [ "$jev_r_only" -eq 1 ] && [ "$api_base" != 'http://127.0.0.1:1234/v1' ]; then
         echo '--api-base applies only to model-assisted routing.' >&2
+        exit 2
+    fi
+    if [ "$native_on_demand" -eq 1 ] && { [ "$jev_r_only" -eq 1 ] || [ "$api_base" != 'http://127.0.0.1:1234/v1' ]; }; then
+        echo '--native-on-demand requires model-assisted routing with the standard loopback LM Studio API base.' >&2
         exit 2
     fi
     if [ "$domain_experts" -eq 1 ] && { [ "$jev_r_only" -eq 1 ] || [ "$reasoning_model" != 'qwen3.6-35b-a3b' ] || [ "$api_base" != 'http://127.0.0.1:1234/v1' ]; }; then
@@ -180,6 +192,18 @@ case $prefix in
         ;;
 esac
 
+data_home=${XDG_DATA_HOME:-${HOME:?HOME must be set}/.local/share}
+cli_home=${COGFABRIC_CLI_HOME:-$data_home/cogfabric-rust}
+opencode_home=${COGFABRIC_HOME:-$data_home/cogfabric-http}
+case $data_home in /*) ;; *) data_home=$PWD/$data_home ;; esac
+case $cli_home in /*) ;; *) cli_home=$PWD/$cli_home ;; esac
+case $opencode_home in /*) ;; *) opencode_home=$PWD/$opencode_home ;; esac
+native_policy_file=$opencode_home/native-policy.json
+if [ "$native_on_demand" -eq 1 ] && { [ -e "$native_policy_file" ] || [ -L "$native_policy_file" ]; }; then
+    echo "Refusing to replace the existing native policy: $native_policy_file" >&2
+    exit 1
+fi
+
 if [ ! -d "$prefix" ]; then
     mkdir -p "$prefix"
 fi
@@ -187,7 +211,7 @@ prefix=$(CDPATH= cd "$prefix" && pwd)
 mkdir -p "$prefix/bin"
 
 if [ "$replace" -ne 1 ]; then
-    for binary in cogfabric cogfabric-chat cogfabric-server cogfabric-opencode; do
+    for binary in cogfabric cogfabric-chat cogfabric-server cogfabric-opencode cogfabric-opencode-on-demand; do
         if [ -e "$prefix/bin/$binary" ] || [ -L "$prefix/bin/$binary" ]; then
             echo "An executable already exists at $prefix/bin/$binary." >&2
             echo 'Re-run with --replace after reviewing the source if you intend to replace it.' >&2
@@ -265,9 +289,6 @@ configure_network_for_home() {
 }
 
 if [ -n "$language_model" ]; then
-    data_home=${XDG_DATA_HOME:-${HOME:?HOME must be set}/.local/share}
-    cli_home=${COGFABRIC_CLI_HOME:-$data_home/cogfabric-rust}
-    opencode_home=${COGFABRIC_HOME:-$data_home/cogfabric-http}
     for config_home in "$cli_home" "$opencode_home"; do
         configure_network_for_home "$config_home"
         if [ "$jev_r_only" -ne 1 ]; then
@@ -296,6 +317,31 @@ if [ -n "$language_model" ]; then
             fi
         fi
     done
+    if [ "$native_on_demand" -eq 1 ]; then
+        policy_tmp=$(mktemp "$opencode_home/.native-policy.XXXXXX") || {
+            echo 'Could not create a private native policy draft.' >&2
+            exit 1
+        }
+        if ! "$prefix/bin/cogfabric" --home "$opencode_home" --json native-policy-draft \
+            --api-base http://127.0.0.1:1234/api/v1 --context-length 16384 >"$policy_tmp"; then
+            rm -f "$policy_tmp"
+            echo 'Could not draft the on-demand policy; no provider operation was attempted.' >&2
+            exit 1
+        fi
+        chmod 600 "$policy_tmp"
+        if [ -e "$native_policy_file" ] || [ -L "$native_policy_file" ]; then
+            rm -f "$policy_tmp"
+            echo "Refusing to replace the existing native policy: $native_policy_file" >&2
+            exit 1
+        fi
+        if ! ln "$policy_tmp" "$native_policy_file"; then
+            rm -f "$policy_tmp"
+            echo "Could not create the native policy without replacing an existing file: $native_policy_file" >&2
+            exit 1
+        fi
+        rm -f "$policy_tmp"
+        printf 'Saved unapproved on-demand policy draft: %s\n' "$native_policy_file"
+    fi
     echo 'Network configuration saved. Models were not loaded and no inference was run.'
 fi
 
@@ -303,5 +349,9 @@ helper_tmp=$(mktemp "$prefix/bin/.cogfabric-opencode.XXXXXX")
 cp "$source_dir/scripts/opencode-local.sh" "$helper_tmp"
 chmod 755 "$helper_tmp"
 mv -f "$helper_tmp" "$prefix/bin/cogfabric-opencode"
-printf '\nInstalled commands:\n  %s\n  %s\n  %s\n  %s\n' "$prefix/bin/cogfabric" "$prefix/bin/cogfabric-chat" "$prefix/bin/cogfabric-server" "$prefix/bin/cogfabric-opencode"
+helper_tmp=$(mktemp "$prefix/bin/.cogfabric-opencode-on-demand.XXXXXX")
+cp "$source_dir/scripts/opencode-on-demand.sh" "$helper_tmp"
+chmod 755 "$helper_tmp"
+mv -f "$helper_tmp" "$prefix/bin/cogfabric-opencode-on-demand"
+printf '\nInstalled commands:\n  %s\n  %s\n  %s\n  %s\n  %s\n' "$prefix/bin/cogfabric" "$prefix/bin/cogfabric-chat" "$prefix/bin/cogfabric-server" "$prefix/bin/cogfabric-opencode" "$prefix/bin/cogfabric-opencode-on-demand"
 echo "Add $prefix/bin to PATH if it is not already present."

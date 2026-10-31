@@ -1,5 +1,18 @@
 # Current Rust implementation
 
+## Prepare an explicit on-demand OpenCode launch — 2026-10-31
+
+**Implemented; runtime unverified.** `scripts/setup.sh --native-on-demand`
+drafts a private 16K-context native lifecycle policy from every configured
+language and Jev-R model route in the OpenCode home. The draft confers no
+approval and makes no provider call. The separately installed
+`cogfabric-opencode-on-demand` command visibly opts into per-task activation by
+passing the existing explicit activation and model-key-evidence approvals to a
+new private server; that server loads only policy-listed models when a role
+first needs them. The ordinary launcher remains unchanged. This does not prove
+model availability, memory fit or overlapping provider execution. No tests,
+benchmarks, provider calls or model operations were performed.
+
 ## Match OpenCode request context to on-demand model policy — 2026-10-31
 
 **Implemented; runtime unverified.** `scripts/opencode-local.sh` reads the

@@ -66,7 +66,8 @@ model-assisted installer options:
 sh setup.sh --ref develop/v1.0 --prefix "$HOME/.local" --replace \
   --language-model qwen/qwen3-8b \
   --reasoning-model qwen3.6-35b-a3b \
-  --domain-experts --parallelism 2 --expert-parallelism 2
+  --domain-experts --native-on-demand \
+  --parallelism 2 --expert-parallelism 2
 ```
 
 Jev-R roles can also be assigned separate model IDs with repeated
@@ -77,6 +78,11 @@ the configured local API base.
 The `--domain-experts` examples are prompt-routed workflows on the shared model,
 not separately trained or verified experts. This configures both the CLI and
 OpenCode homes; it does not start LM Studio, load weights, or run inference.
+`--native-on-demand` saves a private, unapproved lifecycle policy draft for the
+OpenCode routes. Review that file, start LM Studio, then run
+`cogfabric-opencode-on-demand` to explicitly authorize first-use loading for
+that session. The ordinary `cogfabric-opencode` command keeps its normal startup
+behavior.
 
 ### Chat alongside an agentic client
 

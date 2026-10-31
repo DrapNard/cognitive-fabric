@@ -84,7 +84,8 @@ written to both CLI and OpenCode homes; model weights remain unloaded. Example:
 sh setup.sh --ref develop/v1.0 --prefix "$HOME/.local" --replace \
   --language-model qwen/qwen3-8b \
   --reasoning-model qwen3.6-35b-a3b \
-  --domain-experts --parallelism 2 --expert-parallelism 2
+  --domain-experts --native-on-demand \
+  --parallelism 2 --expert-parallelism 2
 ```
 
 To override an individual Jev-R role model, repeat `--role-model ROLE=MODEL`,
@@ -94,11 +95,22 @@ Supported role names are `planner`, `solver`, `explorer`, `critic`, and
 are exact IDs served by the configured API base. This selects routes but does
 not verify that the provider has those models available.
 
+`--native-on-demand` writes a private, **unapproved** policy draft to the
+OpenCode home for every configured language and Jev-R model route. It contacts
+no provider and loads no model. Review the exact model keys and context lengths
+in `native-policy.json`, start LM Studio, then run
+`cogfabric-opencode-on-demand`. Invoking that named command is the explicit
+approval to activate only models in the selected policy on first admitted use;
+it does not preload or download models. The ordinary launcher remains
+available with its normal behavior.
+
 The default prefix is `$HOME/.local`; add its `bin` directory to `PATH` if
 needed. Existing `cogfabric`, `cogfabric-chat`, or
-`cogfabric-server` binaries in that prefix cause the script to stop. The installer also adds `cogfabric-opencode`,
-a startup helper for the local API and OpenCode (requires Bash, jq, curl, GNU
-timeout and OpenSSL at runtime; OpenCode is installed separately). See
+`cogfabric-server` binaries in that prefix cause the script to stop. The
+installer also adds `cogfabric-opencode` and the explicit opt-in
+`cogfabric-opencode-on-demand` helper for the local API and OpenCode (requires
+Bash, jq, curl, GNU timeout and OpenSSL at runtime; OpenCode is installed
+separately). See
 [OpenCode startup](OPENCODE.md). Pass
 `--replace` only when you intend to replace them. The build is locked by
 `Cargo.lock`; optional features such as

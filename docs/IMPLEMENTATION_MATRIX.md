@@ -1,5 +1,17 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Generate a private on-demand OpenCode policy — 2026-10-31
+
+**Implemented; runtime unverified.** `scripts/setup.sh --native-on-demand`
+uses the existing offline `native-policy-draft` CLI command after configuring
+the OpenCode routes and saves the result with mode 0600 without replacing an
+existing policy. `scripts/opencode-on-demand.sh` is installed as
+`cogfabric-opencode-on-demand`; invoking it is the explicit approval to start a
+private server with task-time model activation and model-key evidence. The
+ordinary launcher does not silently opt in. No model is loaded or downloaded by
+setup. Shell syntax and patch whitespace checks were run; no tests, benchmarks,
+provider calls or model operations were performed.
+
 ## Bound OpenCode facade context by routed model contexts — 2026-10-31
 
 **Implemented; runtime unverified.** `scripts/opencode-local.sh` reads the

@@ -46,6 +46,18 @@ export COGFABRIC_NATIVE_MODEL_KEY_EVIDENCE_APPROVED=1
 cogfabric-opencode
 ```
 
+If setup created `native-policy.json` in the OpenCode home, review it and use
+the explicit convenience command instead of exporting those variables:
+
+```sh
+cogfabric-opencode-on-demand
+```
+
+Running this named command is the operator's explicit approval of first-use
+activation and model-key/inventory evidence for that session. The policy remains
+an editable local file and should be reviewed before each policy change. The
+launcher still requires the local inference provider to be running.
+
 The helper passes these approvals to a new local server, skips eager model loads
 and does not require unloaded models to appear in the OpenAI model list. It
 refuses to reuse an existing server because it cannot verify that server's pinned
