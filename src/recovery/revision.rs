@@ -179,6 +179,11 @@ impl Store {
             let mut boundary = crate::strict_json::value(raw.as_bytes(), 262144)?;
             let prior_reflector_boundary = required == 3 && boundary["phase"] == "ready_reflector";
             let prior_critic_boundary = !needs_critic && boundary["phase"] == "ready_critic";
+            if boundary["format_version"] == 2 && boundary["phase"] == "ready_solver" {
+                // Validate the typed handoff before converting this mutable
+                // checkpoint into the historical revision-phase shape.
+                crate::reasoning::handoff::decode(&boundary["solver_handoff"], &query)?;
+            }
             let prior_valid = if prior_critic_boundary {
                 boundary["cycles_before"] == cycles
                     && boundary["calls_before"] == last - required as u64 + 1
@@ -213,7 +218,8 @@ impl Store {
             };
             if boundary_source != "jev-r"
                 || !boundary_before_result
-                || boundary["format_version"] != 1
+                || !(boundary["format_version"] == 1
+                    || (boundary["format_version"] == 2 && boundary["phase"] == "ready_solver"))
                 || !prior_valid
             {
                 bail!("Revision boundary is missing, consumed differently or already reconciled")
@@ -234,6 +240,10 @@ impl Store {
                 boundary["critique_reason"] = json!(reason);
             } else {
                 boundary.as_object_mut().unwrap().remove("critique_reason");
+            }
+            if boundary["format_version"] == 2 {
+                boundary["format_version"] = json!(1);
+                boundary.as_object_mut().unwrap().remove("solver_handoff");
             }
             boundary["strategy"] = json!(strategy);
             boundary["previous_answer"] = json!(previous);

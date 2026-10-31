@@ -16,6 +16,7 @@ use std::{
 };
 
 mod expert_parallel;
+pub(crate) mod handoff;
 pub(crate) mod language_boundary;
 pub(crate) use language_boundary::{
     reservation_payload as language_reservation_payload, TerminalState,
@@ -826,7 +827,7 @@ impl Session {
                 .await?
                 .ok_or_else(|| anyhow::anyhow!("Original reflection allowance exhausted"))?
         } else {
-            boundary["strategy"].as_str().unwrap().into()
+            handoff::from_boundary(boundary, query)?
         };
         self.solve_with_strategy(query, context, mode, true, Some(strategy), None)
             .await
@@ -2977,11 +2978,12 @@ impl Session {
             // A durable boundary describes the exact next solver input and the
             // stopping state. It grants no permission and reserves no fresh budget.
             let mut boundary = json!({
-                "format_version":1,"phase":"ready_solver","mode":mode,
+                "format_version":2,"phase":"ready_solver","mode":mode,
                 "objective_hash":crate::store::sha256(query.as_bytes()),
                 "context_hash":crate::store::sha256(context.as_bytes()),
                 "prompt_base_hash":crate::store::sha256(base.as_bytes()),
-                "strategy":truncate(&strategy,4000),"previous_answer":answer,
+                "solver_handoff":crate::reasoning::handoff::encode(query,&truncate(&strategy,4000))?,
+                "previous_answer":answer,
                 "last_answer_hash":last_hash,"calls_before":self.resources.calls,
                 "cycles_before":self.resources.cycles,"tool_calls_before":self.resources.tool_calls,
                 "reserved_output_tokens":self.resources.reserved_output_tokens,
@@ -4269,10 +4271,13 @@ mod tests {
             crate::store::sha256(b"reference bytes")
         );
         assert_eq!(boundaries[1]["permissions_restorable"], false);
-        assert!(boundaries[1]["strategy"]
-            .as_str()
-            .unwrap()
-            .starts_with("Independent checker rejected"));
+        assert_eq!(boundaries[1]["format_version"], 2);
+        assert!(handoff::decode(
+            &boundaries[1]["solver_handoff"],
+            r#"sort:{"values":[2,1,2]}"#
+        )
+        .unwrap()
+        .starts_with("Independent checker rejected the candidate: "));
     }
     #[tokio::test]
     async fn boundary_persistence_failure_prevents_cycle_reservation_and_solver_dispatch() {

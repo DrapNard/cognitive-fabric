@@ -500,8 +500,9 @@ fn prepare_with_native(
         let admission=&audit["remaining_inference_admission"];
         let cycles=settings["cycle_limit"].as_u64().unwrap()-admission["cycles"].as_u64().unwrap();
         let previous=v["previous_answer"].as_str().ok_or_else(||anyhow::anyhow!("Missing prior answer"))?;
-        let strategy=v["strategy"].as_str().ok_or_else(||anyhow::anyhow!("Missing revision strategy"))?;
-        if later != 0 || v["format_version"] != 1 || !matches!(v["phase"].as_str(),Some("ready_solver"|"ready_reflector"|"ready_critic"))
+        let strategy=crate::reasoning::handoff::from_boundary(&v,&query)?;
+        let boundary_version = v["format_version"].as_u64();
+        if later != 0 || !(boundary_version == Some(1) || (boundary_version == Some(2) && v["phase"] == "ready_solver")) || !matches!(v["phase"].as_str(),Some("ready_solver"|"ready_reflector"|"ready_critic"))
             || v["mode"] != mode || v["objective_hash"] != context["objective_hash"]
             || v["context_hash"] != context["context_hash"] || v["prompt_base_hash"] != context["prompt_base_hash"]
             || v["calls_before"] != audit["reserved_calls"] || v["cycles_before"] != cycles
