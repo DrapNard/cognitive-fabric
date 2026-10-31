@@ -1,5 +1,17 @@
 # Current Rust implementation
 
+## Install per-role Jev-R model overrides — 2026-10-31
+
+**Implemented; runtime unverified.** `scripts/setup.sh` now accepts repeated
+`--role-model ROLE=MODEL` overrides for planner, solver, explorer, critic and
+reflector, forwarding them to the existing typed `configure-network` CLI. An
+unassigned Jev-R role still uses the shared `--reasoning-model`. Both the CLI
+and OpenCode homes receive model-assisted or compiled-only network configuration.
+The script rejects role overrides in compiled-only mode and rejects a custom
+API base there because no reasoning model is configured. This selects provider
+routes but does not confirm model availability, downloads, or concurrent GPU
+execution. No tests or benchmarks were run.
+
 ## Switch from compiled Jev-R to Jev-R role models — 2026-10-31
 
 **Implemented; runtime unverified.** `Config::language_network` now clears the

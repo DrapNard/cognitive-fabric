@@ -10,6 +10,8 @@ replace=0
 nvml_gpu=0
 language_model=''
 reasoning_model=''
+role_models=''
+role_model_count=0
 api_base='http://127.0.0.1:1234/v1'
 jev_r_only=0
 domain_experts=0
@@ -20,6 +22,7 @@ usage() {
     cat <<'USAGE'
 Usage: setup.sh [--prefix PATH] [--ref GIT_REF_OR_COMMIT] [--replace] [--nvml-gpu]
                 [--language-model MODEL --reasoning-model MODEL | --jev-r-only]
+                [--role-model ROLE=MODEL ...]
                 [--api-base URL] [--domain-experts]
                 [--parallelism 1..4] [--expert-parallelism 1..4]
 
@@ -33,6 +36,8 @@ language-only route and shares the selected reasoning backbone across Jev-R
 roles in the CLI and OpenCode state directories. --domain-experts additionally
 registers the included Qwen3.6-backed workflow manifests; it requires the
 repository's qwen3.6-35b-a3b model key and the standard LM Studio API base.
+Repeat --role-model ROLE=MODEL to route planner, solver, explorer, critic or
+reflector to a specific model; unassigned roles use --reasoning-model.
 Supplying --language-model with --jev-r-only instead disables reasoning-role
 model calls. Configuration and registration do not load models or run inference.
 Width defaults are 2 and 2.
@@ -67,6 +72,19 @@ while [ "$#" -gt 0 ]; do
         --reasoning-model)
             [ "$#" -ge 2 ] && [ -n "$2" ] || { echo 'Missing value for --reasoning-model.' >&2; exit 2; }
             reasoning_model=$2
+            shift 2
+            ;;
+        --role-model)
+            [ "$#" -ge 2 ] && [ -n "$2" ] || { echo 'Missing value for --role-model.' >&2; exit 2; }
+            role_model_count=$((role_model_count + 1))
+            [ "$role_model_count" -le 5 ] || { echo 'At most five --role-model options are supported.' >&2; exit 2; }
+            case $2 in *'='*) ;; *) echo '--role-model requires ROLE=MODEL.' >&2; exit 2 ;; esac
+            if [ -n "$role_models" ]; then
+                role_models="$role_models
+$2"
+            else
+                role_models=$2
+            fi
             shift 2
             ;;
         --api-base)
@@ -104,7 +122,7 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 
-if [ "$jev_r_only" -eq 1 ] || [ -n "$language_model" ] || [ -n "$reasoning_model" ] || [ "$domain_experts" -eq 1 ]; then
+if [ "$jev_r_only" -eq 1 ] || [ -n "$language_model" ] || [ -n "$reasoning_model" ] || [ "$domain_experts" -eq 1 ] || [ "$role_model_count" -gt 0 ]; then
     if [ -z "$language_model" ]; then
         echo 'A configured network requires --language-model MODEL.' >&2
         exit 2
@@ -113,8 +131,16 @@ if [ "$jev_r_only" -eq 1 ] || [ -n "$language_model" ] || [ -n "$reasoning_model
         echo '--jev-r-only conflicts with --reasoning-model.' >&2
         exit 2
     fi
+    if [ "$jev_r_only" -eq 1 ] && [ "$role_model_count" -gt 0 ]; then
+        echo '--jev-r-only conflicts with --role-model.' >&2
+        exit 2
+    fi
     if [ "$jev_r_only" -ne 1 ] && [ -z "$reasoning_model" ]; then
         echo 'Model-assisted routing requires --reasoning-model MODEL; use --jev-r-only for compiled solvers.' >&2
+        exit 2
+    fi
+    if [ "$jev_r_only" -eq 1 ] && [ "$api_base" != 'http://127.0.0.1:1234/v1' ]; then
+        echo '--api-base applies only to model-assisted routing.' >&2
         exit 2
     fi
     if [ "$domain_experts" -eq 1 ] && { [ "$jev_r_only" -eq 1 ] || [ "$reasoning_model" != 'qwen3.6-35b-a3b' ] || [ "$api_base" != 'http://127.0.0.1:1234/v1' ]; }; then
@@ -216,23 +242,35 @@ else
     cargo install --locked --path "$source_dir/crates/cogfabric-server" --root "$prefix"
 fi
 
-if [ -n "$language_model" ]; then
+configure_network_for_home() {
+    config_home=$1
     if [ "$jev_r_only" -eq 1 ]; then
-        "$prefix/bin/cogfabric" configure-network \
-            --language-model "$language_model" \
-            --jev-r-only \
-            --parallelism "$parallelism" \
-            --expert-parallelism "$expert_parallelism"
-    else
-        data_home=${XDG_DATA_HOME:-${HOME:?HOME must be set}/.local/share}
-        cli_home=${COGFABRIC_CLI_HOME:-$data_home/cogfabric-rust}
-        opencode_home=${COGFABRIC_HOME:-$data_home/cogfabric-http}
-        for config_home in "$cli_home" "$opencode_home"; do
-            "$prefix/bin/cogfabric" --home "$config_home" configure-network \
-                --language-model "$language_model" \
-                --reasoning-model "$reasoning_model" \
-                --parallelism "$parallelism" \
-                --expert-parallelism "$expert_parallelism"
+        "$prefix/bin/cogfabric" --home "$config_home" configure-network \
+            --language-model "$language_model" --jev-r-only \
+            --parallelism "$parallelism" --expert-parallelism "$expert_parallelism"
+        return
+    fi
+    set -- --home "$config_home" configure-network \
+        --language-model "$language_model" --reasoning-model "$reasoning_model"
+    newline=$(printf '\nx')
+    newline=${newline%x}
+    old_ifs=$IFS
+    IFS=$newline
+    for assignment in $role_models; do
+        [ -n "$assignment" ] && set -- "$@" --role "$assignment"
+    done
+    IFS=$old_ifs
+    set -- "$@" --parallelism "$parallelism" --expert-parallelism "$expert_parallelism"
+    "$prefix/bin/cogfabric" "$@"
+}
+
+if [ -n "$language_model" ]; then
+    data_home=${XDG_DATA_HOME:-${HOME:?HOME must be set}/.local/share}
+    cli_home=${COGFABRIC_CLI_HOME:-$data_home/cogfabric-rust}
+    opencode_home=${COGFABRIC_HOME:-$data_home/cogfabric-http}
+    for config_home in "$cli_home" "$opencode_home"; do
+        configure_network_for_home "$config_home"
+        if [ "$jev_r_only" -ne 1 ]; then
             "$prefix/bin/cogfabric" --home "$config_home" configure-local \
                 --model "$reasoning_model" \
                 --api-base "$api_base" \
@@ -256,8 +294,8 @@ if [ -n "$language_model" ]; then
                     "$prefix/bin/cogfabric" --home "$config_home" skill-activate "$skill_id" 1.0.0
                 done
             fi
-        done
-    fi
+        fi
+    done
     echo 'Network configuration saved. Models were not loaded and no inference was run.'
 fi
 

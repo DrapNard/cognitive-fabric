@@ -69,6 +69,11 @@ sh setup.sh --ref develop/v1.0 --prefix "$HOME/.local" --replace \
   --domain-experts --parallelism 2 --expert-parallelism 2
 ```
 
+Jev-R roles can also be assigned separate model IDs with repeated
+`--role-model ROLE=MODEL` options (`planner`, `solver`, `explorer`, `critic`, or
+`reflector`). Roles without an override use `--reasoning-model`; all routes use
+the configured local API base.
+
 The `--domain-experts` examples are prompt-routed workflows on the shared model,
 not separately trained or verified experts. This configures both the CLI and
 OpenCode homes; it does not start LM Studio, load weights, or run inference.

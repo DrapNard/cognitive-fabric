@@ -87,6 +87,13 @@ sh setup.sh --ref develop/v1.0 --prefix "$HOME/.local" --replace \
   --domain-experts --parallelism 2 --expert-parallelism 2
 ```
 
+To override an individual Jev-R role model, repeat `--role-model ROLE=MODEL`,
+for example `--role-model planner=planner-model --role-model solver=solver-model`.
+Supported role names are `planner`, `solver`, `explorer`, `critic`, and
+`reflector`; unassigned roles use the shared `--reasoning-model`. The values
+are exact IDs served by the configured API base. This selects routes but does
+not verify that the provider has those models available.
+
 The default prefix is `$HOME/.local`; add its `bin` directory to `PATH` if
 needed. Existing `cogfabric`, `cogfabric-chat`, or
 `cogfabric-server` binaries in that prefix cause the script to stop. The installer also adds `cogfabric-opencode`,

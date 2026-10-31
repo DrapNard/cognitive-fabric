@@ -1,5 +1,16 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Install explicit Jev-R role model routes — 2026-10-31
+
+**Implemented; runtime unverified.** `scripts/setup.sh` accepts repeated
+`--role-model ROLE=MODEL` values and forwards them to `configure-network` in
+both CLI and OpenCode homes. Supported Jev-R roles are planner, solver,
+explorer, critic and reflector; any omitted role continues to use the shared
+reasoning model. Compiled-only setup is also applied to both homes. Invalid
+provider model IDs remain a runtime/provider concern. `sh -n scripts/setup.sh`
+and `git diff --check` were run; no tests, benchmarks, provider calls or model
+operations were performed.
+
 ## Switch from compiled Jev-R to role-model routing — 2026-10-31
 
 **Implemented; runtime unverified.** `src/config.rs` clears stale
