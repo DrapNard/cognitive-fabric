@@ -30,10 +30,14 @@ enough for the requests sent to that route.
 
 This repository includes `examples/qwen_network_native_policy.json` for its
 current OpenCode workspace: Qwen3-8B is allowed a 32K language context and the
-shared Qwen3.6 Jev-R/Jev+ backbone a 16K context. It is an unapproved policy
-example, not a model inventory or memory-fit guarantee. It keeps admitted models
-resident after first use to avoid reload delays. The local machine currently has
-no working NVIDIA driver and limited available RAM for these model weights.
+shared Qwen3.6 Jev-R/Jev+ backbone a 16K context. The OpenCode-facing model
+limit must not exceed the smallest context in the policy; the example config
+uses 16K. The launcher now refuses an advertised context larger than any
+policy-routed model's configured context, before making a provider call. The
+policy is an unapproved example, not a model inventory or memory-fit guarantee.
+It keeps admitted models resident after first use to avoid reload delays. The
+local machine currently has no working NVIDIA driver and limited available RAM
+for these model weights.
 
 ```sh
 export COGFABRIC_NATIVE_POLICY=/absolute/path/to/cognitive-fabric/examples/qwen_network_native_policy.json
@@ -142,9 +146,10 @@ Start the inference provider yourself and bind it to loopback. For LM Studio,
 start its local server on `127.0.0.1:1234`. Running `cogfabric-opencode` authorizes
 loading the exact configured installed LLM through Core's audited
 `residency-managed-load` command when no matching instance is loaded. The native
-API request is `POST /api/v1/models/load` with the configured model key and
-`context_length: 32768` and `offload_kv_cache_to_gpu: false`, with configuration
-confirmation enabled. The context cache defaults to CPU RAM to reduce VRAM demand;
+API request is `POST /api/v1/models/load` with the configured model key and the
+context limit declared by the project's OpenCode config, plus
+`offload_kv_cache_to_gpu: false`, with configuration confirmation enabled. The
+context cache defaults to CPU RAM to reduce VRAM demand;
 model-layer placement remains controlled by LM Studio. Set
 `COGFABRIC_OPENCODE_KV_GPU=true` to request GPU caching on a subsequent new load.
 Only literal `true` and `false` are accepted. Existing compatible instances are reused. Other instances
@@ -222,7 +227,7 @@ replaces project configuration.
             {"id": "medium", "settings": {"reasoningEffort": "medium"}},
             {"id": "high", "settings": {"reasoningEffort": "high"}}
           ],
-          "limit": {"context": 32768, "output": 1024}
+          "limit": {"context": 16384, "output": 1024}
         }
       }
     }
@@ -269,14 +274,14 @@ Pass ordinary OpenCode arguments through the helper as needed, for example
 The helper checks the selected private workspace has `backend: "openai-local"`,
 `max_tokens` of at least 1024, and `max_tool_calls` of at least one. The OpenCode
 provider declares a 1024-token output allowance, so it cannot exceed the saved
-server ceiling. Its declared context size is 32768; ensure the loaded model and
-provider configuration actually support that context. When the configured
-loopback endpoint exposes LM Studio's native model inventory, the helper checks
-the context length of the configured loaded model and stops if any matching
-instance is below 32768. If the provider does not expose that native endpoint,
-the helper warns that the actual context is unknown and continues. The server
-itself still enforces its configured request, tool, wall-time, and connection
-limits.
+server ceiling. Its context limit is 16384 in the example config; set it no
+higher than the smallest context configured for any routed model. With an
+approved native policy, the helper checks this before server startup. When the
+configured loopback endpoint exposes LM Studio's native model inventory, it
+checks the loaded context against the OpenCode declaration. If the provider
+does not expose that native endpoint, the helper warns that the actual context
+is unknown and continues. The server itself still enforces its configured
+request, tool, wall-time, and connection limits.
 
 For an authenticated LM Studio native inventory, set its separate
 `COGFABRIC_RESIDENCY_API_KEY`; the helper uses it for native inventory and approved model loading only.

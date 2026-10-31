@@ -1,5 +1,17 @@
 # Current Rust implementation
 
+## Match OpenCode request context to on-demand model policy — 2026-10-31
+
+**Implemented; runtime unverified.** `scripts/opencode-local.sh` reads the
+project's declared OpenCode context limit and, when a native lifecycle policy is
+supplied, refuses startup if any model in that policy has a smaller configured
+context. This prevents advertising requests larger than one of the routed
+models can accept. `opencode.example.json` and the documentation now use 16K,
+matching the smallest context in the checked-in Qwen network policy. Model
+loading remains on demand only when that separately reviewed policy is passed
+with the explicit approval settings. No tests, benchmarks, provider calls or
+model operations were performed.
+
 ## Install per-role Jev-R model overrides — 2026-10-31
 
 **Implemented; runtime unverified.** `scripts/setup.sh` now accepts repeated

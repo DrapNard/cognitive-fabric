@@ -10,7 +10,7 @@ readonly SERVER_URL="http://127.0.0.1:8234"
 readonly MODEL_ID="cogfabric-agent"
 readonly PROVIDER_MODEL="cogfabric/cogfabric-agent"
 readonly OUTPUT_LIMIT=1024
-readonly CONTEXT_LIMIT=32768
+CONTEXT_LIMIT=''
 
 CF_HOME="${COGFABRIC_HOME:-${XDG_DATA_HOME:-${HOME:?HOME is not set}/.local/share}/cogfabric-http}"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
@@ -92,6 +92,8 @@ fi
 (( opencode_major >= 2 )) || die "OpenCode v2 or newer is required; found: $version_output"
 
 [[ -f opencode.json && ! -L opencode.json ]] || die "No regular opencode.json in '$PWD'. Copy /path/to/cognitive-fabric/opencode.example.json to this project, then merge its provider fields if a config already exists. The helper never creates or overwrites project configuration."
+CONTEXT_LIMIT="$(jq -er '.providers.cogfabric.models["cogfabric-agent"].limit.context | select(type == "number" and . == floor and . >= 1024 and . <= 32768)' opencode.json 2>/dev/null)" \
+    || die 'The OpenCode Cognitive Fabric model must declare an integer context limit from 1024 to 32768.'
 jq -e --arg api "$API_URL" --arg model "$PROVIDER_MODEL" \
     --argjson context "$CONTEXT_LIMIT" --argjson output "$OUTPUT_LIMIT" '
       .model as $selected
@@ -104,6 +106,16 @@ jq -e --arg api "$API_URL" --arg model "$PROVIDER_MODEL" \
       and .providers.cogfabric.models["cogfabric-agent"].limit.output == $output
     ' opencode.json >/dev/null 2>&1 \
     || die "The opencode.json in '$PWD' does not match the Cognitive Fabric v2 provider settings. See docs/OPENCODE.md. It was left untouched."
+if [[ -n "$NATIVE_POLICY" ]]; then
+    minimum_policy_context="$(jq -er '
+      .models | select(type == "array" and length > 0) | map(.context_length)
+      | if all(.[]; type == "number" and . == floor and . >= 1 and . <= 32768)
+        then min else error("invalid model context") end
+    ' "$NATIVE_POLICY" 2>/dev/null)" \
+        || die 'The native lifecycle policy has no valid bounded model contexts.'
+    (( CONTEXT_LIMIT <= minimum_policy_context )) \
+        || die "OpenCode advertises ${CONTEXT_LIMIT}-token requests, but the native policy configures at least one routed model for only ${minimum_policy_context} tokens. Set the project model limit.context to ${minimum_policy_context} or less before retrying. No provider call was made."
+fi
 
 case "$API_KEY" in
     *$'\n'*|*$'\r'*) die 'COGFABRIC_SERVER_API_KEY must not contain a newline.' ;;

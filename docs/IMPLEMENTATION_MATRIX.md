@@ -1,5 +1,16 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Bound OpenCode facade context by routed model contexts — 2026-10-31
+
+**Implemented; runtime unverified.** `scripts/opencode-local.sh` reads the
+project's declared context and checks it against every model context in an
+explicitly supplied native lifecycle policy before starting the server. The
+OpenCode example now advertises 16K, no greater than the smallest context in
+`examples/qwen_network_native_policy.json`. This prevents an over-limit request
+declaration but does not prove actual provider context or memory fit. Bash syntax
+and patch whitespace checks were run; no tests, benchmarks or provider/model
+operations were performed.
+
 ## Install explicit Jev-R role model routes — 2026-10-31
 
 **Implemented; runtime unverified.** `scripts/setup.sh` accepts repeated
