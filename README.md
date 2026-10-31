@@ -53,6 +53,11 @@ preserved unless `--replace` is explicitly supplied. See the complete
 verification steps. If you trust the current development branch and want the
 one-line form, see that guide for the `curl | sh` command.
 
+To install and set Qwen as the language interface while Jev-R uses only compiled
+solvers, pass `--language-model MODEL_ID --jev-r-only` to `setup.sh`. The
+language route is written to the local config after the binaries install; the
+installer does not load models.
+
 ### Chat alongside an agentic client
 
 Use `cogfabric-chat` for text-only conversation while OpenCode or another agentic

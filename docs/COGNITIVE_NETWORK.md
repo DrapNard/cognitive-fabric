@@ -1,5 +1,21 @@
 # Cognitive network implementation
 
+## Model-free Jev-R configuration — 2026-10-31
+
+**Partial; runtime unverified.** `configure-network --language-model MODEL
+--jev-r-only` configures a language interface without a reasoning model. In this
+mode, Qwen translates natural-language requests and can present a verified
+result; Jev-R rejects planner/solver/explorer/critic/reflector LLM calls, and
+Jev+ skips model-backed workflow experts. Compiled Jev-R solvers cover exact
+arithmetic, inline SQL, dependency ordering, integer sorting, shortest paths,
+and bounded finite-domain search (default ceiling 4,096 nodes). Other reasoning
+domains return an explicit unsupported result; there is no hidden LLM fallback.
+Natural-language interpretation currently selects routing metadata; the request
+must still match a supported deterministic input format for those solvers.
+Deterministic typed experts remain subject to their own capability routing.
+General model-free reasoning and live-provider behavior are not established. No
+tests, benchmarks, or live inference ran.
+
 ## Enforce one Engine-wide inference width across reasoning and expert brokers — 2026-10-31
 
 **Implemented; runtime unverified.** `Engine` now owns a shared semaphore sized

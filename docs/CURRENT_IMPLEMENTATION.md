@@ -1,5 +1,18 @@
 # Current Rust implementation
 
+## Configure Qwen as language interface with model-free Jev-R — 2026-10-31
+
+**Partial; runtime unverified.** `Config::language_network_jev_r_only` and
+`configure-network --language-model MODEL --jev-r-only` configure no reasoning
+LLM. Engine inference rejects reasoning-role calls in this mode, skips
+model-backed workflow experts, and uses existing compiled Jev-R solvers for
+exact arithmetic, SQL, dependency ordering, integer sorting, shortest paths,
+and bounded finite-domain search. Unsupported domains return explicitly without
+an LLM fallback. This is a finite solver set, not general model-free reasoning.
+The language model supplies routing metadata; it does not yet transform arbitrary
+natural-language requests into the solver-specific input formats. No tests,
+benchmarks, or live inference ran.
+
 ## Share inference admission across Engine reasoning and experts — 2026-10-31
 
 **Implemented; runtime unverified.** `src/engine.rs`, `src/reasoning.rs`, and

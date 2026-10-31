@@ -60,7 +60,18 @@ sh setup.sh --ref COMMIT_ID --prefix "$HOME/.local"
 ```
 
 The installer accepts `--prefix PATH`, `--ref BRANCH_OR_COMMIT`, `--replace`,
-and `--nvml-gpu`. The default prefix is `$HOME/.local`; add its `bin` directory
+and `--nvml-gpu`. To configure Qwen as the language interface with no reasoning
+LLM during installation, pass `--language-model MODEL_ID`
+and `--jev-r-only`; setup then runs `cogfabric configure-network` after
+installing. Jev-R uses compiled solver paths for exact arithmetic, SQL,
+dependency ordering, integer sorting, shortest paths, and bounded finite-domain
+search; it reports unsupported for other domains. No reasoning LLM is configured
+or dispatched in this mode. The language model supplies routing metadata; it
+does not yet translate arbitrary requests into solver input formats. Optional
+`--parallelism 1..4` and `--expert-parallelism 1..4` set the bounded reasoning
+and expert widths (both default to 2). These are exact provider model IDs; setup
+records the language route but does not contact LM Studio or load model weights. The
+default prefix is `$HOME/.local`; add its `bin` directory
 to `PATH` if needed. Existing `cogfabric`, `cogfabric-chat`, or
 `cogfabric-server` binaries in that prefix cause the script to stop. The installer also adds `cogfabric-opencode`,
 a startup helper for the local API and OpenCode (requires Bash, jq, curl, GNU

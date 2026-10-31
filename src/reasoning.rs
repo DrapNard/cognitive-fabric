@@ -939,6 +939,9 @@ impl Session {
         prompt: &str,
         allocation: usize,
     ) -> Result<Option<String>> {
+        if self.cfg.jev_r_only && !matches!(role, "interface" | "synthesizer") {
+            bail!("Jev-R-only mode forbids LLM calls for reasoning roles")
+        }
         self.call_with_backend(role, prompt, allocation, self.backend.clone())
             .await
     }
@@ -2625,6 +2628,9 @@ impl Session {
         if query.trim().is_empty() || query.len() > 12000 || context.len() > 96000 {
             bail!("Reasoning objective or context exceeds bounds")
         }
+        if self.cfg.jev_r_only {
+            return self.solve_jev_r_only(query).await;
+        }
         self.snapshot_escalator()?;
         let criterion = if self.verification_enabled {
             crate::verification::Criterion::from_query(query)?
@@ -3256,6 +3262,205 @@ impl Session {
             answer = "No solution generated within the execution budget".into();
         }
         Ok(answer)
+    }
+
+    async fn solve_jev_r_only(&mut self, query: &str) -> Result<String> {
+        self.stop_reason = "unsupported_reasoning_domain".into();
+        self.store.event(
+            &self.task,
+            "reasoning_context",
+            "jev-r",
+            json!({
+                "format_version":1,
+                "reasoning_mode":"compiled_jev_r_only",
+                "objective_sha256":crate::store::sha256(query.as_bytes()),
+                "language_model_used_for_reasoning":false,
+                "permissions_restorable":false
+            }),
+        )?;
+        if !self.verification_enabled {
+            return Ok(
+                "Jev-R-only mode requires a verifiable deterministic solver for this task.".into(),
+            );
+        }
+        let Some(criterion) = crate::verification::Criterion::from_query(query)? else {
+            return Ok("Jev-R-only mode has no compiled solver for this task.".into());
+        };
+        if criterion.name() != "finite_domain/v1" {
+            let Some(answer) = criterion.deterministic_answer()? else {
+                return Ok(format!(
+                    "Jev-R-only mode has no compiled solver for criterion {}.",
+                    criterion.name()
+                ));
+            };
+            if self
+                .cfg
+                .max_tool_calls
+                .saturating_sub(self.resources.tool_calls)
+                < 2
+            {
+                self.stop_reason = "budget_exhausted".into();
+                return Ok(
+                    "Jev-R exhausted the tool budget before deterministic solving and verification."
+                        .into(),
+                );
+            }
+            self.authorize_tool(criterion.capability())?;
+            let check = criterion.check(&answer);
+            self.verification_attempted = true;
+            self.store.event(
+                &self.task,
+                "deterministic_solver",
+                "jev-r",
+                json!({
+                    "format_version":1,
+                    "criterion":criterion.name(),
+                    "objective_sha256":crate::store::sha256(query.as_bytes()),
+                    "answer_sha256":crate::store::sha256(answer.as_bytes()),
+                    "compiled_checker_accepted":check.is_ok(),
+                    "language_model_used_for_reasoning":false,
+                    "permissions_granted":false
+                }),
+            )?;
+            self.store.event(
+                &self.task,
+                "verification",
+                "verifier-r",
+                json!({
+                    "criterion":criterion.name(),
+                    "checker":"compiled_criterion/v1",
+                    "verified":check.is_ok(),
+                    "objective_sha256":crate::store::sha256(query.as_bytes()),
+                    "answer_sha256":crate::store::sha256(answer.as_bytes()),
+                    "language_model_used_for_reasoning":false
+                }),
+            )?;
+            if check.is_ok() {
+                self.has_solution = true;
+                self.verified = true;
+                self.verified_criterion = Some(criterion.name());
+                self.stop_reason = "verified".into();
+                return Ok(answer);
+            }
+            self.has_solution = true;
+            self.stop_reason = "verification_rejected".into();
+            return Ok("Jev-R found a candidate, but the compiled checker rejected it.".into());
+        }
+        let Some(settings) = &self.cfg.finite_search else {
+            return Ok(
+                "Finite-domain reasoning is unavailable because bounded search is not configured."
+                    .into(),
+            );
+        };
+        let max_nodes = settings.max_nodes;
+        if self
+            .cfg
+            .max_tool_calls
+            .saturating_sub(self.resources.tool_calls)
+            < 2
+        {
+            self.stop_reason = "budget_exhausted".into();
+            return Ok(
+                "Jev-R exhausted the tool budget before finite-domain search and verification."
+                    .into(),
+            );
+        }
+
+        tokio::task::yield_now().await;
+        self.authorize_tool("constraints.solve")?;
+        let Some(outcome) =
+            criterion.finite_search(max_nodes, || Instant::now() >= self.deadline)?
+        else {
+            bail!("Finite search was admitted for a non-finite criterion")
+        };
+        let label = match &outcome.result {
+            crate::verification::SearchResult::Witness(_) => "witness",
+            crate::verification::SearchResult::Unsatisfiable => "unsatisfiable",
+            crate::verification::SearchResult::LimitReached => "limit_reached",
+            crate::verification::SearchResult::Cancelled => "cancelled",
+        };
+        self.store.event(
+            &self.task,
+            "finite_search",
+            "jev-r",
+            json!({
+                "format_version":1,
+                "criterion":"finite_domain/v1",
+                "objective_sha256":crate::store::sha256(query.as_bytes()),
+                "max_nodes":max_nodes,
+                "explored_nodes":outcome.explored_nodes,
+                "outcome":label,
+                "language_model_used_for_reasoning":false,
+                "permissions_granted":false
+            }),
+        )?;
+        match outcome.result {
+            crate::verification::SearchResult::Witness(answer) => {
+                self.authorize_tool(criterion.capability())?;
+                let check = criterion.check(&answer);
+                self.verification_attempted = true;
+                self.store.event(
+                    &self.task,
+                    "verification",
+                    "verifier-r",
+                    json!({
+                        "criterion":criterion.name(),
+                        "checker":"compiled_criterion/v1",
+                        "verified":check.is_ok(),
+                        "objective_sha256":crate::store::sha256(query.as_bytes()),
+                        "answer_sha256":crate::store::sha256(answer.as_bytes()),
+                        "language_model_used_for_reasoning":false
+                    }),
+                )?;
+                if check.is_ok() {
+                    self.has_solution = true;
+                    self.verified = true;
+                    self.verified_criterion = Some(criterion.name());
+                    self.stop_reason = "verified".into();
+                    Ok(answer)
+                } else {
+                    self.has_solution = true;
+                    self.stop_reason = "verification_rejected".into();
+                    Ok("Jev-R found a candidate, but the compiled checker rejected it.".into())
+                }
+            }
+            crate::verification::SearchResult::Unsatisfiable => {
+                self.authorize_tool(criterion.capability())?;
+                self.has_solution = true;
+                self.verified = true;
+                self.verification_attempted = true;
+                self.verified_criterion = Some(criterion.name());
+                self.stop_reason = "proven_unsatisfiable".into();
+                self.store.event(
+                    &self.task,
+                    "verification",
+                    "verifier-r",
+                    json!({
+                        "criterion":criterion.name(),
+                        "checker":"bounded_exhaustive_search/v1",
+                        "verified":true,
+                        "result":"unsatisfiable",
+                        "explored_nodes":outcome.explored_nodes,
+                        "language_model_used_for_reasoning":false
+                    }),
+                )?;
+                Ok(format!(
+                    "No satisfying assignment exists in the declared finite domains; exhaustive search checked {} nodes. This proof applies only to the supplied finite specification.",
+                    outcome.explored_nodes
+                ))
+            }
+            crate::verification::SearchResult::LimitReached => {
+                self.stop_reason = "finite_search_limit".into();
+                Ok(format!(
+                    "Jev-R stopped finite-domain search after {} nodes without a verified answer.",
+                    outcome.explored_nodes
+                ))
+            }
+            crate::verification::SearchResult::Cancelled => {
+                self.stop_reason = "budget_exhausted".into();
+                Ok("Jev-R stopped finite-domain search at the task deadline.".into())
+            }
+        }
     }
 }
 

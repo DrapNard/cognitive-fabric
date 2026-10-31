@@ -191,13 +191,12 @@ impl Engine {
                 "Native lifecycle policy is unsupported for this backend or process configuration"
             )
         }
-        let configured_models = std::iter::once(self.cfg.model.as_str())
-            .chain(
-                self.cfg
-                    .role_profiles
-                    .values()
-                    .map(|profile| profile.model.as_str()),
-            )
+        let configured_models = self
+            .cfg
+            .role_profiles
+            .values()
+            .map(|profile| profile.model.as_str())
+            .chain((!self.cfg.jev_r_only).then_some(self.cfg.model.as_str()))
             .collect::<std::collections::BTreeSet<_>>();
         let approved_models = policy
             .models
@@ -1387,7 +1386,20 @@ impl Engine {
             let mut workflow_overlap = None;
             let mut overlap_expert_cap = 0usize;
             let global_inference_capacity = self.cfg.inference_concurrency();
-            if experts && mode != "fast" {
+            if experts && mode != "fast" && self.cfg.jev_r_only {
+                self.store.event(
+                    &id,
+                    "schedule",
+                    "jev-plus",
+                    json!({
+                        "decision":"skip_model_backed_experts",
+                        "reason":"Jev-R-only mode forbids reasoning-role model inference",
+                        "compiled_tool_modules_remain_available":true,
+                        "permissions_granted":false
+                    }),
+                )?;
+            }
+            if experts && mode != "fast" && !self.cfg.jev_r_only {
                 let mut candidates = Vec::new();
                 for skill in &skills {
                     let Some(manifest) = pinned
@@ -1551,7 +1563,11 @@ impl Engine {
                     .await?
             };
             let status = if !session.has_solution {
-                "exhausted"
+                if session.stop_reason == "unsupported_reasoning_domain" {
+                    "unsupported"
+                } else {
+                    "exhausted"
+                }
             } else if session.verified {
                 evidence.push(format!(
                     "verified:{}",

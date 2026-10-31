@@ -8,16 +8,24 @@ prefix=${HOME:?HOME must be set}/.local
 ref=$default_ref
 replace=0
 nvml_gpu=0
+language_model=''
+jev_r_only=0
+parallelism=2
+expert_parallelism=2
 
 usage() {
     cat <<'USAGE'
 Usage: setup.sh [--prefix PATH] [--ref GIT_REF_OR_COMMIT] [--replace] [--nvml-gpu]
+                [--language-model MODEL --jev-r-only]
+                [--parallelism 1..4] [--expert-parallelism 1..4]
 
 Build and install cogfabric, cogfabric-chat, and cogfabric-server from source.
 Also install the cogfabric-opencode startup helper.
 The default prefix is $HOME/.local and the default source ref is develop/v1.0.
 --replace allows replacing existing binaries with the same package version.
 --nvml-gpu builds the CLI and HTTP server with optional NVML observation support.
+Supplying --language-model with --jev-r-only configures the language interface
+and disables reasoning-role model calls after install. Width defaults are 2 and 2.
 USAGE
 }
 
@@ -41,6 +49,25 @@ while [ "$#" -gt 0 ]; do
             nvml_gpu=1
             shift
             ;;
+        --language-model)
+            [ "$#" -ge 2 ] && [ -n "$2" ] || { echo 'Missing value for --language-model.' >&2; exit 2; }
+            language_model=$2
+            shift 2
+            ;;
+        --jev-r-only)
+            jev_r_only=1
+            shift
+            ;;
+        --parallelism)
+            [ "$#" -ge 2 ] || { echo 'Missing value for --parallelism.' >&2; exit 2; }
+            parallelism=$2
+            shift 2
+            ;;
+        --expert-parallelism)
+            [ "$#" -ge 2 ] || { echo 'Missing value for --expert-parallelism.' >&2; exit 2; }
+            expert_parallelism=$2
+            shift 2
+            ;;
         --help|-h)
             usage
             exit 0
@@ -52,6 +79,15 @@ while [ "$#" -gt 0 ]; do
             ;;
     esac
 done
+
+if [ "$jev_r_only" -eq 1 ] || [ -n "$language_model" ]; then
+    if [ "$jev_r_only" -ne 1 ] || [ -z "$language_model" ]; then
+        echo 'Use --language-model MODEL together with --jev-r-only to configure the network.' >&2
+        exit 2
+    fi
+    case $parallelism in 1|2|3|4) ;; *) echo '--parallelism must be 1, 2, 3, or 4.' >&2; exit 2 ;; esac
+    case $expert_parallelism in 1|2|3|4) ;; *) echo '--expert-parallelism must be 1, 2, 3, or 4.' >&2; exit 2 ;; esac
+fi
 
 for program in git cargo rustc; do
     command -v "$program" >/dev/null 2>&1 || {
@@ -142,6 +178,14 @@ elif [ "$replace" -eq 1 ]; then
     cargo install --locked --path "$source_dir/crates/cogfabric-server" --root "$prefix" --force
 else
     cargo install --locked --path "$source_dir/crates/cogfabric-server" --root "$prefix"
+fi
+
+if [ "$jev_r_only" -eq 1 ]; then
+    "$prefix/bin/cogfabric" configure-network \
+        --language-model "$language_model" \
+        --jev-r-only \
+        --parallelism "$parallelism" \
+        --expert-parallelism "$expert_parallelism"
 fi
 
 helper_tmp=$(mktemp "$prefix/bin/.cogfabric-opencode.XXXXXX")

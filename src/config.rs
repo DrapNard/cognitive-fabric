@@ -103,6 +103,9 @@ pub struct Config {
     /// Restrict client collective inference to interpretation and presentation.
     #[serde(skip_serializing_if = "is_false")]
     pub native_only_client: bool,
+    /// Disable reasoning-role LLM calls and use only compiled Jev-R solvers.
+    #[serde(skip_serializing_if = "is_false")]
+    pub jev_r_only: bool,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub client_tool_routes: BTreeMap<String, ClientToolRoute>,
     /// Optional immutable operator-published project context applied to new
@@ -152,6 +155,7 @@ impl Default for Config {
             interpret_goals: true,
             agent_collective: false,
             native_only_client: false,
+            jev_r_only: false,
             client_tool_routes: BTreeMap::new(),
             agent_project_profile: None,
             interface_tokens: 128,
@@ -217,6 +221,47 @@ impl Config {
         Ok(configured)
     }
 
+    /// Configure Qwen as the language interface while reserving reasoning for
+    /// deterministic Jev-R implementations. No reasoning model is configured.
+    pub fn language_network_jev_r_only(
+        &self,
+        language: String,
+        parallelism: usize,
+        expert_parallelism: usize,
+    ) -> Result<Self> {
+        if language.trim().is_empty()
+            || language.len() > 256
+            || !(1..=4).contains(&parallelism)
+            || !(1..=4).contains(&expert_parallelism)
+        {
+            bail!("Invalid language model or Jev-R network parallelism")
+        }
+        let mut configured = self.clone();
+        configured.backend = "openai-local".into();
+        configured.model_registration = None;
+        configured.model = "cogfabric-jev-r/deterministic".into();
+        configured.role_profiles.clear();
+        configured.role_profiles.insert(
+            "language".into(),
+            RoleProfile {
+                model: language,
+                temperature: self.temperature,
+            },
+        );
+        configured.interpret_goals = true;
+        configured.agent_collective = true;
+        configured.native_only_client = true;
+        configured.jev_r_only = true;
+        configured.subtask_parallelism = Some(parallelism);
+        configured.expert_parallelism = Some(expert_parallelism);
+        if configured.finite_search.is_none() {
+            configured.finite_search =
+                Some(crate::reasoning::finite_search::Settings { max_nodes: 4096 });
+        }
+        configured.validate()?;
+        Ok(configured)
+    }
+
     /// Explicit language-only routing marker, carried in typed role profiles.
     pub fn language_model(&self) -> Option<&str> {
         self.role_profiles
@@ -226,6 +271,9 @@ impl Config {
 
     pub fn require_role_model(&self, role: &str, model: &str) -> Result<()> {
         crate::fabric::protocol::actor(role)?;
+        if self.jev_r_only && !matches!(role, "interface" | "synthesizer") {
+            bail!("Jev-R-only mode forbids LLM models for reasoning roles")
+        }
         if let Some(language) = self.language_model() {
             let boundary = matches!(role, "interface" | "synthesizer");
             if boundary != (model == language) {
@@ -488,6 +536,15 @@ impl Config {
             {
                 bail!("Invalid role profile")
             }
+        }
+        if self.jev_r_only
+            && (self.language_model().is_none()
+                || !self.native_only_client
+                || self.model != "cogfabric-jev-r/deterministic"
+                || self.model_registration.is_some()
+                || self.role_profiles.keys().any(|role| role != "language"))
+        {
+            bail!("Jev-R-only mode requires a language interface and no reasoning model routes")
         }
         if let Some(language) = self.language_model() {
             if language == self.model {

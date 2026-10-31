@@ -468,12 +468,15 @@ enum Command {
         #[arg(long, value_parser = clap::value_parser!(u64).range(1..=4))]
         expert_parallelism: Option<u64>,
     },
-    /// Replace the role map with a language-only model and reasoning model network.
+    /// Configure a language interface with model-assisted or compiled Jev-R routes.
     ConfigureNetwork {
         #[arg(long)]
         language_model: String,
         #[arg(long)]
         reasoning_model: Option<String>,
+        /// Run compiled Jev-R solvers without any reasoning-role LLM model.
+        #[arg(long, conflicts_with = "reasoning_model")]
+        jev_r_only: bool,
         /// Restrict client inference to language roles and complete native typed tasks.
         #[arg(long)]
         native_only_client: bool,
@@ -2110,6 +2113,7 @@ async fn run_cli() -> Result<()> {
         Command::ConfigureNetwork {
             language_model,
             reasoning_model,
+            jev_r_only,
             native_only_client,
             roles,
             parallelism,
@@ -2127,26 +2131,43 @@ async fn run_cli() -> Result<()> {
                     bail!("Duplicate reasoning role binding")
                 }
             }
-            let reasoning_model = match reasoning_model {
-                Some(model) => model,
-                None if native_only_client => {
-                    let placeholder = "cogfabric-native-reasoning-disabled";
-                    if language_model == placeholder {
-                        format!("{placeholder}-placeholder")
-                    } else {
-                        placeholder.to_owned()
-                    }
+            let settings = if jev_r_only {
+                if !bindings.is_empty() {
+                    bail!("Jev-R-only mode does not accept reasoning-role model overrides")
                 }
-                None => bail!("A reasoning model is required unless --native-only-client is set"),
+                if reasoning_model.is_some() {
+                    bail!("Jev-R-only mode cannot configure a reasoning model")
+                }
+                cfg.language_network_jev_r_only(
+                    language_model,
+                    parallelism as usize,
+                    expert_parallelism as usize,
+                )?
+            } else {
+                let reasoning_model = match reasoning_model {
+                    Some(model) => model,
+                    None if native_only_client => {
+                        let placeholder = "cogfabric-native-reasoning-disabled";
+                        if language_model == placeholder {
+                            format!("{placeholder}-placeholder")
+                        } else {
+                            placeholder.to_owned()
+                        }
+                    }
+                    None => {
+                        bail!("A reasoning model is required unless --native-only-client is set")
+                    }
+                };
+                let mut configured = cfg.language_network(
+                    language_model,
+                    reasoning_model,
+                    bindings,
+                    parallelism as usize,
+                    expert_parallelism as usize,
+                )?;
+                configured.native_only_client = native_only_client;
+                configured
             };
-            let mut settings = cfg.language_network(
-                language_model,
-                reasoning_model,
-                bindings,
-                parallelism as usize,
-                expert_parallelism as usize,
-            )?;
-            settings.native_only_client = native_only_client;
             settings.save()?;
             let routes = [
                 "interface",
@@ -2159,7 +2180,7 @@ async fn run_cli() -> Result<()> {
             ]
             .into_iter()
             .map(|role| {
-                if native_only_client && !matches!(role, "interface" | "synthesizer") {
+                if settings.native_only_client && !matches!(role, "interface" | "synthesizer") {
                     return Ok(json!({"role":role,"client_route":"disabled"}));
                 }
                 settings
@@ -2168,7 +2189,8 @@ async fn run_cli() -> Result<()> {
             })
             .collect::<Result<Vec<_>>>()?;
             json!({"saved":true,"routes":routes,"parallelism":parallelism,
-                "native_only_client":native_only_client,
+                "native_only_client":settings.native_only_client,
+                "reasoning_mode":if jev_r_only {"jev_r_only"} else {"model_assisted"},
                 "expert_parallelism":expert_parallelism,"client_collective":true,
                 "models_loaded":false,"trained_weights_created":false,
                 "verification":"Independent compiled kernel; no verifier-model override",

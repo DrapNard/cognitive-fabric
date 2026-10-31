@@ -1,5 +1,18 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Qwen language boundary and no-reasoning-model Jev-R mode — 2026-10-31
+
+**Partial; runtime unverified.** `src/config.rs`, `src/main.rs`,
+`src/engine.rs`, and `src/reasoning.rs` add a configuration with Qwen limited to
+request interpretation/presentation roles and no reasoning LLM. Compiled Jev-R
+solvers cover exact arithmetic, inline SQL, dependency ordering, integer
+sorting, shortest paths, and bounded finite-domain search. The Engine refuses
+reasoning-role model calls and skips model-backed expert workflows. Other
+domains are reported unsupported. This does not implement general model-free
+reasoning or translate arbitrary natural-language objectives into solver input,
+and does not verify real provider routing. No tests, benchmarks or live inference
+ran.
+
 ## Shared Engine inference admission across Jev-R and Jev+ experts — 2026-10-31
 
 **Implemented; runtime unverified.** `src/engine.rs` creates one bounded
