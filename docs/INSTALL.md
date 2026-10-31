@@ -99,6 +99,8 @@ Supported role names are `planner`, `solver`, `explorer`, `critic`, and
 `reflector`; unassigned roles use the shared `--reasoning-model`. The values
 are exact IDs served by the configured API base. This selects routes but does
 not verify that the provider has those models available.
+`jq` is required when using `--domain-experts` for exact immutable registry
+checks.
 
 `--native-on-demand` writes a private, **unapproved** policy draft to the
 OpenCode home for every configured language and Jev-R model route. It contacts

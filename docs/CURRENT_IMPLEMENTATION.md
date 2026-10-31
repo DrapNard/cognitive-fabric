@@ -1,5 +1,14 @@
 # Current Rust implementation
 
+## Keep identical registered experts during setup reruns — 2026-10-31
+
+**Implemented; runtime unverified.** With `--domain-experts`,
+`scripts/setup.sh` compares the existing model registration to the checked-in
+manifest before registering it. Exact immutable matches are retained, disabled
+exact matches are re-enabled, and a same-ID/version content conflict aborts
+instead of replacing user data. `jq` is required for this exact comparison. No
+tests or benchmarks were run.
+
 ## Install from an offline local checkout — 2026-10-31
 
 **Implemented; installation unverified.** `scripts/setup.sh --source PATH`

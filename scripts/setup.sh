@@ -170,6 +170,13 @@ if [ "$jev_r_only" -eq 1 ] || [ -n "$language_model" ] || [ -n "$reasoning_model
     case $expert_parallelism in 1|2|3|4) ;; *) echo '--expert-parallelism must be 1, 2, 3, or 4.' >&2; exit 2 ;; esac
 fi
 
+if [ "$domain_experts" -eq 1 ]; then
+    command -v jq >/dev/null 2>&1 || {
+        echo 'jq is required for exact model-registry checks with --domain-experts.' >&2
+        exit 1
+    }
+fi
+
 for program in git cargo rustc; do
     command -v "$program" >/dev/null 2>&1 || {
         echo "Required program not found: $program" >&2
@@ -307,6 +314,30 @@ configure_network_for_home() {
     "$prefix/bin/cogfabric" "$@"
 }
 
+register_model_if_exact() {
+    config_home=$1
+    model_manifest=$2
+    registered_models=$("$prefix/bin/cogfabric" --home "$config_home" --json models)
+    if printf '%s\n' "$registered_models" | jq -e --slurpfile expected "$model_manifest" \
+        'any(.[]; .manifest.id == $expected[0].id and .manifest.version == $expected[0].version)' >/dev/null; then
+        if ! printf '%s\n' "$registered_models" | jq -e --slurpfile expected "$model_manifest" \
+            'any(.[]; .manifest == $expected[0])' >/dev/null; then
+            echo "Refusing to replace a different immutable model manifest: $model_manifest" >&2
+            return 1
+        fi
+        if ! printf '%s\n' "$registered_models" | jq -e --slurpfile expected "$model_manifest" \
+            'any(.[]; .manifest == $expected[0] and .enabled == true)' >/dev/null; then
+            "$prefix/bin/cogfabric" --home "$config_home" model-enable \
+                "$(jq -r '.id' "$model_manifest")" "$(jq -r '.version' "$model_manifest")"
+        else
+            printf 'Keeping identical registered model %s@%s in %s\n' \
+                "$(jq -r '.id' "$model_manifest")" "$(jq -r '.version' "$model_manifest")" "$config_home"
+        fi
+    else
+        "$prefix/bin/cogfabric" --home "$config_home" model-register "$model_manifest"
+    fi
+}
+
 if [ -n "$language_model" ]; then
     for config_home in "$cli_home" "$opencode_home"; do
         configure_network_for_home "$config_home"
@@ -316,7 +347,7 @@ if [ -n "$language_model" ]; then
                 --api-base "$api_base" \
                 --reasoning-effort default
             if [ "$domain_experts" -eq 1 ]; then
-                "$prefix/bin/cogfabric" --home "$config_home" model-register \
+                register_model_if_exact "$config_home" \
                     "$source_dir/examples/qwen36_model_manifest.json"
                 for expert in \
                     'data.sql.s1:data_sql' \

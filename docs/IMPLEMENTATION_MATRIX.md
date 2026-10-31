@@ -1,5 +1,15 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Make domain model registration safe to rerun — 2026-10-31
+
+**Implemented; runtime unverified.** `scripts/setup.sh --domain-experts` now
+compares the exact registered manifest before attempting immutable model
+registration. Identical entries are kept, disabled identical entries are
+re-enabled, and conflicting content with the same ID/version stops the setup.
+This avoids both duplicate-registration failures and silent manifest replacement.
+`jq` is required for the comparison. Shell syntax and whitespace checks were
+run; no tests or benchmarks were performed.
+
 ## Offline installation from a local checkout — 2026-10-31
 
 **Implemented; installation unverified.** `scripts/setup.sh --source PATH`
