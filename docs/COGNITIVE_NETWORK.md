@@ -10,14 +10,16 @@ Jev+ skips model-backed workflow experts. Compiled Jev-R solvers cover exact
 arithmetic, inline SQL, dependency ordering, integer sorting, shortest paths,
 and bounded finite-domain search (default ceiling 4,096 nodes). Other reasoning
 domains return an explicit unsupported result; there is no hidden LLM fallback.
-For natural-language ordering, sorting, shortest-path, or finite-domain tasks,
-the language schema can now carry a bounded typed `compiled_solver_request`.
-The request is checked against the compiled criterion parser before Jev-R uses
-it. The checker proves the answer against that translated input; it cannot prove
-the translation preserved the user's intent, so such outcomes remain
-`unverified`. Explicit solver syntax skips the initial Qwen call. General
-model-free reasoning and live-provider behavior are not established. No tests,
-benchmarks, or live inference ran.
+For natural-language arithmetic, local SQL, ordering, sorting, shortest-path,
+or finite-domain tasks, the language schema can carry a bounded typed
+`compiled_solver_request`. Rust validates the expression, local table/query
+limits, or compiled criterion before Jev-R uses it. Configured typed math/SQL
+modules run alongside the local Rust calculation/query, and their results
+must match the local result. The checker cannot prove that the language model
+preserved the user's intent, so translated-task outcomes remain `unverified`.
+Explicit solver syntax skips the initial Qwen call. General model-free reasoning
+and live-provider behavior are not established. No tests, benchmarks, or live
+inference ran.
 
 ## Enforce one Engine-wide inference width across reasoning and expert brokers — 2026-10-31
 

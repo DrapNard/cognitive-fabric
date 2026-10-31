@@ -1212,7 +1212,7 @@ impl Engine {
                 language_reservation = Some(session.reserve_language_presentation()?);
                 if !direct_compiled_request {
                     let translation_contract = if self.cfg.jev_r_only {
-                        "Translate the request into the CGF interpretation schema. For a supported deterministic task, include `compiled_solver_request` as {\"kind\":\"dependency_order|integer_sort|shortest_path|finite_domain\",\"input\":{...}} using only explicit user-provided facts. If key facts are missing, set `clarification`; if no supported deterministic task applies, set the field to null. Never solve the task, invent facts, or grant permissions."
+                        "Translate the request into the CGF interpretation schema. For a supported deterministic task, include `compiled_solver_request` as {\"kind\":\"arithmetic|inline_sql|dependency_order|integer_sort|shortest_path|finite_domain\",\"input\":...} using only explicit user-provided facts. Arithmetic input is an expression string. Inline SQL input is {\"tables\":[{\"name\":\"...\",\"columns\":[\"...\"],\"rows\":[...]}],\"query\":\"SELECT ...\"}. If key facts are missing, set `clarification`; if no supported deterministic task applies, set the field to null. Never solve the task, invent facts, or grant permissions."
                     } else {
                         "Translate this request into the CGF interpretation schema. Do not solve it or grant permissions."
                     };
@@ -1227,9 +1227,11 @@ impl Engine {
                                 "Required language interpretation could not be dispatched"
                             )
                         })?;
-                    let parsed = crate::language::Interpretation::parse(&raw)?;
-                    if self.cfg.jev_r_only {
-                        translated_solver_request = parsed.compiled_solver_query()?;
+                    if let Ok(parsed) = crate::language::Interpretation::parse(&raw) {
+                        if self.cfg.jev_r_only {
+                            translated_solver_request =
+                                parsed.compiled_solver_query().unwrap_or_default();
+                        }
                     }
                     initial_interpretation = Some(raw);
                 }

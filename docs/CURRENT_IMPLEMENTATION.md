@@ -9,12 +9,14 @@ model-backed workflow experts, and uses existing compiled Jev-R solvers for
 exact arithmetic, SQL, dependency ordering, integer sorting, shortest paths,
 and bounded finite-domain search. Unsupported domains return explicitly without
 an LLM fallback. This is a finite solver set, not general model-free reasoning.
-`Interpretation.compiled_solver_request` can translate ordering, sorting,
-shortest-path and finite-domain requests into bounded typed solver inputs.
-Jev-R validates answers against those inputs without reasoning-role model calls.
-Since the checker cannot prove that the language model preserved the user's
-intent, translated-task outcomes remain `unverified`. Explicit solver syntax
-skips the initial Qwen call. No tests, benchmarks, or live inference ran.
+`Interpretation.compiled_solver_request` can translate arithmetic, local SQL,
+ordering, sorting, shortest-path and finite-domain requests into bounded typed
+inputs. Jev-R validates expressions, tables and criteria without reasoning-role
+model calls; configured typed math/SQL modules run concurrently with the local
+Rust computation and are compared with its result. Since the checker cannot
+prove that the language model preserved the user's intent, translated-task
+outcomes remain `unverified`. Explicit solver syntax skips the initial Qwen call.
+No tests, benchmarks, or live inference ran.
 
 ## Share inference admission across Engine reasoning and experts — 2026-10-31
 

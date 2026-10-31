@@ -3298,6 +3298,169 @@ impl Session {
                 "Jev-R-only mode requires a verifiable deterministic solver for this task.".into(),
             );
         }
+        if let Some(expression) = solver_input.strip_prefix("math:") {
+            if self
+                .cfg
+                .max_tool_calls
+                .saturating_sub(self.resources.tool_calls)
+                < 1
+            {
+                self.stop_reason = "budget_exhausted".into();
+                return Ok("Jev-R exhausted the tool budget before arithmetic evaluation.".into());
+            }
+            let typed_route = self.typed_modules.clone().and_then(|(broker, pins)| {
+                pins.get(&crate::fabric::modules::Capability::MathEvaluate)
+                    .cloned()
+                    .map(|candidates| (broker, candidates))
+            });
+            let (routed, expected) = if let Some((broker, candidates)) = typed_route {
+                let (module_result, expected_result) = tokio::join!(
+                    self.dispatch_typed_module(
+                        &broker,
+                        &candidates,
+                        crate::fabric::modules::Request::Arithmetic {
+                            expression: expression.to_owned(),
+                        }
+                    ),
+                    async { crate::math::calculate(expression) }
+                );
+                let (module, response) = module_result?;
+                let crate::fabric::modules::Response::Arithmetic { value } = response else {
+                    bail!("Typed arithmetic module returned another response kind")
+                };
+                self.store.event(
+                    &self.task,
+                    "tool_dispatch",
+                    "fabric",
+                    json!({
+                        "module_id":module.descriptor().id,
+                        "module_version":module.descriptor().version,
+                        "capability":"math.evaluate",
+                        "response_available":true,
+                        "verified":false
+                    }),
+                )?;
+                (value, expected_result?)
+            } else {
+                self.authorize_tool("math.evaluate")?;
+                let answer = crate::math::calculate(expression)?;
+                (answer.clone(), answer)
+            };
+            self.verification_attempted = true;
+            let verified = routed == expected;
+            self.store.event(
+                &self.task,
+                "verification",
+                "verifier-r",
+                json!({
+                    "checker":"arithmetic_parser/v1",
+                    "verified":verified,
+                    "objective_sha256":crate::store::sha256(query.as_bytes()),
+                    "solver_input_sha256":crate::store::sha256(solver_input.as_bytes()),
+                    "answer_sha256":crate::store::sha256(expected.as_bytes()),
+                    "translation_semantics_verified":false
+                }),
+            )?;
+            if !verified {
+                self.has_solution = true;
+                self.stop_reason = "verification_rejected".into();
+                return Ok("The typed math module disagreed with Jev-R's evaluator.".into());
+            }
+            self.has_solution = true;
+            self.verified = true;
+            self.verified_criterion = Some("arithmetic_parser/v1");
+            self.stop_reason = "verified".into();
+            return Ok(expected);
+        }
+        if let Some(raw) = solver_input.strip_prefix("sql:") {
+            if self
+                .cfg
+                .max_tool_calls
+                .saturating_sub(self.resources.tool_calls)
+                < 1
+            {
+                self.stop_reason = "budget_exhausted".into();
+                return Ok("Jev-R exhausted the tool budget before SQL execution.".into());
+            }
+            let typed_route = self.typed_modules.clone().and_then(|(broker, pins)| {
+                pins.get(&crate::fabric::modules::Capability::SqlQuery)
+                    .cloned()
+                    .map(|candidates| (broker, candidates))
+            });
+            let (routed, expected) = if let Some((broker, candidates)) = typed_route {
+                let request = crate::reasoning::modules::sql_request(raw)?;
+                let (module_result, expected_result) = tokio::join!(
+                    self.dispatch_typed_module(&broker, &candidates, request),
+                    crate::sql::execute(raw.to_owned())
+                );
+                let (module, response) = module_result?;
+                let routed = crate::reasoning::modules::sql_response(response)?;
+                self.store.event(
+                    &self.task,
+                    "tool_dispatch",
+                    "fabric",
+                    json!({
+                        "module_id":module.descriptor().id,
+                        "module_version":module.descriptor().version,
+                        "capability":"sql.query",
+                        "response_available":true,
+                        "verified":false
+                    }),
+                )?;
+                (routed, expected_result)
+            } else {
+                self.authorize_tool("sql.query")?;
+                let result = crate::sql::execute(raw.to_owned()).await;
+                (result.as_ref().cloned().unwrap_or_default(), result)
+            };
+            let expected = match expected {
+                Ok(answer) => answer,
+                Err(error) => {
+                    self.verification_attempted = true;
+                    self.has_solution = true;
+                    self.stop_reason = "verification_rejected".into();
+                    self.store.event(
+                        &self.task,
+                        "verification",
+                        "verifier-r",
+                        json!({
+                            "checker":"sqlite_inline/v1",
+                            "verified":false,
+                            "objective_sha256":crate::store::sha256(query.as_bytes()),
+                            "solver_input_sha256":crate::store::sha256(solver_input.as_bytes()),
+                            "translation_semantics_verified":false
+                        }),
+                    )?;
+                    return Ok(format!("Translated SQL task rejected: {error}"));
+                }
+            };
+            self.verification_attempted = true;
+            let verified = serde_json::from_str::<serde_json::Value>(&routed)?
+                == serde_json::from_str::<serde_json::Value>(&expected)?;
+            self.store.event(
+                &self.task,
+                "verification",
+                "verifier-r",
+                json!({
+                    "checker":"sqlite_inline/v1",
+                    "verified":verified,
+                    "objective_sha256":crate::store::sha256(query.as_bytes()),
+                    "solver_input_sha256":crate::store::sha256(solver_input.as_bytes()),
+                    "answer_sha256":crate::store::sha256(expected.as_bytes()),
+                    "translation_semantics_verified":false
+                }),
+            )?;
+            if !verified {
+                self.has_solution = true;
+                self.stop_reason = "verification_rejected".into();
+                return Ok("The typed SQL module disagreed with Jev-R's local execution.".into());
+            }
+            self.has_solution = true;
+            self.verified = true;
+            self.verified_criterion = Some("sqlite_inline/v1");
+            self.stop_reason = "verified".into();
+            return Ok(expected);
+        }
         let Some(criterion) = crate::verification::Criterion::from_query(solver_input)? else {
             return Ok("Jev-R-only mode has no compiled solver for this task.".into());
         };

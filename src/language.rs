@@ -21,6 +21,10 @@ pub struct Interpretation {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "input", deny_unknown_fields)]
 pub enum CompiledSolverRequest {
+    #[serde(rename = "arithmetic")]
+    ArithmeticExpression(String),
+    #[serde(rename = "inline_sql")]
+    InlineSql(serde_json::Value),
     #[serde(rename = "dependency_order")]
     DependencyOrder(serde_json::Value),
     #[serde(rename = "integer_sort")]
@@ -33,7 +37,28 @@ pub enum CompiledSolverRequest {
 
 impl CompiledSolverRequest {
     fn query(&self) -> Result<String> {
+        match self {
+            Self::ArithmeticExpression(expression) => {
+                crate::math::calculate(expression)?;
+                return Ok(format!("math:{expression}"));
+            }
+            Self::InlineSql(input) => {
+                if !input.is_object() {
+                    bail!("Inline SQL solver input must be a JSON object")
+                }
+                let raw = serde_json::to_string(input)?;
+                if raw.len() > 32_000 {
+                    bail!("Inline SQL solver input exceeds its byte limit")
+                }
+                crate::sql::parse_task(&raw)?;
+                return Ok(format!("sql:{raw}"));
+            }
+            _ => {}
+        }
         let (prefix, expected_criterion, input) = match self {
+            Self::ArithmeticExpression(_) | Self::InlineSql(_) => {
+                bail!("Compiled Jev-R solver kind was not handled")
+            }
             Self::DependencyOrder(input) => ("order", "dependency_order/v1", input),
             Self::IntegerSort(input) => ("sort", "integer_sort/v1", input),
             Self::ShortestPath(input) => ("path", "shortest_path/v1", input),
