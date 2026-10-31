@@ -19,6 +19,8 @@ domain_experts=0
 domain_expert_manifest=''
 domain_expert_workflow_version=''
 native_on_demand=0
+language_context=16384
+language_context_set=0
 parallelism=2
 expert_parallelism=2
 
@@ -30,6 +32,7 @@ Usage: setup.sh [--prefix PATH] [--ref GIT_REF_OR_COMMIT] [--source PATH] [--rep
                 [--api-base URL] [--domain-experts]
                 [--domain-expert-manifest MODEL_MANIFEST]
                 [--domain-expert-workflow-version VERSION] [--native-on-demand]
+                [--language-context TOKENS]
                 [--parallelism 1..4] [--expert-parallelism 1..4]
 
 Build and install cogfabric, cogfabric-chat, and cogfabric-server from source.
@@ -54,6 +57,8 @@ reflector to a specific model; unassigned roles use --reasoning-model.
 --native-on-demand writes an unapproved native lifecycle policy draft for the
 OpenCode home and installs cogfabric-opencode-on-demand. Running that explicit
 command approves model activation on first admitted use; it does not preload.
+The draft assigns 16384 tokens to all routes by default. Set
+--language-context TOKENS to override only the language model context (1-32768).
 Supplying --language-model with --jev-r-only instead disables reasoning-role
 model calls. Configuration and registration do not load models or run inference.
 Width defaults are 2 and 2.
@@ -135,6 +140,12 @@ $2"
             native_on_demand=1
             shift
             ;;
+        --language-context)
+            [ "$#" -ge 2 ] || { echo 'Missing value for --language-context.' >&2; exit 2; }
+            language_context=$2
+            language_context_set=1
+            shift 2
+            ;;
         --parallelism)
             [ "$#" -ge 2 ] || { echo 'Missing value for --parallelism.' >&2; exit 2; }
             parallelism=$2
@@ -156,6 +167,18 @@ $2"
             ;;
     esac
 done
+
+if [ "$language_context_set" -eq 1 ] && [ "$native_on_demand" -ne 1 ]; then
+    echo '--language-context requires --native-on-demand.' >&2
+    exit 2
+fi
+case $language_context in
+    ''|*[!0-9]*) echo '--language-context must be an integer from 1 through 32768.' >&2; exit 2 ;;
+esac
+if [ "$language_context" -lt 1 ] || [ "$language_context" -gt 32768 ]; then
+    echo '--language-context must be an integer from 1 through 32768.' >&2
+    exit 2
+fi
 
 if [ "$jev_r_only" -eq 1 ] || [ -n "$language_model" ] || [ -n "$reasoning_model" ] || [ "$domain_experts" -eq 1 ] || [ -n "$domain_expert_manifest" ] || [ -n "$domain_expert_workflow_version" ] || [ "$role_model_count" -gt 0 ] || [ "$native_on_demand" -eq 1 ]; then
     if [ -z "$language_model" ]; then
@@ -499,7 +522,8 @@ if [ -n "$language_model" ]; then
             echo 'Could not create a private native policy draft.' >&2
             exit 1
         }
-        set -- --api-base http://127.0.0.1:1234/api/v1 --context-length 16384
+        set -- --api-base http://127.0.0.1:1234/api/v1 --context-length 16384 \
+            --model-context "$language_model=$language_context"
         if [ -n "$domain_expert_model_key" ]; then
             set -- "$@" --extra-model "$domain_expert_model_key"
         fi

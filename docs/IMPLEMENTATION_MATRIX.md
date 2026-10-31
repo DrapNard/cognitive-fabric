@@ -1,5 +1,14 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Match on-demand language context to the configured interface — 2026-10-31
+
+**Implemented; syntax-checked, runtime unverified.** `scripts/setup.sh` supports
+`--language-context TOKENS` for new native on-demand policy drafts, bounded to
+1-32768 and requiring `--native-on-demand`. It overrides only the language
+route; the Jev-R/Jev+ context keeps the existing 16K default. The install guide
+documents Qwen3-8B at 32K and Qwen3.6 at 16K. No tests, benchmarks, model loads,
+or inference ran.
+
 ## Pin every Jev-R role to an explicit configured model — 2026-10-31
 
 **Implemented; compile-checked, runtime unverified.** `config.rs` now writes

@@ -1,5 +1,15 @@
 # Current Rust implementation
 
+## Match on-demand language context to the configured interface — 2026-10-31
+
+**Implemented; syntax-checked, runtime unverified.** `scripts/setup.sh` accepts
+`--language-context TOKENS` when drafting the OpenCode native on-demand policy.
+It overrides the language route only, while Jev-R and Jev+ routes retain the
+default 16K context. The option is bounded to 1-32768 and is rejected unless
+on-demand policy creation is enabled. The install guide shows Qwen3-8B at 32K
+with the shared Qwen3.6 reasoning/expert model at 16K. No tests or benchmarks
+ran.
+
 ## Pin every Jev-R role to an explicit configured model — 2026-10-31
 
 **Implemented; compile-checked, runtime unverified.** `Config::language_network`

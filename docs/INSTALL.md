@@ -89,7 +89,7 @@ written to both CLI and OpenCode homes; model weights remain unloaded. Example:
 sh setup.sh --ref develop/v1.0 --prefix "$HOME/.local" --replace \
   --language-model qwen/qwen3-8b \
   --reasoning-model qwen3.6-35b-a3b \
-  --domain-experts --native-on-demand \
+  --domain-experts --native-on-demand --language-context 32768 \
   --parallelism 2 --expert-parallelism 2
 ```
 
@@ -117,7 +117,10 @@ expert and reasoning models fit or execute concurrently.
 
 `--native-on-demand` writes a private, **unapproved** policy draft to the
 OpenCode home for every configured language and Jev-R model route. It contacts
-no provider and loads no model. Review the exact model keys and context lengths
+no provider and loads no model. Context defaults to 16384 for every route;
+`--language-context TOKENS` overrides only the language model from 1 to 32768.
+For example, `--language-context 32768` gives Qwen3-8B a 32K context while
+keeping Jev-R at the 16K default. Review the exact model keys and context lengths
 in `native-policy.json`, start LM Studio, then run
 `cogfabric-opencode-on-demand`. Invoking that named command is the explicit
 approval to activate only models in the selected policy on first admitted use;
