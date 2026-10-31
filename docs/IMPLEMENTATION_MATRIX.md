@@ -1,5 +1,13 @@
 # Implementation matrix — 1.1.0-alpha.1
 
+## Offline installation from a local checkout — 2026-10-31
+
+**Implemented; installation unverified.** `scripts/setup.sh --source PATH`
+skips remote fetch and builds from a local checkout containing `Cargo.toml` and
+`Cargo.lock`; the locked Cargo install and replacement protections still apply.
+This supports local deployment when GitHub is unreachable. Shell syntax and
+patch whitespace checks were run; no tests or benchmarks were performed.
+
 ## Generate a private on-demand OpenCode policy — 2026-10-31
 
 **Implemented; runtime unverified.** `scripts/setup.sh --native-on-demand`

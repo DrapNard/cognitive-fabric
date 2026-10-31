@@ -15,6 +15,11 @@ start a server, or alter the runtime state directory.
 - Network access to GitHub and Cargo's configured crate registry for source and
   dependencies.
 
+To install from an existing checkout without fetching GitHub, use
+`sh scripts/setup.sh --source . --replace`. The local directory must contain
+`Cargo.toml` and `Cargo.lock`; Cargo may still need its configured crate
+registry unless dependencies are already cached.
+
 The checkout selects the Rust stable channel in `rust-toolchain.toml`; it does
 not pin an exact compiler release. `Cargo.lock` pins dependency versions. The
 reviewed FlatBuffers Rust bindings are committed, so a separate `flatc`

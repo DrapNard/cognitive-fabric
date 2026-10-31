@@ -1,5 +1,13 @@
 # Current Rust implementation
 
+## Install from an offline local checkout — 2026-10-31
+
+**Implemented; installation unverified.** `scripts/setup.sh --source PATH`
+installs directly from an existing Rust checkout and skips the GitHub fetch;
+the default `--ref` flow remains available. It requires the workspace manifest
+and lockfile and uses the same locked Cargo install path. Cargo can still need
+cached or reachable crate dependencies. No tests or benchmarks were run.
+
 ## Prepare an explicit on-demand OpenCode launch — 2026-10-31
 
 **Implemented; runtime unverified.** `scripts/setup.sh --native-on-demand`
