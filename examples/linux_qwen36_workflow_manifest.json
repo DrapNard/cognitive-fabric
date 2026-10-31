@@ -1,0 +1,18 @@
+{
+  "id": "linux.s1",
+  "version": "1.0.0",
+  "kind": "workflow",
+  "description": "Model-backed Linux operations review advice; quality is not independently established",
+  "tags": ["linux", "arch", "nixos", "bash", "kernel"],
+  "dependencies": [],
+  "source": "Cognitive Fabric project workflow manifest",
+  "license": "GPL-3.0-only",
+  "workflow_steps": [
+    {
+      "id": "review",
+      "advice": "Review the Linux operations objective and supplied host evidence. Identify privilege, persistence, resource, and rollback risks; distinguish observed facts from assumptions. Give bounded advice to the whole-goal solver. Do not claim commands ran, execute actions, or grant permissions.",
+      "depends_on": []
+    }
+  ],
+  "model": {"id": "local.qwen36.35b", "version": "1.0.0"}
+}

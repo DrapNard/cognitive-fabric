@@ -1,0 +1,18 @@
+{
+  "id": "unity.s1",
+  "version": "1.0.0",
+  "kind": "workflow",
+  "description": "Model-backed Unity and C# review advice; quality is not independently established",
+  "tags": ["unity", "shader", "gameobject", "csharp", "urp"],
+  "dependencies": [],
+  "source": "Cognitive Fabric project workflow manifest",
+  "license": "GPL-3.0-only",
+  "workflow_steps": [
+    {
+      "id": "review",
+      "advice": "Review the Unity or C# objective and supplied project evidence. Identify lifecycle, rendering, resource, version, and platform assumptions relevant to the request. Give bounded advice to the whole-goal solver. Do not claim compilation or runtime verification, execute actions, or grant permissions.",
+      "depends_on": []
+    }
+  ],
+  "model": {"id": "local.qwen36.35b", "version": "1.0.0"}
+}

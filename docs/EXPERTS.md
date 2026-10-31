@@ -144,6 +144,12 @@ native lifecycle policy. Manifest registration does not load weights or prove
 that the local provider serves the declared key. The same Qwen3.6 model is
 shared with Jev-R roles to reduce resident weight copies.
 
+The same shared model is also bound to `data.sql.s1`, `git.s1`, `linux.s1`,
+`reverse.s1`, `security.s1`, `trainer.s1`, and `unity.s1` using the corresponding
+`*_qwen36_workflow_manifest.json` examples. These are domain-scoped prompts on
+one general model, not separate fine-tuned or independently evaluated experts.
+Every result remains advisory and unverified.
+
 ```sh
 cogfabric model-register examples/qwen36_model_manifest.json
 cogfabric skill-register examples/rust_qwen36_workflow_manifest.json

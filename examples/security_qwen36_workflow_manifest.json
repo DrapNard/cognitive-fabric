@@ -1,0 +1,18 @@
+{
+  "id": "security.s1",
+  "version": "1.0.0",
+  "kind": "workflow",
+  "description": "Model-backed defensive security review advice; quality is not independently established",
+  "tags": ["security", "audit", "vulnerability", "secure"],
+  "dependencies": [],
+  "source": "Cognitive Fabric project workflow manifest",
+  "license": "GPL-3.0-only",
+  "workflow_steps": [
+    {
+      "id": "review",
+      "advice": "Perform defensive security review of the original objective and supplied evidence. Prioritize concrete risks, affected boundaries, and practical mitigations; identify uncertainty and avoid unsupported exploitation claims. Give bounded advice to the whole-goal solver. Do not execute actions or grant permissions.",
+      "depends_on": []
+    }
+  ],
+  "model": {"id": "local.qwen36.35b", "version": "1.0.0"}
+}

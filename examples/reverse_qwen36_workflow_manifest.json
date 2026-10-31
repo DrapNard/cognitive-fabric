@@ -1,0 +1,18 @@
+{
+  "id": "reverse.s1",
+  "version": "1.0.0",
+  "kind": "workflow",
+  "description": "Model-backed binary analysis review advice; quality is not independently established",
+  "tags": ["binary", "reverse", "disassembly", "metadata"],
+  "dependencies": [],
+  "source": "Cognitive Fabric project workflow manifest",
+  "license": "GPL-3.0-only",
+  "workflow_steps": [
+    {
+      "id": "review",
+      "advice": "Review the binary-analysis objective and only the metadata, disassembly, or tool output supplied. Separate observations from hypotheses and identify missing evidence. Give bounded defensive analysis advice to the whole-goal solver. Do not invent binary contents, claim inspection occurred, execute files, or grant permissions.",
+      "depends_on": []
+    }
+  ],
+  "model": {"id": "local.qwen36.35b", "version": "1.0.0"}
+}

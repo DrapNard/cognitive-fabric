@@ -14,11 +14,14 @@ cleared; language roles still force `none`, while Jev-R roles use the provider
 default. LM Studio is stopped, so provider activation and inference remain
 unverified. No tests or benchmarks ran. Additional Jev+ model-backed workflow
 experts require separately registered expert manifests/models. A first
-model-backed Jev+ Rust workflow is now registered and active on `rust.s1`,
-bound to `local.qwen36.35b@1.0.0`; it provides unverified advisory only. The
-registry metadata and skill activation are installed in both the CLI and
-OpenCode state directories. The checked-in policy example enables first-use
-loading for the two configured keys, but has not been applied or exercised.
+model-backed Jev+ workflow is now registered and active for each existing
+domain skill (`rust.s1`, `linux.s1`, `security.s1`, `reverse.s1`, `data.sql.s1`,
+`git.s1`, `unity.s1`, and `trainer.s1`). All eight bind to
+`local.qwen36.35b@1.0.0` and produce unverified advisory only; they are
+prompt-routed workflows, not separately trained experts. Registry metadata and
+activation are installed in both CLI and OpenCode state directories. The
+checked-in policy example enables first-use loading for the two configured
+model keys, but remains unapplied and unexercised.
 
 ## Configure Qwen as language interface with model-free Jev-R — 2026-10-31
 

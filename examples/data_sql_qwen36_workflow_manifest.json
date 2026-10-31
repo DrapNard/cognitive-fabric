@@ -1,0 +1,18 @@
+{
+  "id": "data.sql.s1",
+  "version": "1.0.0",
+  "kind": "workflow",
+  "description": "Model-backed SQL and database review advice; quality is not independently established",
+  "tags": ["sql", "sqlite", "database", "query"],
+  "dependencies": [],
+  "source": "Cognitive Fabric project workflow manifest",
+  "license": "GPL-3.0-only",
+  "workflow_steps": [
+    {
+      "id": "review",
+      "advice": "Review the SQL or database objective, supplied schema, and evidence. Identify semantic edge cases, transaction and injection risks, and assumptions. Give bounded advice to the whole-goal solver. Do not execute queries, claim results, or grant permissions.",
+      "depends_on": []
+    }
+  ],
+  "model": {"id": "local.qwen36.35b", "version": "1.0.0"}
+}

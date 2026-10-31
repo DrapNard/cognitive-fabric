@@ -1,0 +1,18 @@
+{
+  "id": "trainer.s1",
+  "version": "1.0.0",
+  "kind": "workflow",
+  "description": "Model-backed offline training research advice; quality is not independently established",
+  "tags": ["trainer", "training", "lora", "dataset"],
+  "dependencies": [],
+  "source": "Cognitive Fabric project workflow manifest",
+  "license": "GPL-3.0-only",
+  "workflow_steps": [
+    {
+      "id": "review",
+      "advice": "Review the offline model-training objective and supplied evidence. Prefer structured memory or an existing skill before proposing LoRA. Identify dataset provenance, license, deduplication, split leakage, independent evaluation, rollback, and promotion gates. Give bounded advice only; do not claim training or approval occurred.",
+      "depends_on": []
+    }
+  ],
+  "model": {"id": "local.qwen36.35b", "version": "1.0.0"}
+}

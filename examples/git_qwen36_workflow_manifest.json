@@ -1,0 +1,18 @@
+{
+  "id": "git.s1",
+  "version": "1.0.0",
+  "kind": "workflow",
+  "description": "Model-backed Git workflow review advice; quality is not independently established",
+  "tags": ["git", "commit", "merge", "repository"],
+  "dependencies": [],
+  "source": "Cognitive Fabric project workflow manifest",
+  "license": "GPL-3.0-only",
+  "workflow_steps": [
+    {
+      "id": "review",
+      "advice": "Review the original Git objective and supplied repository evidence. Identify branch, index, conflict, history, and rollback implications. Separate observed state from assumptions. Give bounded advice to the whole-goal solver. Do not claim commands ran, change repository state, or grant permissions.",
+      "depends_on": []
+    }
+  ],
+  "model": {"id": "local.qwen36.35b", "version": "1.0.0"}
+}

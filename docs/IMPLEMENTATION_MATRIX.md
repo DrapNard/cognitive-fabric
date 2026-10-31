@@ -11,9 +11,9 @@ roles and the Jev+ `rust.s1@1.0.0` workflow. A stale global `none`
 reasoning-effort override was cleared; language roles still force `none`, and
 Jev-R uses the provider default. LM Studio is stopped; IDs were matched to local
 model files but provider discovery/activation was not verified. The workflow is
-registered and active, bound to `local.qwen36.35b@1.0.0`; its output remains
-unverified advice. This establishes one on-demand Jev+ model route, not a
-complete domain expert network. `examples/qwen_network_native_policy.json`
+registered and active for all eight existing domain skills, each bound to
+`local.qwen36.35b@1.0.0`; outputs remain unverified advice from prompt-routed
+workflows, not independently trained experts. `examples/qwen_network_native_policy.json`
 declares first-use loading for Qwen and the shared Jev-R/Jev+ model, but remains
 unapproved and unapplied. No tests or benchmarks ran.
 
