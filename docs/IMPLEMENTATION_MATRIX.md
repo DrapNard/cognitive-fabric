@@ -8321,3 +8321,28 @@ bounded argument plan used by the root wave and later dependent proposals;
 `src/agent/typed_experts/translation.rs` parses this structured map. Task-memory
 bounds were increased to 24 KB to retain it. Client execution and translation
 quality are unverified. No tests, benchmarks or live inference were run.
+
+# On-demand provider prediction-slot configuration (2026-10-31)
+
+**Partial; runtime unavailable.** The installed network config separates the
+language role (`qwen/qwen3-8b`) from Jev-R roles and the Jev+ workflow model
+(`qwen3.6-35b-a3b`), with shared Engine admission set to four. The managed
+native loader in `src/residency/managed.rs` currently requests model identity,
+context length, and optional KV-cache placement; it does not request a
+prediction-slot count. `src/residency/lifecycle/lazy.rs` gates calls using the
+slot count observed in the provider inventory, falling back to one when the
+provider omits it. Therefore Rust-level width four does not guarantee that
+Jev+ and Jev-R can overlap at the provider.
+
+The installed `lms load --help` exposes `--parallel`, while LM Studio's
+documented REST load request does not list a parallel-slot field
+([CLI](https://lmstudio.ai/docs/cli),
+[REST model load](https://lmstudio.ai/docs/developer/rest/load)). The supported
+parallel-request feature uses continuous batching on compatible llama.cpp
+runtimes ([LM Studio parallel requests](https://lmstudio.ai/docs/app/advanced/parallel-requests)).
+Remaining implementation: provide an auditable, bounded on-demand load path
+that sets prediction slots and verifies the exact applied value from provider
+inventory before admitting concurrent generations. Do not infer GPU readiness
+or speed from the configured width. The current workspace session cannot reach
+LM Studio at `127.0.0.1:1234` and cannot access the NVIDIA driver. No tests,
+benchmarks, model loads, or inference were run.
