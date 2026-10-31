@@ -1,16 +1,17 @@
 # Current Rust implementation
 
-## Bind Jev-R solver handoffs to the original objective — 2026-10-31
+## Structure Jev-R solver handoffs — 2026-10-31
 
 **Implemented; compile-checked, runtime unverified.** New solver-cycle
 checkpoints use a strict version-2 outer boundary and a versioned handoff record
-with an objective digest, trust label, payload digest, and typed deterministic
-checker feedback. V1 saved checkpoints remain readable. Recovery and prompt-size
-accounting decode both versions; revision recovery converts validated V2 solver
-state to the existing revision-phase representation. Exact advisory content is
-still retained as a typed text leaf to preserve resume behavior. Replacing this
-leaf with typed source-event references and reconstructing strategy from planner,
-expert, and exploration records remains future work. No tests or benchmarks ran.
+with an objective digest, trust label, per-record digests, and tagged planner
+results, Jev+ expert envelopes, exploration selections, and checker feedback.
+V1 saved checkpoints remain readable. Recovery and prompt-size accounting decode
+both versions; revision recovery converts validated V2 solver state to the
+existing revision-phase representation. Model result content remains bounded
+text inside its typed record, and unclassified legacy advice is explicitly
+tagged. Reconstructing all strategy from source-event references remains future
+work. No tests or benchmarks ran.
 
 ## Release shared inference capacity after route admission — 2026-10-31
 

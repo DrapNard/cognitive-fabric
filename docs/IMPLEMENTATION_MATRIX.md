@@ -1,19 +1,21 @@
 # Implementation matrix — 1.1.0-alpha.1
 
-## Version Jev-R solver handoffs and bind them to the objective — 2026-10-31
+## Structure Jev-R handoff records and bind them to the objective — 2026-10-31
 
 **Implemented; compile-checked, runtime unverified.** New `ready_solver`
 checkpoints use outer format 2 and a strict `cgf-jev-r-solver-handoff-v1`
 record in `src/reasoning/handoff.rs`. It binds content to the original objective,
-checks content hashes, marks advice unverified, and types compiled-checker
-feedback separately. `Session::continue_solver`, checkpoint recovery, saved
+checks content hashes, and marks advice unverified. It separates planner results,
+Jev+ expert envelopes, selected exploration alternatives, and deterministic
+checker feedback into distinct tagged records; only each record's actual model
+result remains text data. `Session::continue_solver`, checkpoint recovery, saved
 prompt accounting, and revision recovery understand the new shape. Historical
 format-1 checkpoints remain readable; revision recovery converts a validated
 format-2 solver checkpoint to the existing revision-phase format before adding
-its new handoff. The typed envelope still preserves exact model-facing advisory
-text as a leaf, so this is not a text-free memory system or source-event
-reference graph. `cargo fmt --all` and `cargo check --workspace --all-targets`
-passed; no tests, benchmarks, model operations, or live provider calls ran.
+its new handoff. Unclassified legacy advice remains explicitly tagged text; a
+source-event reference graph is still future work. `cargo fmt --all` and
+`cargo check --workspace --all-targets` passed; no tests, benchmarks, model
+operations, or live provider calls ran.
 
 ## Acquire shared inference capacity at dispatch — 2026-10-31
 
